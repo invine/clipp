@@ -5,7 +5,7 @@ export enum ClipType {
   TEXT = "text",
   URL = "url",
   IMAGE = "image",
-  FILE = "file"
+  FILE = "file",
 }
 
 /**
@@ -15,5 +15,5 @@ export enum SyncMessageType {
   NEW_CLIP = "NEW_CLIP",
   SYNC_HISTORY = "SYNC_HISTORY",
   HELLO = "HELLO",
-  ACK = "ACK"
+  ACK = "ACK",
 }
