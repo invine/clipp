@@ -5,10 +5,12 @@
     "@libp2p/mplex": "^11.0.35",
     "@libp2p/webrtc": "^5.2.12",
     "@libp2p/webrtc-star": "^7.0.0",
-    "libp2p": "^2.8.5"
+    "libp2p": "^2.8.5",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
+    "@types/qrcode": "^1.5.5",
     "jest": "^29.7.0",
     "ts-jest": "^29.3.4"
   }
