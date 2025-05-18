@@ -3,9 +3,9 @@ import {
   normalizeClipboardContent,
   sanitizeText,
   guessMimeType,
-} from "../normalize";
-import { validateClip } from "../validate";
-import { Clip } from "../types";
+} from "../../../packages/core/clipboard/normalize";
+import { validateClip } from "../../../packages/core/clipboard/validate";
+import { Clip } from "../../../packages/core/clipboard/types";
 
 describe("Clipboard Normalizer", () => {
   const senderId = "peer-abc";

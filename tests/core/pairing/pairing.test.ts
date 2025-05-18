@@ -1,6 +1,12 @@
-import { encodePairingPayload, generateQRCode } from "../encode";
-import { decodePairingPayload, validatePayload } from "../decode";
-import { PairingPayload } from "../types";
+import {
+  encodePairingPayload,
+  generateQRCode,
+} from "../../../packages/core/pairing/encode";
+import {
+  decodePairingPayload,
+  validatePayload,
+} from "../../../packages/core/pairing/decode";
+import { PairingPayload } from "../../../packages/core/pairing/types";
 
 describe("Pairing QR encode/decode", () => {
   const payload: PairingPayload = {

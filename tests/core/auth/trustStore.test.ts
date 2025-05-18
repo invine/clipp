@@ -1,5 +1,5 @@
-import { InMemoryDeviceTrustStore } from "../trustStore";
-import { TrustedDevice } from "../types";
+import { InMemoryDeviceTrustStore } from "../../../packages/core/auth/trustStore";
+import { TrustedDevice } from "../../../packages/core/auth/types";
 
 describe("DeviceTrustStore", () => {
   const store = new InMemoryDeviceTrustStore();

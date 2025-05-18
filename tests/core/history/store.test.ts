@@ -1,5 +1,5 @@
-import { DefaultClipboardHistoryStore } from "../store";
-import { Clip } from "../../models/Clip";
+import { DefaultClipboardHistoryStore } from "../../../packages/core/history/store";
+import { Clip } from "../../../packages/core/models/Clip";
 
 describe("ClipboardHistoryStore", () => {
   const store = new DefaultClipboardHistoryStore();
