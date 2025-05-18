@@ -1,3 +1,5 @@
+// Remove any embedded Jest config from this test file. Jest config should only be in jest.config.js, not in test files.
+
 import { describe, it, expect } from "@jest/globals";
 
 // Stub file for unit tests of the P2PEngine implementation
