@@ -43,17 +43,13 @@ export class DefaultClipboardHistoryStore implements ClipboardHistoryStore {
 
   async listRecent(limit = 50): Promise<HistoryItem[]> {
     const all = await this.backend.getAll();
-    return all
-      .sort((a, b) => b.syncedAt - a.syncedAt)
-      .slice(0, limit);
+    return all.sort((a, b) => b.syncedAt - a.syncedAt).slice(0, limit);
   }
 
   async search(query: string): Promise<HistoryItem[]> {
     const all = await this.backend.getAll();
     const q = query.toLowerCase();
-    return all.filter((item) =>
-      item.clip.content.toLowerCase().includes(q)
-    );
+    return all.filter((item) => item.clip.content.toLowerCase().includes(q));
   }
 
   async exportAll(): Promise<Clip[]> {
