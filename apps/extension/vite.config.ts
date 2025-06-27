@@ -13,7 +13,7 @@ export default defineConfig({
           dest: ".",
         },
         {
-          src: resolve(__dirname, "public"),
+          src: resolve(__dirname, "public/*"),
           dest: ".",
         },
       ],
