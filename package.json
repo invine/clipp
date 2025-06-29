@@ -34,5 +34,9 @@
     "ts-jest": "^29.3.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
+  },
+  "scripts": {
+    "test": "jest",
+    "lint": "echo lint"
   }
 }
