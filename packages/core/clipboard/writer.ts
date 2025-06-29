@@ -10,7 +10,7 @@ export interface ClipboardWriter {
 export function createWriter(fn: ClipboardWriteFn): ClipboardWriter {
   return {
     async write(clip: Clip) {
-      if (clip.type === ClipType.TEXT || clip.type === ClipType.URL) {
+      if (clip.type === ClipType.Text || clip.type === ClipType.Url) {
         await fn(clip.content);
       }
     },

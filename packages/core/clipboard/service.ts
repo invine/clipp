@@ -43,7 +43,7 @@ export function createClipboardService(
   watcher.onChange(async (text) => {
     const clip = normalizeClipboardContent(text, "local");
     if (!clip) return;
-    if (clip.type !== ClipType.TEXT && clip.type !== ClipType.URL) return;
+    if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     lastLocal = clip;
     await history.add(clip, "local", true);
     localHandlers.forEach((h) => h(clip));
@@ -55,7 +55,7 @@ export function createClipboardService(
   async function writeRemoteClip(clip: Clip): Promise<void> {
     if (seenRemote.has(clip.id)) return;
     seenRemote.add(clip.id);
-    if (clip.type !== ClipType.TEXT && clip.type !== ClipType.URL) return;
+    if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     await writer.write(clip);
     await history.add(clip, clip.senderId, false);
     remoteHandlers.forEach((h) => h(clip));

@@ -1,11 +1,11 @@
 /**
  * Represents a message exchanged between peers during clipboard sync.
  */
-import { SyncMessageType } from "./enums";
+import { MessageType } from "./enums";
 
 export interface SyncMessage {
   /** Message type */
-  type: SyncMessageType | string;
+  type: MessageType | string;
   /** Message payload (Clip, list of Clips, etc.) */
   payload: any;
   /** Sender's Peer ID */
