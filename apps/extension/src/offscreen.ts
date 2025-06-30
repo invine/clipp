@@ -12,6 +12,7 @@ async function checkClipboard() {
   }
 }
 
+console.log("Clipboard monitoring started");
 setInterval(checkClipboard, 2000);
 // initial check
 void checkClipboard();

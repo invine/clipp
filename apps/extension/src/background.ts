@@ -18,7 +18,8 @@ async function ensureOffscreen() {
   const has = await chrome.offscreen.hasDocument?.();
   if (!has) {
     await chrome.offscreen.createDocument({
-      url: chrome.runtime.getURL("offscreen.html"),
+      url: "offscreen.html",
+      // url: chrome.runtime.getURL("offscreen.html"),
       reasons: [chrome.offscreen.Reason.CLIPBOARD],
       justification: "monitor clipboard changes",
     });
