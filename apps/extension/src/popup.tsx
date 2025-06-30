@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import "./styles/tailwind.css";
+import "./styles/tailwind-built.css";
 import { ClipPreview } from "./components/ClipPreview";
 import { ShareButton } from "./components/ShareButton";
 import { StatusBar } from "./components/StatusBar";
