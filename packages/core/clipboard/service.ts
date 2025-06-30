@@ -53,6 +53,7 @@ export function createClipboardService(
   });
 
   async function writeRemoteClip(clip: Clip): Promise<void> {
+    if (clip.id === lastLocal?.id) return;
     if (seenRemote.has(clip.id)) return;
     seenRemote.add(clip.id);
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;

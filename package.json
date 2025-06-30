@@ -25,6 +25,8 @@
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
     "@rollup/plugin-inject": "^5.0.5",
     "@types/jest": "^29.5.14",
+    "@types/node": "^20.11.19",
+    "@types/chrome": "^0.0.246",
     "@types/qrcode": "^1.5.5",
     "@vitejs/plugin-react": "^4.4.1",
     "buffer": "^6.0.3",
