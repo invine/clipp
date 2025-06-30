@@ -5,7 +5,7 @@ import { createClipboardNode } from "./node";
 import { EventBus } from "./events";
 import type { ClipboardMessage } from "./types";
 import type { Clip } from "../models/Clip";
-import { InMemoryDeviceTrustStore } from "../auth/trustStore";
+import { createTrustManager, MemoryStorageBackend } from "../trust";
 
 const PROTOCOL = "/clipboard/1.0.0";
 
@@ -22,7 +22,7 @@ export interface MessagingLayer {
 
 export class ClipboardMessagingLayer implements MessagingLayer {
   private node: any;
-  private trust = new InMemoryDeviceTrustStore();
+  private trust = createTrustManager(new MemoryStorageBackend());
   private messageBus = new EventBus<ClipboardMessage>();
   private connectBus = new EventBus<string>();
   private disconnectBus = new EventBus<string>();
