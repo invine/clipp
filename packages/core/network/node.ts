@@ -15,12 +15,18 @@ export async function createClipboardNode(
   options: { peerId?: any; bootstrapList?: string[] } = {}
 ) {
   const { peerId, bootstrapList = [] } = options;
+  const discovery: any[] = [];
+  if (bootstrapList.length > 0) {
+    discovery.push(bootstrap({ list: bootstrapList }));
+  }
+  discovery.push(mdns());
+
   return await createLibp2p({
     ...(peerId ? { peerId } : {}),
     transports: [webRTC(), webSockets()],
     connectionEncrypters: [noise()],
     streamMuxers: [mplex()],
-    peerDiscovery: [bootstrap({ list: bootstrapList }), mdns()],
+    peerDiscovery: discovery,
     services: {
       pubsub: gossipsub(),
       dht: kadDHT() as any,
