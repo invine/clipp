@@ -1,7 +1,7 @@
 import { createWatcher } from "./watcher";
 import { createWriter } from "./writer";
 import { normalizeClipboardContent } from "./normalize";
-import { DefaultClipboardHistoryStore } from "../history/store";
+import { MemoryHistoryStore } from "../history/store";
 import { Clip } from "../models/Clip";
 import { ClipType } from "../models/enums";
 import * as chromePlatform from "./platform/chrome";
@@ -32,7 +32,7 @@ export function createClipboardService(
 
   const watcher = createWatcher(read, options.pollIntervalMs ?? 2000);
   const writer = createWriter(write);
-  const history = new DefaultClipboardHistoryStore();
+  const history = new MemoryHistoryStore();
   const localHandlers: Array<(c: Clip) => void> = [];
   const remoteHandlers: Array<(c: Clip) => void> = [];
   const seenRemote = new Set<string>();

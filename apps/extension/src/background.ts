@@ -1,12 +1,12 @@
 import { ClipboardMessagingLayer } from "../../../packages/core/network/messaging";
-import { DefaultClipboardHistoryStore } from "../../../packages/core/history/store";
+import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import { createTrustManager, TrustedDevice } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 
 // Background state
 const messaging = new ClipboardMessagingLayer();
-const history = new DefaultClipboardHistoryStore();
+const history = new MemoryHistoryStore();
 const trust = createTrustManager(new ChromeStorageBackend());
 let pendingRequests: TrustedDevice[] = [];
 
