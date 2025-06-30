@@ -18,6 +18,20 @@ describe("Clipboard writer", () => {
     expect(fn).toHaveBeenCalledWith("abc");
   });
 
+  test("writes url clip", async () => {
+    const fn = jest.fn(async (_: string) => {});
+    const writer = createWriter(fn);
+    const clip: Clip = {
+      id: "u1",
+      type: ClipType.Url,
+      content: "https://example.com",
+      timestamp: Date.now(),
+      senderId: "me",
+    };
+    await writer.write(clip);
+    expect(fn).toHaveBeenCalledWith("https://example.com");
+  });
+
   test("rejects unknown type", async () => {
     const fn = jest.fn(async (_: string) => {});
     const writer = createWriter(fn);
