@@ -8,7 +8,7 @@ export type Device = {
 };
 
 export const DeviceList = () => {
-  const [devices, setDevices] = useState([]);
+  const [devices, setDevices] = useState<Device[]>([]);
 
   useEffect(() => {
     // @ts-ignore

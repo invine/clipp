@@ -4,6 +4,7 @@ import "./styles/tailwind.css";
 import { ClipPreview } from "./components/ClipPreview";
 import { ShareButton } from "./components/ShareButton";
 import { StatusBar } from "./components/StatusBar";
+import { TrustPrompt } from "./components/TrustPrompt";
 
 function useLatestClip() {
   const [clip, setClip] = useState(null);
@@ -38,7 +39,7 @@ function usePeerStatus() {
   return { peerCount, connected };
 }
 
-function useSyncToggle() {
+function useSyncToggle(): [boolean, (val: boolean) => void] {
   const [enabled, setEnabled] = useState(true);
   useEffect(() => {
     // @ts-ignore
@@ -46,7 +47,7 @@ function useSyncToggle() {
       setEnabled(res.autoSync !== false);
     });
   }, []);
-  const toggle = (val) => {
+  const toggle = (val: boolean) => {
     setEnabled(val);
     // @ts-ignore
     chrome.storage.local.set({ autoSync: val });
@@ -54,7 +55,7 @@ function useSyncToggle() {
   return [enabled, toggle];
 }
 
-function handleShare(clip) {
+function handleShare(clip: any) {
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "shareClip", clip });
 }
@@ -65,6 +66,7 @@ const Popup = () => {
   const [syncEnabled, setSyncEnabled] = useSyncToggle();
   return (
     <div className="p-4 w-80">
+      <TrustPrompt />
       <div className="mb-4">
         <div className="text-xs text-gray-500 mb-1">Current Clipboard</div>
         <ClipPreview clip={clip} />

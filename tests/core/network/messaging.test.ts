@@ -13,7 +13,7 @@ jest.mock("../../../packages/core/network/node", () => ({
 }));
 
 import { ClipboardMessagingLayer } from "../../../packages/core/network/messaging";
-import { InMemoryDeviceTrustStore } from "../../../packages/core/auth/trustStore";
+
 import { Clip } from "../../../packages/core/models/Clip";
 
 describe("ClipboardMessagingLayer", () => {

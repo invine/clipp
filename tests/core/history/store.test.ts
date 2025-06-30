@@ -1,56 +1,47 @@
-import { DefaultClipboardHistoryStore } from "../../../packages/core/history/store";
+import { MemoryHistoryStore, RETENTION_MS } from "../../../packages/core/history/store";
 import { Clip } from "../../../packages/core/models/Clip";
 
-describe("ClipboardHistoryStore", () => {
-  const store = new DefaultClipboardHistoryStore();
-  const senderId = "peer-xyz";
-  const now = Date.now();
-  const clip: Clip = {
-    id: "clip-1",
-    type: "text",
-    content: "hello",
-    timestamp: now,
-    senderId,
-  };
+describe("ClipHistoryStore", () => {
+  const history = new MemoryHistoryStore();
+  const sender = "me";
 
-  it("add and getById", async () => {
-    await store.add(clip, senderId, true);
-    const item = await store.getById(clip.id);
-    expect(item?.clip.content).toBe("hello");
+  function sampleClip(ts: number, id = `c${ts}`): Clip {
+    return { id, type: "text", content: `clip-${id}`, timestamp: ts, senderId: sender };
+  }
+
+  it("add -> retrieve", async () => {
+    const now = Date.now();
+    const clip = sampleClip(now, "a1");
+    await history.add(clip, sender, true);
+    const got = await history.getById("a1");
+    expect(got).not.toBeNull();
   });
 
-  it("listRecent returns added item", async () => {
-    const items = await store.listRecent();
-    expect(items.length).toBeGreaterThan(0);
+  it("retention", async () => {
+    const oldTs = Date.now() - RETENTION_MS - 1000;
+    const oldClip = sampleClip(oldTs, "old");
+    await history.add(oldClip, sender, true);
+    await history.pruneExpired();
+    const res = await history.getById("old");
+    expect(res).toBeNull();
   });
 
-  it("search finds by content", async () => {
-    const results = await store.search("hello");
-    expect(results.length).toBeGreaterThan(0);
+  it("query by type and search", async () => {
+    const now = Date.now();
+    await history.add({ ...sampleClip(now + 1, "t1"), type: "text", content: "hello" }, sender, true);
+    await history.add({ ...sampleClip(now + 2, "u1"), type: "url", content: "https://openai.com" }, sender, true);
+    const results = await history.query({ search: "openai" });
+    expect(results.length).toBe(1);
+    expect(results[0].clip.type).toBe("url");
   });
 
-  it("exportAll returns all clips", async () => {
-    const all = await store.exportAll();
-    expect(all[0].id).toBe(clip.id);
-  });
-
-  it("importBatch adds new clips", async () => {
-    const newClip = { ...clip, id: "clip-2", content: "world" };
-    await store.importBatch([newClip]);
-    const item = await store.getById("clip-2");
-    expect(item?.clip.content).toBe("world");
-  });
-
-  it("pruneExpired removes old items", async () => {
-    // Add an expired item
-    const oldClip = {
-      ...clip,
-      id: "clip-old",
-      timestamp: now - 366 * 24 * 60 * 60 * 1000,
-    };
-    await store.add(oldClip, senderId, false);
-    await store.pruneExpired();
-    const item = await store.getById("clip-old");
-    expect(item).toBeNull();
+  it("dedup", async () => {
+    const now = Date.now();
+    const clip = sampleClip(now + 3, "d1");
+    await history.add(clip, sender, true);
+    await history.add(clip, sender, true);
+    const items = await history.query({});
+    const count = items.filter((i) => i.clip.id === "d1").length;
+    expect(count).toBe(1);
   });
 });
