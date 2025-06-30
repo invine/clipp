@@ -6,8 +6,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": false,
-    "types": ["jest", "node"]
+    "strict": true,
+    "types": ["jest", "node", "vitest"]
   },
   "include": ["packages/**/*", "tests/**/*", "global.d.ts"]
 }

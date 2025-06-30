@@ -1,0 +1,10 @@
+{
+  "name": "@clipboard-sync/qr",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}
