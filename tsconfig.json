@@ -7,7 +7,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
-    "types": ["jest", "node"]
+    "types": ["jest", "node", "vitest"]
   },
   "include": ["packages/**/*", "tests/**/*", "global.d.ts"]
 }

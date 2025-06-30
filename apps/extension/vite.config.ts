@@ -29,6 +29,7 @@ export default defineConfig({
           process: 'process',
         }),
       ],
+      external: ['expo-clipboard'],
     },
   },
 });
