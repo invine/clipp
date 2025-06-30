@@ -8,6 +8,7 @@
     "@libp2p/kad-dht": "^15.0.2",
     "@libp2p/mdns": "^11.0.35",
     "@libp2p/mplex": "^11.0.35",
+    "@libp2p/circuit-relay-v2": "^3.2.20",
     "@libp2p/webrtc": "^5.2.12",
     "@libp2p/webrtc-star": "^7.0.0",
     "@libp2p/websockets": "^9.2.10",

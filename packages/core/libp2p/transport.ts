@@ -3,6 +3,7 @@
  */
 import { webRTCStar } from "@libp2p/webrtc-star";
 import { webRTC } from "@libp2p/webrtc";
+import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { mplex } from "@libp2p/mplex";
 import { noise } from "@chainsafe/libp2p-noise";
 import { mdns } from "@libp2p/mdns";
@@ -12,7 +13,7 @@ export async function createTransportConfig(
   peerId: any
 ): Promise<any> {
   const wrtcStar = webRTCStar();
-  const transports = [wrtcStar.transport, webRTC()];
+  const transports = [wrtcStar.transport, webRTC(), circuitRelayTransport()];
   return {
     peerId,
     transports,
