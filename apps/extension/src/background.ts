@@ -9,6 +9,19 @@ import { createClipboardService } from "../../../packages/core/clipboard/service
 const messaging = createMessagingLayer();
 const history = new MemoryHistoryStore();
 const trust = createTrustManager(new ChromeStorageBackend());
+
+async function ensureOffscreen() {
+  if (!chrome.offscreen) return;
+  const has = await chrome.offscreen.hasDocument?.();
+  if (!has) {
+    await chrome.offscreen.createDocument({
+      url: chrome.runtime.getURL('offscreen.html'),
+      reasons: ['CLIPBOARD'],
+      justification: 'monitor clipboard changes'
+    });
+  }
+}
+
 const clipboard = createClipboardService("chrome", {
   async sendClip(clip) {
     const id = await trust.getLocalIdentity();
@@ -198,6 +211,8 @@ messaging.onMessage(async (msg) => {
   }
 });
 
-// Start services
-messaging.start();
-clipboard.start();
+// Start services after ensuring offscreen page exists
+ensureOffscreen().finally(() => {
+  messaging.start();
+  clipboard.start();
+});

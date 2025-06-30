@@ -33,8 +33,14 @@ export function createClipboardService(
   platform: "chrome" | "android",
   options: Options = {}
 ): ClipboardService {
-  const read = platform === "chrome" ? chromePlatform.readText : androidPlatform.readText;
-  const write = platform === "chrome" ? chromePlatform.writeText : androidPlatform.writeText;
+  const read =
+    platform === "chrome"
+      ? chromePlatform.readText
+      : androidPlatform.readText;
+  const write =
+    platform === "chrome"
+      ? chromePlatform.writeText
+      : androidPlatform.writeText;
 
   const watcher = createWatcher(read, options.pollIntervalMs ?? 2000);
   const writer = createWriter(write);
