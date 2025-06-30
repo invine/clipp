@@ -3,6 +3,7 @@
  */
 import { createLibp2p } from "libp2p";
 import { webRTC } from "@libp2p/webrtc";
+import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { webSockets } from "@libp2p/websockets";
 import { noise } from "@chainsafe/libp2p-noise";
 import { mplex } from "@libp2p/mplex";
@@ -24,7 +25,7 @@ export async function createClipboardNode(
 
   return await createLibp2p({
     ...(peerId ? { peerId } : {}),
-    transports: [webRTC(), webSockets()],
+    transports: [webRTC(), webSockets(), circuitRelayTransport()],
     connectionEncrypters: [noise()],
     streamMuxers: [mplex()],
     peerDiscovery: discovery,
