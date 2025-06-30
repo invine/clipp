@@ -12,6 +12,7 @@ import { mdns } from "@libp2p/mdns";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { kadDHT } from "@libp2p/kad-dht";
 import { identify } from "@libp2p/identify";
+import { ping } from "@libp2p/ping";
 
 export async function createClipboardNode(
   options: { peerId?: any; bootstrapList?: string[] } = {}
@@ -33,6 +34,7 @@ export async function createClipboardNode(
       pubsub: gossipsub(),
       dht: kadDHT() as any,
       identify: identify(),
+      ping: ping(),
     },
   });
 }
