@@ -118,6 +118,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  if (msg.type === "clipboardUpdate" && msg.text) {
+    void clipboard.processLocalText(msg.text).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
   if (msg.type === "shareNow") {
     navigator.clipboard.readText().then(async (text) => {
       const id = await trust.getLocalIdentity();
