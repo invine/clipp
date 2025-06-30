@@ -159,6 +159,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === "getLocalIdentity") {
+    trust.getLocalIdentity().then((id) => {
+      sendResponse({ identity: id });
+    });
+    return true;
+  }
+  if (msg.type === "pairDevice" && msg.pairing) {
+    trust.getLocalIdentity().then(async (id) => {
+      const request = {
+        type: "trust-request" as const,
+        from: id.deviceId,
+        payload: id,
+        sentAt: Date.now(),
+      };
+      await messaging
+        .sendMessage(msg.pairing.deviceId, request as any)
+        .catch(() => {});
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
   if (msg.type === "getStatus") {
     const peers = messaging.getConnectedPeers
       ? messaging.getConnectedPeers()

@@ -4,13 +4,16 @@ import "./styles/tailwind-built.css";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
-import { decode } from "../../../packages/core/qr";
+import { decode, encode, payloadToBase64 } from "../../../packages/core/qr";
 
 const defaultTypes = { text: true, image: true, file: true };
 
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
   const [qrResult, setQRResult] = useState<string | null>(null);
+  const [showMyQR, setShowMyQR] = useState(false);
+  const [myQRImage, setMyQRImage] = useState<string | null>(null);
+  const [myQRText, setMyQRText] = useState<string | null>(null);
   const [settings, setSettings] = useState({ autoSync: true, expiryDays: 365, typesEnabled: defaultTypes });
 
   useEffect(() => {
@@ -35,6 +38,26 @@ const Options = () => {
     }
   }
 
+  async function generateMyQR() {
+    // @ts-ignore
+    chrome.runtime.sendMessage({ type: "getLocalIdentity" }, async (res) => {
+      if (!res?.identity) return;
+      const info = {
+        deviceId: res.identity.deviceId,
+        deviceName: res.identity.deviceName,
+        multiaddr: res.identity.multiaddr,
+      };
+      const img = await encode(info);
+      const txt = payloadToBase64({ ...info, timestamp: Math.floor(Date.now() / 1000), version: "1" });
+      setMyQRImage(img);
+      setMyQRText(txt);
+    });
+  }
+
+  function copyMyQR() {
+    if (myQRText) navigator.clipboard.writeText(myQRText);
+  }
+
   function handleSettingChange(key: string, value: any) {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
@@ -56,7 +79,27 @@ const Options = () => {
         <button className="mt-2 px-3 py-1 bg-blue-600 text-white rounded" onClick={() => setShowQR((v) => !v)}>
           {showQR ? "Hide QR Scanner" : "Add Device (QR)"}
         </button>
+        <button
+          className="mt-2 ml-2 px-3 py-1 bg-green-600 text-white rounded"
+          onClick={() => {
+            if (!showMyQR) generateMyQR();
+            setShowMyQR((v) => !v);
+          }}
+        >
+          {showMyQR ? "Hide My QR" : "Show My QR"}
+        </button>
         {showQR && <QRScanner onScan={handleScan} />}
+        {showMyQR && myQRImage && (
+          <div className="mt-2 flex flex-col items-center">
+            <img src={myQRImage} alt="My QR" className="w-32 h-32" />
+            <button
+              className="mt-2 px-2 py-1 bg-gray-700 text-white rounded"
+              onClick={copyMyQR}
+            >
+              Copy Pair Text
+            </button>
+          </div>
+        )}
         {qrResult && <div className="text-xs text-green-600 mt-2">QR scanned: {qrResult.slice(0, 32)}...</div>}
       </section>
       <section className="mb-6">
