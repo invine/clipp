@@ -26,6 +26,17 @@ async function ensureOffscreen() {
   }
 }
 
+// In MV3 the service worker may stop when idle and isn't guaranteed to start
+// automatically on browser launch. Listen for startup and install events to
+// create the offscreen document so clipboard monitoring works in the
+// background.
+chrome.runtime.onStartup.addListener(() => {
+  void ensureOffscreen();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  void ensureOffscreen();
+});
+
 const clipboard = createClipboardService("chrome", {
   async sendClip(clip) {
     const id = await trust.getLocalIdentity();
