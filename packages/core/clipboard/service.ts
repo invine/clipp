@@ -13,6 +13,12 @@ export interface ClipboardService {
   onLocalClip(cb: (clip: Clip) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
   writeRemoteClip(clip: Clip): Promise<void>;
+  /**
+   * Manually process a clipboard text value as if it were read by the watcher.
+   * Useful for environments where the background script cannot directly read
+   * from the clipboard (e.g. Chrome MV3 service workers).
+   */
+  processLocalText(text: string): Promise<void>;
   getLastLocalClip(): Clip | undefined;
   setAutoSync(enabled: boolean): void;
   isAutoSync(): boolean;
@@ -40,7 +46,7 @@ export function createClipboardService(
   let autoSync = true;
   const sendClip = options.sendClip ?? (async () => {});
 
-  watcher.onChange(async (text) => {
+  async function processLocalText(text: string): Promise<void> {
     const clip = normalizeClipboardContent(text, "local");
     if (!clip) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
@@ -50,6 +56,10 @@ export function createClipboardService(
     if (autoSync) {
       await sendClip(clip);
     }
+  }
+
+  watcher.onChange(async (text) => {
+    await processLocalText(text);
   });
 
   async function writeRemoteClip(clip: Clip): Promise<void> {
@@ -67,6 +77,7 @@ export function createClipboardService(
     stop: () => watcher.stop(),
     onLocalClip: (cb) => localHandlers.push(cb),
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
+    processLocalText,
     writeRemoteClip,
     getLastLocalClip: () => lastLocal,
     setAutoSync: (enabled) => {

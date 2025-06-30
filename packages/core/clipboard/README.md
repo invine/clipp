@@ -11,4 +11,7 @@ service.onRemoteClipWritten(clip => console.log('remote', clip))
 service.start()
 ```
 
-Use `setAutoSync(false)` to disable sending local clips. Call `writeRemoteClip()` when receiving a clip from the network.
+Use `setAutoSync(false)` to disable sending local clips. Call `writeRemoteClip()`
+when receiving a clip from the network. In environments where the service cannot
+read the clipboard directly (such as a Chrome MV3 service worker), use
+`processLocalText(text)` to manually feed clipboard contents to the service.
