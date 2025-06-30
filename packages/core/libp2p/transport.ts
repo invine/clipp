@@ -8,6 +8,7 @@ import { mplex } from "@libp2p/mplex";
 import { noise } from "@chainsafe/libp2p-noise";
 import { mdns } from "@libp2p/mdns";
 import { identify } from "@libp2p/identify";
+import { ping } from "@libp2p/ping";
 
 export async function createTransportConfig(
   peerId: any
@@ -22,6 +23,7 @@ export async function createTransportConfig(
     peerDiscovery: [mdns(), wrtcStar.discovery],
     services: {
       identify: identify(),
+      ping: ping(),
     },
   };
 }
