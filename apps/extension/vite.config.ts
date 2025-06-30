@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import { crx } from "@crxjs/vite-plugin";
-import manifest from './manifest.json' with { type: 'json' };
-import polyfillNode from 'rollup-plugin-polyfill-node';
-import inject from '@rollup/plugin-inject';
-import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill';
+import manifest from "./manifest.json" with { type: "json" };
+import polyfillNode from "rollup-plugin-polyfill-node";
+import inject from "@rollup/plugin-inject";
+import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfill";
+import { resolve } from "path";
 
 export default defineConfig({
   plugins: [crx({ manifest })],
@@ -19,6 +20,9 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        offscreen: resolve(__dirname, "src/offscreen.html"),
+      },
       plugins: [
         polyfillNode(),
         inject({
