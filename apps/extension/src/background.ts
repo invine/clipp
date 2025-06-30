@@ -1,6 +1,9 @@
 import { createMessagingLayer } from "../../../packages/core/network/engine";
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
-import { createTrustManager, TrustedDevice } from "../../../packages/core/trust";
+import {
+  createTrustManager,
+  TrustedDevice,
+} from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import { createClipboardService } from "../../../packages/core/clipboard/service";
@@ -15,9 +18,9 @@ async function ensureOffscreen() {
   const has = await chrome.offscreen.hasDocument?.();
   if (!has) {
     await chrome.offscreen.createDocument({
-      url: chrome.runtime.getURL('offscreen.html'),
-      reasons: ['CLIPBOARD'],
-      justification: 'monitor clipboard changes'
+      url: chrome.runtime.getURL("offscreen.html"),
+      reasons: [chrome.offscreen.Reason.CLIPBOARD],
+      justification: "monitor clipboard changes",
     });
   }
 }
@@ -41,27 +44,27 @@ clipboard.onLocalClip((clip) => {
 });
 let pendingRequests: TrustedDevice[] = [];
 
-trust.on('request', (d) => {
+trust.on("request", (d) => {
   pendingRequests.push(d);
   // @ts-ignore
-  chrome.runtime.sendMessage({ type: 'trustRequest', device: d });
+  chrome.runtime.sendMessage({ type: "trustRequest", device: d });
 });
-trust.on('rejected', async (d) => {
+trust.on("rejected", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
   const id = await trust.getLocalIdentity();
   const ack = {
-    type: 'trust-ack' as const,
+    type: "trust-ack" as const,
     from: id.deviceId,
     payload: { id: d.deviceId, accepted: false },
     sentAt: Date.now(),
   };
   await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
 });
-trust.on('approved', async (d) => {
+trust.on("approved", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
   const id = await trust.getLocalIdentity();
   const ack = {
-    type: 'trust-ack' as const,
+    type: "trust-ack" as const,
     from: id.deviceId,
     payload: { id: d.deviceId, accepted: true },
     sentAt: Date.now(),
@@ -156,7 +159,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "getStatus") {
-    const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+    const peers = messaging.getConnectedPeers
+      ? messaging.getConnectedPeers()
+      : [];
     sendResponse({ peerCount: peers.length, autoSync: clipboard.isAutoSync() });
     return true;
   }

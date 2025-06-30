@@ -8,7 +8,8 @@
     "clipboardRead",
     "clipboardWrite",
     "notifications",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -37,9 +38,5 @@
     "32": "icon-32.png",
     "48": "icon-48.png",
     "128": "icon-128.png"
-  },
-  "offscreen": {
-    "page": "offscreen.html",
-    "persistent": true
   }
 }

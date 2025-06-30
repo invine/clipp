@@ -1,11 +1,11 @@
-let lastText = '';
+let lastText = "";
 
 async function checkClipboard() {
   try {
     const text = await navigator.clipboard.readText();
     if (text && text !== lastText) {
       lastText = text;
-      await chrome.runtime.sendMessage({ type: 'clipboardUpdate', text });
+      await chrome.runtime.sendMessage({ type: "clipboardUpdate", text });
     }
   } catch {
     // ignore
