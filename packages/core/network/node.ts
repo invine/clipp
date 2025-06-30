@@ -10,6 +10,7 @@ import { bootstrap } from "@libp2p/bootstrap";
 import { mdns } from "@libp2p/mdns";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { kadDHT } from "@libp2p/kad-dht";
+import { identify } from "@libp2p/identify";
 
 export async function createClipboardNode(
   options: { peerId?: any; bootstrapList?: string[] } = {}
@@ -30,6 +31,7 @@ export async function createClipboardNode(
     services: {
       pubsub: gossipsub(),
       dht: kadDHT() as any,
+      identify: identify(),
     },
   });
 }

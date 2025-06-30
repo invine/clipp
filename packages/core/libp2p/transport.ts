@@ -6,6 +6,7 @@ import { webRTC } from "@libp2p/webrtc";
 import { mplex } from "@libp2p/mplex";
 import { noise } from "@chainsafe/libp2p-noise";
 import { mdns } from "@libp2p/mdns";
+import { identify } from "@libp2p/identify";
 
 export async function createTransportConfig(
   peerId: any
@@ -18,5 +19,8 @@ export async function createTransportConfig(
     streamMuxers: [mplex()],
     connectionEncryption: [noise()],
     peerDiscovery: [mdns(), wrtcStar.discovery],
+    services: {
+      identify: identify(),
+    },
   };
 }
