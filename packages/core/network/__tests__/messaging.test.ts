@@ -1,5 +1,5 @@
 import { ClipboardMessagingLayer } from "../messaging";
-import { InMemoryDeviceTrustStore } from "../../auth/trustStore";
+import { TrustedDevice } from "../../trust";
 import { Clip } from "../../models/Clip";
 
 describe("ClipboardMessagingLayer", () => {
@@ -7,12 +7,14 @@ describe("ClipboardMessagingLayer", () => {
     const layer = new ClipboardMessagingLayer();
     // Add a trusted peer
     const trustedId = "peer-trusted";
-    await (layer as any).trust.addDevice({
-      id: trustedId,
-      name: "Test",
+    const device: TrustedDevice = {
+      deviceId: trustedId,
+      deviceName: "Test",
       publicKey: "pk",
+      multiaddr: `/p2p/${trustedId}`,
       createdAt: Date.now(),
-    });
+    };
+    await (layer as any).trust.add(device);
     const received: any[] = [];
     layer.onMessage((msg) => received.push(msg));
     // Simulate receiving from trusted

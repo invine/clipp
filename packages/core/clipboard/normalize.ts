@@ -37,19 +37,19 @@ export function detectClipType(content: unknown): Clip["type"] {
     try {
       const url = new URL(text);
       if (url.protocol === "http:" || url.protocol === "https:")
-        return ClipType.URL;
+        return ClipType.Url;
     } catch {}
-    if (/^data:image\/(png|jpeg);base64,/.test(text)) return ClipType.IMAGE;
-    if (/^data:.*;base64,/.test(text)) return ClipType.FILE;
-    return ClipType.TEXT;
+    if (/^data:image\/(png|jpeg);base64,/.test(text)) return ClipType.Image;
+    if (/^data:.*;base64,/.test(text)) return ClipType.File;
+    return ClipType.Text;
   }
   if (typeof content === "object" && content && "base64" in content) {
     // File or image object
     const c = content as any;
-    if (c.mime && c.mime.startsWith("image/")) return ClipType.IMAGE;
-    return ClipType.FILE;
+    if (c.mime && c.mime.startsWith("image/")) return ClipType.Image;
+    return ClipType.File;
   }
-  return ClipType.TEXT;
+  return ClipType.Text;
 }
 
 // Normalize clipboard content into a Clip
@@ -62,17 +62,17 @@ export function normalizeClipboardContent(
   let content = "";
   let expiresAt: number | undefined = undefined;
 
-  if (type === ClipType.TEXT) {
+  if (type === ClipType.Text) {
     content = sanitizeText(typeof input === "string" ? input : String(input));
     if (!content) return null;
-  } else if (type === ClipType.URL) {
+  } else if (type === ClipType.Url) {
     content = sanitizeText(input);
     try {
       new URL(content);
     } catch {
       return null;
     }
-  } else if (type === ClipType.IMAGE || type === ClipType.FILE) {
+  } else if (type === ClipType.Image || type === ClipType.File) {
     if (typeof input === "string") {
       content = stripDataUriPrefix(input);
     } else if (input && typeof input.base64 === "string") {
