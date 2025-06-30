@@ -1,7 +1,7 @@
 import { createClipboardNode } from "./node";
 import { EventBus } from "./events";
 import type { ClipboardMessage } from "./types";
-import { InMemoryDeviceTrustStore, DeviceTrustStore } from "../auth/trustStore";
+import { createTrustManager, MemoryStorageBackend, TrustManager } from "../trust";
 
 export interface MessagingLayer {
   start(): Promise<void>;
@@ -18,14 +18,14 @@ const PROTOCOL = "/clipboard/1.0.0";
 
 class Libp2pMessagingLayer implements MessagingLayer {
   private node: any;
-  private readonly trust: DeviceTrustStore;
+  private readonly trust: TrustManager;
   private readonly messageBus = new EventBus<ClipboardMessage>();
   private readonly connectBus = new EventBus<string>();
   private readonly disconnectBus = new EventBus<string>();
   private started = false;
 
-  constructor(private opts: { peerId?: any; bootstrapList?: string[]; trustStore?: DeviceTrustStore } = {}) {
-    this.trust = opts.trustStore || new InMemoryDeviceTrustStore();
+  constructor(private opts: { peerId?: any; bootstrapList?: string[]; trustStore?: TrustManager } = {}) {
+    this.trust = opts.trustStore || createTrustManager(new MemoryStorageBackend());
   }
 
   async start() {
@@ -85,7 +85,7 @@ class Libp2pMessagingLayer implements MessagingLayer {
   }
 }
 
-export function createMessagingLayer(options?: { peerId?: any; bootstrapList?: string[]; trustStore?: DeviceTrustStore }): MessagingLayer {
+export function createMessagingLayer(options?: { peerId?: any; bootstrapList?: string[]; trustStore?: TrustManager }): MessagingLayer {
   return new Libp2pMessagingLayer(options);
 }
 

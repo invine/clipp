@@ -4,13 +4,13 @@ import "./styles/tailwind.css";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
-import { decodePairingPayload, validatePayload } from "../../../packages/core/pairing/decode";
+import { decode } from "../../../packages/core/qr";
 
 const defaultTypes = { text: true, image: true, file: true };
 
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
-  const [qrResult, setQRResult] = useState(null);
+  const [qrResult, setQRResult] = useState<string | null>(null);
   const [settings, setSettings] = useState({ autoSync: true, expiryDays: 365, typesEnabled: defaultTypes });
 
   useEffect(() => {
@@ -24,27 +24,25 @@ const Options = () => {
     });
   }, []);
 
-  function handleScan(payload) {
+  async function handleScan(payload: string) {
     setQRResult(payload);
-    try {
-      const pairing = decodePairingPayload(payload);
-      if (validatePayload(pairing)) {
-        // @ts-ignore
-        chrome.runtime.sendMessage({ type: "pairDevice", pairing }, (resp) => {
-          // Optionally show success/failure
-        });
-      }
-    } catch (e) {}
+    const pairing = await decode(payload);
+    if (pairing) {
+      // @ts-ignore
+      chrome.runtime.sendMessage({ type: "pairDevice", pairing }, (resp) => {
+        // Optionally show success/failure
+      });
+    }
   }
 
-  function handleSettingChange(key, value) {
+  function handleSettingChange(key: string, value: any) {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "setSettings", settings: newSettings });
   }
 
-  function handleTypeToggle(type) {
+  function handleTypeToggle(type: keyof typeof defaultTypes) {
     const newTypes = { ...settings.typesEnabled, [type]: !settings.typesEnabled[type] };
     handleSettingChange("typesEnabled", newTypes);
   }
