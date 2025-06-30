@@ -4,6 +4,7 @@ import "./styles/tailwind.css";
 import { ClipPreview } from "./components/ClipPreview";
 import { ShareButton } from "./components/ShareButton";
 import { StatusBar } from "./components/StatusBar";
+import { TrustPrompt } from "./components/TrustPrompt";
 
 function useLatestClip() {
   const [clip, setClip] = useState(null);
@@ -65,6 +66,7 @@ const Popup = () => {
   const [syncEnabled, setSyncEnabled] = useSyncToggle();
   return (
     <div className="p-4 w-80">
+      <TrustPrompt />
       <div className="mb-4">
         <div className="text-xs text-gray-500 mb-1">Current Clipboard</div>
         <ClipPreview clip={clip} />

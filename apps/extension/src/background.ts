@@ -1,12 +1,26 @@
 import { ClipboardMessagingLayer } from "../../../packages/core/network/messaging";
 import { DefaultClipboardHistoryStore } from "../../../packages/core/history/store";
-import { InMemoryDeviceTrustStore } from "../../../packages/core/auth/trustStore";
+import { createTrustManager, TrustedDevice } from "../../../packages/core/trust";
+import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 
 // Background state
 const messaging = new ClipboardMessagingLayer();
 const history = new DefaultClipboardHistoryStore();
-const trust = new InMemoryDeviceTrustStore();
+const trust = createTrustManager(new ChromeStorageBackend());
+let pendingRequests: TrustedDevice[] = [];
+
+trust.on('request', (d) => {
+  pendingRequests.push(d);
+  // @ts-ignore
+  chrome.runtime.sendMessage({ type: 'trustRequest', device: d });
+});
+trust.on('rejected', (d) => {
+  pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+});
+trust.on('approved', (d) => {
+  pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+});
 
 // Listen for clipboard changes (MV3: use chrome.clipboard or content script)
 // Listen for messages from popup/options
@@ -61,15 +75,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg === "getPendingRequests") {
+    sendResponse(pendingRequests);
+    return true;
+  }
+  if (msg.cmd === "respondTrust") {
+    pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
+    if (msg.accept && msg.device) {
+      trust.add(msg.device);
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
   // Handle trusted device list for options page
   if (msg.type === "getTrustedDevices") {
-    trust.listDevices().then((devices) => {
+    trust.list().then((devices) => {
       sendResponse({ devices });
     });
     return true;
   }
   if (msg.type === "revokeDevice" && msg.id) {
-    trust.removeDevice(msg.id).then(() => sendResponse({ ok: true }));
+    trust.remove(msg.id).then(() => sendResponse({ ok: true }));
     return true;
   }
   // Settings: auto-sync, expiry, type filters
@@ -106,6 +132,9 @@ messaging.onMessage(async (msg) => {
     // Optionally notify popup/options
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "newClip", clip: msg.clip });
+  } else if (msg.type === "trust-request") {
+    const dev = msg.payload as TrustedDevice;
+    await trust.handleTrustRequest(dev);
   }
 });
 
