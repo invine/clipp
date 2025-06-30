@@ -4,7 +4,7 @@ import "./styles/tailwind.css";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
-import { decodePairingPayload, validatePayload } from "../../../packages/core/pairing/decode";
+import { decode } from "../../../packages/core/qr";
 
 const defaultTypes = { text: true, image: true, file: true };
 
@@ -24,17 +24,15 @@ const Options = () => {
     });
   }, []);
 
-  function handleScan(payload) {
+  async function handleScan(payload: string) {
     setQRResult(payload);
-    try {
-      const pairing = decodePairingPayload(payload);
-      if (validatePayload(pairing)) {
-        // @ts-ignore
-        chrome.runtime.sendMessage({ type: "pairDevice", pairing }, (resp) => {
-          // Optionally show success/failure
-        });
-      }
-    } catch (e) {}
+    const pairing = await decode(payload);
+    if (pairing) {
+      // @ts-ignore
+      chrome.runtime.sendMessage({ type: "pairDevice", pairing }, (resp) => {
+        // Optionally show success/failure
+      });
+    }
   }
 
   function handleSettingChange(key, value) {
