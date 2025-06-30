@@ -4,8 +4,9 @@
 import type { Clip } from "../models/Clip";
 
 export interface ClipboardMessage {
-  type: "CLIP";
+  type: "CLIP" | "trust-request" | "trust-ack";
   from: string; // libp2p Peer ID
-  clip: Clip;
+  clip?: Clip;
+  payload?: any;
   sentAt: number; // Timestamp (ms)
 }

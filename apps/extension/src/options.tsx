@@ -10,7 +10,7 @@ const defaultTypes = { text: true, image: true, file: true };
 
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
-  const [qrResult, setQRResult] = useState(null);
+  const [qrResult, setQRResult] = useState<string | null>(null);
   const [settings, setSettings] = useState({ autoSync: true, expiryDays: 365, typesEnabled: defaultTypes });
 
   useEffect(() => {
@@ -35,14 +35,14 @@ const Options = () => {
     }
   }
 
-  function handleSettingChange(key, value) {
+  function handleSettingChange(key: string, value: any) {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "setSettings", settings: newSettings });
   }
 
-  function handleTypeToggle(type) {
+  function handleTypeToggle(type: keyof typeof defaultTypes) {
     const newTypes = { ...settings.typesEnabled, [type]: !settings.typesEnabled[type] };
     handleSettingChange("typesEnabled", newTypes);
   }

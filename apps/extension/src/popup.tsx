@@ -39,7 +39,7 @@ function usePeerStatus() {
   return { peerCount, connected };
 }
 
-function useSyncToggle() {
+function useSyncToggle(): [boolean, (val: boolean) => void] {
   const [enabled, setEnabled] = useState(true);
   useEffect(() => {
     // @ts-ignore
@@ -47,7 +47,7 @@ function useSyncToggle() {
       setEnabled(res.autoSync !== false);
     });
   }, []);
-  const toggle = (val) => {
+  const toggle = (val: boolean) => {
     setEnabled(val);
     // @ts-ignore
     chrome.storage.local.set({ autoSync: val });
@@ -55,7 +55,7 @@ function useSyncToggle() {
   return [enabled, toggle];
 }
 
-function handleShare(clip) {
+function handleShare(clip: any) {
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "shareClip", clip });
 }
