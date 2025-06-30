@@ -1,13 +1,31 @@
-import { ClipboardMessagingLayer } from "../../../packages/core/network/messaging";
+import { createMessagingLayer } from "../../../packages/core/network/engine";
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import { createTrustManager, TrustedDevice } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
+import { createClipboardService } from "../../../packages/core/clipboard/service";
 
 // Background state
-const messaging = new ClipboardMessagingLayer();
+const messaging = createMessagingLayer();
 const history = new MemoryHistoryStore();
 const trust = createTrustManager(new ChromeStorageBackend());
+const clipboard = createClipboardService("chrome", {
+  async sendClip(clip) {
+    const id = await trust.getLocalIdentity();
+    const message = {
+      type: "CLIP" as const,
+      from: id.deviceId,
+      clip,
+      sentAt: Date.now(),
+    };
+    await messaging.broadcast(message as any);
+  },
+});
+clipboard.onLocalClip((clip) => {
+  void trust.getLocalIdentity().then((id) => {
+    history.add(clip, id.deviceId, true);
+  });
+});
 let pendingRequests: TrustedDevice[] = [];
 
 trust.on('request', (d) => {
@@ -15,39 +33,52 @@ trust.on('request', (d) => {
   // @ts-ignore
   chrome.runtime.sendMessage({ type: 'trustRequest', device: d });
 });
-trust.on('rejected', (d) => {
+trust.on('rejected', async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+  const id = await trust.getLocalIdentity();
+  const ack = {
+    type: 'trust-ack' as const,
+    from: id.deviceId,
+    payload: { id: d.deviceId, accepted: false },
+    sentAt: Date.now(),
+  };
+  await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
 });
-trust.on('approved', (d) => {
+trust.on('approved', async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+  const id = await trust.getLocalIdentity();
+  const ack = {
+    type: 'trust-ack' as const,
+    from: id.deviceId,
+    payload: { id: d.deviceId, accepted: true },
+    sentAt: Date.now(),
+  };
+  await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
 });
 
 // Listen for clipboard changes (MV3: use chrome.clipboard or content script)
 // Listen for messages from popup/options
 // @ts-ignore
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // Example: handle getLatestClip
   if (msg.type === "getLatestClip") {
-    history.listRecent(1).then((items) => {
+    history.query({ limit: 1 }).then((items) => {
       sendResponse({ clip: items[0]?.clip || null });
     });
     return true;
   }
   // Handle shareClip from popup
   if (msg.type === "shareClip" && msg.clip) {
-    // Send to all peers via messaging layer
-    if (
-      typeof messaging.sendClip === "function" &&
-      typeof messaging.getConnectedPeers === "function"
-    ) {
-      const peers = messaging.getConnectedPeers();
-      for (const peerId of peers) {
-        messaging.sendClip(peerId, msg.clip);
-      }
-    }
-    // Optionally add to local history
-    history.add(msg.clip, msg.clip.senderId, true);
-    sendResponse({ ok: true });
+    trust.getLocalIdentity().then(async (id) => {
+      const message = {
+        type: "CLIP" as const,
+        from: id.deviceId,
+        clip: msg.clip,
+        sentAt: Date.now(),
+      };
+      await messaging.broadcast(message as any);
+      history.add(msg.clip, msg.clip.senderId, true);
+      sendResponse({ ok: true });
+    });
     return true;
   }
   // Handle getPeerStatus from popup
@@ -70,21 +101,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "searchClipHistory") {
-    history.search(msg.query || "").then((items) => {
+    history.query({ search: msg.query || "" }).then((items) => {
       sendResponse({ clips: items.map((i) => i.clip) });
     });
     return true;
   }
-  if (msg === "getPendingRequests") {
+  if (msg.type === "getPendingRequests") {
     sendResponse(pendingRequests);
     return true;
   }
-  if (msg.cmd === "respondTrust") {
+  if (msg.type === "respondTrust") {
     pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
     if (msg.accept && msg.device) {
       trust.add(msg.device);
     }
     sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.type === "shareNow") {
+    navigator.clipboard.readText().then(async (text) => {
+      const id = await trust.getLocalIdentity();
+      const clip = normalizeClipboardContent(text, id.deviceId);
+      if (clip) {
+        history.add(clip, id.deviceId, true);
+        const message = {
+          type: "CLIP" as const,
+          from: id.deviceId,
+          clip,
+          sentAt: Date.now(),
+        };
+        await messaging.broadcast(message as any);
+      }
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  if (msg.type === "getStatus") {
+    const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+    sendResponse({ peerCount: peers.length, autoSync: clipboard.isAutoSync() });
     return true;
   }
   // Handle trusted device list for options page
@@ -128,7 +182,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Listen for incoming clips from peers
 messaging.onMessage(async (msg) => {
   if (msg.type === "CLIP") {
-    await history.add(msg.clip, msg.from, false);
+    await history.add(msg.clip!, msg.from, false);
     // Optionally notify popup/options
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "newClip", clip: msg.clip });
@@ -138,5 +192,6 @@ messaging.onMessage(async (msg) => {
   }
 });
 
-// Start messaging layer
+// Start services
 messaging.start();
+clipboard.start();
