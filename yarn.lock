@@ -971,6 +971,32 @@
     "@multiformats/mafmt" "^12.1.6"
     "@multiformats/multiaddr" "^12.3.3"
 
+"@libp2p/circuit-relay-v2@^3.2.20":
+  version "3.2.20"
+  resolved "https://registry.npmjs.org/@libp2p/circuit-relay-v2/-/circuit-relay-v2-3.2.20.tgz"
+  integrity sha512-RkMWdTm926hTEVq0mC94sjnHLodr3sf1E7mP5honSF+SSCkAhUxAKBtH1ze0Fy7s1q28mtVgp5voXvawqt2ghw==
+  dependencies:
+    "@libp2p/crypto" "^5.1.7"
+    "@libp2p/interface" "^2.10.5"
+    "@libp2p/interface-internal" "^2.3.18"
+    "@libp2p/peer-collections" "^6.0.34"
+    "@libp2p/peer-id" "^5.1.8"
+    "@libp2p/peer-record" "^8.0.34"
+    "@libp2p/utils" "^6.7.1"
+    "@multiformats/multiaddr" "^12.4.4"
+    "@multiformats/multiaddr-matcher" "^1.7.2"
+    any-signal "^4.1.1"
+    it-protobuf-stream "^2.0.2"
+    it-stream-types "^2.0.2"
+    main-event "^1.0.1"
+    multiformats "^13.3.6"
+    nanoid "^5.1.5"
+    progress-events "^1.0.1"
+    protons-runtime "^5.5.0"
+    retimeable-signal "^1.0.1"
+    uint8arraylist "^2.4.8"
+    uint8arrays "^5.1.0"
+
 "@libp2p/crypto@^5.0.0", "@libp2p/crypto@^5.1.1", "@libp2p/crypto@^5.1.7":
   version "5.1.7"
   resolved "https://registry.npmjs.org/@libp2p/crypto/-/crypto-5.1.7.tgz"
@@ -5869,6 +5895,11 @@ nanoid@^3.3.8:
   resolved "https://registry.npmjs.org/nanoid/-/nanoid-3.3.11.tgz"
   integrity sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==
 
+nanoid@^5.1.5:
+  version "5.1.5"
+  resolved "https://registry.npmjs.org/nanoid/-/nanoid-5.1.5.tgz"
+  integrity sha512-Ir/+ZpE9fDsNH0hQ3C68uyThDXzYcim2EqcZ8zn8Chtt1iylPT9xXJB0kPCnqzgcEGikO9RxSrh63MsmVCU7Fw==
+
 napi-build-utils@^2.0.0:
   version "2.0.0"
   resolved "https://registry.npmjs.org/napi-build-utils/-/napi-build-utils-2.0.0.tgz"
@@ -6694,6 +6725,11 @@ resolve@^2.0.0-next.5:
     is-core-module "^2.13.0"
     path-parse "^1.0.7"
     supports-preserve-symlinks-flag "^1.0.0"
+
+retimeable-signal@^1.0.1:
+  version "1.0.1"
+  resolved "https://registry.npmjs.org/retimeable-signal/-/retimeable-signal-1.0.1.tgz"
+  integrity sha512-Cy26CYfbWnYu8HMoJeDhaMpW/EYFIbne3vMf6G9RSrOyWYXbPehja/BEdzpqmM84uy2bfBD7NPZhoQ4GZEtgvg==
 
 retry@^0.13.1:
   version "0.13.1"
