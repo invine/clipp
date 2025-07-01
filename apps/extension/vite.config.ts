@@ -27,6 +27,7 @@ export default defineConfig({
         polyfillNode(),
         inject({
           process: 'process',
+          Buffer: ['buffer', 'Buffer'],
         }),
       ],
       external: ['expo-clipboard'],
