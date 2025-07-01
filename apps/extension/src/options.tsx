@@ -84,6 +84,10 @@ const Options = () => {
           >
             {showQR ? "Hide QR Scanner" : "Add Device (QR)"}
           </button>
+        </div>
+        {showQR && <QRScanner onScan={handleScan} />}
+        {qrResult && <div className="text-xs text-green-600 mt-2">QR scanned: {qrResult.slice(0, 32)}...</div>}
+        <div className="mt-2 flex flex-col space-y-2">
           <button
             className="px-3 py-1 bg-blue-600 text-white rounded"
             onClick={() => {
@@ -94,7 +98,6 @@ const Options = () => {
             {showMyQR ? "Hide My QR" : "Generate My QR"}
           </button>
         </div>
-        {showQR && <QRScanner onScan={handleScan} />}
         {showMyQR && myQRImage && (
           <div className="mt-2 flex flex-col items-center">
             <img src={myQRImage} alt="My QR" className="w-32 h-32" />
@@ -106,7 +109,6 @@ const Options = () => {
             </button>
           </div>
         )}
-        {qrResult && <div className="text-xs text-green-600 mt-2">QR scanned: {qrResult.slice(0, 32)}...</div>}
       </section>
       <section className="mb-6">
         <h2 className="font-semibold mb-2">Clipboard History</h2>
