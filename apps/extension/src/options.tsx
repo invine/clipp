@@ -58,6 +58,7 @@ const Options = () => {
     if (myQRText) navigator.clipboard.writeText(myQRText);
   }
 
+
   function handleSettingChange(key: string, value: any) {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
@@ -76,18 +77,23 @@ const Options = () => {
       <section className="mb-6">
         <h2 className="font-semibold mb-2">Trusted Devices</h2>
         <DeviceList />
-        <button className="mt-2 px-3 py-1 bg-blue-600 text-white rounded" onClick={() => setShowQR((v) => !v)}>
-          {showQR ? "Hide QR Scanner" : "Add Device (QR)"}
-        </button>
-        <button
-          className="mt-2 ml-2 px-3 py-1 bg-green-600 text-white rounded"
-          onClick={() => {
-            if (!showMyQR) generateMyQR();
-            setShowMyQR((v) => !v);
-          }}
-        >
-          {showMyQR ? "Hide My QR" : "Show My QR"}
-        </button>
+        <div className="mt-2 flex flex-col space-y-2">
+          <button
+            className="px-3 py-1 bg-blue-600 text-white rounded"
+            onClick={() => setShowQR((v) => !v)}
+          >
+            {showQR ? "Hide QR Scanner" : "Add Device (QR)"}
+          </button>
+          <button
+            className="px-3 py-1 bg-blue-600 text-white rounded"
+            onClick={() => {
+              if (!showMyQR) generateMyQR();
+              setShowMyQR((v) => !v);
+            }}
+          >
+            {showMyQR ? "Hide My QR" : "Generate My QR"}
+          </button>
+        </div>
         {showQR && <QRScanner onScan={handleScan} />}
         {showMyQR && myQRImage && (
           <div className="mt-2 flex flex-col items-center">
@@ -96,7 +102,7 @@ const Options = () => {
               className="mt-2 px-2 py-1 bg-gray-700 text-white rounded"
               onClick={copyMyQR}
             >
-              Copy Pair Text
+              Copy as Text
             </button>
           </div>
         )}
