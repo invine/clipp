@@ -18,14 +18,6 @@ export function isValidPayload(obj: any): obj is QRPayload {
   )
 }
 
-function toBase64Url(input: string): string {
-  return Buffer.from(input, 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
-}
-
 function fromBase64Url(b64url: string): string {
   const b64 = b64url
     .replace(/-/g, '+')
@@ -36,7 +28,7 @@ function fromBase64Url(b64url: string): string {
 
 export function payloadToBase64(payload: QRPayload): string {
   const json = JSON.stringify(payload)
-  return toBase64Url(json)
+  return Buffer.from(json, 'utf8').toString('base64')
 }
 
 export function base64ToPayload(b64: string): QRPayload | null {
