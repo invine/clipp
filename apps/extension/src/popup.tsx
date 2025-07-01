@@ -86,8 +86,14 @@ const Popup = () => {
       onFocus();
     } else {
       window.addEventListener("focus", onFocus, { once: true });
-      return () => window.removeEventListener("focus", onFocus);
     }
+    const timer = setInterval(() => {
+      void checkClipboard();
+    }, 2000);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
   return (
     <div className="p-4 w-80">
