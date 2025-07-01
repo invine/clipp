@@ -6,14 +6,14 @@ export const TrustPrompt = () => {
 
   useEffect(() => {
     // @ts-ignore
-    chrome.runtime.sendMessage('getPendingRequests', (res) => {
+    chrome.runtime.sendMessage({ type: 'getPendingRequests' }, (res) => {
       setRequests(res || [])
     })
   }, [])
 
   function respond(dev: TrustedDevice, accept: boolean) {
     // @ts-ignore
-    chrome.runtime.sendMessage({ cmd: 'respondTrust', id: dev.deviceId, accept, device: dev }, () => {
+    chrome.runtime.sendMessage({ type: 'respondTrust', id: dev.deviceId, accept, device: dev }, () => {
       setRequests((r) => r.filter((p) => p.deviceId !== dev.deviceId))
     })
   }
