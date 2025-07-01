@@ -22,7 +22,11 @@ export async function createClipboardNode(
   if (bootstrapList.length > 0) {
     discovery.push(bootstrap({ list: bootstrapList }));
   }
-  discovery.push(mdns());
+  // mdns relies on Node's dgram module which is not available in browser
+  // environments like the extension background service worker.
+  if (typeof navigator === "undefined") {
+    discovery.push(mdns());
+  }
 
   return await createLibp2p({
     ...(peerId ? { peerId } : {}),
