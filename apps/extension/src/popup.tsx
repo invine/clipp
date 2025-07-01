@@ -7,14 +7,15 @@ import { StatusBar } from "./components/StatusBar";
 import { TrustPrompt } from "./components/TrustPrompt";
 
 async function checkClipboard() {
+  if (!document.hasFocus()) return;
   try {
     const text = await navigator.clipboard.readText();
     if (text) {
       // @ts-ignore
       await chrome.runtime.sendMessage({ type: "clipboardUpdate", text });
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn("Failed to read clipboard", err);
   }
 }
 
@@ -78,7 +79,15 @@ const Popup = () => {
   const [syncEnabled, setSyncEnabled] = useSyncToggle();
 
   useEffect(() => {
-    void checkClipboard();
+    const onFocus = () => {
+      void checkClipboard();
+    };
+    if (document.hasFocus()) {
+      onFocus();
+    } else {
+      window.addEventListener("focus", onFocus, { once: true });
+      return () => window.removeEventListener("focus", onFocus);
+    }
   }, []);
   return (
     <div className="p-4 w-80">
