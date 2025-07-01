@@ -14,7 +14,7 @@ const Options = () => {
   const [showMyQR, setShowMyQR] = useState(false);
   const [myQRImage, setMyQRImage] = useState<string | null>(null);
   const [myQRText, setMyQRText] = useState<string | null>(null);
-  const [settings, setSettings] = useState({ autoSync: true, expiryDays: 365, typesEnabled: defaultTypes });
+  const [settings, setSettings] = useState({ autoSync: true, expiryDays: 365, typesEnabled: defaultTypes, logLevel: "info" });
 
   useEffect(() => {
     // @ts-ignore
@@ -23,6 +23,7 @@ const Options = () => {
         autoSync: resp?.autoSync !== false,
         expiryDays: resp?.expiryDays || 365,
         typesEnabled: resp?.typesEnabled || defaultTypes,
+        logLevel: resp?.logLevel || "info",
       });
     });
   }, []);
@@ -122,6 +123,19 @@ const Options = () => {
           </label>
           <label className="flex items-center gap-2">
             <input type="number" className="w-16 px-1 border rounded" min={1} max={3650} value={settings.expiryDays} onChange={e => handleSettingChange("expiryDays", Number(e.target.value))} /> Expiry (days)
+          </label>
+          <label className="flex items-center gap-2">
+            Log level
+            <select
+              className="border rounded px-1"
+              value={settings.logLevel}
+              onChange={e => handleSettingChange("logLevel", e.target.value)}
+            >
+              <option value="debug">Debug</option>
+              <option value="info">Info</option>
+              <option value="warn">Warn</option>
+              <option value="error">Error</option>
+            </select>
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" className="accent-blue-600" checked={settings.typesEnabled.text} onChange={() => handleTypeToggle("text")} /> Text
