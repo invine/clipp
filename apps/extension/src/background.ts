@@ -22,30 +22,6 @@ const messaging = createMessagingLayer();
 const history = new MemoryHistoryStore();
 const trust = createTrustManager(new ChromeStorageBackend());
 
-async function ensureOffscreen() {
-  if (!chrome.offscreen) return;
-  const has = await chrome.offscreen.hasDocument?.();
-  if (!has) {
-    await chrome.offscreen.createDocument({
-      url: "src/offscreen.html",
-      // url: chrome.runtime.getURL("src/offscreen.html"),
-      reasons: [chrome.offscreen.Reason.CLIPBOARD],
-      justification: "monitor clipboard changes",
-    });
-    log.info("Offscreen document created");
-  }
-}
-
-// In MV3 the service worker may stop when idle and isn't guaranteed to start
-// automatically on browser launch. Listen for startup and install events to
-// create the offscreen document so clipboard monitoring works in the
-// background.
-chrome.runtime.onStartup.addListener(() => {
-  void ensureOffscreen();
-});
-chrome.runtime.onInstalled.addListener(() => {
-  void ensureOffscreen();
-});
 
 const clipboard = createClipboardService("chrome", {
   async sendClip(clip) {
@@ -271,10 +247,8 @@ messaging.onMessage(async (msg) => {
   }
 });
 
-// Start services after ensuring offscreen page exists
-ensureOffscreen().finally(() => {
-  log.info("Background services starting");
-  messaging.start();
-  clipboard.start();
-  log.info("Background services started");
-});
+// Start background services
+log.info("Background services starting");
+messaging.start();
+clipboard.start();
+log.info("Background services started");

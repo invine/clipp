@@ -20,9 +20,6 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        offscreen: resolve(__dirname, "src/offscreen.html"),
-      },
       plugins: [
         polyfillNode(),
         inject({

@@ -6,6 +6,18 @@ import { ShareButton } from "./components/ShareButton";
 import { StatusBar } from "./components/StatusBar";
 import { TrustPrompt } from "./components/TrustPrompt";
 
+async function checkClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      // @ts-ignore
+      await chrome.runtime.sendMessage({ type: "clipboardUpdate", text });
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function useLatestClip() {
   const [clip, setClip] = useState(null);
   useEffect(() => {
@@ -64,6 +76,10 @@ const Popup = () => {
   const clip = useLatestClip();
   const { peerCount, connected } = usePeerStatus();
   const [syncEnabled, setSyncEnabled] = useSyncToggle();
+
+  useEffect(() => {
+    void checkClipboard();
+  }, []);
   return (
     <div className="p-4 w-80">
       <TrustPrompt />
