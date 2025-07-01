@@ -1,5 +1,6 @@
 import { TypedEventEmitter } from './events'
 import { DeviceIdentity, getLocalIdentity } from './identity'
+import * as log from '../logger'
 
 export interface TrustedDevice extends DeviceIdentity {
   lastSeen?: number
@@ -92,6 +93,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
       pending.delete(device.deviceId)
       pendingDevices.delete(device.deviceId)
     }
+    log.info("Device approved", device.deviceId)
     events.emit('approved', device)
   }
 
@@ -102,6 +104,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     if (idx >= 0) {
       list.splice(idx, 1)
       await save(list)
+      log.info("Device removed", id)
       events.emit('removed', device)
     }
   }
@@ -129,6 +132,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
       events.emit('rejected', req)
     }, PENDING_TTL)
     pending.set(req.deviceId, timer)
+    log.info("Trust request from", req.deviceId)
     events.emit('request', req)
   }
 

@@ -6,6 +6,7 @@ import { Clip } from "../models/Clip";
 import { ClipType } from "../models/enums";
 import * as chromePlatform from "./platform/chrome";
 import * as androidPlatform from "./platform/android";
+import * as log from "../logger";
 
 export interface ClipboardService {
   start(): void;
@@ -53,6 +54,7 @@ export function createClipboardService(
   const sendClip = options.sendClip ?? (async () => {});
 
   async function processLocalText(text: string): Promise<void> {
+    log.debug("Processing local clipboard text");
     const clip = normalizeClipboardContent(text, "local");
     if (!clip) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
@@ -69,6 +71,7 @@ export function createClipboardService(
   });
 
   async function writeRemoteClip(clip: Clip): Promise<void> {
+    log.debug("Writing remote clip", clip.id);
     if (clip.id === lastLocal?.id) return;
     if (seenRemote.has(clip.id)) return;
     seenRemote.add(clip.id);
@@ -79,8 +82,14 @@ export function createClipboardService(
   }
 
   return {
-    start: () => watcher.start(),
-    stop: () => watcher.stop(),
+    start: () => {
+      log.info("Clipboard service started");
+      watcher.start();
+    },
+    stop: () => {
+      log.info("Clipboard service stopped");
+      watcher.stop();
+    },
     onLocalClip: (cb) => localHandlers.push(cb),
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
     processLocalText,

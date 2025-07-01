@@ -4,6 +4,7 @@
 import { createPeer } from "./peer";
 import { encodeMessage, decodeMessage, PROTOCOL } from "./protocol";
 import type { SyncMessage } from "../models/SyncMessage";
+import * as log from "../logger";
 
 export interface P2PEngine {
   start(): Promise<void>;
@@ -23,11 +24,10 @@ export class Libp2pEngine implements P2PEngine {
     if (this.started) return;
     this.node = await createPeer();
     this.node.addEventListener("peer:discovery", (evt: any) => {
-      // Lightweight logger
-      console.log("Discovered peer", evt.detail.id.toString());
+      log.debug("Discovered peer", evt.detail.id.toString());
     });
     this.node.addEventListener("peer:connect", (evt: any) => {
-      console.log("Connected to peer", evt.detail.remotePeer.toString());
+      log.info("Connected to peer", evt.detail.remotePeer.toString());
     });
     this.node.handle(PROTOCOL, async ({ stream, connection }: any) => {
       for await (const chunk of stream.source) {
@@ -37,29 +37,31 @@ export class Libp2pEngine implements P2PEngine {
             fn(msg, connection.remotePeer.toString())
           );
         } catch (e) {
-          console.warn("Failed to decode message", e);
+          log.warn("Failed to decode message", e);
         }
       }
     });
     await this.node.start();
     this.started = true;
-    console.log("P2PEngine started");
+    log.info("P2PEngine started");
   }
 
   async stop() {
     if (!this.started) return;
     await this.node.stop();
     this.started = false;
-    console.log("P2PEngine stopped");
+    log.info("P2PEngine stopped");
   }
 
   async sendMessage(peerId: string, message: SyncMessage) {
+    log.debug("Sending message to", peerId);
     const conn = await this.node.dialProtocol(peerId, PROTOCOL);
     await conn.sink([encodeMessage(message)]);
   }
 
   async broadcast(message: SyncMessage) {
     const peers = this.getConnectedPeers();
+    log.debug("Broadcasting message to", peers.length, "peers");
     await Promise.all(peers.map((pid) => this.sendMessage(pid, message)));
   }
 

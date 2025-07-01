@@ -1,3 +1,5 @@
+import { info } from "../../../packages/core/logger";
+
 let lastText = "";
 
 async function checkClipboard() {
@@ -12,7 +14,7 @@ async function checkClipboard() {
   }
 }
 
-console.log("Clipboard monitoring started");
+info("Clipboard monitoring started");
 setInterval(checkClipboard, 2000);
 // initial check
 void checkClipboard();
