@@ -40,6 +40,9 @@ clipboard.onLocalClip((clip) => {
   void trust.getLocalIdentity().then((id) => {
     history.add(clip, id.deviceId, true);
   });
+  // Notify all extension pages about the new local clip
+  // @ts-ignore
+  chrome.runtime.sendMessage({ type: "newClip", clip });
 });
 let pendingRequests: TrustedDevice[] = [];
 

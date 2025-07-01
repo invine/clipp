@@ -6,11 +6,13 @@ import { ShareButton } from "./components/ShareButton";
 import { StatusBar } from "./components/StatusBar";
 import { TrustPrompt } from "./components/TrustPrompt";
 
+let lastText = "";
 async function checkClipboard() {
   if (!document.hasFocus()) return;
   try {
     const text = await navigator.clipboard.readText();
-    if (text) {
+    if (text && text !== lastText) {
+      lastText = text;
       // @ts-ignore
       await chrome.runtime.sendMessage({ type: "clipboardUpdate", text });
     }
