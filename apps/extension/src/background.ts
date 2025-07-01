@@ -7,8 +7,10 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import { createClipboardService } from "../../../packages/core/clipboard/service";
+import * as log from "../../../packages/core/logger";
 
 // Background state
+log.info("Background script initialized");
 const messaging = createMessagingLayer();
 const history = new MemoryHistoryStore();
 const trust = createTrustManager(new ChromeStorageBackend());
@@ -23,6 +25,7 @@ async function ensureOffscreen() {
       reasons: [chrome.offscreen.Reason.CLIPBOARD],
       justification: "monitor clipboard changes",
     });
+    log.info("Offscreen document created");
   }
 }
 
@@ -46,6 +49,7 @@ const clipboard = createClipboardService("chrome", {
       clip,
       sentAt: Date.now(),
     };
+    log.debug("Broadcasting clip");
     await messaging.broadcast(message as any);
   },
 });
@@ -60,6 +64,7 @@ trust.on("request", (d) => {
   pendingRequests.push(d);
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "trustRequest", device: d });
+  log.info("Trust request received", d.deviceId);
 });
 trust.on("rejected", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
@@ -71,6 +76,7 @@ trust.on("rejected", async (d) => {
     sentAt: Date.now(),
   };
   await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
+  log.info("Trust request rejected", d.deviceId);
 });
 trust.on("approved", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
@@ -82,6 +88,7 @@ trust.on("approved", async (d) => {
     sentAt: Date.now(),
   };
   await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
+  log.info("Device approved", d.deviceId);
 });
 
 // Listen for clipboard changes (MV3: use chrome.clipboard or content script)
@@ -103,6 +110,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         clip: msg.clip,
         sentAt: Date.now(),
       };
+      log.debug("Broadcasting clip");
       await messaging.broadcast(message as any);
       history.add(msg.clip, msg.clip.senderId, true);
       sendResponse({ ok: true });
@@ -164,6 +172,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           clip,
           sentAt: Date.now(),
         };
+        log.debug("Broadcasting clip");
         await messaging.broadcast(message as any);
       }
       sendResponse({ ok: true });
@@ -239,11 +248,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Listen for incoming clips from peers
 messaging.onMessage(async (msg) => {
   if (msg.type === "CLIP") {
+    log.debug("Received clip from", msg.from);
     await history.add(msg.clip!, msg.from, false);
     // Optionally notify popup/options
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "newClip", clip: msg.clip });
   } else if (msg.type === "trust-request") {
+    log.debug("Received trust request from", (msg.payload as TrustedDevice).deviceId);
     const dev = msg.payload as TrustedDevice;
     await trust.handleTrustRequest(dev);
   }
@@ -251,6 +262,8 @@ messaging.onMessage(async (msg) => {
 
 // Start services after ensuring offscreen page exists
 ensureOffscreen().finally(() => {
+  log.info("Background services starting");
   messaging.start();
   clipboard.start();
+  log.info("Background services started");
 });

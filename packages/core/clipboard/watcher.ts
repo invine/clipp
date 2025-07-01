@@ -1,3 +1,5 @@
+import * as log from "../logger";
+
 export type ClipboardReader = () => Promise<string>;
 export type ChangeHandler = (text: string) => void;
 
@@ -35,6 +37,7 @@ export function createWatcher(
       const hash = hashString(text || "");
       if (hash !== lastHash) {
         lastHash = hash;
+        log.debug("Clipboard changed");
         handlers.forEach((h) => h(text));
       }
     } catch {
@@ -49,12 +52,14 @@ export function createWatcher(
           await check();
           timer = setInterval(check, intervalMs);
         })();
+        log.info("Clipboard watcher started");
       }
     },
     stop() {
       if (timer) {
         clearInterval(timer);
         timer = undefined;
+        log.info("Clipboard watcher stopped");
       }
     },
     onChange(cb: ChangeHandler) {

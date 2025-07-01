@@ -2,6 +2,7 @@ import { createClipboardNode } from "./node";
 import { EventBus } from "./events";
 import type { ClipboardMessage } from "./types";
 import { createTrustManager, MemoryStorageBackend, TrustManager } from "../trust";
+import * as log from "../logger";
 
 export interface MessagingLayer {
   start(): Promise<void>;
@@ -34,10 +35,12 @@ class Libp2pMessagingLayer implements MessagingLayer {
     this.node.addEventListener("peer:connect", (evt: any) => {
       const peerId = evt.detail.remotePeer.toString();
       this.connectBus.emit(peerId);
+      log.info("Peer connected", peerId);
     });
     this.node.addEventListener("peer:disconnect", (evt: any) => {
       const peerId = evt.detail.remotePeer.toString();
       this.disconnectBus.emit(peerId);
+      log.info("Peer disconnected", peerId);
     });
     this.node.handle(PROTOCOL, async ({ stream, connection }: any) => {
       for await (const chunk of stream.source) {
@@ -53,21 +56,25 @@ class Libp2pMessagingLayer implements MessagingLayer {
     });
     await this.node.start();
     this.started = true;
+    log.info("Messaging layer started");
   }
 
   async stop() {
     if (!this.started) return;
     await this.node.stop();
     this.started = false;
+    log.info("Messaging layer stopped");
   }
 
   async sendMessage(peerId: string, msg: ClipboardMessage) {
+    log.debug("Sending message to", peerId);
     const conn = await this.node.dialProtocol(peerId, PROTOCOL);
     await conn.sink([new TextEncoder().encode(JSON.stringify(msg))]);
   }
 
   async broadcast(msg: ClipboardMessage) {
     const peers = this.getConnectedPeers();
+    log.debug("Broadcasting message to", peers.length, "peers");
     await Promise.all(peers.map((p) => this.sendMessage(p, msg)));
   }
 
