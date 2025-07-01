@@ -9,8 +9,15 @@ import { normalizeClipboardContent } from "../../../packages/core/clipboard/norm
 import { createClipboardService } from "../../../packages/core/clipboard/service";
 import * as log from "../../../packages/core/logger";
 
+// Initialize log level from storage
+chrome.storage.local.get(["logLevel"], (res) => {
+  if (res.logLevel) {
+    log.setLogLevel(res.logLevel);
+  }
+  log.info("Background script initialized");
+});
+
 // Background state
-log.info("Background script initialized");
 const messaging = createMessagingLayer();
 const history = new MemoryHistoryStore();
 const trust = createTrustManager(new ChromeStorageBackend());
@@ -222,7 +229,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "getSettings") {
     // @ts-ignore
     chrome.storage.local.get(
-      ["autoSync", "expiryDays", "typesEnabled"],
+      ["autoSync", "expiryDays", "typesEnabled", "logLevel"],
       (res) => {
         sendResponse({
           autoSync: res.autoSync !== false,
@@ -232,6 +239,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             image: true,
             file: true,
           },
+          logLevel: res.logLevel || "info",
         });
       }
     );
@@ -240,6 +248,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "setSettings" && msg.settings) {
     // @ts-ignore
     chrome.storage.local.set(msg.settings, () => sendResponse({ ok: true }));
+    if (msg.settings.logLevel) {
+      log.setLogLevel(msg.settings.logLevel);
+    }
     return true;
   }
   // Add more message handlers as needed
