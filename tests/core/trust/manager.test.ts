@@ -9,6 +9,7 @@ function sample(id: string): TrustedDevice {
     deviceName: 'Test',
     publicKey: 'pk',
     multiaddr: `/p2p/${id}`,
+    multiaddrs: [`/p2p/${id}`],
     createdAt: Date.now(),
   }
 }

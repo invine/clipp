@@ -8,8 +8,7 @@
     "clipboardRead",
     "clipboardWrite",
     "notifications",
-    "scripting",
-    "offscreen"
+    "scripting"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

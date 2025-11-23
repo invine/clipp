@@ -1,5 +1,7 @@
 import { createMessagingLayer } from "../../../packages/core/network/engine";
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
+import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
+import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
   createTrustManager,
   TrustedDevice,
@@ -19,33 +21,13 @@ chrome.storage.local.get(["logLevel"], (res) => {
 
 // Background state
 const messaging = createMessagingLayer();
-const history = new MemoryHistoryStore();
+const historyBackend =
+  typeof (globalThis as any).indexedDB !== "undefined"
+    ? new IndexedDBHistoryBackend()
+    : new InMemoryHistoryBackend();
+const history = new MemoryHistoryStore(historyBackend);
 const trust = createTrustManager(new ChromeStorageBackend());
 
-async function ensureOffscreen() {
-  if (!chrome.offscreen) return;
-  const has = await chrome.offscreen.hasDocument?.();
-  if (!has) {
-    await chrome.offscreen.createDocument({
-      url: "src/offscreen.html",
-      // url: chrome.runtime.getURL("src/offscreen.html"),
-      reasons: [chrome.offscreen.Reason.CLIPBOARD],
-      justification: "monitor clipboard changes",
-    });
-    log.info("Offscreen document created");
-  }
-}
-
-// In MV3 the service worker may stop when idle and isn't guaranteed to start
-// automatically on browser launch. Listen for startup and install events to
-// create the offscreen document so clipboard monitoring works in the
-// background.
-chrome.runtime.onStartup.addListener(() => {
-  void ensureOffscreen();
-});
-chrome.runtime.onInstalled.addListener(() => {
-  void ensureOffscreen();
-});
 
 const clipboard = createClipboardService("chrome", {
   async sendClip(clip) {
@@ -60,10 +42,17 @@ const clipboard = createClipboardService("chrome", {
     await messaging.broadcast(message as any);
   },
 });
+// Initialize auto-sync state from storage
+chrome.storage.local.get(["autoSync"], (res) => {
+  clipboard.setAutoSync(res.autoSync !== false);
+});
 clipboard.onLocalClip((clip) => {
   void trust.getLocalIdentity().then((id) => {
     history.add(clip, id.deviceId, true);
   });
+  // Notify all extension pages about the new local clip
+  // @ts-ignore
+  chrome.runtime.sendMessage({ type: "newClip", clip });
 });
 let pendingRequests: TrustedDevice[] = [];
 
@@ -76,25 +65,27 @@ trust.on("request", (d) => {
 trust.on("rejected", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
   const id = await trust.getLocalIdentity();
+  const target = d.multiaddrs?.[0] || d.multiaddr || d.deviceId;
   const ack = {
     type: "trust-ack" as const,
     from: id.deviceId,
     payload: { id: d.deviceId, accepted: false },
     sentAt: Date.now(),
   };
-  await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
+  await messaging.sendMessage(target, ack as any).catch(() => {});
   log.info("Trust request rejected", d.deviceId);
 });
 trust.on("approved", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
   const id = await trust.getLocalIdentity();
+  const target = d.multiaddrs?.[0] || d.multiaddr || d.deviceId;
   const ack = {
     type: "trust-ack" as const,
     from: id.deviceId,
     payload: { id: d.deviceId, accepted: true },
     sentAt: Date.now(),
   };
-  await messaging.sendMessage(d.deviceId, ack as any).catch(() => {});
+  await messaging.sendMessage(target, ack as any).catch(() => {});
   log.info("Device approved", d.deviceId);
 });
 
@@ -194,16 +185,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "pairDevice" && msg.pairing) {
     trust.getLocalIdentity().then(async (id) => {
+      const targetAddrs =
+        msg.pairing.multiaddrs ||
+        (msg.pairing.multiaddr ? [msg.pairing.multiaddr] : []);
+      const target = targetAddrs[0] || msg.pairing.deviceId;
       const request = {
         type: "trust-request" as const,
         from: id.deviceId,
         payload: id,
         sentAt: Date.now(),
       };
-      await messaging
-        .sendMessage(msg.pairing.deviceId, request as any)
-        .catch(() => {});
-      sendResponse({ ok: true });
+      try {
+        await messaging.sendMessage(target, request as any);
+        sendResponse({ ok: true });
+      } catch (err) {
+        log.warn("Failed to send trust request", err);
+        sendResponse({ ok: false, error: "dial_failed" });
+      }
     });
     return true;
   }
@@ -214,11 +212,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ peerCount: peers.length, autoSync: clipboard.isAutoSync() });
     return true;
   }
+  if (msg.type === "getConnectedPeers") {
+    const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+    sendResponse({ peers });
+    return true;
+  }
   // Handle trusted device list for options page
   if (msg.type === "getTrustedDevices") {
     trust.list().then((devices) => {
       sendResponse({ devices });
     });
+    return true;
+  }
+  if (msg.type === "deleteClip" && msg.id) {
+    history.remove(msg.id).then(() => sendResponse({ ok: true }));
     return true;
   }
   if (msg.type === "revokeDevice" && msg.id) {
@@ -251,6 +258,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.settings.logLevel) {
       log.setLogLevel(msg.settings.logLevel);
     }
+    if (msg.settings.autoSync !== undefined) {
+      clipboard.setAutoSync(msg.settings.autoSync !== false);
+    }
     return true;
   }
   // Add more message handlers as needed
@@ -271,10 +281,8 @@ messaging.onMessage(async (msg) => {
   }
 });
 
-// Start services after ensuring offscreen page exists
-ensureOffscreen().finally(() => {
-  log.info("Background services starting");
-  messaging.start();
-  clipboard.start();
-  log.info("Background services started");
-});
+// Start background services
+log.info("Background services starting");
+messaging.start();
+clipboard.start();
+log.info("Background services started");

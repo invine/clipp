@@ -91,6 +91,9 @@ export class ClipboardMessagingLayer implements MessagingLayer {
     this.disconnectBus.on(handler);
   }
   getConnectedPeers(): string[] {
+    if (!this.node || !this.started || typeof this.node.getConnections !== "function") {
+      return [];
+    }
     return this.node.getConnections().map((c: any) => c.remotePeer.toString());
   }
   getNode() {

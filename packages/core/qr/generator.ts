@@ -4,6 +4,9 @@ import { QRPayload, payloadToBase64 } from './types'
 export async function encode(
   identity: Omit<QRPayload, 'timestamp' | 'version'>
 ): Promise<string> {
+  if (!identity.multiaddrs || identity.multiaddrs.length === 0) {
+    throw new Error('QR encode requires at least one multiaddr')
+  }
   const payload: QRPayload = {
     ...identity,
     timestamp: Math.floor(Date.now() / 1000),

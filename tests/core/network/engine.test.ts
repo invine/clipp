@@ -18,6 +18,11 @@ import type { ClipboardMessage } from "../../../packages/core/network/types";
 const { createClipboardNode } = jest.requireMock("../../../packages/core/network/node");
 
 describe("MessagingLayer", () => {
+  it("returns no peers when node not started", () => {
+    const layer = createMessagingLayer();
+    expect(layer.getConnectedPeers()).toEqual([]);
+  });
+
   it("start and stop are idempotent", async () => {
     const layer = createMessagingLayer();
     await layer.start();

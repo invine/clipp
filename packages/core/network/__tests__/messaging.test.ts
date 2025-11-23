@@ -12,6 +12,7 @@ describe("ClipboardMessagingLayer", () => {
       deviceName: "Test",
       publicKey: "pk",
       multiaddr: `/p2p/${trustedId}`,
+      multiaddrs: [`/p2p/${trustedId}`],
       createdAt: Date.now(),
     };
     await (layer as any).trust.add(device);

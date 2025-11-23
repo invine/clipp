@@ -17,6 +17,11 @@ import { ClipboardMessagingLayer } from "../../../packages/core/network/messagin
 import { Clip } from "../../../packages/core/models/Clip";
 
 describe("ClipboardMessagingLayer", () => {
+  it("returns no peers when not started", () => {
+    const layer = new ClipboardMessagingLayer();
+    expect(layer.getConnectedPeers()).toEqual([]);
+  });
+
   it("should ignore messages from untrusted peers (trust logic)", async () => {
     const layer = new ClipboardMessagingLayer();
     // Patch trust.isTrusted to simulate trust logic

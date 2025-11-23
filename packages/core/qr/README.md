@@ -8,7 +8,8 @@ import { encode, decode } from './index'
 const uri = await encode({
   deviceId: 'peer1',
   deviceName: 'Pixel',
-  multiaddr: '/ip4/1.2.3.4/tcp/9000/ws/p2p/QmPeer'
+  publicKey: 'peer1-public-key',
+  multiaddrs: ['/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star/p2p/peer1']
 })
 
 const payload = await decode(uri)

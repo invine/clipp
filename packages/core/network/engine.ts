@@ -25,13 +25,24 @@ class Libp2pMessagingLayer implements MessagingLayer {
   private readonly disconnectBus = new EventBus<string>();
   private started = false;
 
-  constructor(private opts: { peerId?: any; bootstrapList?: string[]; trustStore?: TrustManager } = {}) {
+  constructor(
+    private opts: {
+      peerId?: any;
+      bootstrapList?: string[];
+      relayAddresses?: string[];
+      trustStore?: TrustManager;
+    } = {}
+  ) {
     this.trust = opts.trustStore || createTrustManager(new MemoryStorageBackend());
   }
 
   async start() {
     if (this.started) return;
-    this.node = await createClipboardNode({ peerId: this.opts.peerId, bootstrapList: this.opts.bootstrapList });
+    this.node = await createClipboardNode({
+      peerId: this.opts.peerId,
+      bootstrapList: this.opts.bootstrapList,
+      relayAddresses: this.opts.relayAddresses,
+    });
     this.node.addEventListener("peer:connect", (evt: any) => {
       const peerId = evt.detail.remotePeer.toString();
       this.connectBus.emit(peerId);
@@ -66,9 +77,9 @@ class Libp2pMessagingLayer implements MessagingLayer {
     log.info("Messaging layer stopped");
   }
 
-  async sendMessage(peerId: string, msg: ClipboardMessage) {
-    log.debug("Sending message to", peerId);
-    const conn = await this.node.dialProtocol(peerId, PROTOCOL);
+  async sendMessage(target: string, msg: ClipboardMessage) {
+    log.debug("Sending message to", target);
+    const conn = await this.node.dialProtocol(target, PROTOCOL);
     await conn.sink([new TextEncoder().encode(JSON.stringify(msg))]);
   }
 
@@ -88,11 +99,19 @@ class Libp2pMessagingLayer implements MessagingLayer {
     this.disconnectBus.on(cb);
   }
   getConnectedPeers(): string[] {
+    if (!this.node || !this.started || typeof this.node.getConnections !== "function") {
+      return [];
+    }
     return this.node.getConnections().map((c: any) => c.remotePeer.toString());
   }
 }
 
-export function createMessagingLayer(options?: { peerId?: any; bootstrapList?: string[]; trustStore?: TrustManager }): MessagingLayer {
+export function createMessagingLayer(options?: {
+  peerId?: any;
+  bootstrapList?: string[];
+  relayAddresses?: string[];
+  trustStore?: TrustManager;
+}): MessagingLayer {
   return new Libp2pMessagingLayer(options);
 }
 

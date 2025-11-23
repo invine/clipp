@@ -12,6 +12,7 @@ export interface ClipHistoryStore {
   importBatch(clips: Clip[]): Promise<void>;
   pruneExpired(): Promise<void>;
   onNew(cb: (item: HistoryItem) => void): void;
+  remove(id: string): Promise<void>;
 }
 
 export class MemoryHistoryStore implements ClipHistoryStore {
@@ -78,6 +79,10 @@ export class MemoryHistoryStore implements ClipHistoryStore {
         await this.backend.remove(item.clip.id);
       }
     }
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.backend.remove(id);
   }
 
   onNew(cb: (item: HistoryItem) => void): void {

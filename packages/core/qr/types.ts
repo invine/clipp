@@ -1,7 +1,9 @@
 export interface QRPayload {
   deviceId: string
   deviceName: string
-  multiaddr: string
+  multiaddr?: string
+  multiaddrs: string[]
+  publicKey?: string
   timestamp: number
   version: "1"
 }
@@ -12,7 +14,9 @@ export function isValidPayload(obj: any): obj is QRPayload {
     typeof obj === "object" &&
     typeof obj.deviceId === "string" &&
     typeof obj.deviceName === "string" &&
-    typeof obj.multiaddr === "string" &&
+    Array.isArray(obj.multiaddrs) &&
+    obj.multiaddrs.length > 0 &&
+    obj.multiaddrs.every((m: any) => typeof m === "string") &&
     typeof obj.timestamp === "number" &&
     obj.version === "1"
   )

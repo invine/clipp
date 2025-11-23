@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import "./styles/tailwind-built.css";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
-import { decode, encode, payloadToBase64 } from "../../../packages/core/qr";
+import "./styles/tailwind-built.css";
+import { decode, encode } from "../../../packages/core/qr";
+import { encodePairing } from "../../../packages/core/pairing/encode";
 
 const defaultTypes = { text: true, image: true, file: true };
 
@@ -43,13 +44,18 @@ const Options = () => {
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, async (res) => {
       if (!res?.identity) return;
+      const multiaddrs =
+        res.identity.multiaddrs ||
+        (res.identity.multiaddr ? [res.identity.multiaddr] : []);
+      if (!multiaddrs.length) return;
       const info = {
         deviceId: res.identity.deviceId,
         deviceName: res.identity.deviceName,
-        multiaddr: res.identity.multiaddr,
+        multiaddrs,
+        publicKey: res.identity.publicKey,
       };
       const img = await encode(info);
-      const txt = payloadToBase64({ ...info, timestamp: Math.floor(Date.now() / 1000), version: "1" });
+      const txt = encodePairing(info);
       setMyQRImage(img);
       setMyQRText(txt);
     });

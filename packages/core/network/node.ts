@@ -5,20 +5,69 @@ import { createLibp2p } from "libp2p";
 import { webRTC } from "@libp2p/webrtc";
 import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { webSockets } from "@libp2p/websockets";
+import { webRTCStar } from "@libp2p/webrtc-star";
 import { noise } from "@chainsafe/libp2p-noise";
-import { mplex } from "@libp2p/mplex";
+import { yamux } from "@chainsafe/libp2p-yamux";
 import { bootstrap } from "@libp2p/bootstrap";
 import { mdns } from "@libp2p/mdns";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { kadDHT } from "@libp2p/kad-dht";
 import { identify } from "@libp2p/identify";
 import { ping } from "@libp2p/ping";
+import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants";
+
+function hasWebRTCSupport() {
+  return (
+    typeof (globalThis as any).RTCPeerConnection !== "undefined" ||
+    typeof (globalThis as any).webkitRTCPeerConnection !== "undefined"
+  );
+}
+
+function withTransportFilters(factory: any) {
+  // Wrap transport factory to ensure listenFilter/dialFilter exist on the instance
+  return (components: any) => {
+    const transport = factory(components);
+    if (transport) {
+      const filterFn =
+        typeof transport.filter === "function"
+          ? transport.filter.bind(transport)
+          : (addrs: any) => addrs;
+      if (typeof transport.listenFilter !== "function") {
+        transport.listenFilter = filterFn;
+      }
+      if (typeof transport.dialFilter !== "function") {
+        transport.dialFilter = filterFn;
+      }
+    }
+    return transport;
+  };
+}
 
 export async function createClipboardNode(
-  options: { peerId?: any; bootstrapList?: string[] } = {}
+  options: { peerId?: any; bootstrapList?: string[]; relayAddresses?: string[] } = {}
 ) {
-  const { peerId, bootstrapList = [] } = options;
+  const {
+    peerId,
+    bootstrapList = [],
+    relayAddresses = DEFAULT_WEBRTC_STAR_RELAYS,
+  } = options;
   const discovery: any[] = [];
+  const transports: any[] = [
+    withTransportFilters(webSockets()),
+    withTransportFilters(circuitRelayTransport()),
+  ];
+  const listenAddrs: string[] = [];
+
+  if (hasWebRTCSupport()) {
+    const wrtcStar = webRTCStar() as any;
+    transports.unshift(
+      withTransportFilters(wrtcStar.transport as any),
+      withTransportFilters(webRTC())
+    );
+    discovery.push(wrtcStar.discovery);
+    listenAddrs.push(...relayAddresses);
+  }
+
   if (bootstrapList.length > 0) {
     discovery.push(bootstrap({ list: bootstrapList }));
   }
@@ -30,10 +79,14 @@ export async function createClipboardNode(
 
   return await createLibp2p({
     ...(peerId ? { peerId } : {}),
-    transports: [webRTC(), webSockets(), circuitRelayTransport()],
+    addresses: {
+      listen: listenAddrs,
+    },
+    transports,
     connectionEncrypters: [noise()],
-    streamMuxers: [mplex()],
-    peerDiscovery: discovery,
+    // Type cast required to satisfy older StreamMuxerFactory shape in libp2p typings
+    streamMuxers: [yamux() as any],
+    peerDiscovery: discovery.map((d) => d as any),
     services: {
       pubsub: gossipsub(),
       dht: kadDHT() as any,

@@ -110,14 +110,19 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
   }
 
   function validate(device: TrustedDevice): boolean {
+    const hasMultiaddr = typeof device.multiaddr === 'string' && device.multiaddr.endsWith(`/p2p/${device.deviceId}`)
+    const hasMultiaddrs =
+      Array.isArray(device.multiaddrs) &&
+      device.multiaddrs.length > 0 &&
+      device.multiaddrs.every((addr) => typeof addr === 'string' && addr.endsWith(`/p2p/${device.deviceId}`))
+
     return (
       device &&
       typeof device.deviceId === 'string' &&
       typeof device.deviceName === 'string' &&
       typeof device.publicKey === 'string' &&
-      typeof device.multiaddr === 'string' &&
       typeof device.createdAt === 'number' &&
-      device.multiaddr.endsWith(`/p2p/${device.deviceId}`)
+      (hasMultiaddr || hasMultiaddrs)
     )
   }
 

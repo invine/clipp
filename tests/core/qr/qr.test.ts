@@ -4,7 +4,8 @@ import { payloadToBase64 } from '../../../packages/core/qr/types'
 const sample = {
   deviceId: 'dev-123',
   deviceName: 'Pixel 8',
-  multiaddr: '/ip4/1.2.3.4/tcp/9000/ws/p2p/QmABC'
+  multiaddrs: ['/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star/p2p/dev-123'],
+  publicKey: 'pubkey-abc',
 }
 
 describe('qr encode/decode', () => {
