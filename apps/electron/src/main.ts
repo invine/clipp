@@ -1,14 +1,28 @@
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, Tray, Menu } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  nativeImage,
+  Tray,
+  Menu,
+} from "electron";
 import path from "node:path";
 import wrtc from "@koush/wrtc";
 import { webcrypto } from "node:crypto";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
-import { openDatabase, SQLiteHistoryBackend, SQLiteKVStore } from "./storage.js";
+import {
+  openDatabase,
+  SQLiteHistoryBackend,
+  SQLiteKVStore,
+} from "./storage.js";
 import type { Clip } from "../../../packages/core/models/Clip.js";
 import { encode } from "../../../packages/core/qr/index.js";
 import { encodePairing } from "../../../packages/core/pairing/encode.js";
+import { E } from "vite/dist/node/moduleRunnerTransport.d-DJ_mE5sf.js";
 
-const __dirnameFallback = typeof __dirname !== "undefined" ? (__dirname as string) : "";
+const __dirnameFallback =
+  typeof __dirname !== "undefined" ? (__dirname as string) : "";
 const isDev = !app.isPackaged;
 
 // Ensure WebRTC globals exist before loading libp2p/webrtc-star.
@@ -32,16 +46,23 @@ try {
 
 async function bootstrap() {
   // Dynamically import libp2p deps after globals are set.
-  const [{ createMessagingLayer }, { MemoryHistoryStore }, trustMod, clipboardMod, normalizeMod, decodeMod, log] =
-    await Promise.all([
-      import("../../../packages/core/network/engine.js"),
-      import("../../../packages/core/history/store.js"),
-      import("../../../packages/core/trust/trusted-devices.js"),
-      import("../../../packages/core/clipboard/service.js"),
-      import("../../../packages/core/clipboard/normalize.js"),
-      import("../../../packages/core/pairing/decode.js"),
-      import("../../../packages/core/logger.js"),
-    ]);
+  const [
+    { createMessagingLayer },
+    { MemoryHistoryStore },
+    trustMod,
+    clipboardMod,
+    normalizeMod,
+    decodeMod,
+    log,
+  ] = await Promise.all([
+    import("../../../packages/core/network/engine.js"),
+    import("../../../packages/core/history/store.js"),
+    import("../../../packages/core/trust/trusted-devices.js"),
+    import("../../../packages/core/clipboard/service.js"),
+    import("../../../packages/core/clipboard/normalize.js"),
+    import("../../../packages/core/pairing/decode.js"),
+    import("../../../packages/core/logger.js"),
+  ]);
 
   const { createTrustManager, TrustedDevice } = trustMod as any;
   const { createClipboardService } = clipboardMod as any;
@@ -57,16 +78,29 @@ async function bootstrap() {
   let lastClipboardCheck: number | null = null;
   let lastClipboardPreview: string | null = null;
   let lastClipboardError: string | null = null;
-  const iconBase = path.resolve(process.cwd(), "apps/electron/assets/icons");
-  const trayIconPath = path.join(iconBase, "clipp-trayTemplate-32.png");
-  const appIconPath = path.join(iconBase, "clipp-appicon-256.png");
+  let pinnedIds: string[] = (await kvStore.get("pinnedIds")) || [];
+  const iconRoot = app.isPackaged
+    ? path.dirname(app.getPath("exe"))
+    : path.resolve(__dirnameFallback || process.cwd(), "..", "..", "..");
+  const iconBase = path.join(iconRoot, "clipp-electron-icons-bundle");
+  const appIconPath = path.join(iconBase, "clipp-purple-256.png");
+  const trayIconCandidates = [
+    "clipp-tray-16.png",
+    "clipp-tray-32.png",
+    "clipp-tray-64.png",
+    "clipp-purple-32.png",
+    "clipp-purple-16.png",
+    "clipp-purple-256.png",
+  ].map((f) => path.join(iconBase, f));
 
   async function ensureIdentityAddrs(id: any) {
     if (Array.isArray(id?.multiaddrs) && id.multiaddrs.length > 0) return id;
     const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
       "../../../packages/core/network/constants.js"
     );
-    const derived = DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${id.deviceId}`);
+    const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
+      (addr: string) => `${addr}/p2p/${id.deviceId}`
+    );
     id.multiaddrs = derived;
     if (!id.multiaddr && derived[0]) {
       id.multiaddr = derived[0];
@@ -119,7 +153,7 @@ async function bootstrap() {
     },
   });
 
-  let pendingRequests: typeof TrustedDevice[] = [];
+  let pendingRequests: (typeof TrustedDevice)[] = [];
   let mainWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
   let quitting = false;
@@ -135,6 +169,7 @@ async function bootstrap() {
       pending: pendingRequests,
       peers,
       identity,
+      pinnedIds,
       diagnostics: {
         lastClipboardCheck,
         lastClipboardPreview,
@@ -152,7 +187,8 @@ async function bootstrap() {
 
   async function sendTrustAck(device: any, accepted: boolean) {
     const id = await trust.getLocalIdentity();
-    const target = device.multiaddrs?.[0] || device.multiaddr || device.deviceId;
+    const target =
+      device.multiaddrs?.[0] || device.multiaddr || device.deviceId;
     const ack = {
       type: "trust-ack" as const,
       from: id.deviceId,
@@ -192,13 +228,17 @@ async function bootstrap() {
       (log as any).info("Trust request received", d.deviceId);
     });
     trust.on("approved", async (d: any) => {
-      pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+      pendingRequests = pendingRequests.filter(
+        (p) => p.deviceId !== d.deviceId
+      );
       await sendTrustAck(d, true);
       emitState();
       (log as any).info("Device approved", d.deviceId);
     });
     trust.on("rejected", async (d: any) => {
-      pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+      pendingRequests = pendingRequests.filter(
+        (p) => p.deviceId !== d.deviceId
+      );
       await sendTrustAck(d, false);
       emitState();
       (log as any).info("Device rejected", d.deviceId);
@@ -232,10 +272,12 @@ async function bootstrap() {
     });
 
     const devUrl = process.env.VITE_DEV_SERVER_URL;
+    const html = path.join(__dirnameFallback, "renderer/index.html");
     if (devUrl) {
-      mainWindow.loadURL(devUrl);
+      mainWindow.loadURL(devUrl).catch(() => {
+        mainWindow?.loadFile(html);
+      });
     } else {
-      const html = path.join(__dirnameFallback, "renderer/index.html");
       mainWindow.loadFile(html);
     }
 
@@ -262,17 +304,42 @@ async function bootstrap() {
     }
   }
 
-  function createTray() {
-    let icon = nativeImage.createFromPath(trayIconPath);
-    if (icon.isEmpty()) {
-      icon = nativeImage.createFromPath(appIconPath);
+  function pickTrayIcon(): Electron.NativeImage {
+    for (const candidate of trayIconCandidates) {
+      const img = nativeImage.createFromPath(candidate);
+      if (!img.isEmpty()) {
+        if (
+          candidate.includes("trayTemplate") &&
+          process.platform === "darwin"
+        ) {
+          img.setTemplateImage?.(true);
+        } else {
+          img.setTemplateImage?.(false);
+        }
+        return img;
+      }
     }
-    // Improve visibility on macOS menu bar
-    icon.setTemplateImage?.(true);
+    return nativeImage.createEmpty();
+  }
+
+  function createTray() {
+    let icon = pickTrayIcon();
+    if (icon.isEmpty()) {
+      // Last resort: create a simple 1x1 icon to avoid crash/blank
+      icon = nativeImage.createFromDataURL(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII="
+      );
+    }
     tray = new Tray(icon);
     const contextMenu = Menu.buildFromTemplate([
       { label: "Open Clipp", click: () => showWindow() },
-      { label: "Quit", click: () => { quitting = true; app.quit(); } },
+      {
+        label: "Quit",
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
     ]);
     tray.setToolTip("Clipp – clipboard sync");
     tray.setContextMenu(contextMenu);
@@ -317,16 +384,38 @@ async function bootstrap() {
     await emitState();
   });
 
+  ipcMain.handle("clipp:clear-history", async () => {
+    try {
+      db.prepare("DELETE FROM history").run();
+      await emitState();
+    } catch (err) {
+      (log as any).error?.("Failed to clear history", err);
+      throw err;
+    }
+  });
+
   ipcMain.handle("clipp:unpair-device", async (_evt, id: string) => {
     await trust.remove(id);
     await emitState();
+  });
+
+  ipcMain.handle("clipp:toggle-pin", async (_evt, id: string) => {
+    const set = new Set(pinnedIds);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    pinnedIds = Array.from(set);
+    await kvStore.set("pinnedIds", pinnedIds);
+    await emitState();
+    return { pinnedIds };
   });
 
   ipcMain.handle(
     "clipp:respond-trust",
     async (_evt, payload: { accept: boolean; device: any }) => {
       const { accept, device } = payload;
-      pendingRequests = pendingRequests.filter((p) => p.deviceId !== device.deviceId);
+      pendingRequests = pendingRequests.filter(
+        (p) => p.deviceId !== device.deviceId
+      );
       if (accept) {
         await trust.add(device);
       } else {
@@ -340,13 +429,16 @@ async function bootstrap() {
     const pairing = decodePairing(txt);
     if (!pairing) return { ok: false, error: "invalid" as const };
     const id = await trust.getLocalIdentity();
-    let targetAddrs = pairing.multiaddrs || (pairing.multiaddr ? [pairing.multiaddr] : []);
+    let targetAddrs =
+      pairing.multiaddrs || (pairing.multiaddr ? [pairing.multiaddr] : []);
     let valid = validMultiaddrs(targetAddrs);
     if (!valid.length) {
       const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
         "../../../packages/core/network/constants.js"
       );
-      const derived = DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${pairing.deviceId}`);
+      const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
+        (addr: string) => `${addr}/p2p/${pairing.deviceId}`
+      );
       targetAddrs = derived;
       valid = validMultiaddrs(targetAddrs);
     }
@@ -422,8 +514,13 @@ async function bootstrap() {
           <div class="card">
             <h3>Pair this device</h3>
             <img src="${img}" style="width:220px;height:220px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);" />
-            <div style="margin-top:8px;font-size:12px;color:#9ca3af;word-break:break-all;">${info.deviceId}</div>
-            <button onclick="require('electron').clipboard.writeText('${txt.replace(/'/g, "\\'")}')">Copy QR text</button>
+            <div style="margin-top:8px;font-size:12px;color:#9ca3af;word-break:break-all;">${
+              info.deviceId
+            }</div>
+            <button onclick="require('electron').clipboard.writeText('${txt.replace(
+              /'/g,
+              "\\'"
+            )}')">Copy QR text</button>
           </div>
         </body>
       </html>

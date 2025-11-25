@@ -4,6 +4,7 @@ import { Clip, Device, Identity, PendingRequest } from "./types";
 import { encode } from "../../core/qr";
 import { encodePairing } from "../../core/pairing/encode";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../core/network/constants";
+import appLogo from "../../../clipp-electron-icons-bundle/clipp-purple-32.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -42,12 +43,15 @@ export type ClipboardAppProps = {
   pending: PendingRequest[];
   peers: string[];
   identity: Identity | null;
+  pinnedIds: string[];
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): void | Promise<void>;
   onReject(dev: PendingRequest): void | Promise<void>;
   onPairText(txt: string): void | Promise<void>;
   onRequestQr(): Promise<Identity | null>;
+  onTogglePin(id: string): void | Promise<void>;
+  onClearAll(): void | Promise<void>;
 };
 
 export function ClipboardApp({
@@ -56,23 +60,31 @@ export function ClipboardApp({
   pending,
   peers,
   identity,
+  pinnedIds,
   onDeleteClip,
   onUnpair,
   onAccept,
   onReject,
   onPairText,
   onRequestQr,
+  onTogglePin,
+  onClearAll,
 }: ClipboardAppProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [search, setSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [filterMode, setFilterMode] = useState<"all" | "pinned">("all");
   const [pairText, setPairText] = useState("");
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrText, setQrText] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [showNav, setShowNav] = useState(false);
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [timeMenuOpen, setTimeMenuOpen] = useState(false);
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -88,8 +100,21 @@ export function ClipboardApp({
   }, [openMenuId]);
 
   useEffect(() => {
+    function handleDocClick(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".time-filter-wrap") || target?.closest(".source-filter-wrap")) return;
+      setTimeMenuOpen(false);
+      setSourceMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleDocClick);
+    return () => document.removeEventListener("mousedown", handleDocClick);
+  }, []);
+
+  useEffect(() => {
     function handleResize() {
-      setIsNarrow(window.innerWidth < 1100);
+      const narrow = window.innerWidth < 1100;
+      setIsNarrow(narrow);
+      if (!narrow) setShowNav(false);
     }
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -114,13 +139,15 @@ export function ClipboardApp({
   const filteredClips = useMemo(() => {
     const now = Date.now();
     const rangeMs = timeOptions.find((t) => t.value === timeFilter)?.ms;
-    return clips
+    let list = clips
       .filter((c) => {
         if (rangeMs) return c.timestamp >= now - rangeMs;
         return true;
       })
       .filter((c) => {
         if (sourceFilter === "all") return true;
+        if (sourceFilter === "local" && identity) return c.senderId === identity.deviceId;
+        if (sourceFilter === "remote" && identity) return c.senderId !== identity.deviceId;
         return c.senderId === sourceFilter;
       })
       .filter((c) => {
@@ -133,7 +160,46 @@ export function ClipboardApp({
         );
       })
       .sort((a, b) => b.timestamp - a.timestamp);
-  }, [clips, search, timeFilter, sourceFilter, deviceNameMap]);
+
+    if (filterMode === "pinned") {
+      list = list.filter((c) => pinnedSet.has(c.id));
+    }
+
+    return list;
+  }, [clips, search, timeFilter, sourceFilter, deviceNameMap, filterMode, pinnedSet, identity]);
+
+  function togglePin(id: string) {
+    onTogglePin(id);
+  }
+
+  function handleDelete(id: string) {
+    setRemovingIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setTimeout(() => {
+      Promise.resolve(onDeleteClip(id)).finally(() =>
+        setRemovingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      );
+    }, 180);
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setTimeFilter("all");
+    setSourceFilter("all");
+    setFilterMode("all");
+  }
+
+  function clearAllHistory() {
+    setRemovingIds(new Set(clips.map((c) => c.id)));
+    Promise.resolve(onClearAll()).finally(() => setRemovingIds(new Set()));
+  }
 
   function copyClip(text: string) {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -179,11 +245,194 @@ export function ClipboardApp({
     }
   }
 
+  function renderNavContent(isDrawer = false) {
+    return (
+      <>
+        <div className="nav-header">
+          <div className="nav-title">Peers</div>
+          {isDrawer ? (
+            <button className="icon-button" onClick={() => setShowNav(false)}>
+              <span className="icon">close</span>
+            </button>
+          ) : (
+            <div className="nav-chip">{peerCount} online</div>
+          )}
+        </div>
+
+        <div className="peer-list">
+          {identity && (
+            <div className="peer-item active">
+              <div className="peer-avatar">L</div>
+              <div className="peer-meta">
+                <div className="peer-name">{identity.deviceName || "Local device"}</div>
+                <div className="peer-sub">This computer</div>
+              </div>
+              <div className="peer-indicator">
+                <span className="icon" style={{ fontSize: 14 }}>
+                  laptop_mac
+                </span>
+              </div>
+            </div>
+          )}
+
+          {devices.map((dev) => (
+            <div className="peer-item" key={dev.deviceId}>
+              <div className="peer-avatar">{dev.deviceName?.[0] || "D"}</div>
+              <div className="peer-meta">
+                <div className="peer-name">{dev.deviceName}</div>
+                <div className="peer-sub">Paired · {formatTime(dev.createdAt)}</div>
+              </div>
+              <div className="peer-indicator">
+                <span className="icon" style={{ fontSize: 14 }}>
+                  smartphone
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {pending.length > 0 && (
+          <>
+            <div className="section-divider"></div>
+            <div>
+              <div className="nav-section-label" style={{ marginTop: 14 }}>
+                Pending requests
+              </div>
+              <div className="nav-tag-list" style={{ flexDirection: "column", gap: 8 }}>
+                {pending.map((req) => (
+                  <div
+                    key={req.deviceId}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 12,
+                      padding: "8px 10px",
+                      background: "rgba(255,255,255,0.02)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{req.deviceName}</div>
+                    <div style={{ fontSize: 11, color: "#9ca3af", wordBreak: "break-all" }}>
+                      {req.deviceId}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        className="primary-button"
+                        style={{ padding: "4px 10px", fontSize: 11 }}
+                        onClick={() => onAccept(req)}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="icon-button"
+                        style={{
+                          width: "auto",
+                          padding: "4px 10px",
+                          fontSize: 11,
+                          border: "1px solid rgba(255,255,255,0.1)",
+                        }}
+                        onClick={() => onReject(req)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="section-divider"></div>
+
+        <div>
+          <div className="nav-section-label">Pairing</div>
+          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+            <input
+              className="search-field"
+              style={{ flex: 1, minWidth: 0, borderRadius: 12 }}
+              placeholder="Paste pairing text (base64)…"
+              value={pairText}
+              onChange={(e) => setPairText(e.target.value)}
+            />
+            <button
+              className="primary-button"
+              onClick={() => {
+                if (pairText.trim()) onPairText(pairText.trim());
+              }}
+            >
+              Add
+            </button>
+          </div>
+          <button className="text-button" style={{ marginTop: 6 }} onClick={handleShowQr}>
+            <span className="icon">qr_code</span>Show my QR
+          </button>
+        </div>
+
+        <div>
+          <div className="nav-section-label" style={{ marginTop: 14 }}>
+            Connected devices
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              maxHeight: 200,
+              overflow: "auto",
+            }}
+          >
+            {devices.length === 0 && <div className="content-subtitle">No devices yet.</div>}
+            {devices.map((dev) => (
+              <div
+                key={dev.deviceId}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 12,
+                  padding: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ fontSize: 13, color: "#e5e7eb" }}>{dev.deviceName}</div>
+                  <div style={{ fontSize: 11, color: "#9ca3af" }}>{dev.deviceId}</div>
+                </div>
+                <button
+                  className="icon-button"
+                  style={{
+                    width: "auto",
+                    padding: "4px 8px",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                  }}
+                  onClick={() => onUnpair(dev.deviceId)}
+                >
+                  Unpair
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <div className="app-shell">
       <header className="app-bar">
         <div className="app-bar-left">
-          <div className="app-logo">C</div>
+          <div
+            className="app-logo"
+            onClick={() => {
+              if (isNarrow) setShowNav(true);
+            }}
+          >
+            <img src={appLogo} alt="Clipp logo" />
+          </div>
           <div className="app-title-block">
             <div className="app-title">
               Clipp
@@ -206,220 +455,18 @@ export function ClipboardApp({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button className="icon-button" title="Clear search" onClick={() => setSearch("")}>
-              <span className="icon">tune</span>
-            </button>
           </div>
 
           <button className="icon-button" title="Toggle theme">
             <span className="icon">dark_mode</span>
           </button>
 
-          <button className="icon-button" title="Peers" onClick={() => setShowNav(true)}>
-            <span className="icon">group</span>
-          </button>
-          <button className="primary-button" onClick={handleShowQr}>
-            <span className="icon">link</span>
-            Pair device
-          </button>
         </div>
       </header>
 
       <main className="app-main">
         <aside className="surface nav-pane" style={{ display: navHidden ? "none" : undefined }}>
-          <div className="nav-header">
-            <div className="nav-title">Peers</div>
-            <div className="nav-chip">{peerCount} online</div>
-          </div>
-
-          <div className="peer-list">
-            {identity && (
-              <div className="peer-item active">
-                <div className="peer-avatar">L</div>
-                <div className="peer-meta">
-                  <div className="peer-name">{identity.deviceName || "Local device"}</div>
-                  <div className="peer-sub">This computer</div>
-                </div>
-                <div className="peer-indicator">
-                  <span className="icon" style={{ fontSize: 14 }}>
-                    laptop_mac
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {devices.map((dev) => (
-              <div className="peer-item" key={dev.deviceId}>
-                <div className="peer-avatar">{dev.deviceName?.[0] || "D"}</div>
-                <div className="peer-meta">
-                  <div className="peer-name">{dev.deviceName}</div>
-                  <div className="peer-sub">Paired · {formatTime(dev.createdAt)}</div>
-                </div>
-                <div className="peer-indicator">
-                  <span className="icon" style={{ fontSize: 14 }}>
-                    smartphone
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {pending.length > 0 && (
-            <>
-              <div className="section-divider"></div>
-              <div>
-                <div className="nav-section-label" style={{ marginTop: 14 }}>
-                  Pending requests
-                </div>
-                <div className="nav-tag-list" style={{ flexDirection: "column", gap: 8 }}>
-                  {pending.map((req) => (
-                    <div
-                      key={req.deviceId}
-                      style={{
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 12,
-                        padding: "8px 10px",
-                        background: "rgba(255,255,255,0.02)",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 6,
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{req.deviceName}</div>
-                      <div style={{ fontSize: 11, color: "#9ca3af", wordBreak: "break-all" }}>
-                        {req.deviceId}
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          className="primary-button"
-                          style={{ padding: "4px 10px", fontSize: 11 }}
-                          onClick={() => onAccept(req)}
-                        >
-                          Accept
-                        </button>
-                        <button
-                          className="icon-button"
-                          style={{ width: "auto", padding: "4px 10px", fontSize: 11, border: "1px solid rgba(255,255,255,0.1)" }}
-                          onClick={() => onReject(req)}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="section-divider"></div>
-
-          <div>
-            <div className="nav-section-label">Pairing</div>
-            <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-              <input
-                className="search-field"
-                style={{ flex: 1, minWidth: 0, borderRadius: 12 }}
-                placeholder="Paste pairing text (base64)…"
-                value={pairText}
-                onChange={(e) => setPairText(e.target.value)}
-              />
-              <button
-                className="primary-button"
-                onClick={() => {
-                  if (pairText.trim()) onPairText(pairText.trim());
-                }}
-              >
-                Add
-              </button>
-            </div>
-            <button className="text-button" style={{ marginTop: 6 }} onClick={handleShowQr}>
-              <span className="icon">qr_code</span>Show my QR
-            </button>
-          </div>
-
-          <div>
-            <div className="nav-section-label" style={{ marginTop: 14 }}>
-              Connected devices
-            </div>
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflow: "auto" }}>
-              {devices.length === 0 && (
-                <div className="content-subtitle">No devices yet.</div>
-              )}
-              {devices.map((dev) => (
-                <div
-                  key={dev.deviceId}
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 12,
-                    padding: 8,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <div style={{ fontSize: 13, color: "#e5e7eb" }}>{dev.deviceName}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{dev.deviceId}</div>
-                  </div>
-                  <button
-                    className="icon-button"
-                    style={{ width: "auto", padding: "4px 8px", border: "1px solid rgba(255,255,255,0.12)" }}
-                    onClick={() => onUnpair(dev.deviceId)}
-                  >
-                    Unpair
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {pending.length > 0 && (
-            <div>
-              <div className="nav-section-label" style={{ marginTop: 14 }}>
-                Pending requests
-              </div>
-              <div className="nav-tag-list" style={{ flexDirection: "column", gap: 8 }}>
-                {pending.map((req) => (
-                  <div
-                    key={req.deviceId}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: "12px",
-                      padding: "8px 10px",
-                      background: "rgba(255,255,255,0.02)",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{req.deviceName}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af", wordBreak: "break-all" }}>
-                      {req.deviceId}
-                    </div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button
-                        className="primary-button"
-                        style={{ padding: "4px 10px", fontSize: 11 }}
-                        onClick={() => onAccept(req)}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        className="icon-button"
-                        style={{ width: "auto", padding: "4px 10px", fontSize: 11, border: "1px solid rgba(255,255,255,0.1)" }}
-                        onClick={() => onReject(req)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+          {renderNavContent(false)}
         </aside>
 
         <section className="surface content-pane">
@@ -427,9 +474,6 @@ export function ClipboardApp({
             <div className="content-title-block">
               <div className="content-title">
                 History
-                <span className="badge-pill">
-                  {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
-                </span>
               </div>
               <div className="content-subtitle">
                 Source and time reflected in each card. Use filters to slice by device or range.
@@ -438,22 +482,91 @@ export function ClipboardApp({
 
             <div className="content-filters">
               <div className="segmented">
-                <button className="active">All</button>
-                <button disabled>Pinned</button>
-                <button disabled>From others</button>
+                <button
+                  className={filterMode === "all" ? "active" : ""}
+                  onClick={() => setFilterMode("all")}
+                >
+                  All
+                </button>
+                <button
+                  className={filterMode === "pinned" ? "active" : ""}
+                  onClick={() => setFilterMode("pinned")}
+                >
+                  Pinned
+                </button>
               </div>
 
-              <button className="text-button" onClick={() => setTimeFilter("24h")}>
-                <span className="icon">schedule</span>
-                24h
-              </button>
+              <div className="time-filter-wrap">
+                <button
+                  className="text-button"
+                  onClick={() => setTimeMenuOpen((v) => !v)}
+                >
+                  <span className="icon">schedule</span>
+                  {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
+                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                    expand_more
+                  </span>
+                </button>
+                {timeMenuOpen && (
+                  <div className="time-menu">
+                    {timeOptions.map((t) => (
+                      <button
+                        key={t.value}
+                        className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
+                        onClick={() => {
+                          setTimeFilter(t.value);
+                          setTimeMenuOpen(false);
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              <button className="text-button" onClick={() => setSourceFilter("all")}>
-                <span className="icon">filter_alt</span>
-                Source
-              </button>
+              <div className="source-filter-wrap">
+                <button
+                  className="text-button"
+                  onClick={() => setSourceMenuOpen((v) => !v)}
+                >
+                  <span className="icon">filter_alt</span>
+                  {sourceFilter === "all"
+                    ? "Source: All"
+                    : sourceFilter === "local"
+                    ? "Source: Local"
+                    : sourceFilter === "remote"
+                    ? "Source: Remote"
+                    : deviceNameMap.get(sourceFilter) || sourceFilter}
+                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                    expand_more
+                  </span>
+                </button>
+                {sourceMenuOpen && (
+                  <div className="time-menu">
+                    {sources.map((src) => (
+                      <button
+                        key={src}
+                        className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
+                        onClick={() => {
+                          setSourceFilter(src);
+                          setSourceMenuOpen(false);
+                        }}
+                      >
+                        {src === "all"
+                          ? "All sources"
+                          : src === "local"
+                          ? "Local"
+                          : src === "remote"
+                          ? "Remote"
+                          : deviceNameMap.get(src) || src}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              <button className="text-button" onClick={() => setSearch("")}>
+              <button className="text-button" onClick={clearAllHistory}>
                 <span className="icon">delete_sweep</span>
                 Clear
               </button>
@@ -472,14 +585,34 @@ export function ClipboardApp({
               const label = deviceNameMap.get(clip.senderId) || clip.senderId;
               const timeLabel = formatTime(clip.timestamp);
               const isLocal = clip.senderId === identity?.deviceId;
+              const pinned = pinnedSet.has(clip.id);
+              const pinIconName = pinned ? "keep" : "push_pin";
               return (
-                <article className="history-card" key={clip.id} style={{ position: "relative" }}>
+                <article
+                  className={`history-card ${removingIds.has(clip.id) ? "leaving" : ""}`}
+                  key={clip.id}
+                  style={{ position: "relative" }}
+                >
                   <div className="history-card-header">
-                    <div className="history-chip">
-                      <span className="chip-dot"></span>
-                      From: {label}
-                    </div>
+                      <div className="history-chip">
+                        <span className="chip-dot"></span>
+                        From: {label}
+                      </div>
                     <div className="history-actions">
+                      <button
+                        className="icon-button"
+                        title={pinned ? "Unpin" : "Pin"}
+                        onClick={() => togglePin(clip.id)}
+                        style={{
+                          transform: pinned ? "rotate(18deg)" : "none",
+                        }}
+                      >
+                        <span
+                          className={`icon pin-icon ${pinned ? "filled" : "outlined"}`}
+                        >
+                          {pinIconName}
+                        </span>
+                      </button>
                       <div className="history-menu">
                         <button
                           className="icon-button"
@@ -495,17 +628,7 @@ export function ClipboardApp({
                               style={{ width: "100%", justifyContent: "flex-start" }}
                               onClick={() => {
                                 setOpenMenuId(null);
-                                // TODO: pin action hook
-                              }}
-                            >
-                              <span className="icon">push_pin</span>Pin
-                            </button>
-                            <button
-                              className="text-button"
-                              style={{ width: "100%", justifyContent: "flex-start" }}
-                              onClick={() => {
-                                setOpenMenuId(null);
-                                onDeleteClip(clip.id);
+                                handleDelete(clip.id);
                               }}
                             >
                               <span className="icon">delete</span>Delete
@@ -549,46 +672,11 @@ export function ClipboardApp({
         </section>
       </main>
 
-      {showNav && (
+      {showNav && isNarrow && (
         <div className="nav-overlay" onClick={() => setShowNav(false)}>
-          <div className="nav-drawer" onClick={(e) => e.stopPropagation()}>
-            <aside className="nav-pane">
-              <div className="nav-header">
-                <div className="nav-title">Peers</div>
-                <button className="icon-button" onClick={() => setShowNav(false)}>
-                  <span className="icon">close</span>
-                </button>
-              </div>
-              <div className="peer-list">
-                {identity && (
-                  <div className="peer-item active">
-                    <div className="peer-avatar">L</div>
-                    <div className="peer-meta">
-                      <div className="peer-name">{identity.deviceName || "Local device"}</div>
-                      <div className="peer-sub">This computer</div>
-                    </div>
-                    <div className="peer-indicator">
-                      <span className="icon" style={{ fontSize: 14 }}>
-                        laptop_mac
-                      </span>
-                    </div>
-                  </div>
-                )}
-                {devices.map((dev) => (
-                  <div className="peer-item" key={dev.deviceId}>
-                    <div className="peer-avatar">{dev.deviceName?.[0] || "D"}</div>
-                    <div className="peer-meta">
-                      <div className="peer-name">{dev.deviceName}</div>
-                      <div className="peer-sub">Paired · {formatTime(dev.createdAt)}</div>
-                    </div>
-                    <div className="peer-indicator">
-                      <span className="icon" style={{ fontSize: 14 }}>
-                        smartphone
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div className="nav-drawer nav-drawer-open" onClick={(e) => e.stopPropagation()}>
+            <aside className="surface nav-pane drawer-pane">
+              {renderNavContent(true)}
             </aside>
           </div>
         </div>

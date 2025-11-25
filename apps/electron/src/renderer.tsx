@@ -9,6 +9,7 @@ type AppState = {
   pending: PendingRequest[];
   peers: string[];
   identity: Identity | null;
+  pinnedIds?: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
     lastClipboardPreview: string | null;
@@ -22,6 +23,7 @@ const initialState: AppState = {
   pending: [],
   peers: [],
   identity: null,
+  pinnedIds: [],
 };
 
 const App = () => {
@@ -67,12 +69,15 @@ const App = () => {
         pending={state.pending}
         peers={state.peers}
         identity={state.identity}
+        pinnedIds={state.pinnedIds || []}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
         onUnpair={(id) => window.clipp.unpairDevice(id)}
         onAccept={(dev) => window.clipp.acceptRequest(dev)}
         onReject={(dev) => window.clipp.rejectRequest(dev)}
         onPairText={handlePairText}
         onRequestQr={() => window.clipp.getIdentity()}
+        onTogglePin={(id) => window.clipp.togglePin(id)}
+        onClearAll={() => window.clipp.clearHistory()}
       />
     </div>
   );

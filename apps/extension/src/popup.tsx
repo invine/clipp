@@ -11,6 +11,7 @@ const Popup = () => {
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [peers, setPeers] = useState<string[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const lastClipboardRef = useRef("");
 
   useEffect(() => {
@@ -127,6 +128,7 @@ const Popup = () => {
         pending={pending}
         peers={peers}
         identity={identity}
+        pinnedIds={pinnedIds}
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
         onAccept={(dev) =>
@@ -148,6 +150,19 @@ const Popup = () => {
         }
         onPairText={handlePairingText}
         onRequestQr={handleRequestQr}
+        onTogglePin={(id) => {
+          setPinnedIds((prev) => {
+            const set = new Set(prev);
+            if (set.has(id)) set.delete(id);
+            else set.add(id);
+            return Array.from(set);
+          });
+        }}
+        onClearAll={() => {
+          setClips([]);
+          setPinnedIds([]);
+          chrome.runtime.sendMessage({ type: "clearHistory" }, () => {});
+        }}
       />
     </div>
   );

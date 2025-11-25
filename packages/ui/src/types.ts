@@ -29,3 +29,5 @@ export type PendingRequest = Device;
 export type PeerState = {
   peers: string[];
 };
+
+export type PinnedState = string[];
