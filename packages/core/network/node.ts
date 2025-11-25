@@ -15,6 +15,7 @@ import { kadDHT } from "@libp2p/kad-dht";
 import { identify } from "@libp2p/identify";
 import { ping } from "@libp2p/ping";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants";
+import { FaultTolerance } from "@libp2p/interface-transport";
 
 function hasWebRTCSupport() {
   return (
@@ -83,6 +84,9 @@ export async function createClipboardNode(
       listen: listenAddrs,
     },
     transports,
+    transportManager: {
+      faultTolerance: FaultTolerance.NO_FATAL,
+    },
     connectionEncrypters: [noise()],
     // Type cast required to satisfy older StreamMuxerFactory shape in libp2p typings
     streamMuxers: [yamux() as any],

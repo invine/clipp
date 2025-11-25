@@ -1,5 +1,5 @@
 import { createWatcher } from "./watcher";
-import { createWriter } from "./writer";
+import { ClipboardWriteFn, createWriter } from "./writer";
 import { normalizeClipboardContent } from "./normalize";
 import { MemoryHistoryStore } from "../history/store";
 import { Clip } from "../models/Clip";
@@ -28,20 +28,28 @@ export interface ClipboardService {
 interface Options {
   pollIntervalMs?: number;
   sendClip?: (clip: Clip) => Promise<void>;
+  readText?: () => Promise<string>;
+  writeText?: ClipboardWriteFn;
 }
 
 export function createClipboardService(
-  platform: "chrome" | "android",
+  platform: "chrome" | "android" | "custom",
   options: Options = {}
 ): ClipboardService {
   const read =
-    platform === "chrome"
+    options.readText ||
+    (platform === "chrome"
       ? chromePlatform.readText
-      : androidPlatform.readText;
+      : platform === "android"
+      ? androidPlatform.readText
+      : async () => "");
   const write =
-    platform === "chrome"
+    options.writeText ||
+    (platform === "chrome"
       ? chromePlatform.writeText
-      : androidPlatform.writeText;
+      : platform === "android"
+      ? androidPlatform.writeText
+      : async () => {});
 
   const watcher = createWatcher(read, options.pollIntervalMs ?? 2000);
   const writer = createWriter(write);

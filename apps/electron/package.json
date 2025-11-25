@@ -1,0 +1,26 @@
+{
+  "name": "clipp-electron",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev:renderer": "vite --config vite.config.ts",
+    "dev:electron": "npm run build:main && VITE_DEV_SERVER_URL=http://localhost:4173 electron .",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "node esbuild.preload.mjs && node esbuild.main.mjs",
+    "build:renderer": "vite build",
+    "typecheck:main": "tsc -p tsconfig.main.json --noEmit"
+  },
+  "dependencies": {
+    "@koush/wrtc": "^0.5.3",
+    "better-sqlite3": "^11.10.0",
+    "electron": "^31.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "esbuild": "^0.25.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}
