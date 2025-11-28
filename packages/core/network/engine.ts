@@ -1,8 +1,8 @@
-import { createClipboardNode } from "./node";
-import { EventBus } from "./events";
-import type { ClipboardMessage } from "./types";
-import { createTrustManager, MemoryStorageBackend, TrustManager } from "../trust";
-import * as log from "../logger";
+import { createClipboardNode } from "./node.js";
+import { EventBus } from "./events.js";
+import type { ClipboardMessage } from "./types.js";
+import { createTrustManager, MemoryStorageBackend, TrustManager } from "../trust/index.js";
+import * as log from "../logger.js";
 
 export interface MessagingLayer {
   start(): Promise<void>;

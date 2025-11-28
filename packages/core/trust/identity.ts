@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
-import { StorageBackend } from './trusted-devices'
-import { DEFAULT_WEBRTC_STAR_RELAYS } from '../network/constants'
+import { StorageBackend } from './trusted-devices.js'
+import { DEFAULT_WEBRTC_STAR_RELAYS } from '../network/constants.js'
 
 export interface DeviceIdentity {
   deviceId: string

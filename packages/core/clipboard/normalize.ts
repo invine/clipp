@@ -1,8 +1,8 @@
 /**
  * Clipboard normalization and type detection utilities.
  */
-import { Clip } from "../models/Clip";
-import { ClipType } from "../models/enums";
+import { Clip } from "../models/Clip.js";
+import { ClipType } from "../models/enums.js";
 import { v4 as uuidv4 } from "uuid";
 
 // Helper: Remove data URI prefix from base64

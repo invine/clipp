@@ -6,10 +6,10 @@
  * The harness starts two messaging layers, trusts each other, and sends a sample clip.
  * It will no-op if WebRTC is unavailable.
  */
-import { createMessagingLayer } from "../../packages/core/network/engine";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../packages/core/network/constants";
-import { createTrustManager, MemoryStorageBackend } from "../../packages/core/trust";
-import { normalizeClipboardContent } from "../../packages/core/clipboard/normalize";
+import { createMessagingLayer } from "../../packages/core/network/engine.ts";
+import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../packages/core/network/constants.ts";
+import { createTrustManager, MemoryStorageBackend } from "../../packages/core/trust/index.ts";
+import { normalizeClipboardContent } from "../../packages/core/clipboard/normalize.ts";
 
 async function boot(label: string) {
   const trust = createTrustManager(new MemoryStorageBackend());
@@ -19,9 +19,42 @@ async function boot(label: string) {
   return { trust, messaging, identity, label };
 }
 
+async function waitForPeer(messaging: any, label: string, timeoutMs = 5000): Promise<string> {
+  const existing = messaging.getConnectedPeers?.();
+  if (existing && existing.length) return existing[0];
+  return await new Promise((resolve, reject) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        reject(new Error(`[${label}] timed out waiting for peer`));
+      }
+    }, timeoutMs);
+    messaging.onPeerConnected?.((pid: string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(pid);
+    });
+  });
+}
+
+async function ensureWebRTC() {
+  if (typeof (globalThis as any).RTCPeerConnection !== "undefined") return true;
+  try {
+    const wrtc = await import("@koush/wrtc");
+    (globalThis as any).RTCPeerConnection = wrtc.RTCPeerConnection;
+    (globalThis as any).RTCSessionDescription = wrtc.RTCSessionDescription;
+    (globalThis as any).RTCIceCandidate = wrtc.RTCIceCandidate;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
-  if (typeof (globalThis as any).RTCPeerConnection === "undefined") {
-    console.warn("Harness requires WebRTC (browser or Node with `wrtc`).");
+  if (!(await ensureWebRTC())) {
+    console.warn("Harness requires WebRTC. Install @koush/wrtc or run in a browser-like runtime.");
     return;
   }
 
@@ -34,10 +67,11 @@ async function main() {
   a.messaging.onMessage((msg) => console.log("[A] received", msg.type, "from", msg.from));
   b.messaging.onMessage((msg) => console.log("[B] received", msg.type, "from", msg.from));
 
+  const targetPeerId = await waitForPeer(a.messaging, "A");
+
   const clip = normalizeClipboardContent("hello from A", a.identity.deviceId);
   if (clip) {
-    const target = b.identity.multiaddrs?.[0] || b.identity.deviceId;
-    await a.messaging.sendMessage(target, {
+    await a.messaging.sendMessage(targetPeerId, {
       type: "CLIP",
       from: a.identity.deviceId,
       clip,

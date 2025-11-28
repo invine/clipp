@@ -1,6 +1,6 @@
-import { TypedEventEmitter } from './events'
-import { DeviceIdentity, getLocalIdentity } from './identity'
-import * as log from '../logger'
+import { TypedEventEmitter } from './events.js'
+import { DeviceIdentity, getLocalIdentity } from './identity.js'
+import * as log from '../logger.js'
 
 export interface TrustedDevice extends DeviceIdentity {
   lastSeen?: number

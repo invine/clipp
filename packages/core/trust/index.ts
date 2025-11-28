@@ -1,3 +1,3 @@
-export * from './identity'
-export * from './trusted-devices'
-export * from './events'
+export * from './identity.js'
+export * from './trusted-devices.js'
+export * from './events.js'

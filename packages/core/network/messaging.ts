@@ -1,12 +1,12 @@
 /**
  * MessagingLayer implementation for clipboard sync over libp2p.
  */
-import { createClipboardNode } from "./node";
-import { EventBus } from "./events";
-import type { ClipboardMessage } from "./types";
-import type { Clip } from "../models/Clip";
-import { createTrustManager, MemoryStorageBackend } from "../trust";
-import * as log from "../logger";
+import { createClipboardNode } from "./node.js";
+import { EventBus } from "./events.js";
+import type { ClipboardMessage } from "./types.js";
+import type { Clip } from "../models/Clip.js";
+import { createTrustManager, MemoryStorageBackend } from "../trust/index.js";
+import * as log from "../logger.js";
 
 const PROTOCOL = "/clipboard/1.0.0";
 

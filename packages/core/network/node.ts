@@ -14,7 +14,7 @@ import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { kadDHT } from "@libp2p/kad-dht";
 import { identify } from "@libp2p/identify";
 import { ping } from "@libp2p/ping";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants";
+import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants.js";
 import { FaultTolerance } from "@libp2p/interface-transport";
 
 function hasWebRTCSupport() {
