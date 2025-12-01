@@ -48,3 +48,10 @@ export async function getLocalIdentity(storage: StorageBackend): Promise<DeviceI
   await storage.set(ID_KEY, identity)
   return identity
 }
+
+export async function setLocalIdentityName(storage: StorageBackend, deviceName: string): Promise<DeviceIdentity> {
+  const identity = await getLocalIdentity(storage)
+  identity.deviceName = deviceName
+  await storage.set(ID_KEY, identity)
+  return identity
+}

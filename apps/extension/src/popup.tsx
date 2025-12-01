@@ -120,6 +120,15 @@ const Popup = () => {
     });
   }
 
+  async function handleRenameIdentity(name: string): Promise<Identity | null> {
+    return await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "renameLocalIdentity", name }, (res) => {
+        if (res?.identity) setIdentity(res.identity);
+        resolve(res?.identity || null);
+      });
+    });
+  }
+
   return (
     <div
       style={{ width: "100%", height: "100%" }}
@@ -166,6 +175,7 @@ const Popup = () => {
           setPinnedIds([]);
           chrome.runtime.sendMessage({ type: "clearHistory" }, () => {});
         }}
+        onRenameIdentity={handleRenameIdentity}
       />
     </div>
   );

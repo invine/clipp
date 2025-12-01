@@ -1,5 +1,5 @@
 import { TypedEventEmitter } from './events.js'
-import { DeviceIdentity, getLocalIdentity } from './identity.js'
+import { DeviceIdentity, getLocalIdentity, setLocalIdentityName } from './identity.js'
 import * as log from '../logger.js'
 
 export interface TrustedDevice extends DeviceIdentity {
@@ -37,6 +37,7 @@ const PENDING_TTL = 10 * 60 * 1000
 
 export interface TrustManager {
   getLocalIdentity(): Promise<DeviceIdentity>
+  renameLocalIdentity(name: string): Promise<DeviceIdentity>
   list(): Promise<TrustedDevice[]>
   isTrusted(deviceId: string): Promise<boolean>
   verifyPublicKey(deviceId: string, pubkey: string): Promise<boolean>
@@ -145,5 +146,12 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     events.on(event, cb)
   }
 
-  return { getLocalIdentity: getIdentity, list, isTrusted, verifyPublicKey, add, remove, handleTrustRequest, on }
+  async function renameLocalIdentity(name: string): Promise<DeviceIdentity> {
+    const trimmed = (name || '').trim()
+    if (!trimmed) return await getIdentity()
+    identity = await setLocalIdentityName(storage, trimmed)
+    return identity
+  }
+
+  return { getLocalIdentity: getIdentity, renameLocalIdentity, list, isTrusted, verifyPublicKey, add, remove, handleTrustRequest, on }
 }

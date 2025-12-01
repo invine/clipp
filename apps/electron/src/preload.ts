@@ -29,6 +29,7 @@ const api = {
   shareNow: () => ipcRenderer.invoke("clipp:share-now"),
   openQrWindow: () => ipcRenderer.invoke("clipp:open-qr-window"),
   togglePin: (id: string) => ipcRenderer.invoke("clipp:toggle-pin", id),
+  renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
   onUpdate: (cb: (state: AppState) => void) => {
     const listener = (_event: any, state: AppState) => cb(state);
     ipcRenderer.on("clipp:update", listener);

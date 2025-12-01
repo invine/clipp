@@ -52,6 +52,7 @@ export type ClipboardAppProps = {
   onRequestQr(): Promise<Identity | null>;
   onTogglePin(id: string): void | Promise<void>;
   onClearAll(): void | Promise<void>;
+  onRenameIdentity?(name: string): Promise<Identity | null>;
 };
 
 export function ClipboardApp({
@@ -69,6 +70,7 @@ export function ClipboardApp({
   onRequestQr,
   onTogglePin,
   onClearAll,
+  onRenameIdentity,
 }: ClipboardAppProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -85,6 +87,10 @@ export function ClipboardApp({
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [userToggledFilters, setUserToggledFilters] = useState(false);
+  const [editingLocalName, setEditingLocalName] = useState(false);
+  const [localNameDraft, setLocalNameDraft] = useState("");
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -120,6 +126,18 @@ export function ClipboardApp({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    function handleHeight() {
+      const shouldCollapse = window.innerHeight < 760;
+      if (!userToggledFilters) {
+        setFiltersCollapsed(shouldCollapse);
+      }
+    }
+    handleHeight();
+    window.addEventListener("resize", handleHeight);
+    return () => window.removeEventListener("resize", handleHeight);
+  }, [userToggledFilters]);
 
   const deviceNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -201,6 +219,38 @@ export function ClipboardApp({
     Promise.resolve(onClearAll()).finally(() => setRemovingIds(new Set()));
   }
 
+  function toggleFilters() {
+    setFiltersCollapsed((v) => !v);
+    setUserToggledFilters(true);
+  }
+
+  function beginEditLocalName() {
+    if (!identity) return;
+    setLocalNameDraft(identity.deviceName || "");
+    setEditingLocalName(true);
+  }
+
+  useEffect(() => {
+    if (!editingLocalName && identity) {
+      setLocalNameDraft(identity.deviceName || "");
+    }
+  }, [identity, editingLocalName]);
+
+  function saveLocalName() {
+    const trimmed = localNameDraft.trim();
+    if (!identity) return;
+    if (!trimmed) {
+      setEditingLocalName(false);
+      return;
+    }
+    const rename = onRenameIdentity ? onRenameIdentity(trimmed) : Promise.resolve(null);
+    rename
+      .catch(() => {})
+      .finally(() => {
+        setEditingLocalName(false);
+      });
+  }
+
   function copyClip(text: string) {
     navigator.clipboard.writeText(text).catch(() => {});
   }
@@ -261,18 +311,56 @@ export function ClipboardApp({
 
         <div className="peer-list">
           {identity && (
-            <div className="peer-item active">
-              <div className="peer-avatar">L</div>
-              <div className="peer-meta">
-                <div className="peer-name">{identity.deviceName || "Local device"}</div>
-                <div className="peer-sub">This computer</div>
+            <>
+              <div className="peer-item active">
+                <div className="peer-avatar" style={{ minWidth: 32 }}>L</div>
+                <div className="peer-meta">
+                  <div className="peer-name-row">
+                    {editingLocalName ? (
+                      <input
+                        className="peer-name-input"
+                        value={localNameDraft}
+                        onChange={(e) => setLocalNameDraft(e.target.value)}
+                        onBlur={saveLocalName}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveLocalName();
+                          if (e.key === "Escape") setEditingLocalName(false);
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="peer-name">{identity.deviceName || "Local device"}</div>
+                    )}
+                    <button
+                      className="icon-button"
+                      style={{ width: 18, height: 18 }}
+                      title="Rename this device"
+                      onClick={editingLocalName ? saveLocalName : beginEditLocalName}
+                    >
+                      <span
+                        className="icon"
+                        style={{ fontSize: 12, lineHeight: 1 }}
+                      >
+                        {editingLocalName ? "check" : "edit"}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="peer-sub">{identity.deviceId}</div>
+                </div>
+                <div className="peer-indicator">
+                  <span className="icon" style={{ fontSize: 14 }}>
+                    laptop_mac
+                  </span>
+                </div>
               </div>
-              <div className="peer-indicator">
-                <span className="icon" style={{ fontSize: 14 }}>
-                  laptop_mac
-                </span>
-              </div>
-            </div>
+              <button
+                className="text-button"
+                style={{ marginTop: 4, marginLeft: 6, alignSelf: "flex-start" }}
+                onClick={handleShowQr}
+              >
+                <span className="icon">qr_code</span>Show my QR
+              </button>
+            </>
           )}
 
           {devices.map((dev) => (
@@ -365,9 +453,6 @@ export function ClipboardApp({
               Add
             </button>
           </div>
-          <button className="text-button" style={{ marginTop: 6 }} onClick={handleShowQr}>
-            <span className="icon">qr_code</span>Show my QR
-          </button>
         </div>
 
         <div>
@@ -471,113 +556,119 @@ export function ClipboardApp({
 
         <section className="surface content-pane">
           <header className="content-header">
-            <div className="content-title-block">
-              <div className="content-title">
-                History
-              </div>
-              <div className="content-subtitle">
-                Source and time reflected in each card. Use filters to slice by device or range.
-              </div>
+          <div className="content-title-block">
+            <div className="content-title">
+              History
             </div>
+          </div>
 
-            <div className="content-filters">
-              <div className="segmented">
-                <button
-                  className={filterMode === "all" ? "active" : ""}
-                  onClick={() => setFilterMode("all")}
-                >
-                  All
-                </button>
-                <button
-                  className={filterMode === "pinned" ? "active" : ""}
-                  onClick={() => setFilterMode("pinned")}
-                >
-                  Pinned
-                </button>
-              </div>
+          <div className="content-filter-toggle">
+            <button className="text-button" onClick={toggleFilters}>
+              <span className="icon">{filtersCollapsed ? "unfold_more" : "unfold_less"}</span>
+              {filtersCollapsed ? "Show filters" : "Hide filters"}
+            </button>
+          </div>
+        </header>
 
-              <div className="time-filter-wrap">
-                <button
-                  className="text-button"
-                  onClick={() => setTimeMenuOpen((v) => !v)}
-                >
-                  <span className="icon">schedule</span>
-                  {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
-                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
-                    expand_more
-                  </span>
-                </button>
-                {timeMenuOpen && (
-                  <div className="time-menu">
-                    {timeOptions.map((t) => (
-                      <button
-                        key={t.value}
-                        className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
-                        onClick={() => {
-                          setTimeFilter(t.value);
-                          setTimeMenuOpen(false);
-                        }}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="source-filter-wrap">
-                <button
-                  className="text-button"
-                  onClick={() => setSourceMenuOpen((v) => !v)}
-                >
-                  <span className="icon">filter_alt</span>
-                  {sourceFilter === "all"
-                    ? "Source: All"
-                    : sourceFilter === "local"
-                    ? "Source: Local"
-                    : sourceFilter === "remote"
-                    ? "Source: Remote"
-                    : deviceNameMap.get(sourceFilter) || sourceFilter}
-                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
-                    expand_more
-                  </span>
-                </button>
-                {sourceMenuOpen && (
-                  <div className="time-menu">
-                    {sources.map((src) => (
-                      <button
-                        key={src}
-                        className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
-                        onClick={() => {
-                          setSourceFilter(src);
-                          setSourceMenuOpen(false);
-                        }}
-                      >
-                        {src === "all"
-                          ? "All sources"
-                          : src === "local"
-                          ? "Local"
-                          : src === "remote"
-                          ? "Remote"
-                          : deviceNameMap.get(src) || src}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <button className="text-button" onClick={clearAllHistory}>
-                <span className="icon">delete_sweep</span>
-                Clear
+        {!filtersCollapsed && (
+          <div className="content-filters">
+            <div className="segmented">
+              <button
+                className={filterMode === "all" ? "active" : ""}
+                onClick={() => setFilterMode("all")}
+              >
+                All
+              </button>
+              <button
+                className={filterMode === "pinned" ? "active" : ""}
+                onClick={() => setFilterMode("pinned")}
+              >
+                Pinned
               </button>
             </div>
-          </header>
 
-          <div className="history-grid">
-            {filteredClips.length === 0 && (
-              <article className="history-card" style={{ minHeight: 120, maxHeight: 120 }}>
-                <div className="history-body">
-                  <div className="history-text">No clips yet. Copy something!</div>
+            <div className="time-filter-wrap">
+              <button
+                className="text-button"
+                onClick={() => setTimeMenuOpen((v) => !v)}
+              >
+                <span className="icon">schedule</span>
+                {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
+                <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                  expand_more
+                </span>
+              </button>
+              {timeMenuOpen && (
+                <div className="time-menu">
+                  {timeOptions.map((t) => (
+                    <button
+                      key={t.value}
+                      className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
+                      onClick={() => {
+                        setTimeFilter(t.value);
+                        setTimeMenuOpen(false);
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="source-filter-wrap">
+              <button
+                className="text-button"
+                onClick={() => setSourceMenuOpen((v) => !v)}
+              >
+                <span className="icon">filter_alt</span>
+                {sourceFilter === "all"
+                  ? "Source: All"
+                  : sourceFilter === "local"
+                  ? "Source: Local"
+                  : sourceFilter === "remote"
+                  ? "Source: Remote"
+                  : deviceNameMap.get(sourceFilter) || sourceFilter}
+                <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                  expand_more
+                </span>
+              </button>
+              {sourceMenuOpen && (
+                <div className="time-menu">
+                  {sources.map((src) => (
+                    <button
+                      key={src}
+                      className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
+                      onClick={() => {
+                        setSourceFilter(src);
+                        setSourceMenuOpen(false);
+                      }}
+                    >
+                      {src === "all"
+                        ? "All sources"
+                        : src === "local"
+                        ? "Local"
+                        : src === "remote"
+                        ? "Remote"
+                        : deviceNameMap.get(src) || src}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button className="text-button" onClick={clearAllHistory}>
+              <span className="icon">delete_sweep</span>
+              Clear
+            </button>
+          </div>
+        )}
+
+        <div className="history-grid">
+          {filteredClips.length === 0 && (
+            <article className="history-card" style={{ minHeight: 120, maxHeight: 120 }}>
+              <div className="history-body">
+                <div className="history-text">No clips yet. Copy something!</div>
                 </div>
               </article>
             )}

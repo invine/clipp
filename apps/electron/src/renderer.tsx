@@ -78,6 +78,7 @@ const App = () => {
         onRequestQr={() => window.clipp.getIdentity()}
         onTogglePin={(id) => window.clipp.togglePin(id)}
         onClearAll={() => window.clipp.clearHistory()}
+        onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
       />
     </div>
   );

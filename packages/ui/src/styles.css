@@ -30,18 +30,26 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: "Roboto", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: radial-gradient(circle at top, #202333 0, #101114 60%);
   color: var(--md-sys-color-on-surface);
+  min-height: 100vh;
 }
 
 .app-shell {
   display: grid;
   grid-template-rows: auto 1fr;
   grid-template-columns: 100%;
-  height: 100vh;
+  height: 100%;
+  min-height: 720px;
   color: var(--md-sys-color-on-surface);
 }
 
@@ -212,10 +220,14 @@ body {
 .app-main {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  grid-auto-rows: 1fr;
   gap: var(--md-spacing-xl);
   padding: var(--md-spacing-xl);
   padding-top: var(--md-spacing-lg);
   height: 100%;
+  min-height: 0;
+  align-items: stretch;
   overflow: hidden;
 }
 
@@ -232,6 +244,7 @@ body {
   padding: var(--md-spacing-lg);
   gap: var(--md-spacing-lg);
   min-height: 0;
+  height: 100%;
 }
 
 .nav-header {
@@ -285,6 +298,7 @@ body {
 .peer-avatar {
   width: 28px;
   height: 28px;
+  min-width: 28px;
   border-radius: 14px;
   background: linear-gradient(135deg, #4f46e5, #a855f7);
   display: inline-flex;
@@ -317,6 +331,30 @@ body {
 .peer-name {
   font-size: 13px;
   font-weight: 500;
+}
+
+.peer-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  width: 100%;
+}
+
+.peer-name-input {
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px 6px;
+  min-width: 120px;
+  max-width: 100%;
+  width: 100%;
+}
+
+.peer-name-row .icon-button {
+  flex-shrink: 0;
 }
 
 .peer-sub {
@@ -392,11 +430,14 @@ body {
 }
 
 .content-pane {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
   padding: var(--md-spacing-lg);
   gap: var(--md-spacing-lg);
+  flex: 1;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .content-header {
@@ -421,9 +462,10 @@ body {
   gap: 8px;
 }
 
-.content-subtitle {
-  font-size: 12px;
-  color: #9ca3af;
+.content-filter-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
 }
 
 .badge-pill {
@@ -553,6 +595,10 @@ body {
   gap: var(--md-spacing-md);
   padding-bottom: var(--md-spacing-lg);
   overflow: auto;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
   transition: grid-template-columns 160ms ease, gap 160ms ease;
 }
 

@@ -193,6 +193,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === "renameLocalIdentity" && typeof msg.name === "string") {
+    trust.renameLocalIdentity(msg.name).then((id) => {
+      sendResponse({ identity: id });
+    });
+    return true;
+  }
   if (msg.type === "pairDevice" && msg.pairing) {
     trust.getLocalIdentity().then(async (id) => {
       const targetAddrs =

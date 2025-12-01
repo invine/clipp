@@ -379,6 +379,12 @@ async function bootstrap() {
     return id;
   });
 
+  ipcMain.handle("clipp:rename-identity", async (_evt, name: string) => {
+    const id = await trust.renameLocalIdentity(name);
+    await emitState();
+    return await ensureIdentityAddrs(id);
+  });
+
   ipcMain.handle("clipp:delete-clip", async (_evt, id: string) => {
     await history.remove(id);
     await emitState();
