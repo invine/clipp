@@ -134,6 +134,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === "clearHistory") {
+    history
+      .clearAll()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => {
+        log.warn("Failed to clear history", err);
+        sendResponse({ ok: false, error: "clear_failed" });
+      });
+    return true;
+  }
   if (msg.type === "searchClipHistory") {
     history.query({ search: msg.query || "" }).then((items) => {
       sendResponse({ clips: items.map((i) => i.clip) });

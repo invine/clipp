@@ -6,6 +6,7 @@ export interface HistoryStorageBackend {
   get(key: string): Promise<any>;
   getAll(): Promise<any[]>;
   remove(key: string): Promise<void>;
+  clearAll(): Promise<void>;
 }
 
 /**
@@ -25,5 +26,8 @@ export class InMemoryHistoryBackend implements HistoryStorageBackend {
   }
   async remove(key: string) {
     this.store.delete(key);
+  }
+  async clearAll() {
+    this.store.clear();
   }
 }

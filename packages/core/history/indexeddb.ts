@@ -60,4 +60,8 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
   async remove(key: string): Promise<void> {
     await runTx(this.dbPromise, "readwrite", (store) => store.delete(key));
   }
+
+  async clearAll(): Promise<void> {
+    await runTx(this.dbPromise, "readwrite", (store) => store.clear());
+  }
 }

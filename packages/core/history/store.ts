@@ -13,6 +13,7 @@ export interface ClipHistoryStore {
   pruneExpired(): Promise<void>;
   onNew(cb: (item: HistoryItem) => void): void;
   remove(id: string): Promise<void>;
+  clearAll(): Promise<void>;
 }
 
 export class MemoryHistoryStore implements ClipHistoryStore {
@@ -83,6 +84,10 @@ export class MemoryHistoryStore implements ClipHistoryStore {
 
   async remove(id: string): Promise<void> {
     await this.backend.remove(id);
+  }
+
+  async clearAll(): Promise<void> {
+    await this.backend.clearAll();
   }
 
   onNew(cb: (item: HistoryItem) => void): void {

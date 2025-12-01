@@ -88,4 +88,8 @@ export class SQLiteHistoryBackend implements HistoryStorageBackend {
   async remove(key: string): Promise<void> {
     this.db.prepare("DELETE FROM history WHERE id = ?").run(key);
   }
+
+  async clearAll(): Promise<void> {
+    this.db.prepare("DELETE FROM history").run();
+  }
 }

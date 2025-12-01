@@ -9,6 +9,10 @@ describe("ClipHistoryStore", () => {
     return { id, type: "text", content: `clip-${id}`, timestamp: ts, senderId: sender };
   }
 
+  beforeEach(async () => {
+    await history.clearAll();
+  });
+
   it("add -> retrieve", async () => {
     const now = Date.now();
     const clip = sampleClip(now, "a1");
@@ -43,5 +47,14 @@ describe("ClipHistoryStore", () => {
     const items = await history.query({});
     const count = items.filter((i) => i.clip.id === "d1").length;
     expect(count).toBe(1);
+  });
+
+  it("clears all clips", async () => {
+    const now = Date.now();
+    await history.add(sampleClip(now + 4, "c1"), sender, true);
+    await history.add(sampleClip(now + 5, "c2"), sender, true);
+    await history.clearAll();
+    const items = await history.query();
+    expect(items.length).toBe(0);
   });
 });
