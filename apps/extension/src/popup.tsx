@@ -121,7 +121,10 @@ const Popup = () => {
   }
 
   return (
-    <div className="w-[460px] h-[660px] overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-black">
+    <div
+      style={{ width: "100%", height: "100%" }}
+      className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-black"
+    >
       <ClipboardApp
         clips={clips}
         devices={devices}
