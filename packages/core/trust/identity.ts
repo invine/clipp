@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { StorageBackend } from './trusted-devices.js'
 import { DEFAULT_WEBRTC_STAR_RELAYS } from '../network/constants.js'
+import { deviceIdToPeerId } from '../network/peerId.js'
 
 export interface DeviceIdentity {
   deviceId: string
@@ -27,21 +28,30 @@ const ID_KEY = 'localDeviceIdentity'
 export async function getLocalIdentity(storage: StorageBackend): Promise<DeviceIdentity> {
   const existing = await storage.get<DeviceIdentity>(ID_KEY)
   if (existing) {
-    if (!Array.isArray(existing.multiaddrs) || existing.multiaddrs.length === 0) {
-      const derived = DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${existing.deviceId}`)
+    const peerId = await deviceIdToPeerId(existing.deviceId)
+    const needsRebuild =
+      !Array.isArray(existing.multiaddrs) ||
+      existing.multiaddrs.length === 0 ||
+      existing.multiaddrs.some((addr) => addr.includes(existing.deviceId) || !addr.includes(peerId));
+    if (needsRebuild) {
+      const derived = DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`)
       existing.multiaddrs = derived
-      existing.multiaddr = existing.multiaddr || derived[0] || `/p2p/${existing.deviceId}`
+      existing.multiaddr = derived[0] || `/p2p/${peerId}`
+      await storage.set(ID_KEY, existing)
+    } else if (!existing.multiaddr) {
+      existing.multiaddr = existing.multiaddrs[0]
       await storage.set(ID_KEY, existing)
     }
     return existing
   }
   const deviceId = uuidv4()
-  const multiaddrs = DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${deviceId}`)
+  const peerId = await deviceIdToPeerId(deviceId)
+  const multiaddrs = DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`)
   const identity: DeviceIdentity = {
     deviceId,
     deviceName: typeof navigator !== 'undefined' ? navigator.userAgent : 'Device',
     publicKey: await randomKey(),
-    multiaddr: multiaddrs[0] || `/p2p/${deviceId}`,
+    multiaddr: multiaddrs[0] || `/p2p/${peerId}`,
     multiaddrs,
     createdAt: Date.now(),
   }

@@ -35,6 +35,11 @@ const api = {
     ipcRenderer.on("clipp:update", listener);
     return () => ipcRenderer.removeListener("clipp:update", listener);
   },
+  onLog: (cb: (payload: { level: string; message: string; data?: any }) => void) => {
+    const listener = (_event: any, payload: any) => cb(payload);
+    ipcRenderer.on("clipp:log", listener);
+    return () => ipcRenderer.removeListener("clipp:log", listener);
+  },
 };
 
 contextBridge.exposeInMainWorld("clipp", api);

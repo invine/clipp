@@ -6,6 +6,8 @@ import { QRScanner } from "./components/QRScanner";
 import "./styles/tailwind-built.css";
 import { decode, encode } from "../../../packages/core/qr";
 import { encodePairing } from "../../../packages/core/pairing/encode";
+import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
+import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 
 const defaultTypes = { text: true, image: true, file: true };
 
@@ -44,14 +46,19 @@ const Options = () => {
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, async (res) => {
       if (!res?.identity) return;
+      const peerId = await deviceIdToPeerId(res.identity.deviceId);
       const multiaddrs =
         res.identity.multiaddrs ||
         (res.identity.multiaddr ? [res.identity.multiaddr] : []);
-      if (!multiaddrs.length) return;
+      const addrs =
+        multiaddrs && multiaddrs.length
+          ? multiaddrs
+          : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`);
+      if (!addrs.length) return;
       const info = {
         deviceId: res.identity.deviceId,
         deviceName: res.identity.deviceName,
-        multiaddrs,
+        multiaddrs: addrs,
         publicKey: res.identity.publicKey,
       };
       const img = await encode(info);

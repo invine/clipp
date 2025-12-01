@@ -8,13 +8,20 @@
     "clipboardRead",
     "clipboardWrite",
     "notifications",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background.ts",
     "type": "module"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["offscreen.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

@@ -462,10 +462,23 @@ body {
   gap: 8px;
 }
 
-.content-filter-toggle {
-  margin-left: auto;
+.content-header-actions {
   display: flex;
   align-items: center;
+  gap: var(--md-spacing-md);
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.content-filter-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.content-filter-toggle .text-button {
+  min-width: 96px;
+  justify-content: center;
 }
 
 .badge-pill {

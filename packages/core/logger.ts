@@ -1,6 +1,6 @@
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-let currentLevel: LogLevel = "info";
+let currentLevel: LogLevel = "debug";
 
 const order: Record<LogLevel, number> = {
   debug: 0,

@@ -4,6 +4,7 @@ import { Clip, Device, Identity, PendingRequest } from "./types";
 import { encode } from "../../core/qr";
 import { encodePairing } from "../../core/pairing/encode";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../core/network/constants";
+import { deviceIdToPeerId } from "../../core/network/peerId";
 import appLogo from "../../../clipp-electron-icons-bundle/clipp-purple-32.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
@@ -271,13 +272,14 @@ export function ClipboardApp({
       if (!(globalThis as any).Buffer) {
         (globalThis as any).Buffer = Buffer;
       }
+      const peerId = await deviceIdToPeerId(id.deviceId);
       const addrs =
         id.multiaddrs && id.multiaddrs.length
           ? id.multiaddrs
           : id.multiaddr
           ? [id.multiaddr]
-          : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${id.deviceId}`);
-      const safeAddrs = addrs.length ? addrs : [`/p2p/${id.deviceId}`];
+          : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`);
+      const safeAddrs = addrs.length ? addrs : [`/p2p/${peerId}`];
       const info = {
         deviceId: id.deviceId,
         deviceName: id.deviceName,
@@ -556,115 +558,109 @@ export function ClipboardApp({
 
         <section className="surface content-pane">
           <header className="content-header">
-          <div className="content-title-block">
-            <div className="content-title">
-              History
-            </div>
-          </div>
-
-          <div className="content-filter-toggle">
-            <button className="text-button" onClick={toggleFilters}>
-              <span className="icon">{filtersCollapsed ? "unfold_more" : "unfold_less"}</span>
-              {filtersCollapsed ? "Show filters" : "Hide filters"}
-            </button>
-          </div>
-        </header>
-
-        {!filtersCollapsed && (
-          <div className="content-filters">
-            <div className="segmented">
-              <button
-                className={filterMode === "all" ? "active" : ""}
-                onClick={() => setFilterMode("all")}
-              >
-                All
-              </button>
-              <button
-                className={filterMode === "pinned" ? "active" : ""}
-                onClick={() => setFilterMode("pinned")}
-              >
-                Pinned
-              </button>
+            <div className="content-title-block">
+              <div className="content-title">History</div>
             </div>
 
-            <div className="time-filter-wrap">
-              <button
-                className="text-button"
-                onClick={() => setTimeMenuOpen((v) => !v)}
-              >
-                <span className="icon">schedule</span>
-                {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
-                <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
-                  expand_more
-                </span>
-              </button>
-              {timeMenuOpen && (
-                <div className="time-menu">
-                  {timeOptions.map((t) => (
-                    <button
-                      key={t.value}
-                      className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
-                      onClick={() => {
-                        setTimeFilter(t.value);
-                        setTimeMenuOpen(false);
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="content-header-actions">
+              <div className="segmented">
+                <button
+                  className={filterMode === "all" ? "active" : ""}
+                  onClick={() => setFilterMode("all")}
+                >
+                  All
+                </button>
+                <button
+                  className={filterMode === "pinned" ? "active" : ""}
+                  onClick={() => setFilterMode("pinned")}
+                >
+                  Pinned
+                </button>
+              </div>
+
+              <div className="content-filter-toggle">
+                <button className="text-button" onClick={toggleFilters}>
+                  <span className="icon">{filtersCollapsed ? "unfold_more" : "unfold_less"}</span>
+                  {filtersCollapsed ? "More" : "Less"}
+                </button>
+              </div>
             </div>
+          </header>
 
-            <div className="source-filter-wrap">
-              <button
-                className="text-button"
-                onClick={() => setSourceMenuOpen((v) => !v)}
-              >
-                <span className="icon">filter_alt</span>
-                {sourceFilter === "all"
-                  ? "Source: All"
-                  : sourceFilter === "local"
-                  ? "Source: Local"
-                  : sourceFilter === "remote"
-                  ? "Source: Remote"
-                  : deviceNameMap.get(sourceFilter) || sourceFilter}
-                <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
-                  expand_more
-                </span>
+          {!filtersCollapsed && (
+            <div className="content-filters">
+              <div className="time-filter-wrap">
+                <button className="text-button" onClick={() => setTimeMenuOpen((v) => !v)}>
+                  <span className="icon">schedule</span>
+                  {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
+                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                    expand_more
+                  </span>
+                </button>
+                {timeMenuOpen && (
+                  <div className="time-menu">
+                    {timeOptions.map((t) => (
+                      <button
+                        key={t.value}
+                        className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
+                        onClick={() => {
+                          setTimeFilter(t.value);
+                          setTimeMenuOpen(false);
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="source-filter-wrap">
+                <button className="text-button" onClick={() => setSourceMenuOpen((v) => !v)}>
+                  <span className="icon">filter_alt</span>
+                  {sourceFilter === "all"
+                    ? "Source: All"
+                    : sourceFilter === "local"
+                    ? "Source: Local"
+                    : sourceFilter === "remote"
+                    ? "Source: Remote"
+                    : deviceNameMap.get(sourceFilter) || sourceFilter}
+                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                    expand_more
+                  </span>
+                </button>
+                {sourceMenuOpen && (
+                  <div className="time-menu">
+                    {sources.map((src) => (
+                      <button
+                        key={src}
+                        className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
+                        onClick={() => {
+                          setSourceFilter(src);
+                          setSourceMenuOpen(false);
+                        }}
+                      >
+                        {src === "all"
+                          ? "All sources"
+                          : src === "local"
+                          ? "Local"
+                          : src === "remote"
+                          ? "Remote"
+                          : deviceNameMap.get(src) || src}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button className="text-button" onClick={clearAllHistory}>
+                <span className="icon">delete_sweep</span>
+                Clear
               </button>
-              {sourceMenuOpen && (
-                <div className="time-menu">
-                  {sources.map((src) => (
-                    <button
-                      key={src}
-                      className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
-                      onClick={() => {
-                        setSourceFilter(src);
-                        setSourceMenuOpen(false);
-                      }}
-                    >
-                      {src === "all"
-                        ? "All sources"
-                        : src === "local"
-                        ? "Local"
-                        : src === "remote"
-                        ? "Remote"
-                        : deviceNameMap.get(src) || src}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
+          )}
 
-            <button className="text-button" onClick={clearAllHistory}>
-              <span className="icon">delete_sweep</span>
-              Clear
-            </button>
-          </div>
-        )}
-
-        <div className="history-grid">
+          <div className="history-grid">
           {filteredClips.length === 0 && (
             <article className="history-card" style={{ minHeight: 120, maxHeight: 120 }}>
               <div className="history-body">

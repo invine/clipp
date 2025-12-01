@@ -6,6 +6,7 @@ import { webRTC } from "@libp2p/webrtc";
 import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { webSockets } from "@libp2p/websockets";
 import { webRTCStar } from "@libp2p/webrtc-star";
+import { multiaddr } from "@multiformats/multiaddr";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { bootstrap } from "@libp2p/bootstrap";
@@ -57,7 +58,18 @@ export async function createClipboardNode(
     withTransportFilters(webSockets()),
     withTransportFilters(circuitRelayTransport()),
   ];
-  const listenAddrs: string[] = [];
+  const listenAddrs: any[] = [];
+
+  const relayMultiaddrs = relayAddresses
+    .map((a) => {
+      try {
+        return multiaddr(a);
+      } catch (err) {
+        console.warn("Invalid relay multiaddr skipped", a, err);
+        return null;
+      }
+    })
+    .filter(Boolean) as any[];
 
   if (hasWebRTCSupport()) {
     const wrtcStar = webRTCStar() as any;
@@ -66,7 +78,7 @@ export async function createClipboardNode(
       withTransportFilters(webRTC())
     );
     discovery.push(wrtcStar.discovery);
-    listenAddrs.push(...relayAddresses);
+    listenAddrs.push(...relayMultiaddrs);
   }
 
   if (bootstrapList.length > 0) {

@@ -2,4 +2,6 @@
 // This can be overridden by passing custom relay addresses to the networking layer.
 export const DEFAULT_WEBRTC_STAR_RELAYS = [
   "/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star",
+  "/dns4/wrtc-star2.sfo.dwebops.pub/tcp/443/wss/p2p-webrtc-star",
+  "/dns4/webrtc-star.discovery.libp2p.io/tcp/443/wss/p2p-webrtc-star",
 ];

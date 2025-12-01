@@ -48,14 +48,21 @@ const App = () => {
     }
     load();
     const unsubscribe = api.onUpdate((s) => !cancelled && setState(s));
+    const unlog = api.onLog?.((payload) => {
+      const { level, message, data } = payload || {};
+      const fn = level === "warn" ? console.warn : level === "error" ? console.error : console.info;
+      fn(`[clipp:${level || "info"}] ${message || ""}`, data || "");
+    });
     return () => {
       cancelled = true;
       if (unsubscribe) unsubscribe();
+      if (unlog) unlog();
     };
   }, []);
 
   async function handlePairText(txt: string) {
     const res = await window.clipp.pairFromText(txt);
+    console.info("[clipp] pairFromText result", res);
     if (res?.ok === false) {
       alert(res.error === "invalid" ? "Invalid pairing payload" : "Failed to reach device");
     }

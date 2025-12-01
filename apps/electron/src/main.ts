@@ -54,6 +54,7 @@ async function bootstrap() {
     normalizeMod,
     decodeMod,
     log,
+    { deviceIdToPeerId, deviceIdToPeerIdObject },
   ] = await Promise.all([
     import("../../../packages/core/network/engine.js"),
     import("../../../packages/core/history/store.js"),
@@ -62,19 +63,38 @@ async function bootstrap() {
     import("../../../packages/core/clipboard/normalize.js"),
     import("../../../packages/core/pairing/decode.js"),
     import("../../../packages/core/logger.js"),
+    import("../../../packages/core/network/peerId.js"),
   ]);
 
   const { createTrustManager, TrustedDevice } = trustMod as any;
   const { createClipboardService } = clipboardMod as any;
   const { normalizeClipboardContent } = normalizeMod as any;
   const { decodePairing } = decodeMod as any;
+  const logLevel = process.env.CLIPP_LOG_LEVEL || "debug";
+  // const logLevel = process.env.CLIPP_LOG_LEVEL || "info";
+  (log as any).setLogLevel?.(logLevel);
+  (log as any).info?.("Clipp Electron bootstrap", { logLevel });
 
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const trust = createTrustManager(kvStore);
-  const messaging = createMessagingLayer({ trustStore: trust });
+  const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
+  const peerId = await deviceIdToPeerIdObject(localIdentity.deviceId);
+  const messaging = createMessagingLayer({ trustStore: trust, peerId });
+  let messagingStarted = false;
+
+  async function ensureMessagingStarted() {
+    if (messagingStarted) return;
+    try {
+      await messaging.start();
+      messagingStarted = true;
+    } catch (err) {
+      messagingStarted = false;
+      throw err;
+    }
+  }
   let lastClipboardCheck: number | null = null;
   let lastClipboardPreview: string | null = null;
   let lastClipboardError: string | null = null;
@@ -98,8 +118,9 @@ async function bootstrap() {
     const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
       "../../../packages/core/network/constants.js"
     );
+    const peerId = await deviceIdToPeerId(id.deviceId);
     const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
-      (addr: string) => `${addr}/p2p/${id.deviceId}`
+      (addr: string) => `${addr}/p2p/${peerId}`
     );
     id.multiaddrs = derived;
     if (!id.multiaddr && derived[0]) {
@@ -108,17 +129,23 @@ async function bootstrap() {
     return id;
   }
 
-  function validMultiaddrs(addrs: string[]): Multiaddr[] {
+  function validMultiaddrs(
+    addrs: string[],
+    errors?: Array<{ addr: string; error: string }>
+  ): Multiaddr[] {
     const out: Multiaddr[] = [];
     for (const a of addrs) {
       try {
         const ma = multiaddr(a);
-        // ensure it has a peer component we can dial
-        if (ma.getPeerId()) {
-          out.push(ma);
-        }
-      } catch {
-        // ignore invalid addr
+        // accept any parseable addr; some peer ids are UUIDs, not CIDv1
+        out.push(ma);
+      } catch (err) {
+        const msg = (err as any)?.message || "parse_error";
+        (log as any).debug?.("Invalid multiaddr parse error", {
+          addr: a,
+          error: msg,
+        });
+        errors?.push({ addr: a, error: msg });
       }
     }
     return out;
@@ -185,7 +212,21 @@ async function bootstrap() {
     });
   }
 
+  type LogPayload = {
+    level: "info" | "warn" | "error" | "debug";
+    message: string;
+    data?: any;
+  };
+  function broadcastLog({ level, message, data }: LogPayload) {
+    const logger = (log as any)[level] || console.log;
+    logger(message, data || "");
+    BrowserWindow.getAllWindows().forEach((win) =>
+      win.webContents.send("clipp:log", { level, message, data })
+    );
+  }
+
   async function sendTrustAck(device: any, accepted: boolean) {
+    await ensureMessagingStarted();
     const id = await trust.getLocalIdentity();
     const target =
       device.multiaddrs?.[0] || device.multiaddr || device.deviceId;
@@ -246,7 +287,7 @@ async function bootstrap() {
     trust.on("removed", () => emitState());
 
     try {
-      await messaging.start();
+      await ensureMessagingStarted();
     } catch (err) {
       (log as any).warn("Messaging start failed", err);
     }
@@ -432,40 +473,89 @@ async function bootstrap() {
   );
 
   ipcMain.handle("clipp:pair-text", async (_evt, txt: string) => {
+    await ensureMessagingStarted();
     const pairing = decodePairing(txt);
     if (!pairing) return { ok: false, error: "invalid" as const };
     const id = await trust.getLocalIdentity();
+    const peerId = await deviceIdToPeerId(pairing.deviceId);
     let targetAddrs =
       pairing.multiaddrs || (pairing.multiaddr ? [pairing.multiaddr] : []);
-    let valid = validMultiaddrs(targetAddrs);
+    let parseErrors: Array<{ addr: string; error: string }> = [];
+    let valid = validMultiaddrs(targetAddrs, parseErrors);
     if (!valid.length) {
       const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
         "../../../packages/core/network/constants.js"
       );
       const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
-        (addr: string) => `${addr}/p2p/${pairing.deviceId}`
+        (addr: string) => `${addr}/p2p/${peerId}`
       );
       targetAddrs = derived;
-      valid = validMultiaddrs(targetAddrs);
+      parseErrors = [];
+      valid = validMultiaddrs(targetAddrs, parseErrors);
+      broadcastLog({
+        level: "info",
+        message: "No valid addrs in pairing, using defaults",
+        data: {
+          derived: targetAddrs,
+          parseErrors,
+        },
+      });
     }
-    const target: Multiaddr | undefined = valid[0];
-    if (!target) return { ok: false, error: "no_target" as const };
+    const targets: Multiaddr[] = valid;
+    if (!targets.length) {
+      broadcastLog({
+        level: "warn",
+        message: "Pairing failed: no target multiaddr",
+        data: {
+          pairingDeviceId: pairing.deviceId,
+          provided: pairing.multiaddrs || pairing.multiaddr,
+          parseErrors,
+          derived: targetAddrs,
+        },
+      });
+      return { ok: false, error: "no_target" as const };
+    }
+    broadcastLog({
+      level: "info",
+      message: "Sending trust request",
+      data: {
+        local: id.deviceId,
+        targets: targets.map((t) => t.toString()),
+        candidates: targetAddrs,
+      },
+    });
     const request = {
       type: "trust-request" as const,
       from: id.deviceId,
       payload: id,
       sentAt: Date.now(),
     };
-    try {
-      await messaging.sendMessage(target as any, request as any);
-      return { ok: true };
-    } catch (err) {
-      (log as any).warn("Failed to send trust request", err);
-      return { ok: false, error: "dial_failed" as const };
+    for (const target of targets) {
+      try {
+        await messaging.sendMessage(target as any, request as any);
+        return { ok: true };
+      } catch (err) {
+        broadcastLog({
+          level: "warn",
+          message: "Failed to send trust request to target",
+          data: {
+            target: target?.toString?.(),
+            candidates: targetAddrs,
+            error: (err as any)?.message || String(err),
+          },
+        });
+      }
     }
+    broadcastLog({
+      level: "warn",
+      message: "Failed to send trust request to all targets",
+      data: { targets: targetAddrs },
+    });
+    return { ok: false, error: "dial_failed" as const };
   });
 
   ipcMain.handle("clipp:share-now", async () => {
+    await ensureMessagingStarted();
     const text = clipboard.readText();
     const id = await trust.getLocalIdentity();
     const clip = normalizeClipboardContent(text, id.deviceId);

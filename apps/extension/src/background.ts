@@ -1,4 +1,20 @@
-import { createMessagingLayer } from "../../../packages/core/network/engine";
+// MV3 background (service worker) lacks window; some deps expect it.
+if (typeof globalThis.window === "undefined") {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  globalThis.window = globalThis;
+}
+if (typeof globalThis.navigator === "undefined") {
+  // Provide minimal navigator for libraries that sniff userAgent
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  globalThis.navigator = { userAgent: "chrome-extension" };
+}
+
+const supportsWebRTC =
+  typeof (globalThis as any).RTCPeerConnection !== "undefined" ||
+  typeof (globalThis as any).webkitRTCPeerConnection !== "undefined";
+
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
@@ -10,6 +26,8 @@ import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import { createClipboardService } from "../../../packages/core/clipboard/service";
 import * as log from "../../../packages/core/logger";
+import { deviceIdToPeerId, deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
+import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -19,14 +37,75 @@ chrome.storage.local.get(["logLevel"], (res) => {
   log.info("Background script initialized");
 });
 
-// Background state
-const messaging = createMessagingLayer();
 const historyBackend =
   typeof (globalThis as any).indexedDB !== "undefined"
     ? new IndexedDBHistoryBackend()
     : new InMemoryHistoryBackend();
 const history = new MemoryHistoryStore(historyBackend);
 const trust = createTrustManager(new ChromeStorageBackend());
+
+const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
+
+async function ensureOffscreenDocument(): Promise<void> {
+  if (!chrome.offscreen || typeof chrome.offscreen.createDocument !== "function") return;
+  const has = (chrome.offscreen as any).hasDocument
+    ? await (chrome.offscreen as any).hasDocument()
+    : false;
+  if (!has) {
+    try {
+      await chrome.offscreen.createDocument({
+        url: OFFSCREEN_URL,
+        reasons: ["DOM_PARSER"],
+        justification: "Run libp2p WebRTC networking off the service worker",
+      });
+    } catch (err) {
+      log.error("Failed to create offscreen document", err);
+      throw err;
+    }
+  }
+}
+
+async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
+  await ensureOffscreenDocument();
+  return await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ target: "offscreen", ...message }, (resp) => {
+      // @ts-ignore
+      const err = chrome.runtime.lastError;
+      if (err) {
+        if (attempt < 5) {
+          setTimeout(() => {
+            sendOffscreen<T>(message, attempt + 1).then(resolve).catch(reject);
+          }, 200 * (attempt + 1));
+          return;
+        }
+        reject(new Error(err.message || "offscreen_unavailable"));
+        return;
+      }
+      resolve(resp as T);
+    });
+  });
+}
+
+const offscreenReady = (async () => {
+  await ensureOffscreenDocument();
+  const identity = await trust.getLocalIdentity();
+  // simple ping/handshake retry
+  for (let i = 0; i < 5; i++) {
+    try {
+      await sendOffscreen({ action: "ping" });
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+    }
+  }
+  await sendOffscreen({
+    action: "init",
+    identity,
+    relays: DEFAULT_WEBRTC_STAR_RELAYS,
+  });
+})();
+
+// Background state
 
 
 const clipboard = createClipboardService("chrome", {
@@ -39,7 +118,8 @@ const clipboard = createClipboardService("chrome", {
       sentAt: Date.now(),
     };
     log.debug("Broadcasting clip");
-    await messaging.broadcast(message as any);
+    await offscreenReady;
+    await sendOffscreen({ action: "broadcast", msg: message });
   },
 });
 // Initialize auto-sync state from storage
@@ -72,7 +152,8 @@ trust.on("rejected", async (d) => {
     payload: { id: d.deviceId, accepted: false },
     sentAt: Date.now(),
   };
-  await messaging.sendMessage(target, ack as any).catch(() => {});
+  await offscreenReady;
+  await sendOffscreen({ action: "sendMessage", target, msg: ack }).catch(() => {});
   log.info("Trust request rejected", d.deviceId);
 });
 trust.on("approved", async (d) => {
@@ -85,7 +166,8 @@ trust.on("approved", async (d) => {
     payload: { id: d.deviceId, accepted: true },
     sentAt: Date.now(),
   };
-  await messaging.sendMessage(target, ack as any).catch(() => {});
+  await offscreenReady;
+  await sendOffscreen({ action: "sendMessage", target, msg: ack }).catch(() => {});
   log.info("Device approved", d.deviceId);
 });
 
@@ -109,7 +191,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sentAt: Date.now(),
       };
       log.debug("Broadcasting clip");
-      await messaging.broadcast(message as any);
+      await offscreenReady;
+      await sendOffscreen({ action: "broadcast", msg: message });
       history.add(msg.clip, msg.clip.senderId, true);
       sendResponse({ ok: true });
     });
@@ -118,13 +201,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Handle getPeerStatus from popup
   if (msg.type === "getPeerStatus") {
     // Example: get peer count and connection status from messaging layer
-    const peers = messaging.getConnectedPeers
-      ? messaging.getConnectedPeers()
-      : [];
-    sendResponse({
-      peerCount: Array.isArray(peers) ? peers.length : 0,
-      connected: Array.isArray(peers) ? peers.length > 0 : false,
-    });
+    offscreenReady
+      .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
+      .then((resp) => {
+        const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
+        sendResponse({ peerCount: peers.length, connected: peers.length > 0 });
+      })
+      .catch(() => sendResponse({ peerCount: 0, connected: false }));
     return true;
   }
   // Handle clipboard history for options page
@@ -181,7 +264,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sentAt: Date.now(),
         };
         log.debug("Broadcasting clip");
-        await messaging.broadcast(message as any);
+        await offscreenReady;
+        await sendOffscreen({ action: "broadcast", msg: message });
       }
       sendResponse({ ok: true });
     });
@@ -201,36 +285,58 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "pairDevice" && msg.pairing) {
     trust.getLocalIdentity().then(async (id) => {
+      const peerId = await deviceIdToPeerId(msg.pairing.deviceId);
       const targetAddrs =
         msg.pairing.multiaddrs ||
         (msg.pairing.multiaddr ? [msg.pairing.multiaddr] : []);
-      const target = targetAddrs[0] || msg.pairing.deviceId;
+      const candidates = [
+        ...targetAddrs,
+        ...DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`),
+      ];
+      log.info("Sending trust request", {
+        target: candidates[0],
+        targetAddrs: candidates,
+        localId: id.deviceId,
+      });
       const request = {
         type: "trust-request" as const,
         from: id.deviceId,
         payload: id,
         sentAt: Date.now(),
       };
-      try {
-        await messaging.sendMessage(target, request as any);
-        sendResponse({ ok: true });
-      } catch (err) {
-        log.warn("Failed to send trust request", err);
-        sendResponse({ ok: false, error: "dial_failed" });
+      let sent = false;
+      for (const target of candidates) {
+        try {
+          await offscreenReady;
+          await sendOffscreen({ action: "sendMessage", target, msg: request });
+          sent = true;
+          break;
+        } catch (err) {
+          log.warn("Failed to send trust request", {
+            target,
+            error: (err as any)?.message || String(err),
+          });
+        }
       }
+      sendResponse(sent ? { ok: true } : { ok: false, error: "dial_failed" });
     });
     return true;
   }
   if (msg.type === "getStatus") {
-    const peers = messaging.getConnectedPeers
-      ? messaging.getConnectedPeers()
-      : [];
-    sendResponse({ peerCount: peers.length, autoSync: clipboard.isAutoSync() });
+    offscreenReady
+      .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
+      .then((resp) => {
+        const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
+        sendResponse({ peerCount: peers.length, autoSync: clipboard.isAutoSync() });
+      })
+      .catch(() => sendResponse({ peerCount: 0, autoSync: clipboard.isAutoSync() }));
     return true;
   }
   if (msg.type === "getConnectedPeers") {
-    const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
-    sendResponse({ peers });
+    offscreenReady
+      .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
+      .then((resp) => sendResponse({ peers: Array.isArray(resp?.peers) ? resp!.peers : [] }))
+      .catch(() => sendResponse({ peers: [] }));
     return true;
   }
   // Handle trusted device list for options page
@@ -282,23 +388,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Add more message handlers as needed
 });
 
-// Listen for incoming clips from peers
-messaging.onMessage(async (msg) => {
-  if (msg.type === "CLIP") {
-    log.debug("Received clip from", msg.from);
-    await history.add(msg.clip!, msg.from, false);
-    // Optionally notify popup/options
-    // @ts-ignore
-    chrome.runtime.sendMessage({ type: "newClip", clip: msg.clip });
-  } else if (msg.type === "trust-request") {
-    log.debug("Received trust request from", (msg.payload as TrustedDevice).deviceId);
-    const dev = msg.payload as TrustedDevice;
-    await trust.handleTrustRequest(dev);
+// Listen for messages forwarded from offscreen (libp2p)
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.source !== "offscreen" || msg?.action !== "incoming") return;
+  const payload = msg.msg;
+  if (payload?.type === "CLIP") {
+    log.debug("Received clip from", payload.from);
+    void history.add(payload.clip!, payload.from, false).then(() => {
+      // Notify popup/options
+      // @ts-ignore
+      chrome.runtime.sendMessage({ type: "newClip", clip: payload.clip });
+    });
+  } else if (payload?.type === "trust-request") {
+    const dev = payload.payload as TrustedDevice;
+    log.debug("Received trust request from", dev?.deviceId);
+    void trust.handleTrustRequest(dev);
   }
 });
 
-// Start background services
-log.info("Background services starting");
-messaging.start();
-clipboard.start();
-log.info("Background services started");
+// Kick off offscreen + clipboard
+void offscreenReady.then(() => {
+  clipboard.start();
+  log.info("Background services started (offscreen networking)");
+});

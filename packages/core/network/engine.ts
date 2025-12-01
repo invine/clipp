@@ -1,4 +1,5 @@
 import { createClipboardNode } from "./node.js";
+import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { EventBus } from "./events.js";
 import type { ClipboardMessage } from "./types.js";
 import { createTrustManager, MemoryStorageBackend, TrustManager } from "../trust/index.js";
@@ -79,7 +80,8 @@ class Libp2pMessagingLayer implements MessagingLayer {
 
   async sendMessage(target: string, msg: ClipboardMessage) {
     log.debug("Sending message to", target);
-    const conn = await this.node.dialProtocol(target, PROTOCOL);
+    const addr: Multiaddr = typeof target === "string" ? multiaddr(target) : target;
+    const conn = await this.node.dialProtocol(addr, PROTOCOL);
     await conn.sink([new TextEncoder().encode(JSON.stringify(msg))]);
   }
 
