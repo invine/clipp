@@ -59,7 +59,9 @@
   "scripts": {
     "test": "jest",
     "lint": "eslint --ext .ts,.tsx packages apps tests",
-    "lint:fix": "eslint --ext .ts,.tsx packages apps tests --fix"
+    "lint:fix": "eslint --ext .ts,.tsx packages apps tests --fix",
+    "relay:websocket": "tsx scripts/websocket-relay.ts",
+    "relay:probe": "tsx scripts/relay-probe.ts"
   },
   "workspaces": [
     "apps/*",
