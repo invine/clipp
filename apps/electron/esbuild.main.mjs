@@ -19,7 +19,6 @@ await build({
     "@koush/wrtc",
     "@ipshipyard/node-datachannel",
     "node-datachannel",
-    "better-sqlite3",
     "ws"
   ],
   logLevel: "info",

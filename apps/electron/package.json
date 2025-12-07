@@ -13,7 +13,6 @@
     "typecheck:main": "tsc -p tsconfig.main.json --noEmit"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
     "electron": "^31.3.0"
   },
   "devDependencies": {

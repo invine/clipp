@@ -12,8 +12,8 @@ import { webcrypto } from "node:crypto";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import {
   openDatabase,
-  SQLiteHistoryBackend,
-  SQLiteKVStore,
+  FileHistoryBackend,
+  FileKVStore,
 } from "./storage.js";
 import type { Clip } from "../../../packages/core/models/Clip.js";
 import { encode } from "../../../packages/core/qr/index.js";
@@ -122,10 +122,10 @@ async function bootstrap() {
     "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
   const relayAddresses = relayAddrEnv ? [relayAddrEnv] : undefined;
 
-  const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
+  const dbPath = path.join(app.getPath("userData"), "clipp-db.json");
   const db = openDatabase(dbPath);
-  const kvStore = new SQLiteKVStore(db);
-  const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
+  const kvStore = new FileKVStore(db);
+  const history = new MemoryHistoryStore(new FileHistoryBackend(db));
   const trust = createTrustManager(kvStore);
   const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   const peerId = await deviceIdToPeerIdObject(localIdentity.deviceId);
