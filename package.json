@@ -21,7 +21,6 @@
     "@multiformats/multiaddr-matcher": "^3.0.1",
     "jsqr": "^1.4.0",
     "libp2p": "^3.1.2",
-    "node-datachannel": "^0.30.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

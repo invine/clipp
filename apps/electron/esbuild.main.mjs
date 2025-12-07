@@ -17,8 +17,6 @@ await build({
     "electron",
     "wrtc",
     "@koush/wrtc",
-    "@ipshipyard/node-datachannel",
-    "node-datachannel",
     "ws"
   ],
   logLevel: "info",
