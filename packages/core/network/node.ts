@@ -2,7 +2,6 @@
  * libp2p node initialization/config for clipboard network.
  */
 import { createLibp2p } from "libp2p";
-import { webRTC } from "@libp2p/webrtc";
 import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { webSockets } from "@libp2p/websockets";
 import { webRTCStar } from "@libp2p/webrtc-star";
@@ -73,10 +72,7 @@ export async function createClipboardNode(
 
   if (hasWebRTCSupport()) {
     const wrtcStar = webRTCStar() as any;
-    transports.unshift(
-      withTransportFilters(wrtcStar.transport as any),
-      withTransportFilters(webRTC())
-    );
+    transports.unshift(withTransportFilters(wrtcStar.transport as any));
     discovery.push(wrtcStar.discovery);
     listenAddrs.push(...relayMultiaddrs);
   }

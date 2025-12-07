@@ -6,12 +6,27 @@ import {
   circuitRelayServer,
 } from "@libp2p/circuit-relay-v2";
 import { identify } from "@libp2p/identify";
-import { webRTC } from "@libp2p/webrtc";
 import { webSockets } from "@libp2p/websockets";
 import { WebRTC } from "@multiformats/multiaddr-matcher";
 import delay from "delay";
 import { createLibp2p } from "libp2p";
 import type { Multiaddr } from "@multiformats/multiaddr";
+
+async function loadWebRTC() {
+  try {
+    const mod = await import("@libp2p/webrtc");
+    return (mod as any).webRTC;
+  } catch (err: any) {
+    console.error("WebRTC transport unavailable (dependency not installed)", err?.message || err);
+    process.exitCode = 1;
+    return undefined;
+  }
+}
+
+const webRTC = await loadWebRTC();
+if (!webRTC) {
+  throw new Error("WebRTC transport required for web-rtc script; install @libp2p/webrtc to use it.");
+}
 
 // the relay server listens on a transport dialable by the listener and the
 // dialer, and has a relay service configured
