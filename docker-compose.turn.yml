@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  turn:
+    image: instrumentisto/coturn:4.5
+    container_name: coturn
+    restart: unless-stopped
+    ports:
+      # STUN/TURN over UDP/TCP
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      # TURN over TLS (optional; disable if not needed)
+      - "5349:5349/udp"
+      - "5349:5349/tcp"
+    environment:
+      # Set to a shared secret for TURN REST auth or a static user list.
+      # Example below uses a static user "user:pass".
+      - TURN_REALM=turn.local
+      - TURN_SERVER_NAME=turn.local
+      - TURN_PORT=3478
+      - TURNS_PORT=5349
+      - TURN_USER=user:pass
+      # Uncomment to allow loopback for local testing
+      # - ALLOW_LOOPBACK_IP=1
+    command:
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --fingerprint
+      - --listening-port=3478
+      - --tls-listening-port=5349
+      - --realm=$(TURN_REALM)
+      - --server-name=$(TURN_SERVER_NAME)
+      - --lt-cred-mech
+      - --user=$(TURN_USER)
+      - --log-file=stdout
+      # Uncomment to listen on a specific public IP
+      # - --listening-ip=PUBLIC_IP
+      # - --relay-ip=PUBLIC_IP
+

@@ -75,6 +75,12 @@ async function bootstrap() {
   (log as any).setLogLevel?.(logLevel);
   (log as any).info?.("Clipp Electron bootstrap", { logLevel });
 
+  const relayAddrEnv =
+    process.env.CLIPP_RELAY_ADDR ||
+    process.env.CLIPP_RELAY_MULTIADDR ||
+    "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
+  const relayAddresses = relayAddrEnv ? [relayAddrEnv] : undefined;
+
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
@@ -82,7 +88,8 @@ async function bootstrap() {
   const trust = createTrustManager(kvStore);
   const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   const peerId = await deviceIdToPeerIdObject(localIdentity.deviceId);
-  const messaging = createMessagingLayer({ trustStore: trust, peerId });
+
+  const messaging = createMessagingLayer({ trustStore: trust, peerId, relayAddresses });
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
@@ -114,19 +121,42 @@ async function bootstrap() {
   ].map((f) => path.join(iconBase, f));
 
   async function ensureIdentityAddrs(id: any) {
-    if (Array.isArray(id?.multiaddrs) && id.multiaddrs.length > 0) return id;
     const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
       "../../../packages/core/network/constants.js"
     );
     const peerId = await deviceIdToPeerId(id.deviceId);
-    const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
-      (addr: string) => `${addr}/p2p/${peerId}`
-    );
-    id.multiaddrs = derived;
-    if (!id.multiaddr && derived[0]) {
-      id.multiaddr = derived[0];
+
+    // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
+    const existing = Array.isArray(id?.multiaddrs) ? [...id.multiaddrs] : [];
+    const derived: string[] = [];
+    if (relayAddrEnv) {
+      derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
+    }
+    derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
+
+    const merged = dedupeMultiaddrs([...derived, ...existing]);
+    const changed =
+      merged.length !== existing.length || merged.some((v, idx) => v !== existing[idx]) || !id.multiaddr;
+    id.multiaddrs = merged;
+    if (!id.multiaddr && merged[0]) {
+      id.multiaddr = merged[0];
+    }
+    if (changed) {
+      // Persist updated identity so QR pairing uses latest addresses.
+      await kvStore.set("localDeviceIdentity", id);
     }
     return id;
+  }
+
+  function dedupeMultiaddrs(values: string[]) {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const v of values) {
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      out.push(v);
+    }
+    return out;
   }
 
   function validMultiaddrs(

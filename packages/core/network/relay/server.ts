@@ -3,9 +3,7 @@ import { mplex } from "@libp2p/mplex";
 import { circuitRelayServer, type CircuitRelayService } from "@libp2p/circuit-relay-v2";
 import { enable as enableLibp2pDebug } from "@libp2p/logger";
 import { identify } from "@libp2p/identify";
-import { ping } from "@libp2p/ping";
 import { webSockets } from "@libp2p/websockets";
-import * as websocketFilters from "@libp2p/websockets/filters";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { createLibp2p, type Libp2p } from "libp2p";
 import type { Connection } from "@libp2p/interface";
@@ -13,9 +11,26 @@ import { peerIdFromMultihash } from "@libp2p/peer-id";
 import * as Digest from "multiformats/hashes/digest";
 import { defaultLogger } from "@libp2p/logger";
 import { FaultTolerance } from "@libp2p/interface-transport";
+import { privateKeyFromProtobuf, privateKeyFromRaw, type PrivateKey } from "@libp2p/crypto/keys";
+import { ping } from "@libp2p/ping";
 
-type RelayServices = { circuitRelay: CircuitRelayService };
+// Node 20 may not yet have Promise.withResolvers; provide a polyfill so libp2p deps can run.
+if (typeof (Promise as any).withResolvers !== "function") {
+  (Promise as any).withResolvers = function withResolversPolyfill<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
+type RelayServices = { circuitRelay: CircuitRelayService; ping: any };
 type RelayNode = Libp2p<RelayServices>;
+type RendezvousTopic = string;
+type RendezvousRecord = { peer: string; addrs: string[]; lastSeen: number };
 
 export interface WebsocketRelayOptions {
   listen?: Array<string | Multiaddr>;
@@ -26,6 +41,7 @@ export interface WebsocketRelayOptions {
   maxReservations?: number;
   reservationTtlMs?: number;
   debugNamespaces?: string;
+  enableWebRTC?: boolean;
 }
 
 export interface StartedRelay {
@@ -54,15 +70,22 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
   const statusIntervalMs = coerceNumber(options.statusIntervalMs, 15_000);
   const maxReservations = coerceNumber(options.maxReservations, 500);
   const reservationTtl = coerceNumber(options.reservationTtlMs, 2 * 60 * 60 * 1000);
+  const privateKey = loadPrivateKeyFromEnv();
+  const enableWebRTC =
+    typeof options.enableWebRTC === "boolean"
+      ? options.enableWebRTC
+      : coerceBool(process.env.RELAY_ENABLE_WEBRTC, false);
+  const webrtcTransport = enableWebRTC ? await loadWebRTCTransport() : undefined;
 
   const node = await createLibp2p<RelayServices>({
+    ...(privateKey ? { privateKey } : {}),
     logger: defaultLogger(),
     addresses: {
       listen: listenAddrs,
       announce: announceAddrs,
       announceFilter: (addrs) => addrs,
     },
-    transports: [withLogger(webSockets({ filter: websocketFilters.all }))],
+    transports: [withLogger(webSockets()), ...(webrtcTransport ? [webrtcTransport] : [])],
     transportManager: {
       faultTolerance: FaultTolerance.NO_FATAL,
     },
@@ -80,13 +103,20 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
     },
   });
 
+  patchUpgraderConnectionFallbacks(node, [
+    (node as any).components?.upgrader,
+    (node as any).upgrader,
+    (node as any).components?.connectionManager?.upgrader,
+  ]);
   const removeNodeListeners = instrumentNode(node);
   const removeRelayInstrumentation = instrumentRelayService(node.services.circuitRelay, statusIntervalMs);
+  const stopRendezvous = registerRendezvous(node);
 
   const info = {
     peerId: node.peerId.toString(),
     listen: node.getMultiaddrs().map(String),
     announce: announceAddrs.map(String),
+    privateKey: privateKey ? "provided" : "generated",
   };
   log("Websocket relay started", info);
 
@@ -95,6 +125,7 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
     stop: async () => {
       removeRelayInstrumentation?.();
       removeNodeListeners?.();
+      stopRendezvous?.();
       await node.stop();
       log("Websocket relay stopped");
     },
@@ -195,6 +226,39 @@ function formatConnection(conn?: Connection) {
     opened: (conn as any).timeline?.open,
     streams: Array.isArray((conn as any).streams) ? (conn as any).streams.length : undefined,
   };
+}
+
+function patchUpgraderConnectionFallbacks(node: RelayNode, candidates: any[]) {
+  const upgrader = candidates.find(Boolean);
+  if (!upgrader) {
+    log("patchUpgraderConnectionFallbacks: no upgrader found");
+    return;
+  }
+  const origInbound = upgrader._encryptInbound?.bind(upgrader);
+  const origOutbound = upgrader._encryptOutbound?.bind(upgrader);
+  log("patchUpgraderConnectionFallbacks: found upgrader", {
+    hasInbound: typeof origInbound === "function",
+    hasOutbound: typeof origOutbound === "function",
+    keys: Object.keys(upgrader || {}),
+  });
+  if (typeof origInbound === "function") {
+    upgrader._encryptInbound = async function (...args: any[]) {
+      const res = await origInbound(...args);
+      if (res && res.connection == null) {
+        res.connection = res.conn ?? res.stream ?? args[0];
+      }
+      return res;
+    };
+  }
+  if (typeof origOutbound === "function") {
+    upgrader._encryptOutbound = async function (...args: any[]) {
+      const res = await origOutbound(...args);
+      if (res && res.connection == null) {
+        res.connection = res.conn ?? res.stream ?? args[0];
+      }
+      return res;
+    };
+  }
 }
 
 function describePeerIdBytes(raw?: Uint8Array) {
@@ -379,9 +443,285 @@ function coerceNumber(value: unknown, fallback: number) {
   return fallback;
 }
 
+function coerceBool(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const v = value.toLowerCase();
+    if (["1", "true", "yes", "on"].includes(v)) return true;
+    if (["0", "false", "no", "off"].includes(v)) return false;
+  }
+  return fallback;
+}
+
 function withLogger<T>(factory: any) {
   return (components: any) => {
     components.logger = components.logger || defaultLogger();
     return factory(components) as T;
   };
+}
+
+function loadPrivateKeyFromEnv(): PrivateKey | undefined {
+  const raw =
+    (typeof process !== "undefined" && process.env?.RELAY_PRIVATE_KEY_BASE64) ||
+    (typeof process !== "undefined" && process.env?.RELAY_PRIVATE_KEY);
+  if (!raw) return undefined;
+  try {
+    const bytes = Buffer.from(raw.trim(), "base64");
+    if (bytes.byteLength === 0) return undefined;
+    try {
+      return privateKeyFromProtobuf(bytes);
+    } catch {
+      return privateKeyFromRaw(bytes);
+    }
+  } catch (err) {
+    log("Failed to parse RELAY_PRIVATE_KEY", { error: (err as Error)?.message });
+    return undefined;
+  }
+}
+
+function registerRendezvous(node: RelayNode) {
+  const TOPIC_PREFIX = "/rendezvous/1.0.0";
+  const topics = new Map<RendezvousTopic, Map<string, RendezvousRecord>>();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  function touch(topic: RendezvousTopic, record: RendezvousRecord) {
+    let bucket = topics.get(topic);
+    if (!bucket) {
+      bucket = new Map();
+      topics.set(topic, bucket);
+    }
+    bucket.set(record.peer, record);
+  }
+
+  node.handle(TOPIC_PREFIX, async (data: any) => {
+    const stream = data?.stream ?? data;
+    const connection = data?.connection ?? (stream as any)?.connection;
+
+    log("Rendezvous handler invoked", {
+      stream: describeStream(stream),
+      connection: connection ? formatConnection(connection) : undefined,
+    });
+
+    if (!stream) {
+      log("Rendezvous handler received falsy stream", {
+        stream,
+        connection: connection ? formatConnection(connection) : undefined,
+        dataKeys: data ? Object.keys(data) : undefined,
+      });
+      return;
+    }
+
+    const asyncIter =
+      typeof (stream as any)?.[Symbol.asyncIterator] === "function"
+        ? (stream as any)[Symbol.asyncIterator]()
+        : (stream as any)?.source;
+    const iterable = asyncIter as AsyncIterable<any> | undefined;
+    if (!iterable || typeof (iterable as any)[Symbol.asyncIterator] !== "function") {
+      log("Rendezvous handler missing async iterator on stream", {
+        hasSource: Boolean((stream as any)?.source),
+        ctor: (stream as any)?.constructor?.name,
+        keys: Object.keys(stream as any || {}),
+        dataKeys: data ? Object.keys(data) : undefined,
+      });
+      try {
+        await writeResponse(stream, encoder, { ok: false, error: "no_iterator" }, "no-iterator");
+      } catch {}
+      return;
+    }
+
+    for await (const chunk of iterable) {
+      try {
+        const buf =
+          chunk instanceof Uint8Array
+            ? chunk
+            : typeof (chunk as any)?.subarray === "function"
+            ? (chunk as any).subarray()
+            : null;
+        if (!buf) {
+          log("Rendezvous handler received non-buffer chunk", {
+            type: typeof chunk,
+            ctor: (chunk as any)?.constructor?.name,
+            value: chunk,
+          });
+          await stream.sink([encoder.encode(JSON.stringify({ ok: false, error: "invalid_chunk" }))]);
+          continue;
+        }
+        const msg = JSON.parse(decoder.decode(buf));
+        const remotePeer =
+          connection?.remotePeer?.toString?.() ||
+          extractPeerIdFromAddrs(msg?.addrs) ||
+          "unknown";
+        const remoteAddr = connection?.remoteAddr?.toString?.();
+        log("Rendezvous chunk received", {
+          length: buf.length,
+          base64: Buffer.from(buf).toString("base64"),
+          peer: remotePeer,
+          remoteAddr,
+        });
+        log("Rendezvous decoded message", { msg });
+        const topic: string = msg.topic || "default";
+        if (msg.action === "register") {
+          const addrs: string[] = Array.isArray(msg.addrs) ? msg.addrs : [];
+          if (remoteAddr) {
+            addrs.push(remoteAddr);
+          }
+          const record: RendezvousRecord = {
+            peer: remotePeer,
+            addrs: dedupeStrings(addrs),
+            lastSeen: Date.now(),
+          };
+          touch(topic, record);
+          log("Rendezvous register", { topic, peer: record.peer, addrs: record.addrs });
+          await writeResponse(stream, encoder, { ok: true, peer: record.peer }, "register-ok");
+        } else if (msg.action === "list") {
+          const bucket = topics.get(topic);
+          const peers = bucket ? Array.from(bucket.values()) : [];
+          log("Rendezvous list", { topic, count: peers.length });
+          await writeResponse(stream, encoder, { ok: true, peers }, "list-ok");
+        } else {
+          await writeResponse(stream, encoder, { ok: false, error: "unknown_action" }, "unknown-action");
+        }
+      } catch (err: any) {
+        log("Rendezvous handler error", {
+          error: err?.message || err,
+          stack: err?.stack,
+        });
+        try {
+          await writeResponse(stream, encoder, { ok: false, error: "handler_error" }, "handler-error");
+        } catch {}
+      }
+    }
+
+    log("Rendezvous handler completed for stream", {
+      stream: describeStream(stream),
+      connection: connection ? formatConnection(connection) : undefined,
+    });
+  });
+
+  return () => {
+    try {
+      node.unhandle?.(TOPIC_PREFIX);
+    } catch {}
+    topics.clear();
+  };
+}
+
+function dedupeStrings(values: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+function describeStream(stream: any) {
+  if (!stream) return { missing: true };
+  const keys = Object.keys(stream || {});
+  const inner = (stream as any)?.stream;
+  return {
+    ctor: stream?.constructor?.name,
+    keys,
+    hasSink: typeof stream.sink === "function",
+    hasWrite: typeof stream.write === "function",
+    hasSend: typeof stream.send === "function",
+    hasSource: Boolean((stream as any)?.source),
+    hasIterable: typeof (stream as any)[Symbol.asyncIterator] === "function",
+    inner: inner
+      ? {
+          ctor: inner?.constructor?.name,
+          keys: Object.keys(inner || {}),
+          hasSink: typeof inner.sink === "function",
+          hasWrite: typeof inner.write === "function",
+          hasSend: typeof inner.send === "function",
+          hasSource: Boolean((inner as any)?.source),
+          hasIterable: typeof (inner as any)[Symbol.asyncIterator] === "function",
+        }
+      : undefined,
+  };
+}
+
+async function writeResponse(stream: any, encoder: TextEncoder, payload: any, label: string) {
+  const data = encoder.encode(JSON.stringify(payload));
+  const sinkTarget =
+    stream && typeof stream.sink === "function"
+      ? stream
+      : stream?.stream && typeof stream.stream.sink === "function"
+      ? stream.stream
+      : undefined;
+  if (sinkTarget) {
+    log(`Rendezvous response via sink (${label})`, { stream: describeStream(stream), bytes: data.byteLength });
+    await sinkTarget.sink([data]);
+    return;
+  }
+  const writeTarget =
+    stream && typeof stream.write === "function"
+      ? stream
+      : stream?.stream && typeof stream.stream.write === "function"
+      ? stream.stream
+      : undefined;
+  if (writeTarget) {
+    log(`Rendezvous response via write (${label})`, { stream: describeStream(stream), bytes: data.byteLength });
+    await writeTarget.write(data);
+    if (typeof writeTarget.closeWrite === "function") {
+      await writeTarget.closeWrite();
+    } else if (typeof writeTarget.close === "function") {
+      await writeTarget.close();
+    }
+    return;
+  }
+  const sendTarget =
+    stream && typeof stream.send === "function"
+      ? stream
+      : stream?.stream && typeof stream.stream.send === "function"
+      ? stream.stream
+      : undefined;
+  if (sendTarget) {
+    log(`Rendezvous response via send (${label})`, { stream: describeStream(stream), bytes: data.byteLength });
+    sendTarget.send(data);
+    if (typeof sendTarget.closeWrite === "function") {
+      await sendTarget.closeWrite();
+    } else if (typeof sendTarget.close === "function") {
+      await sendTarget.close();
+    }
+    return;
+  }
+  log("Rendezvous response failed: stream not writable", { stream: describeStream(stream), label });
+}
+
+function extractPeerIdFromAddrs(addrs?: string[]) {
+  if (!addrs) return undefined;
+  for (const a of addrs) {
+    try {
+      const ma = multiaddr(a);
+      if (typeof (ma as any).getPeerId === "function") {
+        const pid = (ma as any).getPeerId();
+        if (pid) return pid;
+      }
+      const parts = ma.toString().split("/p2p/");
+      if (parts.length > 1 && parts[parts.length - 1]) {
+        return parts[parts.length - 1];
+      }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+async function loadWebRTCTransport() {
+  try {
+    const mod = await import("@libp2p/webrtc");
+    if (typeof mod.webRTC === "function") {
+      log("WebRTC transport enabled");
+      return withLogger(mod.webRTC());
+    }
+    log("WebRTC transport module missing webRTC export");
+  } catch (err: any) {
+    log("WebRTC transport not enabled", { error: err?.message || err });
+  }
+  return undefined;
 }

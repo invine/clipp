@@ -67,6 +67,7 @@ class Libp2pMessagingLayer implements MessagingLayer {
       }
     });
     await this.node.start();
+    await this.connectRelays();
     this.started = true;
     log.info("Messaging layer started");
   }
@@ -105,6 +106,20 @@ class Libp2pMessagingLayer implements MessagingLayer {
       return [];
     }
     return this.node.getConnections().map((c: any) => c.remotePeer.toString());
+  }
+
+  private async connectRelays() {
+    const relays = this.opts.relayAddresses || [];
+    for (const addr of relays) {
+      try {
+        const ma = multiaddr(addr);
+        log.info("Dialing relay", ma.toString());
+        await this.node.dial(ma);
+        log.info("Relay dial succeeded", ma.toString());
+      } catch (err: any) {
+        log.warn("Relay dial failed", addr, err?.message || err);
+      }
+    }
   }
 }
 

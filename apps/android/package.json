@@ -12,16 +12,16 @@
     "cap:open:android": "cap open android"
   },
   "dependencies": {
-    "@capacitor/clipboard": "^6.2.0",
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/preferences": "^6.2.0",
+    "@capacitor/clipboard": "^7.0.2",
+    "@capacitor/core": "^7.0.2",
+    "@capacitor/preferences": "^7.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@capacitor/android": "^6.2.0",
-    "@capacitor/cli": "^6.2.0",
-    "@capacitor/ios": "^6.2.0",
+    "@capacitor/android": "^7.0.2",
+    "@capacitor/cli": "^7.0.2",
+    "@capacitor/ios": "^7.0.2",
     "@vitejs/plugin-react": "^4.4.1",
     "typescript": "^5.9.3",
     "vite": "^6.3.5"

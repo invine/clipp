@@ -29,14 +29,18 @@ export async function getLocalIdentity(storage: StorageBackend): Promise<DeviceI
   const existing = await storage.get<DeviceIdentity>(ID_KEY)
   if (existing) {
     const peerId = await deviceIdToPeerId(existing.deviceId)
+    const derived = buildDerivedAddrs(peerId)
+    const merged = dedupeAddrs([...(existing.multiaddrs || []), ...derived])
     const needsRebuild =
       !Array.isArray(existing.multiaddrs) ||
       existing.multiaddrs.length === 0 ||
-      existing.multiaddrs.some((addr) => addr.includes(existing.deviceId) || !addr.includes(peerId));
+      merged.length !== existing.multiaddrs.length ||
+      merged.some((addr, idx) => addr !== existing.multiaddrs[idx]) ||
+      existing.multiaddrs.some((addr) => addr.includes(existing.deviceId) || !addr.includes(peerId))
+
     if (needsRebuild) {
-      const derived = DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`)
-      existing.multiaddrs = derived
-      existing.multiaddr = derived[0] || `/p2p/${peerId}`
+      existing.multiaddrs = merged
+      existing.multiaddr = merged[0] || `/p2p/${peerId}`
       await storage.set(ID_KEY, existing)
     } else if (!existing.multiaddr) {
       existing.multiaddr = existing.multiaddrs[0]
@@ -46,7 +50,7 @@ export async function getLocalIdentity(storage: StorageBackend): Promise<DeviceI
   }
   const deviceId = uuidv4()
   const peerId = await deviceIdToPeerId(deviceId)
-  const multiaddrs = DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`)
+  const multiaddrs = buildDerivedAddrs(peerId)
   const identity: DeviceIdentity = {
     deviceId,
     deviceName: typeof navigator !== 'undefined' ? navigator.userAgent : 'Device',
@@ -64,4 +68,31 @@ export async function setLocalIdentityName(storage: StorageBackend, deviceName: 
   identity.deviceName = deviceName
   await storage.set(ID_KEY, identity)
   return identity
+}
+
+function buildDerivedAddrs(peerId: string): string[] {
+  const relayEnv = getRelayEnv()
+  const derived: string[] = []
+  if (relayEnv) {
+    derived.push(`${relayEnv}/p2p-circuit/p2p/${peerId}`)
+  }
+  derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`))
+  return dedupeAddrs(derived)
+}
+
+function dedupeAddrs(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of values) {
+    if (!v || seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+  }
+  return out
+}
+
+function getRelayEnv(): string | undefined {
+  if (typeof process === 'undefined' || !process?.env) return undefined
+  const relay = process.env.CLIPP_RELAY_ADDR || process.env.CLIPP_RELAY_MULTIADDR
+  return relay && relay.trim().length > 0 ? relay.trim() : undefined
 }
