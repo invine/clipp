@@ -15,6 +15,7 @@ await build({
   bundle: true,
   external: [
     "electron",
+    "wrtc",
     "@koush/wrtc",
     "@ipshipyard/node-datachannel",
     "node-datachannel",

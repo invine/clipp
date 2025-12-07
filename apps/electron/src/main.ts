@@ -8,7 +8,6 @@ import {
   Menu,
 } from "electron";
 import path from "node:path";
-import wrtc from "@koush/wrtc";
 import { webcrypto } from "node:crypto";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import {
@@ -25,26 +24,68 @@ const __dirnameFallback =
   typeof __dirname !== "undefined" ? (__dirname as string) : "";
 const isDev = !app.isPackaged;
 
-// Ensure WebRTC globals exist before loading libp2p/webrtc-star.
-const wrtcImpl: any = wrtc;
-(globalThis as any).RTCPeerConnection =
-  (globalThis as any).RTCPeerConnection || wrtcImpl?.RTCPeerConnection;
-(globalThis as any).RTCSessionDescription =
-  (globalThis as any).RTCSessionDescription || wrtcImpl?.RTCSessionDescription;
-(globalThis as any).RTCIceCandidate =
-  (globalThis as any).RTCIceCandidate || wrtcImpl?.RTCIceCandidate;
-try {
-  if (!(globalThis as any).navigator) {
-    (globalThis as any).navigator = { userAgent: "Clipp Desktop" } as any;
+function ensureNavigatorAndCrypto() {
+  try {
+    const g = globalThis as any;
+    if (!g.navigator) {
+      g.navigator = { userAgent: "Clipp Desktop" } as any;
+    }
+  } catch {}
+  try {
+    const g = globalThis as any;
+    if (!g.crypto) {
+      g.crypto = webcrypto;
+    }
+  } catch {}
+}
+
+function hasWebRTCSupport() {
+  const g = globalThis as any;
+  return (
+    typeof g.RTCPeerConnection !== "undefined" ||
+    typeof g.webkitRTCPeerConnection !== "undefined"
+  );
+}
+
+async function ensureWebRTCGlobals() {
+  if (hasWebRTCSupport()) return;
+  const wrtc = await loadNodeWebRTC();
+  if (!wrtc) {
+    console.warn(
+      "[electron] No Node WebRTC implementation available; WebRTC transports will be disabled."
+    );
+    return;
   }
-} catch {}
-try {
-  if (!(globalThis as any).crypto) {
-    (globalThis as any).crypto = webcrypto;
+  const g = globalThis as any;
+  g.RTCPeerConnection = g.RTCPeerConnection || (wrtc as any).RTCPeerConnection;
+  g.RTCSessionDescription =
+    g.RTCSessionDescription || (wrtc as any).RTCSessionDescription;
+  g.RTCIceCandidate = g.RTCIceCandidate || (wrtc as any).RTCIceCandidate;
+}
+
+async function loadNodeWebRTC() {
+  const candidates = ["wrtc", "@koush/wrtc"];
+  for (const name of candidates) {
+    try {
+      const mod = await import(name);
+      return (mod as any).default ?? mod;
+    } catch (err: any) {
+      const code = err?.code || "";
+      if (
+        code !== "ERR_MODULE_NOT_FOUND" &&
+        code !== "MODULE_NOT_FOUND" &&
+        !`${err?.message || ""}`.includes("Cannot find module")
+      ) {
+        console.warn(`[electron] Failed to load ${name}`, err?.message || err);
+      }
+    }
   }
-} catch {}
+  return null;
+}
 
 async function bootstrap() {
+  ensureNavigatorAndCrypto();
+  await ensureWebRTCGlobals();
   // Dynamically import libp2p deps after globals are set.
   const [
     { createMessagingLayer },

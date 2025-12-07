@@ -41,20 +41,27 @@ async function waitForPeer(messaging: any, label: string, timeoutMs = 5000): Pro
 
 async function ensureWebRTC() {
   if (typeof (globalThis as any).RTCPeerConnection !== "undefined") return true;
-  try {
-    const wrtc = await import("@koush/wrtc");
-    (globalThis as any).RTCPeerConnection = wrtc.RTCPeerConnection;
-    (globalThis as any).RTCSessionDescription = wrtc.RTCSessionDescription;
-    (globalThis as any).RTCIceCandidate = wrtc.RTCIceCandidate;
-    return true;
-  } catch {
-    return false;
+  const candidates = ["wrtc", "@koush/wrtc"];
+  for (const name of candidates) {
+    try {
+      const wrtc = await import(name);
+      const impl: any = (wrtc as any).default ?? wrtc;
+      (globalThis as any).RTCPeerConnection = impl.RTCPeerConnection;
+      (globalThis as any).RTCSessionDescription = impl.RTCSessionDescription;
+      (globalThis as any).RTCIceCandidate = impl.RTCIceCandidate;
+      return true;
+    } catch {
+      continue;
+    }
   }
+  return false;
 }
 
 async function main() {
   if (!(await ensureWebRTC())) {
-    console.warn("Harness requires WebRTC. Install @koush/wrtc or run in a browser-like runtime.");
+    console.warn(
+      "Harness requires WebRTC. Install wrtc/@koush/wrtc or run in a browser-like runtime."
+    );
     return;
   }
 
