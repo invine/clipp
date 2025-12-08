@@ -42,21 +42,25 @@ export class ClipboardMessagingLayer implements MessagingLayer {
       this.disconnectBus.emit(peerId);
       log.info("Peer disconnected", peerId);
     });
-    this.node.handle(PROTOCOL, async ({ stream, connection }: any) => {
-      for await (const chunk of stream.source) {
-        try {
-          const msg: ClipboardMessage = JSON.parse(
-            new TextDecoder().decode(chunk)
-          );
-          // Trust check
-          if (await this.trust.isTrusted(msg.from)) {
-            this.messageBus.emit(msg);
+    this.node.handle(
+      PROTOCOL,
+      async (stream: any, connection?: any) => {
+        const iterable = getStreamIterable(stream);
+        if (!iterable) return;
+        for await (const chunk of iterable) {
+          try {
+            const msg: ClipboardMessage = JSON.parse(new TextDecoder().decode(chunk));
+            // Trust check
+            if (await this.trust.isTrusted(msg.from)) {
+              this.messageBus.emit(msg);
+            }
+          } catch {
+            // Ignore malformed or untrusted
           }
-        } catch (e) {
-          // Ignore malformed or untrusted
         }
-      }
-    });
+      },
+      { runOnLimitedConnection: true }
+    );
     await this.node.start();
     this.started = true;
     log.info("Clipboard messaging started");
@@ -77,8 +81,8 @@ export class ClipboardMessagingLayer implements MessagingLayer {
       sentAt: Date.now(),
     };
     log.debug("Sending clip to", toPeerId);
-    const conn = await this.node.dialProtocol(toPeerId, PROTOCOL);
-    await conn.sink([new TextEncoder().encode(JSON.stringify(msg))]);
+    const conn = await this.node.dialProtocol(toPeerId, PROTOCOL, { runOnLimitedConnection: true });
+    await writeToStream(conn, new TextEncoder().encode(JSON.stringify(msg)));
   }
 
   onMessage(handler: (msg: ClipboardMessage) => void) {
@@ -99,4 +103,74 @@ export class ClipboardMessagingLayer implements MessagingLayer {
   getNode() {
     return this.node;
   }
+}
+
+function getStreamIterable(stream: any): AsyncIterable<Uint8Array> | null {
+  if (!stream) return null;
+  if (stream.source && typeof stream.source[Symbol.asyncIterator] === "function") return stream.source;
+  if (typeof stream[Symbol.asyncIterator] === "function") return stream as any;
+  const inner = (stream as any).stream;
+  if (inner?.source && typeof inner.source[Symbol.asyncIterator] === "function") return inner.source;
+  if (inner && typeof inner[Symbol.asyncIterator] === "function") return inner as any;
+  return null;
+}
+
+async function writeToStream(stream: any, data: Uint8Array, opts: { end?: boolean } = {}) {
+  if (!stream) throw new Error("No stream provided");
+  const shouldEnd = opts.end === true;
+
+  const sinkTarget =
+    typeof stream.sink === "function"
+      ? stream
+      : stream?.stream && typeof stream.stream.sink === "function"
+      ? stream.stream
+      : null;
+  if (sinkTarget) {
+    const iterable = (async function* () {
+      yield data;
+    })();
+    await sinkTarget.sink(iterable);
+    if (shouldEnd && typeof sinkTarget.close === "function") {
+      await sinkTarget.close();
+    }
+    return;
+  }
+
+  const writeTarget =
+    typeof stream.write === "function"
+      ? stream
+      : stream?.stream && typeof stream.stream.write === "function"
+      ? stream.stream
+      : null;
+  if (writeTarget) {
+    await writeTarget.write(data);
+    if (shouldEnd) {
+      if (typeof writeTarget.closeWrite === "function") {
+        await writeTarget.closeWrite();
+      } else if (typeof writeTarget.close === "function") {
+        await writeTarget.close();
+      }
+    }
+    return;
+  }
+
+  const sendTarget =
+    typeof stream.send === "function"
+      ? stream
+      : stream?.stream && typeof stream.stream.send === "function"
+      ? stream.stream
+      : null;
+  if (sendTarget) {
+    sendTarget.send(data);
+    if (shouldEnd) {
+      if (typeof sendTarget.closeWrite === "function") {
+        await sendTarget.closeWrite();
+      } else if (typeof sendTarget.close === "function") {
+        await sendTarget.close();
+      }
+    }
+    return;
+  }
+
+  throw new Error("stream is not writable (sink/write/send missing)");
 }

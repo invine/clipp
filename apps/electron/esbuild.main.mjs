@@ -18,6 +18,7 @@ await build({
     "@koush/wrtc",
     "@ipshipyard/node-datachannel",
     "node-datachannel",
+    "@libp2p/webrtc",
     "better-sqlite3",
     "ws"
   ],

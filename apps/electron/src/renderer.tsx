@@ -9,6 +9,7 @@ type AppState = {
   pending: PendingRequest[];
   peers: string[];
   identity: Identity | null;
+  relayAddresses: string[];
   pinnedIds?: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
@@ -24,6 +25,7 @@ const initialState: AppState = {
   peers: [],
   identity: null,
   pinnedIds: [],
+  relayAddresses: [],
 };
 
 const App = () => {

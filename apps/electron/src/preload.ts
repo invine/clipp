@@ -7,6 +7,7 @@ type AppState = {
   pending: PendingRequest[];
   peers: string[];
   identity: Identity | null;
+  relayAddresses: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
     lastClipboardPreview: string | null;
@@ -30,6 +31,7 @@ const api = {
   openQrWindow: () => ipcRenderer.invoke("clipp:open-qr-window"),
   togglePin: (id: string) => ipcRenderer.invoke("clipp:toggle-pin", id),
   renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
+  setRelayAddresses: (addrs: string[]) => ipcRenderer.invoke("clipp:set-relay-addresses", addrs),
   onUpdate: (cb: (state: AppState) => void) => {
     const listener = (_event: any, state: AppState) => cb(state);
     ipcRenderer.on("clipp:update", listener);

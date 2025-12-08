@@ -22,7 +22,17 @@ import { dcutr } from "@libp2p/dcutr";
 import { ping } from "@libp2p/ping";
 import { fromString as u8FromString } from "uint8arrays/from-string";
 import { toString as u8ToString } from "uint8arrays/to-string";
-import { sendTrustRequest, registerClipboardHandler, loadPrivateKeyFromEnv, safeStat, safeConnStat, getStreamIterable, writeStream, describeStream } from "../packages/core/network/probeUtils.js";
+import { encode as encodeQr } from "../packages/core/qr/index.js";
+import {
+  sendTrustRequest,
+  registerClipboardHandler,
+  loadPrivateKeyFromEnv,
+  safeStat,
+  safeConnStat,
+  getStreamIterable,
+  writeStream,
+  describeStream,
+} from "../packages/core/network/probeUtils.js";
 
 function env(name: string): string | undefined {
   const val = process.env[name];
@@ -33,6 +43,23 @@ function envBool(name: string, defaultValue: boolean): boolean {
   const v = env(name);
   if (v === undefined) return defaultValue;
   return ["1", "true", "yes", "on"].includes(v.toLowerCase());
+}
+
+function derivePublicKeyBase64(priv: any, peerId: any): string {
+  try {
+    const pub =
+      priv?.publicKey?.raw ??
+      priv?.publicKey?.bytes ??
+      priv?.publicKey?.marshal?.() ??
+      (peerId?.publicKey instanceof Uint8Array ? peerId.publicKey : undefined) ??
+      null;
+    if (pub instanceof Uint8Array) {
+      return Buffer.from(pub).toString("base64");
+    }
+  } catch {
+    // ignore
+  }
+  return "";
 }
 
 function patchConsoleTimestamps() {
@@ -90,7 +117,12 @@ async function main() {
       listen: relayOnlyListen
         ? [circuitAddr]
         : enableTcp
-        ? [circuitAddr, wsListen, tcpListen, ...(enableWebRTC ? webrtcListen : [])]
+        ? [
+            circuitAddr,
+            wsListen,
+            tcpListen,
+            ...(enableWebRTC ? webrtcListen : []),
+          ]
         : [circuitAddr, wsListen, ...(enableWebRTC ? webrtcListen : [])],
     },
     logger: defaultLogger(),
@@ -124,7 +156,10 @@ async function main() {
   }
 
   if (enableWebRTC) {
-    console.info("[probe] requested WebRTC listen addrs", webrtcListen.map((a: any) => a.toString()));
+    console.info(
+      "[probe] requested WebRTC listen addrs",
+      webrtcListen.map((a: any) => a.toString())
+    );
   }
   console.info("[probe] node started and listening for pairing requests", {
     peer: node.peerId.toString(),
@@ -138,7 +173,9 @@ async function main() {
       .map(String)
       .filter((a) => a.includes("/webrtc"));
     if (boundWebRTC.length === 0) {
-      console.warn("[probe] WebRTC transport enabled but no /webrtc addresses bound. Enable LIBP2P_DEBUG=libp2p:webrtc:* to see binding errors.");
+      console.warn(
+        "[probe] WebRTC transport enabled but no /webrtc addresses bound. Enable LIBP2P_DEBUG=libp2p:webrtc:* to see binding errors."
+      );
     } else {
       console.info("[probe] WebRTC bound addrs", boundWebRTC);
     }
@@ -211,7 +248,10 @@ async function main() {
         sentAt: Date.now(),
       };
       try {
-        await writeStream(stream, new TextEncoder().encode(JSON.stringify(ack)));
+        await writeStream(
+          stream,
+          new TextEncoder().encode(JSON.stringify(ack))
+        );
         console.info("[probe] sent trust-ack to incoming trust-request", ack);
       } catch (err: any) {
         console.warn("[probe] failed to send trust-ack", {
@@ -230,7 +270,10 @@ async function main() {
     (node as any)?.registrar?.getProtocols?.() ??
     (node as any)?.getProtocols?.() ??
     [];
-  console.info("[probe] supported protocols after handler registration", supported);
+  console.info(
+    "[probe] supported protocols after handler registration",
+    supported
+  );
 
   try {
     const baseRelay =
@@ -264,6 +307,27 @@ async function main() {
 
   const announced = node.getMultiaddrs().map(String);
   console.info("[probe] announced multiaddrs:", announced);
+  // Print QR payload for pairing with this probe (as listener)
+  if (!pairTarget) {
+    const publicKeyB64 = derivePublicKeyBase64(privateKey, node.peerId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const qrPayload = {
+      deviceId: node.peerId.toString(),
+      deviceName: "Probe Listener",
+      multiaddr: announced[0],
+      multiaddrs: announced,
+      publicKey: publicKeyB64,
+      timestamp,
+      version: "1",
+    };
+    try {
+      const json = JSON.stringify(qrPayload);
+      const b64 = Buffer.from(json, "utf8").toString("base64");
+      console.info("[probe] QR payload base64 (JSON):", b64);
+    } catch (err: any) {
+      console.warn("[probe] failed to generate QR", err?.message || err);
+    }
+  }
 
   if (pairTarget) {
     await sendPairRequest(node, pairTarget);
@@ -335,7 +399,10 @@ async function registerAndList(node: any, relay: string, topic: string) {
       relay: relayMa.toString(),
     });
     const conn = await node.dialProtocol(relayMa, "/rendezvous/1.0.0");
-    console.info("[probe] rendezvous register stream info", describeStream(conn));
+    console.info(
+      "[probe] rendezvous register stream info",
+      describeStream(conn)
+    );
     await writeStream(
       conn,
       u8FromString(
@@ -350,19 +417,25 @@ async function registerAndList(node: any, relay: string, topic: string) {
     let got = false;
     const iterable = getStreamIterable(conn);
     if (!iterable) {
-      console.warn("[probe] rendezvous register: stream missing async iterator", {
-        keys: Object.keys(conn || {}),
-        protocol: conn?.protocol,
-      });
+      console.warn(
+        "[probe] rendezvous register: stream missing async iterator",
+        {
+          keys: Object.keys(conn || {}),
+          protocol: conn?.protocol,
+        }
+      );
       return;
     }
     let waitLog: any;
     const start = Date.now();
     try {
       waitLog = setInterval(() => {
-        console.info("[probe] rendezvous register: still waiting for response", {
-          waitedMs: Date.now() - start,
-        });
+        console.info(
+          "[probe] rendezvous register: still waiting for response",
+          {
+            waitedMs: Date.now() - start,
+          }
+        );
       }, 2_000);
       for await (const chunk of iterable) {
         if (!chunk) {
@@ -398,7 +471,10 @@ async function registerAndList(node: any, relay: string, topic: string) {
       console.warn("[probe] rendezvous register: no response");
     }
   } catch (err: any) {
-    console.error("[probe] rendezvous register stream info (error)", describeStream(err?.stream || {}));
+    console.error(
+      "[probe] rendezvous register stream info (error)",
+      describeStream(err?.stream || {})
+    );
     console.error(
       "[probe] rendezvous register failed",
       err?.message || err,
@@ -491,7 +567,10 @@ async function registerAndList(node: any, relay: string, topic: string) {
       console.warn("[probe] rendezvous list: no response");
     }
   } catch (err: any) {
-    console.error("[probe] rendezvous list stream info (error)", describeStream(err?.stream || {}));
+    console.error(
+      "[probe] rendezvous list stream info (error)",
+      describeStream(err?.stream || {})
+    );
     console.error("[probe] rendezvous list failed", err?.message || err, err);
   }
 }
@@ -516,7 +595,9 @@ async function sendPairRequest(node: any, target: string | string[]) {
     const peerId = extractPeerId(targetMa);
     const directCandidates: string[] = [];
     if (peerId && peerAddrHints[peerId]) {
-      const hints = peerAddrHints[peerId].filter((a) => !a.includes("/p2p-circuit"));
+      const hints = peerAddrHints[peerId].filter(
+        (a) => !a.includes("/p2p-circuit")
+      );
       directCandidates.push(...hints);
       // Always add hinted addrs to the peer store so DCUtR can use them even if we skip direct dials.
       try {
@@ -527,12 +608,16 @@ async function sendPairRequest(node: any, target: string | string[]) {
       }
     }
     if (skipDirectDial) {
-      console.info("[probe] skipping direct upgrade attempts (PROBE_SKIP_DIRECT_DIAL set)");
+      console.info(
+        "[probe] skipping direct upgrade attempts (PROBE_SKIP_DIRECT_DIAL set)"
+      );
     } else {
       for (const addr of directCandidates) {
         try {
           const ma = multiaddr(addr);
-          await node.peerStore?.addressBook?.add?.(ma.getPeerId?.() || peerId, [ma]);
+          await node.peerStore?.addressBook?.add?.(ma.getPeerId?.() || peerId, [
+            ma,
+          ]);
           console.info("[probe] attempting direct upgrade before relay", {
             target: ma.toString(),
           });
@@ -558,7 +643,7 @@ async function sendPairRequest(node: any, target: string | string[]) {
         peerId,
         peerAddrs: peerAddrHints[peerId],
       });
-      await waitForDirectUpgrade(node, peerId, 10_000);
+      await waitForDirectUpgrade(node, peerId, 1000);
     }
     try {
       const ack = await sendTrustRequest(node, targetMa, payload, {
@@ -607,9 +692,12 @@ function withMuxerLogging(factory: any, name: string) {
           stack: new Error().stack,
         });
       } else if (!maConn.log) {
-        console.warn(`[probe-muxer-${name}] maConn.log is missing; injecting default logger`, {
-          maConnKeys: Object.keys(maConn || {}),
-        });
+        console.warn(
+          `[probe-muxer-${name}] maConn.log is missing; injecting default logger`,
+          {
+            maConnKeys: Object.keys(maConn || {}),
+          }
+        );
         maConn.log = defaultLogger();
       }
       try {
@@ -683,7 +771,10 @@ function parseIceServers(): Array<Record<string, any>> {
       const parsed = JSON.parse(envIce);
       if (Array.isArray(parsed)) return parsed as Array<Record<string, any>>;
     } catch (err: any) {
-      console.warn("[probe] failed to parse PROBE_WEBRTC_ICE", err?.message || err);
+      console.warn(
+        "[probe] failed to parse PROBE_WEBRTC_ICE",
+        err?.message || err
+      );
     }
   }
   // Fallback to a public STUN; override via PROBE_WEBRTC_ICE for TURN.
@@ -717,12 +808,17 @@ function extractPeerId(ma: any): string | undefined {
   }
 }
 
-async function waitForDirectUpgrade(node: any, peerId: string, timeoutMs: number) {
+async function waitForDirectUpgrade(
+  node: any,
+  peerId: string,
+  timeoutMs: number
+) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const conns = node.getConnections(peerId) || [];
     const direct = conns.find(
-      (c: any) => !c.limits && !c.remoteAddr?.toString?.().includes("/p2p-circuit/")
+      (c: any) =>
+        !c.limits && !c.remoteAddr?.toString?.().includes("/p2p-circuit/")
     );
     console.info("[probe] direct upgrade poll", {
       peerId,
@@ -735,9 +831,12 @@ async function waitForDirectUpgrade(node: any, peerId: string, timeoutMs: number
       })),
     });
     if (direct) {
-      console.info("[probe] DCUtR upgrade succeeded; direct connection present", {
-        addr: direct.remoteAddr?.toString?.(),
-      });
+      console.info(
+        "[probe] DCUtR upgrade succeeded; direct connection present",
+        {
+          addr: direct.remoteAddr?.toString?.(),
+        }
+      );
       return true;
     }
     await delay(500);

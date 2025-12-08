@@ -19,6 +19,7 @@ export type Identity = {
   deviceId: string;
   deviceName: string;
   publicKey: string;
+  privateKey?: string;
   createdAt: number;
   multiaddr?: string;
   multiaddrs?: string[];

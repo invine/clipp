@@ -146,6 +146,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.04);
   min-width: 260px;
   max-width: 360px;
+  color: var(--md-sys-color-on-surface);
 }
 
 .search-field input {
@@ -158,6 +159,16 @@ body {
   font-size: 13px;
 }
 
+.search-field textarea {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-field::placeholder,
 .search-field input::placeholder {
   color: #6d7281;
 }
@@ -215,6 +226,12 @@ body {
 .primary-button:hover {
   box-shadow: var(--md-elevation-2);
   transform: translateY(-0.5px);
+}
+
+.compact-button {
+  padding: 4px 10px;
+  font-size: 12px;
+  height: auto;
 }
 
 .app-main {
@@ -326,6 +343,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .peer-name {
@@ -360,10 +379,43 @@ body {
 .peer-sub {
   font-size: 11px;
   color: #9ca3af;
+  max-width: 100%;
+  width: 100%;
+}
+
+.middle-ellipsis {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.middle-ellipsis-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: none;
+  left: 0;
+  top: 0;
+}
+
+.peer-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.peer-actions .icon-button {
+  width: 28px;
+  height: 28px;
 }
 
 .peer-indicator {
-  margin-left: auto;
   font-size: 11px;
   color: #a3a6b9;
   display: flex;
@@ -388,6 +440,39 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pending-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pending-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pending-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .filter-chip {

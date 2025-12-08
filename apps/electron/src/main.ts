@@ -9,6 +9,7 @@ import {
 } from "electron";
 import path from "node:path";
 import wrtc from "@koush/wrtc";
+import WebSocket from "ws";
 import { webcrypto } from "node:crypto";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import {
@@ -24,6 +25,7 @@ import { E } from "vite/dist/node/moduleRunnerTransport.d-DJ_mE5sf.js";
 const __dirnameFallback =
   typeof __dirname !== "undefined" ? (__dirname as string) : "";
 const isDev = !app.isPackaged;
+const preloadPath = path.join(__dirnameFallback, "preload.js");
 
 // Ensure WebRTC globals exist before loading libp2p/webrtc-star.
 const wrtcImpl: any = wrtc;
@@ -33,6 +35,7 @@ const wrtcImpl: any = wrtc;
   (globalThis as any).RTCSessionDescription || wrtcImpl?.RTCSessionDescription;
 (globalThis as any).RTCIceCandidate =
   (globalThis as any).RTCIceCandidate || wrtcImpl?.RTCIceCandidate;
+(globalThis as any).WebSocket = (globalThis as any).WebSocket || (WebSocket as any);
 try {
   if (!(globalThis as any).navigator) {
     (globalThis as any).navigator = { userAgent: "Clipp Desktop" } as any;
@@ -54,7 +57,8 @@ async function bootstrap() {
     normalizeMod,
     decodeMod,
     log,
-    { deviceIdToPeerId, deviceIdToPeerIdObject },
+    { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 },
+    { privateKeyFromProtobuf },
   ] = await Promise.all([
     import("../../../packages/core/network/engine.js"),
     import("../../../packages/core/history/store.js"),
@@ -64,6 +68,7 @@ async function bootstrap() {
     import("../../../packages/core/pairing/decode.js"),
     import("../../../packages/core/logger.js"),
     import("../../../packages/core/network/peerId.js"),
+    import("@libp2p/crypto/keys"),
   ]);
 
   const { createTrustManager, TrustedDevice } = trustMod as any;
@@ -75,21 +80,36 @@ async function bootstrap() {
   (log as any).setLogLevel?.(logLevel);
   (log as any).info?.("Clipp Electron bootstrap", { logLevel });
 
-  const relayAddrEnv =
-    process.env.CLIPP_RELAY_ADDR ||
-    process.env.CLIPP_RELAY_MULTIADDR ||
-    "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
-  const relayAddresses = relayAddrEnv ? [relayAddrEnv] : undefined;
-
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const trust = createTrustManager(kvStore);
+  const relayAddrEnv =
+    process.env.CLIPP_RELAY_ADDR ||
+    process.env.CLIPP_RELAY_MULTIADDR ||
+    "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
+  let relayAddresses = normalizeRelayAddrs(
+    (await kvStore.get<string[]>("relayAddresses"))?.filter(Boolean) ||
+      (relayAddrEnv ? [relayAddrEnv] : [])
+  );
   const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
-  const peerId = await deviceIdToPeerIdObject(localIdentity.deviceId);
+  (log as any).info?.("Loaded identity", {
+    deviceId: localIdentity.deviceId,
+    hasPrivateKey: !!localIdentity.privateKey && localIdentity.privateKey.length > 20,
+    hasPublicKey: !!localIdentity.publicKey && localIdentity.publicKey.length > 20,
+    multiaddrs: localIdentity.multiaddrs,
+  });
+  const peerId =
+    localIdentity.privateKey && typeof localIdentity.privateKey === "string"
+      ? await peerIdFromPrivateKeyBase64(localIdentity.privateKey)
+      : await deviceIdToPeerIdObject(localIdentity.deviceId);
+  const privateKey =
+    localIdentity.privateKey && typeof localIdentity.privateKey === "string"
+      ? await privateKeyFromProtobuf(Buffer.from(localIdentity.privateKey, "base64"))
+      : undefined;
 
-  const messaging = createMessagingLayer({ trustStore: trust, peerId, relayAddresses });
+  let messaging = createMessagingLayer({ trustStore: trust, peerId, privateKey, relayAddresses });
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
@@ -129,7 +149,10 @@ async function bootstrap() {
     // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
     const existing = Array.isArray(id?.multiaddrs) ? [...id.multiaddrs] : [];
     const derived: string[] = [];
-    if (relayAddrEnv) {
+    const relaySet = normalizeRelayAddrs(relayAddresses || []);
+    if (relaySet.length) {
+      relaySet.forEach((addr) => derived.push(`${addr}/p2p-circuit/p2p/${peerId}`));
+    } else if (relayAddrEnv) {
       derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
     }
     derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
@@ -157,6 +180,50 @@ async function bootstrap() {
       out.push(v);
     }
     return out;
+  }
+
+  function normalizeRelayAddrs(values: string[]) {
+    const cleaned = values
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .filter(Boolean);
+    const unique = dedupeMultiaddrs(cleaned);
+    const valid: string[] = [];
+    const invalid: Array<{ addr: string; error: string }> = [];
+    for (const addr of unique) {
+      const repaired = repairRelayAddr(addr);
+      if (!repaired) {
+        invalid.push({ addr, error: "unparseable" });
+        continue;
+      }
+      try {
+        // parse to ensure it is well-formed; discard if invalid
+        multiaddr(repaired);
+        valid.push(repaired);
+      } catch (err: any) {
+        invalid.push({ addr: repaired, error: err?.message || String(err) });
+      }
+    }
+    if (invalid.length) {
+      (log as any).warn?.("Invalid relay addrs filtered out", invalid);
+    }
+    return valid;
+  }
+
+  function repairRelayAddr(addr: string): string | null {
+    const trimmed = (addr || "").trim();
+    if (!trimmed) return null;
+    // If there's accidental duplication after the peer id (e.g. ".../p2p/<id>141.147.116.147"),
+    // keep only up to the peer-id segment.
+    const p2pIdx = trimmed.indexOf("/p2p/");
+    if (p2pIdx >= 0) {
+      const candidate = trimmed.slice(0, p2pIdx) + trimmed.slice(p2pIdx);
+      // strip any junk after peer id (non-base58 or trailing numbers)
+      const match = candidate.match(/^(.*\/p2p\/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+)(?:[^123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz].*)?$/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    return trimmed;
   }
 
   function validMultiaddrs(
@@ -212,6 +279,7 @@ async function bootstrap() {
 
   let pendingRequests: (typeof TrustedDevice)[] = [];
   let mainWindow: BrowserWindow | null = null;
+  let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
   let quitting = false;
 
@@ -227,6 +295,7 @@ async function bootstrap() {
       peers,
       identity,
       pinnedIds,
+      relayAddresses,
       diagnostics: {
         lastClipboardCheck,
         lastClipboardPreview,
@@ -269,6 +338,21 @@ async function bootstrap() {
     await messaging.sendMessage(target, ack as any).catch(() => {});
   }
 
+  function bindMessagingHandlers(target: any) {
+    if (!target || (target as any).__clippBound) return;
+    (target as any).__clippBound = true;
+    target.onMessage(async (msg: any) => {
+      if (msg.type === "CLIP" && msg.clip) {
+        await clipboardSvc.writeRemoteClip(msg.clip);
+      } else if (msg.type === "trust-request") {
+        const dev = msg.payload as any;
+        await trust.handleTrustRequest(dev);
+      }
+    });
+    target.onPeerConnected(() => void emitState());
+    target.onPeerDisconnected(() => void emitState());
+  }
+
   async function startServices() {
     clipboardSvc.onLocalClip(async (clip: Clip) => {
       const id = await trust.getLocalIdentity();
@@ -282,16 +366,7 @@ async function bootstrap() {
       await emitState();
     });
 
-    messaging.onMessage(async (msg: any) => {
-      if (msg.type === "CLIP" && msg.clip) {
-        await clipboardSvc.writeRemoteClip(msg.clip);
-      } else if (msg.type === "trust-request") {
-        const dev = msg.payload as any;
-        await trust.handleTrustRequest(dev);
-      }
-    });
-    messaging.onPeerConnected(() => void emitState());
-    messaging.onPeerDisconnected(() => void emitState());
+    bindMessagingHandlers(messaging);
 
     trust.on("request", (d: any) => {
       pendingRequests.push(d);
@@ -324,8 +399,27 @@ async function bootstrap() {
     clipboardSvc.start();
   }
 
+  async function restartMessaging() {
+    try {
+      await messaging.stop();
+    } catch {
+      // ignore stop failures
+    }
+    messagingStarted = false;
+    messaging = createMessagingLayer({ trustStore: trust, peerId, relayAddresses });
+    bindMessagingHandlers(messaging);
+    await ensureMessagingStarted();
+    await emitState();
+  }
+
+  async function updateRelayAddresses(addrs: string[]) {
+    relayAddresses = normalizeRelayAddrs(addrs.filter(Boolean));
+    await kvStore.set("relayAddresses", relayAddresses);
+    await ensureIdentityAddrs(await trust.getLocalIdentity());
+    await restartMessaging();
+  }
+
   function createWindow() {
-    const preload = path.join(__dirnameFallback, "preload.js");
     mainWindow = new BrowserWindow({
       width: 520,
       height: 760,
@@ -336,7 +430,7 @@ async function bootstrap() {
       autoHideMenuBar: true,
       icon: appIconPath,
       webPreferences: {
-        preload,
+        preload: preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
       },
@@ -375,6 +469,129 @@ async function bootstrap() {
     }
   }
 
+  function buildRelayWindowHtml() {
+    const placeholder = "/dns4/relay.example.com/tcp/443/wss/p2p/<relay-id>";
+    return `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Relay addresses</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { margin:0; padding:16px; background:#0d1018; color:#e5e7eb; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+            .card { background:#131623; border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; box-shadow:0 12px 36px rgba(0,0,0,0.35); }
+            h1 { margin:0 0 6px; font-size:18px; }
+            p { margin:0 0 12px; color:#9ca3af; }
+            textarea { width:100%; min-height:160px; resize:vertical; background:#0f1119; color:#f3f4f6; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:10px; font: 13px/1.4 "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+            textarea:focus { outline:1px solid #7c3aed; }
+            .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+            button { border:none; border-radius:10px; padding:10px 14px; background:#7c3aed; color:#fff; font-weight:600; cursor:pointer; }
+            button.secondary { background:rgba(255,255,255,0.08); color:#e5e7eb; }
+            button:disabled { opacity:0.6; cursor:default; }
+            .status { margin-top:8px; min-height:18px; font-size:12px; color:#9ca3af; }
+            .status[data-tone="ok"] { color:#22c55e; }
+            .status[data-tone="error"] { color:#f87171; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>Relay addresses</h1>
+            <p>One address per line. Changes take effect immediately.</p>
+            <textarea id="relayInput" placeholder="${placeholder}"></textarea>
+            <div class="actions">
+              <button id="saveBtn">Save</button>
+              <button class="secondary" id="closeBtn">Close</button>
+            </div>
+            <div class="status" id="status"></div>
+          </div>
+          <script>
+            (function() {
+              const textarea = document.getElementById("relayInput");
+              const saveBtn = document.getElementById("saveBtn");
+              const closeBtn = document.getElementById("closeBtn");
+              const status = document.getElementById("status");
+
+              function setStatus(msg, tone) {
+                status.textContent = msg || "";
+                if (tone) status.dataset.tone = tone;
+                else status.removeAttribute("data-tone");
+              }
+
+              async function loadState() {
+                try {
+                  const state = await window.clipp.getState();
+                  textarea.value = (state?.relayAddresses || []).join("\\n");
+                  setStatus("");
+                } catch (err) {
+                  console.error(err);
+                  setStatus("Failed to load current relays", "error");
+                }
+              }
+
+              saveBtn.addEventListener("click", async () => {
+                const addrs = textarea.value.split(/\\n+/).map((s) => s.trim()).filter(Boolean);
+                saveBtn.disabled = true;
+                setStatus("Saving…");
+                try {
+                  await window.clipp.setRelayAddresses(addrs);
+                  setStatus("Saved", "ok");
+                } catch (err) {
+                  console.error(err);
+                  setStatus("Failed to save relay addresses", "error");
+                } finally {
+                  saveBtn.disabled = false;
+                }
+              });
+
+              closeBtn.addEventListener("click", () => window.close());
+
+              const unsubscribe = window.clipp.onUpdate?.((state) => {
+                textarea.value = (state?.relayAddresses || []).join("\\n");
+              });
+              window.addEventListener("beforeunload", () => {
+                if (unsubscribe) unsubscribe();
+              });
+              loadState();
+            })();
+          </script>
+        </body>
+      </html>
+    `;
+  }
+
+  function openRelayWindow() {
+    if (relayWindow && !relayWindow.isDestroyed()) {
+      relayWindow.show();
+      relayWindow.focus();
+      return relayWindow;
+    }
+    relayWindow = new BrowserWindow({
+      width: 480,
+      height: 420,
+      minWidth: 420,
+      minHeight: 360,
+      show: false,
+      backgroundColor: "#0f1119",
+      autoHideMenuBar: true,
+      title: "Relay addresses",
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    relayWindow.once("closed", () => {
+      relayWindow = null;
+    });
+    const html = buildRelayWindowHtml();
+    relayWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+    relayWindow.once("ready-to-show", () => {
+      relayWindow?.show();
+    });
+    return relayWindow;
+  }
+
   function pickTrayIcon(): Electron.NativeImage {
     for (const candidate of trayIconCandidates) {
       const img = nativeImage.createFromPath(candidate);
@@ -404,6 +621,7 @@ async function bootstrap() {
     tray = new Tray(icon);
     const contextMenu = Menu.buildFromTemplate([
       { label: "Open Clipp", click: () => showWindow() },
+      { label: "Configure Relays", click: () => openRelayWindow() },
       {
         label: "Quit",
         click: () => {
@@ -414,13 +632,7 @@ async function bootstrap() {
     ]);
     tray.setToolTip("Clipp – clipboard sync");
     tray.setContextMenu(contextMenu);
-    tray.on("click", () => {
-      if (mainWindow?.isVisible()) {
-        mainWindow.hide();
-      } else {
-        showWindow();
-      }
-    });
+    tray.on("click", () => tray?.popUpContextMenu());
   }
 
   app.whenReady().then(async () => {
@@ -454,6 +666,11 @@ async function bootstrap() {
     const id = await trust.renameLocalIdentity(name);
     await emitState();
     return await ensureIdentityAddrs(id);
+  });
+
+  ipcMain.handle("clipp:set-relay-addresses", async (_evt, addrs: string[]) => {
+    await updateRelayAddresses(Array.isArray(addrs) ? addrs : []);
+    return { ok: true, relayAddresses };
   });
 
   ipcMain.handle("clipp:delete-clip", async (_evt, id: string) => {
@@ -605,6 +822,8 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:open-qr-window", async () => {
+    // Ensure we have an active relay reservation before showing the QR so peers can dial us immediately.
+    await ensureMessagingStarted();
     const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
     const addrs = id.multiaddrs && id.multiaddrs.length ? id.multiaddrs : [];
     if (!addrs.length) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Buffer } from "buffer";
 import { Clip, Device, Identity, PendingRequest } from "./types";
 import { encode } from "../../core/qr";
@@ -36,6 +36,89 @@ function formatTime(ts: number): string {
 function truncate(text: string, max = 220): string {
   if (!text) return "";
   return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function truncateMiddle(text: string, max = 28): string {
+  if (!text) return "";
+  if (text.length <= max) return text;
+  const available = Math.max(max - 3, 1);
+  const lead = Math.ceil(available / 2);
+  const tail = Math.floor(available / 2);
+  return `${text.slice(0, lead)}...${text.slice(text.length - tail)}`;
+}
+
+type MiddleEllipsisTextProps = {
+  text: string;
+  max?: number;
+  className?: string;
+  style?: React.CSSProperties;
+};
+
+function MiddleEllipsisText({ text, max = 28, className, style }: MiddleEllipsisTextProps) {
+  const [display, setDisplay] = useState(text);
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+
+    const computeDisplay = () => {
+      const containerWidth = container.clientWidth;
+      if (!containerWidth) {
+        setDisplay(text);
+        return;
+      }
+
+      // If the full string fits, keep it.
+      measure.textContent = text;
+      if (measure.scrollWidth <= containerWidth + 0.5) {
+        setDisplay(text);
+        return;
+      }
+
+      // Find the longest middle-ellipsized string (up to `max` chars) that fits.
+      const maxChars = Math.max(6, Math.min(max, text.length));
+      let low = 6;
+      let high = maxChars;
+      let best = truncateMiddle(text, low);
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const candidate = truncateMiddle(text, mid);
+        measure.textContent = candidate;
+        if (measure.scrollWidth <= containerWidth + 0.5) {
+          best = candidate;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      setDisplay(best);
+    };
+
+    computeDisplay();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(computeDisplay) : null;
+    resizeObserver?.observe(container);
+    window.addEventListener("resize", computeDisplay);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", computeDisplay);
+    };
+  }, [text, max]);
+
+  const classes = className ? `middle-ellipsis ${className}` : "middle-ellipsis";
+
+  return (
+    <span ref={containerRef} className={classes} style={style} title={text}>
+      <span ref={measureRef} className="middle-ellipsis-measure" aria-hidden>
+        {display}
+      </span>
+      {display}
+    </span>
+  );
 }
 
 export type ClipboardAppProps = {
@@ -86,6 +169,7 @@ export function ClipboardApp({
   const [qrOpen, setQrOpen] = useState(false);
   const [showNav, setShowNav] = useState(false);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [peerIdMap, setPeerIdMap] = useState<Record<string, string>>({});
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
@@ -139,6 +223,30 @@ export function ClipboardApp({
     window.addEventListener("resize", handleHeight);
     return () => window.removeEventListener("resize", handleHeight);
   }, [userToggledFilters]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function computePeerIds() {
+      try {
+        const ids = Array.from(new Set([...devices, ...pending].map((dev) => dev.deviceId)));
+        const entries = await Promise.all(
+          ids.map(async (id) => [id, await deviceIdToPeerId(id)] as const),
+        );
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        entries.forEach(([id, pid]) => {
+          next[id] = pid;
+        });
+        setPeerIdMap(next);
+      } catch {
+        // ignore errors and fall back to deviceId
+      }
+    }
+    computePeerIds();
+    return () => {
+      cancelled = true;
+    };
+  }, [devices, pending]);
 
   const deviceNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -347,12 +455,18 @@ export function ClipboardApp({
                       </span>
                     </button>
                   </div>
-                  <div className="peer-sub">{identity.deviceId}</div>
+                  <MiddleEllipsisText
+                    className="peer-sub"
+                    text={identity.deviceId}
+                    max={isNarrow ? 22 : 30}
+                  />
                 </div>
-                <div className="peer-indicator">
-                  <span className="icon" style={{ fontSize: 14 }}>
-                    laptop_mac
-                  </span>
+                <div className="peer-actions">
+                  <div className="peer-indicator">
+                    <span className="icon" style={{ fontSize: 14 }}>
+                      laptop_mac
+                    </span>
+                  </div>
                 </div>
               </div>
               <button
@@ -364,21 +478,6 @@ export function ClipboardApp({
               </button>
             </>
           )}
-
-          {devices.map((dev) => (
-            <div className="peer-item" key={dev.deviceId}>
-              <div className="peer-avatar">{dev.deviceName?.[0] || "D"}</div>
-              <div className="peer-meta">
-                <div className="peer-name">{dev.deviceName}</div>
-                <div className="peer-sub">Paired · {formatTime(dev.createdAt)}</div>
-              </div>
-              <div className="peer-indicator">
-                <span className="icon" style={{ fontSize: 14 }}>
-                  smartphone
-                </span>
-              </div>
-            </div>
-          ))}
         </div>
 
         {pending.length > 0 && (
@@ -388,47 +487,33 @@ export function ClipboardApp({
               <div className="nav-section-label" style={{ marginTop: 14 }}>
                 Pending requests
               </div>
-              <div className="nav-tag-list" style={{ flexDirection: "column", gap: 8 }}>
-                {pending.map((req) => (
-                  <div
-                    key={req.deviceId}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 12,
-                      padding: "8px 10px",
-                      background: "rgba(255,255,255,0.02)",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{req.deviceName}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af", wordBreak: "break-all" }}>
-                      {req.deviceId}
+              <div className="pending-list">
+                {pending.map((req) => {
+                  const peerId = peerIdMap[req.deviceId] || req.deviceId;
+                  return (
+                    <div key={req.deviceId} className="pending-card">
+                      <div className="pending-card-header">
+                        <div className="peer-avatar">{req.deviceName?.[0] || "D"}</div>
+                        <div className="peer-meta">
+                          <div className="peer-name">{req.deviceName}</div>
+                          <MiddleEllipsisText
+                            className="peer-sub"
+                            text={peerId}
+                            max={isNarrow ? 22 : 32}
+                          />
+                        </div>
+                      </div>
+                      <div className="pending-actions">
+                        <button className="primary-button compact-button" onClick={() => onAccept(req)}>
+                          Accept
+                        </button>
+                        <button className="text-button" onClick={() => onReject(req)}>
+                          Reject
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button
-                        className="primary-button"
-                        style={{ padding: "4px 10px", fontSize: 11 }}
-                        onClick={() => onAccept(req)}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        className="icon-button"
-                        style={{
-                          width: "auto",
-                          padding: "4px 10px",
-                          fontSize: 11,
-                          border: "1px solid rgba(255,255,255,0.1)",
-                        }}
-                        onClick={() => onReject(req)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </>
@@ -472,36 +557,43 @@ export function ClipboardApp({
             }}
           >
             {devices.length === 0 && <div className="content-subtitle">No devices yet.</div>}
-            {devices.map((dev) => (
-              <div
-                key={dev.deviceId}
-                style={{
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 12,
-                  padding: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <div style={{ fontSize: 13, color: "#e5e7eb" }}>{dev.deviceName}</div>
-                  <div style={{ fontSize: 11, color: "#9ca3af" }}>{dev.deviceId}</div>
-                </div>
-                <button
-                  className="icon-button"
-                  style={{
-                    width: "auto",
-                    padding: "4px 8px",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                  }}
-                  onClick={() => onUnpair(dev.deviceId)}
+            {devices.map((dev) => {
+              const peerId = peerIdMap[dev.deviceId] || dev.deviceId;
+              return (
+                <div
+                  key={dev.deviceId}
+                  className="peer-item"
+                  title={`Paired ${formatTime(dev.createdAt)}`}
+                  style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                 >
-                  Unpair
-                </button>
-              </div>
-            ))}
+                  <div className="peer-avatar">{dev.deviceName?.[0] || "D"}</div>
+                  <div className="peer-meta">
+                    <div className="peer-name">{dev.deviceName}</div>
+                    <MiddleEllipsisText
+                      className="peer-sub"
+                      text={peerId}
+                      max={isNarrow ? 22 : 32}
+                    />
+                  </div>
+                  <div className="peer-actions">
+                    <div className="peer-indicator">
+                      <span className="icon" style={{ fontSize: 14 }}>
+                        smartphone
+                      </span>
+                    </div>
+                    <button
+                      className="icon-button"
+                      title="Unpair this device"
+                      onClick={() => onUnpair(dev.deviceId)}
+                    >
+                      <span className="icon" style={{ fontSize: 16 }}>
+                        link_off
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </>

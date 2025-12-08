@@ -125,7 +125,13 @@ export async function sendTrustRequest(
     connection: safeConnStat((conn as any)?.connection),
   });
 
-  await writeStream(conn, new TextEncoder().encode(JSON.stringify(message)));
+  try {
+    await writeStream(conn, new TextEncoder().encode(JSON.stringify(message)), { end: true });
+    log("[probe-utils] trust-request written", { target: targetMa.toString() });
+  } catch (err: any) {
+    log("[probe-utils] write failed", { target: targetMa.toString(), error: err?.message || err });
+    throw err;
+  }
   const iterable = getStreamIterable(conn);
   if (!iterable) {
     log("[probe-utils] outbound stream missing async iterator", {
@@ -133,10 +139,19 @@ export async function sendTrustRequest(
     });
     return undefined;
   }
+  log("[probe-utils] waiting for trust-ack", { target: targetMa.toString() });
   for await (const chunk of iterable) {
     const buf = toU8(chunk);
-    if (!buf) continue;
-    const msg = JSON.parse(new TextDecoder().decode(buf));
+    if (!buf) {
+      log("[probe-utils] outbound stream received non-buffer chunk", { chunkType: typeof chunk });
+      continue;
+    }
+    const raw = new TextDecoder().decode(buf);
+    log("[probe-utils] outbound stream received chunk", {
+      len: buf.length,
+      preview: raw.slice(0, 160),
+    });
+    const msg = JSON.parse(raw);
     log("[probe-utils] outbound stream received", msg);
     if (msg?.type === "trust-ack") {
       log("[probe-utils] trust-ack received", msg);
@@ -260,7 +275,8 @@ export function describeStream(stream: any) {
   };
 }
 
-export async function writeStream(stream: any, data: Uint8Array) {
+export async function writeStream(stream: any, data: Uint8Array, opts: { end?: boolean } = {}) {
+  const shouldEnd = opts.end === true;
   const sinkTarget =
     stream && typeof stream.sink === "function"
       ? stream
@@ -272,6 +288,9 @@ export async function writeStream(stream: any, data: Uint8Array) {
       stream: describeStream(stream),
     });
     await pipe([data], (source) => sinkTarget.sink(source));
+    if (shouldEnd && typeof sinkTarget.close === "function") {
+      await sinkTarget.close();
+    }
     return;
   }
 
@@ -286,10 +305,12 @@ export async function writeStream(stream: any, data: Uint8Array) {
       stream: describeStream(stream),
     });
     await writeTarget.write(data);
-    if (typeof writeTarget.closeWrite === "function") {
-      await writeTarget.closeWrite();
-    } else if (typeof writeTarget.close === "function") {
-      await writeTarget.close();
+    if (shouldEnd) {
+      if (typeof writeTarget.closeWrite === "function") {
+        await writeTarget.closeWrite();
+      } else if (typeof writeTarget.close === "function") {
+        await writeTarget.close();
+      }
     }
     return;
   }
@@ -305,10 +326,12 @@ export async function writeStream(stream: any, data: Uint8Array) {
       stream: describeStream(stream),
     });
     sendTarget.send(data);
-    if (typeof sendTarget.closeWrite === "function") {
-      await sendTarget.closeWrite();
-    } else if (typeof sendTarget.close === "function") {
-      await sendTarget.close();
+    if (shouldEnd) {
+      if (typeof sendTarget.closeWrite === "function") {
+        await sendTarget.closeWrite();
+      } else if (typeof sendTarget.close === "function") {
+        await sendTarget.close();
+      }
     }
     return;
   }
