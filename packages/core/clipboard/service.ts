@@ -1,11 +1,6 @@
-import { createWatcher } from "./watcher";
-import { ClipboardWriteFn, createWriter } from "./writer";
 import { normalizeClipboardContent } from "./normalize";
-import { MemoryHistoryStore } from "../history/store";
 import { Clip } from "../models/Clip";
 import { ClipType } from "../models/enums";
-import * as chromePlatform from "./platform/chrome";
-import * as androidPlatform from "./platform/android";
 import * as log from "../logger";
 
 export interface ClipboardService {
@@ -20,92 +15,148 @@ export interface ClipboardService {
    * from the clipboard (e.g. Chrome MV3 service workers).
    */
   processLocalText(text: string): Promise<void>;
-  getLastLocalClip(): Clip | undefined;
-  setAutoSync(enabled: boolean): void;
-  isAutoSync(): boolean;
 }
 
-interface Options {
-  pollIntervalMs?: number;
-  sendClip?: (clip: Clip) => Promise<void>;
-  readText?: () => Promise<string>;
+export type ClipboardReadFn = () => Promise<string>;
+export type ClipboardWriteFn = (text: string) => Promise<void>;
+export type GetSenderIdFn = () => string | Promise<string>;
+
+export type ClipboardServiceBaseOptions = {
+  getSenderId: GetSenderIdFn;
   writeText?: ClipboardWriteFn;
+  now?: () => number;
+  makeId?: () => string;
+};
+
+export type PollingClipboardOptions = ClipboardServiceBaseOptions & {
+  readText: ClipboardReadFn;
+  pollIntervalMs?: number;
+};
+
+export type ManualClipboardOptions = ClipboardServiceBaseOptions;
+
+/**
+ * Polling clipboard service: reads from the system clipboard on an interval.
+ * Callers must provide `readText` (and optionally `writeText`).
+ */
+export function createPollingClipboardService(
+  options: PollingClipboardOptions
+): ClipboardService {
+  return createClipboardService({
+    ...options,
+    pollIntervalMs: options.pollIntervalMs ?? 2000,
+  });
 }
 
-export function createClipboardService(
-  platform: "chrome" | "android" | "custom",
-  options: Options = {}
+/**
+ * Manual clipboard service: does not poll. Local clips must be fed via
+ * `processLocalText(text)`. Useful in environments that cannot read the
+ * clipboard (e.g. Chrome MV3 service worker).
+ */
+export function createManualClipboardService(
+  options: ManualClipboardOptions
 ): ClipboardService {
-  const read =
-    options.readText ||
-    (platform === "chrome"
-      ? chromePlatform.readText
-      : platform === "android"
-      ? androidPlatform.readText
-      : async () => "");
-  const write =
-    options.writeText ||
-    (platform === "chrome"
-      ? chromePlatform.writeText
-      : platform === "android"
-      ? androidPlatform.writeText
-      : async () => {});
+  const svc = createClipboardService({
+    ...options,
+    readText: async () => "",
+    pollIntervalMs: 0,
+  });
+  return {
+    ...svc,
+    start: () => {
+      // no-op: manual mode never polls
+    },
+    stop: () => {
+      // no-op: manual mode never polls
+    },
+  };
+}
 
-  const watcher = createWatcher(read, options.pollIntervalMs ?? 2000);
-  const writer = createWriter(write);
-  const history = new MemoryHistoryStore();
+function createClipboardService(
+  options: ClipboardServiceBaseOptions & {
+    readText: ClipboardReadFn;
+    pollIntervalMs: number;
+  }
+): ClipboardService {
+  const read: ClipboardReadFn = options.readText;
+  const write: ClipboardWriteFn = options.writeText ?? (async () => { });
+  const getSenderId: GetSenderIdFn = options.getSenderId;
+  const now = options.now;
+  const makeId = options.makeId;
+  const pollIntervalMs = options.pollIntervalMs;
+
+  // Custom simple hash function to detect clipboard changes
+  function hashString(str: string): string {
+    let hash = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      hash +=
+        (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
   const localHandlers: Array<(c: Clip) => void> = [];
   const remoteHandlers: Array<(c: Clip) => void> = [];
-  const seenRemote = new Set<string>();
   let lastLocal: Clip | undefined;
-  let autoSync = true;
-  const sendClip = options.sendClip ?? (async () => {});
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let lastHash = "";
 
   async function processLocalText(text: string): Promise<void> {
     log.debug("Processing local clipboard text");
-    const clip = normalizeClipboardContent(text, "local");
+    const senderId = await Promise.resolve(getSenderId());
+    const clip = normalizeClipboardContent(text, senderId, { now, makeId });
     if (!clip) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     lastLocal = clip;
-    await history.add(clip, "local", true);
     localHandlers.forEach((h) => h(clip));
-    if (autoSync) {
-      await sendClip(clip);
-    }
   }
 
-  watcher.onChange(async (text) => {
-    await processLocalText(text);
-  });
+  async function checkOnce(): Promise<void> {
+    try {
+      const text = await read();
+      const hash = hashString(text || "");
+      if (hash !== lastHash) {
+        lastHash = hash;
+        log.debug("Clipboard changed");
+        await processLocalText(text);
+      }
+    } catch {
+      // ignore read errors
+    }
+  }
 
   async function writeRemoteClip(clip: Clip): Promise<void> {
     log.debug("Writing remote clip", clip.id);
     if (clip.id === lastLocal?.id) return;
-    if (seenRemote.has(clip.id)) return;
-    seenRemote.add(clip.id);
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
-    await writer.write(clip);
-    await history.add(clip, clip.senderId, false);
+    log.debug("Writing clip to clipboard");
+    await write(clip.content);
     remoteHandlers.forEach((h) => h(clip));
   }
 
   return {
     start: () => {
       log.info("Clipboard service started");
-      watcher.start();
+      if (timer) return;
+      if (pollIntervalMs <= 0) return;
+      void (async () => {
+        await checkOnce();
+        timer = setInterval(() => {
+          void checkOnce();
+        }, pollIntervalMs);
+      })();
     },
     stop: () => {
       log.info("Clipboard service stopped");
-      watcher.stop();
+      if (timer) {
+        clearInterval(timer);
+        timer = undefined;
+      }
     },
     onLocalClip: (cb) => localHandlers.push(cb),
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
     processLocalText,
     writeRemoteClip,
-    getLastLocalClip: () => lastLocal,
-    setAutoSync: (enabled) => {
-      autoSync = enabled;
-    },
-    isAutoSync: () => autoSync,
   };
 }

@@ -55,9 +55,12 @@ export function detectClipType(content: unknown): Clip["type"] {
 // Normalize clipboard content into a Clip
 export function normalizeClipboardContent(
   input: any,
-  senderId: string
+  senderId: string,
+  deps: { now?: () => number; makeId?: () => string } = {}
 ): Clip | null {
-  const now = Date.now();
+  const now = deps.now ?? Date.now;
+  const makeId = deps.makeId ?? uuidv4;
+  const ts = now();
   let type = detectClipType(input);
   let content = "";
   let expiresAt: number | undefined = undefined;
@@ -81,14 +84,14 @@ export function normalizeClipboardContent(
       return null;
     }
     // Optionally set expiresAt for files/images (e.g., 30 days)
-    expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+    expiresAt = ts + 30 * 24 * 60 * 60 * 1000;
   }
 
   return {
-    id: uuidv4(),
+    id: makeId(),
     type,
     content,
-    timestamp: now,
+    timestamp: ts,
     senderId,
     ...(expiresAt ? { expiresAt } : {}),
   };

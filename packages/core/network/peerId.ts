@@ -1,5 +1,6 @@
 import { CID } from "multiformats/cid";
 import { sha256 } from "multiformats/hashes/sha2";
+// TODO: replace depricated module import
 import { peerIdFromPrivateKey, peerIdFromString, type PeerId } from "@libp2p/peer-id";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { base58btc } from "multiformats/bases/base58";
@@ -9,6 +10,7 @@ import { base58btc } from "multiformats/bases/base58";
  * by hashing and encoding as a CIDv1 with the libp2p-peer codec (0x72).
  * Uses multiformats digest to produce a valid multihash.
  */
+// TODO: why this is async function?
 export async function deviceIdToPeerId(deviceId: string): Promise<string> {
   const pid = await decodePeerId(deviceId);
   if (pid) return peerIdToString(pid);
@@ -20,6 +22,7 @@ export async function deviceIdToPeerId(deviceId: string): Promise<string> {
   return peerIdToString(hashed);
 }
 
+// TODO: why this is async function?
 export async function deviceIdToPeerIdObject(deviceId: string): Promise<PeerId> {
   const pid = await decodePeerId(deviceId);
   if (pid) return pid;
@@ -27,6 +30,7 @@ export async function deviceIdToPeerIdObject(deviceId: string): Promise<PeerId> 
   return await peerIdFromString(pidStr);
 }
 
+// TODO: why this is async function?
 export async function normalizePeerId(value: string): Promise<string> {
   const pid = await decodePeerId(value);
   if (pid) return peerIdToString(pid);
@@ -34,6 +38,7 @@ export async function normalizePeerId(value: string): Promise<string> {
   return peerIdToString(fallback);
 }
 
+// TODO: why this is async function?
 export async function peerIdFromPrivateKeyBase64(b64: string): Promise<PeerId> {
   const bytes = Uint8Array.from(Buffer.from(b64, "base64"));
   const priv = await privateKeyFromProtobuf(bytes);

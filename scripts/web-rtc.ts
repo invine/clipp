@@ -31,6 +31,11 @@ const relay = await createLibp2p({
   },
 });
 
+console.log("Relay listening on:");
+relay.getMultiaddrs().forEach((ma) => {
+  console.log(ma.toString());
+});
+
 // the listener has a WebSocket transport to dial the relay, a Circuit Relay
 // transport to make a reservation, and a WebRTC transport to accept incoming
 // WebRTC connections
@@ -50,11 +55,18 @@ const listener = await createLibp2p({
   },
 });
 
+console.log("Listener listening on:");
+listener.getMultiaddrs().forEach((ma) => {
+  console.log(ma.toString());
+});
+
 // the listener dials the relay (or discovers a public relay via some other
 // method)
 await listener.dial(relay.getMultiaddrs(), {
   signal: AbortSignal.timeout(5000),
 });
+
+console.log("Listener dialed relay");
 
 let webRTCMultiaddr: Multiaddr | undefined;
 
@@ -69,6 +81,8 @@ while (true) {
   // try again later
   await delay(1000);
 }
+
+console.log("Listener reservation established:", webRTCMultiaddr.toString());
 
 // the dialer has Circuit Relay, WebSocket and WebRTC transports to dial
 // the listener via the relay, complete the SDP handshake and establish a
@@ -86,6 +100,11 @@ const dialer = await createLibp2p({
   },
 });
 
+console.log("Dialer created:");
+dialer.getMultiaddrs().forEach((ma) => {
+  console.log(ma.toString());
+});
+
 // dial the listener and open an echo protocol stream
 const stream = await dialer.dialProtocol(
   webRTCMultiaddr,
@@ -94,9 +113,17 @@ const stream = await dialer.dialProtocol(
     signal: AbortSignal.timeout(5000),
   }
 );
+console.log("Dialer dialed listener via relay via:");
+console.log(webRTCMultiaddr.toString());
 
 // we can now stop the relay
 await relay.stop();
+
+console.log("Relay stopped");
+
+await delay(5000);
+
+console.log("Exchanging data over WebRTC direct connection");
 
 // send/receive some data from the remote peer via a direct connection
 stream.send(new TextEncoder().encode("hello world"));

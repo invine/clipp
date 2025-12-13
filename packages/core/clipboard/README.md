@@ -3,15 +3,15 @@
 A cross-platform clipboard watcher and writer used for synchronizing clipboard items across peers.
 
 ```
-import { createClipboardService } from './service'
+import { createPollingClipboardService } from './service'
+import { createClipboardSyncController } from '../sync/clipboardSync'
 
-const service = createClipboardService('chrome', { sendClip })
-service.onLocalClip(clip => console.log('local', clip))
-service.onRemoteClipWritten(clip => console.log('remote', clip))
-service.start()
+const clipboard = createPollingClipboardService({ readText, writeText, getSenderId })
+const sync = createClipboardSyncController({ clipboard, history, messaging, getLocalDeviceId })
+sync.start()
 ```
 
-Use `setAutoSync(false)` to disable sending local clips. Call `writeRemoteClip()`
-when receiving a clip from the network. In environments where the service cannot
-read the clipboard directly (such as a Chrome MV3 service worker), use
-`processLocalText(text)` to manually feed clipboard contents to the service.
+Use `sync.setAutoSync(false)` to disable broadcasting local clips. In
+environments where the service cannot read the clipboard directly (such as a
+Chrome MV3 service worker), use `createManualClipboardService({ getSenderId, writeText })`
+and feed clipboard contents to it via `processLocalText(text)`.

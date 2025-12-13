@@ -3,7 +3,7 @@ import {
   normalizeClipboardContent,
   sanitizeText,
 } from "../../../packages/core/clipboard/normalize";
-import { validateClip } from "../../../packages/core/clipboard/validate";
+import { validateClip } from "../../../packages/core/models/Clip";
 
 describe("Clipboard Normalizer - Additional", () => {
   const senderId = "peer-abc";

@@ -1,11 +1,12 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
-import { createClipboardService } from "@core/clipboard/service";
+import { createPollingClipboardService } from "@core/clipboard/service";
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createMessagingLayer } from "@core/network/engine";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "@core/network/constants";
 import { MemoryHistoryStore } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
+import { createClipboardSyncController } from "@core/sync/clipboardSync";
 import { createTrustManager, type TrustedDevice } from "@core/trust";
 import { decodePairing } from "@core/pairing/decode";
 import type { Clip } from "@core/models/Clip";
@@ -75,33 +76,40 @@ export class AndroidClient {
   private readonly history = new MemoryHistoryStore(createHistoryBackend());
   private readonly trust = createTrustManager(this.storage);
   private readonly messaging = createMessagingLayer({ trustStore: this.trust });
-  private readonly clipboard = createClipboardService("custom", {
-    pollIntervalMs: 1500,
-    readText: async () => {
-      try {
-        const txt = (await readClipboardText()) ?? "";
-        this.lastClipboardCheck = Date.now();
-        this.lastClipboardPreview = txt ? txt.slice(0, 140) : "";
-        this.lastClipboardError = null;
-        return txt;
-      } catch (err: any) {
-        this.lastClipboardCheck = Date.now();
-        this.lastClipboardError = err?.message || "Clipboard unavailable";
-        return "";
-      }
-    },
-    writeText: async (text: string) => {
-      await writeClipboardText(text);
-    },
-    sendClip: async (clip: Clip) => {
+  private createAndroidClipboardService() {
+    return createPollingClipboardService({
+      pollIntervalMs: 1500,
+      getSenderId: async () => {
+        const id = await this.trust.getLocalIdentity();
+        return id.deviceId;
+      },
+      readText: async () => {
+        try {
+          const txt = (await readClipboardText()) ?? "";
+          this.lastClipboardCheck = Date.now();
+          this.lastClipboardPreview = txt ? txt.slice(0, 140) : "";
+          this.lastClipboardError = null;
+          return txt;
+        } catch (err: any) {
+          this.lastClipboardCheck = Date.now();
+          this.lastClipboardError = err?.message || "Clipboard unavailable";
+          return "";
+        }
+      },
+      writeText: async (text: string) => {
+        await writeClipboardText(text);
+      },
+    });
+  }
+
+  private readonly clipboard = this.createAndroidClipboardService();
+  private readonly clipboardSync = createClipboardSyncController({
+    clipboard: this.clipboard,
+    messaging: this.messaging as any,
+    history: this.history,
+    getLocalDeviceId: async () => {
       const id = await this.trust.getLocalIdentity();
-      const message = {
-        type: "CLIP" as const,
-        from: id.deviceId,
-        clip,
-        sentAt: Date.now(),
-      };
-      await this.messaging.broadcast(message as any);
+      return id.deviceId;
     },
   });
 
@@ -127,22 +135,12 @@ export class AndroidClient {
     if (this.eventsBound) return;
     this.eventsBound = true;
 
-    this.clipboard.onLocalClip(async (clip) => {
-      const id = await this.trust.getLocalIdentity();
-      await this.history.add(clip, id.deviceId, true);
-      await this.emitState();
-    });
-    this.clipboard.onRemoteClipWritten(async () => {
-      await this.emitState();
-    });
     this.history.onNew(async () => {
       await this.emitState();
     });
 
     this.messaging.onMessage(async (msg: any) => {
-      if (msg.type === "CLIP" && msg.clip) {
-        await this.clipboard.writeRemoteClip(msg.clip);
-      } else if (msg.type === "trust-request") {
+      if (msg.type === "trust-request") {
         const dev = msg.payload as TrustedDevice;
         await this.trust.handleTrustRequest(dev);
       }
@@ -213,13 +211,13 @@ export class AndroidClient {
     } catch (err) {
       log.warn("Messaging layer failed to start", err);
     }
-    this.clipboard.start();
+    this.clipboardSync.start();
     await this.emitState();
   }
 
   stop() {
     if (!this.started) return;
-    this.clipboard.stop();
+    this.clipboardSync.stop();
     this.messaging.stop();
     this.started = false;
     this.listeners = [];

@@ -1,15 +1,10 @@
-import { createClipboardService } from "../service";
+import { createPollingClipboardService } from "../service";
 import type { Clip } from "../../models/Clip";
 import { jest } from "@jest/globals";
 
 let clipboard = "";
-export const readMock = jest.fn(async () => clipboard);
-export const writeMock = jest.fn(async (_: string) => {});
-
-jest.mock("../platform/chrome", () => ({
-  readText: () => readMock(),
-  writeText: (t: string) => writeMock(t),
-}));
+const readMock = jest.fn(async () => clipboard);
+const writeMock = jest.fn(async (_: string) => {});
 
 describe("Echo prevention", () => {
   beforeEach(() => {
@@ -23,16 +18,23 @@ describe("Echo prevention", () => {
   });
 
   test("ignores echoed remote clip", async () => {
-    const sendClipMock = jest.fn(async () => {});
-    const service = createClipboardService("chrome", { pollIntervalMs: 1000, sendClip: sendClipMock });
+    const service = createPollingClipboardService({
+      pollIntervalMs: 1000,
+      getSenderId: () => "me",
+      readText: readMock,
+      writeText: writeMock,
+    });
+    let localClip: Clip | null = null;
+    service.onLocalClip((c) => {
+      localClip = c;
+    });
     service.start();
     clipboard = "X";
     jest.advanceTimersByTime(1000);
     await jest.runOnlyPendingTimersAsync();
-    expect(sendClipMock).toHaveBeenCalled();
-    const localClip = (sendClipMock.mock.calls[0] as any)[0] as Clip;
+    expect(localClip).not.toBeNull();
     writeMock.mockClear();
-    await service.writeRemoteClip(localClip);
+    await service.writeRemoteClip(localClip!);
     expect(writeMock).not.toHaveBeenCalled();
   });
 });

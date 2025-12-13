@@ -24,7 +24,8 @@ import {
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
-import { createClipboardService } from "../../../packages/core/clipboard/service";
+import { createManualClipboardService } from "../../../packages/core/clipboard/service";
+import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
@@ -107,32 +108,52 @@ const offscreenReady = (async () => {
 
 // Background state
 
+function createExtensionClipboardService() {
+  return createManualClipboardService({
+    getSenderId: async () => {
+      const id = await trust.getLocalIdentity();
+      return id.deviceId;
+    },
+    writeText: async (text: string) => {
+      await navigator.clipboard.writeText(text);
+    },
+  });
+}
 
-const clipboard = createClipboardService("chrome", {
-  async sendClip(clip) {
-    const id = await trust.getLocalIdentity();
-    const message = {
-      type: "CLIP" as const,
-      from: id.deviceId,
-      clip,
-      sentAt: Date.now(),
-    };
+const clipboard = createExtensionClipboardService();
+const messageHandlers: Array<(msg: any) => void> = [];
+const offscreenMessaging = {
+  async broadcast(msg: any) {
     log.debug("Broadcasting clip");
     await offscreenReady;
-    await sendOffscreen({ action: "broadcast", msg: message });
+    await sendOffscreen({ action: "broadcast", msg });
+  },
+  onMessage(cb: (msg: any) => void) {
+    messageHandlers.push(cb);
+  },
+};
+function emitIncomingMessage(msg: any) {
+  for (const h of messageHandlers) h(msg);
+}
+
+const clipboardSync = createClipboardSyncController({
+  clipboard,
+  history,
+  messaging: offscreenMessaging as any,
+  getLocalDeviceId: async () => {
+    const id = await trust.getLocalIdentity();
+    return id.deviceId;
   },
 });
+clipboardSync.start();
 // Initialize auto-sync state from storage
 chrome.storage.local.get(["autoSync"], (res) => {
-  clipboard.setAutoSync(res.autoSync !== false);
+  clipboardSync.setAutoSync(res.autoSync !== false);
 });
-clipboard.onLocalClip((clip) => {
-  void trust.getLocalIdentity().then((id) => {
-    history.add(clip, id.deviceId, true);
-  });
-  // Notify all extension pages about the new local clip
+history.onNew((item) => {
+  // Notify all extension pages about the new clip
   // @ts-ignore
-  chrome.runtime.sendMessage({ type: "newClip", clip });
+  chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
 let pendingRequests: TrustedDevice[] = [];
 
@@ -327,9 +348,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
       .then((resp) => {
         const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
-        sendResponse({ peerCount: peers.length, autoSync: clipboard.isAutoSync() });
+        sendResponse({ peerCount: peers.length, autoSync: clipboardSync.isAutoSync() });
       })
-      .catch(() => sendResponse({ peerCount: 0, autoSync: clipboard.isAutoSync() }));
+      .catch(() => sendResponse({ peerCount: 0, autoSync: clipboardSync.isAutoSync() }));
     return true;
   }
   if (msg.type === "getConnectedPeers") {
@@ -381,7 +402,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       log.setLogLevel(msg.settings.logLevel);
     }
     if (msg.settings.autoSync !== undefined) {
-      clipboard.setAutoSync(msg.settings.autoSync !== false);
+      clipboardSync.setAutoSync(msg.settings.autoSync !== false);
     }
     return true;
   }
@@ -392,14 +413,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.source !== "offscreen" || msg?.action !== "incoming") return;
   const payload = msg.msg;
-  if (payload?.type === "CLIP") {
-    log.debug("Received clip from", payload.from);
-    void history.add(payload.clip!, payload.from, false).then(() => {
-      // Notify popup/options
-      // @ts-ignore
-      chrome.runtime.sendMessage({ type: "newClip", clip: payload.clip });
-    });
-  } else if (payload?.type === "trust-request") {
+  emitIncomingMessage(payload);
+  if (payload?.type === "trust-request") {
     const dev = payload.payload as TrustedDevice;
     log.debug("Received trust request from", dev?.deviceId);
     void trust.handleTrustRequest(dev);
@@ -408,6 +423,5 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // Kick off offscreen + clipboard
 void offscreenReady.then(() => {
-  clipboard.start();
   log.info("Background services started (offscreen networking)");
 });

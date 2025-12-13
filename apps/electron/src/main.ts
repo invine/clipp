@@ -9,7 +9,7 @@ import {
 } from "electron";
 import path from "node:path";
 import wrtc from "@koush/wrtc";
-import WebSocket from "ws";
+// import WebSocket from "ws";
 import { webcrypto } from "node:crypto";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import {
@@ -20,7 +20,7 @@ import {
 import type { Clip } from "../../../packages/core/models/Clip.js";
 import { encode } from "../../../packages/core/qr/index.js";
 import { encodePairing } from "../../../packages/core/pairing/encode.js";
-import { E } from "vite/dist/node/moduleRunnerTransport.d-DJ_mE5sf.js";
+// import { E } from "vite/dist/node/moduleRunnerTransport.d-DJ_mE5sf.js";
 
 const __dirnameFallback =
   typeof __dirname !== "undefined" ? (__dirname as string) : "";
@@ -40,20 +40,22 @@ try {
   if (!(globalThis as any).navigator) {
     (globalThis as any).navigator = { userAgent: "Clipp Desktop" } as any;
   }
-} catch {}
+} catch { }
 try {
   if (!(globalThis as any).crypto) {
     (globalThis as any).crypto = webcrypto;
   }
-} catch {}
+} catch { }
 
 async function bootstrap() {
   // Dynamically import libp2p deps after globals are set.
+  // TODO: redo the imports
   const [
     { createMessagingLayer },
     { MemoryHistoryStore },
     trustMod,
     clipboardMod,
+    syncMod,
     normalizeMod,
     decodeMod,
     log,
@@ -64,6 +66,7 @@ async function bootstrap() {
     import("../../../packages/core/history/store.js"),
     import("../../../packages/core/trust/trusted-devices.js"),
     import("../../../packages/core/clipboard/service.js"),
+    import("../../../packages/core/sync/clipboardSync.js"),
     import("../../../packages/core/clipboard/normalize.js"),
     import("../../../packages/core/pairing/decode.js"),
     import("../../../packages/core/logger.js"),
@@ -72,7 +75,8 @@ async function bootstrap() {
   ]);
 
   const { createTrustManager, TrustedDevice } = trustMod as any;
-  const { createClipboardService } = clipboardMod as any;
+  const { createPollingClipboardService } = clipboardMod as any;
+  const { createClipboardSyncController } = syncMod as any;
   const { normalizeClipboardContent } = normalizeMod as any;
   const { decodePairing } = decodeMod as any;
   const logLevel = process.env.CLIPP_LOG_LEVEL || "debug";
@@ -85,13 +89,14 @@ async function bootstrap() {
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const trust = createTrustManager(kvStore);
+  // TODO: remove relayAddrEnv
   const relayAddrEnv =
     process.env.CLIPP_RELAY_ADDR ||
     process.env.CLIPP_RELAY_MULTIADDR ||
     "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
   let relayAddresses = normalizeRelayAddrs(
     (await kvStore.get<string[]>("relayAddresses"))?.filter(Boolean) ||
-      (relayAddrEnv ? [relayAddrEnv] : [])
+    (relayAddrEnv ? [relayAddrEnv] : [])
   );
   const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   (log as any).info?.("Loaded identity", {
@@ -102,13 +107,17 @@ async function bootstrap() {
   });
   const peerId =
     localIdentity.privateKey && typeof localIdentity.privateKey === "string"
+      // TODO: why it's using asnc funct?
       ? await peerIdFromPrivateKeyBase64(localIdentity.privateKey)
+      // TODO: why it's using asnc funct?
       : await deviceIdToPeerIdObject(localIdentity.deviceId);
   const privateKey =
     localIdentity.privateKey && typeof localIdentity.privateKey === "string"
+      // TODO: why it's using asnc funct?
       ? await privateKeyFromProtobuf(Buffer.from(localIdentity.privateKey, "base64"))
       : undefined;
 
+  // TODO: decide if trust manager should be injected into messaging engine
   let messaging = createMessagingLayer({ trustStore: trust, peerId, privateKey, relayAddresses });
   let messagingStarted = false;
 
@@ -122,10 +131,12 @@ async function bootstrap() {
       throw err;
     }
   }
+  // TODO: why this is here and not in clipboard service?
   let lastClipboardCheck: number | null = null;
   let lastClipboardPreview: string | null = null;
   let lastClipboardError: string | null = null;
   let pinnedIds: string[] = (await kvStore.get("pinnedIds")) || [];
+  // TODO: improve icon import
   const iconRoot = app.isPackaged
     ? path.dirname(app.getPath("exe"))
     : path.resolve(__dirnameFallback || process.cwd(), "..", "..", "..");
@@ -140,6 +151,7 @@ async function bootstrap() {
     "clipp-purple-256.png",
   ].map((f) => path.join(iconBase, f));
 
+  // TODO: remove webrtc star
   async function ensureIdentityAddrs(id: any) {
     const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
       "../../../packages/core/network/constants.js"
@@ -147,6 +159,7 @@ async function bootstrap() {
     const peerId = await deviceIdToPeerId(id.deviceId);
 
     // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
+    // TODO: remove webrtc star. Not read from here
     const existing = Array.isArray(id?.multiaddrs) ? [...id.multiaddrs] : [];
     const derived: string[] = [];
     const relaySet = normalizeRelayAddrs(relayAddresses || []);
@@ -247,35 +260,46 @@ async function bootstrap() {
     }
     return out;
   }
-  const clipboardSvc = createClipboardService("custom", {
-    pollIntervalMs: 1200,
-    readText: async () => {
-      try {
-        const txt = clipboard.readText() ?? "";
-        lastClipboardCheck = Date.now();
-        lastClipboardPreview = txt ? txt.slice(0, 140) : "";
-        lastClipboardError = null;
-        return txt;
-      } catch (err: any) {
-        lastClipboardError = err?.message || "Failed to read clipboard";
-        lastClipboardCheck = Date.now();
-        return "";
-      }
-    },
-    writeText: async (text: string) => {
-      clipboard.writeText(text);
-    },
-    async sendClip(clip: Clip) {
+  // TODO: till here
+
+  function createElectronClipboardService() {
+    return createPollingClipboardService({
+      pollIntervalMs: 1200,
+      getSenderId: async () => {
+        const id = await trust.getLocalIdentity();
+        return id.deviceId;
+      },
+      readText: async () => {
+        try {
+          const txt = clipboard.readText() ?? "";
+          lastClipboardCheck = Date.now();
+          lastClipboardPreview = txt ? txt.slice(0, 140) : "";
+          lastClipboardError = null;
+          return txt;
+        } catch (err: any) {
+          lastClipboardError = err?.message || "Failed to read clipboard";
+          lastClipboardCheck = Date.now();
+          return "";
+        }
+      },
+      writeText: async (text: string) => {
+        clipboard.writeText(text);
+      },
+    });
+  }
+
+  // TODO: think about moving definition for readText and WriteText to separate interface
+  // and implement it as electronClipboard/chromeClipboard/capacitorClipboard depending on the platrofrm
+  const clipboardSvc = createElectronClipboardService();
+  const clipboardSync = createClipboardSyncController({
+    clipboard: clipboardSvc,
+    history,
+    getLocalDeviceId: async () => {
       const id = await trust.getLocalIdentity();
-      const message = {
-        type: "CLIP" as const,
-        from: id.deviceId,
-        clip,
-        sentAt: Date.now(),
-      };
-      await messaging.broadcast(message as any);
+      return id.deviceId;
     },
   });
+  clipboardSync.bindMessaging(messaging as any);
 
   let pendingRequests: (typeof TrustedDevice)[] = [];
   let mainWindow: BrowserWindow | null = null;
@@ -291,11 +315,13 @@ async function bootstrap() {
     return {
       clips,
       devices,
+      // TODO: why pendingRequests is part of the application and not part of trust storage?
       pending: pendingRequests,
       peers,
       identity,
       pinnedIds,
       relayAddresses,
+      // TODO: remove diagnostics
       diagnostics: {
         lastClipboardCheck,
         lastClipboardPreview,
@@ -311,6 +337,7 @@ async function bootstrap() {
     });
   }
 
+  // TODO: streamline logging
   type LogPayload = {
     level: "info" | "warn" | "error" | "debug";
     message: string;
@@ -324,6 +351,7 @@ async function bootstrap() {
     );
   }
 
+  // TODO: Move this to core package to avoid exposing low level send message API from MessagingLayer
   async function sendTrustAck(device: any, accepted: boolean) {
     await ensureMessagingStarted();
     const id = await trust.getLocalIdentity();
@@ -335,16 +363,15 @@ async function bootstrap() {
       payload: { id: device.deviceId, accepted },
       sentAt: Date.now(),
     };
-    await messaging.sendMessage(target, ack as any).catch(() => {});
+    await messaging.sendMessage(target, ack as any).catch(() => { });
   }
 
+  // TODO: main should not know about message types
   function bindMessagingHandlers(target: any) {
     if (!target || (target as any).__clippBound) return;
     (target as any).__clippBound = true;
     target.onMessage(async (msg: any) => {
-      if (msg.type === "CLIP" && msg.clip) {
-        await clipboardSvc.writeRemoteClip(msg.clip);
-      } else if (msg.type === "trust-request") {
+      if (msg.type === "trust-request") {
         const dev = msg.payload as any;
         await trust.handleTrustRequest(dev);
       }
@@ -354,25 +381,19 @@ async function bootstrap() {
   }
 
   async function startServices() {
-    clipboardSvc.onLocalClip(async (clip: Clip) => {
-      const id = await trust.getLocalIdentity();
-      await history.add(clip, id.deviceId, true);
-      await emitState();
-    });
-    clipboardSvc.onRemoteClipWritten(async (_clip: Clip) => {
-      await emitState();
-    });
     history.onNew(async () => {
       await emitState();
     });
 
     bindMessagingHandlers(messaging);
 
+    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("request", (d: any) => {
       pendingRequests.push(d);
       emitState();
       (log as any).info("Trust request received", d.deviceId);
     });
+    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("approved", async (d: any) => {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== d.deviceId
@@ -381,6 +402,7 @@ async function bootstrap() {
       emitState();
       (log as any).info("Device approved", d.deviceId);
     });
+    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("rejected", async (d: any) => {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== d.deviceId
@@ -389,6 +411,7 @@ async function bootstrap() {
       emitState();
       (log as any).info("Device rejected", d.deviceId);
     });
+    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("removed", () => emitState());
 
     try {
@@ -396,7 +419,7 @@ async function bootstrap() {
     } catch (err) {
       (log as any).warn("Messaging start failed", err);
     }
-    clipboardSvc.start();
+    clipboardSync.start();
   }
 
   async function restartMessaging() {
@@ -408,6 +431,7 @@ async function bootstrap() {
     messagingStarted = false;
     messaging = createMessagingLayer({ trustStore: trust, peerId, relayAddresses });
     bindMessagingHandlers(messaging);
+    clipboardSync.bindMessaging(messaging as any);
     await ensureMessagingStarted();
     await emitState();
   }
@@ -469,6 +493,7 @@ async function bootstrap() {
     }
   }
 
+  // TODO: make reusable component
   function buildRelayWindowHtml() {
     const placeholder = "/dns4/relay.example.com/tcp/443/wss/p2p/<relay-id>";
     return `
@@ -560,6 +585,7 @@ async function bootstrap() {
     `;
   }
 
+  // TODO: make reusable component
   function openRelayWindow() {
     if (relayWindow && !relayWindow.isDestroyed()) {
       relayWindow.show();
@@ -643,7 +669,7 @@ async function bootstrap() {
 
   app.on("before-quit", () => {
     quitting = true;
-    clipboardSvc.stop();
+    clipboardSync.stop();
     messaging.stop();
     db.close();
   });
@@ -729,25 +755,25 @@ async function bootstrap() {
       pairing.multiaddrs || (pairing.multiaddr ? [pairing.multiaddr] : []);
     let parseErrors: Array<{ addr: string; error: string }> = [];
     let valid = validMultiaddrs(targetAddrs, parseErrors);
-    if (!valid.length) {
-      const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
-        "../../../packages/core/network/constants.js"
-      );
-      const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
-        (addr: string) => `${addr}/p2p/${peerId}`
-      );
-      targetAddrs = derived;
-      parseErrors = [];
-      valid = validMultiaddrs(targetAddrs, parseErrors);
-      broadcastLog({
-        level: "info",
-        message: "No valid addrs in pairing, using defaults",
-        data: {
-          derived: targetAddrs,
-          parseErrors,
-        },
-      });
-    }
+    // if (!valid.length) {
+    //   const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
+    //     "../../../packages/core/network/constants.js"
+    //   );
+    //   const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
+    //     (addr: string) => `${addr}/p2p/${peerId}`
+    //   );
+    //   targetAddrs = derived;
+    //   parseErrors = [];
+    //   valid = validMultiaddrs(targetAddrs, parseErrors);
+    //   broadcastLog({
+    //     level: "info",
+    //     message: "No valid addrs in pairing, using defaults",
+    //     data: {
+    //       derived: targetAddrs,
+    //       parseErrors,
+    //     },
+    //   });
+    // }
     const targets: Multiaddr[] = valid;
     if (!targets.length) {
       broadcastLog({
@@ -821,6 +847,7 @@ async function bootstrap() {
     return { ok: false };
   });
 
+  // TODO: make reusable component
   ipcMain.handle("clipp:open-qr-window", async () => {
     // Ensure we have an active relay reservation before showing the QR so peers can dial us immediately.
     await ensureMessagingStarted();
@@ -859,13 +886,12 @@ async function bootstrap() {
           <div class="card">
             <h3>Pair this device</h3>
             <img src="${img}" style="width:220px;height:220px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);" />
-            <div style="margin-top:8px;font-size:12px;color:#9ca3af;word-break:break-all;">${
-              info.deviceId
-            }</div>
+            <div style="margin-top:8px;font-size:12px;color:#9ca3af;word-break:break-all;">${info.deviceId
+      }</div>
             <button onclick="require('electron').clipboard.writeText('${txt.replace(
-              /'/g,
-              "\\'"
-            )}')">Copy QR text</button>
+        /'/g,
+        "\\'"
+      )}')">Copy QR text</button>
           </div>
         </body>
       </html>
