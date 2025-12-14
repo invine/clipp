@@ -32,7 +32,7 @@ import {
   getStreamIterable,
   writeStream,
   describeStream,
-} from "../packages/core/network/probeUtils.js";
+} from "./lib/probeUtils.js";
 
 function env(name: string): string | undefined {
   const val = process.env[name];

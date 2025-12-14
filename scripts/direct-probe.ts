@@ -3,7 +3,7 @@
  *
  * Modes:
  * - Listener (default): uses an optional static private key to keep a stable peerId,
- *   listens on a websocket multiaddr, accepts /clipboard/1.0.0, and replies with trust-ack.
+ *   listens on a websocket multiaddr, accepts /clipboard/trust/1.0.0, and replies with trust-ack.
  * - Sender: if TARGET_ADDR (or PAIR_TARGET) is set, dials that multiaddr and sends
  *   a trust-request, waiting for a trust-ack.
  *
@@ -26,7 +26,7 @@ import {
   registerClipboardHandler,
   sendTrustRequest,
   loadPrivateKeyFromEnv,
-} from "../packages/core/network/probeUtils.js";
+} from "./lib/probeUtils.js";
 
 function env(name: string): string | undefined {
   const val = process.env[name];

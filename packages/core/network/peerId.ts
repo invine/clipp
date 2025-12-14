@@ -1,7 +1,8 @@
 import { CID } from "multiformats/cid";
 import { sha256 } from "multiformats/hashes/sha2";
 // TODO: replace depricated module import
-import { peerIdFromPrivateKey, peerIdFromString, type PeerId } from "@libp2p/peer-id";
+import { peerIdFromPrivateKey, peerIdFromString } from "@libp2p/peer-id";
+import type { PeerId } from "@libp2p/interface";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { base58btc } from "multiformats/bases/base58";
 

@@ -1,15 +1,10 @@
-import type { MessagingLayer } from "../network/engine";
 import type { TrustManager, TrustedDevice } from "../trust/trusted-devices";
-import type { Clip } from "../models/Clip";
+import type { ProtocolMessenger } from "../messaging/protocolMessenger";
+import type { HistorySyncMessage } from "../protocols/history";
 import { RETENTION_MS, ClipHistoryStore } from "./store";
 
-interface SyncMessage {
-  type: "sync-history";
-  payload: Clip[];
-}
-
 export function initHistorySync(
-  messaging: MessagingLayer,
+  messaging: ProtocolMessenger<HistorySyncMessage>,
   trust: TrustManager,
   history: ClipHistoryStore
 ): void {
@@ -18,21 +13,21 @@ export function initHistorySync(
   trust.on("approved", async (device: TrustedDevice) => {
     if (synced.has(device.deviceId)) return;
     synced.add(device.deviceId);
+    const local = await trust.getLocalIdentity();
     const items = await history.query({ since: Date.now() - RETENTION_MS });
-    const local = items.filter((i) => i.isLocal).map((i) => i.clip);
+    const clips = items.filter((i) => i.isLocal).map((i) => i.clip);
     const chunkSize = 100;
-    for (let i = 0; i < local.length; i += chunkSize) {
-      const chunk = local.slice(i, i + chunkSize);
-      const msg: SyncMessage = { type: "sync-history", payload: chunk };
+    for (let i = 0; i < clips.length; i += chunkSize) {
+      const chunk = clips.slice(i, i + chunkSize);
+      const msg: HistorySyncMessage = { type: "sync-history", from: local.deviceId, payload: chunk, sentAt: Date.now() };
       const size = Buffer.byteLength(JSON.stringify(msg));
       if (size > 500 * 1024) break;
-      await messaging.sendMessage(device.deviceId, msg as any);
+      const target = device.multiaddrs?.[0] || device.multiaddr || device.deviceId;
+      await messaging.send(target, msg);
     }
   });
 
-  messaging.onMessage(async (msg: any) => {
-    if (msg.type === "sync-history" && Array.isArray(msg.payload)) {
-      await history.importBatch(msg.payload);
-    }
+  messaging.onMessage(async (msg) => {
+    await history.importBatch(msg.payload);
   });
 }

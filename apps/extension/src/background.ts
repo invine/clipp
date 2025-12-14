@@ -26,9 +26,11 @@ import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import { createManualClipboardService } from "../../../packages/core/clipboard/service";
 import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync";
+import { createTrustProtocolBinder } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
+import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -122,6 +124,7 @@ function createExtensionClipboardService() {
 
 const clipboard = createExtensionClipboardService();
 const messageHandlers: Array<(msg: any) => void> = [];
+const trustMessageHandlers: Array<(msg: any) => void> = [];
 const offscreenMessaging = {
   async broadcast(msg: any) {
     log.debug("Broadcasting clip");
@@ -132,6 +135,21 @@ const offscreenMessaging = {
     messageHandlers.push(cb);
   },
 };
+const offscreenTrustMessaging = {
+  async send(target: string, msg: any) {
+    await offscreenReady;
+    await sendOffscreen({ action: "sendMessage", target, msg });
+  },
+  async broadcast(msg: any) {
+    await offscreenReady;
+    await sendOffscreen({ action: "broadcast", msg });
+  },
+  onMessage(cb: (msg: any) => void) {
+    trustMessageHandlers.push(cb);
+  },
+};
+const trustBinder = createTrustProtocolBinder({ trust });
+trustBinder.bind(offscreenTrustMessaging as any);
 function emitIncomingMessage(msg: any) {
   for (const h of messageHandlers) h(msg);
 }
@@ -165,30 +183,10 @@ trust.on("request", (d) => {
 });
 trust.on("rejected", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-  const id = await trust.getLocalIdentity();
-  const target = d.multiaddrs?.[0] || d.multiaddr || d.deviceId;
-  const ack = {
-    type: "trust-ack" as const,
-    from: id.deviceId,
-    payload: { id: d.deviceId, accepted: false },
-    sentAt: Date.now(),
-  };
-  await offscreenReady;
-  await sendOffscreen({ action: "sendMessage", target, msg: ack }).catch(() => {});
   log.info("Trust request rejected", d.deviceId);
 });
 trust.on("approved", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-  const id = await trust.getLocalIdentity();
-  const target = d.multiaddrs?.[0] || d.multiaddr || d.deviceId;
-  const ack = {
-    type: "trust-ack" as const,
-    from: id.deviceId,
-    payload: { id: d.deviceId, accepted: true },
-    sentAt: Date.now(),
-  };
-  await offscreenReady;
-  await sendOffscreen({ action: "sendMessage", target, msg: ack }).catch(() => {});
   log.info("Device approved", d.deviceId);
 });
 
@@ -262,6 +260,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
     if (msg.accept && msg.device) {
       trust.add(msg.device);
+    } else if (typeof msg.id === "string") {
+      void trust.reject(msg.id);
     }
     sendResponse({ ok: true });
     return true;
@@ -319,12 +319,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         targetAddrs: candidates,
         localId: id.deviceId,
       });
-      const request = {
-        type: "trust-request" as const,
-        from: id.deviceId,
-        payload: id,
-        sentAt: Date.now(),
-      };
+      const request = await createSignedTrustRequest(id, peerId);
       let sent = false;
       for (const target of candidates) {
         try {
@@ -414,10 +409,8 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.source !== "offscreen" || msg?.action !== "incoming") return;
   const payload = msg.msg;
   emitIncomingMessage(payload);
-  if (payload?.type === "trust-request") {
-    const dev = payload.payload as TrustedDevice;
-    log.debug("Received trust request from", dev?.deviceId);
-    void trust.handleTrustRequest(dev);
+  if (payload?.type === "trust-request" || payload?.type === "trust-ack") {
+    for (const h of trustMessageHandlers) h(payload);
   }
 });
 

@@ -1,21 +1,61 @@
-import { createMessagingLayer } from "../../../packages/core/network/engine.js";
+import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { createTrustManager } from "../../../packages/core/trust/index.js";
+import { createTrustMessenger, createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging/index.js";
 import { ChromeStorageBackend } from "./chromeStorage.js";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId.js";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
 import * as log from "../../../packages/core/logger.js";
+import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 
-let messaging = null;
+let transport = null;
+let clipMessaging = null;
+let trustMessaging = null;
+let historyMessaging = null;
 let trust = createTrustManager(new ChromeStorageBackend());
+let started = false;
+
+function base64ToBytes(b64) {
+  try {
+    if (typeof Buffer !== "undefined") {
+      return Uint8Array.from(Buffer.from(b64, "base64"));
+    }
+  } catch {
+    // ignore
+  }
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 async function initMessaging(identity, relays = DEFAULT_WEBRTC_STAR_RELAYS) {
-  if (messaging) return;
+  if (transport) return;
   const peerId = await deviceIdToPeerIdObject(identity.deviceId);
-  messaging = createMessagingLayer({ peerId, relayAddresses: relays, trustStore: trust });
-  messaging.onMessage(async (msg) => {
+  const privateKey =
+    identity?.privateKey && typeof identity.privateKey === "string"
+      ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
+      : undefined;
+  transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses: relays });
+
+  clipMessaging = createTrustedClipMessenger(transport, (id) => trust.isTrusted(id));
+  trustMessaging = createTrustMessenger(transport);
+  historyMessaging = createTrustedHistoryMessenger(transport, (id) => trust.isTrusted(id));
+
+  clipMessaging.onMessage((msg) => {
     chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
   });
-  await messaging.start();
+  trustMessaging.onMessage((msg) => {
+    chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
+  });
+  historyMessaging.onMessage((msg) => {
+    chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
+  });
+
+  await transport.start();
+  started = true;
+
+  const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
+  chrome.runtime.sendMessage({ source: "offscreen", action: "peers", peers }).catch(() => {});
   log.info("Offscreen messaging started");
 }
 
@@ -31,23 +71,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
-    if (!messaging) {
+    if (!transport) {
       sendResponse({ ok: false, error: "not_initialized" });
       return;
     }
     if (msg.action === "broadcast" && msg.msg) {
-      await messaging.broadcast(msg.msg);
+      const m = msg.msg;
+      if (m?.type === "CLIP") await clipMessaging.broadcast(m);
+      else if (m?.type === "sync-history") await historyMessaging.broadcast(m);
+      else await trustMessaging.broadcast(m);
       sendResponse({ ok: true });
       return;
     }
     if (msg.action === "sendMessage" && msg.target && msg.msg) {
-      await messaging.sendMessage(msg.target, msg.msg);
+      const target = msg.target;
+      const m = msg.msg;
+      if (m?.type === "CLIP") await clipMessaging.send(target, m);
+      else if (m?.type === "sync-history") await historyMessaging.send(target, m);
+      else await trustMessaging.send(target, m);
       sendResponse({ ok: true });
       return;
     }
     if (msg.action === "getPeers") {
-      const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+      const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
       sendResponse({ peers });
+      return;
+    }
+    if (msg.action === "getStatus") {
+      const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
+      sendResponse({ peers, started });
       return;
     }
     sendResponse({ ok: false, error: "unknown_action" });

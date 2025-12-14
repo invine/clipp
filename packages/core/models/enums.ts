@@ -7,13 +7,3 @@ export enum ClipType {
   Image = "image",
   File = "file",
 }
-
-/**
- * Enum for supported sync message types.
- */
-export enum MessageType {
-  NewClip = "NEW_CLIP",
-  SyncHistory = "SYNC_HISTORY",
-  Hello = "HELLO",
-  Ack = "ACK",
-}

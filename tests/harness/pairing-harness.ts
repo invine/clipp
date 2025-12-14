@@ -6,21 +6,23 @@
  * The harness starts two messaging layers, trusts each other, and sends a sample clip.
  * It will no-op if WebRTC is unavailable.
  */
-import { createMessagingLayer } from "../../packages/core/network/engine.ts";
+import { createLibp2pMessagingTransport } from "../../packages/core/network/engine.ts";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../packages/core/network/constants.ts";
 import { createTrustManager, MemoryStorageBackend } from "../../packages/core/trust/index.ts";
 import { normalizeClipboardContent } from "../../packages/core/clipboard/normalize.ts";
+import { createTrustedClipMessenger } from "../../packages/core/messaging/index.ts";
 
 async function boot(label: string) {
   const trust = createTrustManager(new MemoryStorageBackend());
-  const messaging = createMessagingLayer({ trustStore: trust, relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS });
-  await messaging.start();
+  const transport = createLibp2pMessagingTransport({ relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS });
+  const clip = createTrustedClipMessenger(transport as any, (id) => trust.isTrusted(id));
+  await transport.start();
   const identity = await trust.getLocalIdentity();
-  return { trust, messaging, identity, label };
+  return { trust, transport, clip, identity, label };
 }
 
-async function waitForPeer(messaging: any, label: string, timeoutMs = 5000): Promise<string> {
-  const existing = messaging.getConnectedPeers?.();
+async function waitForPeer(transport: any, label: string, timeoutMs = 5000): Promise<string> {
+  const existing = transport.getConnectedPeers?.();
   if (existing && existing.length) return existing[0];
   return await new Promise((resolve, reject) => {
     let done = false;
@@ -30,7 +32,7 @@ async function waitForPeer(messaging: any, label: string, timeoutMs = 5000): Pro
         reject(new Error(`[${label}] timed out waiting for peer`));
       }
     }, timeoutMs);
-    messaging.onPeerConnected?.((pid: string) => {
+    transport.onPeerConnected?.((pid: string) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -64,14 +66,14 @@ async function main() {
   await a.trust.add({ ...b.identity, lastSeen: Date.now() });
   await b.trust.add({ ...a.identity, lastSeen: Date.now() });
 
-  a.messaging.onMessage((msg) => console.log("[A] received", msg.type, "from", msg.from));
-  b.messaging.onMessage((msg) => console.log("[B] received", msg.type, "from", msg.from));
+  a.clip.onMessage((msg: any) => console.log("[A] received", msg.type, "from", msg.from));
+  b.clip.onMessage((msg: any) => console.log("[B] received", msg.type, "from", msg.from));
 
-  const targetPeerId = await waitForPeer(a.messaging, "A");
+  const targetPeerId = await waitForPeer(a.transport, "A");
 
   const clip = normalizeClipboardContent("hello from A", a.identity.deviceId);
   if (clip) {
-    await a.messaging.sendMessage(targetPeerId, {
+    await a.clip.send(targetPeerId, {
       type: "CLIP",
       from: a.identity.deviceId,
       clip,

@@ -21,7 +21,8 @@ export default {
     "^\.\.\/\.\.\/models/enums$": "<rootDir>/packages/core/models/enums.ts",
     "^\.\.\/\.\.\/models/Clip$": "<rootDir>/packages/core/models/Clip.ts",
     "^\.\/enums$": "<rootDir>/packages/core/models/enums.ts",
-    "^\.\/enums\\.js$": "<rootDir>/packages/core/models/enums.ts"
+    "^\.\/enums\\.js$": "<rootDir>/packages/core/models/enums.ts",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
   },
   extensionsToTreatAsEsm: [".ts"],
 };

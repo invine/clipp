@@ -1,34 +1,21 @@
-import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { pipe } from "it-pipe";
-import { PROTOCOL } from "./engine.js";
+import { CLIP_TRUST_PROTOCOL } from "../../packages/core/network/protocol.js";
+import type {
+  TrustAckMessage,
+  TrustRequestMessage,
+} from "../../packages/core/network/trustRequest.js";
 import {
   privateKeyFromProtobuf,
   privateKeyFromRaw,
   type PrivateKey,
 } from "@libp2p/crypto/keys";
 
-export type TrustRequestPayload = {
-  deviceId: string;
-  deviceName?: string;
-  publicKey?: string;
-  multiaddrs?: string[];
-  createdAt?: number;
-  [key: string]: unknown;
-};
-
-export type TrustRequestMessage = {
-  type: "trust-request";
-  from: string;
-  payload: TrustRequestPayload;
-  sentAt?: number;
-};
-
-export type TrustAckMessage = {
-  type: "trust-ack";
-  from: string;
-  payload: Record<string, unknown>;
-  sentAt?: number;
-};
+export {
+  sendTrustRequest,
+  type TrustAckMessage,
+  type TrustRequestMessage,
+  type TrustRequestPayload,
+} from "../../packages/core/network/trustRequest.js";
 
 type HandlerCtx = { stream: any; node: any };
 
@@ -47,7 +34,7 @@ export function registerClipboardHandler(
   const allowLimited = opts.allowLimited !== false;
   const log = opts.logger || console.info;
   node.handle(
-    PROTOCOL,
+    CLIP_TRUST_PROTOCOL,
     async (data: any) => {
       const stream = data?.stream ?? data;
       const connection = data?.connection ?? (stream as any)?.connection;
@@ -91,78 +78,9 @@ export function registerClipboardHandler(
   );
 }
 
-export async function sendTrustRequest(
-  node: any,
-  target: string | Multiaddr,
-  payload: TrustRequestPayload,
-  opts: { allowLimited?: boolean; logger?: (...args: any[]) => void } = {}
-): Promise<TrustAckMessage | undefined> {
-  const allowLimited = opts.allowLimited !== false;
-  const log = opts.logger || console.info;
-  const targetMa = typeof target === "string" ? multiaddr(target) : target;
-  const deviceId = node.peerId.toString();
-  const message: TrustRequestMessage = {
-    type: "trust-request",
-    from: deviceId,
-    payload,
-    sentAt: Date.now(),
-  };
-
-  log("[probe-utils] sending trust-request", {
-    target: targetMa.toString(),
-    payload,
-  });
-
-  const conn = await node.dialProtocol(targetMa, PROTOCOL, {
-    runOnLimitedConnection: allowLimited,
-  });
-  log("[probe-utils] protocol stream opened", {
-    target: targetMa.toString(),
-    stat: safeStat(conn),
-    protocol: conn?.protocol,
-    timeline: conn?.timeline,
-    stream: describeStream(conn),
-    connection: safeConnStat((conn as any)?.connection),
-  });
-
-  try {
-    await writeStream(conn, new TextEncoder().encode(JSON.stringify(message)), { end: true });
-    log("[probe-utils] trust-request written", { target: targetMa.toString() });
-  } catch (err: any) {
-    log("[probe-utils] write failed", { target: targetMa.toString(), error: err?.message || err });
-    throw err;
-  }
-  const iterable = getStreamIterable(conn);
-  if (!iterable) {
-    log("[probe-utils] outbound stream missing async iterator", {
-      stream: describeStream(conn),
-    });
-    return undefined;
-  }
-  log("[probe-utils] waiting for trust-ack", { target: targetMa.toString() });
-  for await (const chunk of iterable) {
-    const buf = toU8(chunk);
-    if (!buf) {
-      log("[probe-utils] outbound stream received non-buffer chunk", { chunkType: typeof chunk });
-      continue;
-    }
-    const raw = new TextDecoder().decode(buf);
-    log("[probe-utils] outbound stream received chunk", {
-      len: buf.length,
-      preview: raw.slice(0, 160),
-    });
-    const msg = JSON.parse(raw);
-    log("[probe-utils] outbound stream received", msg);
-    if (msg?.type === "trust-ack") {
-      log("[probe-utils] trust-ack received", msg);
-      return msg as TrustAckMessage;
-    }
-  }
-  log("[probe-utils] outbound stream ended without trust-ack");
-  return undefined;
-}
-
-export function loadPrivateKeyFromEnv(envName = "PROBE_PRIVATE_KEY_BASE64"): PrivateKey | undefined {
+export function loadPrivateKeyFromEnv(
+  envName = "PROBE_PRIVATE_KEY_BASE64"
+): PrivateKey | undefined {
   const b64 = process.env[envName];
   if (!b64) return undefined;
   try {
@@ -182,23 +100,6 @@ export function loadPrivateKeyFromEnv(envName = "PROBE_PRIVATE_KEY_BASE64"): Pri
     );
     return undefined;
   }
-}
-
-export function toU8(chunk: any): Uint8Array | null {
-  if (chunk instanceof Uint8Array) return chunk;
-  if (typeof (chunk as any)?.subarray === "function") {
-    return (chunk as any).subarray();
-  }
-  if (
-    typeof chunk === "object" &&
-    chunk != null &&
-    (chunk as any).bufs &&
-    Array.isArray((chunk as any).bufs) &&
-    typeof (chunk as any).subarray === "function"
-  ) {
-    return (chunk as any).subarray();
-  }
-  return null;
 }
 
 export function safeStat(stream: any) {
@@ -275,7 +176,11 @@ export function describeStream(stream: any) {
   };
 }
 
-export async function writeStream(stream: any, data: Uint8Array, opts: { end?: boolean } = {}) {
+export async function writeStream(
+  stream: any,
+  data: Uint8Array,
+  opts: { end?: boolean } = {}
+) {
   const shouldEnd = opts.end === true;
   const sinkTarget =
     stream && typeof stream.sink === "function"
@@ -337,4 +242,13 @@ export async function writeStream(stream: any, data: Uint8Array, opts: { end?: b
   }
 
   throw new Error("stream is not writable (sink missing)");
+}
+
+function toU8(chunk: any): Uint8Array | null {
+  if (chunk instanceof Uint8Array) return chunk;
+  if (chunk && typeof chunk.subarray === "function") return chunk.subarray();
+  if (chunk?.buffer && typeof chunk.byteOffset === "number" && typeof chunk.byteLength === "number") {
+    return new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  }
+  return null;
 }

@@ -1,5 +1,5 @@
 import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync";
-import type { ClipboardMessage } from "../../../packages/core/network/types";
+import type { ClipMessage } from "../../../packages/core/protocols/clip";
 import type { Clip } from "../../../packages/core/models/Clip";
 
 describe("ClipboardSyncController", () => {
@@ -28,11 +28,11 @@ describe("ClipboardSyncController", () => {
       getById: jest.fn(async (id: string) => (store.has(id) ? ({ clip: store.get(id) } as any) : null)),
     } as any;
 
-    const msgHandlers: Array<(msg: ClipboardMessage) => void> = [];
-    const broadcast = jest.fn(async (_msg: ClipboardMessage) => {});
+    const msgHandlers: Array<(msg: ClipMessage) => void> = [];
+    const broadcast = jest.fn(async (_msg: ClipMessage) => {});
     const messaging = {
       broadcast,
-      onMessage: (cb: (msg: ClipboardMessage) => void) => msgHandlers.push(cb),
+      onMessage: (cb: (msg: ClipMessage) => void) => msgHandlers.push(cb),
     };
 
     const sync = createClipboardSyncController({
@@ -78,10 +78,10 @@ describe("ClipboardSyncController", () => {
       getById: jest.fn(async () => null),
     } as any;
 
-    const broadcast = jest.fn(async (_msg: ClipboardMessage) => {});
+    const broadcast = jest.fn(async (_msg: ClipMessage) => {});
     const messaging = {
       broadcast,
-      onMessage: (_cb: (msg: ClipboardMessage) => void) => {},
+      onMessage: (_cb: (msg: ClipMessage) => void) => {},
     };
 
     const sync = createClipboardSyncController({
@@ -125,10 +125,10 @@ describe("ClipboardSyncController", () => {
       getById: jest.fn(async (id: string) => (store.has(id) ? ({ clip: store.get(id) } as any) : null)),
     } as any;
 
-    const msgHandlers: Array<(msg: ClipboardMessage) => void> = [];
+    const msgHandlers: Array<(msg: ClipMessage) => void> = [];
     const messaging = {
       broadcast: jest.fn(async () => {}),
-      onMessage: (cb: (msg: ClipboardMessage) => void) => msgHandlers.push(cb),
+      onMessage: (cb: (msg: ClipMessage) => void) => msgHandlers.push(cb),
     };
 
     const sync = createClipboardSyncController({
@@ -146,7 +146,7 @@ describe("ClipboardSyncController", () => {
       timestamp: 1,
       senderId: "peer",
     };
-    const msg: ClipboardMessage = {
+    const msg: ClipMessage = {
       type: "CLIP",
       from: "peer",
       clip,

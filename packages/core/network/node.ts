@@ -10,13 +10,17 @@ import { yamux } from "@chainsafe/libp2p-yamux";
 import { mplex } from "@libp2p/mplex";
 import { bootstrap } from "@libp2p/bootstrap";
 import { mdns } from "@libp2p/mdns";
+// TODO: remove gossipsub
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
+// TODO: remove kadDHT
 import { kadDHT } from "@libp2p/kad-dht";
 import { identify } from "@libp2p/identify";
 import { ping } from "@libp2p/ping";
+// TODO: remove webrtc-star
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants.js";
 import { FaultTolerance } from "@libp2p/interface-transport";
 
+// TODO: remove webrtc-star
 function hasWebRTCSupport() {
   return (
     typeof (globalThis as any).RTCPeerConnection !== "undefined" ||
@@ -86,18 +90,18 @@ export async function createClipboardNode(
         typeof (webRTCStar as any).webRTCStar === "function"
           ? (webRTCStar as any).webRTCStar()
           : typeof (webRTCStar as any).default === "function"
-          ? (webRTCStar as any).default()
-          : typeof webRTCStar === "function"
-          ? (webRTCStar as any)()
-          : null;
+            ? (webRTCStar as any).default()
+            : typeof webRTCStar === "function"
+              ? (webRTCStar as any)()
+              : null;
       const wrtcTransportFactory =
         typeof (webRTC as any).webRTC === "function"
           ? (webRTC as any).webRTC
           : typeof webRTC === "function"
-          ? (webRTC as any)
-          : typeof (webRTC as any).default === "function"
-          ? (webRTC as any).default
-          : null;
+            ? (webRTC as any)
+            : typeof (webRTC as any).default === "function"
+              ? (webRTC as any).default
+              : null;
 
       const starFactory =
         wrtcStarInstance && typeof wrtcStarInstance.transport === "function"
@@ -173,8 +177,8 @@ export async function createClipboardNode(
     typeof (peerId as any)?.toString === "function"
       ? (peerId as any).toString()
       : peerId && typeof peerId === "string"
-      ? peerId
-      : undefined;
+        ? peerId
+        : undefined;
   if (peerIdStr) {
     relayAddresses.forEach((addr) => {
       try {

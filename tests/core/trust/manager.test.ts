@@ -1,3 +1,30 @@
+jest.mock("../../../packages/core/trust/identity", () => {
+  const KEY = "localDeviceIdentity";
+  return {
+    async getLocalIdentity(storage: any) {
+      const existing = await storage.get(KEY);
+      if (existing) return existing;
+      const created = {
+        deviceId: "me",
+        deviceName: "Test",
+        publicKey: "pk",
+        privateKey: "sk",
+        multiaddr: "/p2p/me",
+        multiaddrs: ["/p2p/me"],
+        createdAt: Date.now(),
+      };
+      await storage.set(KEY, created);
+      return created;
+    },
+    async setLocalIdentityName(storage: any, deviceName: string) {
+      const id = await storage.get(KEY);
+      const updated = { ...(id || {}), deviceName };
+      await storage.set(KEY, updated);
+      return updated;
+    },
+  };
+});
+
 import { createTrustManager, MemoryStorageBackend, TrustedDevice } from '../../../packages/core/trust'
 
 const backend = new MemoryStorageBackend()

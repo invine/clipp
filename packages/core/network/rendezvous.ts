@@ -1,5 +1,5 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
-import { toU8 } from "./probeUtils.js";
+import { toU8 } from "./bytes.js";
 
 export type RendezvousRecord = { peer: string; addrs: string[]; lastSeen?: number };
 
@@ -11,7 +11,7 @@ function asMultiaddr(value: string | Multiaddr) {
 
 function decodeChunk(chunk: any) {
   const buf = toU8(chunk);
-  if (!buf) return null;
+  if (!buf?.length) return null;
   try {
     return JSON.parse(new TextDecoder().decode(buf));
   } catch {
@@ -21,25 +21,13 @@ function decodeChunk(chunk: any) {
 
 async function writeJson(stream: any, obj: any) {
   const data = new TextEncoder().encode(JSON.stringify(obj));
-  if (typeof stream?.sink === "function") {
-    await stream.sink([data]);
-    return;
+  if (typeof stream?.send !== "function") {
+    throw new Error("rendezvous stream is not a libp2p MessageStream (missing send)");
   }
-  if (typeof stream?.write === "function") {
-    await stream.write(data);
-    if (typeof stream.closeWrite === "function") {
-      await stream.closeWrite();
-    }
-    return;
+  const ok = stream.send(data);
+  if (ok === false && typeof stream?.onDrain === "function") {
+    await stream.onDrain();
   }
-  if (typeof stream?.send === "function") {
-    stream.send(data);
-    if (typeof stream.closeWrite === "function") {
-      await stream.closeWrite();
-    }
-    return;
-  }
-  throw new Error("rendezvous stream is not writable");
 }
 
 export async function registerOnRendezvous(
@@ -51,12 +39,17 @@ export async function registerOnRendezvous(
 ): Promise<boolean> {
   try {
     const relayMa = asMultiaddr(relay);
-    const conn = await node.dialProtocol(relayMa, TOPIC);
-    await writeJson(conn, { action: "register", topic, addrs });
-    for await (const chunk of conn.source ?? []) {
+    const stream = await node.dialProtocol(relayMa, TOPIC);
+    await writeJson(stream, { action: "register", topic, addrs });
+    for await (const chunk of stream as AsyncIterable<any>) {
       const msg = decodeChunk(chunk);
       if (!msg) continue;
       log("[rendezvous] register response", msg);
+      try {
+        await stream?.close?.();
+      } catch {
+        // ignore
+      }
       return !!msg.ok;
     }
   } catch (err: any) {
@@ -73,9 +66,9 @@ export async function listRendezvousPeers(
 ): Promise<RendezvousRecord[]> {
   try {
     const relayMa = asMultiaddr(relay);
-    const conn = await node.dialProtocol(relayMa, TOPIC);
-    await writeJson(conn, { action: "list", topic });
-    for await (const chunk of conn.source ?? []) {
+    const stream = await node.dialProtocol(relayMa, TOPIC);
+    await writeJson(stream, { action: "list", topic });
+    for await (const chunk of stream as AsyncIterable<any>) {
       const msg = decodeChunk(chunk);
       if (msg?.ok && Array.isArray(msg.peers)) {
         const peers = msg.peers
@@ -86,6 +79,11 @@ export async function listRendezvousPeers(
           }))
           .filter((p: any) => p.peer && Array.isArray(p.addrs));
         log("[rendezvous] list response", { topic, count: peers.length });
+        try {
+          await stream?.close?.();
+        } catch {
+          // ignore
+        }
         return peers;
       }
     }

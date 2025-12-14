@@ -1,11 +1,9 @@
 import {
   Clip,
-  Device,
-  SyncMessage,
   HistoryItem,
   ClipType,
-  MessageType,
   validateClip,
+  validateHistoryItem,
 } from "../index";
 
 describe("Data-model sanity", () => {
@@ -17,27 +15,23 @@ describe("Data-model sanity", () => {
       timestamp: Date.now(),
       senderId: "peer-A",
     };
-    expect(validateClip ? validateClip(clip) : true).toBe(true);
+    expect(validateClip(clip)).toBe(true);
   });
 
-  it("serialises/deserialises cleanly", () => {
-    const original: Device = {
-      id: "peer-B",
-      name: "Pixel 8",
-      publicKey: "base64key",
-      addedAt: 123456789,
-    };
-    const roundTrip = JSON.parse(JSON.stringify(original)) as Device;
-    expect(roundTrip).toEqual(original);
-  });
-
-  it("accepts each SyncMessage variant", () => {
-    const msg: SyncMessage = {
-      type: MessageType.NewClip,
-      payload: {} as any,
+  it("creates a valid history item", () => {
+    const clip: Clip = {
+      id: "uuid-2",
+      type: ClipType.Text,
+      content: "world",
+      timestamp: Date.now(),
       senderId: "peer-A",
-      timestamp: 0,
     };
-    expect(msg.type).toBe(MessageType.NewClip);
+    const item: HistoryItem = {
+      clip,
+      receivedFrom: "peer-A",
+      syncedAt: Date.now(),
+      isLocal: true,
+    };
+    expect(validateHistoryItem(item)).toBe(true);
   });
 });

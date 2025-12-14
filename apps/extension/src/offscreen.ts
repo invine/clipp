@@ -1,24 +1,61 @@
-import { createMessagingLayer } from "../../../packages/core/network/engine";
+import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import { createTrustManager } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
+import { createTrustMessenger, createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
+import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 
-let messaging: ReturnType<typeof createMessagingLayer> | null = null;
+let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
+let clipMessaging: any = null;
+let trustMessaging: any = null;
+let historyMessaging: any = null;
 let trust = createTrustManager(new ChromeStorageBackend());
 let started = false;
 
+function base64ToBytes(b64: string): Uint8Array {
+  try {
+    // eslint-disable-next-line no-undef
+    if (typeof Buffer !== "undefined") {
+      // eslint-disable-next-line no-undef
+      return Uint8Array.from(Buffer.from(b64, "base64"));
+    }
+  } catch {
+    // ignore
+  }
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_STAR_RELAYS) {
-  if (messaging) return;
+  if (transport) return;
   const peerId = await deviceIdToPeerIdObject(identity.deviceId);
-  messaging = createMessagingLayer({ peerId, relayAddresses: relays, trustStore: trust });
-  messaging.onMessage(async (msg: any) => {
+  const privateKey =
+    identity?.privateKey && typeof identity.privateKey === "string"
+      ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
+      : undefined;
+  transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses: relays });
+
+  clipMessaging = createTrustedClipMessenger(transport, (id) => trust.isTrusted(id));
+  trustMessaging = createTrustMessenger(transport);
+  historyMessaging = createTrustedHistoryMessenger(transport, (id) => trust.isTrusted(id));
+
+  clipMessaging.onMessage((msg: any) => {
     chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
   });
-  await messaging.start();
+  trustMessaging.onMessage((msg: any) => {
+    chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
+  });
+  historyMessaging.onMessage((msg: any) => {
+    chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
+  });
+
+  await transport.start();
   started = true;
-  const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+  const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
   chrome.runtime.sendMessage({ source: "offscreen", action: "peers", peers }).catch(() => {});
   log.info("Offscreen messaging started");
 }
@@ -35,27 +72,42 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
-    if (!messaging) {
+    if (!transport) {
       sendResponse({ ok: false, error: "not_initialized" });
       return;
     }
     if (msg.action === "broadcast" && msg.msg) {
-      await messaging.broadcast(msg.msg as any);
+      const m = msg.msg as any;
+      if (m?.type === "CLIP") {
+        await clipMessaging.broadcast(m);
+      } else if (m?.type === "sync-history") {
+        await historyMessaging.broadcast(m);
+      } else {
+        await trustMessaging.broadcast(m);
+      }
       sendResponse({ ok: true });
       return;
     }
     if (msg.action === "sendMessage" && msg.target && msg.msg) {
-      await messaging.sendMessage(msg.target as string, msg.msg as any);
+      const target = msg.target as string;
+      const m = msg.msg as any;
+      if (m?.type === "CLIP") {
+        await clipMessaging.send(target, m);
+      } else if (m?.type === "sync-history") {
+        await historyMessaging.send(target, m);
+      } else {
+        await trustMessaging.send(target, m);
+      }
       sendResponse({ ok: true });
       return;
     }
     if (msg.action === "getPeers") {
-      const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+      const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
       sendResponse({ peers });
       return;
     }
     if (msg.action === "getStatus") {
-      const peers = messaging.getConnectedPeers ? messaging.getConnectedPeers() : [];
+      const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
       sendResponse({ peers, started });
       return;
     }

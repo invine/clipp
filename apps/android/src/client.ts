@@ -1,17 +1,25 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
+import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { createPollingClipboardService } from "@core/clipboard/service";
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
-import { createMessagingLayer } from "@core/network/engine";
+import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "@core/network/constants";
 import { MemoryHistoryStore } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncController } from "@core/sync/clipboardSync";
+import {
+  createTrustMessenger,
+  createTrustProtocolBinder,
+  createTrustedClipMessenger,
+} from "@core/messaging";
+import { createSignedTrustRequest } from "@core/protocols/clipTrust";
 import { createTrustManager, type TrustedDevice } from "@core/trust";
 import { decodePairing } from "@core/pairing/decode";
 import type { Clip } from "@core/models/Clip";
 import type { Device, Identity, PendingRequest } from "@clipp/ui";
 import * as log from "@core/logger";
+import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 
@@ -71,11 +79,61 @@ async function writeClipboardText(text: string): Promise<void> {
   }
 }
 
+function base64ToBytes(b64: string): Uint8Array {
+  try {
+    if (typeof Buffer !== "undefined") {
+      return Uint8Array.from(Buffer.from(b64, "base64"));
+    }
+  } catch {
+    // ignore
+  }
+  if (typeof atob !== "function") {
+    throw new Error("base64_unavailable");
+  }
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
   private readonly history = new MemoryHistoryStore(createHistoryBackend());
   private readonly trust = createTrustManager(this.storage);
-  private readonly messaging = createMessagingLayer({ trustStore: this.trust });
+  private readonly trustBinder = createTrustProtocolBinder({ trust: this.trust });
+  private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
+  private clipMessaging: ReturnType<typeof createTrustedClipMessenger> | null = null;
+  private trustMessaging: ReturnType<typeof createTrustMessenger> | null = null;
+
+  constructor() {
+    // messaging is initialised lazily in `start()`
+  }
+
+  private async ensureMessaging(): Promise<void> {
+    if (this.transport && this.clipMessaging && this.trustMessaging) return;
+    const identity = await this.trust.getLocalIdentity();
+    const peerId =
+      identity.privateKey && typeof identity.privateKey === "string"
+        ? await peerIdFromPrivateKeyBase64(identity.privateKey)
+        : await deviceIdToPeerIdObject(identity.deviceId);
+    const privateKey =
+      identity.privateKey && typeof identity.privateKey === "string"
+        ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
+        : undefined;
+
+    this.transport = createLibp2pMessagingTransport({
+      peerId,
+      privateKey,
+      relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS,
+    });
+    this.clipMessaging = createTrustedClipMessenger(this.transport, (id) => this.trust.isTrusted(id));
+    this.trustMessaging = createTrustMessenger(this.transport);
+    this.trustBinder.bind(this.trustMessaging);
+    this.clipboardSync.bindMessaging(this.clipMessaging as any);
+
+    this.transport.onPeerConnected(() => void this.emitState());
+    this.transport.onPeerDisconnected(() => void this.emitState());
+  }
   private createAndroidClipboardService() {
     return createPollingClipboardService({
       pollIntervalMs: 1500,
@@ -105,7 +163,6 @@ export class AndroidClient {
   private readonly clipboard = this.createAndroidClipboardService();
   private readonly clipboardSync = createClipboardSyncController({
     clipboard: this.clipboard,
-    messaging: this.messaging as any,
     history: this.history,
     getLocalDeviceId: async () => {
       const id = await this.trust.getLocalIdentity();
@@ -139,15 +196,6 @@ export class AndroidClient {
       await this.emitState();
     });
 
-    this.messaging.onMessage(async (msg: any) => {
-      if (msg.type === "trust-request") {
-        const dev = msg.payload as TrustedDevice;
-        await this.trust.handleTrustRequest(dev);
-      }
-    });
-    this.messaging.onPeerConnected(() => void this.emitState());
-    this.messaging.onPeerDisconnected(() => void this.emitState());
-
     this.trust.on("request", (d) => {
       if (this.pendingRequests.some((p) => p.deviceId === d.deviceId)) return;
       this.pendingRequests.push(d);
@@ -156,29 +204,15 @@ export class AndroidClient {
     });
     this.trust.on("approved", async (d) => {
       this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-      await this.sendTrustAck(d, true);
       await this.emitState();
       log.info("Device approved", d.deviceId);
     });
     this.trust.on("rejected", async (d) => {
       this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-      await this.sendTrustAck(d, false);
       await this.emitState();
       log.info("Device rejected", d.deviceId);
     });
     this.trust.on("removed", () => this.emitState());
-  }
-
-  private async sendTrustAck(device: TrustedDevice, accepted: boolean) {
-    const id = await this.trust.getLocalIdentity();
-    const target = device.multiaddrs?.[0] || device.multiaddr || device.deviceId;
-    const ack = {
-      type: "trust-ack" as const,
-      from: id.deviceId,
-      payload: { id: device.deviceId, accepted },
-      sentAt: Date.now(),
-    };
-    await this.messaging.sendMessage(target, ack as any).catch(() => {});
   }
 
   private validMultiaddrs(addrs: string[], peerId: string): Multiaddr[] {
@@ -206,10 +240,11 @@ export class AndroidClient {
     this.started = true;
     this.bindEvents();
     this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
+    await this.ensureMessaging();
     try {
-      await this.messaging.start();
+      await this.transport!.start();
     } catch (err) {
-      log.warn("Messaging layer failed to start", err);
+      log.warn("Messaging transport failed to start", err);
     }
     this.clipboardSync.start();
     await this.emitState();
@@ -218,7 +253,7 @@ export class AndroidClient {
   stop() {
     if (!this.started) return;
     this.clipboardSync.stop();
-    this.messaging.stop();
+    this.transport?.stop();
     this.started = false;
     this.listeners = [];
   }
@@ -234,9 +269,7 @@ export class AndroidClient {
     const clips = await this.history.exportAll();
     const devices = await this.trust.list();
     const identity = await this.ensureIdentityAddrs(await this.trust.getLocalIdentity());
-    const peers = this.messaging.getConnectedPeers
-      ? this.messaging.getConnectedPeers()
-      : [];
+    const peers = this.transport?.getConnectedPeers?.() ?? [];
 
     return {
       clips,
@@ -272,13 +305,12 @@ export class AndroidClient {
   async acceptRequest(dev: PendingRequest) {
     await this.trust.add(dev as any);
     this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== dev.deviceId);
-    await this.sendTrustAck(dev as any, true);
     await this.emitState();
   }
 
   async rejectRequest(dev: PendingRequest) {
     this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== dev.deviceId);
-    await this.sendTrustAck(dev as any, false);
+    await this.trust.reject(dev.deviceId);
     await this.emitState();
   }
 
@@ -300,31 +332,33 @@ export class AndroidClient {
   async pairFromText(txt: string) {
     const pairing = decodePairing(txt);
     if (!pairing) return { ok: false, error: "invalid" as const };
+    await this.ensureMessaging();
+    try {
+      await this.transport!.start();
+    } catch (err) {
+      log.warn("Messaging transport failed to start", err);
+    }
     const id = await this.trust.getLocalIdentity();
+    const targetPeerId = await deviceIdToPeerId(pairing.deviceId);
     let targetAddrs =
       pairing.multiaddrs && pairing.multiaddrs.length
         ? pairing.multiaddrs
         : pairing.multiaddr
         ? [pairing.multiaddr]
         : [];
-    let valid = this.validMultiaddrs(targetAddrs, pairing.deviceId);
+    let valid = this.validMultiaddrs(targetAddrs, targetPeerId);
     if (!valid.length) {
       const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
-        (addr: string) => `${addr}/p2p/${pairing.deviceId}`
+        (addr: string) => `${addr}/p2p/${targetPeerId}`
       );
       targetAddrs = derived;
-      valid = this.validMultiaddrs(targetAddrs, pairing.deviceId);
+      valid = this.validMultiaddrs(targetAddrs, targetPeerId);
     }
     const target: Multiaddr | undefined = valid[0];
     if (!target) return { ok: false, error: "no_target" as const };
-    const request = {
-      type: "trust-request" as const,
-      from: id.deviceId,
-      payload: id,
-      sentAt: Date.now(),
-    };
+    const request = await createSignedTrustRequest(id, targetPeerId);
     try {
-      await this.messaging.sendMessage(target as any, request as any);
+      await this.trustMessaging!.send(target.toString(), request as any);
       return { ok: true };
     } catch (err) {
       log.warn("Failed to send trust request", err);
@@ -334,6 +368,7 @@ export class AndroidClient {
 
   async shareCurrentClipboard() {
     try {
+      await this.ensureMessaging();
       const text = await readClipboardText();
       const id = await this.trust.getLocalIdentity();
       const clip = normalizeClipboardContent(text, id.deviceId);
@@ -345,7 +380,7 @@ export class AndroidClient {
           clip,
           sentAt: Date.now(),
         };
-        await this.messaging.broadcast(message as any);
+        await this.clipMessaging!.broadcast(message as any);
         await this.emitState();
         return { ok: true };
       }

@@ -7,11 +7,12 @@ export interface TrustedDevice extends DeviceIdentity {
 }
 
 export interface StorageBackend {
-  get<T=any>(key: string): Promise<T | undefined>
-  set<T=any>(key: string, value: T): Promise<void>
+  get<T = any>(key: string): Promise<T | undefined>
+  set<T = any>(key: string, value: T): Promise<void>
   remove(key: string): Promise<void>
 }
 
+// TODO: how MemoryStorageBackend is used?
 export class MemoryStorageBackend implements StorageBackend {
   private store = new Map<string, any>()
   async get<T>(key: string): Promise<T | undefined> {
@@ -42,8 +43,10 @@ export interface TrustManager {
   isTrusted(deviceId: string): Promise<boolean>
   verifyPublicKey(deviceId: string, pubkey: string): Promise<boolean>
   add(device: TrustedDevice): Promise<void>
+  reject(deviceId: string): Promise<void>
   remove(deviceId: string): Promise<void>
   handleTrustRequest(req: TrustedDevice): Promise<void>
+  // TODO: why it's so generic?
   on(event: keyof Events, cb: (device: TrustedDevice) => void): void
 }
 
@@ -57,6 +60,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     const data = await storage.get<TrustedDevice[]>(TRUST_KEY)
     return Array.isArray(data) ? data : []
   }
+  // TODO: Should be part of storage, not part of the use case
   async function save(list: TrustedDevice[]) {
     await storage.set(TRUST_KEY, list)
   }
@@ -68,6 +72,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     return identity
   }
 
+  // TODO: what's the reason for having this function? Why not use load instead?
   async function list(): Promise<TrustedDevice[]> {
     return await load()
   }
@@ -77,6 +82,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     return list.some((d) => d.deviceId === id)
   }
 
+  // TODO: this does nothing!
   async function verifyPublicKey(id: string, key: string): Promise<boolean> {
     const list = await load()
     const dev = list.find((d) => d.deviceId === id)
@@ -96,6 +102,19 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     }
     log.info("Device approved", device.deviceId)
     events.emit('approved', device)
+  }
+
+  async function reject(deviceId: string) {
+    const device = pendingDevices.get(deviceId)
+    if (!device) return
+    const timer = pending.get(deviceId)
+    if (timer) {
+      clearTimeout(timer)
+      pending.delete(deviceId)
+    }
+    pendingDevices.delete(deviceId)
+    log.info('Trust request rejected', deviceId)
+    events.emit('rejected', device)
   }
 
   async function remove(id: string) {
@@ -127,6 +146,7 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     )
   }
 
+  // TODO: need to decide who owns list of pending trust requests - it's either trustManager or trustBinder. Currently both have this functionality
   async function handleTrustRequest(req: TrustedDevice) {
     if (!validate(req)) return
     if (await isTrusted(req.deviceId)) return
@@ -153,5 +173,5 @@ export function createTrustManager(storage: StorageBackend): TrustManager {
     return identity
   }
 
-  return { getLocalIdentity: getIdentity, renameLocalIdentity, list, isTrusted, verifyPublicKey, add, remove, handleTrustRequest, on }
+  return { getLocalIdentity: getIdentity, renameLocalIdentity, list, isTrusted, verifyPublicKey, add, reject, remove, handleTrustRequest, on }
 }

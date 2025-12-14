@@ -1,12 +1,12 @@
 import type { ClipboardService } from "../clipboard/service";
 import type { ClipHistoryStore } from "../history/store";
-import type { ClipboardMessage } from "../network/types";
+import type { ClipMessage } from "../protocols/clip";
 import { validateClip, type Clip } from "../models/Clip";
 import * as log from "../logger";
 
 export type MessagingPort = {
-  broadcast(msg: ClipboardMessage): Promise<void>;
-  onMessage(cb: (msg: ClipboardMessage) => void): void;
+  broadcast(msg: ClipMessage): Promise<void>;
+  onMessage(cb: (msg: ClipMessage) => void): void;
 };
 
 export type ClipboardSyncControllerOptions = {
@@ -58,7 +58,7 @@ export function createClipboardSyncController(
     if (!autoSync) return;
     const messaging = currentMessaging;
     if (!messaging) return;
-    const msg: ClipboardMessage = {
+    const msg: ClipMessage = {
       type: "CLIP",
       from: localId,
       clip,
@@ -71,9 +71,9 @@ export function createClipboardSyncController(
     }
   }
 
-  async function handleIncomingMessage(msg: ClipboardMessage): Promise<void> {
+  async function handleIncomingMessage(msg: ClipMessage): Promise<void> {
     if (!running) return;
-    if (!msg || msg.type !== "CLIP" || !msg.clip) return;
+    if (!msg || msg.type !== "CLIP") return;
     const clip = msg.clip;
     if (!validateClip(clip)) return;
 

@@ -1,67 +1,100 @@
 // Mock libp2p node creation to avoid ESM issues and heavy deps
+jest.mock(
+  "@multiformats/multiaddr",
+  () => ({
+    multiaddr: (addr: string) => ({
+      toString: () => addr,
+      encapsulate: (suffix: string) => ({
+        toString: () => `${addr}${suffix}`,
+        encapsulate: (suffix2: string) => ({
+          toString: () => `${addr}${suffix}${suffix2}`,
+        }),
+      }),
+      getPeerId: () => addr.split("/p2p/")[1] || undefined,
+    }),
+  }),
+  { virtual: true }
+);
+
+const protocolHandlers = new Map<string, any>();
+
 jest.mock("../../../packages/core/network/node", () => ({
   createClipboardNode: jest.fn(async () => ({
     addEventListener: jest.fn(),
-    handle: jest.fn(),
+    handle: jest.fn((protocol: string, handler: any) => {
+      protocolHandlers.set(protocol, handler);
+    }),
     start: jest.fn(),
     stop: jest.fn(),
     getConnections: jest.fn(() => []),
-    dialProtocol: jest.fn(async () => ({ sink: async () => {} })),
+    dialProtocol: jest.fn(async () => ({
+      send: jest.fn(() => true),
+      onDrain: jest.fn(async () => {}),
+      close: jest.fn(async () => {}),
+      [Symbol.asyncIterator]: async function* () {},
+    })),
     peerId: { toString: () => "mock-peer" },
     services: { pubsub: {}, dht: {} },
   })),
 }));
 
-import { createMessagingLayer } from "../../../packages/core/network/engine";
-import type { ClipboardMessage } from "../../../packages/core/network/types";
+import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
+import { CLIP_PROTOCOL } from "../../../packages/core/network/protocol";
 
 const { createClipboardNode } = jest.requireMock("../../../packages/core/network/node");
 
-describe("MessagingLayer", () => {
-  it("returns no peers when node not started", () => {
-    const layer = createMessagingLayer();
-    expect(layer.getConnectedPeers()).toEqual([]);
+describe("Libp2pMessagingTransport", () => {
+  beforeEach(() => {
+    protocolHandlers.clear();
+    jest.clearAllMocks();
+  });
+
+  it("returns no peers when not started", () => {
+    const transport = createLibp2pMessagingTransport();
+    expect(transport.getConnectedPeers()).toEqual([]);
   });
 
   it("start and stop are idempotent", async () => {
-    const layer = createMessagingLayer();
-    await layer.start();
-    await layer.start();
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    await transport.start();
     expect(createClipboardNode).toHaveBeenCalledTimes(1);
-    await layer.stop();
-    await layer.stop();
-    // stop should have been called once on the mocked node
+    await transport.stop();
+    await transport.stop();
     const node = await createClipboardNode.mock.results[0].value;
     expect(node.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("delivers messages only from trusted peers", async () => {
-    const layer = createMessagingLayer();
-    await layer.start();
-    jest.spyOn((layer as any).trust, "isTrusted").mockImplementation(async (id) => id === "trusted");
-    const received: ClipboardMessage[] = [];
-    layer.onMessage((m) => received.push(m));
-    if (await (layer as any).trust.isTrusted("trusted")) {
-      (layer as any).messageBus.emit({ type: "CLIP", from: "trusted", clip: { id: "1", type: "text", content: "hi", timestamp: Date.now(), senderId: "trusted" }, sentAt: Date.now() });
-    }
-    if (await (layer as any).trust.isTrusted("bad")) {
-      (layer as any).messageBus.emit({ type: "CLIP", from: "bad", clip: { id: "2", type: "text", content: "bad", timestamp: Date.now(), senderId: "bad" }, sentAt: Date.now() });
-    }
-    expect(received.length).toBe(1);
-    expect(received[0].from).toBe("trusted");
+  it("send uses MessageStream send/close", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    await transport.send(CLIP_PROTOCOL, "/ip4/127.0.0.1/tcp/1/ws/p2p/mock", new Uint8Array([1, 2, 3]));
+    const stream = await node.dialProtocol.mock.results[0].value;
+    expect(node.dialProtocol).toHaveBeenCalledTimes(1);
+    expect(stream.send).toHaveBeenCalledTimes(1);
+    expect(stream.close).toHaveBeenCalledTimes(1);
   });
 
-  it("broadcast sends to all peers", async () => {
-    const layer = createMessagingLayer();
-    await layer.start();
-    (layer as any).node.getConnections.mockReturnValue([
-      { remotePeer: { toString: () => "p1" } },
-      { remotePeer: { toString: () => "p2" } },
-    ]);
-    const spy = jest.spyOn(layer as any, "sendMessage").mockResolvedValue(undefined as any);
-    expect(layer.getConnectedPeers()).toEqual(["p1", "p2"]);
-    const msg: ClipboardMessage = { type: "CLIP" as any, from: "me", clip: { id: "1", type: "text", content: "x", timestamp: Date.now(), senderId: "me" }, sentAt: Date.now() } as any;
-    await layer.broadcast(msg);
-    expect(spy).toHaveBeenCalledTimes(2);
+  it("dispatches inbound messages to protocol handlers", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+
+    const received: Array<{ from: string; data: Uint8Array }> = [];
+    transport.onMessage(CLIP_PROTOCOL, (from, data) => received.push({ from, data }));
+
+    const handler = protocolHandlers.get(CLIP_PROTOCOL);
+    expect(typeof handler).toBe("function");
+
+    const fakeStream = {
+      async *[Symbol.asyncIterator]() {
+        yield new Uint8Array([7, 8, 9]);
+      },
+    };
+    await handler({ stream: fakeStream, connection: { remotePeer: { toString: () => "peer-1" } } });
+
+    expect(received).toHaveLength(1);
+    expect(received[0].from).toBe("peer-1");
+    expect(Array.from(received[0].data)).toEqual([7, 8, 9]);
   });
 });

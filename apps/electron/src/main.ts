@@ -1,84 +1,44 @@
-import {
-  app,
-  BrowserWindow,
-  clipboard,
-  ipcMain,
-  nativeImage,
-  Tray,
-  Menu,
-} from "electron";
+import "./libp2pGlobals.js";
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, Tray, Menu } from "electron";
 import path from "node:path";
-import wrtc from "@koush/wrtc";
-// import WebSocket from "ws";
-import { webcrypto } from "node:crypto";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
+import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import {
   openDatabase,
   SQLiteHistoryBackend,
   SQLiteKVStore,
 } from "./storage.js";
-import type { Clip } from "../../../packages/core/models/Clip.js";
 import { encode } from "../../../packages/core/qr/index.js";
 import { encodePairing } from "../../../packages/core/pairing/encode.js";
-// import { E } from "vite/dist/node/moduleRunnerTransport.d-DJ_mE5sf.js";
+import { decodePairing } from "../../../packages/core/pairing/decode.js";
+// TODO: why normalizeClipboardContent is used in the app? it should be localized in clipboard service
+// import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
+import { createPollingClipboardService } from "../../../packages/core/clipboard/service.js";
+import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync.js";
+import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
+import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
+// TODO: remove webrtc-star
+// import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
+import {
+  deviceIdToPeerId,
+  deviceIdToPeerIdObject,
+  peerIdFromPrivateKeyBase64,
+} from "../../../packages/core/network/peerId.js";
+import {
+  createTrustMessenger,
+  createTrustProtocolBinder,
+  createTrustedClipMessenger,
+} from "../../../packages/core/messaging/index.js";
+import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust.js";
+import { createTrustManager, type TrustedDevice } from "../../../packages/core/trust/trusted-devices.js";
+import * as log from "../../../packages/core/logger.js";
 
 const __dirnameFallback =
   typeof __dirname !== "undefined" ? (__dirname as string) : "";
 const isDev = !app.isPackaged;
 const preloadPath = path.join(__dirnameFallback, "preload.js");
 
-// Ensure WebRTC globals exist before loading libp2p/webrtc-star.
-const wrtcImpl: any = wrtc;
-(globalThis as any).RTCPeerConnection =
-  (globalThis as any).RTCPeerConnection || wrtcImpl?.RTCPeerConnection;
-(globalThis as any).RTCSessionDescription =
-  (globalThis as any).RTCSessionDescription || wrtcImpl?.RTCSessionDescription;
-(globalThis as any).RTCIceCandidate =
-  (globalThis as any).RTCIceCandidate || wrtcImpl?.RTCIceCandidate;
-(globalThis as any).WebSocket = (globalThis as any).WebSocket || (WebSocket as any);
-try {
-  if (!(globalThis as any).navigator) {
-    (globalThis as any).navigator = { userAgent: "Clipp Desktop" } as any;
-  }
-} catch { }
-try {
-  if (!(globalThis as any).crypto) {
-    (globalThis as any).crypto = webcrypto;
-  }
-} catch { }
-
 async function bootstrap() {
-  // Dynamically import libp2p deps after globals are set.
-  // TODO: redo the imports
-  const [
-    { createMessagingLayer },
-    { MemoryHistoryStore },
-    trustMod,
-    clipboardMod,
-    syncMod,
-    normalizeMod,
-    decodeMod,
-    log,
-    { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 },
-    { privateKeyFromProtobuf },
-  ] = await Promise.all([
-    import("../../../packages/core/network/engine.js"),
-    import("../../../packages/core/history/store.js"),
-    import("../../../packages/core/trust/trusted-devices.js"),
-    import("../../../packages/core/clipboard/service.js"),
-    import("../../../packages/core/sync/clipboardSync.js"),
-    import("../../../packages/core/clipboard/normalize.js"),
-    import("../../../packages/core/pairing/decode.js"),
-    import("../../../packages/core/logger.js"),
-    import("../../../packages/core/network/peerId.js"),
-    import("@libp2p/crypto/keys"),
-  ]);
-
-  const { createTrustManager, TrustedDevice } = trustMod as any;
-  const { createPollingClipboardService } = clipboardMod as any;
-  const { createClipboardSyncController } = syncMod as any;
-  const { normalizeClipboardContent } = normalizeMod as any;
-  const { decodePairing } = decodeMod as any;
   const logLevel = process.env.CLIPP_LOG_LEVEL || "debug";
   // const logLevel = process.env.CLIPP_LOG_LEVEL || "info";
   (log as any).setLogLevel?.(logLevel);
@@ -90,13 +50,13 @@ async function bootstrap() {
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const trust = createTrustManager(kvStore);
   // TODO: remove relayAddrEnv
-  const relayAddrEnv =
-    process.env.CLIPP_RELAY_ADDR ||
-    process.env.CLIPP_RELAY_MULTIADDR ||
-    "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
+  // const relayAddrEnv =
+  //   process.env.CLIPP_RELAY_ADDR ||
+  //   process.env.CLIPP_RELAY_MULTIADDR ||
+  //   "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
   let relayAddresses = normalizeRelayAddrs(
-    (await kvStore.get<string[]>("relayAddresses"))?.filter(Boolean) ||
-    (relayAddrEnv ? [relayAddrEnv] : [])
+    ((await kvStore.get<string[]>("relayAddresses")) ?? []).filter(Boolean)
+    // (relayAddrEnv ? [relayAddrEnv] : [])
   );
   const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   (log as any).info?.("Loaded identity", {
@@ -117,14 +77,17 @@ async function bootstrap() {
       ? await privateKeyFromProtobuf(Buffer.from(localIdentity.privateKey, "base64"))
       : undefined;
 
-  // TODO: decide if trust manager should be injected into messaging engine
-  let messaging = createMessagingLayer({ trustStore: trust, peerId, privateKey, relayAddresses });
+  const trustBinder = createTrustProtocolBinder({ trust });
+  let transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses });
+  let clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
+  let trustMessaging = createTrustMessenger(transport);
+  trustBinder.bind(trustMessaging);
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
     if (messagingStarted) return;
     try {
-      await messaging.start();
+      await transport.start();
       messagingStarted = true;
     } catch (err) {
       messagingStarted = false;
@@ -132,9 +95,9 @@ async function bootstrap() {
     }
   }
   // TODO: why this is here and not in clipboard service?
-  let lastClipboardCheck: number | null = null;
-  let lastClipboardPreview: string | null = null;
-  let lastClipboardError: string | null = null;
+  // let lastClipboardCheck: number | null = null;
+  // let lastClipboardPreview: string | null = null;
+  // let lastClipboardError: string | null = null;
   let pinnedIds: string[] = (await kvStore.get("pinnedIds")) || [];
   // TODO: improve icon import
   const iconRoot = app.isPackaged
@@ -153,10 +116,8 @@ async function bootstrap() {
 
   // TODO: remove webrtc star
   async function ensureIdentityAddrs(id: any) {
-    const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
-      "../../../packages/core/network/constants.js"
-    );
-    const peerId = await deviceIdToPeerId(id.deviceId);
+    // const peerId = await deviceIdToPeerId(id.deviceId);
+    const peerId = id.deviceId;
 
     // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
     // TODO: remove webrtc star. Not read from here
@@ -165,10 +126,10 @@ async function bootstrap() {
     const relaySet = normalizeRelayAddrs(relayAddresses || []);
     if (relaySet.length) {
       relaySet.forEach((addr) => derived.push(`${addr}/p2p-circuit/p2p/${peerId}`));
-    } else if (relayAddrEnv) {
-      derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
+      // } else if (relayAddrEnv) {
+      // derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
     }
-    derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
+    // derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
 
     const merged = dedupeMultiaddrs([...derived, ...existing]);
     const changed =
@@ -272,13 +233,13 @@ async function bootstrap() {
       readText: async () => {
         try {
           const txt = clipboard.readText() ?? "";
-          lastClipboardCheck = Date.now();
-          lastClipboardPreview = txt ? txt.slice(0, 140) : "";
-          lastClipboardError = null;
+          // lastClipboardCheck = Date.now();
+          // lastClipboardPreview = txt ? txt.slice(0, 140) : "";
+          // lastClipboardError = null;
           return txt;
         } catch (err: any) {
-          lastClipboardError = err?.message || "Failed to read clipboard";
-          lastClipboardCheck = Date.now();
+          // lastClipboardError = err?.message || "Failed to read clipboard";
+          // lastClipboardCheck = Date.now();
           return "";
         }
       },
@@ -288,8 +249,6 @@ async function bootstrap() {
     });
   }
 
-  // TODO: think about moving definition for readText and WriteText to separate interface
-  // and implement it as electronClipboard/chromeClipboard/capacitorClipboard depending on the platrofrm
   const clipboardSvc = createElectronClipboardService();
   const clipboardSync = createClipboardSyncController({
     clipboard: clipboardSvc,
@@ -299,9 +258,10 @@ async function bootstrap() {
       return id.deviceId;
     },
   });
-  clipboardSync.bindMessaging(messaging as any);
+  clipboardSync.bindMessaging(clipMessaging as any);
 
-  let pendingRequests: (typeof TrustedDevice)[] = [];
+  // TODO: why pendingRequests is part of the application and not part of trust manager?
+  let pendingRequests: TrustedDevice[] = [];
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -310,23 +270,23 @@ async function bootstrap() {
   async function getState() {
     const clips = await history.exportAll();
     const devices = await trust.list();
-    const peers = messaging.getConnectedPeers();
+    const peers = transport.getConnectedPeers();
     const identity = await ensureIdentityAddrs(await trust.getLocalIdentity());
     return {
       clips,
       devices,
-      // TODO: why pendingRequests is part of the application and not part of trust storage?
+      // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
       peers,
       identity,
       pinnedIds,
       relayAddresses,
       // TODO: remove diagnostics
-      diagnostics: {
-        lastClipboardCheck,
-        lastClipboardPreview,
-        lastClipboardError,
-      },
+      // diagnostics: {
+      //   lastClipboardCheck,
+      //   lastClipboardPreview,
+      //   lastClipboardError,
+      // },
     };
   }
 
@@ -351,31 +311,9 @@ async function bootstrap() {
     );
   }
 
-  // TODO: Move this to core package to avoid exposing low level send message API from MessagingLayer
-  async function sendTrustAck(device: any, accepted: boolean) {
-    await ensureMessagingStarted();
-    const id = await trust.getLocalIdentity();
-    const target =
-      device.multiaddrs?.[0] || device.multiaddr || device.deviceId;
-    const ack = {
-      type: "trust-ack" as const,
-      from: id.deviceId,
-      payload: { id: device.deviceId, accepted },
-      sentAt: Date.now(),
-    };
-    await messaging.sendMessage(target, ack as any).catch(() => { });
-  }
-
-  // TODO: main should not know about message types
-  function bindMessagingHandlers(target: any) {
+  function bindTransportHandlers(target: any) {
     if (!target || (target as any).__clippBound) return;
     (target as any).__clippBound = true;
-    target.onMessage(async (msg: any) => {
-      if (msg.type === "trust-request") {
-        const dev = msg.payload as any;
-        await trust.handleTrustRequest(dev);
-      }
-    });
     target.onPeerConnected(() => void emitState());
     target.onPeerDisconnected(() => void emitState());
   }
@@ -385,7 +323,7 @@ async function bootstrap() {
       await emitState();
     });
 
-    bindMessagingHandlers(messaging);
+    bindTransportHandlers(transport);
 
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("request", (d: any) => {
@@ -398,7 +336,6 @@ async function bootstrap() {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== d.deviceId
       );
-      await sendTrustAck(d, true);
       emitState();
       (log as any).info("Device approved", d.deviceId);
     });
@@ -407,7 +344,6 @@ async function bootstrap() {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== d.deviceId
       );
-      await sendTrustAck(d, false);
       emitState();
       (log as any).info("Device rejected", d.deviceId);
     });
@@ -424,14 +360,17 @@ async function bootstrap() {
 
   async function restartMessaging() {
     try {
-      await messaging.stop();
+      await transport.stop();
     } catch {
       // ignore stop failures
     }
     messagingStarted = false;
-    messaging = createMessagingLayer({ trustStore: trust, peerId, relayAddresses });
-    bindMessagingHandlers(messaging);
-    clipboardSync.bindMessaging(messaging as any);
+    transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses });
+    clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
+    trustMessaging = createTrustMessenger(transport);
+    trustBinder.bind(trustMessaging);
+    bindTransportHandlers(transport);
+    clipboardSync.bindMessaging(clipMessaging as any);
     await ensureMessagingStarted();
     await emitState();
   }
@@ -670,7 +609,7 @@ async function bootstrap() {
   app.on("before-quit", () => {
     quitting = true;
     clipboardSync.stop();
-    messaging.stop();
+    transport.stop();
     db.close();
   });
 
@@ -739,7 +678,7 @@ async function bootstrap() {
       if (accept) {
         await trust.add(device);
       } else {
-        await sendTrustAck(device, false);
+        await trust.reject(device.deviceId);
       }
       await emitState();
     }
@@ -756,9 +695,6 @@ async function bootstrap() {
     let parseErrors: Array<{ addr: string; error: string }> = [];
     let valid = validMultiaddrs(targetAddrs, parseErrors);
     // if (!valid.length) {
-    //   const { DEFAULT_WEBRTC_STAR_RELAYS } = await import(
-    //     "../../../packages/core/network/constants.js"
-    //   );
     //   const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
     //     (addr: string) => `${addr}/p2p/${peerId}`
     //   );
@@ -797,15 +733,10 @@ async function bootstrap() {
         candidates: targetAddrs,
       },
     });
-    const request = {
-      type: "trust-request" as const,
-      from: id.deviceId,
-      payload: id,
-      sentAt: Date.now(),
-    };
+    const request = await createSignedTrustRequest(id, peerId);
     for (const target of targets) {
       try {
-        await messaging.sendMessage(target as any, request as any);
+        await trustMessaging.send(target.toString(), request as any);
         return { ok: true };
       } catch (err) {
         broadcastLog({
@@ -827,25 +758,26 @@ async function bootstrap() {
     return { ok: false, error: "dial_failed" as const };
   });
 
-  ipcMain.handle("clipp:share-now", async () => {
-    await ensureMessagingStarted();
-    const text = clipboard.readText();
-    const id = await trust.getLocalIdentity();
-    const clip = normalizeClipboardContent(text, id.deviceId);
-    if (clip) {
-      await history.add(clip, id.deviceId, true);
-      const message = {
-        type: "CLIP" as const,
-        from: id.deviceId,
-        clip,
-        sentAt: Date.now(),
-      };
-      await messaging.broadcast(message as any);
-      await emitState();
-      return { ok: true };
-    }
-    return { ok: false };
-  });
+  // TODO: confirm that share-now is not used
+  // ipcMain.handle("clipp:share-now", async () => {
+  //   await ensureMessagingStarted();
+  //   const text = clipboard.readText();
+  //   const id = await trust.getLocalIdentity();
+  //   const clip = normalizeClipboardContent(text, id.deviceId);
+  //   if (clip) {
+  //     await history.add(clip, id.deviceId, true);
+  //     const message = {
+  //       type: "CLIP" as const,
+  //       from: id.deviceId,
+  //       clip,
+  //       sentAt: Date.now(),
+  //     };
+  //     await clipMessaging.broadcast(message as any);
+  //     await emitState();
+  //     return { ok: true };
+  //   }
+  //   return { ok: false };
+  // });
 
   // TODO: make reusable component
   ipcMain.handle("clipp:open-qr-window", async () => {
