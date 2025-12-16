@@ -1,37 +1,45 @@
-import "./libp2pGlobals.js";
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, Tray, Menu } from "electron";
-import path from "node:path";
-import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
+import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Tray } from "electron";
+import path from "node:path";
+import { decodePairing } from "../../../packages/core/pairing/decode.js";
+import { encodePairing } from "../../../packages/core/pairing/encode.js";
+import { encode } from "../../../packages/core/qr/index.js";
+import "./libp2pGlobals.js";
 import {
   openDatabase,
   SQLiteHistoryBackend,
   SQLiteKVStore,
 } from "./storage.js";
-import { encode } from "../../../packages/core/qr/index.js";
-import { encodePairing } from "../../../packages/core/pairing/encode.js";
-import { decodePairing } from "../../../packages/core/pairing/decode.js";
 // TODO: why normalizeClipboardContent is used in the app? it should be localized in clipboard service
 // import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
 import { createPollingClipboardService } from "../../../packages/core/clipboard/service.js";
-import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync.js";
 import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
+import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync.js";
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
+import * as log from "../../../packages/core/logger.js";
+import {
+  createTrustedClipMessenger,
+  createTrustMessenger,
+  createTrustProtocolBinder,
+} from "../../../packages/core/messaging/index.js";
 import {
   deviceIdToPeerId,
   deviceIdToPeerIdObject,
   peerIdFromPrivateKeyBase64,
 } from "../../../packages/core/network/peerId.js";
-import {
-  createTrustMessenger,
-  createTrustProtocolBinder,
-  createTrustedClipMessenger,
-} from "../../../packages/core/messaging/index.js";
 import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust.js";
-import { createTrustManager, type TrustedDevice } from "../../../packages/core/trust/trusted-devices.js";
-import * as log from "../../../packages/core/logger.js";
+import {
+  createIdentityService,
+  createKVIdentityRepository,
+  createKVTrustedDeviceRepository,
+  createTrustManager,
+  IDENTITY_KEY,
+  TRUST_KEY,
+  type TrustedDevice
+} from "../../../packages/core/trust/index.js";
 
 const __dirnameFallback =
   typeof __dirname !== "undefined" ? (__dirname as string) : "";
@@ -48,17 +56,22 @@ async function bootstrap() {
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
-  const trust = createTrustManager(kvStore);
+  const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
+  const identitySvc = createIdentityService({ repo: identityRepo })
+  const trustRepo = createKVTrustedDeviceRepository({ storage: kvStore, key: TRUST_KEY })
+  const trust = createTrustManager({ trustRepo: trustRepo, identitySvc: identitySvc });
   // TODO: remove relayAddrEnv
   // const relayAddrEnv =
   //   process.env.CLIPP_RELAY_ADDR ||
   //   process.env.CLIPP_RELAY_MULTIADDR ||
   //   "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
+  // TODO: create Relay Service
   let relayAddresses = normalizeRelayAddrs(
     ((await kvStore.get<string[]>("relayAddresses")) ?? []).filter(Boolean)
     // (relayAddrEnv ? [relayAddrEnv] : [])
   );
-  const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
+  const localIdentity = await identitySvc.get();
+  // const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   (log as any).info?.("Loaded identity", {
     deviceId: localIdentity.deviceId,
     hasPrivateKey: !!localIdentity.privateKey && localIdentity.privateKey.length > 20,
@@ -115,35 +128,35 @@ async function bootstrap() {
   ].map((f) => path.join(iconBase, f));
 
   // TODO: remove webrtc star
-  async function ensureIdentityAddrs(id: any) {
-    // const peerId = await deviceIdToPeerId(id.deviceId);
-    const peerId = id.deviceId;
-
-    // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
-    // TODO: remove webrtc star. Not read from here
-    const existing = Array.isArray(id?.multiaddrs) ? [...id.multiaddrs] : [];
-    const derived: string[] = [];
-    const relaySet = normalizeRelayAddrs(relayAddresses || []);
-    if (relaySet.length) {
-      relaySet.forEach((addr) => derived.push(`${addr}/p2p-circuit/p2p/${peerId}`));
-      // } else if (relayAddrEnv) {
-      // derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
-    }
-    // derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
-
-    const merged = dedupeMultiaddrs([...derived, ...existing]);
-    const changed =
-      merged.length !== existing.length || merged.some((v, idx) => v !== existing[idx]) || !id.multiaddr;
-    id.multiaddrs = merged;
-    if (!id.multiaddr && merged[0]) {
-      id.multiaddr = merged[0];
-    }
-    if (changed) {
-      // Persist updated identity so QR pairing uses latest addresses.
-      await kvStore.set("localDeviceIdentity", id);
-    }
-    return id;
-  }
+  // async function ensureIdentityAddrs(id: any) {
+  //   // const peerId = await deviceIdToPeerId(id.deviceId);
+  //   const peerId = id.deviceId;
+  //
+  //   // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
+  //   // TODO: remove webrtc star. Not read from here
+  //   const existing = Array.isArray(id?.multiaddrs) ? [...id.multiaddrs] : [];
+  //   const derived: string[] = [];
+  //   const relaySet = normalizeRelayAddrs(relayAddresses || []);
+  //   if (relaySet.length) {
+  //     relaySet.forEach((addr) => derived.push(`${addr}/p2p-circuit/p2p/${peerId}`));
+  //     // } else if (relayAddrEnv) {
+  //     // derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
+  //   }
+  //   // derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
+  //
+  //   const merged = dedupeMultiaddrs([...derived, ...existing]);
+  //   const changed =
+  //     merged.length !== existing.length || merged.some((v, idx) => v !== existing[idx]) || !id.multiaddr;
+  //   id.multiaddrs = merged;
+  //   if (!id.multiaddr && merged[0]) {
+  //     id.multiaddr = merged[0];
+  //   }
+  //   if (changed) {
+  //     // Persist updated identity so QR pairing uses latest addresses.
+  //     await kvStore.set("localDeviceIdentity", id);
+  //   }
+  //   return id;
+  // }
 
   function dedupeMultiaddrs(values: string[]) {
     const seen = new Set<string>();
@@ -227,7 +240,7 @@ async function bootstrap() {
     return createPollingClipboardService({
       pollIntervalMs: 1200,
       getSenderId: async () => {
-        const id = await trust.getLocalIdentity();
+        const id = await identitySvc.get();
         return id.deviceId;
       },
       readText: async () => {
@@ -254,7 +267,7 @@ async function bootstrap() {
     clipboard: clipboardSvc,
     history,
     getLocalDeviceId: async () => {
-      const id = await trust.getLocalIdentity();
+      const id = await identitySvc.get();
       return id.deviceId;
     },
   });
@@ -271,7 +284,8 @@ async function bootstrap() {
     const clips = await history.exportAll();
     const devices = await trust.list();
     const peers = transport.getConnectedPeers();
-    const identity = await ensureIdentityAddrs(await trust.getLocalIdentity());
+    // const identity = await ensureIdentityAddrs(await identitySvc.get());
+    const identity = await identitySvc.get();
     return {
       clips,
       devices,
@@ -316,6 +330,18 @@ async function bootstrap() {
     (target as any).__clippBound = true;
     target.onPeerConnected(() => void emitState());
     target.onPeerDisconnected(() => void emitState());
+    if (typeof target.onSelfPeerUpdate === "function") {
+      target.onSelfPeerUpdate((multiaddrs: string[]) => {
+        void (async () => {
+          try {
+            await identitySvc.updateMultiaddrs(multiaddrs);
+          } catch (err) {
+            (log as any).warn("Failed to persist updated multiaddrs", err);
+          }
+          await emitState();
+        })();
+      });
+    }
   }
 
   async function startServices() {
@@ -325,6 +351,7 @@ async function bootstrap() {
 
     bindTransportHandlers(transport);
 
+    // TODO: refactor pendingRequests as it's currently owned by trustManager
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("request", (d: any) => {
       pendingRequests.push(d);
@@ -378,7 +405,7 @@ async function bootstrap() {
   async function updateRelayAddresses(addrs: string[]) {
     relayAddresses = normalizeRelayAddrs(addrs.filter(Boolean));
     await kvStore.set("relayAddresses", relayAddresses);
-    await ensureIdentityAddrs(await trust.getLocalIdentity());
+    // await ensureIdentityAddrs(await trust.getLocalIdentity());
     await restartMessaging();
   }
 
@@ -623,14 +650,16 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:get-identity", async () => {
-    const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
+    const id = await identitySvc.get();
+    // const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
     return id;
   });
 
   ipcMain.handle("clipp:rename-identity", async (_evt, name: string) => {
-    const id = await trust.renameLocalIdentity(name);
+    const id = await identitySvc.rename(name);
     await emitState();
-    return await ensureIdentityAddrs(id);
+    // return await ensureIdentityAddrs(id);
+    return id
   });
 
   ipcMain.handle("clipp:set-relay-addresses", async (_evt, addrs: string[]) => {
@@ -675,11 +704,12 @@ async function bootstrap() {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== device.deviceId
       );
-      if (accept) {
-        await trust.add(device);
-      } else {
-        await trust.reject(device.deviceId);
-      }
+      trust.sendTrustAck(device, accept)
+      // if (accept) {
+      //   await trust.add(device);
+      // } else {
+      //   await trust.reject(device.deviceId);
+      // }
       await emitState();
     }
   );
@@ -688,7 +718,7 @@ async function bootstrap() {
     await ensureMessagingStarted();
     const pairing = decodePairing(txt);
     if (!pairing) return { ok: false, error: "invalid" as const };
-    const id = await trust.getLocalIdentity();
+    const id = await identitySvc.get();
     const peerId = await deviceIdToPeerId(pairing.deviceId);
     let targetAddrs =
       pairing.multiaddrs || (pairing.multiaddr ? [pairing.multiaddr] : []);
@@ -783,7 +813,8 @@ async function bootstrap() {
   ipcMain.handle("clipp:open-qr-window", async () => {
     // Ensure we have an active relay reservation before showing the QR so peers can dial us immediately.
     await ensureMessagingStarted();
-    const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
+    const id = await identitySvc.get();
+    // const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
     const addrs = id.multiaddrs && id.multiaddrs.length ? id.multiaddrs : [];
     if (!addrs.length) {
       throw new Error("No multiaddrs available");

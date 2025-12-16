@@ -24,6 +24,12 @@ export interface MessagingTransport {
   onPeerConnected(cb: (peerId: string) => void): void;
   onPeerDisconnected(cb: (peerId: string) => void): void;
 
+  /**
+   * Emits whenever the transport's own advertised/observed multiaddrs change.
+   *
+   * Used by apps to persist updated addresses for pairing/identity sharing.
+   */
+  onSelfPeerUpdate(cb: (multiaddrs: string[]) => void): void;
+
   getConnectedPeers(): string[];
 }
-

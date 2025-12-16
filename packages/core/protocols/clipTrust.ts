@@ -161,7 +161,7 @@ export async function createSignedTrustRequest(identity: DeviceIdentity, to: str
   }
   const privBytes = b64ToBytes(identity.privateKey);
   const { privateKeyFromProtobuf } = await import("@libp2p/crypto/keys");
-  const privateKey = await privateKeyFromProtobuf(privBytes);
+  const privateKey = privateKeyFromProtobuf(privBytes);
   return await createSignedTrustRequestFromKey({
     from: identity.deviceId,
     to,
@@ -211,4 +211,9 @@ export async function verifyTrustRequestSignatureWithPublicKey(req: TrustRequest
   } catch {
     return false;
   }
+}
+
+export async function validate(msg: TrustMessage): Promise<boolean> {
+  if (!msg) return false
+  return true
 }

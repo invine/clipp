@@ -14,23 +14,29 @@ export async function sendTrustRequest(
   node: any,
   target: string | Multiaddr,
   payload: TrustRequestPayload,
-  opts: { allowLimited?: boolean; logger?: (...args: any[]) => void; privateKey?: any } = {}
+  opts: {
+    allowLimited?: boolean;
+    logger?: (...args: any[]) => void;
+    privateKey?: any;
+  } = {}
 ): Promise<TrustAckMessage | undefined> {
   const allowLimited = opts.allowLimited !== false;
   const log = opts.logger || (() => { });
   const targetMa = typeof target === "string" ? multiaddr(target) : target;
   const deviceId = node.peerId.toString();
-  const to = typeof (targetMa as any).getPeerId === "function" ? (targetMa as any).getPeerId() : undefined;
+  const to =
+    typeof (targetMa as any).getPeerId === "function"
+      ? (targetMa as any).getPeerId()
+      : undefined;
   if (!to) throw new Error("missing_target_peer_id");
 
   const signingKey =
-    opts.privateKey ??
-    node?.components?.privateKey ??
-    node?.privateKey;
+    opts.privateKey ?? node?.components?.privateKey ?? node?.privateKey;
   if (!signingKey || typeof signingKey.sign !== "function") {
     throw new Error("missing_private_key");
   }
 
+  // TODO: why is it here and not in protocol?
   const message: TrustRequestMessage = await createSignedTrustRequestFromKey({
     from: deviceId,
     to,

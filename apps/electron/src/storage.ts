@@ -1,5 +1,6 @@
 import type { HistoryStorageBackend } from "../../../packages/core/history/types";
-import type { StorageBackend } from "../../../packages/core/trust";
+// import type { StorageBackend } from "../../../packages/core/trust";
+import type { KVStorageBackend } from "../../../packages/core/trust"
 import Database from "better-sqlite3";
 
 type DB = any;
@@ -10,7 +11,7 @@ export function openDatabase(dbPath: string): DB {
   return db;
 }
 
-export class SQLiteKVStore implements StorageBackend {
+export class SQLiteKVStore implements KVStorageBackend {
   constructor(private db: DB) {
     this.db
       .prepare(

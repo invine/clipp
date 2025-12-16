@@ -18,10 +18,12 @@ export type Libp2pMessagingOptions = {
 class Libp2pMessagingTransport implements MessagingTransport {
   private node: Libp2pNode | null = null;
   private started = false;
+  private lastSelfMultiaddrsKey: string | null = null;
 
   private readonly handlersByProtocol = new Map<string, MessageHandler[]>();
   private readonly connectBus = new EventBus<string>();
   private readonly disconnectBus = new EventBus<string>();
+  private readonly selfPeerUpdateBus = new EventBus<string[]>();
 
   private readonly relayPeerIds: Set<string>;
   private readonly relayAddrSet: Set<string>;
@@ -54,6 +56,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
       if (this.isRelayConnection(detail)) return;
       this.disconnectBus.emit(peerId);
     });
+    this.node.addEventListener("self:peer:update", () => {
+      this.emitSelfPeerUpdate();
+    });
 
     const handler = (protocol: string) => this.handleIncoming(protocol);
     this.node.handle(CLIP_PROTOCOL, handler(CLIP_PROTOCOL), { runOnLimitedConnection: true });
@@ -64,6 +69,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     // Best-effort: dial relays if explicitly configured.
     await this.connectRelays(this.opts.relayAddresses || []);
+    this.emitSelfPeerUpdate();
 
     this.started = true;
     log.info("Messaging transport started");
@@ -105,6 +111,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   onPeerDisconnected(cb: (peerId: string) => void): void {
     this.disconnectBus.on(cb);
+  }
+
+  onSelfPeerUpdate(cb: (multiaddrs: string[]) => void): void {
+    this.selfPeerUpdateBus.on(cb);
   }
 
   getConnectedPeers(): string[] {
@@ -173,6 +183,29 @@ class Libp2pMessagingTransport implements MessagingTransport {
       } catch (err: any) {
         log.warn("Relay dial failed", { addr, error: err?.message || err });
       }
+    }
+  }
+
+  private emitSelfPeerUpdate(): void {
+    try {
+      const addrs = this.node?.getMultiaddrs?.() ?? [];
+      const list = Array.isArray(addrs)
+        ? addrs.map((a: any) => (typeof a?.toString === "function" ? a.toString() : String(a)))
+        : [];
+      const unique: string[] = [];
+      const seen = new Set<string>();
+      for (const a of list) {
+        if (typeof a !== "string" || a.length === 0) continue;
+        if (seen.has(a)) continue;
+        seen.add(a);
+        unique.push(a);
+      }
+      const key = Array.from(seen).sort().join("\n");
+      if (key === this.lastSelfMultiaddrsKey) return;
+      this.lastSelfMultiaddrsKey = key;
+      this.selfPeerUpdateBus.emit(unique);
+    } catch {
+      // ignore
     }
   }
 

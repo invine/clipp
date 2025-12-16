@@ -12,9 +12,6 @@ function mockTrustManager() {
     emit(event: string, payload: any) {
       (listeners[event] || []).forEach((cb) => cb(payload));
     },
-    async getLocalIdentity() {
-      return { deviceId: "me" };
-    },
   } as any;
 }
 
@@ -23,8 +20,9 @@ describe("history sync", () => {
     const history = new MemoryHistoryStore();
     const send = jest.fn(async () => {});
     const messaging = { send, onMessage: (_cb: any) => {} } as any;
+    const identity = { get: async () => ({ deviceId: "me" }) } as any;
     const trust = mockTrustManager();
-    initHistorySync(messaging, trust, history);
+    initHistorySync(messaging, identity, trust, history);
     const now = Date.now();
     for (let i = 0; i < 3; i++) {
       const clip: Clip = { id: `${i}`, type: "text", content: "x", timestamp: now, senderId: "me" };
@@ -54,8 +52,9 @@ describe("history sync", () => {
         });
       },
     } as any;
+    const identity = { get: async () => ({ deviceId: "me" }) } as any;
     const trust = mockTrustManager();
-    initHistorySync(messaging, trust, history);
+    initHistorySync(messaging, identity, trust, history);
     await history.importBatch([{ id: "1", type: "text", content: "a", timestamp: Date.now(), senderId: "r" }]);
     const all = await history.query({});
     expect(all.length).toBe(1);
@@ -65,8 +64,9 @@ describe("history sync", () => {
     const history = new MemoryHistoryStore();
     const send = jest.fn();
     const messaging = { send, onMessage: (_cb: any) => {} } as any;
+    const identity = { get: async () => ({ deviceId: "me" }) } as any;
     const trust = mockTrustManager();
-    initHistorySync(messaging, trust, history);
+    initHistorySync(messaging, identity, trust, history);
     trust.emit("approved", { deviceId: "peer" });
     trust.emit("approved", { deviceId: "peer" });
     expect(send).toHaveBeenCalledTimes(0); // no clips
@@ -76,8 +76,9 @@ describe("history sync", () => {
     const history = new MemoryHistoryStore();
     const send = jest.fn(async () => {});
     const messaging = { send, onMessage: (_cb: any) => {} } as any;
+    const identity = { get: async () => ({ deviceId: "me" }) } as any;
     const trust = mockTrustManager();
-    initHistorySync(messaging, trust, history);
+    initHistorySync(messaging, identity, trust, history);
     const now = Date.now();
     for (let i = 0; i < 1000; i++) {
       await history.add({ id: `c${i}`, type: "text", content: "x", timestamp: now, senderId: "me" }, "me", true);
