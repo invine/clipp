@@ -25,7 +25,7 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import { createManualClipboardService } from "../../../packages/core/clipboard/service";
-import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync";
+import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createTrustProtocolBinder } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
@@ -154,7 +154,7 @@ function emitIncomingMessage(msg: any) {
   for (const h of messageHandlers) h(msg);
 }
 
-const clipboardSync = createClipboardSyncController({
+const clipboardSync = createClipboardSyncManager({
   clipboard,
   history,
   messaging: offscreenMessaging as any,

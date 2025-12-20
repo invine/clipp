@@ -1,18 +1,13 @@
-// import { StorageBackend } from "./trust-manager.js";
-// import { DEFAULT_WEBRTC_STAR_RELAYS } from "../network/constants.js";
 // TODO: check if these imports are needed
-import { deviceIdToPeerId, normalizePeerId, peerIdToString } from "../network/peerId.js";
+import { deviceIdToPeerId, peerIdToString } from "../network/peerId.js";
 import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
-import { peerIdFromPrivateKey, peerIdFromString } from "@libp2p/peer-id";
-// import { base58btc } from "multiformats/bases/base58";
-import { toTrustRequestPayload, TrustedDevice } from "./trustManager.js";
+import { peerIdFromPrivateKey } from "@libp2p/peer-id";
 
 export interface DeviceIdentity {
   deviceId: string;
   deviceName: string;
   publicKey: string;
   privateKey?: string;
-  // multiaddr: string;
   multiaddrs: string[];
   createdAt: number;
 }
@@ -22,17 +17,16 @@ export interface IdentityRepository {
   upsert(identity: DeviceIdentity): Promise<void>
 }
 
-export interface IdentityService {
+export interface IdentityManager {
   get(): Promise<DeviceIdentity>
-  getPublic(): Promise<TrustedDevice>
   rename(name: string): Promise<void>
   updateMultiaddrs(multiaddrs: string[]): Promise<void>
 }
 
-export function createIdentityService(options: {
+export function createIdentityManager(options: {
   repo: IdentityRepository,
   now?: () => number
-}): IdentityService {
+}): IdentityManager {
   const { repo } = options
   let identity: DeviceIdentity | undefined;
   const clock = options.now ?? Date.now;
@@ -88,12 +82,12 @@ export function createIdentityService(options: {
 
   return {
     get: getLocalIdentity,
-    getPublic: async () => {
-      if (!identity) {
-        identity = await getLocalIdentity()
-      }
-      return toTrustRequestPayload(identity)
-    },
+    // getPublic: async () => {
+    //   if (!identity) {
+    //     identity = await getLocalIdentity()
+    //   }
+    //   return toTrustRequestPayload(identity)
+    // },
     rename: async (name: string) => {
       const current = await getLocalIdentity()
       const updated: DeviceIdentity = {
@@ -114,136 +108,6 @@ export function createIdentityService(options: {
     }
   }
 }
-
-// export async function getLocalIdentity(repo: IdentityRepository): Promise<DeviceIdentity> {
-//   const existing = await repo.get();
-//   if (existing) {
-//     let peerId = existing.deviceId;
-//     let updated = false;
-//     const missingPriv = !existing.privateKey || existing.privateKey.trim().length < 20;
-//     const missingPub = !existing.publicKey || existing.publicKey.trim().length < 20;
-//     const invalidPid = !isValidPeerId(existing.deviceId);
-//     console.info("[identity] load existing", {
-//       deviceId: existing.deviceId,
-//       missingPriv,
-//       missingPub,
-//       invalidPid,
-//       hasMultiaddrs: Array.isArray(existing.multiaddrs) && existing.multiaddrs.length > 0,
-//     });
-//
-//     // Ensure we have a private key; if missing, generate and persist.
-//     if (missingPriv) {
-//       const fresh = await createLibp2pIdentity();
-//       existing.privateKey = fresh.privateKey;
-//       existing.publicKey = fresh.publicKey;
-//       peerId = fresh.peerId;
-//       updated = true;
-//       console.info("[identity] generated new keypair during migration", { peerId });
-//     }
-//
-//     // Derive peerId and publicKey from stored private key.
-//     if (existing.privateKey) {
-//       try {
-//         const derived = await deriveFromPrivateKey(existing.privateKey);
-//         peerId = derived.peerId;
-//         // TODO: this is excessive
-//         if (missingPub || existing.publicKey !== derived.publicKey) {
-//           existing.publicKey = derived.publicKey;
-//           updated = true;
-//           console.info("[identity] derived missing public key from private key", { peerId });
-//         }
-//       } catch (err: any) {
-//         console.warn("[identity] failed to derive from stored private key", err?.message || err);
-//         const fresh = await createLibp2pIdentity();
-//         peerId = fresh.peerId;
-//         existing.privateKey = fresh.privateKey;
-//         existing.publicKey = fresh.publicKey;
-//         updated = true;
-//         console.info("[identity] replaced invalid private key with fresh", { peerId });
-//       }
-//     }
-
-// TODO: why this is here? From here
-// const derivedAddrs = buildDerivedAddrs(peerId);
-// const merged = dedupeAddrs([...(existing.multiaddrs || []), ...derivedAddrs]);
-// const needsRebuild =
-//   !Array.isArray(existing.multiaddrs) ||
-//   existing.multiaddrs.length === 0 ||
-//   merged.length !== existing.multiaddrs.length ||
-//   merged.some((addr, idx) => addr !== existing.multiaddrs[idx]) ||
-//   existing.multiaddrs.some((addr) => addr.includes(existing.deviceId) || !addr.includes(peerId));
-//
-// const normalizedId = await normalizePeerId(peerId);
-//
-// if (needsRebuild || existing.deviceId !== normalizedId || updated) {
-//   existing.deviceId = normalizedId;
-//   existing.multiaddrs = merged;
-//   existing.multiaddr = merged[0] || `/p2p/${normalizedId}`;
-//   await persistIdentity(repo, existing, "update-existing");
-// } else if (!existing.multiaddr) {
-//   existing.multiaddr = existing.multiaddrs[0];
-//   await persistIdentity(repo, existing, "fill-multiaddr");
-// }
-// TODO: till here
-
-// if (updated) {
-//   repo.upsert(existing)
-// }
-// return existing;
-//   }
-//
-// No identity persisted: generate and store a new one.
-// const fresh = await createLibp2pIdentity();
-// // TODO: refactor. Address should come from libp2p update
-// const multiaddrs = buildDerivedAddrs(fresh.peerId);
-// const identity: DeviceIdentity = {
-//   deviceId: fresh.peerId,
-//   deviceName: typeof navigator !== "undefined" ? navigator.userAgent : "Device",
-//   publicKey: fresh.publicKey,
-//   privateKey: fresh.privateKey,
-//   // TODO: get rid of multiaddr. keep only multiaddrs
-//   multiaddr: multiaddrs[0] || `/p2p/${fresh.peerId}`,
-//   multiaddrs,
-//   createdAt: Date.now(),
-// };
-// await repo.upsert(identity);
-// // await persistIdentity(repo, identity, "create-new");
-// return identity;
-// }
-
-// export async function setLocalIdentityName(storage: StorageBackend, deviceName: string): Promise<DeviceIdentity> {
-//   const identity = await getLocalIdentity(storage);
-//   identity.deviceName = deviceName;
-//   await storage.set(ID_KEY, identity);
-//   return identity;
-// }
-//
-// function buildDerivedAddrs(peerId: string): string[] {
-//   const relayEnv = getRelayEnv();
-//   const derived: string[] = [];
-//   if (relayEnv) {
-//     derived.push(`${relayEnv}/p2p-circuit/p2p/${peerId}`);
-//   }
-//   derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`));
-//   return dedupeAddrs(derived);
-// }
-//
-// function dedupeAddrs(values: string[]): string[] {
-//   const seen = new Set<string>();
-//   const out: string[] = [];
-//   for (const v of values) {
-//     if (!v || seen.has(v)) continue;
-//     seen.add(v);
-//     out.push(v);
-//   }
-//   return out;
-// }
-//
-// function getRelayEnv(): string | undefined {
-//   if (typeof process === "undefined" || !process?.env) return undefined;
-//   const relay = process.env.CLIPP_RELAY_ADDR || process.env.CLIPP_RELAY_MULTIADDR;
-//   return relay && relay.trim().length > 0 ? relay.trim() : undefined;
-// }
 
 async function createLibp2pIdentity(): Promise<{ peerId: string; privateKey: string; publicKey: string }> {
   try {
@@ -294,36 +158,3 @@ async function deriveFromPrivateKey(privB64: string): Promise<{ peerId: string; 
   });
   return { peerId, privateKey: privB64, publicKey: pubB64 };
 }
-
-// function isValidPeerId(value: string | undefined): boolean {
-//   if (!value || typeof value !== "string") return false;
-//   try {
-//     peerIdFromString(value);
-//     return true;
-//   } catch {
-//     try {
-//       peerIdFromString(value, base58btc);
-//       return true;
-//     } catch {
-//       return false;
-//     }
-//   }
-// }
-
-// async function persistIdentity(storage: StorageBackend, identity: DeviceIdentity, reason: string) {
-//   try {
-//     await storage.set(ID_KEY, identity);
-//     console.info("[identity] persisted", {
-//       reason,
-//       deviceId: identity.deviceId,
-//       hasPrivateKey: !!identity.privateKey && identity.privateKey.length > 20,
-//       hasPublicKey: !!identity.publicKey && identity.publicKey.length > 20,
-//       multiaddrs: identity.multiaddrs,
-//     });
-//   } catch (err: any) {
-//     console.warn("[identity] failed to persist", {
-//       reason,
-//       error: err?.message || err,
-//     });
-//   }
-// }

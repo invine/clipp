@@ -1,0 +1,131 @@
+@startuml
+title Clipp Electron App - Classes & Interfaces (Clean Architecture)
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam shadowing false
+
+skinparam classBackgroundColor<<Entity>> #FFF7D6
+skinparam classBorderColor<<Entity>> #C8A200
+skinparam interfaceBackgroundColor<<Entity>> #FFF7D6
+skinparam interfaceBorderColor<<Entity>> #C8A200
+
+skinparam classBackgroundColor<<UseCase>> #E8F6FF
+skinparam classBorderColor<<UseCase>> #2E86C1
+skinparam interfaceBackgroundColor<<UseCase>> #E8F6FF
+skinparam interfaceBorderColor<<UseCase>> #2E86C1
+
+skinparam interfaceBackgroundColor<<Port>> #E8F6FF
+skinparam interfaceBorderColor<<Port>> #2E86C1
+
+skinparam classBackgroundColor<<Adapter>> #E8F8F5
+skinparam classBorderColor<<Adapter>> #17A589
+skinparam interfaceBackgroundColor<<Adapter>> #E8F8F5
+skinparam interfaceBorderColor<<Adapter>> #17A589
+
+skinparam classBackgroundColor<<Framework>> #FDEBD0
+skinparam classBorderColor<<Framework>> #CA6F1E
+skinparam interfaceBackgroundColor<<Framework>> #FDEBD0
+skinparam interfaceBorderColor<<Framework>> #CA6F1E
+
+' Framework/Drivers
+class ElectronMain <<Framework>>
+class SQLiteKVStore <<Framework>>
+class SQLiteHistoryBackend <<Framework>>
+class Libp2pMessagingTransport <<Framework>>
+
+' Ports (Use Cases)
+interface KVStorageBackend <<Port>>
+interface HistoryStorageBackend <<Port>>
+interface MessagingTransport <<Port>>
+interface ProtocolMessenger <<Port>>
+interface IdentityRepository <<Port>>
+interface TrustedDeviceRepository <<Port>>
+interface ClipboardService <<Port>>
+interface ClipHistoryStore <<Port>>
+
+' Interface Adapters (Types)
+class ClipMessage <<Adapter>>
+class TrustMessage <<Adapter>>
+class MemoryHistoryStore <<Adapter>>
+class EventBus <<Adapter>>
+class TypedEventEmitter <<Adapter>>
+
+' Use Cases
+interface ClipboardSyncManager <<UseCase>>
+interface TrustManager <<UseCase>>
+interface IdentityManager <<UseCase>>
+
+' Entities
+interface Clip <<Entity>>
+interface HistoryItem <<Entity>>
+interface DeviceIdentity <<Entity>>
+interface TrustedDevice <<Entity>>
+interface QRPayload <<Entity>>
+
+' Relationships
+ElectronMain ..> SQLiteKVStore : uses
+ElectronMain ..> SQLiteHistoryBackend : uses
+ElectronMain ..> MemoryHistoryStore : uses
+ElectronMain ..> Libp2pMessagingTransport : uses
+ElectronMain ..> ClipboardSyncManager : uses
+ElectronMain ..> TrustManager : uses
+ElectronMain ..> IdentityManager : uses
+ElectronMain ..> ClipboardService : uses
+ElectronMain ..> ProtocolMessenger : uses
+ElectronMain ..> ClipMessage : uses
+ElectronMain ..> TrustMessage : uses
+ElectronMain ..> QRPayload : encodes
+
+SQLiteKVStore ..|> KVStorageBackend
+SQLiteHistoryBackend ..|> HistoryStorageBackend
+Libp2pMessagingTransport ..|> MessagingTransport
+MemoryHistoryStore ..|> ClipHistoryStore
+MemoryHistoryStore *-- HistoryStorageBackend
+
+IdentityManager ..> IdentityRepository
+IdentityManager ..> DeviceIdentity
+IdentityRepository ..> DeviceIdentity
+IdentityRepository ..> KVStorageBackend : uses storage
+TrustManager ..> TrustedDeviceRepository
+TrustManager ..> IdentityManager
+TrustManager ..> TrustedDevice
+TrustManager ..> ProtocolMessenger : binds
+TrustManager ..> TrustMessage : handles
+TrustedDeviceRepository ..> TrustedDevice
+TrustedDeviceRepository ..> KVStorageBackend : uses storage
+TrustManager *-- TypedEventEmitter
+
+ProtocolMessenger ..> MessagingTransport
+ProtocolMessenger ..> ClipMessage : Msg
+ProtocolMessenger ..> TrustMessage : Msg
+Libp2pMessagingTransport *-- EventBus
+
+ClipboardSyncManager ..> ClipboardService
+ClipboardSyncManager ..> ClipHistoryStore
+ClipboardSyncManager ..> ProtocolMessenger
+ClipboardSyncManager ..> ClipMessage
+
+ClipboardService --> Clip
+ClipHistoryStore --> Clip
+ClipHistoryStore --> HistoryItem
+HistoryStorageBackend --> HistoryItem
+
+TrustedDevice --|> DeviceIdentity
+
+note right of IdentityRepository
+  Implemented via createKVIdentityRepository()
+end note
+
+note right of TrustedDeviceRepository
+  Implemented via createKVTrustedDeviceRepository()
+end note
+
+legend right
+  Entities: #FFF7D6
+  Use Cases: #E8F6FF
+  Ports (Use Cases): #E8F6FF
+  Interface Adapters: #E8F8F5
+  Framework/Drivers: #FDEBD0
+endlegend
+@enduml

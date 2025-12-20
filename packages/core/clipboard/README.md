@@ -4,10 +4,10 @@ A cross-platform clipboard watcher and writer used for synchronizing clipboard i
 
 ```
 import { createPollingClipboardService } from './service'
-import { createClipboardSyncController } from '../sync/clipboardSync'
+import { createClipboardSyncManager } from '../sync/clipboardSync'
 
 const clipboard = createPollingClipboardService({ readText, writeText, getSenderId })
-const sync = createClipboardSyncController({ clipboard, history, messaging, getLocalDeviceId })
+const sync = createClipboardSyncManager({ clipboard, history, messaging, getLocalDeviceId })
 sync.start()
 ```
 

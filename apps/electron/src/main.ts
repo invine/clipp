@@ -16,7 +16,7 @@ import {
 import { createPollingClipboardService } from "../../../packages/core/clipboard/service.js";
 import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
-import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync.js";
+import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
 import * as log from "../../../packages/core/logger.js";
@@ -32,7 +32,7 @@ import {
 } from "../../../packages/core/network/peerId.js";
 import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust.js";
 import {
-  createIdentityService,
+  createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
   createTrustManager,
@@ -57,7 +57,7 @@ async function bootstrap() {
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
-  const identitySvc = createIdentityService({ repo: identityRepo })
+  const identitySvc = createIdentityManager({ repo: identityRepo })
   const trustRepo = createKVTrustedDeviceRepository({ storage: kvStore, key: TRUST_KEY })
   const trust = createTrustManager({ trustRepo: trustRepo, identitySvc: identitySvc });
   // TODO: remove relayAddrEnv
@@ -263,7 +263,7 @@ async function bootstrap() {
   }
 
   const clipboardSvc = createElectronClipboardService();
-  const clipboardSync = createClipboardSyncController({
+  const clipboardSync = createClipboardSyncManager({
     clipboard: clipboardSvc,
     history,
     getLocalDeviceId: async () => {

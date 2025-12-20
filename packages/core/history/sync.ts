@@ -2,11 +2,11 @@ import type { TrustManager, TrustedDevice } from "../trust/trustManager";
 import type { ProtocolMessenger } from "../messaging/protocolMessenger";
 import type { HistorySyncMessage } from "../protocols/history";
 import { RETENTION_MS, ClipHistoryStore } from "./store";
-import { IdentityService } from "../trust";
+import { IdentityManager } from "../trust";
 
 export function initHistorySync(
   messaging: ProtocolMessenger<HistorySyncMessage>,
-  identity: IdentityService,
+  identity: IdentityManager,
   trust: TrustManager,
   history: ClipHistoryStore
 ): void {

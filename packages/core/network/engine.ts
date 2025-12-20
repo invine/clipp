@@ -103,6 +103,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const list = this.handlersByProtocol.get(protocol) || [];
     list.push(cb);
     this.handlersByProtocol.set(protocol, list);
+    if (list.length === 1) {
+      log.debug("Registered protocol handler", { protocol });
+    }
   }
 
   onPeerConnected(cb: (peerId: string) => void): void {
@@ -155,18 +158,61 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   private handleIncoming(protocol: string) {
     return async (data: any) => {
-      const stream = data?.stream;
-      const conn = data?.connection;
-      const from = safePeerId(conn?.remotePeer ?? (stream as any)?.remotePeer);
-      if (!from) return;
+      const stream = data?.stream ?? data;
+      const conn = data?.connection ?? (stream as any)?.connection;
+      const from = safePeerId(
+        (conn as any)?.remotePeer ?? (stream as any)?.remotePeer ?? (conn as any)?.remotePeerId
+      );
+      let derivedFrom: string | null = null;
+      if (!from) {
+        log.warn("Incoming stream missing peer id", {
+          protocol,
+          dataKeys: data ? Object.keys(data).sort() : undefined,
+          stream: describeStream(stream),
+        });
+      }
 
       const handlers = this.handlersByProtocol.get(protocol);
-      if (!handlers || handlers.length === 0) return;
+      if (!handlers || handlers.length === 0) {
+        log.debug("No handlers for incoming protocol", { protocol, from });
+        return;
+      }
+
+      const iterable = getStreamIterable(stream);
+      if (!iterable) {
+        log.warn("Incoming stream missing async iterator", {
+          protocol,
+          from,
+          dataKeys: data ? Object.keys(data).sort() : undefined,
+          stream: describeStream(stream),
+        });
+        return;
+      }
 
       try {
-        for await (const chunk of stream as AsyncIterable<any>) {
+        log.debug("Incoming protocol stream", { protocol, from });
+        for await (const chunk of iterable) {
           const buf = toU8(chunk);
-          for (const h of handlers) h(from, buf);
+          if (!buf || buf.length === 0) {
+            log.debug("Incoming chunk empty or not bytes", {
+              protocol,
+              from,
+              type: typeof chunk,
+              ctor: (chunk as any)?.constructor?.name,
+            });
+            continue;
+          }
+          let msgFrom = from ?? derivedFrom;
+          if (!msgFrom) {
+            derivedFrom = deriveFromPayload(buf);
+            msgFrom = derivedFrom;
+            if (!msgFrom) {
+              log.warn("Incoming message missing peer id and payload from", { protocol });
+              continue;
+            }
+            log.debug("Derived peer id from payload", { protocol, from: msgFrom });
+          }
+          for (const h of handlers) h(msgFrom, buf);
         }
       } catch (err: any) {
         log.debug("Incoming stream failed", { protocol, from, error: err?.message || err });
@@ -257,4 +303,56 @@ type MultiaddrWithPeerId = ReturnType<typeof multiaddr> & { getPeerId?: () => st
 function getPeerIdFromMultiaddr(addr: any): string | undefined {
   const pid = (addr as MultiaddrWithPeerId).getPeerId?.();
   return pid || undefined;
+}
+
+function getStreamIterable(stream: any): AsyncIterable<any> | undefined {
+  if (!stream) return undefined;
+  if (typeof (stream as any)[Symbol.asyncIterator] === "function") {
+    return stream as any;
+  }
+  const source = (stream as any)?.source;
+  if (source && typeof source[Symbol.asyncIterator] === "function") {
+    return source;
+  }
+  const inner = (stream as any)?.stream;
+  if (inner && typeof inner[Symbol.asyncIterator] === "function") {
+    return inner;
+  }
+  return undefined;
+}
+
+function describeStream(stream: any) {
+  if (!stream) return { missing: true };
+  const keys = Object.keys(stream || {});
+  const inner = (stream as any)?.stream;
+  return {
+    ctor: stream?.constructor?.name,
+    keys,
+    hasSink: typeof stream.sink === "function",
+    hasWrite: typeof stream.write === "function",
+    hasSend: typeof stream.send === "function",
+    hasSource: Boolean((stream as any)?.source),
+    hasIterable: typeof (stream as any)[Symbol.asyncIterator] === "function",
+    inner: inner
+      ? {
+          ctor: inner?.constructor?.name,
+          keys: Object.keys(inner || {}),
+          hasSink: typeof inner.sink === "function",
+          hasWrite: typeof inner.write === "function",
+          hasSend: typeof inner.send === "function",
+          hasSource: Boolean((inner as any)?.source),
+          hasIterable: typeof (inner as any)[Symbol.asyncIterator] === "function",
+        }
+      : undefined,
+  };
+}
+
+function deriveFromPayload(buf: Uint8Array): string | null {
+  try {
+    const raw = new TextDecoder().decode(buf);
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.from === "string" && parsed.from.length > 0 ? parsed.from : null;
+  } catch {
+    return null;
+  }
 }

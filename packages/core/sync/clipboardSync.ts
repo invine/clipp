@@ -9,7 +9,7 @@ export type MessagingPort = {
   onMessage(cb: (msg: ClipMessage) => void): void;
 };
 
-export type ClipboardSyncControllerOptions = {
+export type ClipboardSyncManagerOptions = {
   clipboard: ClipboardService;
   history: ClipHistoryStore;
   getLocalDeviceId: () => Promise<string>;
@@ -18,7 +18,7 @@ export type ClipboardSyncControllerOptions = {
   messaging?: MessagingPort;
 };
 
-export interface ClipboardSyncController {
+export interface ClipboardSyncManager {
   start(): void;
   stop(): void;
   bindMessaging(messaging: MessagingPort): void;
@@ -26,9 +26,9 @@ export interface ClipboardSyncController {
   isAutoSync(): boolean;
 }
 
-export function createClipboardSyncController(
-  options: ClipboardSyncControllerOptions
-): ClipboardSyncController {
+export function createClipboardSyncManager(
+  options: ClipboardSyncManagerOptions
+): ClipboardSyncManager {
   const now = options.now ?? Date.now;
   let running = false;
   let autoSync = options.autoSync ?? true;

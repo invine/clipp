@@ -3,13 +3,14 @@ import type {
   TrustManager,
   // TrustedDevice
 } from "../trust/trustManager.js";
+import * as log from "../logger.js";
 import {
   // toTrustRequestPayload,
   // verifyTrustRequestSignature,
   type TrustMessage,
   // type TrustRequestMessage,
 } from "../protocols/clipTrust.js";
-// import { IdentityService } from "../trust/identity.js";
+// import { IdentityManager } from "../trust/identity.js";
 
 /**
  * Wires the trust protocol to the trust manager.
@@ -32,7 +33,7 @@ export function createTrustProtocolBinder(options: {
   // const inboundRequests = new Map<string, TrustRequestMessage>();
   // const inboundRequestTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // const INBOUND_REQUEST_TTL_MS = 11 * 60 * 1000;
-  // let localIdentityPromise: ReturnType<IdentityService["get"]> | null = null;
+  // let localIdentityPromise: ReturnType<IdentityManager["get"]> | null = null;
   //
   // async function getLocalIdentity() {
   //   if (!localIdentityPromise) {
@@ -93,11 +94,24 @@ export function createTrustProtocolBinder(options: {
   return {
     bind(messaging: ProtocolMessenger<TrustMessage>) {
       current = messaging;
+      trust.bindMessenger(messaging)
       messaging.onMessage((msg) => {
+        if (msg) {
+          log.debug("[trust] inbound message", {
+            type: msg.type,
+            from: msg.from,
+            to: (msg as any).to,
+          });
+        }
         void (async () => {
           // TODO: Why this is not part of the protocol package? message should have a method valid(). It's not a binder's responsibility to know what's the correct TrustRequestMessage
           // TODO: Implement validation
           if (!msg) return;
+          log.debug("[trust] handling message", {
+            type: msg.type,
+            from: msg.from,
+            to: (msg as any).to,
+          });
           // const local = await getLocalIdentity();
           // if (msg.to !== local.deviceId) return;
           // if (!msg.fromdepr - depr || typeof msg.fromdepr - depr !== "object") return;

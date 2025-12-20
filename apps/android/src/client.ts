@@ -7,7 +7,7 @@ import { DEFAULT_WEBRTC_STAR_RELAYS } from "@core/network/constants";
 import { MemoryHistoryStore } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
-import { createClipboardSyncController } from "@core/sync/clipboardSync";
+import { createClipboardSyncManager } from "@core/sync/clipboardSync";
 import {
   createTrustMessenger,
   createTrustProtocolBinder,
@@ -161,7 +161,7 @@ export class AndroidClient {
   }
 
   private readonly clipboard = this.createAndroidClipboardService();
-  private readonly clipboardSync = createClipboardSyncController({
+  private readonly clipboardSync = createClipboardSyncManager({
     clipboard: this.clipboard,
     history: this.history,
     getLocalDeviceId: async () => {

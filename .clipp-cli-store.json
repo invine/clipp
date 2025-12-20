@@ -1,0 +1,24 @@
+{
+  "localDeviceIdentity": {
+    "deviceId": "12D3KooWSX1NunpswTfyTWC1yHcUz5BQNYM7sV8i1PoyXFYBScmh",
+    "deviceName": "12D3KooWSX1NunpswTfyTWC1yHcUz5BQNYM7sV8i1PoyXFYBScmh",
+    "publicKey": "+CRL4Re88Hp3RmjZ4lb0TR5IvK/GSSlC/tjE1+q4w3Q=",
+    "privateKey": "CAESQAyNEXhebxXhYLRdVVUnUFVFGZ5dtgIGE/1emB/1MzFm+CRL4Re88Hp3RmjZ4lb0TR5IvK/GSSlC/tjE1+q4w3Q=",
+    "multiaddrs": [
+      "/ip4/141.147.116.147/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex/p2p-circuit/p2p/12D3KooWSX1NunpswTfyTWC1yHcUz5BQNYM7sV8i1PoyXFYBScmh"
+    ],
+    "createdAt": 1766216933774
+  },
+  "trustedDevices": [
+    {
+      "deviceId": "12D3KooWRYNrEsepscGKdPZwougFMFw46UPvKqULh3TwkLQiaoRd",
+      "deviceName": "Clipp Desktop",
+      "publicKey": "6aJ3xDxIw5nbTTjBDpW4qXMqv3RZyiRXKLi8xhfDlmQ=",
+      "multiaddr": "/ip4/141.147.116.147/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex/p2p-circuit/p2p/12D3KooWRYNrEsepscGKdPZwougFMFw46UPvKqULh3TwkLQiaoRd",
+      "multiaddrs": [
+        "/ip4/141.147.116.147/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex/p2p-circuit/p2p/12D3KooWRYNrEsepscGKdPZwougFMFw46UPvKqULh3TwkLQiaoRd"
+      ],
+      "createdAt": 1765130144933
+    }
+  ]
+}

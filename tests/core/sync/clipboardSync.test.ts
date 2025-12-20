@@ -1,8 +1,8 @@
-import { createClipboardSyncController } from "../../../packages/core/sync/clipboardSync";
+import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import type { ClipMessage } from "../../../packages/core/protocols/clip";
 import type { Clip } from "../../../packages/core/models/Clip";
 
-describe("ClipboardSyncController", () => {
+describe("ClipboardSyncManager", () => {
   async function flushPromises(times = 6) {
     for (let i = 0; i < times; i++) {
       await Promise.resolve();
@@ -35,7 +35,7 @@ describe("ClipboardSyncController", () => {
       onMessage: (cb: (msg: ClipMessage) => void) => msgHandlers.push(cb),
     };
 
-    const sync = createClipboardSyncController({
+    const sync = createClipboardSyncManager({
       clipboard,
       history,
       messaging,
@@ -84,7 +84,7 @@ describe("ClipboardSyncController", () => {
       onMessage: (_cb: (msg: ClipMessage) => void) => {},
     };
 
-    const sync = createClipboardSyncController({
+    const sync = createClipboardSyncManager({
       clipboard,
       history,
       messaging,
@@ -131,7 +131,7 @@ describe("ClipboardSyncController", () => {
       onMessage: (cb: (msg: ClipMessage) => void) => msgHandlers.push(cb),
     };
 
-    const sync = createClipboardSyncController({
+    const sync = createClipboardSyncManager({
       clipboard,
       history,
       messaging,

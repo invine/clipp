@@ -1,4 +1,5 @@
 import type { MessagingTransport } from "./transport.js";
+import * as log from "../logger.js";
 
 export type ProtocolCodec<Msg> = {
   encode(msg: Msg): Uint8Array;
@@ -20,7 +21,14 @@ export function createProtocolMessenger<Msg>(
 
   transport.onMessage(protocol, (from, data) => {
     const msg = codec.decode(data, from);
-    if (!msg) return;
+    if (!msg) {
+      log.debug("Protocol message decode failed", {
+        protocol,
+        from,
+        bytes: data?.length ?? 0,
+      });
+      return;
+    }
     for (const h of handlers) h(msg);
   });
 
@@ -38,4 +46,3 @@ export function createProtocolMessenger<Msg>(
     },
   };
 }
-
