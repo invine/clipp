@@ -1,6 +1,10 @@
 import type { TrustManager, TrustedDevice } from "../trust/trustManager";
 import type { ProtocolMessenger } from "../messaging/protocolMessenger";
-import type { HistorySyncMessage } from "../protocols/history";
+import {
+  createHistorySyncMessage,
+  encodeHistorySyncMessage,
+  type HistorySyncMessage,
+} from "../protocols/history";
 import { RETENTION_MS, ClipHistoryStore } from "./store";
 import { IdentityManager } from "../trust";
 
@@ -21,8 +25,12 @@ export function initHistorySync(
     const chunkSize = 100;
     for (let i = 0; i < clips.length; i += chunkSize) {
       const chunk = clips.slice(i, i + chunkSize);
-      const msg: HistorySyncMessage = { type: "sync-history", from: local.deviceId, payload: chunk, sentAt: Date.now() };
-      const size = Buffer.byteLength(JSON.stringify(msg));
+      const msg: HistorySyncMessage = createHistorySyncMessage({
+        from: local.deviceId,
+        clips: chunk,
+        sentAt: Date.now(),
+      });
+      const size = encodeHistorySyncMessage(msg).byteLength;
       if (size > 500 * 1024) break;
       const target = device.multiaddrs?.[0] || device.deviceId;
       await messaging.send(target, msg);
@@ -30,6 +38,6 @@ export function initHistorySync(
   });
 
   messaging.onMessage(async (msg) => {
-    await history.importBatch(msg.payload);
+    await history.importBatch(msg.payload.clips);
   });
 }

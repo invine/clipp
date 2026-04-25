@@ -1,67 +1,116 @@
 import type { DeviceIdentity } from "../trust/identity.js";
 import type { PrivateKey, PublicKey } from "@libp2p/interface";
+import {
+  decodeJsonMessage,
+  encodeJsonMessage,
+  isRecord,
+  resolveSentAt,
+  type DirectedProtocolMessage,
+} from "./base.js";
 
-/**
- * Trust/pairing protocol (trust-request/ack, and future trust gossip).
- */
 export const CLIP_TRUST_PROTOCOL = "/clipboard/trust/1.0.0";
 
 export type TrustRequestPayload = Omit<DeviceIdentity, "privateKey">;
 
-export type TrustRequestMessage = {
-  type: "trust-request";
-  from: string; // peer id of sender
-  to: string; // peer id of intended receiver
-  payload: TrustRequestPayload;
-  sentAt: number;
-  sig: string; // base64 signature of the request content
-};
+export type TrustRequestMessage = DirectedProtocolMessage<
+  "trust-request",
+  {
+    device: TrustRequestPayload;
+    sig: string;
+  }
+>;
 
-export type TrustAckMessage = {
-  type: "trust-ack";
-  from: string; // peer id of sender
-  to: string; // peer id of intended receiver
-  payload: { accepted: boolean; request: TrustRequestMessage; responder?: TrustRequestPayload } & Record<string, unknown>;
-  sentAt: number;
-};
+export type TrustAckMessage = DirectedProtocolMessage<
+  "trust-ack",
+  {
+    accepted: boolean;
+    request: TrustRequestMessage;
+    responder?: TrustRequestPayload;
+  } & Record<string, unknown>
+>;
 
 export type TrustMessage = TrustRequestMessage | TrustAckMessage;
 
 export function encodeTrustMessage(msg: TrustMessage): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(msg));
+  return encodeJsonMessage(msg);
+}
+
+function normalizeTrustRequestMessage(
+  parsed: unknown,
+  from: string,
+  useEmbeddedFrom = false
+): TrustRequestMessage | null {
+  if (
+    !isRecord(parsed) ||
+    parsed.type !== "trust-request" ||
+    typeof parsed.from !== "string" ||
+    typeof parsed.to !== "string"
+  ) {
+    return null;
+  }
+  const actualFrom =
+    useEmbeddedFrom && typeof parsed.from === "string" ? parsed.from : from;
+  if (!isRecord(parsed.payload) || typeof parsed.payload.sig !== "string" || !isRecord(parsed.payload.device)) {
+    return null;
+  }
+  return {
+    type: "trust-request",
+    from: actualFrom,
+    to: parsed.to,
+    payload: {
+      device: parsed.payload.device as TrustRequestPayload,
+      sig: parsed.payload.sig,
+    },
+    sentAt: resolveSentAt(parsed.sentAt),
+  };
+}
+
+function normalizeTrustAckMessage(parsed: unknown, from: string): TrustAckMessage | null {
+  if (
+    !isRecord(parsed) ||
+    parsed.type !== "trust-ack" ||
+    typeof parsed.from !== "string" ||
+    typeof parsed.to !== "string" ||
+    !isRecord(parsed.payload)
+  ) {
+    return null;
+  }
+  const normalizedRequest = normalizeTrustRequestMessage(parsed.payload.request, from, true);
+  if (!normalizedRequest || typeof parsed.payload.accepted !== "boolean") {
+    return null;
+  }
+  return {
+    type: "trust-ack",
+    from,
+    to: parsed.to,
+    payload: {
+      ...parsed.payload,
+      accepted: parsed.payload.accepted,
+      request: normalizedRequest,
+      responder: isRecord(parsed.payload.responder)
+        ? (parsed.payload.responder as TrustRequestPayload)
+        : undefined,
+    },
+    sentAt: resolveSentAt(parsed.sentAt),
+  };
 }
 
 export function decodeTrustMessage(data: Uint8Array, from: string): TrustMessage | null {
-  try {
-    const raw = new TextDecoder().decode(data);
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.type !== "string") return null;
-    if (parsed.type !== "trust-request" && parsed.type !== "trust-ack") return null;
-    const sentAt = typeof parsed.sentAt === "number" ? parsed.sentAt : Date.now();
-    if (parsed.type === "trust-request") {
-      if (typeof parsed.to !== "string") return null;
-      if (typeof parsed.sig !== "string") return null;
-      if (parsed.payload == null || typeof parsed.payload !== "object") return null;
-      return {
-        type: "trust-request",
-        from,
-        to: parsed.to,
-        payload: parsed.payload as TrustRequestPayload,
-        sentAt,
-        sig: parsed.sig,
-      };
-    }
-    if (typeof parsed.to !== "string") return null;
-    if (parsed.payload == null || typeof parsed.payload !== "object") return null;
-    return { type: "trust-ack", from, to: parsed.to, payload: parsed.payload as any, sentAt };
-  } catch {
-    return null;
+  const parsed = decodeJsonMessage(data);
+  if (!isRecord(parsed) || typeof parsed.type !== "string") return null;
+  if (parsed.type === "trust-request") {
+    return normalizeTrustRequestMessage(parsed, from);
   }
+  if (parsed.type === "trust-ack") {
+    return normalizeTrustAckMessage(parsed, from);
+  }
+  return null;
 }
 
 export function toTrustRequestPayload(identity: DeviceIdentity): TrustRequestPayload {
-  const { privateKey: _privateKey, ...rest } = identity as any;
-  return rest as TrustRequestPayload;
+  const payload = { ...(identity as any) };
+  delete payload.privateKey;
+  return payload as TrustRequestPayload;
 }
 
 function stableStringify(value: any): string {
@@ -112,14 +161,16 @@ function bytesToB64(bytes: Uint8Array): string {
 function requestSigningBytes(req: {
   from: string;
   to: string;
-  payload: TrustRequestPayload;
+  device: TrustRequestPayload;
   sentAt: number;
 }): Uint8Array {
   const unsigned = {
     type: "trust-request" as const,
     from: req.from,
     to: req.to,
-    payload: req.payload,
+    payload: {
+      device: req.device,
+    },
     sentAt: req.sentAt,
   };
   return new TextEncoder().encode(stableStringify(unsigned));
@@ -141,7 +192,7 @@ export async function createSignedTrustRequestFromKey(options: {
   const bytes = requestSigningBytes({
     from: options.from,
     to: options.to,
-    payload: options.payload,
+    device: options.payload,
     sentAt,
   });
   const sigBytes = await maybeAwait(options.privateKey.sign(bytes));
@@ -149,9 +200,11 @@ export async function createSignedTrustRequestFromKey(options: {
     type: "trust-request",
     from: options.from,
     to: options.to,
-    payload: options.payload,
+    payload: {
+      device: options.payload,
+      sig: bytesToB64(sigBytes),
+    },
     sentAt,
-    sig: bytesToB64(sigBytes),
   };
 }
 
@@ -177,7 +230,7 @@ export async function verifyTrustRequestSignature(req: TrustRequestMessage): Pro
     if (typeof req.from !== "string" || typeof req.to !== "string") return false;
     if (!req.payload || typeof req.payload !== "object") return false;
     if (typeof req.sentAt !== "number") return false;
-    if (typeof req.sig !== "string" || req.sig.length === 0) return false;
+    if (typeof req.payload.sig !== "string" || req.payload.sig.length === 0) return false;
 
     // TODO: remove dynamic import
     const { peerIdFromString } = await import("@libp2p/peer-id");
@@ -194,18 +247,18 @@ export async function verifyTrustRequestSignatureWithPublicKey(req: TrustRequest
   try {
     if (!req || req.type !== "trust-request") return false;
     if (typeof req.from !== "string" || typeof req.to !== "string") return false;
-    if (!req.payload || typeof req.payload !== "object") return false;
+    if (!req.payload || typeof req.payload !== "object" || !isRecord(req.payload.device)) return false;
     if (typeof req.sentAt !== "number") return false;
-    if (typeof req.sig !== "string" || req.sig.length === 0) return false;
+    if (typeof req.payload.sig !== "string" || req.payload.sig.length === 0) return false;
     if (!publicKey || typeof (publicKey as any).verify !== "function") return false;
 
     const data = requestSigningBytes({
       from: req.from,
       to: req.to,
-      payload: req.payload,
+      device: req.payload.device,
       sentAt: req.sentAt,
     });
-    const sigBytes = b64ToBytes(req.sig);
+    const sigBytes = b64ToBytes(req.payload.sig);
     const ok = (publicKey as any).verify(data, sigBytes);
     return await maybeAwait(ok);
   } catch {
@@ -214,6 +267,16 @@ export async function verifyTrustRequestSignatureWithPublicKey(req: TrustRequest
 }
 
 export async function validate(msg: TrustMessage): Promise<boolean> {
-  if (!msg) return false
-  return true
+  if (!msg || typeof msg.from !== "string" || typeof msg.sentAt !== "number") return false;
+  if (msg.type === "trust-request") {
+    return typeof msg.to === "string" &&
+      isRecord(msg.payload) &&
+      isRecord(msg.payload.device) &&
+      typeof msg.payload.sig === "string";
+  }
+  return msg.type === "trust-ack" &&
+    typeof msg.to === "string" &&
+    isRecord(msg.payload) &&
+    typeof msg.payload.accepted === "boolean" &&
+    isRecord(msg.payload.request);
 }

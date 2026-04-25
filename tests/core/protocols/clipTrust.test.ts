@@ -43,7 +43,7 @@ describe("clipTrust signatures", () => {
     });
     expect(req.from).toBe("peerA");
     expect(req.to).toBe("peerB");
-    expect((req.payload as any).privateKey).toBeUndefined();
+    expect((req.payload.device as any).privateKey).toBeUndefined();
     expect(await verifyTrustRequestSignatureWithPublicKey(req, fakePublicKey as any)).toBe(true);
   });
 
@@ -65,6 +65,17 @@ describe("clipTrust signatures", () => {
       now: () => 123,
     });
     expect(await verifyTrustRequestSignatureWithPublicKey({ ...req, to: "peerC" }, fakePublicKey as any)).toBe(false);
-    expect(await verifyTrustRequestSignatureWithPublicKey({ ...req, sig: req.sig.slice(0, -2) + "aa" }, fakePublicKey as any)).toBe(false);
+    expect(
+      await verifyTrustRequestSignatureWithPublicKey(
+        {
+          ...req,
+          payload: {
+            ...req.payload,
+            sig: req.payload.sig.slice(0, -2) + "aa",
+          },
+        },
+        fakePublicKey as any
+      )
+    ).toBe(false);
   });
 });

@@ -1,6 +1,9 @@
 import type { ClipboardService } from "../clipboard/service";
 import type { ClipHistoryStore } from "../history/store";
-import type { ClipMessage } from "../protocols/clip";
+import {
+  createClipMessage,
+  type ClipMessage,
+} from "../protocols/clip";
 import { validateClip, type Clip } from "../models/Clip";
 import * as log from "../logger";
 
@@ -58,12 +61,11 @@ export function createClipboardSyncManager(
     if (!autoSync) return;
     const messaging = currentMessaging;
     if (!messaging) return;
-    const msg: ClipMessage = {
-      type: "CLIP",
+    const msg: ClipMessage = createClipMessage({
       from: localId,
       clip,
       sentAt: now(),
-    };
+    });
     try {
       await messaging.broadcast(msg);
     } catch (err) {
@@ -73,8 +75,8 @@ export function createClipboardSyncManager(
 
   async function handleIncomingMessage(msg: ClipMessage): Promise<void> {
     if (!running) return;
-    if (!msg || msg.type !== "CLIP") return;
-    const clip = msg.clip;
+    if (!msg || msg.type !== "clip") return;
+    const clip = msg.payload.clip;
     if (!validateClip(clip)) return;
 
     const localId = await getLocalId();

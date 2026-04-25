@@ -3,11 +3,13 @@ import { toU8 } from "./bytes.js";
 import {
   CLIP_TRUST_PROTOCOL,
   createSignedTrustRequestFromKey,
+  decodeTrustMessage,
+  encodeTrustMessage,
   type TrustAckMessage,
   type TrustRequestMessage,
 } from "../protocols/clipTrust.js";
 
-export type TrustRequestPayload = TrustRequestMessage["payload"];
+export type TrustRequestPayload = TrustRequestMessage["payload"]["device"];
 
 // TODO: rework the API so it's asyncronous (we don't wait for Trust Ack after sending request)
 export async function sendTrustRequest(
@@ -51,7 +53,7 @@ export async function sendTrustRequest(
   const stream = await node.dialProtocol(targetMa, CLIP_TRUST_PROTOCOL, {
     runOnLimitedConnection: allowLimited,
   });
-  const ok = stream.send(new TextEncoder().encode(JSON.stringify(message)));
+  const ok = stream.send(encodeTrustMessage(message));
   // TODO: I don't understand this part
   if (ok === false && typeof stream?.onDrain === "function") {
     await stream.onDrain();
@@ -62,8 +64,7 @@ export async function sendTrustRequest(
   // TODO: rework this part to be inside handler for clip-trust protocol
   for await (const chunk of stream as AsyncIterable<any>) {
     try {
-      const raw = new TextDecoder().decode(toU8(chunk));
-      const msg = JSON.parse(raw);
+      const msg = decodeTrustMessage(toU8(chunk), to);
       if (msg?.type === "trust-ack") return msg as TrustAckMessage;
     } catch {
       // ignore malformed

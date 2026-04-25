@@ -1,5 +1,8 @@
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
-import type { ClipMessage } from "../../../packages/core/protocols/clip";
+import {
+  createClipMessage,
+  type ClipMessage,
+} from "../../../packages/core/protocols/clip";
 import type { Clip } from "../../../packages/core/models/Clip";
 
 describe("ClipboardSyncManager", () => {
@@ -56,9 +59,11 @@ describe("ClipboardSyncManager", () => {
     expect(history.add).toHaveBeenCalledWith(clip, "me", true);
     expect(broadcast).toHaveBeenCalledTimes(1);
     expect((broadcast.mock.calls[0] as any)[0]).toMatchObject({
-      type: "CLIP",
+      type: "clip",
       from: "me",
-      clip,
+      payload: {
+        clip,
+      },
     });
   });
 
@@ -146,12 +151,11 @@ describe("ClipboardSyncManager", () => {
       timestamp: 1,
       senderId: "peer",
     };
-    const msg: ClipMessage = {
-      type: "CLIP",
+    const msg: ClipMessage = createClipMessage({
       from: "peer",
       clip,
       sentAt: 1,
-    };
+    });
 
     msgHandlers.forEach((h) => h(msg));
     await flushPromises();

@@ -13,6 +13,7 @@ import {
   createTrustProtocolBinder,
   createTrustedClipMessenger,
 } from "@core/messaging";
+import { createClipMessage } from "@core/protocols/clip";
 import { createSignedTrustRequest } from "@core/protocols/clipTrust";
 import { createTrustManager, type TrustedDevice } from "@core/trust";
 import { decodePairing } from "@core/pairing/decode";
@@ -374,12 +375,11 @@ export class AndroidClient {
       const clip = normalizeClipboardContent(text, id.deviceId);
       if (clip) {
         await this.history.add(clip, id.deviceId, true);
-        const message = {
-          type: "CLIP" as const,
+        const message = createClipMessage({
           from: id.deviceId,
           clip,
           sentAt: Date.now(),
-        };
+        });
         await this.clipMessaging!.broadcast(message as any);
         await this.emitState();
         return { ok: true };

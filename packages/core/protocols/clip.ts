@@ -1,31 +1,55 @@
 import type { Clip } from "../models/Clip.js";
+import {
+  decodeJsonMessage,
+  encodeJsonMessage,
+  isRecord,
+  resolveSentAt,
+  type ProtocolMessage,
+} from "./base.js";
 
-/**
- * Clipboard content sync protocol (legacy value kept for compatibility).
- */
 export const CLIP_PROTOCOL = "/clipboard/1.0.0";
+export const CLIP_MESSAGE_TYPE = "clip";
 
-export type ClipMessage = {
-  type: "CLIP";
+export type ClipMessage = ProtocolMessage<
+  typeof CLIP_MESSAGE_TYPE,
+  {
+    clip: Clip;
+  }
+>;
+
+export function createClipMessage(options: {
   from: string;
   clip: Clip;
-  sentAt: number;
-};
+  sentAt?: number;
+  now?: () => number;
+}): ClipMessage {
+  return {
+    type: CLIP_MESSAGE_TYPE,
+    from: options.from,
+    sentAt: typeof options.sentAt === "number" ? options.sentAt : (options.now ?? Date.now)(),
+    payload: {
+      clip: options.clip,
+    },
+  };
+}
+
+function fromWireClipMessage(parsed: Record<string, any>, from: string): ClipMessage | null {
+  if (parsed.type !== CLIP_MESSAGE_TYPE) return null;
+  if (typeof parsed.from !== "string") return null;
+  if (!isRecord(parsed.payload) || parsed.payload.clip == null) return null;
+  return createClipMessage({
+    from,
+    clip: parsed.payload.clip as Clip,
+    sentAt: resolveSentAt(parsed.sentAt),
+  });
+}
 
 export function encodeClipMessage(msg: ClipMessage): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(msg));
+  return encodeJsonMessage(msg);
 }
 
 export function decodeClipMessage(data: Uint8Array, from: string): ClipMessage | null {
-  try {
-    const raw = new TextDecoder().decode(data);
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.type !== "CLIP") return null;
-    if (parsed.clip == null) return null;
-    const sentAt = typeof parsed.sentAt === "number" ? parsed.sentAt : Date.now();
-    return { type: "CLIP", from, clip: parsed.clip as Clip, sentAt };
-  } catch {
-    return null;
-  }
+  const parsed = decodeJsonMessage(data);
+  if (!isRecord(parsed)) return null;
+  return fromWireClipMessage(parsed, from);
 }
-

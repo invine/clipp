@@ -11,6 +11,7 @@ import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../packages/core/network/constant
 import { createTrustManager, MemoryStorageBackend } from "../../packages/core/trust/index.ts";
 import { normalizeClipboardContent } from "../../packages/core/clipboard/normalize.ts";
 import { createTrustedClipMessenger } from "../../packages/core/messaging/index.ts";
+import { createClipMessage } from "../../packages/core/protocols/clip.ts";
 
 async function boot(label: string) {
   const trust = createTrustManager(new MemoryStorageBackend());
@@ -73,12 +74,14 @@ async function main() {
 
   const clip = normalizeClipboardContent("hello from A", a.identity.deviceId);
   if (clip) {
-    await a.clip.send(targetPeerId, {
-      type: "CLIP",
-      from: a.identity.deviceId,
-      clip,
-      sentAt: Date.now(),
-    });
+    await a.clip.send(
+      targetPeerId,
+      createClipMessage({
+        from: a.identity.deviceId,
+        clip,
+        sentAt: Date.now(),
+      })
+    );
   }
 }
 

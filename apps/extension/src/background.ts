@@ -30,6 +30,7 @@ import { createTrustProtocolBinder } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
+import { createClipMessage } from "../../../packages/core/protocols/clip";
 import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust";
 
 // Initialize log level from storage
@@ -203,12 +204,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Handle shareClip from popup
   if (msg.type === "shareClip" && msg.clip) {
     trust.getLocalIdentity().then(async (id) => {
-      const message = {
-        type: "CLIP" as const,
+      const message = createClipMessage({
         from: id.deviceId,
         clip: msg.clip,
         sentAt: Date.now(),
-      };
+      });
       log.debug("Broadcasting clip");
       await offscreenReady;
       await sendOffscreen({ action: "broadcast", msg: message });
@@ -278,12 +278,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const clip = normalizeClipboardContent(text, id.deviceId);
       if (clip) {
         history.add(clip, id.deviceId, true);
-        const message = {
-          type: "CLIP" as const,
+        const message = createClipMessage({
           from: id.deviceId,
           clip,
           sentAt: Date.now(),
-        };
+        });
         log.debug("Broadcasting clip");
         await offscreenReady;
         await sendOffscreen({ action: "broadcast", msg: message });

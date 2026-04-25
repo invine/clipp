@@ -78,9 +78,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.action === "broadcast" && msg.msg) {
       const m = msg.msg as any;
-      if (m?.type === "CLIP") {
+      if (m?.type === "clip") {
         await clipMessaging.broadcast(m);
-      } else if (m?.type === "sync-history") {
+      } else if (m?.type === "history-sync") {
         await historyMessaging.broadcast(m);
       } else {
         await trustMessaging.broadcast(m);
@@ -91,9 +91,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === "sendMessage" && msg.target && msg.msg) {
       const target = msg.target as string;
       const m = msg.msg as any;
-      if (m?.type === "CLIP") {
+      if (m?.type === "clip") {
         await clipMessaging.send(target, m);
-      } else if (m?.type === "sync-history") {
+      } else if (m?.type === "history-sync") {
         await historyMessaging.send(target, m);
       } else {
         await trustMessaging.send(target, m);

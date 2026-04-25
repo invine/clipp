@@ -45,7 +45,16 @@ describe("TrustManager", () => {
       to: "me",
       payload: {
         accepted: true,
-        request: { type: "trust-request", from: "me", to: "peer", payload: dev as any, sentAt: 1, sig: "sig" },
+        request: {
+          type: "trust-request",
+          from: "me",
+          to: "peer",
+          payload: {
+            device: dev as any,
+            sig: "sig",
+          },
+          sentAt: 1,
+        },
         responder: dev as any,
       },
       sentAt: 2,
@@ -75,9 +84,11 @@ describe("TrustManager", () => {
       type: "trust-request",
       from: "peer",
       to: "me",
-      payload: dev as any,
+      payload: {
+        device: dev as any,
+        sig: "sig",
+      },
       sentAt: 1,
-      sig: "sig",
     } as any);
 
     jest.advanceTimersByTime(11 * 60 * 1000);

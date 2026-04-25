@@ -4,8 +4,8 @@ import {
   TrustAckMessage,
   TrustMessage,
   TrustRequestMessage,
-  TrustRequestPayload,
   createSignedTrustRequest,
+  toTrustRequestPayload,
   validate as validateMsg
 } from '../protocols/clipTrust.js';
 import { TypedEventEmitter } from './events.js';
@@ -14,12 +14,6 @@ import { DeviceIdentity, IdentityManager } from './identity.js';
 // TODO: refactor later
 export interface TrustedDevice extends DeviceIdentity {
   lastSeen?: number
-}
-
-// TODO: is it required?
-export function toTrustRequestPayload(identity: DeviceIdentity): TrustRequestPayload {
-  const { privateKey: _privateKey, ...rest } = identity as any;
-  return rest as TrustRequestPayload;
 }
 
 export interface TrustedDeviceRepository {
@@ -119,7 +113,7 @@ export function createTrustManager(options: {
   }
 
   async function handleTrustMessage(msg: TrustMessage): Promise<void> {
-    if (!validateMsg(msg)) {
+    if (!(await validateMsg(msg))) {
       log.warn("Invalid trust message received", { type: (msg as any)?.type, from: (msg as any)?.from });
       return;
     }
@@ -138,7 +132,7 @@ export function createTrustManager(options: {
   }
 
   async function handleTrustRequest(msg: TrustRequestMessage): Promise<void> {
-    const device = msg.payload
+    const device = msg.payload.device
     log.debug("Handling trust request", { from: msg.from, to: msg.to, deviceId: device.deviceId });
     if (await isTrusted(device.deviceId)) {
       log.debug("Trust request ignored: already trusted", { deviceId: device.deviceId });
@@ -169,7 +163,7 @@ export function createTrustManager(options: {
 
   async function handleTrustAck(msg: TrustAckMessage): Promise<void> {
     const responder = (msg.payload as any)?.responder
-    const requestDevice = msg.payload?.request?.payload
+    const requestDevice = msg.payload?.request?.payload?.device
     const device =
       responder && typeof (responder as any).deviceId === "string"
         ? (responder as TrustedDevice)

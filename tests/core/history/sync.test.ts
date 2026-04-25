@@ -34,9 +34,9 @@ describe("history sync", () => {
     expect(send).toHaveBeenCalledTimes(1);
     const [target, arg] = send.mock.calls[0] as any;
     expect(target).toBe("peer");
-    expect(arg.type).toBe("sync-history");
+    expect(arg.type).toBe("history-sync");
     expect(arg.from).toBe("me");
-    expect(arg.payload.length).toBe(3);
+    expect(arg.payload.clips.length).toBe(3);
   });
 
   it("import batch dedup", async () => {
@@ -45,10 +45,12 @@ describe("history sync", () => {
       send: jest.fn(),
       onMessage: (cb: any) => {
         cb({
-          type: "sync-history",
+          type: "history-sync",
           from: "peer",
           sentAt: Date.now(),
-          payload: [{ id: "1", type: "text", content: "a", timestamp: Date.now(), senderId: "r" }],
+          payload: {
+            clips: [{ id: "1", type: "text", content: "a", timestamp: Date.now(), senderId: "r" }],
+          },
         });
       },
     } as any;
@@ -91,7 +93,7 @@ describe("history sync", () => {
       const msg = (c as any)[1] as any;
       const size = JSON.stringify(msg).length;
       expect(size).toBeLessThanOrEqual(500 * 1024);
-      expect(msg.payload.length).toBeLessThanOrEqual(100);
+      expect(msg.payload.clips.length).toBeLessThanOrEqual(100);
     }
   });
 });
