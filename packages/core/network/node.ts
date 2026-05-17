@@ -19,6 +19,9 @@ import { ping } from "@libp2p/ping";
 // TODO: remove webrtc-star
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants.js";
 import { FaultTolerance } from "@libp2p/interface-transport";
+import { ensureLegacyMultiaddrApi, patchGlobalMultiaddrCompat } from "./multiaddrCompat.js";
+
+patchGlobalMultiaddrCompat();
 
 // TODO: remove webrtc-star
 function hasWebRTCSupport() {
@@ -48,21 +51,95 @@ function withTransportFilters(factory: any) {
   };
 }
 
+function withPatchedFilter(
+  factory: any,
+  filter: (addr: any) => boolean
+) {
+  return withTransportFilters((components: any) => {
+    const transport = factory(components);
+    if (transport) {
+      transport.filter = (addrs: any[]) => {
+        const list = Array.isArray(addrs) ? addrs : [addrs];
+        return list
+          .map((addr) => ensureLegacyMultiaddrApi(addr))
+          .filter((addr) => {
+            try {
+              return filter(addr);
+            } catch {
+              return false;
+            }
+          });
+      };
+    }
+    return transport;
+  });
+}
+
+function multiaddrProtocolNames(addr: any): string[] {
+  if (typeof addr?.getComponents === "function") {
+    return addr.getComponents().map((c: any) => c?.name).filter(Boolean);
+  }
+  if (typeof addr?.protoNames === "function") {
+    return addr.protoNames();
+  }
+  return String(addr)
+    .split("/")
+    .filter((part, index) => index > 0 && index % 2 === 1);
+}
+
+function isBrowserDocumentRuntime(): boolean {
+  return typeof window !== "undefined" && typeof document !== "undefined";
+}
+
+function isCircuitRelayAddress(addr: string): boolean {
+  return !addr.includes("/p2p-webrtc-star");
+}
+
 export async function createClipboardNode(
-  options: { peerId?: any; privateKey?: any; bootstrapList?: string[]; relayAddresses?: string[] } = {}
+  options: {
+    peerId?: any;
+    privateKey?: any;
+    bootstrapList?: string[];
+    relayAddresses?: string[];
+    enableWebRTCStar?: boolean;
+    enableWebRTCDirect?: boolean;
+    enableDCUtR?: boolean;
+    enableTcp?: boolean;
+    enableRelayReservations?: boolean;
+    allowInsecureBrowserDials?: boolean;
+  } = {}
 ) {
   const {
     peerId,
     privateKey,
     bootstrapList = [],
     relayAddresses = DEFAULT_WEBRTC_STAR_RELAYS,
+    allowInsecureBrowserDials = false,
   } = options;
+  const enableWebRTCDirect = options.enableWebRTCDirect !== false;
+  const isBrowserDocument = isBrowserDocumentRuntime();
+  const enableTcp = options.enableTcp === true && !isBrowserDocument;
+  const enableRelayReservations = options.enableRelayReservations ?? !isBrowserDocument;
   const discovery: any[] = [];
   const transports: any[] = [
     withTransportFilters(webSockets()),
     withTransportFilters(circuitRelayTransport()),
   ];
-  const listenAddrs: any[] = [multiaddr("/ip4/0.0.0.0/tcp/0/ws")];
+  const listenAddrs: any[] = isBrowserDocument ? [] : [multiaddr("/ip4/0.0.0.0/tcp/0/ws")];
+
+  if (enableTcp) {
+    try {
+      const { tcp } = await import("@libp2p/tcp");
+      if (typeof tcp === "function") {
+        transports.unshift(withTransportFilters(tcp()));
+        listenAddrs.push(multiaddr("/ip4/0.0.0.0/tcp/0"));
+      } else {
+        console.warn("TCP transport missing or invalid; skipping");
+      }
+    } catch (err) {
+      console.warn("TCP transport unavailable; continuing without", err);
+    }
+  }
 
   const relayMultiaddrs = relayAddresses
     .map((a) => {
@@ -76,23 +153,22 @@ export async function createClipboardNode(
     .filter(Boolean) as any[];
 
   const enableWebRTCStar =
-    typeof process !== "undefined" &&
-    process?.env?.CLIPP_ENABLE_WEBRTC_STAR &&
-    ["1", "true", "yes", "on"].includes(process.env.CLIPP_ENABLE_WEBRTC_STAR.toLowerCase());
+    typeof options.enableWebRTCStar === "boolean"
+      ? options.enableWebRTCStar
+      : typeof process !== "undefined" &&
+        process?.env?.CLIPP_ENABLE_WEBRTC_STAR &&
+        ["1", "true", "yes", "on"].includes(process.env.CLIPP_ENABLE_WEBRTC_STAR.toLowerCase());
 
-  if (hasWebRTCSupport()) {
+  if (enableWebRTCDirect || hasWebRTCSupport()) {
     try {
-      const [{ webRTC }, { webRTCStar }] = await Promise.all([
-        import("@libp2p/webrtc"),
-        import("@libp2p/webrtc-star"),
-      ]);
-      const wrtcStarInstance =
-        typeof (webRTCStar as any).webRTCStar === "function"
-          ? (webRTCStar as any).webRTCStar()
-          : typeof (webRTCStar as any).default === "function"
-            ? (webRTCStar as any).default()
-            : typeof webRTCStar === "function"
-              ? (webRTCStar as any)()
+      const { webRTC, webRTCDirect } = await import("@libp2p/webrtc");
+      const wrtcDirectTransportFactory =
+        typeof (webRTCDirect as any).webRTCDirect === "function"
+          ? (webRTCDirect as any).webRTCDirect
+          : typeof webRTCDirect === "function"
+            ? (webRTCDirect as any)
+            : typeof (webRTCDirect as any).default === "function"
+              ? (webRTCDirect as any).default
               : null;
       const wrtcTransportFactory =
         typeof (webRTC as any).webRTC === "function"
@@ -103,128 +179,145 @@ export async function createClipboardNode(
               ? (webRTC as any).default
               : null;
 
-      const starFactory =
-        wrtcStarInstance && typeof wrtcStarInstance.transport === "function"
-          ? wrtcStarInstance.transport
-          : null;
-      if (enableWebRTCStar && starFactory) {
-        const starTransport = starFactory as any;
-        starTransport.filter = (addrs: any[]) => {
-          const list = Array.isArray(addrs) ? addrs : [];
-          const filtered = list.filter((ma: any) => {
-            try {
-              const m = typeof ma === "string" ? multiaddr(ma) : ma;
-              return typeof m?.protoCodes === "function" || typeof m?.protoNames === "function";
-            } catch (err) {
-              console.warn("[wrtc-star] filter proto check failed", { addr: String(ma), error: (err as any)?.message });
-              return false;
-            }
-          });
-          if (filtered.length !== list.length) {
-            console.warn("[wrtc-star] filtered out invalid addrs", {
-              provided: list.map((a: any) => String(a)),
-              kept: filtered.map((a: any) => String(a)),
-            });
-          }
-          return filtered;
-        };
-        transports.unshift(withTransportFilters(starTransport));
-        if (wrtcStarInstance.discovery) {
-          discovery.push(wrtcStarInstance.discovery);
+      if (enableWebRTCDirect && typeof wrtcDirectTransportFactory === "function") {
+        transports.unshift(withTransportFilters((wrtcDirectTransportFactory as any)()));
+        if (!isBrowserDocument) {
+          listenAddrs.push(multiaddr("/ip4/0.0.0.0/udp/0/webrtc-direct"));
         }
-        listenAddrs.push(...relayMultiaddrs);
-      } else if (enableWebRTCStar) {
-        console.warn("WebRTC-star transport missing or invalid; skipping");
+      } else if (enableWebRTCDirect) {
+        console.warn("WebRTC Direct transport missing or invalid; skipping");
       }
 
-      if (typeof wrtcTransportFactory === "function") {
-        const factory = (wrtcTransportFactory as any)();
-        if (factory) {
-          (factory as any).filter = (addrs: any[]) => {
-            const list = Array.isArray(addrs) ? addrs : [];
-            const filtered = list.filter((ma: any) => {
-              try {
-                const m = typeof ma === "string" ? multiaddr(ma) : ma;
-                return typeof m?.protoCodes === "function" || typeof m?.protoNames === "function";
-              } catch (err) {
-                console.warn("[wrtc] filter proto check failed", { addr: String(ma), error: (err as any)?.message });
-                return false;
-              }
-            });
-            if (filtered.length !== list.length) {
-              console.warn("[wrtc] filtered out invalid addrs", {
-                provided: list.map((a: any) => String(a)),
-                kept: filtered.map((a: any) => String(a)),
-              });
-            }
-            return filtered;
-          };
-          transports.unshift(withTransportFilters(factory));
-        } else {
-          console.warn("WebRTC transport factory invalid; skipping");
+      if (hasWebRTCSupport()) {
+        let wrtcStarInstance: any = null;
+        if (enableWebRTCStar) {
+          const { webRTCStar } = await import("@libp2p/webrtc-star");
+          wrtcStarInstance =
+            typeof (webRTCStar as any).webRTCStar === "function"
+              ? (webRTCStar as any).webRTCStar()
+              : typeof (webRTCStar as any).default === "function"
+                ? (webRTCStar as any).default()
+                : typeof webRTCStar === "function"
+                  ? (webRTCStar as any)()
+                  : null;
         }
-      } else {
-        console.warn("WebRTC transport missing; skipping");
+
+        const starFactory =
+          wrtcStarInstance && typeof wrtcStarInstance.transport === "function"
+            ? wrtcStarInstance.transport
+            : null;
+        if (enableWebRTCStar && starFactory) {
+          transports.unshift(
+            withPatchedFilter(starFactory, (addr) => {
+              const protocols = multiaddrProtocolNames(addr);
+              return protocols.includes("p2p-webrtc-star") && !protocols.includes("p2p-circuit");
+            })
+          );
+          if (wrtcStarInstance.discovery) {
+            discovery.push(wrtcStarInstance.discovery);
+          }
+          listenAddrs.push(...relayMultiaddrs);
+        } else if (enableWebRTCStar) {
+          console.warn("WebRTC-star transport missing or invalid; skipping");
+        }
+
+        if (typeof wrtcTransportFactory === "function") {
+          const factory = (wrtcTransportFactory as any)();
+          if (factory) {
+            (factory as any).filter = (addrs: any[]) => {
+              const list = Array.isArray(addrs) ? addrs : [];
+              const filtered = list.filter((ma: any) => {
+                try {
+                  const m = typeof ma === "string" ? multiaddr(ma) : ma;
+                  return typeof m?.protoCodes === "function" || typeof m?.protoNames === "function";
+                } catch (err) {
+                  console.warn("[wrtc] filter proto check failed", { addr: String(ma), error: (err as any)?.message });
+                  return false;
+                }
+              });
+              if (filtered.length !== list.length) {
+                console.warn("[wrtc] filtered out invalid addrs", {
+                  provided: list.map((a: any) => String(a)),
+                  kept: filtered.map((a: any) => String(a)),
+                });
+              }
+              return filtered;
+            };
+            transports.unshift(withTransportFilters(factory));
+            listenAddrs.push(multiaddr("/webrtc"));
+          } else {
+            console.warn("WebRTC transport factory invalid; skipping");
+          }
+        } else {
+          console.warn("WebRTC transport missing; skipping");
+        }
       }
     } catch (err) {
       console.warn("WebRTC transports unavailable; continuing without", err);
     }
   }
 
-  // Announce reachable addresses so getMultiaddrs() returns something useful for rendezvous.
-  const announce: any[] = [];
-  const peerIdStr =
-    typeof (peerId as any)?.toString === "function"
-      ? (peerId as any).toString()
-      : peerId && typeof peerId === "string"
-        ? peerId
-        : undefined;
-  if (peerIdStr) {
-    relayAddresses.forEach((addr) => {
+  // Listen on the relay circuit address to trigger a reservation.
+  if (enableRelayReservations) {
+    relayAddresses.filter(isCircuitRelayAddress).forEach((addr) => {
       try {
-        announce.push(multiaddr(`${addr}/p2p-circuit/p2p/${peerIdStr}`));
+        listenAddrs.push(multiaddr(`${addr}/p2p-circuit`));
       } catch (err) {
-        console.warn("Invalid announce relay addr skipped", addr, err);
+        console.warn("Invalid relay circuit listen addr skipped", addr, err);
       }
     });
   }
-  // Listen on the relay circuit address to trigger a reservation.
-  relayAddresses.forEach((addr) => {
-    try {
-      listenAddrs.push(multiaddr(`${addr}/p2p-circuit`));
-    } catch (err) {
-      console.warn("Invalid relay circuit listen addr skipped", addr, err);
-    }
-  });
 
   if (bootstrapList.length > 0) {
     discovery.push(bootstrap({ list: bootstrapList }));
   }
   // mdns relies on Node's dgram module which is not available in browser
   // environments like the extension background service worker.
-  if (typeof navigator === "undefined") {
+  if (!isBrowserDocument) {
     discovery.push(mdns());
+  }
+
+  const services: Record<string, any> = {
+    pubsub: gossipsub() as any,
+    dht: kadDHT() as any,
+    identify: identify(),
+    ping: ping(),
+  };
+
+  if (options.enableDCUtR === true) {
+    try {
+      const { dcutr } = await import("@libp2p/dcutr");
+      if (typeof dcutr === "function") {
+        services.dcutr = dcutr();
+      } else {
+        console.warn("DCUtR service missing or invalid; skipping");
+      }
+    } catch (err) {
+      console.warn("DCUtR service unavailable; continuing without", err);
+    }
   }
 
   return await createLibp2p({
     ...(privateKey ? { privateKey } : peerId ? { peerId } : {}),
+    start: false,
     addresses: {
       listen: listenAddrs,
-      announce,
     },
     transports,
     transportManager: {
       faultTolerance: FaultTolerance.NO_FATAL,
     },
+    ...(allowInsecureBrowserDials
+      ? {
+          connectionGater: {
+            denyDialMultiaddr: () => false,
+          },
+        }
+      : {}),
     connectionEncrypters: [noise()],
     // Include both yamux and mplex to maximize compatibility (relays often use mplex).
     streamMuxers: [yamux() as any, mplex()],
     peerDiscovery: discovery.map((d) => d as any),
-    services: {
-      pubsub: gossipsub(),
-      dht: kadDHT() as any,
-      identify: identify(),
-      ping: ping(),
-    },
+    services,
   });
 }

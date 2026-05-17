@@ -8,7 +8,19 @@ export function withTrustedPeers<Msg extends { from: string }>(
 ): ProtocolMessenger<Msg> {
   return {
     send: messenger.send,
-    broadcast: messenger.broadcast,
+    async broadcast(msg) {
+      const peers = messenger.getPeers?.();
+      if (!peers) {
+        await messenger.broadcast(msg);
+        return;
+      }
+      const trustedPeers = (
+        await Promise.all(
+          peers.map(async (peerId) => ((await isTrusted(peerId)) ? peerId : null))
+        )
+      ).filter((peerId): peerId is string => typeof peerId === "string");
+      await Promise.all(trustedPeers.map((peerId) => messenger.send(peerId, msg)));
+    },
     onMessage(cb) {
       messenger.onMessage((msg) => {
         void (async () => {
@@ -16,6 +28,6 @@ export function withTrustedPeers<Msg extends { from: string }>(
         })();
       });
     },
+    getPeers: messenger.getPeers,
   };
 }
-

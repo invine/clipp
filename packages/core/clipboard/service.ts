@@ -131,7 +131,14 @@ function createClipboardService(
     if (clip.id === lastLocal?.id) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     log.debug("Writing clip to clipboard");
-    await write(clip.content);
+    const previousHash = lastHash;
+    lastHash = hashString(clip.content || "");
+    try {
+      await write(clip.content);
+    } catch (err) {
+      lastHash = previousHash;
+      throw err;
+    }
     remoteHandlers.forEach((h) => h(clip));
   }
 

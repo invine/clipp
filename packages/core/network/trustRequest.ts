@@ -1,5 +1,6 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { toU8 } from "./bytes.js";
+import { guardMessageStream, writeMessageStream } from "./messageStream.js";
 import {
   CLIP_TRUST_PROTOCOL,
   createSignedTrustRequestFromKey,
@@ -50,14 +51,12 @@ export async function sendTrustRequest(
 
   log("trust-request:send", { target: targetMa.toString() });
 
-  const stream = await node.dialProtocol(targetMa, CLIP_TRUST_PROTOCOL, {
-    runOnLimitedConnection: allowLimited,
-  });
-  const ok = stream.send(encodeTrustMessage(message));
-  // TODO: I don't understand this part
-  if (ok === false && typeof stream?.onDrain === "function") {
-    await stream.onDrain();
-  }
+  const stream = guardMessageStream(
+    await node.dialProtocol(targetMa, CLIP_TRUST_PROTOCOL, {
+      runOnLimitedConnection: allowLimited,
+    })
+  );
+  await writeMessageStream(stream, encodeTrustMessage(message));
 
   // NOTE: The current app-level pairing flow sends trust-acks on a new outbound
   // stream, not on this request stream. This is kept for tooling/probes.

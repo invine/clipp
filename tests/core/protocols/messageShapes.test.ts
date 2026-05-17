@@ -9,6 +9,7 @@ import {
   encodeHistorySyncMessage,
 } from "../../../packages/core/protocols/history";
 import {
+  createTrustedPeersMessage,
   createSignedTrustRequestFromKey,
   decodeTrustMessage,
   encodeTrustMessage,
@@ -98,6 +99,47 @@ describe("protocol message shapes", () => {
       to: "peer",
       payload: request.payload,
       sentAt: 5,
+    });
+  });
+
+  it("uses a separate trusted peers wire shape", () => {
+    const msg = createTrustedPeersMessage({
+      from: "me",
+      to: "peer",
+      devices: [
+        {
+          deviceId: "known",
+          deviceName: "Known",
+          publicKey: "pk",
+          privateKey: "secret",
+          multiaddrs: ["/p2p/known"],
+          createdAt: 1,
+        } as any,
+      ],
+      sentAt: 6,
+    });
+
+    expect(msg.payload.devices[0]).toEqual(
+      expect.not.objectContaining({ privateKey: expect.anything() }),
+    );
+
+    const encoded = new TextDecoder().decode(encodeTrustMessage(msg));
+    expect(JSON.parse(encoded)).toEqual(msg);
+    expect(
+      decodeTrustMessage(new TextEncoder().encode(encoded), "me")
+    ).toEqual({
+      type: "trusted-peers",
+      from: "me",
+      to: "peer",
+      payload: {
+        devices: [
+          expect.objectContaining({
+            deviceId: "known",
+            multiaddrs: ["/p2p/known"],
+          }),
+        ],
+      },
+      sentAt: 6,
     });
   });
 });

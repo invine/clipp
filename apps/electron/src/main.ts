@@ -1,6 +1,6 @@
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Tray } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Notification, Tray } from "electron";
 import path from "node:path";
 import { decodePairing } from "../../../packages/core/pairing/decode.js";
 import { encodePairing } from "../../../packages/core/pairing/encode.js";
@@ -16,6 +16,7 @@ import {
 import { createPollingClipboardService } from "../../../packages/core/clipboard/service.js";
 import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
+import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
@@ -91,7 +92,18 @@ async function bootstrap() {
       : undefined;
 
   const trustBinder = createTrustProtocolBinder({ trust });
-  let transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses });
+  let transport = createLibp2pMessagingTransport({
+    peerId,
+    privateKey,
+    relayAddresses,
+    enableWebRTCDirect: true,
+    enableDCUtR: true,
+    enableTcp: true,
+  });
+  let pairedConnections = createPairedPeerConnectionManager({
+    transport,
+    getPairedPeers: () => trust.list(),
+  });
   let clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
   let trustMessaging = createTrustMessenger(transport);
   trustBinder.bind(trustMessaging);
@@ -167,6 +179,54 @@ async function bootstrap() {
       out.push(v);
     }
     return out;
+  }
+
+  function isLoopbackMultiaddr(addr: string): boolean {
+    return addr.includes("/ip4/127.") || addr.includes("/ip6/::1") || addr.includes("/dns4/localhost") || addr.includes("/dns6/localhost");
+  }
+
+  function isWebRTCDirectMultiaddr(addr: string): boolean {
+    return addr.includes("/webrtc") && !addr.includes("/p2p-webrtc-star");
+  }
+
+  function isRelayLikeMultiaddr(addr: string): boolean {
+    return addr.includes("/p2p-circuit") || addr.includes("/p2p-webrtc-star");
+  }
+
+  function isSecureWebSocketMultiaddr(addr: string): boolean {
+    return addr.includes("/wss");
+  }
+
+  function pairingAdvertiseAddrs(addrs: string[]): string[] {
+    const unique = dedupeMultiaddrs(addrs);
+    const nonLoopback = unique.filter((addr) => !isLoopbackMultiaddr(addr));
+    const source = nonLoopback.length ? nonLoopback : unique;
+    const directWebRTC = source.filter(isWebRTCDirectMultiaddr);
+    const relayLike = source.filter((addr) => !isWebRTCDirectMultiaddr(addr) && isRelayLikeMultiaddr(addr));
+    const secureWebSocket = source.filter((addr) => !isWebRTCDirectMultiaddr(addr) && isSecureWebSocketMultiaddr(addr));
+    const rest = source.filter(
+      (addr) =>
+        !isWebRTCDirectMultiaddr(addr) &&
+        !isRelayLikeMultiaddr(addr) &&
+        !isSecureWebSocketMultiaddr(addr)
+    );
+    return dedupeMultiaddrs([...directWebRTC, ...relayLike, ...secureWebSocket, ...rest]);
+  }
+
+  function pairingDialPriority(addr: string): number {
+    if (isWebRTCDirectMultiaddr(addr)) return 0;
+    if (isRelayLikeMultiaddr(addr)) return 1;
+    if (isSecureWebSocketMultiaddr(addr)) return 2;
+    if (isLoopbackMultiaddr(addr)) return 4;
+    return 3;
+  }
+
+  function orderPairingTargets(addrs: Multiaddr[]): Multiaddr[] {
+    return [...addrs].sort((a, b) => {
+      const aText = a.toString();
+      const bText = b.toString();
+      return pairingDialPriority(aText) - pairingDialPriority(bText);
+    });
   }
 
   function normalizeRelayAddrs(values: string[]) {
@@ -279,11 +339,16 @@ async function bootstrap() {
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
   let quitting = false;
+  let shutdownStarted = false;
+  let shutdownComplete = false;
+  const pendingSelfPeerUpdates = new Set<Promise<void>>();
 
   async function getState() {
     const clips = await history.exportAll();
     const devices = await trust.list();
     const peers = transport.getConnectedPeers();
+    const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
+    const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
     // const identity = await ensureIdentityAddrs(await identitySvc.get());
     const identity = await identitySvc.get();
     return {
@@ -292,6 +357,8 @@ async function bootstrap() {
       // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
       peers,
+      peerConnections,
+      relayConnections,
       identity,
       pinnedIds,
       relayAddresses,
@@ -325,21 +392,74 @@ async function bootstrap() {
     );
   }
 
+  function showPairingRequestNotification(device: TrustedDevice) {
+    if (!Notification.isSupported()) return;
+
+    const deviceName = device.deviceName?.trim() || "Unknown device";
+    const notification = new Notification({
+      title: "New pairing request",
+      body: `${deviceName} wants to pair with Clipp.`,
+      silent: false,
+    });
+
+    notification.on("click", () => {
+      showWindow();
+    });
+    notification.show();
+  }
+
+  function scheduleSelfPeerUpdate(multiaddrs: string[]) {
+    const cleaned = dedupeMultiaddrs(
+      multiaddrs.filter((addr) => typeof addr === "string" && addr.length > 0)
+    );
+    if (quitting) return;
+
+    const task = (async () => {
+      try {
+        if (quitting) return;
+        await identitySvc.updateMultiaddrs(cleaned);
+      } catch (err) {
+        if (!quitting) {
+          (log as any).warn("Failed to persist updated multiaddrs", err);
+        }
+        return;
+      }
+      if (!quitting) {
+        await emitState();
+      }
+    })();
+
+    pendingSelfPeerUpdates.add(task);
+    task.finally(() => pendingSelfPeerUpdates.delete(task));
+  }
+
+  function currentTransportMultiaddrs() {
+    try {
+      return transport.getSelfMultiaddrs?.() ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function waitForCurrentTransportMultiaddrs(timeoutMs = 1500) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      const addrs = currentTransportMultiaddrs();
+      if (addrs.length > 0) return addrs;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return currentTransportMultiaddrs();
+  }
+
   function bindTransportHandlers(target: any) {
     if (!target || (target as any).__clippBound) return;
     (target as any).__clippBound = true;
     target.onPeerConnected(() => void emitState());
     target.onPeerDisconnected(() => void emitState());
+    target.onRelayConnectionChanged?.(() => void emitState());
     if (typeof target.onSelfPeerUpdate === "function") {
       target.onSelfPeerUpdate((multiaddrs: string[]) => {
-        void (async () => {
-          try {
-            await identitySvc.updateMultiaddrs(multiaddrs);
-          } catch (err) {
-            (log as any).warn("Failed to persist updated multiaddrs", err);
-          }
-          await emitState();
-        })();
+        scheduleSelfPeerUpdate(multiaddrs);
       });
     }
   }
@@ -354,8 +474,10 @@ async function bootstrap() {
     // TODO: refactor pendingRequests as it's currently owned by trustManager
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("request", (d: any) => {
+      if (pendingRequests.some((p) => p.deviceId === d.deviceId)) return;
       pendingRequests.push(d);
       emitState();
+      showPairingRequestNotification(d);
       (log as any).info("Trust request received", d.deviceId);
     });
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
@@ -364,6 +486,7 @@ async function bootstrap() {
         (p) => p.deviceId !== d.deviceId
       );
       emitState();
+      void pairedConnections.reconnectNow();
       (log as any).info("Device approved", d.deviceId);
     });
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
@@ -379,6 +502,7 @@ async function bootstrap() {
 
     try {
       await ensureMessagingStarted();
+      pairedConnections.start();
     } catch (err) {
       (log as any).warn("Messaging start failed", err);
     }
@@ -387,18 +511,31 @@ async function bootstrap() {
 
   async function restartMessaging() {
     try {
+      pairedConnections.stop();
       await transport.stop();
     } catch {
       // ignore stop failures
     }
     messagingStarted = false;
-    transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses });
+    transport = createLibp2pMessagingTransport({
+      peerId,
+      privateKey,
+      relayAddresses,
+      enableWebRTCDirect: true,
+      enableDCUtR: true,
+      enableTcp: true,
+    });
+    pairedConnections = createPairedPeerConnectionManager({
+      transport,
+      getPairedPeers: () => trust.list(),
+    });
     clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
     trustMessaging = createTrustMessenger(transport);
     trustBinder.bind(trustMessaging);
     bindTransportHandlers(transport);
     clipboardSync.bindMessaging(clipMessaging as any);
     await ensureMessagingStarted();
+    pairedConnections.start();
     await emitState();
   }
 
@@ -633,11 +770,39 @@ async function bootstrap() {
     await startServices();
   });
 
-  app.on("before-quit", () => {
+  async function shutdownServices() {
     quitting = true;
     clipboardSync.stop();
-    transport.stop();
-    db.close();
+    pairedConnections.stop();
+    try {
+      await transport.stop();
+    } catch (err) {
+      (log as any).warn("Messaging transport stop failed", err);
+    }
+    if (pendingSelfPeerUpdates.size > 0) {
+      await Promise.allSettled(Array.from(pendingSelfPeerUpdates));
+    }
+    try {
+      db.close();
+    } catch (err) {
+      (log as any).warn("Database close failed", err);
+    }
+  }
+
+  app.on("before-quit", (event) => {
+    quitting = true;
+    if (shutdownComplete) return;
+    event.preventDefault();
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    void (async () => {
+      try {
+        await shutdownServices();
+      } finally {
+        shutdownComplete = true;
+        app.quit();
+      }
+    })();
   });
 
   app.on("activate", () => {
@@ -685,6 +850,12 @@ async function bootstrap() {
   ipcMain.handle("clipp:unpair-device", async (_evt, id: string) => {
     await trust.remove(id);
     await emitState();
+  });
+
+  ipcMain.handle("clipp:rename-device", async (_evt, payload: { id: string; name: string }) => {
+    const device = await trust.rename(payload.id, payload.name);
+    await emitState();
+    return device;
   });
 
   ipcMain.handle("clipp:toggle-pin", async (_evt, id: string) => {
@@ -740,7 +911,7 @@ async function bootstrap() {
     //     },
     //   });
     // }
-    const targets: Multiaddr[] = valid;
+    const targets: Multiaddr[] = orderPairingTargets(valid);
     if (!targets.length) {
       broadcastLog({
         level: "warn",
@@ -809,15 +980,20 @@ async function bootstrap() {
   //   return { ok: false };
   // });
 
-  // TODO: make reusable component
   ipcMain.handle("clipp:open-qr-window", async () => {
-    // Ensure we have an active relay reservation before showing the QR so peers can dial us immediately.
     await ensureMessagingStarted();
     const id = await identitySvc.get();
-    // const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
-    const addrs = id.multiaddrs && id.multiaddrs.length ? id.multiaddrs : [];
+    const currentAddrs = dedupeMultiaddrs(await waitForCurrentTransportMultiaddrs());
+    const persistedAddrs = id.multiaddrs && id.multiaddrs.length ? id.multiaddrs : [];
+    const persistedFallback = relayAddresses.length
+      ? persistedAddrs
+      : persistedAddrs.filter((addr) => !addr.includes("/p2p-circuit"));
+    const addrs = pairingAdvertiseAddrs(currentAddrs.length ? currentAddrs : persistedFallback);
     if (!addrs.length) {
       throw new Error("No multiaddrs available");
+    }
+    if (currentAddrs.length) {
+      scheduleSelfPeerUpdate(currentAddrs);
     }
     const info = {
       deviceId: id.deviceId,
@@ -827,39 +1003,10 @@ async function bootstrap() {
     };
     const img = await encode(info);
     const txt = encodePairing(info);
-    const qrWin = new BrowserWindow({
-      width: 420,
-      height: 520,
-      resizable: false,
-      autoHideMenuBar: true,
-      title: "Pair this device",
-      backgroundColor: "#0f0f13",
-      webPreferences: { nodeIntegration: true, contextIsolation: false },
-    });
-    const html = `
-      <html>
-        <head>
-          <style>
-            body { margin:0; padding:20px; background:#0f0f13; color:#e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-            .card { background:#14151c; border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; text-align:center; }
-            button { margin-top:14px; padding:10px 12px; border-radius:12px; border: none; background: linear-gradient(135deg, #7c3aed, #a855f7); color:#fff; font-weight:600; cursor:pointer; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <h3>Pair this device</h3>
-            <img src="${img}" style="width:220px;height:220px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);" />
-            <div style="margin-top:8px;font-size:12px;color:#9ca3af;word-break:break-all;">${info.deviceId
-      }</div>
-            <button onclick="require('electron').clipboard.writeText('${txt.replace(
-        /'/g,
-        "\\'"
-      )}')">Copy QR text</button>
-          </div>
-        </body>
-      </html>
-    `;
-    qrWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+    return {
+      image: img,
+      text: txt,
+    };
   });
 }
 

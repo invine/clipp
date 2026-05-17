@@ -1,14 +1,20 @@
 import { CapacitorConfig } from "@capacitor/cli";
 
+const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+
 const config: CapacitorConfig = {
   appId: "com.clipp.app",
   appName: "Clipp",
   webDir: "dist",
   bundledWebRuntime: false,
-  server: {
-    url: process.env.VITE_DEV_SERVER_URL || "http://localhost:4174",
-    cleartext: true,
-  },
+  ...(devServerUrl
+    ? {
+        server: {
+          url: devServerUrl,
+          cleartext: true,
+        },
+      }
+    : {}),
 };
 
 export default config;

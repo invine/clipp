@@ -1,11 +1,21 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Clip, Device, Identity, PendingRequest } from "../../../packages/ui/src/types.js";
+import type {
+  Clip,
+  Device,
+  Identity,
+  PairingCode,
+  PeerConnectionInfo,
+  PendingRequest,
+  RelayConnectionInfo,
+} from "../../../packages/ui/src/types.js";
 
 type AppState = {
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
   peers: string[];
+  peerConnections?: PeerConnectionInfo[];
+  relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   relayAddresses: string[];
   diagnostics?: {
@@ -22,6 +32,7 @@ const api = {
   deleteClip: (id: string) => ipcRenderer.invoke("clipp:delete-clip", id),
   clearHistory: () => ipcRenderer.invoke("clipp:clear-history"),
   unpairDevice: (id: string) => ipcRenderer.invoke("clipp:unpair-device", id),
+  renameDevice: (id: string, name: string) => ipcRenderer.invoke("clipp:rename-device", { id, name }),
   acceptRequest: (device: PendingRequest) =>
     ipcRenderer.invoke("clipp:respond-trust", { accept: true, device }),
   rejectRequest: (device: PendingRequest) =>
@@ -29,7 +40,7 @@ const api = {
   pairFromText: (txt: string) => ipcRenderer.invoke("clipp:pair-text", txt),
   // TODO: confirm that it's not used anywhere
   // shareNow: () => ipcRenderer.invoke("clipp:share-now"),
-  openQrWindow: () => ipcRenderer.invoke("clipp:open-qr-window"),
+  openQrWindow: () => ipcRenderer.invoke("clipp:open-qr-window") as Promise<PairingCode>,
   togglePin: (id: string) => ipcRenderer.invoke("clipp:toggle-pin", id),
   renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
   setRelayAddresses: (addrs: string[]) => ipcRenderer.invoke("clipp:set-relay-addresses", addrs),

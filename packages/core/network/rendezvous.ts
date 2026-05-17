@@ -1,9 +1,16 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { toU8 } from "./bytes.js";
+import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
 
 export type RendezvousRecord = { peer: string; addrs: string[]; lastSeen?: number };
+export type RendezvousOptions = {
+  timeoutMs?: number;
+  dialOptions?: any;
+  log?: (...args: any[]) => void;
+};
 
 const TOPIC = "/rendezvous/1.0.0";
+const DEFAULT_RENDEZVOUS_TIMEOUT_MS = 8_000;
 
 function asMultiaddr(value: string | Multiaddr) {
   return typeof value === "string" ? multiaddr(value) : value;
@@ -21,12 +28,64 @@ function decodeChunk(chunk: any) {
 
 async function writeJson(stream: any, obj: any) {
   const data = new TextEncoder().encode(JSON.stringify(obj));
-  if (typeof stream?.send !== "function") {
-    throw new Error("rendezvous stream is not a libp2p MessageStream (missing send)");
+  await writeMessageStream(stream, data);
+}
+
+function getStreamIterable(stream: any): AsyncIterable<any> | undefined {
+  if (!stream) return undefined;
+  if (typeof stream[Symbol.asyncIterator] === "function") return stream;
+  if (stream.source && typeof stream.source[Symbol.asyncIterator] === "function") return stream.source;
+  if (stream.stream && typeof stream.stream[Symbol.asyncIterator] === "function") return stream.stream;
+  return undefined;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("rendezvous_timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  const ok = stream.send(data);
-  if (ok === false && typeof stream?.onDrain === "function") {
-    await stream.onDrain();
+}
+
+async function readJsonResponse(stream: any, timeoutMs: number) {
+  const iterable = getStreamIterable(stream);
+  if (!iterable) throw new Error("rendezvous_no_iterator");
+  const iterator = iterable[Symbol.asyncIterator]();
+  const deadline = Date.now() + timeoutMs;
+  let complete = false;
+  try {
+    while (!complete) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error("rendezvous_timeout");
+      const next = await withTimeout(iterator.next(), remaining);
+      if (next.done) {
+        complete = true;
+        continue;
+      }
+      const msg = decodeChunk(next.value);
+      if (msg) return msg;
+    }
+    return null;
+  } finally {
+    try {
+      await iterator.return?.();
+    } catch {
+      // ignore iterator close failures
+    }
+  }
+}
+
+async function closeStream(stream: any) {
+  try {
+    await closeMessageStream(stream, { ignoreClosedDataChannel: true });
+  } catch {
+    // ignore
   }
 }
 
@@ -35,25 +94,23 @@ export async function registerOnRendezvous(
   relay: string | Multiaddr,
   topic: string,
   addrs: string[],
-  log: (...args: any[]) => void = () => {}
+  logOrOptions: ((...args: any[]) => void) | RendezvousOptions = () => {}
 ): Promise<boolean> {
+  const options: RendezvousOptions =
+    typeof logOrOptions === "function" ? { log: logOrOptions } : logOrOptions;
+  const log = options.log ?? (() => {});
+  let stream: any;
   try {
     const relayMa = asMultiaddr(relay);
-    const stream = await node.dialProtocol(relayMa, TOPIC);
+    stream = guardMessageStream(await node.dialProtocol(relayMa, TOPIC, options.dialOptions));
     await writeJson(stream, { action: "register", topic, addrs });
-    for await (const chunk of stream as AsyncIterable<any>) {
-      const msg = decodeChunk(chunk);
-      if (!msg) continue;
-      log("[rendezvous] register response", msg);
-      try {
-        await stream?.close?.();
-      } catch {
-        // ignore
-      }
-      return !!msg.ok;
-    }
+    const msg = await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS);
+    log("[rendezvous] register response", msg);
+    return !!msg?.ok;
   } catch (err: any) {
     log("[rendezvous] register failed", err?.message || err);
+  } finally {
+    await closeStream(stream);
   }
   return false;
 }
@@ -62,33 +119,32 @@ export async function listRendezvousPeers(
   node: any,
   relay: string | Multiaddr,
   topic: string,
-  log: (...args: any[]) => void = () => {}
+  logOrOptions: ((...args: any[]) => void) | RendezvousOptions = () => {}
 ): Promise<RendezvousRecord[]> {
+  const options: RendezvousOptions =
+    typeof logOrOptions === "function" ? { log: logOrOptions } : logOrOptions;
+  const log = options.log ?? (() => {});
+  let stream: any;
   try {
     const relayMa = asMultiaddr(relay);
-    const stream = await node.dialProtocol(relayMa, TOPIC);
+    stream = guardMessageStream(await node.dialProtocol(relayMa, TOPIC, options.dialOptions));
     await writeJson(stream, { action: "list", topic });
-    for await (const chunk of stream as AsyncIterable<any>) {
-      const msg = decodeChunk(chunk);
-      if (msg?.ok && Array.isArray(msg.peers)) {
-        const peers = msg.peers
-          .map((p: any) => ({
-            peer: String(p?.peer || ""),
-            addrs: Array.isArray(p?.addrs) ? p.addrs.filter((a: any) => typeof a === "string") : [],
-            lastSeen: typeof p?.lastSeen === "number" ? p.lastSeen : undefined,
-          }))
-          .filter((p: any) => p.peer && Array.isArray(p.addrs));
-        log("[rendezvous] list response", { topic, count: peers.length });
-        try {
-          await stream?.close?.();
-        } catch {
-          // ignore
-        }
-        return peers;
-      }
+    const msg = await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS);
+    if (msg?.ok && Array.isArray(msg.peers)) {
+      const peers = msg.peers
+        .map((p: any) => ({
+          peer: String(p?.peer || ""),
+          addrs: Array.isArray(p?.addrs) ? p.addrs.filter((a: any) => typeof a === "string") : [],
+          lastSeen: typeof p?.lastSeen === "number" ? p.lastSeen : undefined,
+        }))
+        .filter((p: any) => p.peer && Array.isArray(p.addrs));
+      log("[rendezvous] list response", { topic, count: peers.length });
+      return peers;
     }
   } catch (err: any) {
     log("[rendezvous] list failed", err?.message || err);
+  } finally {
+    await closeStream(stream);
   }
   return [];
 }

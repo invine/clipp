@@ -2,17 +2,17 @@ import { noise } from "@chainsafe/libp2p-noise";
 import { mplex } from "@libp2p/mplex";
 import { circuitRelayServer, type CircuitRelayService } from "@libp2p/circuit-relay-v2";
 import { enable as enableLibp2pDebug } from "@libp2p/logger";
-import { identify } from "@libp2p/identify";
+import { identify, type Identify } from "@libp2p/identify";
 import { webSockets } from "@libp2p/websockets";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { createLibp2p, type Libp2p } from "libp2p";
-import type { Connection } from "@libp2p/interface";
+import type { Connection, PrivateKey } from "@libp2p/interface";
 import { peerIdFromMultihash } from "@libp2p/peer-id";
 import * as Digest from "multiformats/hashes/digest";
 import { defaultLogger } from "@libp2p/logger";
 import { FaultTolerance } from "@libp2p/interface-transport";
-import { privateKeyFromProtobuf, privateKeyFromRaw, type PrivateKey } from "@libp2p/crypto/keys";
-import { ping } from "@libp2p/ping";
+import { privateKeyFromProtobuf, privateKeyFromRaw } from "@libp2p/crypto/keys";
+import { ping, type Ping } from "@libp2p/ping";
 
 // Node 20 may not yet have Promise.withResolvers; provide a polyfill so libp2p deps can run.
 if (typeof (Promise as any).withResolvers !== "function") {
@@ -27,7 +27,7 @@ if (typeof (Promise as any).withResolvers !== "function") {
   };
 }
 
-type RelayServices = { circuitRelay: CircuitRelayService; ping: any };
+type RelayServices = { identify: Identify; circuitRelay: CircuitRelayService; ping: Ping };
 type RelayNode = Libp2p<RelayServices>;
 type RendezvousTopic = string;
 type RendezvousRecord = { peer: string; addrs: string[]; lastSeen: number };
@@ -50,7 +50,7 @@ export interface StartedRelay {
 }
 
 /**
- * Start a libp2p circuit-relay server reachable over WebSockets.
+ * Start a libp2p circuit-relay server reachable over WebSocket and WebRTC Direct listeners.
  * Returns the started node along with a stop helper that cleans up timers and listeners.
  */
 export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): Promise<StartedRelay> {
@@ -63,29 +63,33 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
   enableLibp2pDebug(debugNamespaces);
   log("Libp2p debug namespaces enabled", { namespaces: debugNamespaces });
 
-  const listenAddrs = toMultiaddrs(
-    options.listen && options.listen.length > 0 ? options.listen : buildDefaultListen(options.host, options.port)
-  );
+  const listenInput =
+    options.listen && options.listen.length > 0
+      ? options.listen
+      : buildDefaultListen(options.host, options.port);
+  const listenAddrs = toMultiaddrs(listenInput);
   const announceAddrs = toMultiaddrs(options.announce);
   const statusIntervalMs = coerceNumber(options.statusIntervalMs, 15_000);
   const maxReservations = coerceNumber(options.maxReservations, 500);
   const reservationTtl = coerceNumber(options.reservationTtlMs, 2 * 60 * 60 * 1000);
   const privateKey = loadPrivateKeyFromEnv();
+  const needsWebRTCTransport =
+    containsWebRTCDirectAddr(listenInput) || containsWebRTCDirectAddr(options.announce);
   const enableWebRTC =
     typeof options.enableWebRTC === "boolean"
       ? options.enableWebRTC
-      : coerceBool(process.env.RELAY_ENABLE_WEBRTC, false);
-  const webrtcTransport = enableWebRTC ? await loadWebRTCTransport() : undefined;
+      : coerceBool(process.env.RELAY_ENABLE_WEBRTC, needsWebRTCTransport);
+  const webrtcTransports = enableWebRTC ? await loadWebRTCTransports() : [];
 
   const node = await createLibp2p<RelayServices>({
     ...(privateKey ? { privateKey } : {}),
     logger: defaultLogger(),
     addresses: {
-      listen: listenAddrs,
-      announce: announceAddrs,
+      listen: listenAddrs.map(String),
+      announce: announceAddrs.map(String),
       announceFilter: (addrs) => addrs,
     },
-    transports: [withLogger(webSockets()), ...(webrtcTransport ? [webrtcTransport] : [])],
+    transports: [withLogger(webSockets()), ...webrtcTransports],
     transportManager: {
       faultTolerance: FaultTolerance.NO_FATAL,
     },
@@ -118,7 +122,7 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
     announce: announceAddrs.map(String),
     privateKey: privateKey ? "provided" : "generated",
   };
-  log("Websocket relay started", info);
+  log("Relay started", info);
 
   return {
     node,
@@ -127,7 +131,7 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
       removeNodeListeners?.();
       stopRendezvous?.();
       await node.stop();
-      log("Websocket relay stopped");
+      log("Relay stopped");
     },
   };
 }
@@ -135,13 +139,14 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
 /**
  * Convenience helper to start the relay using environment variables.
  *
- * RELAY_PORT: TCP port (default: 47891)
+ * RELAY_PORT: TCP/UDP port (default: 47891)
  * RELAY_HOST: Host/IP to bind (default: 0.0.0.0)
  * RELAY_LISTEN / RELAY_WS_LISTEN: comma-separated explicit multiaddrs
  * RELAY_ANNOUNCE: comma-separated multiaddrs to announce to peers
  * RELAY_STATUS_INTERVAL_MS: how often to log reservations/status
  * RELAY_MAX_RESERVATIONS: limit concurrent reservations
  * RELAY_RESERVATION_TTL_MS: reservation lifetime in ms
+ * RELAY_ENABLE_WEBRTC: enable WebRTC Direct transport (defaults on for WebRTC Direct listen addrs)
  * LIBP2P_DEBUG / DEBUG: libp2p debug namespaces
  */
 export async function startWebsocketRelayFromEnv(): Promise<StartedRelay> {
@@ -157,7 +162,7 @@ export async function startWebsocketRelayFromEnv(): Promise<StartedRelay> {
   const maxReservations = coerceNumber(process.env.RELAY_MAX_RESERVATIONS, 500);
   const reservationTtlMs = coerceNumber(process.env.RELAY_RESERVATION_TTL_MS, 2 * 60 * 60 * 1000);
 
-  log("Starting websocket relay from environment", {
+  log("Starting relay from environment", {
     host,
     port,
     listen,
@@ -187,7 +192,18 @@ function splitAndClean(value: string) {
 
 function buildDefaultListen(host = "0.0.0.0", port = 47891): string[] {
   const proto = host.includes(":") ? "ip6" : "ip4";
-  return [`/${proto}/${host}/tcp/${port}/ws`];
+  return [
+    `/${proto}/${host}/tcp/${port}/ws`,
+    `/${proto}/${host}/udp/${port}/webrtc-direct`,
+  ];
+}
+
+function containsWebRTCDirectAddr(values?: Array<string | Multiaddr>) {
+  if (!values) return false;
+  return values.some((value) => {
+    const addr = String(value);
+    return addr.includes("/webrtc-direct");
+  });
 }
 
 function toMultiaddrs(values?: Array<string | Multiaddr>): Multiaddr[] {
@@ -453,10 +469,10 @@ function coerceBool(value: unknown, fallback: boolean) {
   return fallback;
 }
 
-function withLogger<T>(factory: any) {
+function withLogger(factory: any): any {
   return (components: any) => {
     components.logger = components.logger || defaultLogger();
-    return factory(components) as T;
+    return factory(components);
   };
 }
 
@@ -481,6 +497,10 @@ function loadPrivateKeyFromEnv(): PrivateKey | undefined {
 
 function registerRendezvous(node: RelayNode) {
   const TOPIC_PREFIX = "/rendezvous/1.0.0";
+  const recordTtlMs = coerceNumber(
+    process.env.RENDEZVOUS_RECORD_TTL_MS || process.env.RENDEZVOUS_TTL_MS,
+    2 * 60 * 1000
+  );
   const topics = new Map<RendezvousTopic, Map<string, RendezvousRecord>>();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -492,6 +512,19 @@ function registerRendezvous(node: RelayNode) {
       topics.set(topic, bucket);
     }
     bucket.set(record.peer, record);
+  }
+
+  function prune(topic: RendezvousTopic, now = Date.now()) {
+    const bucket = topics.get(topic);
+    if (!bucket) return;
+    for (const [peer, record] of bucket.entries()) {
+      if (typeof record.lastSeen === "number" && now - record.lastSeen > recordTtlMs) {
+        bucket.delete(peer);
+      }
+    }
+    if (bucket.size === 0) {
+      topics.delete(topic);
+    }
   }
 
   node.handle(TOPIC_PREFIX, async (data: any) => {
@@ -561,6 +594,7 @@ function registerRendezvous(node: RelayNode) {
         });
         log("Rendezvous decoded message", { msg });
         const topic: string = msg.topic || "default";
+        prune(topic);
         if (msg.action === "register") {
           const addrs: string[] = Array.isArray(msg.addrs) ? msg.addrs : [];
           if (remoteAddr) {
@@ -712,16 +746,16 @@ function extractPeerIdFromAddrs(addrs?: string[]) {
   return undefined;
 }
 
-async function loadWebRTCTransport() {
+async function loadWebRTCTransports() {
   try {
     const mod = await import("@libp2p/webrtc");
-    if (typeof mod.webRTC === "function") {
-      log("WebRTC transport enabled");
-      return withLogger(mod.webRTC());
+    if (typeof mod.webRTCDirect === "function") {
+      log("WebRTC Direct transport enabled");
+      return [withLogger(mod.webRTCDirect())];
     }
-    log("WebRTC transport module missing webRTC export");
+    log("WebRTC transport module missing webRTCDirect export");
   } catch (err: any) {
-    log("WebRTC transport not enabled", { error: err?.message || err });
+    log("WebRTC Direct transport not enabled", { error: err?.message || err });
   }
-  return undefined;
+  return [];
 }

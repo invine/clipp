@@ -2,14 +2,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/tailwind-built.css";
-import { ClipboardApp, Clip, Device, Identity, PendingRequest } from "../../../packages/ui";
+import {
+  ClipboardApp,
+  Clip,
+  Device,
+  Identity,
+  PairingCode,
+  PeerConnectionInfo,
+  PendingRequest,
+} from "../../../packages/ui";
 import { decodePairing } from "../../../packages/core/pairing/decode";
+import { encode } from "../../../packages/core/qr";
+import { encodePairing } from "../../../packages/core/pairing/encode";
+import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
+import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 
 const Popup = () => {
   const [clips, setClips] = useState<Clip[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [peers, setPeers] = useState<string[]>([]);
+  const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const lastClipboardRef = useRef("");
@@ -86,6 +99,7 @@ const Popup = () => {
   function refreshPeers() {
     chrome.runtime.sendMessage({ type: "getConnectedPeers" }, (resp) => {
       setPeers(resp?.peers || []);
+      setPeerConnections(resp?.peerConnections || []);
     });
   }
 
@@ -101,6 +115,17 @@ const Popup = () => {
     });
   }
 
+  async function handleRenameDevice(id: string, name: string): Promise<Device | null> {
+    return await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "renameDevice", id, name }, (res) => {
+        if (res?.device) {
+          setDevices((prev) => prev.map((d) => (d.deviceId === id ? res.device : d)));
+        }
+        resolve(res?.device || null);
+      });
+    });
+  }
+
   async function handlePairingText(txt: string) {
     const payload = decodePairing(txt);
     if (!payload) {
@@ -112,12 +137,31 @@ const Popup = () => {
     });
   }
 
-  async function handleRequestQr(): Promise<Identity | null> {
-    return await new Promise((resolve) => {
+  async function handleRequestPairingCode(): Promise<PairingCode | null> {
+    const id = await new Promise<Identity | null>((resolve) => {
       chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
         resolve(res?.identity || null);
       });
     });
+    if (!id) return null;
+    const peerId = await deviceIdToPeerId(id.deviceId);
+    const multiaddrs =
+      id.multiaddrs && id.multiaddrs.length
+        ? id.multiaddrs
+        : id.multiaddr
+        ? [id.multiaddr]
+        : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`);
+    if (!multiaddrs.length) return null;
+    const info = {
+      deviceId: id.deviceId,
+      deviceName: id.deviceName,
+      multiaddrs,
+      publicKey: id.publicKey,
+    };
+    return {
+      image: await encode(info),
+      text: encodePairing(info),
+    };
   }
 
   async function handleRenameIdentity(name: string): Promise<Identity | null> {
@@ -139,10 +183,12 @@ const Popup = () => {
         devices={devices}
         pending={pending}
         peers={peers}
+        peerConnections={peerConnections}
         identity={identity}
         pinnedIds={pinnedIds}
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
+        onRenameDevice={handleRenameDevice}
         onAccept={(dev) =>
           chrome.runtime.sendMessage(
             { type: "respondTrust", id: dev.deviceId, accept: true, device: dev },
@@ -161,7 +207,7 @@ const Popup = () => {
           )
         }
         onPairText={handlePairingText}
-        onRequestQr={handleRequestQr}
+        onRequestPairingCode={handleRequestPairingCode}
         onTogglePin={(id) => {
           setPinnedIds((prev) => {
             const set = new Set(prev);

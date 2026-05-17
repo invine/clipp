@@ -11,15 +11,16 @@ if (typeof globalThis.navigator === "undefined") {
   globalThis.navigator = { userAgent: "chrome-extension" };
 }
 
-const supportsWebRTC =
-  typeof (globalThis as any).RTCPeerConnection !== "undefined" ||
-  typeof (globalThis as any).webkitRTCPeerConnection !== "undefined";
-
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
+  createIdentityManager,
+  createKVIdentityRepository,
+  createKVTrustedDeviceRepository,
   createTrustManager,
+  IDENTITY_KEY,
+  TRUST_KEY,
   TrustedDevice,
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
@@ -28,10 +29,15 @@ import { createManualClipboardService } from "../../../packages/core/clipboard/s
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createTrustProtocolBinder } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
-import { deviceIdToPeerId, deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
+import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 import { createClipMessage } from "../../../packages/core/protocols/clip";
-import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust";
+import {
+  createSignedTrustRequestFromKey,
+  toTrustRequestPayload,
+} from "../../../packages/core/protocols/clipTrust";
+import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
+import type { PeerConnectionInfo } from "../../../packages/core/messaging/transport";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -46,7 +52,11 @@ const historyBackend =
     ? new IndexedDBHistoryBackend()
     : new InMemoryHistoryBackend();
 const history = new MemoryHistoryStore(historyBackend);
-const trust = createTrustManager(new ChromeStorageBackend());
+const storage = new ChromeStorageBackend();
+const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
+const identitySvc = createIdentityManager({ repo: identityRepo });
+const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
+const trust = createTrustManager({ trustRepo, identitySvc });
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 
@@ -59,7 +69,7 @@ async function ensureOffscreenDocument(): Promise<void> {
     try {
       await chrome.offscreen.createDocument({
         url: OFFSCREEN_URL,
-        reasons: ["DOM_PARSER"],
+        reasons: ["DOM_PARSER" as any],
         justification: "Run libp2p WebRTC networking off the service worker",
       });
     } catch (err) {
@@ -92,7 +102,7 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
 
 const offscreenReady = (async () => {
   await ensureOffscreenDocument();
-  const identity = await trust.getLocalIdentity();
+  const identity = await identitySvc.get();
   // simple ping/handshake retry
   for (let i = 0; i < 5; i++) {
     try {
@@ -114,7 +124,7 @@ const offscreenReady = (async () => {
 function createExtensionClipboardService() {
   return createManualClipboardService({
     getSenderId: async () => {
-      const id = await trust.getLocalIdentity();
+      const id = await identitySvc.get();
       return id.deviceId;
     },
     writeText: async (text: string) => {
@@ -139,7 +149,7 @@ const offscreenMessaging = {
 const offscreenTrustMessaging = {
   async send(target: string, msg: any) {
     await offscreenReady;
-    await sendOffscreen({ action: "sendMessage", target, msg });
+    await sendOffscreen({ action: "sendMessage", peerTarget: target, msg });
   },
   async broadcast(msg: any) {
     await offscreenReady;
@@ -155,12 +165,41 @@ function emitIncomingMessage(msg: any) {
   for (const h of messageHandlers) h(msg);
 }
 
+function base64ToBytes(b64: string): Uint8Array {
+  try {
+    // eslint-disable-next-line no-undef
+    if (typeof Buffer !== "undefined") {
+      // eslint-disable-next-line no-undef
+      return Uint8Array.from(Buffer.from(b64, "base64"));
+    }
+  } catch {
+    // ignore
+  }
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function createServiceWorkerTrustRequest(id: any, peerId: string) {
+  if (!id?.privateKey || typeof id.privateKey !== "string") {
+    throw new Error("missing_private_key");
+  }
+  const privateKey = privateKeyFromProtobuf(base64ToBytes(id.privateKey));
+  return await createSignedTrustRequestFromKey({
+    from: id.deviceId,
+    to: peerId,
+    payload: toTrustRequestPayload(id),
+    privateKey: privateKey as any,
+  });
+}
+
 const clipboardSync = createClipboardSyncManager({
   clipboard,
   history,
   messaging: offscreenMessaging as any,
   getLocalDeviceId: async () => {
-    const id = await trust.getLocalIdentity();
+    const id = await identitySvc.get();
     return id.deviceId;
   },
 });
@@ -176,10 +215,24 @@ history.onNew((item) => {
 });
 let pendingRequests: TrustedDevice[] = [];
 
+function showPairingRequestNotification(device: TrustedDevice) {
+  if (!chrome.notifications?.create) return;
+
+  const deviceName = device.deviceName?.trim() || "Unknown device";
+  chrome.notifications.create(`pairing-request-${device.deviceId}`, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icon-128.png"),
+    title: "New pairing request",
+    message: `${deviceName} wants to pair with Clipp.`,
+  });
+}
+
 trust.on("request", (d) => {
+  if (pendingRequests.some((p) => p.deviceId === d.deviceId)) return;
   pendingRequests.push(d);
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "trustRequest", device: d });
+  showPairingRequestNotification(d);
   log.info("Trust request received", d.deviceId);
 });
 trust.on("rejected", async (d) => {
@@ -188,6 +241,9 @@ trust.on("rejected", async (d) => {
 });
 trust.on("approved", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
+  void offscreenReady
+    .then(() => sendOffscreen({ action: "connectPairedPeers" }))
+    .catch(() => {});
   log.info("Device approved", d.deviceId);
 });
 
@@ -203,7 +259,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Handle shareClip from popup
   if (msg.type === "shareClip" && msg.clip) {
-    trust.getLocalIdentity().then(async (id) => {
+    identitySvc.get().then(async (id) => {
       const message = createClipMessage({
         from: id.deviceId,
         clip: msg.clip,
@@ -221,7 +277,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "getPeerStatus") {
     // Example: get peer count and connection status from messaging layer
     offscreenReady
-      .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
+      .then(() => sendOffscreen<{ peers: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
       .then((resp) => {
         const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
         sendResponse({ peerCount: peers.length, connected: peers.length > 0 });
@@ -259,9 +315,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "respondTrust") {
     pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
     if (msg.accept && msg.device) {
-      trust.add(msg.device);
+      void trust.sendTrustAck(msg.device, true);
     } else if (typeof msg.id === "string") {
-      void trust.reject(msg.id);
+      void trust.sendTrustAck(msg.device || { deviceId: msg.id }, false);
     }
     sendResponse({ ok: true });
     return true;
@@ -274,7 +330,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "shareNow") {
     navigator.clipboard.readText().then(async (text) => {
-      const id = await trust.getLocalIdentity();
+      const id = await identitySvc.get();
       const clip = normalizeClipboardContent(text, id.deviceId);
       if (clip) {
         history.add(clip, id.deviceId, true);
@@ -292,54 +348,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "getLocalIdentity") {
-    trust.getLocalIdentity().then((id) => {
+    identitySvc.get().then((id) => {
       sendResponse({ identity: id });
     });
     return true;
   }
   if (msg.type === "renameLocalIdentity" && typeof msg.name === "string") {
-    trust.renameLocalIdentity(msg.name).then((id) => {
-      sendResponse({ identity: id });
+    identitySvc.rename(msg.name).then(async () => {
+      sendResponse({ identity: await identitySvc.get() });
     });
     return true;
   }
   if (msg.type === "pairDevice" && msg.pairing) {
-    trust.getLocalIdentity().then(async (id) => {
-      const peerId = await deviceIdToPeerId(msg.pairing.deviceId);
-      const targetAddrs =
-        msg.pairing.multiaddrs ||
-        (msg.pairing.multiaddr ? [msg.pairing.multiaddr] : []);
-      const candidates = [
-        ...targetAddrs,
-        ...DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`),
-      ];
-      log.info("Sending trust request", {
-        target: candidates[0],
-        targetAddrs: candidates,
-        localId: id.deviceId,
-      });
-      const request = await createSignedTrustRequest(id, peerId);
-      let sent = false;
-      for (const target of candidates) {
-        try {
-          await offscreenReady;
-          await sendOffscreen({ action: "sendMessage", target, msg: request });
-          sent = true;
-          break;
-        } catch (err) {
-          log.warn("Failed to send trust request", {
-            target,
-            error: (err as any)?.message || String(err),
-          });
+    void (async () => {
+      try {
+        const id = await identitySvc.get();
+        const peerId = await deviceIdToPeerId(msg.pairing.deviceId);
+        const targetAddrs =
+          msg.pairing.multiaddrs ||
+          (msg.pairing.multiaddr ? [msg.pairing.multiaddr] : []);
+        const candidates = [
+          ...targetAddrs,
+          ...DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`),
+        ];
+        log.info("Sending trust request", {
+          target: candidates[0],
+          targetAddrs: candidates,
+          localId: id.deviceId,
+        });
+        const request = await createServiceWorkerTrustRequest(id, peerId);
+        let sent = false;
+        let lastError = "dial_failed";
+        for (const target of candidates) {
+          try {
+            await offscreenReady;
+            const result = await sendOffscreen<{ ok?: boolean; error?: string }>({
+              action: "sendMessage",
+              peerTarget: target,
+              msg: request,
+            });
+            if (result?.ok === false) {
+              lastError = result.error || "send_failed";
+              throw new Error(lastError);
+            }
+            sent = true;
+            break;
+          } catch (err) {
+            lastError = (err as any)?.message || String(err);
+            log.warn("Failed to send trust request", {
+              target,
+              error: lastError,
+            });
+          }
         }
+        sendResponse(sent ? { ok: true } : { ok: false, error: lastError });
+      } catch (err) {
+        const error = (err as any)?.message || String(err);
+        log.warn("Pairing request failed", { error });
+        sendResponse({ ok: false, error });
       }
-      sendResponse(sent ? { ok: true } : { ok: false, error: "dial_failed" });
-    });
+    })();
     return true;
   }
   if (msg.type === "getStatus") {
     offscreenReady
-      .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
+      .then(() => sendOffscreen<{ peers: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
       .then((resp) => {
         const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
         sendResponse({ peerCount: peers.length, autoSync: clipboardSync.isAutoSync() });
@@ -349,9 +422,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "getConnectedPeers") {
     offscreenReady
-      .then(() => sendOffscreen<{ peers: string[] }>({ action: "getPeers" }))
-      .then((resp) => sendResponse({ peers: Array.isArray(resp?.peers) ? resp!.peers : [] }))
-      .catch(() => sendResponse({ peers: [] }));
+      .then(() => sendOffscreen<{ peers: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
+      .then((resp) =>
+        sendResponse({
+          peers: Array.isArray(resp?.peers) ? resp!.peers : [],
+          peerConnections: Array.isArray(resp?.peerConnections) ? resp!.peerConnections : [],
+        })
+      )
+      .catch(() => sendResponse({ peers: [], peerConnections: [] }));
     return true;
   }
   // Handle trusted device list for options page
@@ -367,6 +445,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "revokeDevice" && msg.id) {
     trust.remove(msg.id).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
+    trust.rename(msg.id, msg.name).then((device) => sendResponse({ ok: true, device }));
     return true;
   }
   // Settings: auto-sync, expiry, type filters
@@ -405,10 +487,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Listen for messages forwarded from offscreen (libp2p)
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.source !== "offscreen" || msg?.action !== "incoming") return;
+  if (msg?.source !== "offscreen") return;
+  if (msg?.action === "selfPeerUpdate" && Array.isArray(msg.multiaddrs)) {
+    void identitySvc.updateMultiaddrs(msg.multiaddrs);
+    return;
+  }
+  if (msg?.action !== "incoming") return;
   const payload = msg.msg;
   emitIncomingMessage(payload);
-  if (payload?.type === "trust-request" || payload?.type === "trust-ack") {
+  if (
+    payload?.type === "trust-request" ||
+    payload?.type === "trust-ack" ||
+    payload?.type === "trusted-peers"
+  ) {
     for (const h of trustMessageHandlers) h(payload);
   }
 });

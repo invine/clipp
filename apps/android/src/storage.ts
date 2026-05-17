@@ -1,5 +1,5 @@
 import { Preferences } from "@capacitor/preferences";
-import type { StorageBackend } from "../../packages/core/trust/trusted-devices";
+import type { KVStorageBackend } from "@core/trust";
 
 const memory = new Map<string, string>();
 const hasLocalStorage = () => {
@@ -67,7 +67,7 @@ async function removeItem(key: string): Promise<void> {
  * Hybrid key/value store using Capacitor Preferences when available,
  * falling back to localStorage or in-memory storage for web preview.
  */
-export class LocalStorageBackend implements StorageBackend {
+export class LocalStorageBackend implements KVStorageBackend {
   constructor(private prefix = "clipp-android:") {}
 
   async get<T = any>(key: string): Promise<T | undefined> {

@@ -10,6 +10,7 @@ export interface ProtocolMessenger<Msg> {
   send(target: string, msg: Msg): Promise<void>;
   broadcast(msg: Msg): Promise<void>;
   onMessage(cb: (msg: Msg) => void): void;
+  getPeers?(): string[];
 }
 
 export function createProtocolMessenger<Msg>(
@@ -43,6 +44,9 @@ export function createProtocolMessenger<Msg>(
     },
     onMessage(cb: (msg: Msg) => void): void {
       handlers.push(cb);
+    },
+    getPeers(): string[] {
+      return transport.getConnectedPeers();
     },
   };
 }

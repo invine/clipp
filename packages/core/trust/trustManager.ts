@@ -4,6 +4,9 @@ import {
   TrustAckMessage,
   TrustMessage,
   TrustRequestMessage,
+  TrustedPeersMessage,
+  type TrustRequestPayload,
+  createTrustedPeersMessage,
   createSignedTrustRequest,
   toTrustRequestPayload,
   validate as validateMsg
@@ -30,15 +33,86 @@ type Events = {
   approved: TrustedDevice
   rejected: TrustedDevice
   removed: TrustedDevice
+  renamed: TrustedDevice
 }
 
 const PENDING_TTL = 10 * 60 * 1000
+
+function isDevicePayload(device: unknown): device is TrustRequestPayload {
+  return (
+    !!device &&
+    typeof device === "object" &&
+    typeof (device as any).deviceId === "string"
+  );
+}
+
+function toTrustedDevice(device: TrustRequestPayload): TrustedDevice {
+  const trusted = { ...(device as any) };
+  delete trusted.privateKey;
+  return trusted as TrustedDevice;
+}
+
+function targetForDevice(device: TrustRequestPayload): string {
+  const multiaddrs = (device as any).multiaddrs;
+  const multiaddr = (device as any).multiaddr;
+  return (
+    (Array.isArray(multiaddrs) && multiaddrs.find((addr) => typeof addr === "string")) ||
+    (typeof multiaddr === "string" ? multiaddr : undefined) ||
+    device.deviceId
+  );
+}
+
+function deviceMultiaddrs(device: Partial<TrustRequestPayload>): string[] {
+  const values = [
+    ...(Array.isArray((device as any).multiaddrs) ? (device as any).multiaddrs : []),
+    (device as any).multiaddr,
+  ];
+  return values.filter((addr): addr is string => typeof addr === "string" && addr.length > 0);
+}
+
+function peerIdFromAddress(value: string): string | null {
+  const match = value.match(/\/p2p\/([^/]+)/);
+  return match?.[1] ?? null;
+}
+
+function normalizedPeerTarget(value: string): string {
+  return value.startsWith("/") ? peerIdFromAddress(value) ?? value : value;
+}
+
+async function trustedDeviceAliases(device: TrustedDevice): Promise<Set<string>> {
+  const aliases = new Set<string>();
+  aliases.add(device.deviceId);
+  for (const addr of deviceMultiaddrs(device)) {
+    aliases.add(addr);
+    const peerId = peerIdFromAddress(addr);
+    if (peerId) aliases.add(peerId);
+  }
+  return aliases;
+}
+
+async function trustedDeviceMatchesId(device: TrustedDevice, id: string): Promise<boolean> {
+  const target = normalizedPeerTarget(id);
+  const aliases = await trustedDeviceAliases(device);
+  return aliases.has(id) || aliases.has(target);
+}
+
+function dedupeDevicePayloads(devices: TrustRequestPayload[]): TrustRequestPayload[] {
+  const seen = new Set<string>();
+  const out: TrustRequestPayload[] = [];
+  for (const device of devices) {
+    if (!isDevicePayload(device) || seen.has(device.deviceId)) continue;
+    seen.add(device.deviceId);
+    out.push(toTrustRequestPayload(device as DeviceIdentity));
+  }
+  return out;
+}
 
 export interface TrustManager {
   sendTrustRequest(device: TrustedDevice): Promise<void>
   sendTrustAck(device: TrustedDevice, accepted: boolean): Promise<void>
   handleTrustMessage(msg: TrustMessage): Promise<void>
   list(): Promise<TrustedDevice[]>
+  rename(deviceId: string, name: string): Promise<TrustedDevice | null>
   remove(deviceId: string): Promise<void>
   isTrusted(deviceId: string): Promise<boolean>
   on(event: keyof Events, cb: (device: TrustedDevice) => void): void
@@ -77,39 +151,166 @@ export function createTrustManager(options: {
   }
 
   async function sendTrustAck(device: TrustedDevice, accepted: boolean): Promise<void> {
-    const messaging = current;
-    if (!messaging) {
-      log.debug("Trust ack skipped: messenger not bound", { deviceId: device.deviceId, accepted });
-      return;
-    }
     const req = pendingDevices.get(device.deviceId);
     if (!req) {
       log.debug("Trust ack skipped: no pending request", { deviceId: device.deviceId, accepted });
       return;
     }
-    const local = await identitySvc.get();
-    const msg: TrustMessage = {
-      type: "trust-ack",
-      from: local.deviceId,
-      to: device.deviceId,
-      payload: { accepted: accepted, request: req, responder: toTrustRequestPayload(local) },
-      sentAt: clock(),
-    };
-
-    await messaging.send(device.deviceId, msg)
-      .catch(() => {
-        // TODO: add logging
-      });
-    log.debug("Sent trust ack", { from: local.deviceId, to: device.deviceId, accepted });
+    if (!(await sendTrustAckForRequest(req, device, accepted))) return
     forgetPendingRequest(device.deviceId)
     // TODO: add logging
     if (accepted) {
-      await trustRepo.upsert(device)
-      events.emit('approved', device)
+      await addTrustedDevice(device)
       return
     } else {
       events.emit('rejected', device)
     }
+  }
+
+  async function sendTrustAckForRequest(
+    req: TrustRequestMessage,
+    device: TrustedDevice,
+    accepted: boolean,
+  ): Promise<boolean> {
+    const messaging = current;
+    if (!messaging) {
+      log.debug("Trust ack skipped: messenger not bound", { deviceId: device.deviceId, accepted });
+      return false;
+    }
+    const local = await identitySvc.get();
+    const payload: TrustAckMessage["payload"] = {
+      accepted,
+      request: req,
+      responder: toTrustRequestPayload(local),
+    };
+    const msg: TrustMessage = {
+      type: "trust-ack",
+      from: local.deviceId,
+      to: req.from,
+      payload,
+      sentAt: clock(),
+    };
+
+    await messaging.send(req.from, msg)
+      .catch(() => {
+        // TODO: add logging
+      });
+    log.debug("Sent trust ack", { from: local.deviceId, to: req.from, accepted });
+    return true;
+  }
+
+  async function addTrustedDevice(
+    device: TrustRequestPayload,
+    options: { share?: boolean } = {},
+  ): Promise<{ device: TrustedDevice; added: boolean } | null> {
+    const local = await identitySvc.get();
+    if (!isDevicePayload(device) || device.deviceId === local.deviceId) return null;
+
+    const existing = await trustRepo.get(device.deviceId);
+    const trustedDevice = toTrustedDevice(device);
+    await trustRepo.upsert(trustedDevice);
+
+    if (!existing) {
+      events.emit('approved', trustedDevice)
+      if (options.share !== false) {
+        await shareTrustedPeerAdded(trustedDevice, local)
+      }
+    }
+    return { device: trustedDevice, added: !existing };
+  }
+
+  async function shareTrustedPeerAdded(
+    device: TrustedDevice,
+    local: DeviceIdentity,
+  ): Promise<void> {
+    const messaging = current;
+    if (!messaging) return;
+    await shareKnownPeersWithDevice(device, local);
+    await shareNewPeerWithConnectedTrustedPeers(device, local);
+  }
+
+  async function shareKnownPeersWithDevice(
+    device: TrustedDevice,
+    local: DeviceIdentity,
+  ): Promise<void> {
+    const peers = await trustRepo.list();
+    const devices = dedupeDevicePayloads([
+      toTrustRequestPayload(local),
+      ...peers.filter((peer) => peer.deviceId !== device.deviceId),
+    ]);
+    if (devices.length === 0) return;
+    await sendTrustedPeers(targetForDevice(device), device.deviceId, devices, local);
+  }
+
+  async function shareNewPeerWithConnectedTrustedPeers(
+    device: TrustedDevice,
+    local: DeviceIdentity,
+  ): Promise<void> {
+    const messaging = current;
+    const connected = new Set(messaging?.getPeers?.() ?? []);
+    if (connected.size === 0) return;
+
+    const peers = await trustRepo.list();
+    const connectedPeers = (
+      await Promise.all(
+        peers.map(async (peer) => ({
+          peer,
+          connected: await trustedDeviceConnected(peer, connected),
+        }))
+      )
+    )
+      .filter((entry) => entry.connected)
+      .map((entry) => entry.peer);
+
+    await Promise.all(
+      connectedPeers
+        .filter((peer) => peer.deviceId !== device.deviceId)
+        .filter((peer) => peer.deviceId !== local.deviceId)
+        .map((peer) =>
+          sendTrustedPeers(targetForConnectedDevice(peer, connected), peer.deviceId, [device], local),
+        ),
+    );
+  }
+
+  async function trustedDeviceConnected(device: TrustedDevice, connected: Set<string>): Promise<boolean> {
+    const aliases = await trustedDeviceAliases(device);
+    for (const peer of connected) {
+      if (aliases.has(peer) || aliases.has(normalizedPeerTarget(peer))) return true;
+    }
+    return false;
+  }
+
+  function targetForConnectedDevice(device: TrustedDevice, connected: Set<string>): string {
+    for (const addr of deviceMultiaddrs(device)) {
+      const peerId = peerIdFromAddress(addr);
+      if (peerId && connected.has(peerId)) return peerId;
+    }
+    if (connected.has(device.deviceId)) return device.deviceId;
+    return targetForDevice(device);
+  }
+
+  async function sendTrustedPeers(
+    target: string,
+    to: string,
+    devices: TrustRequestPayload[],
+    local: DeviceIdentity,
+  ): Promise<void> {
+    const messaging = current;
+    if (!messaging) return;
+    const shared = dedupeDevicePayloads(
+      devices.filter((device) => device.deviceId !== to),
+    );
+    if (shared.length === 0) return;
+
+    const msg = createTrustedPeersMessage({
+      from: local.deviceId,
+      to,
+      devices: shared,
+      now: clock,
+    });
+    await messaging.send(target, msg).catch(() => {
+      // TODO: add logging
+    });
   }
 
   async function handleTrustMessage(msg: TrustMessage): Promise<void> {
@@ -125,6 +326,9 @@ export function createTrustManager(options: {
       case 'trust-ack':
         return await handleTrustAck(msg)
 
+      case 'trusted-peers':
+        return await handleTrustedPeers(msg)
+
       default:
         // TODO: add logging
         return
@@ -135,7 +339,8 @@ export function createTrustManager(options: {
     const device = msg.payload.device
     log.debug("Handling trust request", { from: msg.from, to: msg.to, deviceId: device.deviceId });
     if (await isTrusted(device.deviceId)) {
-      log.debug("Trust request ignored: already trusted", { deviceId: device.deviceId });
+      log.debug("Trust request accepted automatically: already trusted", { deviceId: device.deviceId });
+      await sendTrustAckForRequest(msg, device as TrustedDevice, true);
       return;
     }
     pendingDevices.set(device.deviceId, msg)
@@ -184,13 +389,44 @@ export function createTrustManager(options: {
       events.emit('rejected', device)
       return
     }
-    await trustRepo.upsert(device)
+    await addTrustedDevice(device)
     forgetPendingRequest(device.deviceId)
-    events.emit('approved', device)
+  }
+
+  async function handleTrustedPeers(msg: TrustedPeersMessage): Promise<void> {
+    const local = await identitySvc.get()
+    if (msg.to !== local.deviceId) return
+    if (!(await isTrusted(msg.from))) {
+      log.warn("Trusted peers message ignored: sender not trusted", { from: msg.from, to: msg.to })
+      return
+    }
+    const added: TrustedDevice[] = []
+    for (const device of msg.payload.devices) {
+      const result = await addTrustedDevice(device, { share: false })
+      if (result?.added) added.push(result.device)
+    }
+    for (const device of added) {
+      await shareTrustedPeerAdded(device, local)
+    }
   }
 
   async function list(): Promise<TrustedDevice[]> {
     return trustRepo.list()
+  }
+
+  async function rename(deviceId: string, name: string): Promise<TrustedDevice | null> {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+    const device = await trustRepo.get(deviceId)
+    if (!device) return null
+    const updated: TrustedDevice = {
+      ...device,
+      deviceName: trimmed,
+    }
+    await trustRepo.upsert(updated)
+    log.info("Device renamed", deviceId)
+    events.emit('renamed', updated)
+    return updated
   }
 
   async function remove(deviceId: string): Promise<void> {
@@ -203,7 +439,13 @@ export function createTrustManager(options: {
 
   async function isTrusted(id: string): Promise<boolean> {
     const device = await trustRepo.get(id)
-    return !!device
+    if (device) return true
+
+    const devices = await trustRepo.list()
+    for (const candidate of devices) {
+      if (await trustedDeviceMatchesId(candidate, id)) return true
+    }
+    return false
   }
 
   function on(event: keyof Events, cb: (device: TrustedDevice) => void) {
@@ -215,6 +457,7 @@ export function createTrustManager(options: {
     sendTrustAck,
     handleTrustMessage,
     list,
+    rename,
     remove,
     isTrusted,
     on,

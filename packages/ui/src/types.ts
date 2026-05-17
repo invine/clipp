@@ -27,8 +27,34 @@ export type Identity = {
 
 export type PendingRequest = Device;
 
+export type PeerConnectionPath = "direct" | "relay" | "unknown";
+
+export type PeerConnectionInfo = {
+  peerId: string;
+  path: PeerConnectionPath;
+  hasDirect: boolean;
+  hasRelay: boolean;
+  addrs: string[];
+};
+
+export type RelayConnectionStatus = "connected" | "disconnected" | "unknown";
+
+export type RelayConnectionInfo = {
+  address: string;
+  peerId: string | null;
+  status: RelayConnectionStatus;
+  addrs: string[];
+};
+
+export type PairingCode = {
+  image: string;
+  text: string;
+};
+
 export type PeerState = {
   peers: string[];
+  peerConnections?: PeerConnectionInfo[];
+  relayConnections?: RelayConnectionInfo[];
 };
 
 export type PinnedState = string[];

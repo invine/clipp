@@ -1,5 +1,13 @@
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
-import { createTrustManager } from "../../../packages/core/trust";
+import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
+import {
+  createIdentityManager,
+  createKVIdentityRepository,
+  createKVTrustedDeviceRepository,
+  createTrustManager,
+  IDENTITY_KEY,
+  TRUST_KEY,
+} from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
@@ -8,11 +16,17 @@ import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
+let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
 let clipMessaging: any = null;
 let trustMessaging: any = null;
 let historyMessaging: any = null;
-let trust = createTrustManager(new ChromeStorageBackend());
+const storage = new ChromeStorageBackend();
+const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
+const identitySvc = createIdentityManager({ repo: identityRepo });
+const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
+let trust = createTrustManager({ trustRepo, identitySvc });
 let started = false;
+const OFFSCREEN_OPERATION_TIMEOUT_MS = 15_000;
 
 function base64ToBytes(b64: string): Uint8Array {
   try {
@@ -31,13 +45,38 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_STAR_RELAYS) {
-  if (transport) return;
+  if (transport && started) {
+    pairedConnections?.start();
+    return;
+  }
+  if (transport && !started) {
+    try {
+      pairedConnections?.stop();
+      await transport.stop();
+    } catch {
+      // ignore stale transport cleanup failures
+    }
+    transport = null;
+    pairedConnections = null;
+    clipMessaging = null;
+    trustMessaging = null;
+    historyMessaging = null;
+  }
   const peerId = await deviceIdToPeerIdObject(identity.deviceId);
   const privateKey =
     identity?.privateKey && typeof identity.privateKey === "string"
       ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
       : undefined;
-  transport = createLibp2pMessagingTransport({ peerId, privateKey, relayAddresses: relays });
+  transport = createLibp2pMessagingTransport({
+    peerId,
+    privateKey,
+    relayAddresses: relays,
+    enableWebRTCStar: true,
+  });
+  pairedConnections = createPairedPeerConnectionManager({
+    transport,
+    getPairedPeers: () => trust.list(),
+  });
 
   clipMessaging = createTrustedClipMessenger(transport, (id) => trust.isTrusted(id));
   trustMessaging = createTrustMessenger(transport);
@@ -52,12 +91,44 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
   historyMessaging.onMessage((msg: any) => {
     chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
   });
+  transport.onSelfPeerUpdate((multiaddrs: string[]) => {
+    chrome.runtime
+      .sendMessage({ source: "offscreen", action: "selfPeerUpdate", multiaddrs })
+      .catch(() => {});
+  });
 
-  await transport.start();
-  started = true;
-  const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
-  chrome.runtime.sendMessage({ source: "offscreen", action: "peers", peers }).catch(() => {});
-  log.info("Offscreen messaging started");
+  try {
+    await transport.start();
+    started = true;
+    pairedConnections.start();
+    const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
+    const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
+    chrome.runtime.sendMessage({ source: "offscreen", action: "peers", peers, peerConnections }).catch(() => {});
+    log.info("Offscreen messaging started");
+  } catch (err) {
+    pairedConnections?.stop();
+    transport = null;
+    pairedConnections = null;
+    clipMessaging = null;
+    trustMessaging = null;
+    historyMessaging = null;
+    started = false;
+    throw err;
+  }
+}
+
+async function withOperationTimeout<T>(label: string, operation: () => Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timer = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`${label}_timeout`));
+    }, OFFSCREEN_OPERATION_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(operation), timer]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -79,42 +150,54 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === "broadcast" && msg.msg) {
       const m = msg.msg as any;
       if (m?.type === "clip") {
-        await clipMessaging.broadcast(m);
+        await withOperationTimeout("clip_broadcast", () => clipMessaging.broadcast(m));
       } else if (m?.type === "history-sync") {
-        await historyMessaging.broadcast(m);
+        await withOperationTimeout("history_broadcast", () => historyMessaging.broadcast(m));
       } else {
-        await trustMessaging.broadcast(m);
+        await withOperationTimeout("trust_broadcast", () => trustMessaging.broadcast(m));
       }
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "sendMessage" && msg.target && msg.msg) {
-      const target = msg.target as string;
+    if (msg.action === "sendMessage" && msg.peerTarget && msg.msg) {
+      const target = msg.peerTarget as string;
       const m = msg.msg as any;
       if (m?.type === "clip") {
-        await clipMessaging.send(target, m);
+        await withOperationTimeout("clip_send", () => clipMessaging.send(target, m));
       } else if (m?.type === "history-sync") {
-        await historyMessaging.send(target, m);
+        await withOperationTimeout("history_send", () => historyMessaging.send(target, m));
       } else {
-        await trustMessaging.send(target, m);
+        await withOperationTimeout("trust_send", () => trustMessaging.send(target, m));
       }
       sendResponse({ ok: true });
       return;
     }
     if (msg.action === "getPeers") {
       const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
-      sendResponse({ peers });
+      const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
+      sendResponse({ peers, peerConnections });
       return;
     }
     if (msg.action === "getStatus") {
       const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
-      sendResponse({ peers, started });
+      const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
+      sendResponse({ peers, peerConnections, started });
+      return;
+    }
+    if (msg.action === "connectPairedPeers") {
+      await pairedConnections?.reconnectNow();
+      sendResponse({ ok: true });
       return;
     }
     sendResponse({ ok: false, error: "unknown_action" });
   })().catch((err) => {
-    log.error("Offscreen handler error", err);
-    sendResponse({ ok: false, error: (err as any)?.message || "offscreen_error" });
+    const error = (err as any)?.message || "offscreen_error";
+    sendResponse({ ok: false, error });
+    try {
+      log.error("Offscreen handler error", err);
+    } catch {
+      // Response delivery is more important than diagnostics here.
+    }
   });
   return true;
 });

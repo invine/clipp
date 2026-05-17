@@ -29,7 +29,17 @@ export type TrustAckMessage = DirectedProtocolMessage<
   } & Record<string, unknown>
 >;
 
-export type TrustMessage = TrustRequestMessage | TrustAckMessage;
+export type TrustedPeersMessage = DirectedProtocolMessage<
+  "trusted-peers",
+  {
+    devices: TrustRequestPayload[];
+  }
+>;
+
+export type TrustMessage =
+  | TrustRequestMessage
+  | TrustAckMessage
+  | TrustedPeersMessage;
 
 export function encodeTrustMessage(msg: TrustMessage): Uint8Array {
   return encodeJsonMessage(msg);
@@ -38,7 +48,7 @@ export function encodeTrustMessage(msg: TrustMessage): Uint8Array {
 function normalizeTrustRequestMessage(
   parsed: unknown,
   from: string,
-  useEmbeddedFrom = false
+  useEmbeddedFrom = false,
 ): TrustRequestMessage | null {
   if (
     !isRecord(parsed) ||
@@ -50,7 +60,11 @@ function normalizeTrustRequestMessage(
   }
   const actualFrom =
     useEmbeddedFrom && typeof parsed.from === "string" ? parsed.from : from;
-  if (!isRecord(parsed.payload) || typeof parsed.payload.sig !== "string" || !isRecord(parsed.payload.device)) {
+  if (
+    !isRecord(parsed.payload) ||
+    typeof parsed.payload.sig !== "string" ||
+    !isRecord(parsed.payload.device)
+  ) {
     return null;
   }
   return {
@@ -65,7 +79,10 @@ function normalizeTrustRequestMessage(
   };
 }
 
-function normalizeTrustAckMessage(parsed: unknown, from: string): TrustAckMessage | null {
+function normalizeTrustAckMessage(
+  parsed: unknown,
+  from: string,
+): TrustAckMessage | null {
   if (
     !isRecord(parsed) ||
     parsed.type !== "trust-ack" ||
@@ -75,7 +92,11 @@ function normalizeTrustAckMessage(parsed: unknown, from: string): TrustAckMessag
   ) {
     return null;
   }
-  const normalizedRequest = normalizeTrustRequestMessage(parsed.payload.request, from, true);
+  const normalizedRequest = normalizeTrustRequestMessage(
+    parsed.payload.request,
+    from,
+    true,
+  );
   if (!normalizedRequest || typeof parsed.payload.accepted !== "boolean") {
     return null;
   }
@@ -95,7 +116,37 @@ function normalizeTrustAckMessage(parsed: unknown, from: string): TrustAckMessag
   };
 }
 
-export function decodeTrustMessage(data: Uint8Array, from: string): TrustMessage | null {
+function normalizeTrustedPeersMessage(
+  parsed: unknown,
+  from: string,
+): TrustedPeersMessage | null {
+  if (
+    !isRecord(parsed) ||
+    parsed.type !== "trusted-peers" ||
+    typeof parsed.from !== "string" ||
+    typeof parsed.to !== "string" ||
+    !isRecord(parsed.payload) ||
+    !Array.isArray(parsed.payload.devices)
+  ) {
+    return null;
+  }
+  return {
+    type: "trusted-peers",
+    from,
+    to: parsed.to,
+    payload: {
+      devices: parsed.payload.devices
+        .filter(isRecord)
+        .map((device) => device as TrustRequestPayload),
+    },
+    sentAt: resolveSentAt(parsed.sentAt),
+  };
+}
+
+export function decodeTrustMessage(
+  data: Uint8Array,
+  from: string,
+): TrustMessage | null {
   const parsed = decodeJsonMessage(data);
   if (!isRecord(parsed) || typeof parsed.type !== "string") return null;
   if (parsed.type === "trust-request") {
@@ -104,13 +155,42 @@ export function decodeTrustMessage(data: Uint8Array, from: string): TrustMessage
   if (parsed.type === "trust-ack") {
     return normalizeTrustAckMessage(parsed, from);
   }
+  if (parsed.type === "trusted-peers") {
+    return normalizeTrustedPeersMessage(parsed, from);
+  }
   return null;
 }
 
-export function toTrustRequestPayload(identity: DeviceIdentity): TrustRequestPayload {
+export function toTrustRequestPayload(
+  identity: DeviceIdentity,
+): TrustRequestPayload {
   const payload = { ...(identity as any) };
   delete payload.privateKey;
   return payload as TrustRequestPayload;
+}
+
+export function createTrustedPeersMessage(options: {
+  from: string;
+  to: string;
+  devices: TrustRequestPayload[];
+  sentAt?: number;
+  now?: () => number;
+}): TrustedPeersMessage {
+  const sentAt =
+    typeof options.sentAt === "number"
+      ? options.sentAt
+      : (options.now ?? Date.now)();
+  return {
+    type: "trusted-peers",
+    from: options.from,
+    to: options.to,
+    payload: {
+      devices: options.devices.map((device) =>
+        toTrustRequestPayload(device as DeviceIdentity),
+      ),
+    },
+    sentAt,
+  };
 }
 
 function stableStringify(value: any): string {
@@ -123,7 +203,8 @@ function stableStringify(value: any): string {
   if (Array.isArray(value)) {
     const items = value.map((v) => {
       const vt = typeof v;
-      if (v === undefined || vt === "function" || vt === "symbol") return "null";
+      if (v === undefined || vt === "function" || vt === "symbol")
+        return "null";
       return stableStringify(v);
     });
     return `[${items.join(",")}]`;
@@ -188,7 +269,10 @@ export async function createSignedTrustRequestFromKey(options: {
   sentAt?: number;
   now?: () => number;
 }): Promise<TrustRequestMessage> {
-  const sentAt = typeof options.sentAt === "number" ? options.sentAt : (options.now ?? Date.now)();
+  const sentAt =
+    typeof options.sentAt === "number"
+      ? options.sentAt
+      : (options.now ?? Date.now)();
   const bytes = requestSigningBytes({
     from: options.from,
     to: options.to,
@@ -208,7 +292,11 @@ export async function createSignedTrustRequestFromKey(options: {
   };
 }
 
-export async function createSignedTrustRequest(identity: DeviceIdentity, to: string, now?: () => number): Promise<TrustRequestMessage> {
+export async function createSignedTrustRequest(
+  identity: DeviceIdentity,
+  to: string,
+  now?: () => number,
+): Promise<TrustRequestMessage> {
   if (!identity?.privateKey) {
     throw new Error("missing_private_key");
   }
@@ -224,15 +312,18 @@ export async function createSignedTrustRequest(identity: DeviceIdentity, to: str
   });
 }
 
-export async function verifyTrustRequestSignature(req: TrustRequestMessage): Promise<boolean> {
+export async function verifyTrustRequestSignature(
+  req: TrustRequestMessage,
+): Promise<boolean> {
   try {
     if (!req || req.type !== "trust-request") return false;
-    if (typeof req.from !== "string" || typeof req.to !== "string") return false;
+    if (typeof req.from !== "string" || typeof req.to !== "string")
+      return false;
     if (!req.payload || typeof req.payload !== "object") return false;
     if (typeof req.sentAt !== "number") return false;
-    if (typeof req.payload.sig !== "string" || req.payload.sig.length === 0) return false;
+    if (typeof req.payload.sig !== "string" || req.payload.sig.length === 0)
+      return false;
 
-    // TODO: remove dynamic import
     const { peerIdFromString } = await import("@libp2p/peer-id");
     const peer = peerIdFromString(req.from) as any;
     const publicKey: PublicKey | undefined = peer?.publicKey;
@@ -243,14 +334,25 @@ export async function verifyTrustRequestSignature(req: TrustRequestMessage): Pro
   }
 }
 
-export async function verifyTrustRequestSignatureWithPublicKey(req: TrustRequestMessage, publicKey: PublicKey): Promise<boolean> {
+export async function verifyTrustRequestSignatureWithPublicKey(
+  req: TrustRequestMessage,
+  publicKey: PublicKey,
+): Promise<boolean> {
   try {
     if (!req || req.type !== "trust-request") return false;
-    if (typeof req.from !== "string" || typeof req.to !== "string") return false;
-    if (!req.payload || typeof req.payload !== "object" || !isRecord(req.payload.device)) return false;
+    if (typeof req.from !== "string" || typeof req.to !== "string")
+      return false;
+    if (
+      !req.payload ||
+      typeof req.payload !== "object" ||
+      !isRecord(req.payload.device)
+    )
+      return false;
     if (typeof req.sentAt !== "number") return false;
-    if (typeof req.payload.sig !== "string" || req.payload.sig.length === 0) return false;
-    if (!publicKey || typeof (publicKey as any).verify !== "function") return false;
+    if (typeof req.payload.sig !== "string" || req.payload.sig.length === 0)
+      return false;
+    if (!publicKey || typeof (publicKey as any).verify !== "function")
+      return false;
 
     const data = requestSigningBytes({
       from: req.from,
@@ -267,16 +369,28 @@ export async function verifyTrustRequestSignatureWithPublicKey(req: TrustRequest
 }
 
 export async function validate(msg: TrustMessage): Promise<boolean> {
-  if (!msg || typeof msg.from !== "string" || typeof msg.sentAt !== "number") return false;
+  if (!msg || typeof msg.from !== "string" || typeof msg.sentAt !== "number")
+    return false;
   if (msg.type === "trust-request") {
-    return typeof msg.to === "string" &&
+    return (
+      typeof msg.to === "string" &&
       isRecord(msg.payload) &&
       isRecord(msg.payload.device) &&
-      typeof msg.payload.sig === "string";
+      typeof msg.payload.sig === "string"
+    );
   }
-  return msg.type === "trust-ack" &&
+  if (msg.type === "trust-ack") {
+    return (
+      typeof msg.to === "string" &&
+      isRecord(msg.payload) &&
+      typeof msg.payload.accepted === "boolean" &&
+      isRecord(msg.payload.request)
+    );
+  }
+  return (
+    msg.type === "trusted-peers" &&
     typeof msg.to === "string" &&
     isRecord(msg.payload) &&
-    typeof msg.payload.accepted === "boolean" &&
-    isRecord(msg.payload.request);
+    Array.isArray(msg.payload.devices)
+  );
 }

@@ -3,18 +3,23 @@ import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
 import type { Clip, Device, Identity, PendingRequest } from "@clipp/ui";
 import { AndroidClient, createAndroidClient, type AndroidAppState } from "./client";
+import { scanPairingQrWithCamera } from "./qrCameraScanner";
 
 const initialState: AndroidAppState = {
   clips: [],
   devices: [],
   pending: [],
   peers: [],
+  peerConnections: [],
+  relayConnections: [],
   identity: null,
   pinnedIds: [],
+  relayAddresses: [],
   diagnostics: {
     lastClipboardCheck: null,
     lastClipboardPreview: null,
     lastClipboardError: null,
+    lastPairingAttempt: null,
   },
 };
 
@@ -56,14 +61,33 @@ function App() {
 
   async function handlePairText(txt: string) {
     const res = await client.pairFromText(txt);
+    console.info("[clipp:android:pairing] pairFromText result", JSON.stringify(res));
     if (res?.ok === false) {
+      const suffix = res.diagnostics?.attemptId
+        ? `\n\nAttempt: ${res.diagnostics.attemptId}\nDetails are logged under [clipp:android:pairing].`
+        : "";
       alert(
         res.error === "invalid"
-          ? "Invalid pairing payload"
+          ? `Invalid pairing payload${suffix}`
           : res.error === "no_target"
-          ? "Could not find a dialable address"
-          : "Failed to reach device"
+          ? `Could not find a dialable address${suffix}`
+          : `Failed to reach device${suffix}`
       );
+    }
+  }
+
+  async function handleScanPairingCode(): Promise<string | null> {
+    try {
+      return await scanPairingQrWithCamera();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message === "camera_permission_denied"
+          ? "Camera permission is required to scan pairing QR codes."
+          : err instanceof Error && err.message === "camera_not_found"
+          ? "No camera was found on this device."
+          : "Unable to open the camera.";
+      alert(message);
+      return null;
     }
   }
 
@@ -84,23 +108,75 @@ function App() {
           {error}
         </div>
       )}
+      <PairingDiagnosticsPanel attempt={state.diagnostics?.lastPairingAttempt || null} />
       <ClipboardApp
         clips={state.clips as Clip[]}
         devices={state.devices as Device[]}
         pending={state.pending as PendingRequest[]}
         peers={state.peers}
+        peerConnections={state.peerConnections || []}
+        relayConnections={state.relayConnections || []}
         identity={state.identity as Identity | null}
         pinnedIds={state.pinnedIds || []}
+        relayAddresses={state.relayAddresses || []}
         onDeleteClip={(id) => client.deleteClip(id)}
         onUnpair={(id) => client.unpairDevice(id)}
+        onRenameDevice={(id, name) => client.renameDevice(id, name)}
+        onRenameIdentity={(name) => client.renameIdentity(name)}
         onAccept={(dev) => client.acceptRequest(dev)}
         onReject={(dev) => client.rejectRequest(dev)}
         onPairText={handlePairText}
-        onRequestQr={() => client.getIdentity()}
-        onTogglePin={(id) => client.togglePin(id)}
+        onScanPairingCode={handleScanPairingCode}
+        onRequestPairingCode={() => client.getPairingCode()}
+        onSetRelayAddresses={(addrs) => client.setRelayAddresses(addrs)}
+        onTogglePin={async (id) => {
+          await client.togglePin(id);
+        }}
         onClearAll={() => client.clearHistory()}
       />
     </div>
+  );
+}
+
+function PairingDiagnosticsPanel({
+  attempt,
+}: {
+  attempt: NonNullable<AndroidAppState["diagnostics"]>["lastPairingAttempt"];
+}) {
+  if (!attempt) return null;
+
+  return (
+    <details
+      open={attempt.status === "failed"}
+      style={{
+        margin: 12,
+        padding: 12,
+        borderRadius: 12,
+        border:
+          attempt.status === "failed"
+            ? "1px solid rgba(248, 113, 113, 0.35)"
+            : "1px solid rgba(94, 234, 212, 0.25)",
+        background: "rgba(15, 23, 42, 0.72)",
+        color: "#e5e7eb",
+        fontSize: 12,
+      }}
+    >
+      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+        Pairing diagnostics: {attempt.status} ({attempt.attemptId})
+      </summary>
+      <pre
+        style={{
+          marginTop: 10,
+          maxHeight: 260,
+          overflow: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          color: "#cbd5e1",
+        }}
+      >
+        {JSON.stringify(attempt, null, 2)}
+      </pre>
+    </details>
   );
 }
 

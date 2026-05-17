@@ -1,6 +1,6 @@
-import type { StorageBackend } from '../../../packages/core/trust'
+import type { KVStorageBackend } from '../../../packages/core/trust'
 
-export class ChromeStorageBackend implements StorageBackend {
+export class ChromeStorageBackend implements KVStorageBackend {
   async get<T = any>(key: string): Promise<T | undefined> {
     return new Promise((resolve) => {
       chrome.storage.local.get([key], (res) => resolve(res[key]))

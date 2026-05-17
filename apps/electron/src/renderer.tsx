@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import type { Clip, Device, Identity, PendingRequest } from "@clipp/ui";
+import type { Clip, Device, Identity, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 
 type AppState = {
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
   peers: string[];
+  peerConnections?: PeerConnectionInfo[];
+  relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   relayAddresses: string[];
   pinnedIds?: string[];
@@ -23,6 +25,8 @@ const initialState: AppState = {
   devices: [],
   pending: [],
   peers: [],
+  peerConnections: [],
+  relayConnections: [],
   identity: null,
   pinnedIds: [],
   relayAddresses: [],
@@ -77,17 +81,25 @@ const App = () => {
         devices={state.devices}
         pending={state.pending}
         peers={state.peers}
+        peerConnections={state.peerConnections || []}
+        relayConnections={state.relayConnections || []}
         identity={state.identity}
         pinnedIds={state.pinnedIds || []}
+        relayAddresses={state.relayAddresses || []}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
         onUnpair={(id) => window.clipp.unpairDevice(id)}
+        onRenameDevice={(id, name) => window.clipp.renameDevice(id, name)}
         onAccept={(dev) => window.clipp.acceptRequest(dev)}
         onReject={(dev) => window.clipp.rejectRequest(dev)}
         onPairText={handlePairText}
-        onRequestQr={() => window.clipp.getIdentity()}
+        onRequestPairingCode={() => window.clipp.openQrWindow()}
         onTogglePin={(id) => window.clipp.togglePin(id)}
         onClearAll={() => window.clipp.clearHistory()}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
+        onSetRelayAddresses={async (addrs) => {
+          const res = await window.clipp.setRelayAddresses(addrs);
+          return res?.relayAddresses || addrs;
+        }}
       />
     </div>
   );

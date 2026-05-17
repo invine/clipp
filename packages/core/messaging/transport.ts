@@ -1,5 +1,24 @@
 export type MessageHandler = (from: string, data: Uint8Array) => void;
 
+export type PeerConnectionPath = "direct" | "relay" | "unknown";
+
+export type PeerConnectionInfo = {
+  peerId: string;
+  path: PeerConnectionPath;
+  hasDirect: boolean;
+  hasRelay: boolean;
+  addrs: string[];
+};
+
+export type RelayConnectionStatus = "connected" | "disconnected" | "unknown";
+
+export type RelayConnectionInfo = {
+  address: string;
+  peerId: string | null;
+  status: RelayConnectionStatus;
+  addrs: string[];
+};
+
 /**
  * Minimal messaging transport port.
  *
@@ -17,12 +36,21 @@ export interface MessagingTransport {
   send(protocol: string, target: string, data: Uint8Array): Promise<void>;
 
   /**
+   * Establish a best-effort connection to a peer without opening an application
+   * protocol stream.
+   *
+   * `target` can be a peer id or a multiaddr string - the concrete transport decides.
+   */
+  connect(target: string): Promise<void>;
+
+  /**
    * Receive message payloads for a protocol.
    */
   onMessage(protocol: string, cb: MessageHandler): void;
 
   onPeerConnected(cb: (peerId: string) => void): void;
   onPeerDisconnected(cb: (peerId: string) => void): void;
+  onRelayConnectionChanged?(cb: () => void): void;
 
   /**
    * Emits whenever the transport's own advertised/observed multiaddrs change.
@@ -32,4 +60,10 @@ export interface MessagingTransport {
   onSelfPeerUpdate(cb: (multiaddrs: string[]) => void): void;
 
   getConnectedPeers(): string[];
+
+  getSelfMultiaddrs?(): string[];
+
+  getPeerConnectionInfo?(): PeerConnectionInfo[];
+
+  getRelayConnectionInfo?(): RelayConnectionInfo[];
 }

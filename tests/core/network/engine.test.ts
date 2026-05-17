@@ -10,23 +10,38 @@ jest.mock(
           toString: () => `${addr}${suffix}${suffix2}`,
         }),
       }),
-      getPeerId: () => addr.split("/p2p/")[1] || undefined,
+      getPeerId: () => {
+        const parts = addr.split("/p2p/");
+        return parts.length > 1 ? parts[parts.length - 1].split("/")[0] : undefined;
+      },
     }),
   }),
   { virtual: true }
 );
 
 const protocolHandlers = new Map<string, any>();
+const eventHandlers = new Map<string, any[]>();
+let mockSelfMultiaddrs = ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"];
+const mockTransportManagerListen = jest.fn<Promise<void>, any[]>(async () => {});
+const mockTransportManagerGetListeners = jest.fn<any[], any[]>(() => []);
+const mockRegisterOnRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
+const mockListRendezvousPeers = jest.fn<Promise<any[]>, any[]>(async () => []);
 
 jest.mock("../../../packages/core/network/node", () => ({
   createClipboardNode: jest.fn(async () => ({
-    addEventListener: jest.fn(),
+    addEventListener: jest.fn((event: string, handler: any) => {
+      const handlers = eventHandlers.get(event) || [];
+      handlers.push(handler);
+      eventHandlers.set(event, handlers);
+    }),
     handle: jest.fn((protocol: string, handler: any) => {
       protocolHandlers.set(protocol, handler);
     }),
     start: jest.fn(),
     stop: jest.fn(),
     getConnections: jest.fn(() => []),
+    getMultiaddrs: jest.fn(() => mockSelfMultiaddrs),
+    dial: jest.fn(async () => ({})),
     dialProtocol: jest.fn(async () => ({
       send: jest.fn(() => true),
       onDrain: jest.fn(async () => {}),
@@ -34,8 +49,19 @@ jest.mock("../../../packages/core/network/node", () => ({
       [Symbol.asyncIterator]: async function* () {},
     })),
     peerId: { toString: () => "mock-peer" },
+    components: {
+      transportManager: {
+        listen: mockTransportManagerListen,
+        getListeners: mockTransportManagerGetListeners,
+      },
+    },
     services: { pubsub: {}, dht: {} },
   })),
+}));
+
+jest.mock("../../../packages/core/network/rendezvous", () => ({
+  registerOnRendezvous: mockRegisterOnRendezvous,
+  listRendezvousPeers: mockListRendezvousPeers,
 }));
 
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
@@ -46,6 +72,10 @@ const { createClipboardNode } = jest.requireMock("../../../packages/core/network
 describe("Libp2pMessagingTransport", () => {
   beforeEach(() => {
     protocolHandlers.clear();
+    eventHandlers.clear();
+    mockSelfMultiaddrs = ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"];
+    mockTransportManagerListen.mockResolvedValue(undefined);
+    mockTransportManagerGetListeners.mockReturnValue([]);
     jest.clearAllMocks();
   });
 
@@ -65,6 +95,23 @@ describe("Libp2pMessagingTransport", () => {
     expect(node.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("passes direct upgrade options to the libp2p node", async () => {
+    const transport = createLibp2pMessagingTransport({
+      enableDCUtR: true,
+      enableTcp: true,
+    });
+
+    await transport.start();
+
+    expect(createClipboardNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enableDCUtR: true,
+        enableTcp: true,
+      })
+    );
+    await transport.stop();
+  });
+
   it("send uses MessageStream send/close", async () => {
     const transport = createLibp2pMessagingTransport();
     await transport.start();
@@ -74,6 +121,351 @@ describe("Libp2pMessagingTransport", () => {
     expect(node.dialProtocol).toHaveBeenCalledTimes(1);
     expect(stream.send).toHaveBeenCalledTimes(1);
     expect(stream.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects when a queued WebRTC stream write fails after the data channel closes", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const err = new Error(
+      "libdatachannel error while sending data channel message: DataChannel is closed"
+    );
+    const stream: any = {
+      abort: jest.fn(),
+      send: jest.fn(() => false),
+      onDrain: jest.fn(async () => {
+        stream.processSendQueue();
+      }),
+      close: jest.fn(async () => {}),
+      processSendQueue: jest.fn(() => {
+        throw err;
+      }),
+      [Symbol.asyncIterator]: async function* () {},
+    };
+    node.dialProtocol.mockResolvedValueOnce(stream);
+
+    await expect(
+      transport.send(CLIP_PROTOCOL, "/ip4/127.0.0.1/tcp/1/ws/p2p/mock", new Uint8Array([1, 2, 3]))
+    ).rejects.toThrow("DataChannel is closed");
+    expect(stream.abort).toHaveBeenCalledWith(err);
+    expect(stream.close).not.toHaveBeenCalled();
+  });
+
+  it("connect dials multiaddr targets without opening a protocol stream", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const connected: string[] = [];
+    transport.onPeerConnected((peerId) => connected.push(peerId));
+
+    await transport.connect("/ip4/127.0.0.1/tcp/1/ws/p2p/mock");
+
+    expect(node.dial).toHaveBeenCalledTimes(1);
+    expect(node.dialProtocol).not.toHaveBeenCalled();
+    expect(connected).toEqual(["mock"]);
+    expect(transport.getConnectedPeers()).toEqual(["mock"]);
+  });
+
+  it("does not hide peers connected through a relay circuit", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({ relayAddresses: [relay] });
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+
+    node.getConnections.mockReturnValue([
+      {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: {
+          toString: () => `${relay}/p2p-circuit/p2p/peer-1`,
+        },
+      },
+      {
+        remotePeer: { toString: () => "relay" },
+        remoteAddr: { toString: () => relay },
+      },
+    ]);
+
+    expect(transport.getConnectedPeers()).toEqual(["peer-1"]);
+    expect(transport.getPeerConnectionInfo?.()).toEqual([
+      {
+        peerId: "peer-1",
+        path: "relay",
+        hasDirect: false,
+        hasRelay: true,
+        addrs: [`${relay}/p2p-circuit/p2p/peer-1`],
+      },
+    ]);
+    await transport.stop();
+  });
+
+  it("reports direct connection path when a direct connection is active", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+
+    node.getConnections.mockReturnValue([
+      {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1" },
+      },
+    ]);
+
+    expect(transport.getPeerConnectionInfo?.()).toEqual([
+      {
+        peerId: "peer-1",
+        path: "direct",
+        hasDirect: true,
+        hasRelay: false,
+        addrs: ["/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1"],
+      },
+    ]);
+    await transport.stop();
+  });
+
+  it("reports WebRTC-over-relay connections as direct", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({ relayAddresses: [relay] });
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+
+    node.getConnections.mockReturnValue([
+      {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: { toString: () => `${relay}/p2p-circuit/webrtc/p2p/peer-1` },
+      },
+    ]);
+
+    expect(transport.getPeerConnectionInfo?.()).toEqual([
+      {
+        peerId: "peer-1",
+        path: "direct",
+        hasDirect: true,
+        hasRelay: false,
+        addrs: [`${relay}/p2p-circuit/webrtc/p2p/peer-1`],
+      },
+    ]);
+    await transport.stop();
+  });
+
+  it("exposes current self multiaddrs", async () => {
+    const transport = createLibp2pMessagingTransport();
+    expect(transport.getSelfMultiaddrs?.()).toEqual([]);
+
+    await transport.start();
+
+    expect(transport.getSelfMultiaddrs?.()).toEqual([
+      "/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer",
+    ]);
+    await transport.stop();
+  });
+
+  it("logs when a relayed peer connection upgrades to direct", async () => {
+    const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const connectionOpen = eventHandlers.get("connection:open")?.[0];
+    expect(typeof connectionOpen).toBe("function");
+
+    connectionOpen({
+      detail: {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit/p2p/peer-1" },
+      },
+    });
+    connectionOpen({
+      detail: {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1" },
+      },
+    });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      "Peer connection upgraded from relay to direct",
+      expect.objectContaining({
+        peerId: "peer-1",
+        directAddr: "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1",
+      })
+    );
+    expect(transport.getPeerConnectionInfo?.()).toEqual([
+      {
+        peerId: "peer-1",
+        path: "direct",
+        hasDirect: true,
+        hasRelay: true,
+        addrs: [],
+      },
+    ]);
+    infoSpy.mockRestore();
+    await transport.stop();
+  });
+
+  it("dials discovered peers by multiaddr", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const discovered = eventHandlers.get("peer:discovery")?.[0];
+    expect(typeof discovered).toBe("function");
+
+    discovered({
+      detail: {
+        id: { toString: () => "peer-1" },
+        multiaddrs: ["/ip4/127.0.0.1/tcp/1/ws/p2p/peer-1"],
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(node.dial).toHaveBeenCalledTimes(1);
+  });
+
+  it("dials direct discovery targets when an existing peer connection is relay-only", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    node.getConnections.mockReturnValue([
+      {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: { toString: () => `${relay}/p2p-circuit/p2p/peer-1` },
+        limits: {},
+      },
+    ]);
+    const discovered = eventHandlers.get("peer:discovery")?.[0];
+    expect(typeof discovered).toBe("function");
+
+    discovered({
+      detail: {
+        id: { toString: () => "peer-1" },
+        multiaddrs: [
+          `${relay}/p2p-circuit/p2p/peer-1`,
+          `${relay}/p2p-circuit/webrtc/p2p/peer-1`,
+        ],
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(node.dial).toHaveBeenCalledTimes(1);
+    expect(node.dial.mock.calls[0][0].toString()).toBe(`${relay}/p2p-circuit/webrtc/p2p/peer-1`);
+  });
+
+  it("registers with relay rendezvous and dials listed peers", async () => {
+    mockListRendezvousPeers.mockResolvedValueOnce([
+      {
+        peer: "peer-2",
+        addrs: ["/ip4/127.0.0.1/tcp/2/ws/p2p/peer-2"],
+      },
+    ]);
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    const node = await createClipboardNode.mock.results[0].value;
+
+    expect(mockRegisterOnRendezvous).toHaveBeenCalledWith(
+      node,
+      relay,
+      "clipp",
+      ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"],
+      expect.objectContaining({ timeoutMs: 12_000 })
+    );
+    expect(mockListRendezvousPeers).toHaveBeenCalledWith(
+      node,
+      relay,
+      "clipp",
+      expect.objectContaining({ timeoutMs: 12_000 })
+    );
+    expect(node.dial).toHaveBeenCalledTimes(2);
+    await transport.stop();
+  });
+
+  it("explicitly retries relay reservation after dialing configured relays", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+
+    await transport.start();
+
+    expect(mockTransportManagerListen).toHaveBeenCalledWith([
+      expect.objectContaining({
+        toString: expect.any(Function),
+      }),
+    ]);
+    expect(mockTransportManagerListen.mock.calls[0][0].map(String)).toEqual([
+      `${relay}/p2p-circuit`,
+    ]);
+    await transport.stop();
+  });
+
+  it("does not retry relay reservation when a circuit self address already exists", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+
+    await transport.start();
+
+    expect(mockTransportManagerListen).not.toHaveBeenCalled();
+    await transport.stop();
+  });
+
+  it("still lists rendezvous peers when self addresses are not available yet", async () => {
+    mockSelfMultiaddrs = [];
+    mockListRendezvousPeers.mockResolvedValueOnce([
+      {
+        peer: "peer-2",
+        addrs: ["/ip4/127.0.0.1/tcp/2/ws/p2p/peer-2"],
+      },
+    ]);
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    const node = await createClipboardNode.mock.results[0].value;
+
+    expect(mockRegisterOnRendezvous).not.toHaveBeenCalled();
+    expect(mockListRendezvousPeers).toHaveBeenCalledWith(
+      node,
+      relay,
+      "clipp",
+      expect.objectContaining({ timeoutMs: 12_000 })
+    );
+    expect(node.dial).toHaveBeenCalledTimes(2);
+    await transport.stop();
+  });
+
+  it("reruns rendezvous when self addresses change", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    mockRegisterOnRendezvous.mockClear();
+    mockListRendezvousPeers.mockClear();
+
+    mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+    eventHandlers.get("self:peer:update")?.[0]?.({});
+    await new Promise((resolve) => setImmediate(resolve));
+    const node = await createClipboardNode.mock.results[0].value;
+
+    expect(mockRegisterOnRendezvous).toHaveBeenCalledWith(
+      node,
+      relay,
+      "clipp",
+      [`${relay}/p2p-circuit/p2p/mock-peer`],
+      expect.objectContaining({ timeoutMs: 12_000 })
+    );
+    await transport.stop();
   });
 
   it("dispatches inbound messages to protocol handlers", async () => {

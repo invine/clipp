@@ -1,11 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Buffer } from "buffer";
-import { Clip, Device, Identity, PendingRequest } from "./types";
-import { encode } from "../../core/qr";
-import { encodePairing } from "../../core/pairing/encode";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../core/network/constants";
-import { deviceIdToPeerId } from "../../core/network/peerId";
-import appLogo from "../../../clipp-electron-icons-bundle/clipp-purple-32.png";
+import { createPortal } from "react-dom";
+import { Clip, Device, Identity, PairingCode, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
+import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -47,6 +43,99 @@ function truncateMiddle(text: string, max = 28): string {
   return `${text.slice(0, lead)}...${text.slice(text.length - tail)}`;
 }
 
+function connectionStatusFor(connection: PeerConnectionInfo | undefined, online: boolean) {
+  if (!online) {
+    return {
+      kind: "offline",
+      title: "Offline",
+    };
+  }
+  if (!connection) {
+    return {
+      kind: "unknown",
+      title: "Online; connection path unknown",
+    };
+  }
+  if (connection.hasDirect) {
+    return {
+      kind: "direct",
+      title: connection.hasRelay
+        ? "Direct connection active; relay is also available"
+        : "Direct peer connection",
+    };
+  }
+  if (connection.hasRelay) {
+    return {
+      kind: "relay",
+      title: "Relayed peer connection",
+    };
+  }
+  return {
+    kind: "unknown",
+    title: "Online; connection path unknown",
+  };
+}
+
+function relayDisplayName(address: string, index: number): string {
+  const parts = address.split("/").filter(Boolean);
+  const hostIndex = parts.findIndex((part) => ["dns4", "dns6", "ip4", "ip6"].includes(part));
+  const host = hostIndex >= 0 ? parts[hostIndex + 1] : "";
+  const tcpIndex = parts.findIndex((part) => part === "tcp");
+  const port = tcpIndex >= 0 ? parts[tcpIndex + 1] : "";
+  if (host && port) return `${host}:${port}`;
+  if (host) return host;
+
+  const p2pIndex = parts.findIndex((part) => part === "p2p");
+  const peerId = p2pIndex >= 0 ? parts[p2pIndex + 1] : "";
+  if (peerId) return `Relay ${truncateMiddle(peerId, 12)}`;
+
+  return `Relay ${index + 1}`;
+}
+
+function parseRelayInput(value: string): string[] {
+  return value
+    .split(/\r?\n|,/)
+    .map((addr) => addr.trim())
+    .filter(Boolean);
+}
+
+function relayConnectionFor(address: string, relayConnections: RelayConnectionInfo[]) {
+  return relayConnections.find((conn) => conn.address === address || conn.addrs.includes(address));
+}
+
+function relayStatusFor(connection: RelayConnectionInfo | undefined) {
+  if (!connection) {
+    return {
+      kind: "unknown",
+      label: "Configured",
+      title: "Relay configured; connection status is not reported yet",
+    };
+  }
+  if (connection.status === "connected") {
+    return {
+      kind: "connected",
+      label: "Connected",
+      title: connection.addrs.length
+        ? `Connected to ${connection.addrs.join(", ")}`
+        : "Connected to relay",
+    };
+  }
+  if (connection.status === "disconnected") {
+    return {
+      kind: "disconnected",
+      label: "Offline",
+      title: "Relay is configured but not connected",
+    };
+  }
+  return {
+    kind: "unknown",
+    label: "Configured",
+    title: connection.peerId
+      ? "Relay status is not available yet"
+      : "Relay address is configured; connection status cannot be tracked for this address",
+  };
+}
+
 type MiddleEllipsisTextProps = {
   text: string;
   max?: number;
@@ -54,7 +143,7 @@ type MiddleEllipsisTextProps = {
   style?: React.CSSProperties;
 };
 
-function MiddleEllipsisText({ text, max = 28, className, style }: MiddleEllipsisTextProps) {
+function MiddleEllipsisText({ text, max, className, style }: MiddleEllipsisTextProps) {
   const [display, setDisplay] = useState(text);
   const containerRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -78,9 +167,9 @@ function MiddleEllipsisText({ text, max = 28, className, style }: MiddleEllipsis
         return;
       }
 
-      // Find the longest middle-ellipsized string (up to `max` chars) that fits.
-      const maxChars = Math.max(6, Math.min(max, text.length));
-      let low = 6;
+      // Find the longest middle-ellipsized string that fits the current pixel width.
+      const maxChars = Math.max(1, Math.min(max ?? text.length, text.length));
+      let low = 1;
       let high = maxChars;
       let best = truncateMiddle(text, low);
 
@@ -126,17 +215,23 @@ export type ClipboardAppProps = {
   devices: Device[];
   pending: PendingRequest[];
   peers: string[];
+  peerConnections?: PeerConnectionInfo[];
+  relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  relayAddresses?: string[];
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): void | Promise<void>;
   onReject(dev: PendingRequest): void | Promise<void>;
   onPairText(txt: string): void | Promise<void>;
-  onRequestQr(): Promise<Identity | null>;
+  onScanPairingCode?(): Promise<string | null> | string | null;
+  onRequestPairingCode(): Promise<PairingCode | null>;
   onTogglePin(id: string): void | Promise<void>;
   onClearAll(): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
+  onRenameDevice?(id: string, name: string): Promise<Device | null>;
+  onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
 };
 
 export function ClipboardApp({
@@ -144,17 +239,23 @@ export function ClipboardApp({
   devices,
   pending,
   peers,
+  peerConnections = [],
+  relayConnections = [],
   identity,
   pinnedIds,
+  relayAddresses = [],
   onDeleteClip,
   onUnpair,
   onAccept,
   onReject,
   onPairText,
-  onRequestQr,
+  onScanPairingCode,
+  onRequestPairingCode,
   onTogglePin,
   onClearAll,
   onRenameIdentity,
+  onRenameDevice,
+  onSetRelayAddresses,
 }: ClipboardAppProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -164,18 +265,28 @@ export function ClipboardApp({
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [filterMode, setFilterMode] = useState<"all" | "pinned">("all");
   const [pairText, setPairText] = useState("");
+  const [isScanningPairing, setIsScanningPairing] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrText, setQrText] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
   const [showNav, setShowNav] = useState(false);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
-  const [peerIdMap, setPeerIdMap] = useState<Record<string, string>>({});
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [userToggledFilters, setUserToggledFilters] = useState(false);
   const [editingLocalName, setEditingLocalName] = useState(false);
   const [localNameDraft, setLocalNameDraft] = useState("");
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [deviceNameDraft, setDeviceNameDraft] = useState("");
+  const [relaysOpen, setRelaysOpen] = useState(true);
+  const [addingRelay, setAddingRelay] = useState(false);
+  const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(null);
+  const [relayDraft, setRelayDraft] = useState("");
+  const [relaySaving, setRelaySaving] = useState(false);
+  const [relayError, setRelayError] = useState<string | null>(null);
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -224,36 +335,26 @@ export function ClipboardApp({
     return () => window.removeEventListener("resize", handleHeight);
   }, [userToggledFilters]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function computePeerIds() {
-      try {
-        const ids = Array.from(new Set([...devices, ...pending].map((dev) => dev.deviceId)));
-        const entries = await Promise.all(
-          ids.map(async (id) => [id, await deviceIdToPeerId(id)] as const),
-        );
-        if (cancelled) return;
-        const next: Record<string, string> = {};
-        entries.forEach(([id, pid]) => {
-          next[id] = pid;
-        });
-        setPeerIdMap(next);
-      } catch {
-        // ignore errors and fall back to deviceId
-      }
-    }
-    computePeerIds();
-    return () => {
-      cancelled = true;
-    };
-  }, [devices, pending]);
-
   const deviceNameMap = useMemo(() => {
     const map = new Map<string, string>();
     if (identity) map.set(identity.deviceId, "You");
     devices.forEach((d) => map.set(d.deviceId, d.deviceName));
     return map;
   }, [devices, identity]);
+
+  const connectedPeerSet = useMemo(() => new Set(peers), [peers]);
+  const peerConnectionMap = useMemo(() => {
+    const map = new Map<string, PeerConnectionInfo>();
+    peerConnections.forEach((conn) => map.set(conn.peerId, conn));
+    return map;
+  }, [peerConnections]);
+  const connectedRelayCount = useMemo(
+    () =>
+      relayAddresses.filter(
+        (address) => relayConnectionFor(address, relayConnections)?.status === "connected",
+      ).length,
+    [relayAddresses, relayConnections],
+  );
 
   const sources = useMemo(() => {
     const set = new Set<string>();
@@ -316,13 +417,6 @@ export function ClipboardApp({
     }, 180);
   }
 
-  function clearFilters() {
-    setSearch("");
-    setTimeFilter("all");
-    setSourceFilter("all");
-    setFilterMode("all");
-  }
-
   function clearAllHistory() {
     setRemovingIds(new Set(clips.map((c) => c.id)));
     Promise.resolve(onClearAll()).finally(() => setRemovingIds(new Set()));
@@ -345,6 +439,18 @@ export function ClipboardApp({
     }
   }, [identity, editingLocalName]);
 
+  useEffect(() => {
+    if (editingRelayIndex !== null && editingRelayIndex >= relayAddresses.length) {
+      setEditingRelayIndex(null);
+      setRelayDraft("");
+      setRelayError(null);
+    }
+    if (!addingRelay && editingRelayIndex === null) {
+      setRelayDraft("");
+      setRelayError(null);
+    }
+  }, [relayAddresses, addingRelay, editingRelayIndex]);
+
   function saveLocalName() {
     const trimmed = localNameDraft.trim();
     if (!identity) return;
@@ -360,49 +466,370 @@ export function ClipboardApp({
       });
   }
 
+  function beginEditDeviceName(device: Device) {
+    setDeviceNameDraft(device.deviceName || "");
+    setEditingDeviceId(device.deviceId);
+  }
+
+  function cancelEditDeviceName() {
+    setEditingDeviceId(null);
+    setDeviceNameDraft("");
+  }
+
+  function saveDeviceName(device: Device) {
+    const trimmed = deviceNameDraft.trim();
+    if (!trimmed || trimmed === device.deviceName) {
+      cancelEditDeviceName();
+      return;
+    }
+    const rename = onRenameDevice ? onRenameDevice(device.deviceId, trimmed) : Promise.resolve(null);
+    rename
+      .catch(() => {})
+      .finally(() => {
+        cancelEditDeviceName();
+      });
+  }
+
   function copyClip(text: string) {
     navigator.clipboard.writeText(text).catch(() => {});
   }
 
-  async function handleShowQr() {
-    if ((window as any).clipp?.openQrWindow) {
-      await (window as any).clipp.openQrWindow();
-      return;
-    }
+  function beginAddRelay() {
+    setRelaysOpen(true);
+    setAddingRelay(true);
+    setEditingRelayIndex(null);
+    setRelayDraft("");
+    setRelayError(null);
+  }
 
-    const id = await onRequestQr();
-    if (!id) {
-      alert("No identity found. Please ensure the app has initialized.");
+  function beginRenameRelay(index: number, address: string) {
+    setRelaysOpen(true);
+    setAddingRelay(false);
+    setEditingRelayIndex(index);
+    setRelayDraft(address);
+    setRelayError(null);
+  }
+
+  function cancelRelayEdit() {
+    setAddingRelay(false);
+    setEditingRelayIndex(null);
+    setRelayDraft("");
+    setRelayError(null);
+  }
+
+  async function updateRelayAddresses(next: string[]) {
+    if (!onSetRelayAddresses || relaySaving) return;
+    setRelaySaving(true);
+    setRelayError(null);
+    try {
+      await onSetRelayAddresses(next);
+      cancelRelayEdit();
+    } catch (err) {
+      console.warn("Failed to save relay addresses", err);
+      setRelayError("Failed to save relay changes.");
+    } finally {
+      setRelaySaving(false);
+    }
+  }
+
+  async function saveNewRelay() {
+    const entries = parseRelayInput(relayDraft);
+    if (entries.length === 0) {
+      setRelayError("Enter a relay address.");
       return;
     }
-    try {
-      // Ensure Buffer exists for QR encoding in renderer contexts
-      if (!(globalThis as any).Buffer) {
-        (globalThis as any).Buffer = Buffer;
-      }
-      const peerId = await deviceIdToPeerId(id.deviceId);
-      const addrs =
-        id.multiaddrs && id.multiaddrs.length
-          ? id.multiaddrs
-          : id.multiaddr
-          ? [id.multiaddr]
-          : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`);
-      const safeAddrs = addrs.length ? addrs : [`/p2p/${peerId}`];
-      const info = {
-        deviceId: id.deviceId,
-        deviceName: id.deviceName,
-        multiaddrs: safeAddrs,
-        publicKey: id.publicKey,
-      };
-      const img = await encode(info);
-      const txt = encodePairing(info);
-      setQrImage(img);
-      setQrText(txt);
-      setQrOpen(true);
-    } catch (err: any) {
-      console.error("Failed to generate QR", err);
-      alert(`Failed to generate QR. ${err?.message || "Please try again."}`);
+    await updateRelayAddresses([...relayAddresses, ...entries]);
+  }
+
+  async function saveRelayRename(index: number) {
+    const entries = parseRelayInput(relayDraft);
+    if (entries.length !== 1) {
+      setRelayError("Enter one relay address.");
+      return;
     }
+    const next = relayAddresses.map((address, i) => (i === index ? entries[0] : address));
+    await updateRelayAddresses(next);
+  }
+
+  async function removeRelay(index: number) {
+    const next = relayAddresses.filter((_, i) => i !== index);
+    await updateRelayAddresses(next);
+  }
+
+  function sourceOptionLabel(src: string): string {
+    if (src === "all") return "All sources";
+    if (src === "local") return "Local";
+    if (src === "remote") return "Remote";
+    return deviceNameMap.get(src) || src;
+  }
+
+  function sourceFilterLabel(src: string): string {
+    if (src === "all") return "Source: All";
+    if (src === "local") return "Source: Local";
+    if (src === "remote") return "Source: Remote";
+    return `Source: ${deviceNameMap.get(src) || src}`;
+  }
+
+  async function handleShowQr() {
+    setShowNav(false);
+    setQrImage(null);
+    setQrText(null);
+    setQrError(null);
+    setQrLoading(true);
+    setQrOpen(true);
+    try {
+      const code = await onRequestPairingCode();
+      if (!code) {
+        setQrError("Unable to create a pairing QR code.");
+        return;
+      }
+      setQrImage(code.image);
+      setQrText(code.text);
+    } catch (err) {
+      console.warn("Failed to create pairing QR", err);
+      setQrError("Unable to create a pairing QR code.");
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
+  function closeQr() {
+    setQrOpen(false);
+    setQrImage(null);
+    setQrText(null);
+    setQrError(null);
+    setQrLoading(false);
+  }
+
+  function submitPairText() {
+    const trimmed = pairText.trim();
+    setPairText("");
+    if (!trimmed) {
+      return;
+    }
+    void Promise.resolve(onPairText(trimmed));
+  }
+
+  async function scanPairingCode() {
+    if (!onScanPairingCode || isScanningPairing) return;
+    setIsScanningPairing(true);
+    try {
+      const scanned = await onScanPairingCode();
+      const trimmed = scanned?.trim();
+      if (trimmed) {
+        await onPairText(trimmed);
+      }
+    } catch (err) {
+      console.warn("Pairing QR scan failed", err);
+    } finally {
+      setIsScanningPairing(false);
+    }
+  }
+
+  function relaySummaryLabel() {
+    if (relayAddresses.length === 0) return "No relays";
+    if (connectedRelayCount > 0) {
+      return `${connectedRelayCount}/${relayAddresses.length} connected`;
+    }
+    return relayAddresses.length === 1 ? "1 configured" : `${relayAddresses.length} configured`;
+  }
+
+  function renderRelayDraftCard() {
+    return (
+      <div className="relay-card relay-card-editing">
+        <div className="peer-avatar relay-avatar unknown">
+          <span className="icon" style={{ fontSize: 16 }}>
+            add_link
+          </span>
+        </div>
+        <div className="peer-meta">
+          <input
+            className="relay-address-input"
+            value={relayDraft}
+            onChange={(e) => setRelayDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void saveNewRelay();
+              if (e.key === "Escape") cancelRelayEdit();
+            }}
+            placeholder="/dns4/relay.example.com/tcp/443/wss/p2p/..."
+            autoFocus
+          />
+          {relayError && addingRelay && <div className="relay-error">{relayError}</div>}
+        </div>
+        <div className="peer-actions">
+          <button
+            className="icon-button"
+            title="Add relay"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void saveNewRelay()}
+            disabled={relaySaving}
+          >
+            <span className="icon" style={{ fontSize: 16 }}>
+              check
+            </span>
+          </button>
+          <button
+            className="icon-button"
+            title="Cancel"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={cancelRelayEdit}
+            disabled={relaySaving}
+          >
+            <span className="icon" style={{ fontSize: 16 }}>
+              close
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderRelayCard(address: string, index: number) {
+    const editingThisRelay = editingRelayIndex === index;
+    const connection = relayConnectionFor(address, relayConnections);
+    const status = relayStatusFor(connection);
+
+    return (
+      <div
+        key={`${address}-${index}`}
+        className={`relay-card ${editingThisRelay ? "relay-card-editing" : ""}`}
+        title={`${address}\n${status.title}`}
+      >
+        <div className={`peer-avatar relay-avatar ${status.kind}`}>
+          <span className="icon" style={{ fontSize: 16 }}>
+            hub
+          </span>
+        </div>
+        <div className="peer-meta">
+          {editingThisRelay ? (
+            <>
+              <input
+                className="relay-address-input"
+                value={relayDraft}
+                onChange={(e) => setRelayDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveRelayRename(index);
+                  if (e.key === "Escape") cancelRelayEdit();
+                }}
+                autoFocus
+              />
+              {relayError && <div className="relay-error">{relayError}</div>}
+            </>
+          ) : (
+            <>
+              <MiddleEllipsisText className="peer-name" text={relayDisplayName(address, index)} />
+              <MiddleEllipsisText
+                className="peer-sub"
+                text={address}
+                max={isNarrow ? 24 : 34}
+              />
+              <div className={`relay-status ${status.kind}`} title={status.title}>
+                <span className="relay-status-dot"></span>
+                <span className="relay-status-label">{status.label}</span>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="peer-actions">
+          {editingThisRelay ? (
+            <>
+              <button
+                className="icon-button"
+                title="Save relay address"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => void saveRelayRename(index)}
+                disabled={relaySaving}
+              >
+                <span className="icon" style={{ fontSize: 16 }}>
+                  check
+                </span>
+              </button>
+              <button
+                className="icon-button"
+                title="Cancel"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={cancelRelayEdit}
+                disabled={relaySaving}
+              >
+                <span className="icon" style={{ fontSize: 16 }}>
+                  close
+                </span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="icon-button"
+                title="Rename relay"
+                onClick={() => beginRenameRelay(index, address)}
+                disabled={relaySaving}
+              >
+                <span className="icon" style={{ fontSize: 16 }}>
+                  edit
+                </span>
+              </button>
+              <button
+                className="icon-button"
+                title="Remove relay"
+                onClick={() => void removeRelay(index)}
+                disabled={relaySaving}
+              >
+                <span className="icon" style={{ fontSize: 16 }}>
+                  delete
+                </span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderRelaysSection() {
+    if (!onSetRelayAddresses) return null;
+    return (
+      <>
+        <div className="section-divider"></div>
+        <div className="relay-settings">
+          <div className="nav-section-label">Network</div>
+          <div className="relay-accordion-head">
+            <button
+              className="relay-accordion-toggle"
+              onClick={() => setRelaysOpen((open) => !open)}
+              aria-expanded={relaysOpen}
+            >
+              <span className="icon" style={{ fontSize: 16 }}>
+                {relaysOpen ? "expand_less" : "expand_more"}
+              </span>
+              <span className="relay-accordion-title">Relays</span>
+              <span className="relay-summary-text">{relaySummaryLabel()}</span>
+            </button>
+            <button
+              className="icon-button"
+              title="Add relay"
+              onClick={beginAddRelay}
+              disabled={relaySaving}
+            >
+              <span className="icon" style={{ fontSize: 16 }}>
+                add
+              </span>
+            </button>
+          </div>
+          {relaysOpen && (
+            <div className="relay-list">
+              {relayAddresses.length === 0 && !addingRelay && (
+                <div className="relay-empty">No relays configured.</div>
+              )}
+              {relayError && !addingRelay && editingRelayIndex === null && (
+                <div className="relay-error relay-section-error">{relayError}</div>
+              )}
+              {relayAddresses.map((address, index) => renderRelayCard(address, index))}
+              {addingRelay && renderRelayDraftCard()}
+            </div>
+          )}
+        </div>
+      </>
+    );
   }
 
   function renderNavContent(isDrawer = false) {
@@ -439,7 +866,10 @@ export function ClipboardApp({
                         autoFocus
                       />
                     ) : (
-                      <div className="peer-name">{identity.deviceName || "Local device"}</div>
+                      <MiddleEllipsisText
+                        className="peer-name"
+                        text={identity.deviceName || "Local device"}
+                      />
                     )}
                     <button
                       className="icon-button"
@@ -489,16 +919,18 @@ export function ClipboardApp({
               </div>
               <div className="pending-list">
                 {pending.map((req) => {
-                  const peerId = peerIdMap[req.deviceId] || req.deviceId;
                   return (
                     <div key={req.deviceId} className="pending-card">
                       <div className="pending-card-header">
                         <div className="peer-avatar">{req.deviceName?.[0] || "D"}</div>
                         <div className="peer-meta">
-                          <div className="peer-name">{req.deviceName}</div>
+                          <MiddleEllipsisText
+                            className="peer-name"
+                            text={req.deviceName}
+                          />
                           <MiddleEllipsisText
                             className="peer-sub"
-                            text={peerId}
+                            text={req.deviceId}
                             max={isNarrow ? 22 : 32}
                           />
                         </div>
@@ -533,13 +965,22 @@ export function ClipboardApp({
             />
             <button
               className="primary-button"
-              onClick={() => {
-                if (pairText.trim()) onPairText(pairText.trim());
-              }}
+              onClick={submitPairText}
             >
               Add
             </button>
           </div>
+          {onScanPairingCode && (
+            <button
+              className="text-button"
+              style={{ marginTop: 8, alignSelf: "flex-start" }}
+              onClick={scanPairingCode}
+              disabled={isScanningPairing}
+            >
+              <span className="icon">qr_code_scanner</span>
+              {isScanningPairing ? "Scanning" : "Scan QR"}
+            </button>
+          )}
         </div>
 
         <div>
@@ -558,20 +999,55 @@ export function ClipboardApp({
           >
             {devices.length === 0 && <div className="content-subtitle">No devices yet.</div>}
             {devices.map((dev) => {
-              const peerId = peerIdMap[dev.deviceId] || dev.deviceId;
+              const editingThisDevice = editingDeviceId === dev.deviceId;
+              const devicePeerIds = [
+                dev.deviceId,
+                ...(dev.multiaddr ? [dev.multiaddr] : []),
+                ...(dev.multiaddrs || []),
+              ];
+              const connectionInfo = devicePeerIds
+                .map((value) =>
+                  peerConnectionMap.get(value) ||
+                  peerConnections.find((conn) => value.endsWith(`/p2p/${conn.peerId}`))
+                )
+                .find(Boolean);
+              const isOnline = devicePeerIds.some((value) =>
+                connectedPeerSet.has(value) ||
+                peers.some((peer) => value.endsWith(`/p2p/${peer}`)),
+              ) || Boolean(connectionInfo);
+              const connectionStatus = connectionStatusFor(connectionInfo, isOnline);
               return (
                 <div
                   key={dev.deviceId}
                   className="peer-item"
-                  title={`Paired ${formatTime(dev.createdAt)}`}
+                  title={`Paired ${formatTime(dev.createdAt)}\n${connectionStatus.title}`}
                   style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                 >
-                  <div className="peer-avatar">{dev.deviceName?.[0] || "D"}</div>
+                  <div className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}>
+                    {dev.deviceName?.[0] || "D"}
+                  </div>
                   <div className="peer-meta">
-                    <div className="peer-name">{dev.deviceName}</div>
+                    {editingThisDevice ? (
+                      <input
+                        className="peer-name-input"
+                        value={deviceNameDraft}
+                        onChange={(e) => setDeviceNameDraft(e.target.value)}
+                        onBlur={() => saveDeviceName(dev)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveDeviceName(dev);
+                          if (e.key === "Escape") cancelEditDeviceName();
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <MiddleEllipsisText
+                        className="peer-name"
+                        text={dev.deviceName}
+                      />
+                    )}
                     <MiddleEllipsisText
                       className="peer-sub"
-                      text={peerId}
+                      text={dev.deviceId}
                       max={isNarrow ? 22 : 32}
                     />
                   </div>
@@ -581,6 +1057,24 @@ export function ClipboardApp({
                         smartphone
                       </span>
                     </div>
+                    {onRenameDevice && (
+                      <button
+                        className="icon-button"
+                        title={editingThisDevice ? "Save device name" : "Rename this device"}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          if (editingThisDevice) {
+                            saveDeviceName(dev);
+                          } else {
+                            beginEditDeviceName(dev);
+                          }
+                        }}
+                      >
+                        <span className="icon" style={{ fontSize: 16 }}>
+                          {editingThisDevice ? "check" : "edit"}
+                        </span>
+                      </button>
+                    )}
                     <button
                       className="icon-button"
                       title="Unpair this device"
@@ -596,6 +1090,8 @@ export function ClipboardApp({
             })}
           </div>
         </div>
+
+        {renderRelaysSection()}
       </>
     );
   }
@@ -610,7 +1106,7 @@ export function ClipboardApp({
               if (isNarrow) setShowNav(true);
             }}
           >
-            <img src={appLogo} alt="Clipp logo" />
+            <img src={clippPurpleIcon} alt="Clipp" draggable={false} />
           </div>
           <div className="app-title-block">
             <div className="app-title">
@@ -684,7 +1180,9 @@ export function ClipboardApp({
               <div className="time-filter-wrap">
                 <button className="text-button" onClick={() => setTimeMenuOpen((v) => !v)}>
                   <span className="icon">schedule</span>
-                  {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
+                  <span className="filter-button-label">
+                    {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
+                  </span>
                   <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
                     expand_more
                   </span>
@@ -700,7 +1198,7 @@ export function ClipboardApp({
                           setTimeMenuOpen(false);
                         }}
                       >
-                        {t.label}
+                        <span className="filter-menu-label">{t.label}</span>
                       </button>
                     ))}
                   </div>
@@ -710,19 +1208,15 @@ export function ClipboardApp({
               <div className="source-filter-wrap">
                 <button className="text-button" onClick={() => setSourceMenuOpen((v) => !v)}>
                   <span className="icon">filter_alt</span>
-                  {sourceFilter === "all"
-                    ? "Source: All"
-                    : sourceFilter === "local"
-                    ? "Source: Local"
-                    : sourceFilter === "remote"
-                    ? "Source: Remote"
-                    : deviceNameMap.get(sourceFilter) || sourceFilter}
+                  <span className="filter-button-label">
+                    {sourceFilterLabel(sourceFilter)}
+                  </span>
                   <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
                     expand_more
                   </span>
                 </button>
                 {sourceMenuOpen && (
-                  <div className="time-menu">
+                  <div className="time-menu source-menu">
                     {sources.map((src) => (
                       <button
                         key={src}
@@ -732,13 +1226,7 @@ export function ClipboardApp({
                           setSourceMenuOpen(false);
                         }}
                       >
-                        {src === "all"
-                          ? "All sources"
-                          : src === "local"
-                          ? "Local"
-                          : src === "remote"
-                          ? "Remote"
-                          : deviceNameMap.get(src) || src}
+                        <span className="filter-menu-label">{sourceOptionLabel(src)}</span>
                       </button>
                     ))}
                   </div>
@@ -773,10 +1261,11 @@ export function ClipboardApp({
                   style={{ position: "relative" }}
                 >
                   <div className="history-card-header">
-                      <div className="history-chip">
-                        <span className="chip-dot"></span>
-                        From: {label}
-                      </div>
+                    <div className="history-chip" title={`From: ${label}`}>
+                      <span className="chip-dot"></span>
+                      <span className="history-chip-prefix">From:</span>
+                      <MiddleEllipsisText className="history-chip-label" text={label} />
+                    </div>
                     <div className="history-actions">
                       <button
                         className="icon-button"
@@ -831,7 +1320,7 @@ export function ClipboardApp({
                           </span>
                           {isLocal ? "Local" : "Remote"}
                         </span>
-                        <span>{timeLabel}</span>
+                        <span className="meta-time">{timeLabel}</span>
                       </div>
                       <div className="meta-bottom-line">Text</div>
                     </div>
@@ -861,42 +1350,39 @@ export function ClipboardApp({
         </div>
       )}
 
-      {qrOpen && qrImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div
-            style={{
-              background: "rgba(16,17,20,0.95)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 16,
-              padding: 16,
-              width: "360px",
-            }}
-          >
-            <div className="flex items-center justify-between mb-2" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div className="text-white font-semibold">Pair this device</div>
-              <button className="icon-button" onClick={() => setQrOpen(false)}>
-                Close
-              </button>
+      {qrOpen && (
+        createPortal(
+          <div className="qr-modal-backdrop" role="presentation">
+            <div className="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
+              <div className="qr-modal-header">
+                <div id="qr-modal-title" className="qr-modal-title">
+                  Pair this device
+                </div>
+                <button className="icon-button" onClick={closeQr} aria-label="Close QR dialog">
+                  <span className="icon">close</span>
+                </button>
+              </div>
+              {qrLoading && <div className="qr-modal-status">Creating QR code...</div>}
+              {!qrLoading && qrError && <div className="qr-modal-error">{qrError}</div>}
+              {!qrLoading && !qrError && qrImage && (
+                <div className="qr-code-frame">
+                  <img src={qrImage} alt="Pairing QR" className="qr-modal-image" />
+                </div>
+              )}
+              {!qrLoading && !qrError && qrText && (
+                <button
+                  className="primary-button qr-modal-copy"
+                  onClick={() => navigator.clipboard.writeText(qrText)}
+                >
+                  Copy QR text
+                </button>
+              )}
             </div>
-            <div className="flex justify-center" style={{ display: "flex", justifyContent: "center" }}>
-              <img
-                src={qrImage}
-                alt="Pairing QR"
-                style={{ width: 160, height: 160, borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)" }}
-              />
-            </div>
-            {qrText && (
-              <button
-                className="primary-button"
-                style={{ width: "100%", marginTop: 12, justifyContent: "center" }}
-                onClick={() => navigator.clipboard.writeText(qrText)}
-              >
-                Copy QR text
-              </button>
-            )}
-          </div>
-        </div>
+          </div>,
+          document.body
+        )
       )}
+
     </div>
   );
 }
