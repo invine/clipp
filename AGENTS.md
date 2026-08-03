@@ -7,6 +7,8 @@ This repository is an npm workspaces monorepo for Clipp, a peer-to-peer clipboar
 - Android/Capacitor app
 
 Use this file for fast orientation. Use [`docs/agent-guide.md`](docs/agent-guide.md) for the deeper architecture map.
+Use [`CONTEXT.md`](CONTEXT.md) for canonical domain language and
+the specs under [`.scratch/`](.scratch/) for settled feature requirements.
 
 ## Start Here
 
@@ -45,9 +47,9 @@ Electron is the most complete runtime and is usually the best reference implemen
 
 ## Runtime Differences That Matter
 
-- Electron uses `createPollingClipboardService`, stores state in SQLite, and lets users edit relay addresses.
+- Electron uses `createPollingClipboardService`, stores state in SQLite, and wires relay-address changes into persisted runtime state.
 - Android uses `createPollingClipboardService`, stores preferences in Capacitor Preferences or local storage fallback, and currently relies on the default relay list.
-- Extension uses `createManualClipboardService` because the MV3 service worker cannot poll the clipboard directly. Clipboard input is pushed in from the popup.
+- Extension uses `createManualClipboardService` because the MV3 service worker cannot poll the clipboard directly; the popup feeds local text into that service.
 - Electron and Android persist `pinnedIds`. Extension pinning is currently popup-local UI state and is not persisted.
 - Extension is the only runtime currently wiring the history messenger in the offscreen document. Clip sync and trust flows are shared more broadly.
 
@@ -87,8 +89,37 @@ Electron dev uses two processes. Start the renderer first on `http://localhost:4
 
 ## Useful References
 
+- [`CONTEXT.md`](CONTEXT.md)
+- [`docs/adr/0001-use-transitive-trust-within-an-owned-device-network.md`](docs/adr/0001-use-transitive-trust-within-an-owned-device-network.md)
+- [`docs/adr/0002-use-hop-authenticated-unsigned-revocations.md`](docs/adr/0002-use-hop-authenticated-unsigned-revocations.md)
+- [`docs/adr/0003-resolve-membership-by-instance-id.md`](docs/adr/0003-resolve-membership-by-instance-id.md)
+- [`docs/adr/0004-use-peer-id-as-membership-identity.md`](docs/adr/0004-use-peer-id-as-membership-identity.md)
+- [`docs/adr/0005-use-stateless-signed-trust-requests.md`](docs/adr/0005-use-stateless-signed-trust-requests.md)
+- [`docs/adr/0006-separate-pairing-from-membership-reconciliation.md`](docs/adr/0006-separate-pairing-from-membership-reconciliation.md)
+- [`docs/adr/0007-forward-libp2p-signed-peer-records.md`](docs/adr/0007-forward-libp2p-signed-peer-records.md)
+- [`docs/adr/0008-store-device-keys-in-runtime-application-storage.md`](docs/adr/0008-store-device-keys-in-runtime-application-storage.md)
+- [`docs/adr/0009-use-hop-authenticated-unsigned-clips.md`](docs/adr/0009-use-hop-authenticated-unsigned-clips.md)
+- [`docs/adr/0010-identify-clip-events-with-origin-assigned-uuids.md`](docs/adr/0010-identify-clip-events-with-origin-assigned-uuids.md)
+- [`docs/adr/0011-use-live-gossip-with-full-history-reconciliation.md`](docs/adr/0011-use-live-gossip-with-full-history-reconciliation.md)
+- [`.scratch/pairing-and-trust/spec.md`](.scratch/pairing-and-trust/spec.md)
+- [`.scratch/clip-history/spec.md`](.scratch/clip-history/spec.md)
+- [`.scratch/runtime-capabilities/spec.md`](.scratch/runtime-capabilities/spec.md)
 - [`docs/agent-guide.md`](docs/agent-guide.md)
 - [`docs/diagrams/electron-architecture.puml`](docs/diagrams/electron-architecture.puml)
 - [`packages/core/clipboard/README.md`](packages/core/clipboard/README.md)
 - [`packages/core/trust/README.md`](packages/core/trust/README.md)
 - [`packages/core/qr/README.md`](packages/core/qr/README.md)
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked as local Markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default five-role triage vocabulary is used. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.

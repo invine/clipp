@@ -1,0 +1,11 @@
+# Use hop-authenticated unsigned revocations
+
+Clipp does not add application-level signatures to Device Revocations. A receiver accepts a revocation only when the immediate sender is authenticated by the libp2p connection and is a current member of the Device Network; because every member already has equal unilateral revocation authority, a signature would not prevent a compromised member from issuing the same revocation.
+
+When a member forwards a revocation, it exercises its own current authority rather than proving the original issuer's identity. Device Revocation carries no protocol timestamp because the permanently revoked Peer ID provides remove-wins conflict resolution; implementations may record a local observation time for diagnostics, but do not forward it as part of the Membership View. Security-sensitive receive paths must require libp2p's authenticated remote Peer ID and must not fall back to a sender identity claimed inside the payload.
+
+The same rule applies to full Membership Reconciliation. Its Admitted Peer ID and Revoked Peer ID sets have no application-level signature or per-entry issuer. An authenticated Active Member reasserts the complete Membership View under its own Admission and revocation authority. After complete-frame and authoritative-set validation, the receiver atomically checks the sender against its pre-merge Membership View. A view that passes this check remains authorized while in flight even if another concurrent merge revokes the sender; open or incomplete streams reserve no authority, and authorization is not persisted across streams or reconnects. An already-revoked sender is not allowed to force the receiver to rotate merely by including the receiver in the Revoked Peer ID set.
+
+## Consequences
+
+The protocol deliberately gives up portable proof of original authorship and independently verifiable integrity for stored Admission and revocation state. It avoids signature canonicalization, verification, and key-management complexity, but every forwarding hop must authenticate the immediate peer and verify that it is an Active Member. Consequently, two mutually revoked devices with no third still-trusted member cannot directly notify one another of their own revocations.

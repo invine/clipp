@@ -1,0 +1,15 @@
+---
+status: accepted
+---
+
+# Forward libp2p signed peer records
+
+Clipp keeps Device Membership separate from reachability. Membership Reconciliation forwards each Active Member's latest available libp2p Signed Peer Record unchanged, and receivers verify and import the envelope against the expected Peer ID using the libp2p peer store. Each runtime backs that peer store with a durable datastore, while Clipp's trust repository stores Membership Views rather than duplicating routing records. This reuses libp2p's peer-authored address format, signature verification, sequence ordering, and storage ownership instead of propagating application-defined raw multiaddrs.
+
+## Consequences
+
+A Signed Peer Record supplies replaceable dialing information but never grants Device Membership or overrides Device Revocation. An Active Member can lack a current record, in which case it may remain unreachable until another discovery mechanism supplies an address. An invalid, mismatched, or stale record is logged and discarded independently; it does not prevent otherwise valid Admission and revocation sets in the surrounding Membership View from being merged.
+
+Pairing Target version 2 payloads carry the target's Signed Peer Record instead of application-defined raw multiaddrs and public-key fields. Their logical fields are encoded as protobuf, using canonical libp2p Peer ID multihash bytes for the target, then transported as unpadded Base64URL with the `clipp:pair:` prefix. This encoding is compact and self-identifying but adds no security authority; the target bytes must agree with the verified Signed Peer Record and the live authenticated remote Peer ID. The Signed Peer Record remains the signed reachability object. The target payload is public, non-secret contact data that bootstraps a connection to the named Peer ID but grants no trust authority. Pairing Targets do not expire at the application layer. To recover when their embedded relay addresses become stale, importing a target temporarily permits an exact Rendezvous lookup for that Peer ID before Admission; the returned Signed Peer Record must verify against the target ID and still grants reachability only. The incompatible legacy version 1 payload is rejected rather than translated or used as a raw-address fallback.
+
+The existing custom Rendezvous discovery is retained in the initial implementation only to constrain the scope of current changes. It complements forwarded records but remains subject to Clipp's membership authorization checks and the explicit Pairing Target exception. The interim protocol uses `/clipp/rendezvous/1.0.0` and accepts only self-registration carrying a Signed Peer Record whose Peer ID matches the authenticated connection. It provides exact lookup by Peer ID rather than topic-wide enumeration, and returns the original envelope for clients to verify and import. This retention is not a decision that Rendezvous—or standards-compatible Rendezvous—is Clipp's target discovery architecture. A later phase must research and select the peer-discovery mechanism appropriate for Clipp's use case.

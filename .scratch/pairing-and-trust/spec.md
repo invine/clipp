@@ -1,0 +1,484 @@
+# Pairing and Trust
+
+## Development migration scope
+
+- Migration of legacy identity, trust, and application data is deferred until the 0.0.2 protocol-version work.
+- During the current transition to this protocol model, implementations may delete all legacy identity and application data and initialize a new first-launch state.
+- The current scope requires neither legacy data migration nor wire-protocol interoperability.
+
+## Device Network
+
+Clipp organizes an owner's devices into a logical Device Network represented by converging local Membership Views.
+
+- A newly created Device Identity begins in a singleton Device Network.
+- The singleton network contains that Device Identity under its libp2p Peer ID.
+- A Device Network has no separate network identifier or central membership object.
+- Trust is authority derived from Device Membership rather than separately persisted state.
+- When Membership Views converge, every Active Member mutually trusts every other Active Member.
+
+## Device Membership
+
+- Each device's Membership View contains an Admitted Peer ID set and a Revoked Peer ID set.
+- Admission adds a Device Identity's Peer ID to the Admitted Peer ID set.
+- A Device Identity's libp2p Peer ID is the identifier for its Device Membership.
+- A Device Identity is an Active Member when its Peer ID is admitted and not revoked in the local Membership View.
+- A remote Active Member is presented to the user as a Trusted Device.
+- Device Membership grants the authority associated with trust, including Clip exchange, Admission, Membership Reconciliation, and Device Revocation.
+- Membership Views may temporarily disagree; Device Membership is recognized from the observing device's local view until reconciliation converges.
+- Device Revocation permanently ends Device Membership for the revoked Peer ID and leaves a tombstone rather than a "revoked membership."
+- Repeating Pairing while a Peer ID identifies an Active Member is idempotent.
+- Pairing and Device Network merges preserve active Peer IDs.
+- A revoked Peer ID cannot become active again.
+- Returning after revocation requires Identity Rotation and therefore creates a new logical device.
+- Device Revocation carries no protocol timestamp; Trust Request timestamps are used only for request freshness.
+
+## Pairing
+
+- Pairing exchanges a Trust Request and Trust Response between two devices.
+- Pairing uses the libp2p protocol ID `/clipp/pairing/1.0.0`.
+- Implementations do not negotiate or fall back to the legacy JSON `/clipboard/trust/1.0.0` protocol.
+- A Trust Request and its later Trust Response use independent short-lived libp2p streams.
+- Each Pairing stream carries exactly one length-prefixed protobuf frame and then closes.
+- Pairing protobuf decoders ignore unknown fields while strictly validating every recognized field.
+- `/clipp/pairing/1.0.0` keeps fixed signature, identity-binding, authorization, and sequencing semantics; unknown fields may extend metadata only.
+- A breaking Pairing change requires a new negotiated libp2p protocol ID.
+- A Pairing frame has a 16 KiB production maximum enforced before protobuf decoding.
+- The Pairing frame limit is deployment-configurable and injectable for tests, but is not an end-user setting.
+- Multiple frames, trailing data, an invalid length prefix, or an oversized frame make that Pairing stream invalid.
+- The target reads and validates one Trust Request, persists its original envelope when pending, and closes the request stream without waiting for the user decision.
+- After a decision, the target opens a new `/clipp/pairing/1.0.0` stream to send the Trust Response in its single best-effort delivery attempt.
+- Pairing does not require the original connection or request stream to survive until the user decides.
+- An authenticated Peer ID that is not yet admitted may use only the Pairing protocol.
+- An unknown peer may send a valid Trust Request targeting the local Device Identity or a valid Trust Response that echoes a signed Trust Request issued by the local Device Identity for that peer.
+- A valid Trust Request from an unknown, non-revoked Peer ID is presented to the user immediately through the runtime's native notification system, without requiring the target to enter a prior local pairing mode.
+- A request does not cause an unsolicited in-application pop-up.
+- At most one pending Trust Request and native notification exist per authenticated initiator Peer ID.
+- Trust Requests from different initiator Peer IDs may remain pending concurrently.
+- Each distinct initiator has an independent pending request, native notification, expiry, and user decision.
+- Accepting, rejecting, replacing, or expiring one initiator's request does not affect requests from other initiators.
+- The initial implementation does not impose a global limit on the number of distinct pending initiators.
+- Bounding the pending-request collection against Peer ID rotation and notification flooding is deferred as a future hardening decision.
+- A repeated valid request from the same initiator is coalesced into the existing pending decision rather than creating another notification.
+- The newest valid coalesced request's original encoded envelope bytes are echoed by the eventual Trust Response.
+- The target persists each pending incoming signed Trust Request as its original encoded envelope bytes.
+- Pending incoming requests survive runtime restarts but are retained only until decision or expiry.
+- Selecting a Trust Request notification opens Clipp's in-application approval view for that pending request.
+- Native notification actions do not directly accept or reject trust.
+- The user reviews identity details and accepts or rejects the request inside Clipp.
+- The target revalidates the signed Trust Request, including expiry, when the user submits a decision.
+- An expired request cannot be accepted even if its approval view was opened while it was valid.
+- A pending approval and its native notification expire when the newest coalesced Trust Request expires.
+- Coalescing a newer valid request replaces the pending request's expiration deadline with that request's deadline.
+- Expiry removes the pending decision and dismisses its native notification.
+- On startup, the runtime restores notifications only for persisted requests that remain valid and removes expired pending records.
+- Rejecting a pending request creates no cooldown, denylist, or automatic-rejection state.
+- Explicit rejection sends a rejected Trust Response that echoes the pending signed Trust Request.
+- A rejected Trust Response is reserved for an explicit user rejection of an otherwise valid Trust Request.
+- The target makes one best-effort attempt to send the rejected Trust Response and creates no outgoing response or retry job if delivery fails.
+- After that delivery attempt, the target clears the pending decision and dismisses its notification regardless of delivery success.
+- A later valid request from the same non-revoked Peer ID creates a new pending decision and notification.
+- Invalid or revoked requests are rejected without presenting a notification.
+- A malformed, oversized, incorrectly signed, prematurely dated, expired, or wrongly targeted request receives no Trust Response.
+- An invalid Pairing message closes its stream; when its authenticated sender is unknown, Clipp also closes that sender's connection.
+- A revoked sender follows the one-way full Membership View notification flow rather than the malformed-message flow.
+- Unknown peers cannot use Clip synchronization, history, Membership Reconciliation, Device Revocation, or other trusted application protocols.
+- A revoked Peer ID cannot use any application protocol, including Pairing.
+- When a revoked Peer ID reconnects without knowing its status, a current member permits the authenticated connection only long enough to send its complete Membership View over `/clipp/membership/1.0.0`.
+- The current member accepts no application messages from the revoked peer and closes the connection after sending the full view.
+- Active members may use trusted application protocols.
+- The authoritative sender identity is the remote Peer ID authenticated by the live libp2p connection.
+- The `initiator_peer_id` in a Trust Request must equal the connection's authenticated remote Peer ID.
+- The responder identity in a Trust Response must equal the connection's authenticated remote Peer ID.
+- Pairing rejects a message when the authenticated remote Peer ID is missing or does not match its claimed Device Identity.
+- Trust Request and Trust Response messages use protobuf wire encoding.
+- Pairing v1 requires Device Identities to use Ed25519 libp2p keys.
+- The initial implementation persists private keys in each runtime's ordinary application storage and relies on operating-system and application-profile protection; platform Keychain, Keystore, and equivalent secure-key integration are deferred.
+- Private keys never appear in logs, diagnostics, exports, protocol messages, or UI surfaces.
+- Copying ordinary application storage can clone a Device Identity until that Peer ID is revoked; this risk is accepted for the initial version.
+- On first launch, Clipp creates and durably persists its Ed25519 Device Identity before starting clipboard capture or networking.
+- If key generation or initial identity persistence fails, Clipp creates no Device Identity, starts no clipboard capture or networking, persists or advertises no placeholder Peer ID, and exposes a persistent retryable initialization error.
+- After initial identity persistence, clipboard capture does not depend on relay availability, peer discovery, connections, or successful networking startup.
+- The target derives the initiator's Ed25519 public key from its canonical Peer ID when revalidating a persisted Trust Request after the original connection or a runtime restart; it does not persist separate initiator public-key material.
+- A Trust Request is signed by the initiating Device Identity.
+- The Trust Request protobuf envelope contains exactly two security-bearing fields: the protobuf-encoded `signedPayload` bytes and the initiator's `signature` bytes.
+- The initiator encodes `signedPayload` once and signs the exact byte sequence `"clipp:trust-request:v1\0" || signedPayload`.
+- Verifiers use the same domain-separated bytes directly and do not reconstruct or reserialize the signed payload for verification.
+- A verifier checks the signature before decoding `signedPayload` into the Trust Request fields.
+- The signed Trust Request names the initiator Peer ID, target Peer ID, initiator Device Name, initiator `nameRevision`, and `issuedAt` timestamp.
+- The `initiator_peer_id` and `target_peer_id` fields contain canonical libp2p Peer ID multihash bytes rather than textual Peer IDs.
+- Protobuf encodes `issuedAt` as `uint64 issued_at_unix_ms`, representing UTC milliseconds since the Unix epoch.
+- Implementations validate the full 64-bit value without first coercing it to an imprecise JavaScript `number`.
+- The initiator Device Name and `nameRevision` are covered by the Trust Request signature but remain self-asserted presentation metadata rather than identity proof.
+- Trust Request notifications and approval views show the initiator Device Name together with its Peer ID.
+- The initial Pairing flow does not derive or display a short authentication string and does not require cross-device code comparison.
+- Users distinguish same-named initiators through the displayed full Peer ID, request timing, and explicit approval; the resulting wrong-request approval risk is accepted to keep Pairing simple.
+- A Trust Request does not carry an `expiresAt` value.
+- Expiration is derived as `issuedAt + validityWindow`, where `validityWindow` is supplied by local configuration.
+- The production default `validityWindow` is 10 minutes.
+- Tests can inject another duration, and deployments may override it without changing message contents.
+- `validityWindow` is not exposed as an end-user setting.
+- Pairing uses an injected `clockSkewAllowance` with a two-minute production default.
+- Tests may override `clockSkewAllowance`; it is not exposed as an end-user setting.
+- A request is not yet valid when `issuedAt > now + clockSkewAllowance`.
+- A request is expired when `now > issuedAt + validityWindow + clockSkewAllowance`.
+- A request cannot select or extend its own validity window.
+- The target validates the Trust Request's validity window before presenting it for approval.
+- A Trust Response echoes the complete signed Trust Request byte-for-byte as the exact envelope received by the target.
+- The Trust Response itself is a protobuf message containing the decision, the exact original Trust Request envelope bytes, and the responder's own Device Name metadata.
+- Trust Response reserves protobuf decision value `0` as `DECISION_UNSPECIFIED`; `ACCEPTED` and `REJECTED` use nonzero values.
+- A missing, zero, or unknown decision is invalid and causes no membership change.
+- A rejected response carries no rejection reason code or user-entered explanation.
+- The target does not reconstruct or re-encode the Trust Request when creating the Trust Response.
+- The initiator verifies and decodes the echoed original envelope; verification must not depend on the target's serializer, field ordering, or preservation of unknown fields.
+- Unknown signed-payload fields remain covered by the signature because verification uses the original raw `signedPayload` bytes even when the current decoder ignores those fields.
+- The initiator verifies the echoed Trust Request's signature, confirms that its initiator is the current local Peer ID, confirms that its target is the response connection's authenticated remote Peer ID, and checks that it remains within the configured validity window.
+- Both participants apply their own local `validityWindow`; when configurations differ, the stricter effective window wins.
+- A Trust Response for a revoked target Peer ID is rejected.
+- When processing an accepted Trust Response, the initiator atomically checks that the target is absent from its current Revoked Peer ID set and persists Admission in the same Membership View transition.
+- If a concurrent revocation has already committed, remove-wins prevents Admission and the response does not establish Device Membership.
+- Only when an accepted Trust Response has arrived but the target remains non-revoked and Admission persistence fails does the initiator expose no partial membership change and retry Pairing in memory with backoff while the runtime remains active.
+- Each retry uses a freshly issued and signed Trust Request; the already-admitting target automatically accepts it.
+- Retry uses capped exponential backoff with no fixed attempt limit and keeps a visible Pairing error while persistence continues to fail.
+- Retry stops when Admission succeeds, the target becomes revoked, or the runtime stops.
+- Retry state is keyed independently by target Peer ID, so a failing attempt does not block Pairing with another target.
+- Concurrent or repeated attempts for the same target coalesce into one retry loop.
+- The retry state is not persisted, so a runtime restart ends automatic retry and the user may initiate Pairing again.
+- A rejected Trust Response is informational for that Pairing attempt and never removes or changes existing Device Membership.
+- A replayed rejection received after successful Pairing has no Device Membership effect.
+- The initiator never persists outgoing Trust Requests but retains the latest sent request envelope per target in memory while waiting.
+- Trust Response authorization remains stateless and does not depend on that in-memory copy; the echoed signed request is independently sufficient for validation.
+- After successfully sending a Trust Request, the initiator shows a non-persistent `Waiting for approval` state until acceptance, rejection, or that request's derived expiry.
+- Scanning or importing the same Pairing Target again while waiting is an explicit user retry: Clipp sends a freshly issued and signed request and replaces that target's waiting deadline with the new request's expiry.
+- The target coalesces that fresh request into its existing per-initiator pending approval; waiting states for different target Peer IDs remain independent.
+- The waiting indicator performs no automatic retry and grants no cancellation authority over the signed request.
+- Runtime restart clears the indicator without preventing stateless acceptance of a later still-valid Trust Response.
+- Any valid rejected Trust Response from the authenticated target clears that target's in-memory sent request and waiting indicator, without attempting to distinguish whether the rejection echoed an older or the latest request.
+- Clearing that state does not cancel any other unexpired signed request already delivered to the target; a later valid accepted Trust Response may still establish Device Membership.
+- A valid accepted Trust Response, request expiry, and runtime shutdown also clear the corresponding in-memory state.
+- If no Trust Response arrives, the initiator does not retry automatically; the user must initiate Pairing again.
+- Until it expires, the signed Trust Request is a target-specific capability to complete Pairing and cannot be canceled by deleting local pending state.
+- Replayed successful responses are idempotent while the target Peer ID remains active.
+- When the target accepts a Trust Request, it durably admits the initiator regardless of whether the Trust Response reaches the initiator.
+- Acceptance atomically checks that the initiator is absent from the Revoked Peer ID set and persists its Admission before attempting Trust Response delivery.
+- If the initiator is already revoked at that atomic transition, remove-wins prevents Admission, acceptance fails, and no accepted Trust Response is sent.
+- A revoked initiator instead follows the one-way full Membership View notification flow.
+- The target makes one best-effort attempt to send the accepted Trust Response.
+- Immediately before opening the response stream, the target rechecks that the initiator remains an Active Member.
+- If a later revocation made the initiator inactive after Admission but before delivery, the target suppresses the accepted Trust Response and sends its current full Membership View through the revoked-peer notification flow instead.
+- Once an accepted Trust Response has been delivered, a later revocation cannot retract it.
+- The initiator may therefore temporarily admit the target before learning its own revocation; this asymmetric state is acceptable and is resolved by the later remove-wins Membership View.
+- If delivery fails, the target stores no outgoing response or retry job, clears the decided pending request, and retains the initiator as an Active Member.
+- The target does not roll back that Device Membership when Trust Response delivery cannot be confirmed.
+- Target-side Admission may therefore propagate through Membership Reconciliation so that the target's Device Network trusts the initiator while the initiator still considers itself a singleton.
+- This temporary network-wide asymmetry is valid and persists until a later user-initiated Trust Request receives an automatically accepted Trust Response.
+- If the authenticated initiator Peer ID already identifies an Active Member in the target's Membership View, the target automatically returns an accepted Trust Response to a valid Trust Request without asking for approval.
+- Automatic acceptance applies whether the target admitted the initiator through an earlier direct Pairing or through Membership Reconciliation.
+- A revoked Peer ID does not identify an Active Member and cannot receive automatic acceptance.
+- The automatic response echoes the valid request being retried; an expired or otherwise invalid request is still rejected.
+- An accepted Trust Response causes the initiator to admit the authenticated target; together with the target's earlier Admission of the initiator, this establishes mutual trust between the participants.
+- Each participant grants the other full Active Member capabilities as soon as it recognizes the other's Device Membership: the target when it accepts the Trust Request and the initiator when it validates the accepted Trust Response.
+- Active Member capabilities include Clip synchronization and authority to send Admission or revocation state.
+- Initial Membership Reconciliation is not a prerequisite for those capabilities.
+- Pairing messages do not contain complete Membership Views.
+- After accepting a Trust Response, the participants start a separate Membership Reconciliation over their authenticated, trusted connection.
+- Pairing a new device with any member eventually admits the new device to the entire Device Network through Membership Reconciliation.
+- Pairing devices from separate Device Networks eventually merges both networks through Membership Reconciliation.
+- A completed Device Network merge preserves every active Peer ID from both networks.
+- After reconciliation converges, every Active Member trusts every other Active Member.
+
+## Pairing Diagnostics
+
+- Every rejected invalid Pairing message writes a structured local `pairing_message_rejected` log entry even when the sender receives no protocol response.
+- The log entry includes a stable rejection reason code, authenticated remote Peer ID when available, message direction or type when known, frame size, Direct or Relayed Connection path, and local observation time.
+- Rejection reason codes distinguish invalid framing, oversized frames, protobuf decoding failure, invalid signature, authenticated-identity mismatch, wrong target, premature `issuedAt`, and expired requests.
+- Repeated log entries are rate-limited by remote Peer ID and reason while retaining a count of suppressed duplicates.
+- Log entries do not contain raw message payloads, signatures, Device Names, private or public key material, or other unbounded attacker-controlled content.
+- Log observation time and suppression counts are local operational data and never participate in Pairing authorization.
+- The initial implementation does not add persistent diagnostic storage, diagnostics export, or user-facing diagnostic history; those capabilities are deferred.
+
+## Pairing Target
+
+- A Pairing Target supplies the bootstrap information needed to connect to a specific target before trust exists.
+- Successfully importing or scanning a valid Pairing Target immediately starts the connection attempt and sends a signed Trust Request; the initiator receives no additional confirmation prompt.
+- Importing the explicit target is the initiator's consent step for sending that target-specific request.
+- Pairing Target uses format version 2.
+- Its required fields are the target Peer ID, the target's latest Signed Peer Record envelope, and the format version.
+- It may carry the target's Device Name as an untrusted presentation hint.
+- The version 2 logical fields are encoded in a compact protobuf message, with the Signed Peer Record retained as its original binary envelope bytes.
+- The protobuf `target_peer_id` field contains the canonical libp2p Peer ID multihash bytes rather than a textual Peer ID.
+- The protobuf bytes are encoded once as unpadded Base64URL and prefixed with `clipp:pair:`.
+- A decoder requires the `clipp:pair:` prefix before decoding the Base64URL and protobuf payload.
+- A decoder rejects an input whose Base64URL length would decode to more than 16 KiB before allocating or parsing the protobuf payload.
+- The 16 KiB production limit is deployment-configurable and injectable for tests, but is not an end-user setting.
+- Exceeding the limit is a terminal Pairing Target validation failure and does not trigger legacy or raw-address fallback.
+- This encoding supplies compact transport, format recognition, and versioned parsing only; it provides no authorization or anti-forgery guarantee.
+- It carries no application-level timestamp or expiration.
+- It is public, non-secret contact data rather than a bearer credential.
+- It does not carry application-defined raw multiaddrs or a separate public key; those are supplied and authenticated by the Signed Peer Record.
+- The scanner verifies the Signed Peer Record against the target Peer ID and imports it through libp2p's peer store before dialing.
+- The target Peer ID bytes must match the Peer ID carried by the verified Signed Peer Record.
+- After connection establishment, the authenticated remote Peer ID must equal the Pairing Target's target Peer ID.
+- A Pairing Target grants no membership or trust authority; Pairing still requires a valid signed Trust Request and accepted Trust Response.
+- Possession or disclosure of a Pairing Target may enable a connection attempt but cannot bypass explicit acceptance.
+- Stale reachability in a Pairing Target causes connection failure rather than an authorization failure; Trust Request freshness remains the time-limited authorization boundary.
+- Decoders reject the legacy version 1 Pairing payload rather than translating its timestamp, raw multiaddrs, or public-key field into version 2.
+- No raw-address or legacy-format fallback is attempted after a version 2 decoding or validation failure.
+
+## Device Presentation
+
+- A Device Name is self-chosen presentation metadata reported by its own Device Identity.
+- A Device Name never replaces the Peer ID as the authoritative Device Identity.
+- Device Names and Local Device Aliases are normalized to Unicode NFC, trimmed, limited to 1–64 Unicode code points, and restricted to a single line without control characters.
+- A local rename that fails presentation-label validation is rejected without changing the stored label or incrementing `nameRevision`.
+- An invalid incoming Device Name or Pairing Target name hint is ignored for display; the shortened Peer ID is used when no valid label remains.
+- Invalid presentation metadata does not invalidate an otherwise valid Trust Request, Trust Response, Membership Reconciliation, or Pairing Target.
+- A receiver accepts a Device Name or Device Name update only from a live libp2p connection authenticated as the Device Identity that the name describes.
+- Pairing supplies each participant's initial Device Name directly from that participant.
+- Changing the local Device Name sends the new name to currently connected Active Members.
+- An offline Active Member learns the current Device Name when it next connects and performs Membership Reconciliation with that Device Identity.
+- A device does not forward another Device Identity's Device Name or Device Name updates.
+- Each Device Identity persists a non-negative monotonic `nameRevision`, initially zero.
+- Changing the local Device Name atomically increments `nameRevision`.
+- Whenever a device reports its Device Name, it includes the current `nameRevision`; Membership Reconciliation carries only the immediate authenticated sender's own Device Name and revision as sender metadata.
+- For a previously unseen Peer ID, a receiver accepts its reported Device Name and revision.
+- For a known Peer ID, a higher `nameRevision` replaces the stored self-reported Device Name, an equal revision with the same name is idempotent, and a lower revision is ignored.
+- An equal revision carrying a different Device Name is invalid and does not replace the stored name.
+- A syntactically valid higher `nameRevision` is remembered even when its accompanying Device Name fails presentation-label validation, preventing a later stale name from being accepted.
+- Wall-clock timestamps do not order Device Name updates; a receiver may record a local observation time for diagnostics only.
+- Identity Rotation creates a new Peer ID, runs the normal first-launch naming path to derive a fresh platform-default Device Name, and starts the new identity's `nameRevision` at zero.
+- The platform defaults are exactly `Desktop` for Electron, `Mobile` for Android, and `Extension` for the Chrome extension.
+- Default naming does not read or expose an OS hostname, account name, or hardware model.
+- Rotation does not copy the former identity's stored Device Name into the new identity.
+- Renaming a remote Trusted Device creates or changes a Local Device Alias rather than changing that peer's Device Name.
+- A Local Device Alias is stored only on the device where it was chosen and is never included in Pairing, Membership Reconciliation, Signed Peer Records, or other propagated state.
+- The displayed label for a remote Device Identity is its Local Device Alias when present, otherwise its latest self-reported Device Name, otherwise a shortened Peer ID.
+- Receiving a newer self-reported Device Name does not overwrite an existing Local Device Alias.
+- An observed Device Name and Local Device Alias are keyed to the Device Identity's Peer ID.
+- After Device Revocation, presentation metadata may be retained as historical labeling for old Clips and records associated with the revoked Peer ID.
+- Identity Rotation never transfers a Device Name or Local Device Alias from the former Peer ID to the new Peer ID.
+
+## Membership Reconciliation
+
+- Membership Reconciliation is separate from Trust Request and Trust Response processing.
+- Membership Reconciliation uses the libp2p protocol ID `/clipp/membership/1.0.0`.
+- Membership View messages use protobuf wire encoding with exactly one length-prefixed frame per short-lived stream.
+- A Membership View frame has a 256 KiB production maximum enforced before protobuf decoding.
+- The Membership View frame limit is deployment-configurable and injectable for tests, but is not an end-user setting.
+- An oversized frame is not decoded or partially applied; the reconciliation stream closes without changing the local Membership View.
+- Handling a legitimate Membership View that exceeds 256 KiB is deferred; the initial design defines no chunking, pagination, truncation, compaction, or limit-negotiation mechanism.
+- Implementations do not carry membership state on `/clipp/pairing/1.0.0` and do not negotiate or fall back to the legacy JSON `trusted-peers` message.
+- Membership Reconciliation can be retried independently if its connection or message exchange fails.
+- Every authenticated connection or reconnection between Active Members triggers a full Membership Reconciliation.
+- Reconciliation uses symmetric push: each connected Active Member independently sends its complete local Membership View.
+- Reconciliation has no elected initiator, request/response handshake, acknowledgement, or long-lived stream.
+- Each full Membership View is sent on an independent short-lived stream.
+- Membership View protobuf decoders ignore unknown fields while strictly validating every recognized field.
+- `/clipp/membership/1.0.0` keeps fixed membership-authority, merge, and sequencing semantics; a breaking change requires a new negotiated libp2p protocol ID.
+- As a one-way exception, a current member also sends its complete Membership View to an authenticated remote Peer ID that the sender's local view marks revoked, allowing a cooperative remote to learn its own revocation.
+- This exception sends the same full protobuf shape, including current membership and available reachability records; it does not introduce a reduced delta or separate revocation protocol.
+- Minimizing the state disclosed to a revoked device and other hardening or optimization of this path are deferred.
+- Reconnection reconciliation is the recovery mechanism for membership changes missed while a device was offline.
+- Every local Admission or Device Revocation immediately triggers a full Membership Reconciliation with every connected Active Member.
+- Merging a received Membership View triggers propagation of the newly merged full view to connected Active Members only when the merge changes local Admission or revocation state.
+- An idempotent merge that changes no local state emits no further reconciliation message.
+- The initial implementation does not use a separate incremental membership-change protocol.
+- Each member retains an Admitted Peer ID set and a Revoked Peer ID set as its local Membership View.
+- The Membership View protobuf contains repeated canonical Peer ID multihash bytes for the Admitted Peer ID set and the Revoked Peer ID set.
+- It contains an optional sender Device Name submessage with `value` and `revision`; that metadata can update only the Device Identity authenticated as the immediate sender.
+- It contains repeated peer-reachability entries pairing an expected Peer ID's canonical bytes with that peer's original Signed Peer Record envelope bytes.
+- The protobuf contains no network identifier, original Admission or revocation issuer, membership timestamp, application-level signature, or Local Device Alias.
+- Every Peer ID in the Admitted Peer ID and Revoked Peer ID sets must decode as a canonical libp2p Peer ID; one malformed entry rejects the complete Membership View without partial state changes.
+- Duplicate valid Peer IDs within a set are deduplicated and have no additional effect.
+- A valid Peer ID appearing in both sets is valid input and remains revoked under remove-wins semantics.
+- A Device Identity is an Active Member when its Peer ID is admitted and not revoked.
+- Members reconcile by taking the union of their Admitted Peer ID sets and the union of their Revoked Peer ID sets.
+- Before encoding, a sender deduplicates each set and sorts Peer IDs lexicographically by their canonical bytes.
+- A sender includes at most one Signed Peer Record per Active Member: the latest record available by libp2p sequence ordering.
+- A receiver treats membership-set and peer-reachability entry order as semantically irrelevant and does not reject an otherwise valid unsorted message.
+- A revoked Peer ID is retained even when it is absent from the local Admitted Peer ID set.
+- A later Admission or stale Admitted Peer ID set cannot activate an identity whose Peer ID already appears in the Revoked Peer ID set.
+- Device Network merges are eventually consistent rather than atomic with acceptance of a Trust Response.
+- Reconciliation is independent of message-delivery order.
+- A receiver computes the union of both membership sets and durably persists the resulting Admitted Peer ID and Revoked Peer ID sets as one atomic Membership View transition.
+- The persisted transition commits before the new view is published in memory, newly revoked connections are closed, optional reachability is imported, or the merged view is propagated.
+- If persistence fails, the receiver exposes no partial membership change, performs no message-derived side effects, logs the failure, and retries through a later reconciliation.
+- When a valid message changes no membership state, sender-owned Device Name and valid reachability updates may be processed against the already-persisted local Membership View.
+- Membership Reconciliation payloads are not signed at the application layer.
+- A receiver accepts a Membership View only when libp2p authenticates the immediate sending peer and that peer is an Active Member in the receiver's local Membership View.
+- Sender authorization is evaluated against the receiver's pre-merge Membership View and is not relaxed merely because the incoming view contains the receiver's own Peer ID in the Revoked Peer ID set.
+- After receiving the complete frame and validating its framing, protobuf, and authoritative membership sets, the receiver atomically checks the authenticated sender's Active Member status before applying the merge.
+- A view that passes this pre-merge check remains authorized while in flight even if another concurrently processed view revokes its sender before its merge completes.
+- Opening a stream, sending an incomplete frame, or retaining a connection does not reserve authority; an in-flight authorization is neither persisted nor reusable across streams or reconnects.
+- A sender already revoked in the receiver's local view cannot force the receiver to perform Identity Rotation.
+- The general in-flight authorization rule does not let other work continue after the receiver durably applies its own revocation: the triggering merge completes, then all other in-flight network operations are cancelled.
+- A missing transport-authenticated peer identity must not be replaced with an identity claimed by the reconciliation payload.
+- A Membership View received from an authenticated Active Member is propagated under that member's authority.
+- Reconciled entries do not retain or prove their original issuer; a forwarding member reasserts the complete state under its own authority.
+- The latest available Signed Peer Record for an Active Member is forwarded unchanged alongside the Membership View.
+- Peer-reachability entries are included only for Active Members and never determine Admission or revocation state.
+- A Signed Peer Record is reachability information, not Admission authority; it cannot add a Peer ID to the Admitted Peer ID set or override the Revoked Peer ID set.
+- A receiver verifies a Signed Peer Record against its expected Peer ID and imports it through libp2p's peer store.
+- An invalid, mismatched, or stale Signed Peer Record invalidates only its peer-reachability entry.
+- A receiver logs and ignores that reachability entry while still merging otherwise valid Admission and revocation sets from the Membership View.
+- Libp2p's peer-record sequence ordering determines whether a received record replaces the stored record.
+- Each runtime supplies a durable datastore for libp2p's peer store so verified Signed Peer Records survive runtime restarts.
+- Clipp's trust repository does not duplicate Signed Peer Record envelopes or raw addresses; it remains authoritative for the Admitted Peer ID and Revoked Peer ID sets.
+- A member can remain active when no Signed Peer Record is currently available, although it may be unreachable until discovery supplies an address.
+- The initial implementation does not compact these sets because Device Networks are expected to remain small.
+- An optimization must not discard revocation state unless it preserves the same convergence and non-resurrection guarantees.
+
+## Peer Discovery and Reachability
+
+- The required initial outcome is that two untrusted peers can use an explicit Pairing Target to establish a libp2p-authenticated Relayed Connection and perform Pairing.
+- After Admission, a device that goes offline and later returns must be discoverable and able to re-establish a Relayed Connection with its Active Members without repeating Pairing.
+- Detailed peer-discovery lifecycle, persistence, retry, and selection behavior beyond the already settled interim constraints is deferred.
+- The initial implementation supports both Signed Peer Record forwarding and Rendezvous discovery.
+- The existing custom Rendezvous mechanism is retained temporarily to avoid expanding the current implementation scope.
+- Retaining it does not establish Rendezvous, standards-compatible Rendezvous, or any other particular mechanism as Clipp's target peer-discovery architecture.
+- A later phase must research and select the peer-discovery mechanism appropriate for Clipp's trusted-device, cross-runtime use case before replacing or removing the placeholder.
+- The interim Clipp-specific Rendezvous protocol uses `/clipp/rendezvous/1.0.0`, not the standards-compatible `/rendezvous/1.0.0` protocol ID.
+- An interim Rendezvous registration contains the registering peer's original Signed Peer Record envelope rather than raw client-supplied addresses.
+- The Rendezvous server accepts only self-registration: the record's Peer ID must equal the Peer ID authenticated on the registration connection.
+- The Rendezvous server verifies the Signed Peer Record and returns the original envelope unchanged during discovery.
+- The interim Rendezvous server stores registrations as finite leases and returns the server-enforced expiration to the registering client.
+- A client refreshes a registration lease before expiration, with jitter, only while the corresponding relay reservation remains live.
+- Registration timing is deployment- and test-configurable rather than an end-user setting; the initial specification does not commit to a permanent duration.
+- When a reservation is lost, the client attempts to unregister immediately and stops refreshing; server-side lease expiration removes stale state if unregister cannot be delivered.
+- The Rendezvous server is not required to inspect or manage the relay reservation itself.
+- A client independently verifies a discovered envelope against its expected Peer ID before importing it into the libp2p peer store.
+- The interim Rendezvous does not expose or consume a topic-wide listing of Clipp devices.
+- Each peer registers under its own Peer ID, and clients normally perform exact lookups only for Peer IDs active in local membership.
+- Importing an explicit Pairing Target temporarily permits exact Rendezvous lookup of that target Peer ID before Admission so stale embedded reachability can be refreshed.
+- A Signed Peer Record returned for a Pairing Target must verify against the target Peer ID before import and remains reachability data only.
+- The lifetime and persistence of this explicit pre-trust lookup scope are deferred with the broader discovery design.
+- Discovery and reachability mechanisms do not grant Device Membership.
+- Discovery success or failure never changes membership or revocation state.
+- If discovery cannot supply a usable path, an Active Member remains trusted but is treated as temporarily unreachable while discovery retries in the background.
+- Existing connections and valid peer-store reachability records remain usable during a discovery outage.
+- A discovered Peer ID is eligible for trusted application traffic only when it identifies an Active Member in the local Membership View.
+- Automatic Rendezvous discovery ignores and does not dial Peer IDs that are not active in local membership, except for the narrowly scoped exact lookup and Pairing connection initiated from an explicit Pairing Target.
+- Unknown Pairing candidates are reached through that explicit Pairing Target path, not ambient discovery or enumeration.
+- Signed Peer Records are forwarded as their original opaque envelopes; an intermediary does not rewrite another member's addresses.
+- Rendezvous is available from the initial implementation rather than deferred as a later replacement for record forwarding.
+- Initial remote connectivity uses libp2p Circuit Relay v2.
+- WebRTC-star is legacy and is not part of the target Pairing or connectivity design.
+- Production relay defaults contain Circuit Relay v2 addresses rather than WebRTC-star addresses.
+- Electron, Android, and the Chrome extension ship the same ordered default Circuit Relay v2 server list.
+- Each device attempts to maintain a relay reservation and interim Rendezvous self-registration on every configured relay.
+- A Signed Peer Record advertises only circuit addresses backed by successfully established reservations.
+- Each interim Rendezvous registration is valid only while its corresponding relay reservation remains live and is refreshed before its registration lifetime expires.
+- When a relay reservation is lost or expires, the device publishes a newer Signed Peer Record that omits the invalid circuit address and removes the corresponding Rendezvous registration.
+- If explicit registration removal fails, the registration must have a bounded lifetime and be allowed to expire without refresh.
+- Dialers try the available advertised relay addresses in configured order.
+- Electron, Android, and the Chrome extension enable libp2p Identify Push so connected peers promptly receive updated Signed Peer Records when advertised reachability changes.
+- Identify Push distributes reachability only; it does not grant membership, replace discovery of disconnected peers, or replace later Membership Reconciliation.
+- After establishing a Relayed Connection, libp2p DCUtR attempts to upgrade it to a Direct Connection.
+- Electron, Android, and the Chrome extension's offscreen networking runtime all implement this relay-first behavior.
+- Each runtime enables DCUtR where supported; inability to upgrade does not make the Relayed Connection invalid.
+- A DCUtR failure does not interrupt application traffic; the Relayed Connection remains usable.
+- After a successful direct upgrade, the Relayed Connection is closed to release relay capacity.
+- If the Direct Connection later fails, the devices re-establish a Relayed Connection and may retry DCUtR.
+
+## Device Revocation
+
+- The user initiates Device Revocation through a standard confirmation prompt such as “Are you sure?”.
+- The confirmation need not include a specialized warning about the target's automatic Identity Rotation or local-history deletion.
+- Confirming the prompt immediately commits the local revocation tombstone; Clipp provides no post-confirmation undo or cancellation window.
+- A locally initiated revocation is persisted before it is published in memory, propagated, or used to close the target's connections.
+- If that persistence fails, the target remains an Active Member, Clipp performs no revocation side effects, and the UI reports a retryable failure.
+- After persistence succeeds, the initiating UI immediately removes the target from the Active Member list or marks it revoked according to the local Membership View.
+- The UI does not claim that every member has applied the revocation because Membership Reconciliation provides no network-wide convergence acknowledgement.
+- The initial UI provides no revoked-device management or audit list; the Revoked Peer ID set remains internal protocol state.
+- A Clip received while its source Device Identity was trusted remains a valid historical Clip after that identity is revoked.
+- Historical Clips receive no revoked-source badge or other special visual treatment.
+- An incoming Clip is accepted only if its authenticated sender is still an Active Member immediately before the Clip is durably persisted.
+- If Device Revocation commits after transfer begins but before Clip persistence, Clipp cancels or discards that unstored Clip; only Clips persisted before revocation remain valid history.
+- Removing a Trusted Device is a Device Revocation, not a local list change.
+- Every current member has equal, unilateral authority to revoke any other member.
+- A Device Revocation does not require approval from another member.
+- A Device Revocation is not signed at the application layer.
+- A receiver accepts a Device Revocation only when libp2p authenticates the immediate sending peer and that peer is a current member of the Device Network.
+- A missing transport-authenticated peer identity must not be replaced with an identity claimed by the message payload.
+- Forwarding a Device Revocation is a fresh exercise of the forwarding member's own revocation authority, not proof that an earlier member authored the revocation.
+- A Device Revocation names the Peer ID it removes.
+- Device Revocation is remove-wins for that exact Peer ID regardless of message-delivery order.
+- A Device Revocation does not affect a new Peer ID created by Identity Rotation.
+- Applying a Device Revocation closes active connections to the revoked Peer ID.
+- Applying a Device Revocation deletes that Peer ID's reachability data from the libp2p peer store.
+- Discovery results and Signed Peer Records for a revoked Peer ID are ignored and not re-imported.
+- Reachability cleanup does not remove the durable revoked-Peer-ID tombstone.
+- A Device Revocation propagates to every member of the Device Network.
+- Clipp does not create a durable per-peer delivery job when a propagation attempt fails; the persisted Membership View is the durable source of truth.
+- While an intended recipient remains connected, Clipp retries the full Membership View with backoff; every reconnection independently triggers another full-view send.
+- Every remaining member stops trusting the revoked device.
+- When notified of its own valid Device Revocation, the revoked installation relinquishes its Device Membership and stops treating the former members as trusted.
+- Persisting its own revocation is an immediate networking shutdown barrier: after the triggering Membership View merge completes, the installation closes its connections and cancels every other in-flight Pairing, reconciliation, discovery, and Clip operation.
+- The notified installation performs Identity Rotation automatically, without local confirmation, export, or grace period, and creates a singleton Device Network containing its new Peer ID.
+- Because every Active Member has unilateral revocation authority, any Active Member can thereby cause irreversible deletion of the revoked installation's local Clipp history.
+- Identity Rotation starts the new Device Identity with an empty persistent libp2p peer store.
+- Before starting libp2p networking, every runtime checks whether its stored local Peer ID appears in the persisted Revoked Peer ID set.
+- A locally revoked identity is prohibited from starting networking or handling Pairing, Membership Reconciliation, Clip, history, or discovery protocols.
+- The runtime completes Identity Rotation and durably persists the new Device Identity, its singleton Membership View, an empty peer store, and deletion of the revoked private key, former Device Network's Membership View, complete local Clipboard History, and presentation metadata before starting the new libp2p node.
+- Identity Rotation is crash-recoverable and idempotent; a durable transition marker or equivalent storage transaction ensures that startup resumes an interrupted rotation rather than reusing the revoked Peer ID.
+- Once rotation durably stores a candidate replacement keypair, every retry reuses that candidate until commit instead of generating another Peer ID.
+- If rotation cannot be persisted, Clipp starts in a local-only recovery mode with Clipboard History accessible.
+- Local-only recovery mode presents a persistent rotation error and retries recovery, while Pairing, discovery, synchronization, and every other network protocol remain disabled.
+- Local Clip capture continues during recovery.
+- Every Clip captured before Identity Rotation commits remains attributed to the old revoked Peer ID, even when a candidate replacement keypair has already been stored.
+- Committing Identity Rotation deletes the complete local Clipboard History associated with the former Device Network, including both Local Clips and Remote Clips and including Local Clips captured during recovery.
+- Deletion includes Clipp-visible active records and derived references such as pin and index entries.
+- Committing Identity Rotation logically deletes the revoked identity's private key from Clipp-visible active storage so that the runtime cannot reuse it.
+- Clipp does not guarantee forensic erasure of history or old-key data from database remnants, write-ahead logs, platform backups, or underlying storage media.
+- Committing Identity Rotation also deletes the rotating installation's stored Device Names and Local Device Aliases for the former Device Network.
+- Failure to complete any required cleanup prevents the rotation commit; the replacement identity and networking remain inactive while recovery retries.
+- Clips captured after the replacement identity commits are attributed to the new Peer ID; Identity Rotation never rewrites or transfers earlier Clips across the identity boundary.
+- When Clip capture restarts under the new identity, a polling clipboard watcher establishes its initial baseline from the platform clipboard's current value without creating a Clip.
+- Only a clipboard change observed after that baseline can create a Clip attributed to the new Peer ID.
+- Identity-independent installation preferences, including theme, relay configuration, clipboard polling settings, and history limits, survive Identity Rotation unchanged.
+- Identity-, membership-, peer-, presentation-, and history-scoped state belonging to the former Device Network does not survive; cached reachability for that network is deleted.
+- Identity Rotation deletes all persisted pending Trust Requests addressed to the former Peer ID and dismisses their native notifications.
+- Pending Pairing state is not transferred or reinterpreted as targeting the new Device Identity.
+- The new Device Identity receives a freshly derived platform-default Device Name through the normal first-launch naming path and starts `nameRevision` at zero.
+- The new Device Identity generates and publishes a fresh Pairing Target containing its new Peer ID and current Signed Peer Record.
+- The new singleton's Membership View admits only its new Device Identity.
+- Identity Rotation deletes the former Membership View rather than retaining it as local historical state.
+- Membership and revocation state from the former Device Network does not participate in the singleton's reconciliation or later Pairing.
+- Other members remain responsible for retaining the former Peer ID's revocation tombstone.
+- After rotation succeeds, Clipp makes a best-effort attempt to display a persistent, non-blocking notice until user acknowledgement, stating that this installation was revoked, its local Clipboard History was deleted, and its new Device Identity requires fresh Pairing.
+- The notice is optional operational output: failure to persist or display it does not fail rotation or block activation of the new Device Identity.
+- The notice does not attribute the revocation to a device because the accepted full Membership View proves only the immediate forwarding member's authority and preserves no original issuer provenance.
+- Remaining members enforce Device Revocation even if a compromised revoked device does not cooperate.
+- A cooperative offline device that reconnects under its revoked Peer ID receives a complete Membership View containing its own Peer ID in the Revoked Peer ID set before the current member closes the connection.
+- Members that were offline during a Device Revocation apply it when they reconnect.
+- Device Revocation takes precedence over stale membership information.
+- Transitive trust propagation must not restore a revoked device.
+- Valid concurrent Device Revocations all take effect.
+- If two members concurrently revoke each other, both become revoked when the network reconciles.
+- If two mutually revoked devices have no third device that either still trusts, neither accepts the other's later full Membership View; each therefore cannot directly notify the other of its own revocation.
+- Revoking one member does not invalidate an in-flight Membership View already authorized while that member was active.
+
+## Returning After Revocation
+
+- A revoked Device Identity and Peer ID cannot rejoin a Device Network.
+- The installation performs Identity Rotation and becomes a new logical device with a new Peer ID.
+- Returning requires a fresh Pairing that a current member explicitly accepts.
+- Pairing merges the new identity's singleton Device Network into the accepting member's Device Network.
+- The rotating installation deletes its entire local Clipboard History from the former Device Network rather than carrying any Local or Remote Clip into the new identity.
+- Copies of old Clips already retained by other devices remain attributed to the permanently revoked Peer ID.
+- The rotating installation deletes presentation metadata for its former Device Network; other devices may retain historical Device Names and Local Device Aliases associated only with the old Peer ID.
+- Membership propagation and stale trust data cannot restore a revoked Peer ID.
+
+## Identity Loss
+
+- Identity Loss occurs when an installation can no longer load and validate the private key for a previously persisted Device Identity.
+- The Ed25519 private key is the authoritative identity material; Clipp derives the Peer ID and public key from it on load.
+- A mismatched stored Peer ID or public-key value is repaired from a valid private key and does not trigger Identity Loss.
+- A completely empty installation with no identity-scoped state is a first launch rather than Identity Loss.
+- Clipp handles Identity Loss automatically by running Identity Rotation, creating a new logical device in a singleton Device Network, and requiring fresh Pairing.
+- Identity Loss uses the same crash-recoverable cleanup boundary as revocation-driven rotation: the old Membership View, complete local Clipboard History, peer store, pending Pairing state, and former-network presentation metadata are deleted rather than transferred.
+- Identity-independent installation preferences survive unchanged.
+- Identity Loss is not itself Device Revocation and the replacement identity cannot claim continuity with or authority over the inaccessible former Peer ID.
+- Fresh Pairing of the replacement identity neither replaces nor revokes the former Peer ID.
+- Other members continue to recognize the former Peer ID as a stale Active Member until the user separately performs Device Revocation from any current member.
+- After recovery succeeds, Clipp makes a best-effort attempt to retain a non-blocking notice until acknowledgement, explaining the identity reset, local-history deletion, and need for fresh Pairing.
+- Failure to persist or display the optional notice does not fail recovery or block the replacement identity.
