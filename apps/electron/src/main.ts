@@ -14,8 +14,6 @@ import {
 // TODO: why normalizeClipboardContent is used in the app? it should be localized in clipboard service
 // import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
 import {
-  createKVRuntimeApplicationState,
-  createKVRuntimeIdentityStorage,
   createElectronRuntimeAdapter,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
@@ -788,12 +786,10 @@ async function bootstrap() {
   }
 
   const runtimeAdapter = createElectronRuntimeAdapter({
-    identity: createKVRuntimeIdentityStorage<any>({ storage: kvStore, key: IDENTITY_KEY }),
-    state: createKVRuntimeApplicationState<Record<string, unknown>>({
-      storage: kvStore,
-      key: "runtimeApplicationState",
-      initialState: () => ({}),
-    }),
+    storage: kvStore,
+    identityKey: IDENTITY_KEY,
+    applicationStateKey: "runtimeApplicationState",
+    initialApplicationState: () => ({} as Record<string, unknown>),
     clipboard: {
       readText: async () => clipboard.readText() ?? "",
       writeText: async (text) => clipboard.writeText(text),
@@ -831,6 +827,13 @@ async function bootstrap() {
         BrowserWindow.getAllWindows().forEach((win) => {
           win.webContents.send("clipp:update", state);
         });
+      },
+    },
+    relays: {
+      readAddresses: async () => [...relayAddresses],
+      async updateAddresses(addresses) {
+        await updateRelayAddresses(addresses);
+        return [...relayAddresses];
       },
     },
   });

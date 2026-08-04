@@ -128,7 +128,6 @@ function App() {
         onPairText={handlePairText}
         onScanPairingCode={handleScanPairingCode}
         onRequestPairingCode={() => client.getPairingCode()}
-        onSetRelayAddresses={(addrs) => client.setRelayAddresses(addrs)}
         onTogglePin={async (id) => {
           await client.togglePin(id);
         }}

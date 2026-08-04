@@ -9,16 +9,18 @@ import {
 import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
 import type {
   RuntimeAdapter,
-  RuntimeAdapterPorts,
+  RuntimePlatformAdapterDependencies,
   RuntimeCapabilities,
 } from "../../../packages/core/runtime";
 
 type ConformanceIdentity = { deviceId: string };
 type ConformanceState = { launches: number };
 type ConformancePublicState = { launches: number };
-type AdapterFactory = (
-  ports: RuntimeAdapterPorts<ConformanceIdentity, ConformanceState, ConformancePublicState>
-) => RuntimeAdapter<ConformanceIdentity, ConformanceState, ConformancePublicState>;
+type AdapterFactory = typeof createElectronRuntimeAdapter<
+  ConformanceIdentity,
+  ConformanceState,
+  ConformancePublicState
+>;
 
 async function expectAdapterConformance(
   factory: AdapterFactory,
@@ -36,8 +38,54 @@ async function expectAdapterConformance(
     initialClipboardText: "captured text",
     getPublicState: async ({ state }) => ({ launches: (await state.read()).launches }),
   });
-  const { capabilities: _fakeCapabilities, ...ports } = harness.adapter;
-  const adapter = factory(ports);
+  const durable = new Map<string, unknown>([
+    ["identity", { deviceId: "device-a" }],
+    ["application-state", { launches: 0 }],
+  ]);
+  const storage = {
+    get: async <Value>(key: string) => durable.get(key) as Value | undefined,
+    set: async <Value>(key: string, value: Value) => {
+      durable.set(key, structuredClone(value));
+    },
+    remove: async (key: string) => {
+      durable.delete(key);
+    },
+  };
+  const nativePorts: Pick<
+    RuntimePlatformAdapterDependencies<
+      ConformanceIdentity,
+      ConformanceState,
+      ConformancePublicState
+    >,
+    "clipboard" | "notifications" | "lifecycle" | "network" | "clock"
+  > = {
+    clipboard: harness.adapter.clipboard,
+    notifications: harness.adapter.notifications,
+    lifecycle: harness.adapter.lifecycle,
+    network: harness.adapter.network,
+    clock: harness.adapter.clock,
+  };
+  let relayAddresses = ["/dns4/relay.example.com/tcp/443/wss/p2p/relay"];
+  const updateRelayAddresses = jest.fn(async (addresses: string[]) => {
+    relayAddresses = [...addresses];
+    return relayAddresses;
+  });
+  let adapter!: RuntimeAdapter<ConformanceIdentity, ConformanceState, ConformancePublicState>;
+  adapter = factory({
+    ...nativePorts,
+    storage,
+    identityKey: "identity",
+    applicationStateKey: "application-state",
+    initialApplicationState: () => ({ launches: 0 }),
+    publicState: {
+      read: async () => ({ launches: (await adapter.state.read()).launches }),
+      publish: harness.adapter.publicState.publish,
+    },
+    relays: {
+      readAddresses: async () => relayAddresses,
+      updateAddresses: updateRelayAddresses,
+    },
+  });
   let selectedNotification: string | null = null;
   let shutdown = false;
   adapter.notifications.onSelect((id) => {
@@ -70,6 +118,15 @@ async function expectAdapterConformance(
   clipboard.stop();
 
   expect(adapter.capabilities).toEqual(expected);
+  expect(adapter.relays.mode).toBe(expected.relayConfiguration);
+  expect(await adapter.relays.readAddresses()).toEqual(relayAddresses);
+  if (adapter.relays.mode === "editable") {
+    await adapter.relays.updateAddresses(["/dns4/new-relay.example.com/tcp/443/wss/p2p/relay"]);
+    expect(updateRelayAddresses).toHaveBeenCalledTimes(1);
+  } else {
+    expect("updateAddresses" in adapter.relays).toBe(false);
+    expect(updateRelayAddresses).not.toHaveBeenCalled();
+  }
   expect(await adapter.identity.load()).toEqual({ deviceId: "device-a" });
   expect(await adapter.state.read()).toEqual({ launches: 1 });
   expect(harness.observed.notifications).toHaveLength(1);

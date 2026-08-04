@@ -59,6 +59,7 @@ export function createRuntimeConformanceHarness<Identity, ApplicationState, Publ
   let clockNow = options.now ?? 0;
   let nextTimerId = 1;
   const timers = new Map<number, { at: number; handler: () => void }>();
+  let relayAddresses: string[] = [];
 
   const network: MessagingTransport = {
     async start() {},
@@ -141,6 +142,24 @@ export function createRuntimeConformanceHarness<Identity, ApplicationState, Publ
         observed.publicStates.push(structuredClone(state));
       },
     },
+    relays:
+      options.capabilities.relayConfiguration === "editable"
+        ? {
+            mode: "editable",
+            async readAddresses() {
+              return [...relayAddresses];
+            },
+            async updateAddresses(addresses) {
+              relayAddresses = [...addresses];
+              return [...relayAddresses];
+            },
+          }
+        : {
+            mode: "fixed",
+            async readAddresses() {
+              return [...relayAddresses];
+            },
+          },
   };
 
   return {

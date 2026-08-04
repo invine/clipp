@@ -26,8 +26,6 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import {
-  createKVRuntimeApplicationState,
-  createKVRuntimeIdentityStorage,
   createChromeExtensionRuntimeAdapter,
   createRuntimeClipboardService,
   createRuntimeNotificationSelection,
@@ -300,12 +298,10 @@ const extensionNetwork: MessagingTransport = {
 const notificationSelection = createRuntimeNotificationSelection();
 
 const runtimeAdapter = createChromeExtensionRuntimeAdapter({
-  identity: createKVRuntimeIdentityStorage<any>({ storage, key: IDENTITY_KEY }),
-  state: createKVRuntimeApplicationState<Record<string, unknown>>({
-    storage,
-    key: "runtimeApplicationState",
-    initialState: () => ({}),
-  }),
+  storage,
+  identityKey: IDENTITY_KEY,
+  applicationStateKey: "runtimeApplicationState",
+  initialApplicationState: () => ({} as Record<string, unknown>),
   clipboard: {
     readText: async () => navigator.clipboard.readText(),
     writeText: async (text) => navigator.clipboard.writeText(text),
@@ -365,6 +361,9 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
     async publish(state) {
       await chrome.runtime.sendMessage({ type: "runtimeState", state }).catch(() => {});
     },
+  },
+  relays: {
+    readAddresses: async () => [...DEFAULT_WEBRTC_STAR_RELAYS],
   },
 });
 runtimeAdapter.notifications.onSelect(() => runtimeAdapter.lifecycle.openApprovalView());

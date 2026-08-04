@@ -1,8 +1,6 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import {
-  createKVRuntimeApplicationState,
-  createKVRuntimeIdentityStorage,
   createAndroidRuntimeAdapter,
   createRuntimeClipboardService,
   createRuntimeNetworkProxy,
@@ -15,7 +13,7 @@ import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "@core/network/constants";
-import { deriveRelayPeerMultiaddrs, normalizeRelayAddresses } from "@core/network/relayAddresses";
+import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
 import { MemoryHistoryStore } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
@@ -128,7 +126,6 @@ export type PairingResult =
   | { ok: false; error: PairingFailureCode; diagnostics: PairingAttemptDiagnostics };
 
 const PINNED_KEY = "pinnedIds";
-const RELAY_ADDRESSES_KEY = "relayAddresses";
 
 function createHistoryBackend() {
   try {
@@ -380,17 +377,13 @@ export class AndroidClient {
   private lastClipboardError: string | null = null;
   private lastPairingAttempt: PairingAttemptDiagnostics | null = null;
   private pairingAttemptSeq = 0;
-  private relayAddresses: string[] = [];
-  private relayAddressesLoaded = false;
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
-    identity: createKVRuntimeIdentityStorage<any>({ storage: this.storage, key: IDENTITY_KEY }),
-    state: createKVRuntimeApplicationState<Record<string, unknown>>({
-      storage: this.storage,
-      key: "runtimeApplicationState",
-      initialState: () => ({}),
-    }),
+    storage: this.storage,
+    identityKey: IDENTITY_KEY,
+    applicationStateKey: "runtimeApplicationState",
+    initialApplicationState: () => ({} as Record<string, unknown>),
     clipboard: {
       readText: readClipboardText,
       writeText: writeClipboardText,
@@ -444,6 +437,9 @@ export class AndroidClient {
         this.listeners.forEach((listener) => listener(state));
       },
     },
+    relays: {
+      readAddresses: () => this.getRelayAddresses(),
+    },
   });
   private readonly runtime = createRuntimeOrchestrator({
     adapter: this.runtimeAdapter,
@@ -451,51 +447,8 @@ export class AndroidClient {
     stop: () => this.stopServices(),
   });
 
-  private normalizeStoredRelayAddresses(value: string[] | string | undefined): string[] {
-    if (value === undefined) return normalizeRelayAddresses(DEFAULT_WEBRTC_STAR_RELAYS);
-    if (Array.isArray(value)) return normalizeRelayAddresses(value);
-    if (typeof value === "string") return normalizeRelayAddresses(value.split(/\r?\n|,/));
-    return [];
-  }
-
-  private async loadRelayAddresses(): Promise<string[]> {
-    const stored = await this.storage.get<string[] | string>(RELAY_ADDRESSES_KEY);
-    this.relayAddresses = this.normalizeStoredRelayAddresses(stored);
-    this.relayAddressesLoaded = true;
-    return this.relayAddresses;
-  }
-
   private async getRelayAddresses(): Promise<string[]> {
-    if (this.relayAddressesLoaded) return this.relayAddresses;
-    return this.loadRelayAddresses();
-  }
-
-  private async restartMessaging(): Promise<void> {
-    const shouldRun = this.started;
-    try {
-      this.pairedConnections?.stop();
-      await this.transport?.stop();
-    } catch {
-      // ignore shutdown failures
-    }
-    this.transport = null;
-    this.pairedConnections = null;
-    this.clipMessaging = null;
-    this.trustMessaging = null;
-
-    await this.ensureMessaging();
-    if (shouldRun) {
-      try {
-        await this.transport!.start();
-        const pairedConnections = this.pairedConnections as ReturnType<
-          typeof createPairedPeerConnectionManager
-        > | null;
-        pairedConnections?.start();
-      } catch (err) {
-        log.warn("Messaging transport failed to restart", err);
-      }
-      await this.emitState();
-    }
+    return [...DEFAULT_WEBRTC_STAR_RELAYS];
   }
 
   private async ensureIdentityAddrs(id: any): Promise<any> {
@@ -649,7 +602,6 @@ export class AndroidClient {
     this.started = true;
     this.bindEvents();
     this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
-    await this.loadRelayAddresses();
     await this.ensureMessaging();
     try {
       await this.transport!.start();
@@ -766,15 +718,6 @@ export class AndroidClient {
     await this.storage.set(PINNED_KEY, this.pinnedIds);
     await this.emitState();
     return this.pinnedIds;
-  }
-
-  async setRelayAddresses(addrs: string[]): Promise<string[]> {
-    const normalized = normalizeRelayAddresses(addrs);
-    this.relayAddresses = normalized;
-    this.relayAddressesLoaded = true;
-    await this.storage.set(RELAY_ADDRESSES_KEY, normalized);
-    await this.restartMessaging();
-    return normalized;
   }
 
   async getIdentity(): Promise<Identity | null> {

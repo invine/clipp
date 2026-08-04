@@ -62,6 +62,22 @@ export interface RuntimePublicState<State> {
   publish(state: State): void | Promise<void>;
 }
 
+export type RuntimeRelayPorts = {
+  readAddresses(): Promise<string[]>;
+  updateAddresses?(addresses: string[]): Promise<string[]>;
+};
+
+export type RuntimeRelayAccess =
+  | {
+      mode: "fixed";
+      readAddresses(): Promise<string[]>;
+    }
+  | {
+      mode: "editable";
+      readAddresses(): Promise<string[]>;
+      updateAddresses(addresses: string[]): Promise<string[]>;
+    };
+
 export type RuntimeAdapter<Identity, ApplicationState, PublicState> = {
   capabilities: RuntimeCapabilities;
   identity: RuntimeIdentityStorage<Identity>;
@@ -72,6 +88,7 @@ export type RuntimeAdapter<Identity, ApplicationState, PublicState> = {
   network: MessagingTransport;
   clock: RuntimeClock;
   publicState: RuntimePublicState<PublicState>;
+  relays: RuntimeRelayAccess;
 };
 
 export type RuntimeContext<Identity, ApplicationState, PublicState> =
