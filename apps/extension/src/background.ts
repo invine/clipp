@@ -25,7 +25,16 @@ import {
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
-import { createManualClipboardService } from "../../../packages/core/clipboard/service";
+import {
+  createKVRuntimeApplicationState,
+  createKVRuntimeIdentityStorage,
+  createChromeExtensionRuntimeAdapter,
+  createRuntimeClipboardService,
+  createRuntimeNotificationSelection,
+  createRuntimeOrchestrator,
+  RUNTIME_CAPABILITIES,
+  systemRuntimeClock,
+} from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createTrustProtocolBinder } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
@@ -37,7 +46,10 @@ import {
   toTrustRequestPayload,
 } from "../../../packages/core/protocols/clipTrust";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import type { PeerConnectionInfo } from "../../../packages/core/messaging/transport";
+import type {
+  MessagingTransport,
+  PeerConnectionInfo,
+} from "../../../packages/core/messaging/transport";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -122,7 +134,8 @@ const offscreenReady = (async () => {
 // Background state
 
 function createExtensionClipboardService() {
-  return createManualClipboardService({
+  return createRuntimeClipboardService({
+    capabilities: RUNTIME_CAPABILITIES.chromeExtension,
     getSenderId: async () => {
       const id = await identitySvc.get();
       return id.deviceId;
@@ -203,7 +216,6 @@ const clipboardSync = createClipboardSyncManager({
     return id.deviceId;
   },
 });
-clipboardSync.start();
 // Initialize auto-sync state from storage
 chrome.storage.local.get(["autoSync"], (res) => {
   clipboardSync.setAutoSync(res.autoSync !== false);
@@ -216,14 +228,11 @@ history.onNew((item) => {
 let pendingRequests: TrustedDevice[] = [];
 
 function showPairingRequestNotification(device: TrustedDevice) {
-  if (!chrome.notifications?.create) return;
-
   const deviceName = device.deviceName?.trim() || "Unknown device";
-  chrome.notifications.create(`pairing-request-${device.deviceId}`, {
-    type: "basic",
-    iconUrl: chrome.runtime.getURL("icon-128.png"),
+  void runtimeAdapter.notifications.show({
+    id: `pairing-request-${device.deviceId}`,
     title: "New pairing request",
-    message: `${deviceName} wants to pair with Clipp.`,
+    body: `${deviceName} wants to pair with Clipp.`,
   });
 }
 
@@ -245,6 +254,132 @@ trust.on("approved", async (d) => {
     .then(() => sendOffscreen({ action: "connectPairedPeers" }))
     .catch(() => {});
   log.info("Device approved", d.deviceId);
+});
+
+const runtimeProtocolHandlers = new Map<string, Array<(from: string, data: Uint8Array) => void>>();
+const runtimePeerConnectedHandlers = new Set<(peerId: string) => void>();
+const runtimePeerDisconnectedHandlers = new Set<(peerId: string) => void>();
+const runtimeSelfPeerUpdateHandlers = new Set<(multiaddrs: string[]) => void>();
+let runtimeConnectedPeers = new Set<string>();
+
+const extensionNetwork: MessagingTransport = {
+  async start() {
+    await offscreenReady;
+  },
+  async stop() {
+    // The offscreen document remains available across service-worker suspension.
+  },
+  async send(protocol, target, data) {
+    await offscreenReady;
+    await sendOffscreen({ action: "runtimeSend", protocol, peerTarget: target, data: Array.from(data) });
+  },
+  async connect(target) {
+    await offscreenReady;
+    await sendOffscreen({ action: "runtimeConnect", peerTarget: target });
+  },
+  onMessage(protocol, handler) {
+    const handlers = runtimeProtocolHandlers.get(protocol) ?? [];
+    runtimeProtocolHandlers.set(protocol, [...handlers, handler]);
+    if (handlers.length === 0) {
+      void offscreenReady
+        .then(() => sendOffscreen({ action: "runtimeRegisterProtocol", protocol }))
+        .catch(() => {});
+    }
+  },
+  onPeerConnected(handler) {
+    runtimePeerConnectedHandlers.add(handler);
+  },
+  onPeerDisconnected(handler) {
+    runtimePeerDisconnectedHandlers.add(handler);
+  },
+  onSelfPeerUpdate(handler) {
+    runtimeSelfPeerUpdateHandlers.add(handler);
+  },
+  getConnectedPeers: () => [...runtimeConnectedPeers],
+};
+const notificationSelection = createRuntimeNotificationSelection();
+
+const runtimeAdapter = createChromeExtensionRuntimeAdapter({
+  identity: createKVRuntimeIdentityStorage<any>({ storage, key: IDENTITY_KEY }),
+  state: createKVRuntimeApplicationState<Record<string, unknown>>({
+    storage,
+    key: "runtimeApplicationState",
+    initialState: () => ({}),
+  }),
+  clipboard: {
+    readText: async () => navigator.clipboard.readText(),
+    writeText: async (text) => navigator.clipboard.writeText(text),
+  },
+  notifications: {
+    async show(message) {
+      if (!chrome.notifications?.create) return;
+      await chrome.notifications.create(message.id, {
+        type: "basic",
+        iconUrl: chrome.runtime.getURL("icon-128.png"),
+        title: message.title,
+        message: message.body,
+      });
+    },
+    async dismiss(id) {
+      if (chrome.notifications?.clear) await chrome.notifications.clear(id);
+    },
+    onSelect: notificationSelection.onSelect,
+  },
+  lifecycle: {
+    onShutdown(handler) {
+      const listener = () => void handler();
+      chrome.runtime.onSuspend?.addListener(listener);
+      return () => chrome.runtime.onSuspend?.removeListener(listener);
+    },
+    openApprovalView() {
+      if (typeof chrome.action?.openPopup === "function") {
+        void chrome.action.openPopup().catch(() => {});
+      } else {
+        void chrome.runtime.sendMessage({ type: "openPairingApproval" });
+      }
+    },
+  },
+  network: extensionNetwork,
+  clock: systemRuntimeClock,
+  publicState: {
+    async read() {
+      const [clips, devices, identity, peerState] = await Promise.all([
+        history.exportAll(),
+        trust.list(),
+        identitySvc.get(),
+        offscreenReady
+          .then(() => sendOffscreen<{ peers?: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
+          .catch(() => ({ peers: [], peerConnections: [] })),
+      ]);
+      return {
+        clips,
+        devices,
+        pending: pendingRequests,
+        peers: peerState.peers ?? [],
+        peerConnections: peerState.peerConnections ?? [],
+        identity,
+        pinnedIds: [],
+        relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS,
+      };
+    },
+    async publish(state) {
+      await chrome.runtime.sendMessage({ type: "runtimeState", state }).catch(() => {});
+    },
+  },
+});
+runtimeAdapter.notifications.onSelect(() => runtimeAdapter.lifecycle.openApprovalView());
+chrome.notifications?.onClicked?.addListener((id) => {
+  notificationSelection.emit(id);
+});
+const sharedRuntime = createRuntimeOrchestrator({
+  adapter: runtimeAdapter,
+  start: async () => {
+    clipboardSync.start();
+    await extensionNetwork.start();
+  },
+  stop: async () => {
+    clipboardSync.stop();
+  },
 });
 
 // Listen for clipboard changes (MV3: use chrome.clipboard or content script)
@@ -490,6 +625,32 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.source !== "offscreen") return;
   if (msg?.action === "selfPeerUpdate" && Array.isArray(msg.multiaddrs)) {
     void identitySvc.updateMultiaddrs(msg.multiaddrs);
+    runtimeSelfPeerUpdateHandlers.forEach((handler) => handler(msg.multiaddrs));
+    return;
+  }
+  if (
+    msg?.action === "runtimeProtocol" &&
+    typeof msg.protocol === "string" &&
+    typeof msg.from === "string" &&
+    Array.isArray(msg.data)
+  ) {
+    const data = Uint8Array.from(msg.data);
+    runtimeProtocolHandlers.get(msg.protocol)?.forEach((handler) => handler(msg.from, data));
+    return;
+  }
+  if (msg?.action === "peers" && Array.isArray(msg.peers)) {
+    const nextPeers = new Set<string>(msg.peers.filter((peer: unknown): peer is string => typeof peer === "string"));
+    nextPeers.forEach((peerId) => {
+      if (!runtimeConnectedPeers.has(peerId)) {
+        runtimePeerConnectedHandlers.forEach((handler) => handler(peerId));
+      }
+    });
+    runtimeConnectedPeers.forEach((peerId) => {
+      if (!nextPeers.has(peerId)) {
+        runtimePeerDisconnectedHandlers.forEach((handler) => handler(peerId));
+      }
+    });
+    runtimeConnectedPeers = nextPeers;
     return;
   }
   if (msg?.action !== "incoming") return;
@@ -505,6 +666,6 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 // Kick off offscreen + clipboard
-void offscreenReady.then(() => {
+void sharedRuntime.start().then(() => {
   log.info("Background services started (offscreen networking)");
 });

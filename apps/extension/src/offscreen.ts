@@ -20,6 +20,7 @@ let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | nu
 let clipMessaging: any = null;
 let trustMessaging: any = null;
 let historyMessaging: any = null;
+const runtimeRegisteredProtocols = new Set<string>();
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createIdentityManager({ repo: identityRepo });
@@ -67,6 +68,7 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
     identity?.privateKey && typeof identity.privateKey === "string"
       ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
       : undefined;
+  runtimeRegisteredProtocols.clear();
   transport = createLibp2pMessagingTransport({
     peerId,
     privateKey,
@@ -96,14 +98,21 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
       .sendMessage({ source: "offscreen", action: "selfPeerUpdate", multiaddrs })
       .catch(() => {});
   });
+  const emitPeers = () => {
+    const peers = transport?.getConnectedPeers?.() ?? [];
+    const peerConnections = transport?.getPeerConnectionInfo?.() ?? [];
+    chrome.runtime
+      .sendMessage({ source: "offscreen", action: "peers", peers, peerConnections })
+      .catch(() => {});
+  };
+  transport.onPeerConnected(emitPeers);
+  transport.onPeerDisconnected(emitPeers);
 
   try {
     await transport.start();
     started = true;
     pairedConnections.start();
-    const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
-    const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
-    chrome.runtime.sendMessage({ source: "offscreen", action: "peers", peers, peerConnections }).catch(() => {});
+    emitPeers();
     log.info("Offscreen messaging started");
   } catch (err) {
     pairedConnections?.stop();
@@ -169,6 +178,36 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else {
         await withOperationTimeout("trust_send", () => trustMessaging.send(target, m));
       }
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "runtimeSend" && msg.peerTarget && msg.protocol && Array.isArray(msg.data)) {
+      await transport.send(msg.protocol, msg.peerTarget, Uint8Array.from(msg.data));
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "runtimeConnect" && msg.peerTarget) {
+      await transport.connect(msg.peerTarget);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "runtimeRegisterProtocol" && typeof msg.protocol === "string") {
+      if (runtimeRegisteredProtocols.has(msg.protocol)) {
+        sendResponse({ ok: true });
+        return;
+      }
+      runtimeRegisteredProtocols.add(msg.protocol);
+      transport.onMessage(msg.protocol, (from, data) => {
+        chrome.runtime
+          .sendMessage({
+            source: "offscreen",
+            action: "runtimeProtocol",
+            protocol: msg.protocol,
+            from,
+            data: Array.from(data),
+          })
+          .catch(() => {});
+      });
       sendResponse({ ok: true });
       return;
     }

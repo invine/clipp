@@ -13,7 +13,17 @@ import {
 } from "./storage.js";
 // TODO: why normalizeClipboardContent is used in the app? it should be localized in clipboard service
 // import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
-import { createPollingClipboardService } from "../../../packages/core/clipboard/service.js";
+import {
+  createKVRuntimeApplicationState,
+  createKVRuntimeIdentityStorage,
+  createElectronRuntimeAdapter,
+  createRuntimeNetworkProxy,
+  createRuntimeNotificationSelection,
+  createRuntimeClipboardService,
+  createRuntimeOrchestrator,
+  RUNTIME_CAPABILITIES,
+  systemRuntimeClock,
+} from "../../../packages/core/runtime/index.js";
 import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
@@ -297,7 +307,8 @@ async function bootstrap() {
   // TODO: till here
 
   function createElectronClipboardService() {
-    return createPollingClipboardService({
+    return createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.electron,
       pollIntervalMs: 1200,
       getSenderId: async () => {
         const id = await identitySvc.get();
@@ -341,6 +352,8 @@ async function bootstrap() {
   let quitting = false;
   let shutdownStarted = false;
   let shutdownComplete = false;
+  let runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
+  const notificationSelection = createRuntimeNotificationSelection();
   const pendingSelfPeerUpdates = new Set<Promise<void>>();
 
   async function getState() {
@@ -373,9 +386,7 @@ async function bootstrap() {
 
   async function emitState() {
     const state = await getState();
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send("clipp:update", state);
-    });
+    await runtimeAdapter.publicState.publish(state);
   }
 
   // TODO: streamline logging
@@ -393,19 +404,12 @@ async function bootstrap() {
   }
 
   function showPairingRequestNotification(device: TrustedDevice) {
-    if (!Notification.isSupported()) return;
-
     const deviceName = device.deviceName?.trim() || "Unknown device";
-    const notification = new Notification({
+    void runtimeAdapter.notifications.show({
+      id: `pairing-request-${device.deviceId}`,
       title: "New pairing request",
       body: `${deviceName} wants to pair with Clipp.`,
-      silent: false,
     });
-
-    notification.on("click", () => {
-      showWindow();
-    });
-    notification.show();
   }
 
   function scheduleSelfPeerUpdate(multiaddrs: string[]) {
@@ -764,12 +768,6 @@ async function bootstrap() {
     tray.on("click", () => tray?.popUpContextMenu());
   }
 
-  app.whenReady().then(async () => {
-    createWindow();
-    createTray();
-    await startServices();
-  });
-
   async function shutdownServices() {
     quitting = true;
     clipboardSync.stop();
@@ -789,6 +787,66 @@ async function bootstrap() {
     }
   }
 
+  const runtimeAdapter = createElectronRuntimeAdapter({
+    identity: createKVRuntimeIdentityStorage<any>({ storage: kvStore, key: IDENTITY_KEY }),
+    state: createKVRuntimeApplicationState<Record<string, unknown>>({
+      storage: kvStore,
+      key: "runtimeApplicationState",
+      initialState: () => ({}),
+    }),
+    clipboard: {
+      readText: async () => clipboard.readText() ?? "",
+      writeText: async (text) => clipboard.writeText(text),
+    },
+    notifications: {
+      async show(message) {
+        if (!Notification.isSupported()) return;
+        const notification = new Notification({
+          title: message.title,
+          body: message.body,
+          silent: false,
+        });
+        notification.on("click", () => notificationSelection.emit(message.id));
+        notification.show();
+      },
+      async dismiss() {
+        // Electron notifications are transient and have no stable close handle here.
+      },
+      onSelect: notificationSelection.onSelect,
+    },
+    lifecycle: {
+      onShutdown(handler) {
+        runtimeShutdownHandler = handler;
+        return () => {
+          if (runtimeShutdownHandler === handler) runtimeShutdownHandler = null;
+        };
+      },
+      openApprovalView: () => showWindow(),
+    },
+    network: createRuntimeNetworkProxy(() => transport),
+    clock: systemRuntimeClock,
+    publicState: {
+      read: getState,
+      async publish(state) {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send("clipp:update", state);
+        });
+      },
+    },
+  });
+  runtimeAdapter.notifications.onSelect(() => runtimeAdapter.lifecycle.openApprovalView());
+  const sharedRuntime = createRuntimeOrchestrator({
+    adapter: runtimeAdapter,
+    start: startServices,
+    stop: shutdownServices,
+  });
+
+  app.whenReady().then(async () => {
+    createWindow();
+    createTray();
+    await sharedRuntime.start();
+  });
+
   app.on("before-quit", (event) => {
     quitting = true;
     if (shutdownComplete) return;
@@ -797,7 +855,8 @@ async function bootstrap() {
     shutdownStarted = true;
     void (async () => {
       try {
-        await shutdownServices();
+        if (runtimeShutdownHandler) await runtimeShutdownHandler();
+        else await shutdownServices();
       } finally {
         shutdownComplete = true;
         app.quit();

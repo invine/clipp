@@ -1,6 +1,16 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import { createPollingClipboardService } from "@core/clipboard/service";
+import {
+  createKVRuntimeApplicationState,
+  createKVRuntimeIdentityStorage,
+  createAndroidRuntimeAdapter,
+  createRuntimeClipboardService,
+  createRuntimeNetworkProxy,
+  createRuntimeNotificationSelection,
+  createRuntimeOrchestrator,
+  RUNTIME_CAPABILITIES,
+  systemRuntimeClock,
+} from "@core/runtime";
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
@@ -36,6 +46,7 @@ import * as log from "@core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
+import { LocalNotifications } from "@capacitor/local-notifications";
 
 export type AndroidAppState = {
   clips: Clip[];
@@ -159,26 +170,6 @@ async function writeClipboardText(text: string): Promise<void> {
   }
 }
 
-async function showPairingRequestNotification(device: TrustedDevice): Promise<void> {
-  if (typeof Notification === "undefined") return;
-
-  const deviceName = device.deviceName?.trim() || "Unknown device";
-  try {
-    let permission = Notification.permission;
-    if (permission === "default" && typeof Notification.requestPermission === "function") {
-      permission = await Notification.requestPermission();
-    }
-    if (permission !== "granted") return;
-
-    new Notification("New pairing request", {
-      body: `${deviceName} wants to pair with Clipp.`,
-      tag: `pairing-request-${device.deviceId}`,
-    });
-  } catch (err) {
-    log.warn("Failed to show pairing request notification", err);
-  }
-}
-
 function base64ToBytes(b64: string): Uint8Array {
   try {
     if (typeof Buffer !== "undefined") {
@@ -198,6 +189,14 @@ function base64ToBytes(b64: string): Uint8Array {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err ?? "unknown_error");
+}
+
+function nativeNotificationId(id: string): number {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (Math.imul(hash, 31) + id.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash || 1);
 }
 
 function connectionPathForAddr(addr: unknown): PairingConnectionPath {
@@ -274,6 +273,13 @@ export class AndroidClient {
 
   constructor() {
     // messaging is initialised lazily in `start()`
+    this.runtimeAdapter.notifications.onSelect(() => this.runtimeAdapter.lifecycle.openApprovalView());
+    void LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
+      const id = event.notification.extra?.runtimeNotificationId;
+      if (typeof id === "string") {
+        this.notificationSelection.emit(id);
+      }
+    });
   }
 
   private async ensureMessaging(): Promise<void> {
@@ -328,7 +334,8 @@ export class AndroidClient {
     });
   }
   private createAndroidClipboardService() {
-    return createPollingClipboardService({
+    return createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.android,
       pollIntervalMs: 1500,
       getSenderId: async () => {
         const id = await this.identitySvc.get();
@@ -375,6 +382,74 @@ export class AndroidClient {
   private pairingAttemptSeq = 0;
   private relayAddresses: string[] = [];
   private relayAddressesLoaded = false;
+  private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
+  private readonly notificationSelection = createRuntimeNotificationSelection();
+  private readonly runtimeAdapter = createAndroidRuntimeAdapter({
+    identity: createKVRuntimeIdentityStorage<any>({ storage: this.storage, key: IDENTITY_KEY }),
+    state: createKVRuntimeApplicationState<Record<string, unknown>>({
+      storage: this.storage,
+      key: "runtimeApplicationState",
+      initialState: () => ({}),
+    }),
+    clipboard: {
+      readText: readClipboardText,
+      writeText: writeClipboardText,
+    },
+    notifications: {
+      show: async (message) => {
+        try {
+          let permission = await LocalNotifications.checkPermissions();
+          if (permission.display === "prompt" || permission.display === "prompt-with-rationale") {
+            permission = await LocalNotifications.requestPermissions();
+          }
+          if (permission.display !== "granted") return;
+          await LocalNotifications.schedule({
+            notifications: [
+              {
+                id: nativeNotificationId(message.id),
+                title: message.title,
+                body: message.body,
+                extra: { runtimeNotificationId: message.id },
+              },
+            ],
+          });
+        } catch (err) {
+          if (typeof Notification === "undefined") {
+            log.warn("Failed to show pairing request notification", err);
+            return;
+          }
+          const notification = new Notification(message.title, { body: message.body, tag: message.id });
+          notification.onclick = () => this.notificationSelection.emit(message.id);
+        }
+      },
+      async dismiss(id) {
+        await LocalNotifications.cancel({ notifications: [{ id: nativeNotificationId(id) }] }).catch(() => {});
+      },
+      onSelect: this.notificationSelection.onSelect,
+    },
+    lifecycle: {
+      onShutdown: (handler) => {
+        this.runtimeShutdownHandler = handler;
+        return () => {
+          if (this.runtimeShutdownHandler === handler) this.runtimeShutdownHandler = null;
+        };
+      },
+      openApprovalView: () => window.focus(),
+    },
+    network: createRuntimeNetworkProxy(() => this.transport),
+    clock: systemRuntimeClock,
+    publicState: {
+      read: () => this.getState(),
+      publish: (state) => {
+        this.listeners.forEach((listener) => listener(state));
+      },
+    },
+  });
+  private readonly runtime = createRuntimeOrchestrator({
+    adapter: this.runtimeAdapter,
+    start: () => this.startServices(),
+    stop: () => this.stopServices(),
+  });
 
   private normalizeStoredRelayAddresses(value: string[] | string | undefined): string[] {
     if (value === undefined) return normalizeRelayAddresses(DEFAULT_WEBRTC_STAR_RELAYS);
@@ -455,7 +530,12 @@ export class AndroidClient {
       if (this.pendingRequests.some((p) => p.deviceId === d.deviceId)) return;
       this.pendingRequests.push(d);
       this.emitState();
-      void showPairingRequestNotification(d);
+      const deviceName = d.deviceName?.trim() || "Unknown device";
+      void this.runtimeAdapter.notifications.show({
+        id: `pairing-request-${d.deviceId}`,
+        title: "New pairing request",
+        body: `${deviceName} wants to pair with Clipp.`,
+      });
       log.info("Trust request received", d.deviceId);
     });
     this.trust.on("approved", async (d) => {
@@ -561,10 +641,10 @@ export class AndroidClient {
 
   private async emitState() {
     const state = await this.getState();
-    this.listeners.forEach((l) => l(state));
+    await this.runtimeAdapter.publicState.publish(state);
   }
 
-  async start() {
+  private async startServices() {
     if (this.started) return;
     this.started = true;
     this.bindEvents();
@@ -578,16 +658,25 @@ export class AndroidClient {
       log.warn("Messaging transport failed to start", err);
     }
     this.clipboardSync.start();
-    await this.emitState();
   }
 
-  stop() {
+  private async stopServices() {
     if (!this.started) return;
     this.clipboardSync.stop();
     this.pairedConnections?.stop();
-    this.transport?.stop();
+    await this.transport?.stop();
     this.started = false;
     this.listeners = [];
+  }
+
+  start() {
+    return this.runtime.start();
+  }
+
+  stop() {
+    return this.runtimeShutdownHandler
+      ? Promise.resolve(this.runtimeShutdownHandler())
+      : this.runtime.stop();
   }
 
   onUpdate(cb: (state: AndroidAppState) => void) {
