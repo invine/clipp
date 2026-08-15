@@ -26,6 +26,7 @@ export type Identity = {
 };
 
 export type PendingRequest = Device;
+export type PairingWaiting = { targetPeerId: string; expiresAtUnixMs: bigint };
 
 export type PeerConnectionPath = "direct" | "relay" | "unknown";
 

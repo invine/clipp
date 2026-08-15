@@ -348,6 +348,7 @@ async function bootstrap() {
   let pendingRequests: TrustedDevice[] = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
+  let pairingWaiting: Array<{ targetPeerId: string; expiresAtUnixMs: bigint }> = [];
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -371,6 +372,7 @@ async function bootstrap() {
       devices,
       // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
+      waiting: pairingWaiting,
       peers,
       peerConnections,
       relayConnections,
@@ -994,6 +996,7 @@ async function bootstrap() {
       verify: verifyPairingTrustRequestSignature,
       send: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
       clock: systemRuntimeClock,
+      onWaitingChanged: (waiting) => { pairingWaiting = waiting; void emitState(); },
     });
     try {
       pairingSessions.set(target.targetPeerId, session);

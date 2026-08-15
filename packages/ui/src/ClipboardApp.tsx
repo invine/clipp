@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Clip, Device, Identity, PairingCode, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
+import { Clip, Device, Identity, PairingCode, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
@@ -214,6 +214,7 @@ export type ClipboardAppProps = {
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
+  waiting?: PairingWaiting[];
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -238,6 +239,7 @@ export function ClipboardApp({
   clips,
   devices,
   pending,
+  waiting = [],
   peers,
   peerConnections = [],
   relayConnections = [],
@@ -910,13 +912,14 @@ export function ClipboardApp({
           )}
         </div>
 
-        {pending.length > 0 && (
+        {(pending.length > 0 || waiting.length > 0) && (
           <>
             <div className="section-divider"></div>
             <div>
               <div className="nav-section-label" style={{ marginTop: 14 }}>
                 Pending requests
               </div>
+              {waiting.map((entry) => <div key={entry.targetPeerId} className="pending-card"><div className="peer-meta"><span className="peer-name">Waiting for approval</span><span className="peer-sub">{entry.targetPeerId}</span></div></div>)}
               <div className="pending-list">
                 {pending.map((req) => {
                   return (

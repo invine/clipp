@@ -52,6 +52,7 @@ export type AndroidAppState = {
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
+  waiting?: Array<{ targetPeerId: string; expiresAtUnixMs: bigint }>;
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -455,6 +456,7 @@ export class AndroidClient {
   });
   private pairingInboundBound = false;
   private readonly pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
+  private pairingWaiting: Array<{ targetPeerId: string; expiresAtUnixMs: bigint }> = [];
   private readonly runtime = createRuntimeOrchestrator({
     adapter: this.runtimeAdapter,
     start: () => this.startServices(),
@@ -680,6 +682,7 @@ export class AndroidClient {
       clips,
       devices,
       pending: this.pendingRequests,
+      waiting: this.pairingWaiting,
       peers,
       peerConnections,
       relayConnections,
@@ -805,6 +808,7 @@ export class AndroidClient {
         verify: verifyPairingTrustRequestSignature,
         send: (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
         clock: systemRuntimeClock,
+        onWaitingChanged: (waiting) => { this.pairingWaiting = waiting; void this.emitState(); },
       });
       this.pairingSessions.set(target.targetPeerId, session);
       await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: session.request });

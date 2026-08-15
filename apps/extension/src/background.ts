@@ -229,6 +229,7 @@ history.onNew((item) => {
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
 let pendingRequests: TrustedDevice[] = [];
+let pairingWaiting: Array<{ targetPeerId: string; expiresAtUnixMs: bigint }> = [];
 
 function showPairingRequestNotification(device: TrustedDevice) {
   const deviceName = device.deviceName?.trim() || "Unknown device";
@@ -365,6 +366,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         clips,
         devices,
         pending: pendingRequests,
+        waiting: pairingWaiting,
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
         identity,
@@ -555,6 +557,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           verify: verifyPairingTrustRequestSignature,
           send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
           clock: systemRuntimeClock,
+          onWaitingChanged: (waiting) => { pairingWaiting = waiting; void runtimeAdapter.publicState.publish(runtimeAdapter.publicState.read() as any); },
         });
         const target = decodePairingTarget(msg.pairingText);
         if (!target) throw new Error("invalid_pairing_target");

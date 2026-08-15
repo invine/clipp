@@ -4,7 +4,7 @@ import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
 import { CLIP_PROTOCOL, CLIP_TRUST_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
-import { PAIRING_PROTOCOL } from "../pairing/protocol.js";
+import { decodePairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
 import { ensureLegacyMultiaddrApi, getPeerIdFromMultiaddr } from "./multiaddrCompat.js";
 import { listRendezvousPeers, registerOnRendezvous } from "./rendezvous.js";
 import type {
@@ -17,6 +17,13 @@ import type {
 import * as log from "../logger.js";
 
 type Libp2pNode = any;
+
+function concatBytes(parts: Uint8Array[], size: number): Uint8Array {
+  const result = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) { result.set(part, offset); offset += part.length; }
+  return result;
+}
 
 export type Libp2pMessagingOptions = {
   peerId?: any;
@@ -715,6 +722,26 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
       try {
         log.debug("Incoming protocol stream", { protocol, from });
+        if (protocol === PAIRING_PROTOCOL) {
+          // Pairing is intentionally one authenticated, bounded frame per stream.
+          if (!from) {
+            log.warn("Pairing stream missing authenticated peer id");
+            return;
+          }
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          for await (const chunk of iterable) {
+            const bytes = toU8(chunk);
+            if (!bytes) return;
+            size += bytes.length;
+            if (size > PAIRING_MAX_FRAME_BYTES + 10) return;
+            chunks.push(bytes);
+          }
+          const frame = concatBytes(chunks, size);
+          if (!decodePairingFrame(frame)) return;
+          for (const handler of handlers) handler(from, frame);
+          return;
+        }
         for await (const chunk of iterable) {
           const buf = toU8(chunk);
           if (!buf || buf.length === 0) {
