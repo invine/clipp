@@ -1,5 +1,6 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
+import QRCode from "qrcode";
 import {
   createAndroidRuntimeAdapter,
   createRuntimeClipboardService,
@@ -25,7 +26,10 @@ import {
   createTrustedClipMessenger,
 } from "@core/messaging";
 import { createClipMessage } from "@core/protocols/clip";
-import { createSignedTrustRequest } from "@core/protocols/clipTrust";
+import { PAIRING_PROTOCOL } from "@core/pairing/protocol";
+import { createPairingSession } from "@core/pairing/session";
+import { importPairingTargetAndRequest } from "@core/pairing/target";
+import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
   createIdentityManager,
   createKVIdentityRepository,
@@ -35,9 +39,6 @@ import {
   TRUST_KEY,
   type TrustedDevice,
 } from "@core/trust";
-import { encode } from "@core/qr";
-import { encodePairing } from "@core/pairing/encode";
-import { decodePairing } from "@core/pairing/decode";
 import type { Clip } from "@core/models/Clip";
 import type { Device, Identity, PairingCode, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 import * as log from "@core/logger";
@@ -727,22 +728,13 @@ export class AndroidClient {
 
   async getPairingCode(): Promise<PairingCode | null> {
     const id = await this.ensureIdentityAddrs(await this.identitySvc.get());
-    const peerId = await deviceIdToPeerId(id.deviceId);
-    const addrs =
-      id.multiaddrs && id.multiaddrs.length
-        ? id.multiaddrs
-        : id.multiaddr
-        ? [id.multiaddr]
-        : [`/p2p/${peerId}`];
-    const info = {
-      deviceId: id.deviceId,
-      deviceName: id.deviceName,
-      multiaddrs: addrs,
-      publicKey: id.publicKey,
-    };
+    await this.ensureMessaging();
+    await this.transport!.start();
+    const signedPeerRecord = await this.transport!.getSignedPeerRecord();
+    const text = encodePairingTarget({ targetPeerId: id.deviceId, signedPeerRecord, deviceNameHint: id.deviceName });
     return {
-      image: await encode(info),
-      text: encodePairing(info),
+      image: await QRCode.toDataURL(text, { errorCorrectionLevel: "L", margin: 0, scale: 2 }),
+      text,
     };
   }
 
@@ -772,8 +764,24 @@ export class AndroidClient {
     };
 
     try {
-      const pairing = decodePairing(txt);
-      if (!pairing) return fail("invalid");
+      const target = decodePairingTarget(txt);
+      if (!target) return fail("invalid");
+      await this.ensureMessaging();
+      await this.transport!.start();
+      const localIdentity = await this.identitySvc.get();
+      if (!localIdentity.privateKey) return fail("invalid");
+      const privateKey = privateKeyFromProtobuf(Uint8Array.from(Buffer.from(localIdentity.privateKey, "base64")));
+      const session = createPairingSession({
+        identity: async () => ({ peerId: localIdentity.deviceId, deviceName: localIdentity.deviceName, nameRevision: localIdentity.nameRevision ?? 0 }),
+        sign: async (bytes) => privateKey.sign(bytes),
+        verify: async () => false,
+        send: (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
+        clock: systemRuntimeClock,
+      });
+      await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: session.request });
+      return { ok: true, diagnostics: this.finishPairingDiagnostics(diagnostics, "succeeded", null) };
+
+      const pairing: any = target;
 
       diagnostics.targetDeviceId = pairing.deviceId;
       diagnostics.providedAddrs =
