@@ -6,7 +6,8 @@ import QRCode from "qrcode";
 import { encodePairingTarget, decodePairingTarget } from "../../../packages/core/pairing/v2.js";
 import { createPairingSession } from "../../../packages/core/pairing/session.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
-import { PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol.js";
+import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
+import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending.js";
 import "./libp2pGlobals.js";
 import {
   openDatabase,
@@ -345,6 +346,7 @@ async function bootstrap() {
 
   // TODO: why pendingRequests is part of the application and not part of trust manager?
   let pendingRequests: TrustedDevice[] = [];
+  let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -473,6 +475,11 @@ async function bootstrap() {
     });
 
     bindTransportHandlers(transport);
+    await pairingPending?.start();
+    if (pairingPending) {
+      const requests = await pairingPending.list();
+      pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
+    }
 
     // TODO: refactor pendingRequests as it's currently owned by trustManager
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
@@ -838,7 +845,22 @@ async function bootstrap() {
       },
     },
   });
-  runtimeAdapter.notifications.onSelect(() => runtimeAdapter.lifecycle.openApprovalView());
+  pairingPending = createPendingTrustRequestCoordinator({
+    localPeerId: async () => peerId.toString(),
+    store: createKVPendingTrustRequestStore({ storage: kvStore, key: "pairingPendingRequests" }),
+    notifications: runtimeAdapter.notifications,
+    lifecycle: runtimeAdapter.lifecycle,
+    clock: systemRuntimeClock,
+    verify: verifyPairingTrustRequestSignature,
+  });
+  transport.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+    void pairingPending?.receive(from, frame).then(async (accepted) => {
+      if (!accepted || !pairingPending) return;
+      const requests = await pairingPending.list();
+      pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
+      await emitState();
+    }).catch((error) => log.warn("Pairing request processing failed", error));
+  });
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
     start: startServices,

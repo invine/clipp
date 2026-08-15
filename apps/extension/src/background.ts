@@ -44,7 +44,8 @@ import {
   toTrustRequestPayload,
 } from "../../../packages/core/protocols/clipTrust";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import { PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
+import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
+import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { createPairingSession } from "../../../packages/core/pairing/session";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import { encodePairingTarget } from "../../../packages/core/pairing/v2";
@@ -379,7 +380,22 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
     readAddresses: async () => [...DEFAULT_WEBRTC_STAR_RELAYS],
   },
 });
-runtimeAdapter.notifications.onSelect(() => runtimeAdapter.lifecycle.openApprovalView());
+const pairingPending = createPendingTrustRequestCoordinator({
+  localPeerId: async () => deviceIdToPeerId((await identitySvc.get()).deviceId),
+  store: createKVPendingTrustRequestStore({ storage, key: "pairingPendingRequests" }),
+  notifications: runtimeAdapter.notifications,
+  lifecycle: runtimeAdapter.lifecycle,
+  clock: systemRuntimeClock,
+  verify: verifyPairingTrustRequestSignature,
+});
+extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+  void pairingPending.receive(from, frame).then(async (accepted) => {
+    if (!accepted) return;
+    const requests = await pairingPending.list();
+    pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
+    await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
+  }).catch((error) => log.warn("Pairing request processing failed", error));
+});
 chrome.notifications?.onClicked?.addListener((id) => {
   notificationSelection.emit(id);
 });
@@ -389,6 +405,9 @@ const sharedRuntime = createRuntimeOrchestrator({
     await offscreenReady;
     clipboardSync.start();
     await extensionNetwork.start();
+    await pairingPending.start();
+    const requests = await pairingPending.list();
+    pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
   },
   stop: async () => {
     clipboardSync.stop();

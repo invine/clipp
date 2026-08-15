@@ -93,6 +93,18 @@ export function validateTrustRequestTime(payload: TrustRequestPayload, now: numb
   return payload.issuedAtUnixMs <= current + skew && current <= payload.issuedAtUnixMs + validity + skew;
 }
 
+/** Verify a v2 request against the public key embedded in its authenticated Peer ID. */
+export async function verifyPairingTrustRequestSignature(signedPayload: Uint8Array, signature: Uint8Array, peerId: string): Promise<boolean> {
+  try {
+    const { peerIdFromString } = await import("@libp2p/peer-id");
+    const key = (peerIdFromString(peerId) as any).publicKey;
+    if (!key || typeof key.verify !== "function") return false;
+    return await key.verify(concatPairingBytes(TRUST_REQUEST_DOMAIN, signedPayload), signature);
+  } catch {
+    return false;
+  }
+}
+
 function encodeTrustResponse(response: TrustResponse): Uint8Array {
   return concatPairingBytes(varintField(1, response.decision === "accepted" ? 1n : 2n), bytesField(2, response.requestEnvelope), bytesField(3, new TextEncoder().encode(response.responderDeviceName)), varintField(4, response.responderNameRevision));
 }

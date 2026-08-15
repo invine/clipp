@@ -88,6 +88,7 @@ export function createPendingTrustRequestCoordinator(options: {
 }) {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
+  let started = false;
 
   const expirationFor = (issuedAt: bigint) => issuedAt + BigInt(options.validityWindowMs ?? 10 * 60 * 1000) + BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
   const isCurrent = (request: PendingTrustRequest) => BigInt(options.clock.now()) <= request.expiresAtUnixMs;
@@ -117,6 +118,8 @@ export function createPendingTrustRequestCoordinator(options: {
   return {
     list: () => options.store.list(),
     async start(): Promise<void> {
+      if (started) return;
+      started = true;
       options.notifications.onSelect((id) => {
         if (id.startsWith("pairing-request-")) return options.lifecycle.openApprovalView();
       });

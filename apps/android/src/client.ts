@@ -26,7 +26,8 @@ import {
   createTrustedClipMessenger,
 } from "@core/messaging";
 import { createClipMessage } from "@core/protocols/clip";
-import { PAIRING_PROTOCOL } from "@core/pairing/protocol";
+import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
+import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingSession } from "@core/pairing/session";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
@@ -271,7 +272,6 @@ export class AndroidClient {
 
   constructor() {
     // messaging is initialised lazily in `start()`
-    this.runtimeAdapter.notifications.onSelect(() => this.runtimeAdapter.lifecycle.openApprovalView());
     void LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
       const id = event.notification.extra?.runtimeNotificationId;
       if (typeof id === "string") {
@@ -442,6 +442,15 @@ export class AndroidClient {
       readAddresses: () => this.getRelayAddresses(),
     },
   });
+  private readonly pairingPending = createPendingTrustRequestCoordinator({
+    localPeerId: async () => deviceIdToPeerId((await this.identitySvc.get()).deviceId),
+    store: createKVPendingTrustRequestStore({ storage: this.storage, key: "pairingPendingRequests" }),
+    notifications: this.runtimeAdapter.notifications,
+    lifecycle: this.runtimeAdapter.lifecycle,
+    clock: systemRuntimeClock,
+    verify: verifyPairingTrustRequestSignature,
+  });
+  private pairingInboundBound = false;
   private readonly runtime = createRuntimeOrchestrator({
     adapter: this.runtimeAdapter,
     start: () => this.startServices(),
@@ -603,6 +612,20 @@ export class AndroidClient {
     this.bindEvents();
     this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
     await this.ensureMessaging();
+    if (!this.pairingInboundBound) {
+      this.pairingInboundBound = true;
+      this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+        void this.pairingPending.receive(from, frame).then(async (accepted) => {
+          if (!accepted) return;
+          const requests = await this.pairingPending.list();
+          this.pendingRequests = [...this.pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
+          await this.emitState();
+        }).catch((error) => log.warn("Pairing request processing failed", error));
+      });
+    }
+    await this.pairingPending.start();
+    const requests = await this.pairingPending.list();
+    this.pendingRequests = [...this.pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
     this.started = true;
     try {
       await this.transport!.start();
