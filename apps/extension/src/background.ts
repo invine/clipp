@@ -47,6 +47,7 @@ import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
 import { createPairingSession } from "../../../packages/core/pairing/session";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
+import { encodePairingTarget } from "../../../packages/core/pairing/v2";
 import type {
   MessagingTransport,
   PeerConnectionInfo,
@@ -498,6 +499,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     identitySvc.get().then((id) => {
       sendResponse({ identity: id });
     });
+    return true;
+  }
+  if (msg.type === "getPairingTarget") {
+    void (async () => {
+      try {
+        await offscreenReady;
+        const identity = await identitySvc.get();
+        const signedPeerRecord = await extensionNetwork.getSignedPeerRecord();
+        sendResponse({ text: encodePairingTarget({ targetPeerId: identity.deviceId, signedPeerRecord, deviceNameHint: identity.deviceName }) });
+      } catch (error) {
+        sendResponse({ error: (error as Error).message });
+      }
+    })();
     return true;
   }
   if (msg.type === "renameLocalIdentity" && typeof msg.name === "string") {

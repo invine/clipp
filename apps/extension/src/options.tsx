@@ -4,10 +4,8 @@ import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
 import "./styles/tailwind-built.css";
-import { decode, encode } from "../../../packages/core/qr";
-import { encodePairing } from "../../../packages/core/pairing/encode";
-import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
+import QRCode from "qrcode";
+import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 
 const defaultTypes = { text: true, image: true, file: true };
 
@@ -33,10 +31,9 @@ const Options = () => {
 
   async function handleScan(payload: string) {
     setQRResult(payload);
-    const pairing = await decode(payload);
-    if (pairing) {
+    if (decodePairingTarget(payload)) {
       // @ts-ignore
-      chrome.runtime.sendMessage({ type: "pairDevice", pairing }, (resp) => {
+      chrome.runtime.sendMessage({ type: "pairDevice", pairingText: payload }, (resp) => {
         // Optionally show success/failure
       });
     }
@@ -44,25 +41,10 @@ const Options = () => {
 
   async function generateMyQR() {
     // @ts-ignore
-    chrome.runtime.sendMessage({ type: "getLocalIdentity" }, async (res) => {
-      if (!res?.identity) return;
-      const peerId = await deviceIdToPeerId(res.identity.deviceId);
-      const multiaddrs =
-        res.identity.multiaddrs ||
-        (res.identity.multiaddr ? [res.identity.multiaddr] : []);
-      const addrs =
-        multiaddrs && multiaddrs.length
-          ? multiaddrs
-          : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`);
-      if (!addrs.length) return;
-      const info = {
-        deviceId: res.identity.deviceId,
-        deviceName: res.identity.deviceName,
-        multiaddrs: addrs,
-        publicKey: res.identity.publicKey,
-      };
-      const img = await encode(info);
-      const txt = encodePairing(info);
+    chrome.runtime.sendMessage({ type: "getPairingTarget" }, async (res) => {
+      if (!res?.text) return;
+      const txt = res.text as string;
+      const img = await QRCode.toDataURL(txt, { errorCorrectionLevel: "L", margin: 0, scale: 2 });
       setMyQRImage(img);
       setMyQRText(txt);
     });

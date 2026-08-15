@@ -1,6 +1,7 @@
 /* global chrome */
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
+import QRCode from "qrcode";
 import "./styles/tailwind-built.css";
 import {
   ClipboardApp,
@@ -12,10 +13,6 @@ import {
   PendingRequest,
 } from "../../../packages/ui";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
-import { encode } from "../../../packages/core/qr";
-import { encodePairing } from "../../../packages/core/pairing/encode";
-import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 
 const Popup = () => {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -137,29 +134,13 @@ const Popup = () => {
   }
 
   async function handleRequestPairingCode(): Promise<PairingCode | null> {
-    const id = await new Promise<Identity | null>((resolve) => {
-      chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
-        resolve(res?.identity || null);
-      });
+    const target = await new Promise<string | null>((resolve) => {
+      chrome.runtime.sendMessage({ type: "getPairingTarget" }, (res) => resolve(res?.text || null));
     });
-    if (!id) return null;
-    const peerId = await deviceIdToPeerId(id.deviceId);
-    const multiaddrs =
-      id.multiaddrs && id.multiaddrs.length
-        ? id.multiaddrs
-        : id.multiaddr
-        ? [id.multiaddr]
-        : DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`);
-    if (!multiaddrs.length) return null;
-    const info = {
-      deviceId: id.deviceId,
-      deviceName: id.deviceName,
-      multiaddrs,
-      publicKey: id.publicKey,
-    };
+    if (!target) return null;
     return {
-      image: await encode(info),
-      text: encodePairing(info),
+      image: await QRCode.toDataURL(target, { errorCorrectionLevel: "L", margin: 0, scale: 2 }),
+      text: target,
     };
   }
 
