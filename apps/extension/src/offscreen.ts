@@ -191,6 +191,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
+    if (msg.action === "runtimeGetSignedPeerRecord") {
+      sendResponse({ record: Array.from(await transport.getSignedPeerRecord!()) });
+      return;
+    }
+    if (msg.action === "runtimeImportSignedPeerRecord" && msg.peerId && Array.isArray(msg.record)) {
+      await transport.importSignedPeerRecord!(msg.peerId, Uint8Array.from(msg.record));
+      sendResponse({ ok: true });
+      return;
+    }
     if (msg.action === "runtimeRegisterProtocol" && typeof msg.protocol === "string") {
       if (runtimeRegisteredProtocols.has(msg.protocol)) {
         sendResponse({ ok: true });

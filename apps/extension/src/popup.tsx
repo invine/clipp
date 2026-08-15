@@ -11,7 +11,7 @@ import {
   PeerConnectionInfo,
   PendingRequest,
 } from "../../../packages/ui";
-import { decodePairing } from "../../../packages/core/pairing/decode";
+import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { encode } from "../../../packages/core/qr";
 import { encodePairing } from "../../../packages/core/pairing/encode";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
@@ -127,12 +127,11 @@ const Popup = () => {
   }
 
   async function handlePairingText(txt: string) {
-    const payload = decodePairing(txt);
-    if (!payload) {
+    if (!decodePairingTarget(txt)) {
       alert("Invalid pairing payload");
       return;
     }
-    chrome.runtime.sendMessage({ type: "pairDevice", pairing: payload }, () => {
+    chrome.runtime.sendMessage({ type: "pairDevice", pairingText: txt }, () => {
       refreshPending();
     });
   }

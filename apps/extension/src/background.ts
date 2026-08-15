@@ -44,6 +44,9 @@ import {
   toTrustRequestPayload,
 } from "../../../packages/core/protocols/clipTrust";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
+import { PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
+import { createPairingSession } from "../../../packages/core/pairing/session";
+import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import type {
   MessagingTransport,
   PeerConnectionInfo,
@@ -294,6 +297,15 @@ const extensionNetwork: MessagingTransport = {
     runtimeSelfPeerUpdateHandlers.add(handler);
   },
   getConnectedPeers: () => [...runtimeConnectedPeers],
+  async getSignedPeerRecord() {
+    const result = await sendOffscreen<{ record?: number[] }>({ action: "runtimeGetSignedPeerRecord" });
+    if (!Array.isArray(result?.record)) throw new Error("signed_peer_record_unavailable");
+    return Uint8Array.from(result.record);
+  },
+  async importSignedPeerRecord(peerId, record) {
+    const result = await sendOffscreen<{ ok?: boolean }>({ action: "runtimeImportSignedPeerRecord", peerId, record: Array.from(record) });
+    if (!result?.ok) throw new Error("invalid_signed_peer_record");
+  },
 };
 const notificationSelection = createRuntimeNotificationSelection();
 
@@ -492,6 +504,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     identitySvc.rename(msg.name).then(async () => {
       sendResponse({ identity: await identitySvc.get() });
     });
+    return true;
+  }
+  if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
+    void (async () => {
+      try {
+        await offscreenReady;
+        const id = await identitySvc.get();
+        if (!id.privateKey) throw new Error("missing_private_key");
+        const privateKey = privateKeyFromProtobuf(base64ToBytes(id.privateKey));
+        const session = createPairingSession({
+          identity: async () => ({ peerId: id.deviceId, deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
+          sign: async (bytes) => privateKey.sign(bytes),
+          verify: async () => false,
+          send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
+          clock: systemRuntimeClock,
+        });
+        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: session.request });
+        sendResponse({ ok: true });
+      } catch (error) {
+        sendResponse({ ok: false, error: (error as Error).message });
+      }
+    })();
     return true;
   }
   if (msg.type === "pairDevice" && msg.pairing) {
