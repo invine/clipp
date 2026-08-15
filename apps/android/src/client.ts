@@ -449,6 +449,9 @@ export class AndroidClient {
     lifecycle: this.runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
+    sendResponse: async (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
+    responseIdentity: async () => { const identity = await this.identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
+    onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
   });
   private pairingInboundBound = false;
   private readonly runtime = createRuntimeOrchestrator({
@@ -723,14 +726,14 @@ export class AndroidClient {
   }
 
   async acceptRequest(dev: PendingRequest) {
-    await this.trust.sendTrustAck(dev as any, true);
+    if (!(await this.pairingPending.decide(dev.deviceId, "accepted"))) await this.trust.sendTrustAck(dev as any, true);
     this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== dev.deviceId);
     await this.emitState();
   }
 
   async rejectRequest(dev: PendingRequest) {
     this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== dev.deviceId);
-    await this.trust.sendTrustAck(dev as any, false);
+    if (!(await this.pairingPending.decide(dev.deviceId, "rejected"))) await this.trust.sendTrustAck(dev as any, false);
     await this.emitState();
   }
 

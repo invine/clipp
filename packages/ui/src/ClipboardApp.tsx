@@ -928,11 +928,7 @@ export function ClipboardApp({
                             className="peer-name"
                             text={req.deviceName}
                           />
-                          <MiddleEllipsisText
-                            className="peer-sub"
-                            text={req.deviceId}
-                            max={isNarrow ? 22 : 32}
-                          />
+                          <span className="peer-sub" title={req.deviceId}>{req.deviceId}</span>
                         </div>
                       </div>
                       <div className="pending-actions">

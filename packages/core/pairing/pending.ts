@@ -6,6 +6,7 @@ import {
   decodeTrustRequestPayload,
   validateTrustRequestTime,
 } from "./protocol";
+import { encodePairingFrame } from "./protocol";
 
 export type PendingTrustRequest = {
   initiatorPeerId: string;
@@ -83,12 +84,24 @@ export function createPendingTrustRequestCoordinator(options: {
   lifecycle: Pick<RuntimeLifecycle, "openApprovalView">;
   clock: RuntimeClock;
   verify: TrustRequestVerifier;
+  sendResponse?(peerId: string, frame: Uint8Array): Promise<void>;
+  responseIdentity?(): Promise<{ deviceName: string; nameRevision: bigint }>;
+  onRejected?(reason: "malformed" | "signature" | "identity" | "time"): void;
   validityWindowMs?: number;
   clockSkewAllowanceMs?: number;
 }) {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
   let started = false;
+  const lastDiagnostic = new Map<string, number>();
+  const reject = (reason: "malformed" | "signature" | "identity" | "time") => {
+    const now = options.clock.now();
+    if ((lastDiagnostic.get(reason) ?? -Infinity) + 60_000 <= now) {
+      lastDiagnostic.set(reason, now);
+      options.onRejected?.(reason);
+    }
+    return false;
+  };
 
   const expirationFor = (issuedAt: bigint) => issuedAt + BigInt(options.validityWindowMs ?? 10 * 60 * 1000) + BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
   const isCurrent = (request: PendingTrustRequest) => BigInt(options.clock.now()) <= request.expiresAtUnixMs;
@@ -133,15 +146,15 @@ export function createPendingTrustRequestCoordinator(options: {
     },
     async receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
       const parsed = decodePairingFrame(frame);
-      if (!parsed || parsed.kind !== "request") return false;
+      if (!parsed || parsed.kind !== "request") return reject("malformed");
       const envelope = decodeTrustRequestEnvelope(parsed.envelope);
-      if (!envelope) return false;
+      if (!envelope) return reject("malformed");
       // The authenticated stream peer supplies the verification key; never
       // parse attacker-controlled signed fields before their signature holds.
-      if (!(await options.verify(envelope.signedPayload, envelope.signature, authenticatedPeerId))) return false;
+      if (!(await options.verify(envelope.signedPayload, envelope.signature, authenticatedPeerId))) return reject("signature");
       const payload = decodeTrustRequestPayload(envelope.signedPayload);
-      if (!payload || payload.initiatorPeerId !== authenticatedPeerId || payload.targetPeerId !== await options.localPeerId()) return false;
-      if (!validateTrustRequestTime(payload, options.clock.now(), options)) return false;
+      if (!payload || payload.initiatorPeerId !== authenticatedPeerId || payload.targetPeerId !== await options.localPeerId()) return reject("identity");
+      if (!validateTrustRequestTime(payload, options.clock.now(), options)) return reject("time");
 
       const request: PendingTrustRequest = {
         initiatorPeerId: payload.initiatorPeerId,
@@ -154,6 +167,19 @@ export function createPendingTrustRequestCoordinator(options: {
       await options.store.save(request);
       scheduleExpiry(request);
       if (!existing) await show(request);
+      return true;
+    },
+    async decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
+      if (!options.sendResponse || !options.responseIdentity) return false;
+      const request = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
+      if (!request || !isCurrent(request)) return false;
+      const envelope = decodeTrustRequestEnvelope(request.requestEnvelope);
+      if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, initiatorPeerId))) return false;
+      const payload = decodeTrustRequestPayload(envelope.signedPayload);
+      if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) return false;
+      const identity = await options.responseIdentity();
+      await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
+      await expire(initiatorPeerId);
       return true;
     },
     expire,

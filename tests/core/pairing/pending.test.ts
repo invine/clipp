@@ -52,4 +52,21 @@ describe("pending Trust Requests", () => {
     expect(await coordinator.receive(initiatorPeerId, frame)).toBe(false);
     expect(verifierCalled).toBe(true);
   });
+
+  it("revalidates and sends one framed response when a request is decided", async () => {
+    const requests = new Map<string, any>();
+    const sent: Uint8Array[] = [];
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined }, clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true, sendResponse: async (_peer, frame) => void sent.push(frame), responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 1n }),
+    });
+    const frame = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, frame);
+    await expect(coordinator.decide(initiatorPeerId, "accepted")).resolves.toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(requests.size).toBe(0);
+  });
 });

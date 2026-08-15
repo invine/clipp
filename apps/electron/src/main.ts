@@ -852,6 +852,9 @@ async function bootstrap() {
     lifecycle: runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
+    sendResponse: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
+    responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
+    onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
   });
   transport.onMessage(PAIRING_PROTOCOL, (from, frame) => {
     void pairingPending?.receive(from, frame).then(async (accepted) => {
@@ -960,7 +963,7 @@ async function bootstrap() {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== device.deviceId
       );
-      trust.sendTrustAck(device, accept)
+      if (!(await pairingPending?.decide(device.deviceId, accept ? "accepted" : "rejected"))) trust.sendTrustAck(device, accept)
       // if (accept) {
       //   await trust.add(device);
       // } else {

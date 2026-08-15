@@ -387,6 +387,9 @@ const pairingPending = createPendingTrustRequestCoordinator({
   lifecycle: runtimeAdapter.lifecycle,
   clock: systemRuntimeClock,
   verify: verifyPairingTrustRequestSignature,
+  sendResponse: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
+  responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
+  onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
 });
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
   void pairingPending.receive(from, frame).then(async (accepted) => {
@@ -481,11 +484,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "respondTrust") {
     pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
-    if (msg.accept && msg.device) {
+    pairingPending.decide(msg.id, msg.accept ? "accepted" : "rejected").then((handled) => {
+      if (handled) return;
+      if (msg.accept && msg.device) {
       void trust.sendTrustAck(msg.device, true);
-    } else if (typeof msg.id === "string") {
+      } else if (typeof msg.id === "string") {
       void trust.sendTrustAck(msg.device || { deviceId: msg.id }, false);
-    }
+      }
+    }).catch((error) => log.warn("Pairing response failed", error));
     sendResponse({ ok: true });
     return true;
   }
