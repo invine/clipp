@@ -2,9 +2,11 @@ import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Notification, Tray } from "electron";
 import path from "node:path";
-import { decodePairing } from "../../../packages/core/pairing/decode.js";
-import { encodePairing } from "../../../packages/core/pairing/encode.js";
-import { encode } from "../../../packages/core/qr/index.js";
+import QRCode from "qrcode";
+import { encodePairingTarget, decodePairingTarget } from "../../../packages/core/pairing/v2.js";
+import { createPairingSession } from "../../../packages/core/pairing/session.js";
+import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
+import { PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol.js";
 import "./libp2pGlobals.js";
 import {
   openDatabase,
@@ -39,7 +41,6 @@ import {
   deviceIdToPeerIdObject,
   peerIdFromPrivateKeyBase64,
 } from "../../../packages/core/network/peerId.js";
-import { createSignedTrustRequest } from "../../../packages/core/protocols/clipTrust.js";
 import {
   createIdentityManager,
   createKVIdentityRepository,
@@ -949,76 +950,24 @@ async function bootstrap() {
 
   ipcMain.handle("clipp:pair-text", async (_evt, txt: string) => {
     await ensureMessagingStarted();
-    const pairing = decodePairing(txt);
-    if (!pairing) return { ok: false, error: "invalid" as const };
     const id = await identitySvc.get();
-    const peerId = await deviceIdToPeerId(pairing.deviceId);
-    let targetAddrs =
-      pairing.multiaddrs || (pairing.multiaddr ? [pairing.multiaddr] : []);
-    let parseErrors: Array<{ addr: string; error: string }> = [];
-    let valid = validMultiaddrs(targetAddrs, parseErrors);
-    // if (!valid.length) {
-    //   const derived = DEFAULT_WEBRTC_STAR_RELAYS.map(
-    //     (addr: string) => `${addr}/p2p/${peerId}`
-    //   );
-    //   targetAddrs = derived;
-    //   parseErrors = [];
-    //   valid = validMultiaddrs(targetAddrs, parseErrors);
-    //   broadcastLog({
-    //     level: "info",
-    //     message: "No valid addrs in pairing, using defaults",
-    //     data: {
-    //       derived: targetAddrs,
-    //       parseErrors,
-    //     },
-    //   });
-    // }
-    const targets: Multiaddr[] = orderPairingTargets(valid);
-    if (!targets.length) {
-      broadcastLog({
-        level: "warn",
-        message: "Pairing failed: no target multiaddr",
-        data: {
-          pairingDeviceId: pairing.deviceId,
-          provided: pairing.multiaddrs || pairing.multiaddr,
-          parseErrors,
-          derived: targetAddrs,
-        },
-      });
-      return { ok: false, error: "no_target" as const };
-    }
-    broadcastLog({
-      level: "info",
-      message: "Sending trust request",
-      data: {
-        local: id.deviceId,
-        targets: targets.map((t) => t.toString()),
-        candidates: targetAddrs,
-      },
+    const target = decodePairingTarget(txt);
+    if (!target) return { ok: false, error: "invalid" as const };
+    const privateKey = id.privateKey ? await privateKeyFromProtobuf(Buffer.from(id.privateKey, "base64")) : null;
+    if (!privateKey) return { ok: false, error: "identity_unavailable" as const };
+    const session = createPairingSession({
+      identity: async () => ({ peerId: id.deviceId, deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
+      sign: async (bytes) => privateKey.sign(bytes),
+      verify: async () => false,
+      send: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
+      clock: systemRuntimeClock,
     });
-    const request = await createSignedTrustRequest(id, peerId);
-    for (const target of targets) {
-      try {
-        await trustMessaging.send(target.toString(), request as any);
-        return { ok: true };
-      } catch (err) {
-        broadcastLog({
-          level: "warn",
-          message: "Failed to send trust request to target",
-          data: {
-            target: target?.toString?.(),
-            candidates: targetAddrs,
-            error: (err as any)?.message || String(err),
-          },
-        });
-      }
+    try {
+      await importPairingTargetAndRequest({ text: txt, network: transport, request: session.request });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "dial_failed" as const };
     }
-    broadcastLog({
-      level: "warn",
-      message: "Failed to send trust request to all targets",
-      data: { targets: targetAddrs },
-    });
-    return { ok: false, error: "dial_failed" as const };
   });
 
   // TODO: confirm that share-now is not used
@@ -1057,14 +1006,9 @@ async function bootstrap() {
     if (currentAddrs.length) {
       scheduleSelfPeerUpdate(currentAddrs);
     }
-    const info = {
-      deviceId: id.deviceId,
-      deviceName: id.deviceName,
-      multiaddrs: addrs,
-      publicKey: id.publicKey,
-    };
-    const img = await encode(info);
-    const txt = encodePairing(info);
+    const signedPeerRecord = await transport.getSignedPeerRecord();
+    const txt = encodePairingTarget({ targetPeerId: id.deviceId, signedPeerRecord, deviceNameHint: id.deviceName });
+    const img = await QRCode.toDataURL(txt, { errorCorrectionLevel: "L", margin: 0, scale: 2 });
     return {
       image: img,
       text: txt,
