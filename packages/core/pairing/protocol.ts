@@ -32,7 +32,7 @@ export function encodeTrustRequestPayload(payload: TrustRequestPayload): Uint8Ar
 }
 
 export function decodeTrustRequestPayload(bytes: Uint8Array): TrustRequestPayload | null {
-  const fields = decodeFields(bytes);
+  const fields = decodeFields(bytes, new Set([1, 2, 3, 4, 5]));
   if (!fields) return null;
   const initiator = requiredBytes(fields, 1);
   const target = requiredBytes(fields, 2);
@@ -58,7 +58,7 @@ export function encodeTrustRequestEnvelope(envelope: TrustRequestEnvelope): Uint
 }
 
 export function decodeTrustRequestEnvelope(bytes: Uint8Array): TrustRequestEnvelope | null {
-  const fields = decodeFields(bytes);
+  const fields = decodeFields(bytes, new Set([1, 2]));
   if (!fields) return null;
   const signedPayload = requiredBytes(fields, 1);
   const signature = requiredBytes(fields, 2);
@@ -76,7 +76,7 @@ export function encodePairingFrame(message: { kind: "request"; envelope: Uint8Ar
 export function decodePairingFrame(frame: Uint8Array, maximumBytes = PAIRING_MAX_FRAME_BYTES): { kind: "request"; envelope: Uint8Array } | { kind: "response"; response: TrustResponse } | null {
   const prefix = decodeVarint(frame, 0);
   if (!prefix || prefix.value > BigInt(maximumBytes) || prefix.value !== BigInt(frame.length - prefix.next)) return null;
-  const fields = decodeFields(frame.slice(prefix.next));
+  const fields = decodeFields(frame.slice(prefix.next), new Set([1, 2]));
   if (!fields) return null;
   const request = optionalBytes(fields, 1);
   const response = optionalBytes(fields, 2);
@@ -98,7 +98,7 @@ function encodeTrustResponse(response: TrustResponse): Uint8Array {
 }
 
 function decodeTrustResponse(bytes: Uint8Array): TrustResponse | null {
-  const fields = decodeFields(bytes);
+  const fields = decodeFields(bytes, new Set([1, 2, 3, 4]));
   if (!fields) return null;
   const decision = requiredVarint(fields, 1);
   const requestEnvelope = requiredBytes(fields, 2);
@@ -111,18 +111,28 @@ function decodeTrustResponse(bytes: Uint8Array): TrustResponse | null {
 // Peer IDs are protobuf multihash bytes.  The libp2p textual form is base58btc;
 // keeping this tiny conversion local makes the wire codec usable in browser
 // runtimes without importing libp2p's Node-oriented peer-id implementation.
-function peerIdBytes(value: string): Uint8Array {
+/** Convert libp2p's canonical base58 peer-id text to its multihash bytes. */
+export function peerIdToMultihashBytes(value: string): Uint8Array {
   const decoded = base58Decode(value);
   if (!decoded.length) throw new Error("invalid_peer_id");
   return decoded;
 }
-function peerIdFromBytes(value: Uint8Array): string { return base58Encode(value); }
+/** Convert canonical peer-id multihash bytes back to base58 text. */
+export function peerIdFromMultihashBytes(value: Uint8Array): string {
+  const text = base58Encode(value);
+  // Round-trip to reject non-canonical encodings (for example a leading zero).
+  const canonical = base58Decode(text);
+  if (canonical.length !== value.length || canonical.some((byte, index) => byte !== value[index])) throw new Error("invalid_peer_id");
+  return text;
+}
+const peerIdBytes = peerIdToMultihashBytes;
+const peerIdFromBytes = peerIdFromMultihashBytes;
 function varintField(field: number, value: bigint): Uint8Array { return concatPairingBytes(encodeVarint(BigInt(field << 3)), encodeVarint(value)); }
 function bytesField(field: number, value: Uint8Array): Uint8Array { return concatPairingBytes(encodeVarint(BigInt((field << 3) | 2)), encodeVarint(BigInt(value.length)), value); }
 function encodeVarint(value: bigint): Uint8Array { if (value < 0n) throw new Error("invalid_varint"); const out: number[] = []; do { const byte = Number(value & 127n); value >>= 7n; out.push(value ? byte | 128 : byte); } while (value); return Uint8Array.from(out); }
 function decodeVarint(bytes: Uint8Array, start: number): { value: bigint; next: number } | null { let value = 0n; for (let index = start, shift = 0n; index < bytes.length && index < start + 10; index += 1, shift += 7n) { const byte = bytes[index]; value |= BigInt(byte & 127) << shift; if ((byte & 128) === 0) return { value, next: index + 1 }; } return null; }
 type Field = { wire: number; value: Uint8Array | bigint };
-function decodeFields(bytes: Uint8Array): Map<number, Field> | null { const result = new Map<number, Field>(); for (let offset = 0; offset < bytes.length;) { const key = decodeVarint(bytes, offset); if (!key || key.value > BigInt(Number.MAX_SAFE_INTEGER)) return null; offset = key.next; const field = Number(key.value >> 3n); const wire = Number(key.value & 7n); if (field === 0 || result.has(field)) return null; if (wire === 0) { const value = decodeVarint(bytes, offset); if (!value) return null; result.set(field, { wire, value: value.value }); offset = value.next; } else if (wire === 2) { const length = decodeVarint(bytes, offset); if (!length || length.value > BigInt(bytes.length - length.next)) return null; const end = length.next + Number(length.value); result.set(field, { wire, value: bytes.slice(length.next, end) }); offset = end; } else return null; } return result; }
+function decodeFields(bytes: Uint8Array, recognizedFields: Set<number>): Map<number, Field> | null { const result = new Map<number, Field>(); for (let offset = 0; offset < bytes.length;) { const key = decodeVarint(bytes, offset); if (!key || key.value > BigInt(Number.MAX_SAFE_INTEGER)) return null; offset = key.next; const field = Number(key.value >> 3n); const wire = Number(key.value & 7n); if (field === 0) return null; const recognized = recognizedFields.has(field); if (recognized && result.has(field)) return null; if (wire === 0) { const value = decodeVarint(bytes, offset); if (!value) return null; if (recognized) result.set(field, { wire, value: value.value }); offset = value.next; } else if (wire === 1) { if (offset + 8 > bytes.length) return null; offset += 8; } else if (wire === 2) { const length = decodeVarint(bytes, offset); if (!length || length.value > BigInt(bytes.length - length.next)) return null; const end = length.next + Number(length.value); if (recognized) result.set(field, { wire, value: bytes.slice(length.next, end) }); offset = end; } else if (wire === 5) { if (offset + 4 > bytes.length) return null; offset += 4; } else return null; } return result; }
 function requiredBytes(fields: Map<number, Field>, field: number): Uint8Array | null { return optionalBytes(fields, field); }
 function optionalBytes(fields: Map<number, Field>, field: number): Uint8Array | null { const value = fields.get(field); return value?.wire === 2 && value.value instanceof Uint8Array ? value.value : null; }
 function requiredVarint(fields: Map<number, Field>, field: number): bigint | null { const value = fields.get(field); return value?.wire === 0 && typeof value.value === "bigint" ? value.value : null; }

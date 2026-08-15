@@ -48,4 +48,11 @@ describe("Pairing protocol", () => {
     expect(validateTrustRequestTime(request, 1_100, { validityWindowMs: 50, clockSkewAllowanceMs: 25 })).toBe(false);
     expect(validateTrustRequestTime(request, 1_075, { validityWindowMs: 50, clockSkewAllowanceMs: 25 })).toBe(true);
   });
+
+  it("ignores unknown protobuf fields, including repeated fields with fixed-width wire types", () => {
+    const payload = encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Desktop", nameRevision: 0n, issuedAtUnixMs: 1n });
+    // field 99 / fixed64, twice: extension data must not affect signed-field decoding.
+    const extended = new Uint8Array([...payload, 0x99, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0x99, 0x06, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(decodeTrustRequestPayload(extended)).toEqual({ initiatorPeerId, targetPeerId, deviceName: "Desktop", nameRevision: 0n, issuedAtUnixMs: 1n });
+  });
 });

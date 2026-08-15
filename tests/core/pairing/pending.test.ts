@@ -1,10 +1,20 @@
-import { createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
+import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload } from "../../../packages/core/pairing/protocol";
 
 const initiatorPeerId = "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv";
 const targetPeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
 
 describe("pending Trust Requests", () => {
+  it("serializes pending records without losing byte or bigint fields", async () => {
+    let value: unknown;
+    const store = createKVPendingTrustRequestStore({
+      storage: { get: async () => value as any, set: async (_key, next) => { value = next; }, remove: async () => undefined },
+      key: "pairing-pending",
+    });
+    await store.save({ initiatorPeerId, deviceName: "Mobile", nameRevision: 3n, requestEnvelope: new Uint8Array([1, 2]), expiresAtUnixMs: 100n });
+    await expect(store.list()).resolves.toEqual([{ initiatorPeerId, deviceName: "Mobile", nameRevision: 3n, requestEnvelope: new Uint8Array([1, 2]), expiresAtUnixMs: 100n }]);
+  });
+
   it("persists the original request and coalesces retries without another notification", async () => {
     const requests = new Map<string, any>();
     const shown: string[] = [];

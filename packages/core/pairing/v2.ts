@@ -1,3 +1,5 @@
+import { peerIdFromMultihashBytes, peerIdToMultihashBytes } from "./protocol";
+
 export const PAIRING_TARGET_PREFIX = "clipp:pair:";
 export const PAIRING_TARGET_VERSION = 2;
 export const PAIRING_TARGET_MAX_BYTES = 16 * 1024;
@@ -17,11 +19,12 @@ type PairingTargetInput = Omit<PairingTarget, "version">;
  * by the networking adapter before it is imported as reachability information.
  */
 export function encodePairingTarget(target: PairingTargetInput, maximumBytes = PAIRING_TARGET_MAX_BYTES): string {
+  const deviceNameHint = target.deviceNameHint === undefined ? undefined : normalizeDeviceName(target.deviceNameHint);
   const payload = concat(
     fieldVarint(1, PAIRING_TARGET_VERSION),
-    fieldBytes(2, utf8(target.targetPeerId)),
+    fieldBytes(2, peerIdToMultihashBytes(target.targetPeerId)),
     fieldBytes(3, target.signedPeerRecord),
-    target.deviceNameHint === undefined ? new Uint8Array() : fieldBytes(4, utf8(target.deviceNameHint))
+    deviceNameHint === undefined ? new Uint8Array() : fieldBytes(4, utf8(deviceNameHint))
   );
   if (payload.length > maximumBytes) throw new Error("pairing_target_too_large");
   return `${PAIRING_TARGET_PREFIX}${toBase64Url(payload)}`;
@@ -59,13 +62,17 @@ export function decodePairingTarget(raw: string, maximumBytes = PAIRING_TARGET_M
       offset = value.next;
       if (field === 2) {
         if (targetPeerId !== undefined) return null;
-        targetPeerId = decodeUtf8(value.value);
+        try {
+          targetPeerId = peerIdFromMultihashBytes(value.value);
+        } catch {
+          return null;
+        }
       } else if (field === 3) {
         if (signedPeerRecord !== undefined) return null;
         signedPeerRecord = value.value;
       } else {
         if (deviceNameHint !== undefined) return null;
-        deviceNameHint = decodeUtf8(value.value);
+        deviceNameHint = normalizeDeviceName(decodeUtf8(value.value));
       }
     } else {
       const next = skipField(bytes, offset, wire);
@@ -74,8 +81,14 @@ export function decodePairingTarget(raw: string, maximumBytes = PAIRING_TARGET_M
     }
   }
   if (version !== PAIRING_TARGET_VERSION || !targetPeerId || !signedPeerRecord?.length) return null;
-  if (deviceNameHint !== undefined && !deviceNameHint) return null;
   return { version, targetPeerId, signedPeerRecord, ...(deviceNameHint ? { deviceNameHint } : {}) };
+}
+
+/** Invalid presentation metadata never invalidates an otherwise valid target. */
+function normalizeDeviceName(value: string): string | undefined {
+  const normalized = value.normalize("NFC").trim();
+  if (!normalized || [...normalized].length > 64 || /[\u0000-\u001f\u007f]/.test(normalized)) return undefined;
+  return normalized;
 }
 
 function fieldVarint(field: number, value: number): Uint8Array {
