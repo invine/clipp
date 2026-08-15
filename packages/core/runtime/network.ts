@@ -22,5 +22,15 @@ export function createRuntimeNetworkProxy(
     getSelfMultiaddrs: () => current()?.getSelfMultiaddrs?.() ?? [],
     getPeerConnectionInfo: () => current()?.getPeerConnectionInfo?.() ?? [],
     getRelayConnectionInfo: () => current()?.getRelayConnectionInfo?.() ?? [],
+    getSignedPeerRecord: () => {
+      const network = requireNetwork();
+      if (!network.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
+      return network.getSignedPeerRecord();
+    },
+    importSignedPeerRecord: (expectedPeerId, record) => {
+      const network = requireNetwork();
+      if (!network.importSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
+      return network.importSignedPeerRecord(expectedPeerId, record);
+    },
   };
 }

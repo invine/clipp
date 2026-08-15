@@ -66,4 +66,8 @@ export interface MessagingTransport {
   getPeerConnectionInfo?(): PeerConnectionInfo[];
 
   getRelayConnectionInfo?(): RelayConnectionInfo[];
+
+  /** Public, signed reachability data used only by an explicit Pairing Target. */
+  getSignedPeerRecord?(): Promise<Uint8Array>;
+  importSignedPeerRecord?(expectedPeerId: string, record: Uint8Array): Promise<void>;
 }

@@ -4,6 +4,7 @@ import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
 import { CLIP_PROTOCOL, CLIP_TRUST_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
+import { PAIRING_PROTOCOL } from "../pairing/protocol.js";
 import { ensureLegacyMultiaddrApi, getPeerIdFromMultiaddr } from "./multiaddrCompat.js";
 import { listRendezvousPeers, registerOnRendezvous } from "./rendezvous.js";
 import type {
@@ -141,6 +142,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const handler = (protocol: string) => this.handleIncoming(protocol);
     this.node.handle(CLIP_PROTOCOL, handler(CLIP_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(CLIP_TRUST_PROTOCOL, handler(CLIP_TRUST_PROTOCOL), { runOnLimitedConnection: true });
+    this.node.handle(PAIRING_PROTOCOL, handler(PAIRING_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(HISTORY_PROTOCOL, handler(HISTORY_PROTOCOL), { runOnLimitedConnection: true });
 
     await this.node.start();
@@ -358,6 +360,25 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
 
     return relays.map((address) => summarizeRelayConnectionInfo(address, connections, false));
+  }
+
+  async getSignedPeerRecord(): Promise<Uint8Array> {
+    if (!this.node || !this.started) throw new Error("messaging_not_started");
+    const existing = await this.node.peerStore?.get?.(this.node.peerId);
+    if (existing?.peerRecordEnvelope instanceof Uint8Array) return Uint8Array.from(existing.peerRecordEnvelope);
+    const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
+    const envelope = await RecordEnvelope.seal(
+      new PeerRecord({ peerId: this.node.peerId, multiaddrs: this.node.getMultiaddrs(), seqNumber: BigInt(Date.now()) }),
+      this.node.privateKey
+    );
+    return Uint8Array.from(envelope.marshal());
+  }
+
+  async importSignedPeerRecord(expectedPeerId: string, record: Uint8Array): Promise<void> {
+    if (!this.node || !this.started) throw new Error("messaging_not_started");
+    const peerId = await peerIdObjectForTarget(expectedPeerId);
+    const imported = await this.node.peerStore?.consumePeerRecord?.(record, peerId);
+    if (imported !== true) throw new Error("invalid_signed_peer_record");
   }
 
   private async openStream(protocol: string, target: string): Promise<any> {
