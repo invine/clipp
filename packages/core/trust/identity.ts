@@ -1,7 +1,5 @@
-// TODO: check if these imports are needed
-import { deviceIdToPeerId, peerIdToString } from "../network/peerId.js";
-import { generateKeyPair, privateKeyFromProtobuf, privateKeyToProtobuf } from "@libp2p/crypto/keys";
-import { peerIdFromPrivateKey } from "@libp2p/peer-id";
+
+export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
 
 export interface DeviceIdentity {
   deviceId: string;
@@ -10,151 +8,146 @@ export interface DeviceIdentity {
   privateKey?: string;
   multiaddrs: string[];
   createdAt: number;
+  nameRevision?: number;
+  membershipView?: MembershipView;
 }
 
 export interface IdentityRepository {
-  get(): Promise<DeviceIdentity | undefined>
-  upsert(identity: DeviceIdentity): Promise<void>
+  get(): Promise<DeviceIdentity | undefined>;
+  upsert(identity: DeviceIdentity): Promise<void>;
+  loadInitializationError?(): Promise<IdentityInitializationError | undefined>;
+  saveInitializationError?(error: IdentityInitializationError): Promise<void>;
+  clearInitializationError?(): Promise<void>;
 }
 
 export interface IdentityManager {
-  get(): Promise<DeviceIdentity>
-  rename(name: string): Promise<void>
-  updateMultiaddrs(multiaddrs: string[]): Promise<void>
+  get(): Promise<DeviceIdentity>;
+  rename(name: string): Promise<void>;
+  updateMultiaddrs(multiaddrs: string[]): Promise<void>;
+  getInitializationError(): Promise<IdentityInitializationError | undefined>;
 }
 
-export function createIdentityManager(options: {
-  repo: IdentityRepository,
-  now?: () => number
-}): IdentityManager {
-  const { repo } = options
-  let identity: DeviceIdentity | undefined;
-  const clock = options.now ?? Date.now;
+export type IdentityKeyMaterial = { peerId: string; privateKey: string; publicKey: string };
+export type IdentityInitializationError = { code: "identity_initialization_failed" };
 
-  async function generateNewIdentity(): Promise<DeviceIdentity> {
-    const libp2pIdentity = await createLibp2pIdentity()
-    const identity: DeviceIdentity = {
-      deviceId: libp2pIdentity.peerId,
-      deviceName: libp2pIdentity.peerId,
-      publicKey: libp2pIdentity.publicKey,
-      privateKey: libp2pIdentity.privateKey,
+export function createIdentityManager(options: {
+  repo: IdentityRepository;
+  now?: () => number;
+  initialDeviceName?: string;
+  generateKeyMaterial?: () => Promise<IdentityKeyMaterial>;
+  deriveKeyMaterial?: (privateKey: string) => Promise<IdentityKeyMaterial>;
+}): IdentityManager {
+  const clock = options.now ?? Date.now;
+  const initialDeviceName = options.initialDeviceName ?? "Desktop";
+  const generateKeyMaterial = options.generateKeyMaterial ?? createLibp2pIdentity;
+  const deriveKeyMaterial = options.deriveKeyMaterial ?? deriveFromPrivateKey;
+  let identity: DeviceIdentity | undefined;
+
+  async function persist(value: DeviceIdentity): Promise<DeviceIdentity> {
+    await options.repo.upsert(value);
+    await options.repo.clearInitializationError?.();
+    identity = value;
+    return value;
+  }
+
+  async function createNewIdentity(): Promise<DeviceIdentity> {
+    const key = await generateKeyMaterial();
+    return persist({
+      deviceId: key.peerId,
+      deviceName: initialDeviceName,
+      nameRevision: 0,
+      publicKey: key.publicKey,
+      privateKey: key.privateKey,
       multiaddrs: [],
       createdAt: clock(),
-    }
-    repo.upsert(identity)
-    return identity
+      membershipView: { admittedPeerIds: [key.peerId], revokedPeerIds: [] },
+    });
   }
 
-  async function getLocalIdentity(): Promise<DeviceIdentity> {
-    if (!identity) {
-      identity = await repo.get()
+  async function loadIdentity(): Promise<DeviceIdentity> {
+    try {
+      return await loadIdentityOrThrow();
+    } catch (error) {
+      await options.repo.saveInitializationError?.({ code: "identity_initialization_failed" });
+      throw error;
     }
-    if (!identity?.privateKey) {
-      identity = await generateNewIdentity()
-    }
-    if (!validateIdentity(identity)) {
-      identity = await restoreFromPrivKey()
-    }
-    return identity
   }
 
-  // TODO: implement
-  function validateIdentity(identity: DeviceIdentity): boolean {
-    if (!identity) return false
-    return true
-  }
+  async function loadIdentityOrThrow(): Promise<DeviceIdentity> {
+    if (identity) return identity;
+    const stored = await options.repo.get();
+    if (!stored?.privateKey) return createNewIdentity();
 
-  async function restoreFromPrivKey(): Promise<DeviceIdentity> {
-    const current = await getLocalIdentity()
-    if (!current.privateKey) return await generateNewIdentity();
-    const libp2pIdentity = await deriveFromPrivateKey(current.privateKey)
-    const restored: DeviceIdentity = {
-      ...current,
-      deviceId: libp2pIdentity.peerId,
-      deviceName: libp2pIdentity.peerId,
-      publicKey: libp2pIdentity.publicKey,
-      privateKey: libp2pIdentity.privateKey,
-    }
-    identity = restored
-    repo.upsert(restored)
-    return identity
+    const key = await deriveKeyMaterial(stored.privateKey);
+    const membershipView = completeMembershipView(key.peerId, stored.membershipView);
+    const repaired: DeviceIdentity = {
+      ...stored,
+      deviceId: key.peerId,
+      publicKey: key.publicKey,
+      privateKey: key.privateKey,
+      deviceName: stored.deviceName || initialDeviceName,
+      nameRevision: stored.nameRevision ?? 0,
+      multiaddrs: Array.isArray(stored.multiaddrs) ? stored.multiaddrs : [],
+      membershipView,
+    };
+    const needsRepair =
+      stored.deviceId !== repaired.deviceId ||
+      stored.publicKey !== repaired.publicKey ||
+      stored.nameRevision !== repaired.nameRevision ||
+      !sameMembershipView(stored.membershipView, membershipView) ||
+      !Array.isArray(stored.multiaddrs);
+    return needsRepair ? persist(repaired) : (identity = repaired);
   }
 
   return {
-    get: getLocalIdentity,
-    // getPublic: async () => {
-    //   if (!identity) {
-    //     identity = await getLocalIdentity()
-    //   }
-    //   return toTrustRequestPayload(identity)
-    // },
-    rename: async (name: string) => {
-      const current = await getLocalIdentity()
-      const updated: DeviceIdentity = {
-        ...current,
-        deviceName: name,
-      }
-      await repo.upsert(updated)
-      identity = updated
+    get: loadIdentity,
+    rename: async (name) => {
+      const current = await loadIdentity();
+      await persist({ ...current, deviceName: name, nameRevision: (current.nameRevision ?? 0) + 1 });
     },
-    updateMultiaddrs: async (multiaddrs: string[]) => {
-      const current = await getLocalIdentity()
-      const updated: DeviceIdentity = {
-        ...current,
-        multiaddrs: multiaddrs,
-      }
-      await repo.upsert(updated)
-      identity = updated
-    }
-  }
+    updateMultiaddrs: async (multiaddrs) => {
+      const current = await loadIdentity();
+      await persist({ ...current, multiaddrs: [...multiaddrs] });
+    },
+    getInitializationError: async () => options.repo.loadInitializationError?.(),
+  };
 }
 
-async function createLibp2pIdentity(): Promise<{ peerId: string; privateKey: string; publicKey: string }> {
-  try {
-    const key = (await generateKeyPair("Ed25519")) as any;
-    const privBytes: Uint8Array = privateKeyToProtobuf(key);
-    const privB64 = Buffer.from(privBytes).toString("base64");
-    const pubBytes: Uint8Array =
-      key?.publicKey?.raw ?? key?.publicKey?.bytes ?? key?.publicKey?.marshal?.() ?? new Uint8Array();
-    const pubB64 = Buffer.from(pubBytes).toString("base64");
-    const peerId = peerIdToString(peerIdFromPrivateKey(key));
-    console.info("[identity] createLibp2pIdentity", {
-      peerId,
-      privLen: privBytes?.length || 0,
-      pubLen: pubBytes.length || 0,
-      privPreview: privB64.slice(0, 24),
-    });
-    return { peerId, privateKey: privB64, publicKey: pubB64 };
-  } catch (err: any) {
-    console.warn("[identity] createLibp2pIdentity failed", {
-      error: err?.message || err,
-      stack: err?.stack,
-    });
-    const randomPid = await deviceIdToPeerId(
-      crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
-    );
-    return { peerId: randomPid, privateKey: "", publicKey: "" };
-  }
+function completeMembershipView(peerId: string, membershipView?: MembershipView): MembershipView {
+  const admittedPeerIds = [...new Set(membershipView?.admittedPeerIds ?? [peerId])];
+  if (!admittedPeerIds.includes(peerId)) admittedPeerIds.push(peerId);
+  return { admittedPeerIds, revokedPeerIds: [...new Set(membershipView?.revokedPeerIds ?? [])] };
 }
 
-async function deriveFromPrivateKey(privB64: string): Promise<{ peerId: string; privateKey: string; publicKey: string }> {
-  const bytes = Buffer.from(privB64, "base64");
-  const priv = privateKeyFromProtobuf(bytes);
-  const peerId = peerIdToString(peerIdFromPrivateKey(priv as any));
-  const pubBytes: Uint8Array =
-    (priv as any).publicKey?.raw ??
-    (priv as any).publicKey?.bytes ??
-    (priv as any).publicKey?.marshal?.() ??
-    (priv as any).public?.bytes ??
-    (priv as any).public?.marshal?.() ??
-    new Uint8Array();
-  const pubB64 = Buffer.from(pubBytes).toString("base64");
-  console.info("[identity] deriveFromPrivateKey", {
-    peerId,
-    privLen: privB64.length,
-    privPreview: privB64.slice(0, 24),
-    keyType: (priv as any).type,
-    pubLen: pubBytes.length,
-  });
-  return { peerId, privateKey: privB64, publicKey: pubB64 };
+function sameMembershipView(left: MembershipView | undefined, right: MembershipView): boolean {
+  return (
+    left?.admittedPeerIds.length === right.admittedPeerIds.length &&
+    left?.revokedPeerIds.length === right.revokedPeerIds.length &&
+    left.admittedPeerIds.every((peerId, index) => peerId === right.admittedPeerIds[index]) &&
+    left.revokedPeerIds.every((peerId, index) => peerId === right.revokedPeerIds[index])
+  );
+}
+
+async function createLibp2pIdentity(): Promise<IdentityKeyMaterial> {
+  const { generateKeyPair, privateKeyToProtobuf } = await import("@libp2p/crypto/keys");
+  const key = await generateKeyPair("Ed25519");
+  const privateKey = Buffer.from(privateKeyToProtobuf(key)).toString("base64");
+  return keyMaterialFromPrivateKey(key, privateKey);
+}
+
+async function deriveFromPrivateKey(privateKey: string): Promise<IdentityKeyMaterial> {
+  const { privateKeyFromProtobuf } = await import("@libp2p/crypto/keys");
+  const key = privateKeyFromProtobuf(Uint8Array.from(Buffer.from(privateKey, "base64")));
+  return keyMaterialFromPrivateKey(key, privateKey);
+}
+
+async function keyMaterialFromPrivateKey(key: any, privateKey: string): Promise<IdentityKeyMaterial> {
+  const { peerIdFromPrivateKey } = await import("@libp2p/peer-id");
+  const publicKey = key.publicKey?.raw ?? key.publicKey?.bytes ?? key.publicKey?.marshal?.();
+  if (!(publicKey instanceof Uint8Array)) throw new Error("identity_public_key_unavailable");
+  return {
+    peerId: peerIdFromPrivateKey(key).toString(),
+    privateKey,
+    publicKey: Buffer.from(publicKey).toString("base64"),
+  };
 }

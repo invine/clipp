@@ -66,7 +66,7 @@ async function bootstrap() {
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
-  const identitySvc = createIdentityManager({ repo: identityRepo })
+  const identitySvc = createIdentityManager({ repo: identityRepo, initialDeviceName: "Desktop" })
   const trustRepo = createKVTrustedDeviceRepository({ storage: kvStore, key: TRUST_KEY })
   const trust = createTrustManager({ trustRepo: trustRepo, identitySvc: identitySvc });
   // TODO: remove relayAddrEnv

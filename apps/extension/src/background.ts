@@ -64,7 +64,7 @@ const historyBackend =
 const history = new MemoryHistoryStore(historyBackend);
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
-const identitySvc = createIdentityManager({ repo: identityRepo });
+const identitySvc = createIdentityManager({ repo: identityRepo, initialDeviceName: "Extension" });
 const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 const trust = createTrustManager({ trustRepo, identitySvc });
 
@@ -373,6 +373,7 @@ chrome.notifications?.onClicked?.addListener((id) => {
 const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
   start: async () => {
+    await offscreenReady;
     clipboardSync.start();
     await extensionNetwork.start();
   },

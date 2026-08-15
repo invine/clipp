@@ -259,7 +259,7 @@ export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
   private readonly history = new MemoryHistoryStore(createHistoryBackend());
   private readonly identityRepo = createKVIdentityRepository({ storage: this.storage, key: IDENTITY_KEY });
-  private readonly identitySvc = createIdentityManager({ repo: this.identityRepo });
+  private readonly identitySvc = createIdentityManager({ repo: this.identityRepo, initialDeviceName: "Mobile" });
   private readonly trustRepo = createKVTrustedDeviceRepository({ storage: this.storage, key: TRUST_KEY });
   private readonly trust = createTrustManager({ trustRepo: this.trustRepo, identitySvc: this.identitySvc });
   private readonly trustBinder = createTrustProtocolBinder({ trust: this.trust });
@@ -599,10 +599,10 @@ export class AndroidClient {
 
   private async startServices() {
     if (this.started) return;
-    this.started = true;
     this.bindEvents();
     this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
     await this.ensureMessaging();
+    this.started = true;
     try {
       await this.transport!.start();
       this.pairedConnections?.start();

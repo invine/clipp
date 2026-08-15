@@ -1,4 +1,4 @@
-import { DeviceIdentity, IdentityRepository } from "./identity"
+import { DeviceIdentity, IdentityInitializationError, IdentityRepository } from "./identity"
 import { TrustedDevice, TrustedDeviceRepository } from "./trustManager"
 
 export interface KVStorageBackend {
@@ -13,13 +13,17 @@ export const TRUST_KEY = 'trustedDevices'
 
 export function createKVIdentityRepository(options: { storage: KVStorageBackend, key: string }): IdentityRepository {
   const { storage, key } = options
+  const initializationErrorKey = `${key}:initializationError`;
   return {
     get: async (): Promise<DeviceIdentity | undefined> => {
       return storage.get<DeviceIdentity>(key)
     },
     upsert: async (device: DeviceIdentity): Promise<void> => {
       return storage.set<DeviceIdentity>(key, device)
-    }
+    },
+    loadInitializationError: () => storage.get<IdentityInitializationError>(initializationErrorKey),
+    saveInitializationError: (error) => storage.set(initializationErrorKey, error),
+    clearInitializationError: () => storage.remove(initializationErrorKey),
   }
 }
 
