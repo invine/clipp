@@ -22,7 +22,7 @@ export type TrustResponse = {
 };
 
 export function encodeTrustRequestPayload(payload: TrustRequestPayload): Uint8Array {
-  return concat(
+  return concatPairingBytes(
     bytesField(1, peerIdBytes(payload.initiatorPeerId)),
     bytesField(2, peerIdBytes(payload.targetPeerId)),
     bytesField(3, new TextEncoder().encode(payload.deviceName)),
@@ -54,7 +54,7 @@ export function decodeTrustRequestPayload(bytes: Uint8Array): TrustRequestPayloa
 }
 
 export function encodeTrustRequestEnvelope(envelope: TrustRequestEnvelope): Uint8Array {
-  return concat(bytesField(1, envelope.signedPayload), bytesField(2, envelope.signature));
+  return concatPairingBytes(bytesField(1, envelope.signedPayload), bytesField(2, envelope.signature));
 }
 
 export function decodeTrustRequestEnvelope(bytes: Uint8Array): TrustRequestEnvelope | null {
@@ -70,7 +70,7 @@ export function encodePairingFrame(message: { kind: "request"; envelope: Uint8Ar
     ? bytesField(1, message.envelope)
     : bytesField(2, encodeTrustResponse(message.response));
   if (payload.length > PAIRING_MAX_FRAME_BYTES) throw new Error("pairing_frame_too_large");
-  return concat(encodeVarint(BigInt(payload.length)), payload);
+  return concatPairingBytes(encodeVarint(BigInt(payload.length)), payload);
 }
 
 export function decodePairingFrame(frame: Uint8Array, maximumBytes = PAIRING_MAX_FRAME_BYTES): { kind: "request"; envelope: Uint8Array } | { kind: "response"; response: TrustResponse } | null {
@@ -94,7 +94,7 @@ export function validateTrustRequestTime(payload: TrustRequestPayload, now: numb
 }
 
 function encodeTrustResponse(response: TrustResponse): Uint8Array {
-  return concat(varintField(1, response.decision === "accepted" ? 1n : 2n), bytesField(2, response.requestEnvelope), bytesField(3, new TextEncoder().encode(response.responderDeviceName)), varintField(4, response.responderNameRevision));
+  return concatPairingBytes(varintField(1, response.decision === "accepted" ? 1n : 2n), bytesField(2, response.requestEnvelope), bytesField(3, new TextEncoder().encode(response.responderDeviceName)), varintField(4, response.responderNameRevision));
 }
 
 function decodeTrustResponse(bytes: Uint8Array): TrustResponse | null {
@@ -117,8 +117,8 @@ function peerIdBytes(value: string): Uint8Array {
   return decoded;
 }
 function peerIdFromBytes(value: Uint8Array): string { return base58Encode(value); }
-function varintField(field: number, value: bigint): Uint8Array { return concat(encodeVarint(BigInt(field << 3)), encodeVarint(value)); }
-function bytesField(field: number, value: Uint8Array): Uint8Array { return concat(encodeVarint(BigInt((field << 3) | 2)), encodeVarint(BigInt(value.length)), value); }
+function varintField(field: number, value: bigint): Uint8Array { return concatPairingBytes(encodeVarint(BigInt(field << 3)), encodeVarint(value)); }
+function bytesField(field: number, value: Uint8Array): Uint8Array { return concatPairingBytes(encodeVarint(BigInt((field << 3) | 2)), encodeVarint(BigInt(value.length)), value); }
 function encodeVarint(value: bigint): Uint8Array { if (value < 0n) throw new Error("invalid_varint"); const out: number[] = []; do { const byte = Number(value & 127n); value >>= 7n; out.push(value ? byte | 128 : byte); } while (value); return Uint8Array.from(out); }
 function decodeVarint(bytes: Uint8Array, start: number): { value: bigint; next: number } | null { let value = 0n; for (let index = start, shift = 0n; index < bytes.length && index < start + 10; index += 1, shift += 7n) { const byte = bytes[index]; value |= BigInt(byte & 127) << shift; if ((byte & 128) === 0) return { value, next: index + 1 }; } return null; }
 type Field = { wire: number; value: Uint8Array | bigint };
@@ -126,7 +126,7 @@ function decodeFields(bytes: Uint8Array): Map<number, Field> | null { const resu
 function requiredBytes(fields: Map<number, Field>, field: number): Uint8Array | null { return optionalBytes(fields, field); }
 function optionalBytes(fields: Map<number, Field>, field: number): Uint8Array | null { const value = fields.get(field); return value?.wire === 2 && value.value instanceof Uint8Array ? value.value : null; }
 function requiredVarint(fields: Map<number, Field>, field: number): bigint | null { const value = fields.get(field); return value?.wire === 0 && typeof value.value === "bigint" ? value.value : null; }
-function concat(...parts: Uint8Array[]): Uint8Array { const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0)); let offset = 0; for (const part of parts) { result.set(part, offset); offset += part.length; } return result; }
+export function concatPairingBytes(...parts: Uint8Array[]): Uint8Array { const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0)); let offset = 0; for (const part of parts) { result.set(part, offset); offset += part.length; } return result; }
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58Decode(value: string): Uint8Array {
   if (!value) return new Uint8Array();
