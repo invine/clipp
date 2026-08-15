@@ -347,6 +347,7 @@ async function bootstrap() {
   // TODO: why pendingRequests is part of the application and not part of trust manager?
   let pendingRequests: TrustedDevice[] = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
+  const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -475,6 +476,7 @@ async function bootstrap() {
     });
 
     bindTransportHandlers(transport);
+    bindPairingHandler(transport);
     await pairingPending?.start();
     if (pairingPending) {
       const requests = await pairingPending.list();
@@ -856,14 +858,20 @@ async function bootstrap() {
     responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
   });
-  transport.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+  function bindPairingHandler(target: typeof transport) {
+    target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+      void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => {
+        if (decision) pairingSessions.delete(from);
+      }).catch((error) => log.warn("Pairing response processing failed", error));
     void pairingPending?.receive(from, frame).then(async (accepted) => {
       if (!accepted || !pairingPending) return;
       const requests = await pairingPending.list();
       pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
       await emitState();
     }).catch((error) => log.warn("Pairing request processing failed", error));
-  });
+    });
+  }
+  bindPairingHandler(transport);
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
     start: startServices,
@@ -981,14 +989,15 @@ async function bootstrap() {
     const privateKey = id.privateKey ? await privateKeyFromProtobuf(Buffer.from(id.privateKey, "base64")) : null;
     if (!privateKey) return { ok: false, error: "identity_unavailable" as const };
     const session = createPairingSession({
-      identity: async () => ({ peerId: id.deviceId, deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
+      identity: async () => ({ peerId: peerId.toString(), deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
       sign: async (bytes) => privateKey.sign(bytes),
-      verify: async () => false,
+      verify: verifyPairingTrustRequestSignature,
       send: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
       clock: systemRuntimeClock,
     });
     try {
       await importPairingTargetAndRequest({ text: txt, network: transport, request: session.request });
+      pairingSessions.set(target.targetPeerId, session);
       return { ok: true };
     } catch {
       return { ok: false, error: "dial_failed" as const };

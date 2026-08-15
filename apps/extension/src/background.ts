@@ -48,7 +48,7 @@ import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../p
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { createPairingSession } from "../../../packages/core/pairing/session";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
-import { encodePairingTarget } from "../../../packages/core/pairing/v2";
+import { decodePairingTarget, encodePairingTarget } from "../../../packages/core/pairing/v2";
 import type {
   MessagingTransport,
   PeerConnectionInfo,
@@ -391,7 +391,9 @@ const pairingPending = createPendingTrustRequestCoordinator({
   responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
   onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
 });
+const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+  void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
   void pairingPending.receive(from, frame).then(async (accepted) => {
     if (!accepted) return;
     const requests = await pairingPending.list();
@@ -532,7 +534,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await offscreenReady;
         const identity = await identitySvc.get();
         const signedPeerRecord = await extensionNetwork.getSignedPeerRecord();
-        sendResponse({ text: encodePairingTarget({ targetPeerId: identity.deviceId, signedPeerRecord, deviceNameHint: identity.deviceName }) });
+        sendResponse({ text: encodePairingTarget({ targetPeerId: await deviceIdToPeerId(identity.deviceId), signedPeerRecord, deviceNameHint: identity.deviceName }) });
       } catch (error) {
         sendResponse({ error: (error as Error).message });
       }
@@ -553,13 +555,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!id.privateKey) throw new Error("missing_private_key");
         const privateKey = privateKeyFromProtobuf(base64ToBytes(id.privateKey));
         const session = createPairingSession({
-          identity: async () => ({ peerId: id.deviceId, deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
+          identity: async () => ({ peerId: await deviceIdToPeerId(id.deviceId), deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
           sign: async (bytes) => privateKey.sign(bytes),
-          verify: async () => false,
+          verify: verifyPairingTrustRequestSignature,
           send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
           clock: systemRuntimeClock,
         });
         await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: session.request });
+        const target = decodePairingTarget(msg.pairingText);
+        if (target) pairingSessions.set(target.targetPeerId, session);
         sendResponse({ ok: true });
       } catch (error) {
         sendResponse({ ok: false, error: (error as Error).message });

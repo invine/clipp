@@ -454,6 +454,7 @@ export class AndroidClient {
     onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
   });
   private pairingInboundBound = false;
+  private readonly pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
   private readonly runtime = createRuntimeOrchestrator({
     adapter: this.runtimeAdapter,
     start: () => this.startServices(),
@@ -618,6 +619,7 @@ export class AndroidClient {
     if (!this.pairingInboundBound) {
       this.pairingInboundBound = true;
       this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+        void this.pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
         void this.pairingPending.receive(from, frame).then(async (accepted) => {
           if (!accepted) return;
           const requests = await this.pairingPending.list();
@@ -798,13 +800,14 @@ export class AndroidClient {
       if (!localIdentity.privateKey) return fail("invalid");
       const privateKey = privateKeyFromProtobuf(Uint8Array.from(Buffer.from(localIdentity.privateKey, "base64")));
       const session = createPairingSession({
-        identity: async () => ({ peerId: localIdentity.deviceId, deviceName: localIdentity.deviceName, nameRevision: localIdentity.nameRevision ?? 0 }),
+        identity: async () => ({ peerId: await deviceIdToPeerId(localIdentity.deviceId), deviceName: localIdentity.deviceName, nameRevision: localIdentity.nameRevision ?? 0 }),
         sign: async (bytes) => privateKey.sign(bytes),
-        verify: async () => false,
+        verify: verifyPairingTrustRequestSignature,
         send: (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
         clock: systemRuntimeClock,
       });
       await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: session.request });
+      this.pairingSessions.set(target.targetPeerId, session);
       return { ok: true, diagnostics: this.finishPairingDiagnostics(diagnostics, "succeeded", null) };
 
       const pairing: any = target;
