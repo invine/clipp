@@ -124,7 +124,7 @@ export function createPendingTrustRequestCoordinator(options: {
     await options.notifications.show({
       id: notificationId(request.initiatorPeerId),
       title: "Pairing request",
-      body: `${request.deviceName} wants to pair.`,
+      body: `${request.deviceName} (${request.initiatorPeerId}) wants to pair.`,
     });
   };
 
@@ -158,7 +158,7 @@ export function createPendingTrustRequestCoordinator(options: {
 
       const request: PendingTrustRequest = {
         initiatorPeerId: payload.initiatorPeerId,
-        deviceName: payload.deviceName,
+        deviceName: normalizeDeviceName(payload.deviceName) ?? shortenPeerId(payload.initiatorPeerId),
         nameRevision: payload.nameRevision,
         requestEnvelope: Uint8Array.from(parsed.envelope),
         expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
@@ -178,10 +178,19 @@ export function createPendingTrustRequestCoordinator(options: {
       const payload = decodeTrustRequestPayload(envelope.signedPayload);
       if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) return false;
       const identity = await options.responseIdentity();
-      await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
-      await expire(initiatorPeerId);
-      return true;
+      try {
+        await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
+        return true;
+      } finally {
+        await expire(initiatorPeerId);
+      }
     },
     expire,
   };
 }
+
+function normalizeDeviceName(value: string): string | undefined {
+  const normalized = value.normalize("NFC").trim();
+  return normalized && [...normalized].length <= 64 && !/[\u0000-\u001f\u007f]/.test(normalized) ? normalized : undefined;
+}
+function shortenPeerId(peerId: string): string { return `${peerId.slice(0, 8)}…${peerId.slice(-6)}`; }

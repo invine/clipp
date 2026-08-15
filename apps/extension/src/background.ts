@@ -44,7 +44,7 @@ import {
   toTrustRequestPayload,
 } from "../../../packages/core/protocols/clipTrust";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
+import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { createPairingSession } from "../../../packages/core/pairing/session";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
@@ -393,8 +393,8 @@ const pairingPending = createPendingTrustRequestCoordinator({
 });
 const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-  void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
-  void pairingPending.receive(from, frame).then(async (accepted) => {
+  if (decodePairingFrame(frame)?.kind === "response") void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
+  else void pairingPending.receive(from, frame).then(async (accepted) => {
     if (!accepted) return;
     const requests = await pairingPending.list();
     pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
@@ -487,12 +487,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "respondTrust") {
     pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
     pairingPending.decide(msg.id, msg.accept ? "accepted" : "rejected").then((handled) => {
-      if (handled) return;
-      if (msg.accept && msg.device) {
-      void trust.sendTrustAck(msg.device, true);
-      } else if (typeof msg.id === "string") {
-      void trust.sendTrustAck(msg.device || { deviceId: msg.id }, false);
-      }
+      if (!handled) log.warn("No valid pairing request to decide");
     }).catch((error) => log.warn("Pairing response failed", error));
     sendResponse({ ok: true });
     return true;
@@ -561,63 +556,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
           clock: systemRuntimeClock,
         });
-        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: session.request });
         const target = decodePairingTarget(msg.pairingText);
-        if (target) pairingSessions.set(target.targetPeerId, session);
+        if (!target) throw new Error("invalid_pairing_target");
+        pairingSessions.set(target.targetPeerId, session);
+        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: session.request });
         sendResponse({ ok: true });
       } catch (error) {
+        const target = decodePairingTarget(msg.pairingText);
+        if (target) pairingSessions.delete(target.targetPeerId);
         sendResponse({ ok: false, error: (error as Error).message });
-      }
-    })();
-    return true;
-  }
-  if (msg.type === "pairDevice" && msg.pairing) {
-    void (async () => {
-      try {
-        const id = await identitySvc.get();
-        const peerId = await deviceIdToPeerId(msg.pairing.deviceId);
-        const targetAddrs =
-          msg.pairing.multiaddrs ||
-          (msg.pairing.multiaddr ? [msg.pairing.multiaddr] : []);
-        const candidates = [
-          ...targetAddrs,
-          ...DEFAULT_WEBRTC_STAR_RELAYS.map((addr) => `${addr}/p2p/${peerId}`),
-        ];
-        log.info("Sending trust request", {
-          target: candidates[0],
-          targetAddrs: candidates,
-          localId: id.deviceId,
-        });
-        const request = await createServiceWorkerTrustRequest(id, peerId);
-        let sent = false;
-        let lastError = "dial_failed";
-        for (const target of candidates) {
-          try {
-            await offscreenReady;
-            const result = await sendOffscreen<{ ok?: boolean; error?: string }>({
-              action: "sendMessage",
-              peerTarget: target,
-              msg: request,
-            });
-            if (result?.ok === false) {
-              lastError = result.error || "send_failed";
-              throw new Error(lastError);
-            }
-            sent = true;
-            break;
-          } catch (err) {
-            lastError = (err as any)?.message || String(err);
-            log.warn("Failed to send trust request", {
-              target,
-              error: lastError,
-            });
-          }
-        }
-        sendResponse(sent ? { ok: true } : { ok: false, error: lastError });
-      } catch (err) {
-        const error = (err as any)?.message || String(err);
-        log.warn("Pairing request failed", { error });
-        sendResponse({ ok: false, error });
       }
     })();
     return true;

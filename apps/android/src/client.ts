@@ -26,7 +26,7 @@ import {
   createTrustedClipMessenger,
 } from "@core/messaging";
 import { createClipMessage } from "@core/protocols/clip";
-import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
+import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingSession } from "@core/pairing/session";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
@@ -619,8 +619,8 @@ export class AndroidClient {
     if (!this.pairingInboundBound) {
       this.pairingInboundBound = true;
       this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-        void this.pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
-        void this.pairingPending.receive(from, frame).then(async (accepted) => {
+        if (decodePairingFrame(frame)?.kind === "response") void this.pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
+        else void this.pairingPending.receive(from, frame).then(async (accepted) => {
           if (!accepted) return;
           const requests = await this.pairingPending.list();
           this.pendingRequests = [...this.pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
@@ -728,14 +728,14 @@ export class AndroidClient {
   }
 
   async acceptRequest(dev: PendingRequest) {
-    if (!(await this.pairingPending.decide(dev.deviceId, "accepted"))) await this.trust.sendTrustAck(dev as any, true);
+    await this.pairingPending.decide(dev.deviceId, "accepted");
     this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== dev.deviceId);
     await this.emitState();
   }
 
   async rejectRequest(dev: PendingRequest) {
     this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== dev.deviceId);
-    if (!(await this.pairingPending.decide(dev.deviceId, "rejected"))) await this.trust.sendTrustAck(dev as any, false);
+    await this.pairingPending.decide(dev.deviceId, "rejected");
     await this.emitState();
   }
 
@@ -759,7 +759,7 @@ export class AndroidClient {
     await this.ensureMessaging();
     await this.transport!.start();
     const signedPeerRecord = await this.transport!.getSignedPeerRecord();
-    const text = encodePairingTarget({ targetPeerId: id.deviceId, signedPeerRecord, deviceNameHint: id.deviceName });
+    const text = encodePairingTarget({ targetPeerId: await deviceIdToPeerId(id.deviceId), signedPeerRecord, deviceNameHint: id.deviceName });
     return {
       image: await QRCode.toDataURL(text, { errorCorrectionLevel: "L", margin: 0, scale: 2 }),
       text,
@@ -806,150 +806,13 @@ export class AndroidClient {
         send: (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
         clock: systemRuntimeClock,
       });
-      await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: session.request });
       this.pairingSessions.set(target.targetPeerId, session);
+      await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: session.request });
       return { ok: true, diagnostics: this.finishPairingDiagnostics(diagnostics, "succeeded", null) };
 
-      const pairing: any = target;
-
-      diagnostics.targetDeviceId = pairing.deviceId;
-      diagnostics.providedAddrs =
-        pairing.multiaddrs && pairing.multiaddrs.length
-          ? pairing.multiaddrs
-          : pairing.multiaddr
-          ? [pairing.multiaddr]
-          : [];
-
-      await this.ensureMessaging();
-
-      const transportStartAt = Date.now();
-      diagnostics.transportStart = {
-        attempted: true,
-        ok: false,
-        startedAt: transportStartAt,
-        finishedAt: null,
-        durationMs: null,
-        error: null,
-      };
-      try {
-        await this.transport!.start();
-        const finishedAt = Date.now();
-        diagnostics.transportStart = {
-          ...diagnostics.transportStart,
-          ok: true,
-          finishedAt,
-          durationMs: finishedAt - transportStartAt,
-        };
-      } catch (err) {
-        const finishedAt = Date.now();
-        diagnostics.transportStart = {
-          ...diagnostics.transportStart,
-          finishedAt,
-          durationMs: finishedAt - transportStartAt,
-          error: errorMessage(err),
-        };
-        logPairing("warn", "Messaging transport failed to start during pairing", {
-          attemptId: diagnostics.attemptId,
-          error: diagnostics.transportStart.error,
-        });
-      }
-
-      const id = await this.identitySvc.get();
-      diagnostics.localDeviceId = id.deviceId;
-      const targetPeerId = await deviceIdToPeerId(pairing.deviceId);
-      diagnostics.targetPeerId = targetPeerId;
-      diagnostics.relayAddresses = await this.getRelayAddresses();
-
-      const payloadCandidates = this.inspectMultiaddrs(
-        diagnostics.providedAddrs,
-        targetPeerId,
-        "payload"
-      );
-      diagnostics.candidates.push(...payloadCandidates.diagnostics);
-      let valid = payloadCandidates.valid;
-
-      if (!valid.length) {
-        diagnostics.derivedAddrs = deriveRelayPeerMultiaddrs(
-          diagnostics.relayAddresses.filter(canDerivePairingAddress),
-          targetPeerId
-        );
-        const derivedCandidates = this.inspectMultiaddrs(
-          diagnostics.derivedAddrs,
-          targetPeerId,
-          "derived"
-        );
-        diagnostics.candidates.push(...derivedCandidates.diagnostics);
-        valid = derivedCandidates.valid;
-      }
-      valid = orderPairingTargets(valid);
-
-      logPairing("info", "Pairing candidates inspected", {
-        attemptId: diagnostics.attemptId,
-        targetDeviceId: diagnostics.targetDeviceId,
-        targetPeerId,
-        relayAddresses: diagnostics.relayAddresses,
-        validTargetCount: valid.length,
-        candidates: diagnostics.candidates,
-      });
-
-      if (!valid.length) return fail("no_target");
-
-      const request = await createSignedTrustRequest(id, targetPeerId);
-      for (const target of valid) {
-        const targetText = target.toString();
-        const startedAt = Date.now();
-        const attempt: PairingTargetAttemptDiagnostics = {
-          target: targetText,
-          startedAt,
-          finishedAt: null,
-          durationMs: null,
-          ok: false,
-          error: null,
-          before: this.transportSnapshot(),
-          after: null,
-        };
-        diagnostics.targetAttempts.push(attempt);
-        logPairing("info", "Sending trust request", {
-          attemptId: diagnostics.attemptId,
-          target: targetText,
-          before: attempt.before,
-        });
-
-        try {
-          await this.trustMessaging!.send(targetText, request as any);
-          const finishedAt = Date.now();
-          attempt.finishedAt = finishedAt;
-          attempt.durationMs = finishedAt - startedAt;
-          attempt.ok = true;
-          attempt.after = this.transportSnapshot();
-          const finished = this.finishPairingDiagnostics(diagnostics, "succeeded", null);
-          logPairing("info", "Pairing trust request sent", {
-            attemptId: finished.attemptId,
-            target: targetText,
-            durationMs: attempt.durationMs,
-            after: attempt.after,
-          });
-          await this.emitState();
-          return { ok: true, diagnostics: finished };
-        } catch (err) {
-          const finishedAt = Date.now();
-          attempt.finishedAt = finishedAt;
-          attempt.durationMs = finishedAt - startedAt;
-          attempt.error = errorMessage(err);
-          attempt.after = this.transportSnapshot();
-          logPairing("warn", "Trust request target failed", {
-            attemptId: diagnostics.attemptId,
-            target: targetText,
-            durationMs: attempt.durationMs,
-            error: attempt.error,
-            before: attempt.before,
-            after: attempt.after,
-          });
-        }
-      }
-
-      return fail("dial_failed");
     } catch (err) {
+      const target = decodePairingTarget(txt);
+      if (target) this.pairingSessions.delete(target.targetPeerId);
       logPairing("warn", "Pairing attempt failed unexpectedly", {
         attemptId: diagnostics.attemptId,
         error: errorMessage(err),

@@ -6,7 +6,7 @@ import QRCode from "qrcode";
 import { encodePairingTarget, decodePairingTarget } from "../../../packages/core/pairing/v2.js";
 import { createPairingSession } from "../../../packages/core/pairing/session.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
-import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
+import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending.js";
 import "./libp2pGlobals.js";
 import {
@@ -860,10 +860,10 @@ async function bootstrap() {
   });
   function bindPairingHandler(target: typeof transport) {
     target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-      void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => {
+      if (decodePairingFrame(frame)?.kind === "response") void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => {
         if (decision) pairingSessions.delete(from);
       }).catch((error) => log.warn("Pairing response processing failed", error));
-    void pairingPending?.receive(from, frame).then(async (accepted) => {
+    else void pairingPending?.receive(from, frame).then(async (accepted) => {
       if (!accepted || !pairingPending) return;
       const requests = await pairingPending.list();
       pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
@@ -971,7 +971,7 @@ async function bootstrap() {
       pendingRequests = pendingRequests.filter(
         (p) => p.deviceId !== device.deviceId
       );
-      if (!(await pairingPending?.decide(device.deviceId, accept ? "accepted" : "rejected"))) trust.sendTrustAck(device, accept)
+      await pairingPending?.decide(device.deviceId, accept ? "accepted" : "rejected");
       // if (accept) {
       //   await trust.add(device);
       // } else {
@@ -996,10 +996,11 @@ async function bootstrap() {
       clock: systemRuntimeClock,
     });
     try {
-      await importPairingTargetAndRequest({ text: txt, network: transport, request: session.request });
       pairingSessions.set(target.targetPeerId, session);
+      await importPairingTargetAndRequest({ text: txt, network: transport, request: session.request });
       return { ok: true };
     } catch {
+      pairingSessions.delete(target.targetPeerId);
       return { ok: false, error: "dial_failed" as const };
     }
   });
