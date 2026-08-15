@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Initialize Device Identities across all runtimes.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] All runtimes generate and accept only Pairing Target version 2 using bounded protobuf bytes, unpadded Base64URL, and the `clipp:pair:` prefix.
 - [ ] Pairing Targets contain the canonical target Peer ID and original Signed Peer Record envelope, may contain an untrusted Device Name hint, and contain no membership authority, secret, raw address list, separate public key, or application expiry.
