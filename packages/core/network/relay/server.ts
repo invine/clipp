@@ -7,7 +7,7 @@ import { webSockets } from "@libp2p/websockets";
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { createLibp2p, type Libp2p } from "libp2p";
 import type { Connection, PrivateKey } from "@libp2p/interface";
-import { peerIdFromMultihash } from "@libp2p/peer-id";
+import { peerIdFromMultihash, peerIdFromString } from "@libp2p/peer-id";
 import * as Digest from "multiformats/hashes/digest";
 import { defaultLogger } from "@libp2p/logger";
 import { FaultTolerance } from "@libp2p/interface-transport";
@@ -30,7 +30,7 @@ if (typeof (Promise as any).withResolvers !== "function") {
 type RelayServices = { identify: Identify; circuitRelay: CircuitRelayService; ping: Ping };
 type RelayNode = Libp2p<RelayServices>;
 type RendezvousTopic = string;
-type RendezvousRecord = { peer: string; addrs: string[]; lastSeen: number };
+type RendezvousRecord = { peer: string; signedPeerRecord: number[]; lastSeen: number };
 
 export interface WebsocketRelayOptions {
   listen?: Array<string | Multiaddr>;
@@ -581,38 +581,57 @@ function registerRendezvous(node: RelayNode) {
           continue;
         }
         const msg = JSON.parse(decoder.decode(buf));
-        const remotePeer =
-          connection?.remotePeer?.toString?.() ||
-          extractPeerIdFromAddrs(msg?.addrs) ||
-          "unknown";
-        const remoteAddr = connection?.remoteAddr?.toString?.();
+        const remotePeer = connection?.remotePeer?.toString?.();
         log("Rendezvous chunk received", {
           length: buf.length,
-          base64: Buffer.from(buf).toString("base64"),
           peer: remotePeer,
-          remoteAddr,
         });
-        log("Rendezvous decoded message", { msg });
-        const topic: string = msg.topic || "default";
+        const topic: string = msg.topic === "clipp" ? msg.topic : "";
         prune(topic);
         if (msg.action === "register") {
-          const addrs: string[] = Array.isArray(msg.addrs) ? msg.addrs : [];
-          if (remoteAddr) {
-            addrs.push(remoteAddr);
+          const signedPeerRecord = Array.isArray(msg.signedPeerRecord) ? msg.signedPeerRecord : [];
+          const validBytes = signedPeerRecord.length > 0 && signedPeerRecord.every(
+            (value: unknown) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
+          );
+          if (!remotePeer || !topic || !validBytes) {
+            await writeResponse(stream, encoder, { ok: false, error: "invalid_registration" }, "register-invalid");
+            continue;
+          }
+          // peerStore verifies the envelope signature and its subject.  An
+          // authenticated connection may register only its own record.
+          const verified = await (node as any).peerStore?.consumePeerRecord?.(
+            Uint8Array.from(signedPeerRecord),
+            peerIdFromString(remotePeer)
+          );
+          if (verified !== true) {
+            await writeResponse(stream, encoder, { ok: false, error: "invalid_peer_record" }, "register-invalid-record");
+            continue;
           }
           const record: RendezvousRecord = {
             peer: remotePeer,
-            addrs: dedupeStrings(addrs),
+            signedPeerRecord,
             lastSeen: Date.now(),
           };
           touch(topic, record);
-          log("Rendezvous register", { topic, peer: record.peer, addrs: record.addrs });
+          log("Rendezvous register", { topic, peer: record.peer });
           await writeResponse(stream, encoder, { ok: true, peer: record.peer }, "register-ok");
-        } else if (msg.action === "list") {
+        } else if (msg.action === "lookup") {
+          const peerId = typeof msg.peerId === "string" ? msg.peerId : "";
+          if (!topic || !peerId) {
+            await writeResponse(stream, encoder, { ok: false, error: "invalid_lookup" }, "lookup-invalid");
+            continue;
+          }
           const bucket = topics.get(topic);
-          const peers = bucket ? Array.from(bucket.values()) : [];
-          log("Rendezvous list", { topic, count: peers.length });
-          await writeResponse(stream, encoder, { ok: true, peers }, "list-ok");
+          const record = bucket?.get(peerId);
+          log("Rendezvous lookup", { topic, peerId, found: Boolean(record) });
+          await writeResponse(stream, encoder, { ok: true, ...(record ? { record } : {}) }, "lookup-ok");
+        } else if (msg.action === "unregister") {
+          if (!remotePeer || !topic) {
+            await writeResponse(stream, encoder, { ok: false, error: "invalid_unregister" }, "unregister-invalid");
+            continue;
+          }
+          topics.get(topic)?.delete(remotePeer);
+          await writeResponse(stream, encoder, { ok: true }, "unregister-ok");
         } else {
           await writeResponse(stream, encoder, { ok: false, error: "unknown_action" }, "unknown-action");
         }

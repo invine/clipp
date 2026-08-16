@@ -38,7 +38,7 @@ import {
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
+import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
 import { createClipMessage } from "../../../packages/core/protocols/clip";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
@@ -148,7 +148,7 @@ const offscreenReady = (async () => {
   }
   await sendOffscreen({
     action: "init",
-    relays: DEFAULT_WEBRTC_STAR_RELAYS,
+    relays: DEFAULT_CIRCUIT_RELAY_ADDRESSES,
   });
 })();
 
@@ -375,7 +375,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         peerConnections: peerState.peerConnections ?? [],
         identity: toPublicDeviceIdentity(identity),
         pinnedIds: [],
-        relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS,
+        relayAddresses: DEFAULT_CIRCUIT_RELAY_ADDRESSES,
       };
     },
     async publish(state) {
@@ -383,7 +383,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
     },
   },
   relays: {
-    readAddresses: async () => [...DEFAULT_WEBRTC_STAR_RELAYS],
+    readAddresses: async () => [...DEFAULT_CIRCUIT_RELAY_ADDRESSES],
   },
 });
 const pairingPending = createPendingTrustRequestCoordinator({

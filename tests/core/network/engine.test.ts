@@ -25,7 +25,8 @@ let mockSelfMultiaddrs = ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"];
 const mockTransportManagerListen = jest.fn<Promise<void>, any[]>(async () => {});
 const mockTransportManagerGetListeners = jest.fn<any[], any[]>(() => []);
 const mockRegisterOnRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
-const mockListRendezvousPeers = jest.fn<Promise<any[]>, any[]>(async () => []);
+const mockLookupRendezvousPeer = jest.fn<Promise<any[]>, any[]>(async () => []);
+const mockUnregisterFromRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
 
 jest.mock("../../../packages/core/network/node", () => ({
   createClipboardNode: jest.fn(async () => ({
@@ -49,6 +50,7 @@ jest.mock("../../../packages/core/network/node", () => ({
       [Symbol.asyncIterator]: async function* () {},
     })),
     peerId: { toString: () => "mock-peer" },
+    peerStore: { get: jest.fn(async () => ({ peerRecordEnvelope: Uint8Array.of(1, 2, 3) })) },
     components: {
       transportManager: {
         listen: mockTransportManagerListen,
@@ -61,7 +63,8 @@ jest.mock("../../../packages/core/network/node", () => ({
 
 jest.mock("../../../packages/core/network/rendezvous", () => ({
   registerOnRendezvous: mockRegisterOnRendezvous,
-  listRendezvousPeers: mockListRendezvousPeers,
+  lookupRendezvousPeer: mockLookupRendezvousPeer,
+  unregisterFromRendezvous: mockUnregisterFromRendezvous,
 }));
 
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
@@ -80,12 +83,12 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("returns no peers when not started", () => {
-    const transport = createLibp2pMessagingTransport();
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     expect(transport.getConnectedPeers()).toEqual([]);
   });
 
   it("start and stop are idempotent", async () => {
-    const transport = createLibp2pMessagingTransport();
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
     await transport.start();
     expect(createClipboardNode).toHaveBeenCalledTimes(1);
@@ -113,7 +116,7 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("send uses MessageStream send/close", async () => {
-    const transport = createLibp2pMessagingTransport();
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     await transport.send(CLIP_PROTOCOL, "/ip4/127.0.0.1/tcp/1/ws/p2p/mock", new Uint8Array([1, 2, 3]));
@@ -124,7 +127,7 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("rejects when a queued WebRTC stream write fails after the data channel closes", async () => {
-    const transport = createLibp2pMessagingTransport();
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     const err = new Error(
@@ -300,7 +303,7 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("dials discovered peers by multiaddr", async () => {
-    const transport = createLibp2pMessagingTransport();
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     const discovered = eventHandlers.get("peer:discovery")?.[0];
@@ -319,7 +322,7 @@ describe("Libp2pMessagingTransport", () => {
 
   it("dials direct discovery targets when an existing peer connection is relay-only", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
-    const transport = createLibp2pMessagingTransport();
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     node.getConnections.mockReturnValue([
@@ -347,14 +350,9 @@ describe("Libp2pMessagingTransport", () => {
     expect(node.dial.mock.calls[0][0].toString()).toBe(`${relay}/p2p-circuit/webrtc/p2p/peer-1`);
   });
 
-  it("registers with relay rendezvous and dials listed peers", async () => {
-    mockListRendezvousPeers.mockResolvedValueOnce([
-      {
-        peer: "peer-2",
-        addrs: ["/ip4/127.0.0.1/tcp/2/ws/p2p/peer-2"],
-      },
-    ]);
+  it("registers only a Signed Peer Record after a relay reservation is live", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
     const transport = createLibp2pMessagingTransport({
       relayAddresses: [relay],
       rendezvousIntervalMs: 60_000,
@@ -367,16 +365,10 @@ describe("Libp2pMessagingTransport", () => {
       node,
       relay,
       "clipp",
-      ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"],
+      Uint8Array.of(1, 2, 3),
       expect.objectContaining({ timeoutMs: 12_000 })
     );
-    expect(mockListRendezvousPeers).toHaveBeenCalledWith(
-      node,
-      relay,
-      "clipp",
-      expect.objectContaining({ timeoutMs: 12_000 })
-    );
-    expect(node.dial).toHaveBeenCalledTimes(2);
+    expect(mockLookupRendezvousPeer).not.toHaveBeenCalled();
     await transport.stop();
   });
 
@@ -414,14 +406,8 @@ describe("Libp2pMessagingTransport", () => {
     await transport.stop();
   });
 
-  it("still lists rendezvous peers when self addresses are not available yet", async () => {
+  it("does not register while a relay reservation is unavailable", async () => {
     mockSelfMultiaddrs = [];
-    mockListRendezvousPeers.mockResolvedValueOnce([
-      {
-        peer: "peer-2",
-        addrs: ["/ip4/127.0.0.1/tcp/2/ws/p2p/peer-2"],
-      },
-    ]);
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
     const transport = createLibp2pMessagingTransport({
       relayAddresses: [relay],
@@ -429,16 +415,8 @@ describe("Libp2pMessagingTransport", () => {
     });
     await transport.start();
     await new Promise((resolve) => setImmediate(resolve));
-    const node = await createClipboardNode.mock.results[0].value;
-
     expect(mockRegisterOnRendezvous).not.toHaveBeenCalled();
-    expect(mockListRendezvousPeers).toHaveBeenCalledWith(
-      node,
-      relay,
-      "clipp",
-      expect.objectContaining({ timeoutMs: 12_000 })
-    );
-    expect(node.dial).toHaveBeenCalledTimes(2);
+    expect(mockUnregisterFromRendezvous).not.toHaveBeenCalled();
     await transport.stop();
   });
 
@@ -451,7 +429,7 @@ describe("Libp2pMessagingTransport", () => {
     await transport.start();
     await new Promise((resolve) => setImmediate(resolve));
     mockRegisterOnRendezvous.mockClear();
-    mockListRendezvousPeers.mockClear();
+    mockUnregisterFromRendezvous.mockClear();
 
     mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
     eventHandlers.get("self:peer:update")?.[0]?.({});
@@ -462,7 +440,7 @@ describe("Libp2pMessagingTransport", () => {
       node,
       relay,
       "clipp",
-      [`${relay}/p2p-circuit/p2p/mock-peer`],
+      Uint8Array.of(1, 2, 3),
       expect.objectContaining({ timeoutMs: 12_000 })
     );
     await transport.stop();

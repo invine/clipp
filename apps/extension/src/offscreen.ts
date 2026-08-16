@@ -9,7 +9,7 @@ import {
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
+import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
 import { createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
@@ -50,7 +50,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-async function initMessaging(relays: string[] = DEFAULT_WEBRTC_STAR_RELAYS) {
+async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES) {
   if (transport && started) {
     pairedConnections?.start();
     return;
@@ -78,7 +78,7 @@ async function initMessaging(relays: string[] = DEFAULT_WEBRTC_STAR_RELAYS) {
     peerId,
     privateKey,
     relayAddresses: relays,
-    enableWebRTCStar: true,
+    enableDCUtR: true,
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   pairedConnections = createPairedPeerConnectionManager({

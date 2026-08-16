@@ -15,7 +15,7 @@ import {
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "@core/network/constants";
+import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
 import { MemoryHistoryStore } from "@core/history/store";
@@ -505,7 +505,7 @@ export class AndroidClient {
   });
 
   private async getRelayAddresses(): Promise<string[]> {
-    return [...DEFAULT_WEBRTC_STAR_RELAYS];
+    return [...DEFAULT_CIRCUIT_RELAY_ADDRESSES];
   }
 
   private async ensureIdentityAddrs(id: any): Promise<any> {

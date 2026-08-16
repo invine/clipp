@@ -2,7 +2,7 @@ import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
 
-export type RendezvousRecord = { peer: string; addrs: string[]; lastSeen?: number };
+export type RendezvousRecord = { peer: string; signedPeerRecord: Uint8Array };
 export type RendezvousOptions = {
   timeoutMs?: number;
   dialOptions?: any;
@@ -93,7 +93,7 @@ export async function registerOnRendezvous(
   node: any,
   relay: string | Multiaddr,
   topic: string,
-  addrs: string[],
+  signedPeerRecord: Uint8Array,
   logOrOptions: ((...args: any[]) => void) | RendezvousOptions = () => {}
 ): Promise<boolean> {
   const options: RendezvousOptions =
@@ -103,7 +103,7 @@ export async function registerOnRendezvous(
   try {
     const relayMa = asMultiaddr(relay);
     stream = guardMessageStream(await node.dialProtocol(relayMa, TOPIC, options.dialOptions));
-    await writeJson(stream, { action: "register", topic, addrs });
+    await writeJson(stream, { action: "register", topic, signedPeerRecord: Array.from(signedPeerRecord) });
     const msg = await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS);
     log("[rendezvous] register response", msg);
     return !!msg?.ok;
@@ -115,10 +115,11 @@ export async function registerOnRendezvous(
   return false;
 }
 
-export async function listRendezvousPeers(
+export async function lookupRendezvousPeer(
   node: any,
   relay: string | Multiaddr,
   topic: string,
+  peerId: string,
   logOrOptions: ((...args: any[]) => void) | RendezvousOptions = () => {}
 ): Promise<RendezvousRecord[]> {
   const options: RendezvousOptions =
@@ -128,18 +129,13 @@ export async function listRendezvousPeers(
   try {
     const relayMa = asMultiaddr(relay);
     stream = guardMessageStream(await node.dialProtocol(relayMa, TOPIC, options.dialOptions));
-    await writeJson(stream, { action: "list", topic });
+    await writeJson(stream, { action: "lookup", topic, peerId });
     const msg = await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS);
-    if (msg?.ok && Array.isArray(msg.peers)) {
-      const peers = msg.peers
-        .map((p: any) => ({
-          peer: String(p?.peer || ""),
-          addrs: Array.isArray(p?.addrs) ? p.addrs.filter((a: any) => typeof a === "string") : [],
-          lastSeen: typeof p?.lastSeen === "number" ? p.lastSeen : undefined,
-        }))
-        .filter((p: any) => p.peer && Array.isArray(p.addrs));
-      log("[rendezvous] list response", { topic, count: peers.length });
-      return peers;
+    if (msg?.ok && msg.record?.peer === peerId && Array.isArray(msg.record.signedPeerRecord)) {
+      const bytes = msg.record.signedPeerRecord;
+      if (bytes.every((value: unknown) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255)) {
+        return [{ peer: peerId, signedPeerRecord: Uint8Array.from(bytes) }];
+      }
     }
   } catch (err: any) {
     log("[rendezvous] list failed", err?.message || err);
@@ -147,4 +143,23 @@ export async function listRendezvousPeers(
     await closeStream(stream);
   }
   return [];
+}
+
+export async function unregisterFromRendezvous(
+  node: any,
+  relay: string | Multiaddr,
+  topic: string,
+  logOrOptions: ((...args: any[]) => void) | RendezvousOptions = () => {}
+): Promise<boolean> {
+  const options: RendezvousOptions = typeof logOrOptions === "function" ? { log: logOrOptions } : logOrOptions;
+  let stream: any;
+  try {
+    stream = guardMessageStream(await node.dialProtocol(asMultiaddr(relay), TOPIC, options.dialOptions));
+    await writeJson(stream, { action: "unregister", topic });
+    return !!(await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS))?.ok;
+  } catch {
+    return false;
+  } finally {
+    await closeStream(stream);
+  }
 }

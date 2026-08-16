@@ -48,6 +48,7 @@ jest.mock("@libp2p/kad-dht", () => ({
 
 jest.mock("@libp2p/identify", () => ({
   identify: jest.fn(() => ({})),
+  identifyPush: jest.fn(() => ({})),
 }), { virtual: true });
 
 jest.mock("@libp2p/ping", () => ({

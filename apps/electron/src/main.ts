@@ -30,6 +30,7 @@ import {
 } from "../../../packages/core/runtime/index.js";
 import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
+import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 // TODO: remove webrtc-star
@@ -82,7 +83,7 @@ async function bootstrap() {
   //   "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
   // TODO: create Relay Service
   let relayAddresses = normalizeRelayAddrs(
-    ((await kvStore.get<string[]>("relayAddresses")) ?? []).filter(Boolean)
+    ((await kvStore.get<string[]>("relayAddresses")) ?? DEFAULT_CIRCUIT_RELAY_ADDRESSES).filter(Boolean)
     // (relayAddrEnv ? [relayAddrEnv] : [])
   );
   let localIdentity;

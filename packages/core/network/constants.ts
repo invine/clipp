@@ -1,7 +1,10 @@
-// Default public WebRTC-star relay used for browser-to-browser connectivity.
-// This can be overridden by passing custom relay addresses to the networking layer.
-export const DEFAULT_WEBRTC_STAR_RELAYS = [
-  "/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star",
-  "/dns4/wrtc-star2.sfo.dwebops.pub/tcp/443/wss/p2p-webrtc-star",
-  "/dns4/webrtc-star.discovery.libp2p.io/tcp/443/wss/p2p-webrtc-star",
+/**
+ * Ordered Circuit Relay v2 defaults shared by every runtime.  These are relay
+ * peer addresses, never WebRTC-star signalling endpoints.
+ */
+export const DEFAULT_CIRCUIT_RELAY_ADDRESSES = [
+  "/ip4/141.147.116.147/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex",
 ];
+
+/** @deprecated Use DEFAULT_CIRCUIT_RELAY_ADDRESSES. */
+export const DEFAULT_WEBRTC_STAR_RELAYS = DEFAULT_CIRCUIT_RELAY_ADDRESSES;

@@ -7,7 +7,7 @@
  * It will no-op if WebRTC is unavailable.
  */
 import { createLibp2pMessagingTransport } from "../../packages/core/network/engine.ts";
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../packages/core/network/constants.ts";
+import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../packages/core/network/constants.ts";
 import { createTrustManager, MemoryStorageBackend } from "../../packages/core/trust/index.ts";
 import { normalizeClipboardContent } from "../../packages/core/clipboard/normalize.ts";
 import { createTrustedClipMessenger } from "../../packages/core/messaging/index.ts";
@@ -15,7 +15,7 @@ import { createClipMessage } from "../../packages/core/protocols/clip.ts";
 
 async function boot(label: string) {
   const trust = createTrustManager(new MemoryStorageBackend());
-  const transport = createLibp2pMessagingTransport({ relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS });
+  const transport = createLibp2pMessagingTransport({ relayAddresses: DEFAULT_CIRCUIT_RELAY_ADDRESSES });
   const clip = createTrustedClipMessenger(transport as any, (id) => trust.isTrusted(id));
   await transport.start();
   const identity = await trust.getLocalIdentity();

@@ -54,7 +54,6 @@ export function deriveRelayPeerMultiaddrs(relayAddresses: string[], peerId: stri
     .map((relayAddress) => {
       const relay = relayAddress.replace(/\/+$/, "");
       if (relay.endsWith(`/p2p/${peerId}`)) return relay;
-      if (relay.includes("/p2p-webrtc-star")) return `${relay}/p2p/${peerId}`;
       if (relay.includes("/p2p-circuit")) return `${relay}/p2p/${peerId}`;
       return `${relay}/p2p-circuit/p2p/${peerId}`;
     })

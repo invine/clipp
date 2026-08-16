@@ -26,14 +26,21 @@ export type MembershipReconciliationIdentity = {
 
 /** Adapt the transport's local signed record APIs without making reachability authoritative. */
 export function createMembershipPeerRecordBridge(options: {
-  transport: Pick<MessagingTransport, "getSignedPeerRecord" | "importSignedPeerRecord">;
-  identity: Pick<MembershipReconciliationIdentity, "get">;
+  transport: Pick<MessagingTransport, "getSignedPeerRecord" | "getSignedPeerRecordFor" | "importSignedPeerRecord">;
+  identity: Pick<MembershipReconciliationIdentity, "get" | "membershipView">;
 }): Pick<Parameters<typeof createMembershipReconciler>[0], "signedPeerRecords" | "importSignedPeerRecord"> {
   return {
     signedPeerRecords: async () => {
       try {
-        const envelope = await options.transport.getSignedPeerRecord?.();
-        return envelope ? [{ peerId: (await options.identity.get()).deviceId, envelope }] : [];
+        const [identity, view] = await Promise.all([options.identity.get(), options.identity.membershipView()]);
+        const activePeerIds = view.admittedPeerIds.filter((peerId) => !view.revokedPeerIds.includes(peerId));
+        const records = await Promise.all(activePeerIds.map(async (peerId) => {
+          const envelope = peerId === identity.deviceId
+            ? await options.transport.getSignedPeerRecord?.()
+            : await options.transport.getSignedPeerRecordFor?.(peerId);
+          return envelope ? { peerId, envelope } : undefined;
+        }));
+        return records.filter((record): record is MembershipPeerRecord => Boolean(record));
       } catch { return []; }
     },
     importSignedPeerRecord: (record) => options.transport.importSignedPeerRecord?.(record.peerId, record.envelope) ?? Promise.resolve(),

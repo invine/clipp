@@ -14,10 +14,9 @@ import { mdns } from "@libp2p/mdns";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 // TODO: remove kadDHT
 import { kadDHT } from "@libp2p/kad-dht";
-import { identify } from "@libp2p/identify";
+import { identify, identifyPush } from "@libp2p/identify";
 import { ping } from "@libp2p/ping";
-// TODO: remove webrtc-star
-import { DEFAULT_WEBRTC_STAR_RELAYS } from "./constants.js";
+import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "./constants.js";
 import { FaultTolerance } from "@libp2p/interface-transport";
 import { ensureLegacyMultiaddrApi, patchGlobalMultiaddrCompat } from "./multiaddrCompat.js";
 
@@ -113,7 +112,7 @@ export async function createClipboardNode(
     peerId,
     privateKey,
     bootstrapList = [],
-    relayAddresses = DEFAULT_WEBRTC_STAR_RELAYS,
+    relayAddresses = DEFAULT_CIRCUIT_RELAY_ADDRESSES,
     allowInsecureBrowserDials = false,
   } = options;
   const enableWebRTCDirect = options.enableWebRTCDirect !== false;
@@ -281,6 +280,7 @@ export async function createClipboardNode(
     pubsub: gossipsub() as any,
     dht: kadDHT() as any,
     identify: identify(),
+    identifyPush: identifyPush(),
     ping: ping(),
   };
 
