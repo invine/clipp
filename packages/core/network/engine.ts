@@ -5,6 +5,7 @@ import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
 import { CLIP_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
 import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
+import { decodeMembershipFrame, MEMBERSHIP_MAX_FRAME_BYTES, MEMBERSHIP_PROTOCOL } from "../membership/reconciliation.js";
 import { createPairingRejectionReporter } from "../pairing/diagnostics.js";
 import { ensureLegacyMultiaddrApi, getPeerIdFromMultiaddr } from "./multiaddrCompat.js";
 import { listRendezvousPeers, registerOnRendezvous } from "./rendezvous.js";
@@ -154,6 +155,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const handler = (protocol: string) => this.handleIncoming(protocol);
     this.node.handle(CLIP_PROTOCOL, handler(CLIP_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(PAIRING_PROTOCOL, handler(PAIRING_PROTOCOL), { runOnLimitedConnection: true });
+    this.node.handle(MEMBERSHIP_PROTOCOL, handler(MEMBERSHIP_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(HISTORY_PROTOCOL, handler(HISTORY_PROTOCOL), { runOnLimitedConnection: true });
 
     await this.node.start();
@@ -770,6 +772,24 @@ class Libp2pMessagingTransport implements MessagingTransport {
             await this.closeInvalidPairingConnection(from, conn);
             return;
           }
+          for (const handler of handlers) handler(from, frame);
+          return;
+        }
+        if (protocol === MEMBERSHIP_PROTOCOL) {
+          // Like Pairing, Membership Reconciliation is exactly one bounded
+          // length-prefixed protobuf view per short-lived stream.
+          if (!from) return;
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          for await (const chunk of iterable) {
+            const bytes = toU8(chunk);
+            if (!bytes) return;
+            size += bytes.length;
+            if (size > MEMBERSHIP_MAX_FRAME_BYTES + 10) return;
+            chunks.push(bytes);
+          }
+          const frame = concatBytes(chunks, size);
+          if (!decodeMembershipFrame(frame)) return;
           for (const handler of handlers) handler(from, frame);
           return;
         }

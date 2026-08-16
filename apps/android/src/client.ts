@@ -27,6 +27,7 @@ import {
 } from "@core/messaging";
 import { createClipMessage } from "@core/protocols/clip";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
+import { createMembershipPeerRecordBridge, createMembershipReconciler } from "@core/membership/reconciliation";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingRuntimeSessions } from "@core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
@@ -272,6 +273,7 @@ export class AndroidClient {
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
   private pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
   private clipMessaging: ReturnType<typeof createTrustedClipMessenger> | null = null;
+  private membershipReconciler: ReturnType<typeof createMembershipReconciler> | null = null;
 
   constructor() {
     // messaging is initialised lazily in `start()`
@@ -325,6 +327,13 @@ export class AndroidClient {
     });
     this.clipMessaging = createTrustedClipMessenger(this.transport, (id) => this.trust.isTrusted(id));
     this.clipboardSync.bindMessaging(this.clipMessaging as any);
+    this.membershipReconciler = createMembershipReconciler({
+      transport: this.transport,
+      identity: this.identitySvc,
+      ...createMembershipPeerRecordBridge({ transport: this.transport, identity: this.identitySvc }),
+      onChanged: () => this.emitState(),
+    });
+    this.membershipReconciler.start();
 
     this.transport.onPeerConnected(() => void this.emitState());
     this.transport.onPeerDisconnected(() => void this.emitState());
@@ -671,6 +680,8 @@ export class AndroidClient {
     this.clipboardSync.stop();
     this.pairedConnections?.stop();
     await this.transport?.stop();
+    this.membershipReconciler?.stop();
+    this.membershipReconciler = null;
     this.started = false;
     this.listeners = [];
   }

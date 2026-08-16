@@ -7,6 +7,7 @@ import { encodePairingTarget, decodePairingTarget } from "../../../packages/core
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
+import { createMembershipPeerRecordBridge, createMembershipReconciler } from "../../../packages/core/membership/reconciliation.js";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending.js";
 import "./libp2pGlobals.js";
 import {
@@ -829,6 +830,12 @@ async function bootstrap() {
     },
   });
   const runtimeNetwork = createRuntimeNetworkProxy(() => transport);
+  const membershipReconciler = createMembershipReconciler({
+    transport: runtimeNetwork,
+    identity: identitySvc,
+    ...createMembershipPeerRecordBridge({ transport: runtimeNetwork, identity: identitySvc }),
+    onChanged: emitState,
+  });
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,
@@ -899,6 +906,7 @@ async function bootstrap() {
     });
   }
   bindPairingHandler(runtimeNetwork);
+  membershipReconciler.start();
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
     start: () => startIdentityBoundRuntimeServices({

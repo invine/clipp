@@ -1,7 +1,9 @@
 
 import type { AdmissionResult, MembershipStatus } from "../pairing/membership";
+import { normalizeDeviceName, shortenPeerId } from "../pairing/presentation";
 
 export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
+export type RemoteDeviceName = { deviceName: string; nameRevision: string };
 
 export interface DeviceIdentity {
   deviceId: string;
@@ -12,6 +14,9 @@ export interface DeviceIdentity {
   createdAt: number;
   nameRevision?: number;
   membershipView?: MembershipView;
+  /** Local presentation metadata; it is never part of Membership Reconciliation. */
+  remoteDeviceNames?: Record<string, RemoteDeviceName>;
+  localDeviceAliases?: Record<string, string>;
 }
 
 /** The identity shape that may cross a runtime's public/UI boundary. */
@@ -39,6 +44,12 @@ export interface IdentityManager {
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   activePeerIds(): Promise<string[]>;
   admit(peerId: string): Promise<AdmissionResult>;
+  membershipView(): Promise<MembershipView>;
+  mergeMembershipView(view: MembershipView): Promise<boolean>;
+  recordRemoteDeviceName(peerId: string, name: string, revision: bigint): Promise<void>;
+  setLocalDeviceAlias(peerId: string, alias?: string): Promise<void>;
+  displayDeviceLabel(peerId: string): Promise<string>;
+  onMembershipChanged(listener: () => void): () => void;
   getInitializationError(): Promise<IdentityInitializationError | undefined>;
 }
 
@@ -59,6 +70,7 @@ export function createIdentityManager(options: {
   let identity: DeviceIdentity | undefined;
   let initialization: Promise<DeviceIdentity> | undefined;
   let mutation = Promise.resolve();
+  const membershipListeners = new Set<() => void>();
 
   function serializeMutation<Result>(operation: () => Promise<Result>): Promise<Result> {
     const result = mutation.then(operation);
@@ -88,8 +100,12 @@ export function createIdentityManager(options: {
   }
 
   async function persistMutation(value: DeviceIdentity): Promise<DeviceIdentity> {
+    const prior = identity ?? await options.repo.get();
     await options.repo.upsert(value);
     identity = value;
+    if (!sameMembershipView(prior?.membershipView, value.membershipView ?? completeMembershipView(value.deviceId))) {
+      membershipListeners.forEach((listener) => listener());
+    }
     return value;
   }
 
@@ -149,7 +165,9 @@ export function createIdentityManager(options: {
     retryInitialization: () => loadIdentity(true),
     rename: (name) => serializeMutation(async () => {
       const current = await loadIdentity();
-      await persistMutation({ ...current, deviceName: name, nameRevision: (current.nameRevision ?? 0) + 1 });
+      const normalized = normalizeDeviceName(name);
+      if (!normalized) throw new Error("invalid_device_name");
+      await persistMutation({ ...current, deviceName: normalized, nameRevision: (current.nameRevision ?? 0) + 1 });
     }),
     updateMultiaddrs: (multiaddrs) => serializeMutation(async () => {
       const current = await loadIdentity();
@@ -183,14 +201,69 @@ export function createIdentityManager(options: {
       });
       return "admitted" as const;
     }),
+    membershipView: async () => {
+      await mutation;
+      const current = await options.repo.get() ?? await loadIdentity();
+      return completeMembershipView(current.deviceId, current.membershipView);
+    },
+    mergeMembershipView: (incoming) => serializeMutation(async () => {
+      const current = await loadIdentity();
+      const view = completeMembershipView(current.deviceId, current.membershipView);
+      const merged = completeMembershipView(current.deviceId, {
+        admittedPeerIds: [...view.admittedPeerIds, ...(incoming.admittedPeerIds ?? [])],
+        revokedPeerIds: [...view.revokedPeerIds, ...(incoming.revokedPeerIds ?? [])],
+      });
+      if (sameMembershipView(view, merged)) return false;
+      await persistMutation({ ...current, membershipView: merged });
+      return true;
+    }),
+    recordRemoteDeviceName: (peerId, name, revision) => serializeMutation(async () => {
+      const current = await loadIdentity();
+      if (peerId === current.deviceId || await (async () => {
+        const view = completeMembershipView(current.deviceId, current.membershipView);
+        return view.revokedPeerIds.includes(peerId) || !view.admittedPeerIds.includes(peerId);
+      })()) return;
+      const normalized = normalizeDeviceName(name);
+      if (revision < 0n || revision > BigInt(Number.MAX_SAFE_INTEGER)) return;
+      const names = { ...(current.remoteDeviceNames ?? {}) };
+      const known = names[peerId];
+      if (known && BigInt(known.nameRevision) >= revision) return;
+      names[peerId] = { deviceName: normalized ?? known?.deviceName ?? "", nameRevision: revision.toString() };
+      await persistMutation({ ...current, remoteDeviceNames: names });
+    }),
+    setLocalDeviceAlias: (peerId, alias) => serializeMutation(async () => {
+      const current = await loadIdentity();
+      if (peerId === current.deviceId) return;
+      const aliases = { ...(current.localDeviceAliases ?? {}) };
+      if (alias === undefined || alias === "") delete aliases[peerId];
+      else {
+        const normalized = normalizeDeviceName(alias);
+        if (!normalized) throw new Error("invalid_device_alias");
+        aliases[peerId] = normalized;
+      }
+      await persistMutation({ ...current, localDeviceAliases: aliases });
+    }),
+    displayDeviceLabel: async (peerId) => {
+      const current = await loadIdentity();
+      return current.localDeviceAliases?.[peerId]
+        ?? normalizeDeviceName(current.remoteDeviceNames?.[peerId]?.deviceName ?? "")
+        ?? shortenPeerId(peerId);
+    },
+    onMembershipChanged: (listener) => {
+      membershipListeners.add(listener);
+      return () => membershipListeners.delete(listener);
+    },
     getInitializationError: async () => options.repo.loadInitializationError?.(),
   };
 }
 
 function completeMembershipView(peerId: string, membershipView?: MembershipView): MembershipView {
-  const admittedPeerIds = [...new Set(membershipView?.admittedPeerIds ?? [peerId])];
-  if (!admittedPeerIds.includes(peerId)) admittedPeerIds.push(peerId);
-  return { admittedPeerIds, revokedPeerIds: [...new Set(membershipView?.revokedPeerIds ?? [])] };
+  const revokedPeerIds = [...new Set(membershipView?.revokedPeerIds ?? [])].sort();
+  const revoked = new Set(revokedPeerIds);
+  const admittedPeerIds = [...new Set(membershipView?.admittedPeerIds ?? [peerId])]
+    .filter((candidate) => !revoked.has(candidate));
+  if (!revoked.has(peerId) && !admittedPeerIds.includes(peerId)) admittedPeerIds.push(peerId);
+  return { admittedPeerIds: admittedPeerIds.sort(), revokedPeerIds };
 }
 
 function sameMembershipView(left: MembershipView | undefined, right: MembershipView): boolean {

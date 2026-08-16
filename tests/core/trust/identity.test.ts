@@ -93,6 +93,47 @@ describe("Device Identity initialization", () => {
     expect(stored.membershipView?.admittedPeerIds).not.toContain(remotePeerId);
   });
 
+  it("merges complete Membership Views atomically with revocation taking precedence", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    await manager.get();
+
+    await expect(manager.mergeMembershipView({
+      admittedPeerIds: [remotePeerId],
+      revokedPeerIds: [remotePeerId],
+    })).resolves.toBe(true);
+
+    expect(await manager.membershipView()).toEqual({
+      admittedPeerIds: [generatedIdentity.peerId],
+      revokedPeerIds: [remotePeerId],
+    });
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("revoked");
+  });
+
+  it("keeps aliases local and resolves labels as alias, latest valid Device Name, then Peer ID", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    await manager.get();
+    await manager.admit(remotePeerId);
+
+    expect(await manager.displayDeviceLabel(remotePeerId)).toContain("…");
+    await manager.recordRemoteDeviceName(remotePeerId, "Phone", 2n);
+    await manager.recordRemoteDeviceName(remotePeerId, "Older", 1n);
+    expect(await manager.displayDeviceLabel(remotePeerId)).toBe("Phone");
+    await manager.setLocalDeviceAlias(remotePeerId, "My pocket");
+    expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
+    expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({ deviceName: "Phone", nameRevision: "2" });
+    await manager.recordRemoteDeviceName(remotePeerId, "\u0001", 3n);
+    expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
+    expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({ deviceName: "Phone", nameRevision: "3" });
+  });
+
   it.each([
     ["Electron", createElectronRuntimeAdapter, "Desktop"],
     ["Android", createAndroidRuntimeAdapter, "Mobile"],

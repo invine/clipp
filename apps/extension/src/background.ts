@@ -42,6 +42,7 @@ import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/const
 import { createClipMessage } from "../../../packages/core/protocols/clip";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
+import { createMembershipPeerRecordBridge, createMembershipReconciler } from "../../../packages/core/membership/reconciliation";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
@@ -307,6 +308,12 @@ const extensionNetwork: MessagingTransport = {
   },
 };
 const notificationSelection = createRuntimeNotificationSelection();
+const membershipReconciler = createMembershipReconciler({
+  transport: extensionNetwork,
+  identity: identitySvc,
+  ...createMembershipPeerRecordBridge({ transport: extensionNetwork, identity: identitySvc }),
+  onChanged: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
+});
 
 const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   storage,
@@ -424,6 +431,7 @@ const sharedRuntime = createRuntimeOrchestrator({
       offscreenInitializationGate.open();
       await offscreenReady;
       await extensionNetwork.start();
+      membershipReconciler.start();
       await pairingPending.start();
     },
     onNetworkingFailure: (error) => {
