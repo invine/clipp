@@ -95,7 +95,7 @@ export function createPendingTrustRequestCoordinator(options: {
 }) {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
-  const receiveMutations = new Map<string, Promise<void>>();
+  const pendingMutations = new Map<string, Promise<void>>();
   let started = false;
   const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
   const reject = (reason: PairingRejectionReason, authenticatedPeerId: string, frame: Uint8Array, messageType: "request" | "response" | "unknown" = "request") => {
@@ -103,24 +103,44 @@ export function createPendingTrustRequestCoordinator(options: {
     return false;
   };
   const publish = async () => options.onChanged?.(await options.store.list());
+  const serializeMutation = <T>(peerId: string, operation: () => Promise<T>): Promise<T> => {
+    const previous = pendingMutations.get(peerId) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const settled = result.then(() => undefined, () => undefined);
+    pendingMutations.set(peerId, settled);
+    void settled.then(() => {
+      if (pendingMutations.get(peerId) === settled) pendingMutations.delete(peerId);
+    });
+    return result;
+  };
 
   const expirationFor = (issuedAt: bigint) => issuedAt + BigInt(options.validityWindowMs ?? 10 * 60 * 1000) + BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
   const isCurrent = (request: PendingTrustRequest) => BigInt(options.clock.now()) <= request.expiresAtUnixMs;
+  const isSameRequest = (left: PendingTrustRequest, right: PendingTrustRequest) => left.expiresAtUnixMs === right.expiresAtUnixMs
+    && left.requestEnvelope.byteLength === right.requestEnvelope.byteLength
+    && left.requestEnvelope.every((byte, index) => byte === right.requestEnvelope[index]);
   const clearTimer = (peerId: string) => {
     const timer = expiryTimers.get(peerId);
     if (timer !== undefined) options.clock.clearTimeout(timer);
     expiryTimers.delete(peerId);
   };
-  const expire = async (peerId: string) => {
+  const expirePending = async (peerId: string, expected?: PendingTrustRequest) => {
+    if (expected) {
+      const current = (await options.store.list()).find((request) => request.initiatorPeerId === peerId);
+      if (!current || !isSameRequest(current, expected)) return false;
+    }
     clearTimer(peerId);
     await options.store.remove(peerId);
     await options.notifications.dismiss(notificationId(peerId));
     await publish();
+    return true;
   };
   const scheduleExpiry = (request: PendingTrustRequest) => {
     clearTimer(request.initiatorPeerId);
     const delay = Number(request.expiresAtUnixMs - BigInt(options.clock.now())) + 1;
-    expiryTimers.set(request.initiatorPeerId, options.clock.setTimeout(() => { void expire(request.initiatorPeerId).catch(() => undefined); }, Math.max(0, delay)));
+    expiryTimers.set(request.initiatorPeerId, options.clock.setTimeout(() => {
+      void serializeMutation(request.initiatorPeerId, () => expirePending(request.initiatorPeerId, request)).catch(() => undefined);
+    }, Math.max(0, delay)));
   };
   const show = async (request: PendingTrustRequest) => {
     await options.notifications.show({
@@ -155,7 +175,7 @@ export function createPendingTrustRequestCoordinator(options: {
       for (const storedRequest of await options.store.list()) {
         const request = await revalidateStoredRequest(storedRequest);
         if (!request) {
-          await expire(storedRequest.initiatorPeerId);
+          await expirePending(storedRequest.initiatorPeerId);
           continue;
         }
         await options.store.save(request);
@@ -165,8 +185,7 @@ export function createPendingTrustRequestCoordinator(options: {
       await publish();
     },
     receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
-      const previous = receiveMutations.get(authenticatedPeerId) ?? Promise.resolve();
-      const result = previous.then(async () => {
+      return serializeMutation(authenticatedPeerId, async () => {
         const parsed = decodePairingFrame(frame);
         if (!parsed || parsed.kind !== "request") return reject("protobuf_decoding_failed", authenticatedPeerId, frame, parsed?.kind ?? "unknown");
         const envelope = decodeTrustRequestEnvelope(parsed.envelope);
@@ -204,42 +223,38 @@ export function createPendingTrustRequestCoordinator(options: {
         await publish();
         return true;
       });
-      const settled = result.then(() => undefined, () => undefined);
-      receiveMutations.set(authenticatedPeerId, settled);
-      void settled.then(() => {
-        if (receiveMutations.get(authenticatedPeerId) === settled) receiveMutations.delete(authenticatedPeerId);
+    },
+    decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
+      return serializeMutation(initiatorPeerId, async () => {
+        if (!options.sendResponse || !options.responseIdentity) return false;
+        const request = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
+        if (!request) return false;
+        if (!isCurrent(request)) {
+          await expirePending(initiatorPeerId);
+          return false;
+        }
+        const envelope = decodeTrustRequestEnvelope(request.requestEnvelope);
+        if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, initiatorPeerId))) {
+          await expirePending(initiatorPeerId);
+          return false;
+        }
+        const payload = decodeTrustRequestPayload(envelope.signedPayload);
+        if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) {
+          await expirePending(initiatorPeerId);
+          return false;
+        }
+        const identity = await options.responseIdentity();
+        try {
+          await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
+        } catch {
+          // A response has one best-effort delivery attempt and no retry job.
+        } finally {
+          await expirePending(initiatorPeerId);
+        }
+        return true;
       });
-      return result;
     },
-    async decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
-      if (!options.sendResponse || !options.responseIdentity) return false;
-      const request = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
-      if (!request) return false;
-      if (!isCurrent(request)) {
-        await expire(initiatorPeerId);
-        return false;
-      }
-      const envelope = decodeTrustRequestEnvelope(request.requestEnvelope);
-      if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, initiatorPeerId))) {
-        await expire(initiatorPeerId);
-        return false;
-      }
-      const payload = decodeTrustRequestPayload(envelope.signedPayload);
-      if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) {
-        await expire(initiatorPeerId);
-        return false;
-      }
-      const identity = await options.responseIdentity();
-      try {
-        await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
-      } catch {
-        // A response has one best-effort delivery attempt and no retry job.
-      } finally {
-        await expire(initiatorPeerId);
-      }
-      return true;
-    },
-    expire,
+    expire: (initiatorPeerId: string) => serializeMutation(initiatorPeerId, () => expirePending(initiatorPeerId)),
   };
 }
 

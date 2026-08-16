@@ -102,6 +102,51 @@ describe("pending Trust Requests", () => {
     expect(shown).toEqual([`pairing-request-${initiatorPeerId}`]);
   });
 
+  it("does not let an old expiry remove a newer coalesced request", async () => {
+    const requests = new Map<string, any>();
+    const timers: Array<() => void> = [];
+    const dismissed: string[] = [];
+    let releaseNewerSave!: () => void;
+    let markNewerSaveStarted!: () => void;
+    const newerSaveStarted = new Promise<void>((resolve) => { markNewerSaveStarted = resolve; });
+    const newerSaveGate = new Promise<void>((resolve) => { releaseNewerSave = resolve; });
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => [...requests.values()],
+        save: async (request) => {
+          if (request.expiresAtUnixMs === 721_100n) {
+            markNewerSaveStarted();
+            await newerSaveGate;
+          }
+          requests.set(request.initiatorPeerId, request);
+        },
+        remove: async (id) => void requests.delete(id),
+      },
+      notifications: { show: async () => undefined, dismiss: async (id) => void dismissed.push(id), onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: {
+        now: () => 1_100,
+        setTimeout: (handler) => { timers.push(handler); return timers.length; },
+        // The old callback may already be queued when its timer is cleared.
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+    });
+    const frame = (issuedAt: bigint) => encodePairingFrame({ kind: "request" as const, envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: issuedAt }), signature: new Uint8Array([1]) }) });
+
+    await coordinator.receive(initiatorPeerId, frame(1_000n));
+    const newer = coordinator.receive(initiatorPeerId, frame(1_100n));
+    await newerSaveStarted;
+    timers[0]();
+    releaseNewerSave();
+    await newer;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(requests.get(initiatorPeerId).expiresAtUnixMs).toBe(721_100n);
+    expect(dismissed).toEqual([]);
+  });
+
   it("keeps different initiators independently pending", async () => {
     const requests = new Map<string, any>();
     const shown: string[] = [];
