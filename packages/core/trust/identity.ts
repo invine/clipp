@@ -4,6 +4,7 @@ import { normalizeDeviceName, shortenPeerId } from "../pairing/presentation";
 
 export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
 export type RemoteDeviceName = { deviceName: string; nameRevision: string };
+const MAX_UINT64 = (1n << 64n) - 1n;
 
 export interface DeviceIdentity {
   deviceId: string;
@@ -224,7 +225,7 @@ export function createIdentityManager(options: {
         return view.revokedPeerIds.includes(peerId) || !view.admittedPeerIds.includes(peerId);
       })()) return;
       const normalized = normalizeDeviceName(name);
-      if (revision < 0n || revision > BigInt(Number.MAX_SAFE_INTEGER)) return;
+      if (revision < 0n || revision > MAX_UINT64) return;
       const names = { ...(current.remoteDeviceNames ?? {}) };
       const known = names[peerId];
       if (known && BigInt(known.nameRevision) >= revision) return;
@@ -259,10 +260,8 @@ export function createIdentityManager(options: {
 
 function completeMembershipView(peerId: string, membershipView?: MembershipView): MembershipView {
   const revokedPeerIds = [...new Set(membershipView?.revokedPeerIds ?? [])].sort();
-  const revoked = new Set(revokedPeerIds);
-  const admittedPeerIds = [...new Set(membershipView?.admittedPeerIds ?? [peerId])]
-    .filter((candidate) => !revoked.has(candidate));
-  if (!revoked.has(peerId) && !admittedPeerIds.includes(peerId)) admittedPeerIds.push(peerId);
+  const admittedPeerIds = [...new Set(membershipView?.admittedPeerIds ?? [peerId])];
+  if (!revokedPeerIds.includes(peerId) && !admittedPeerIds.includes(peerId)) admittedPeerIds.push(peerId);
   return { admittedPeerIds: admittedPeerIds.sort(), revokedPeerIds };
 }
 

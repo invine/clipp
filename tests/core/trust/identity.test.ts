@@ -107,7 +107,7 @@ describe("Device Identity initialization", () => {
     })).resolves.toBe(true);
 
     expect(await manager.membershipView()).toEqual({
-      admittedPeerIds: [generatedIdentity.peerId],
+      admittedPeerIds: [remotePeerId, generatedIdentity.peerId],
       revokedPeerIds: [remotePeerId],
     });
     await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("revoked");
@@ -132,6 +132,12 @@ describe("Device Identity initialization", () => {
     await manager.recordRemoteDeviceName(remotePeerId, "\u0001", 3n);
     expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
     expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({ deviceName: "Phone", nameRevision: "3" });
+    await manager.recordRemoteDeviceName(remotePeerId, "Large revision", 9_007_199_254_740_993n);
+    expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
+    expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({
+      deviceName: "Large revision",
+      nameRevision: "9007199254740993",
+    });
   });
 
   it.each([

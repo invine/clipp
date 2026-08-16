@@ -1,4 +1,5 @@
 import { createTrustManager, type TrustedDevice } from "../../../packages/core/trust/trustManager";
+import { createIdentityManager, type DeviceIdentity } from "../../../packages/core/trust/identity";
 
 function createMemoryTrustedDeviceRepo() {
   const devices = new Map<string, TrustedDevice>();
@@ -25,6 +26,7 @@ function sampleDevice(id: string): TrustedDevice {
 }
 
 const connectedPeerId = "12D3KooWAuz1FwEK4f32DznuhrHm1BWYBhP5NcZ7sPcEFdUykNMR";
+const localPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 describe("TrustManager", () => {
   it("makes a newly admitted member immediately trusted and visible by Peer ID", async () => {
@@ -77,6 +79,46 @@ describe("TrustManager", () => {
     await expect(trust.isTrusted(activePeerId)).resolves.toBe(true);
     await expect(trust.isTrusted(unknownPeerId)).resolves.toBe(false);
     await expect(trust.isTrusted(revokedPeerId)).resolves.toBe(false);
+  });
+
+  it("shows reconciled Device Names and aliases transitive members without legacy metadata", async () => {
+    let storedIdentity: DeviceIdentity | undefined;
+    const identitySvc = createIdentityManager({
+      repo: {
+        get: async () => storedIdentity,
+        upsert: async (identity) => { storedIdentity = structuredClone(identity); },
+      },
+      initialDeviceName: "Desktop",
+      generateKeyMaterial: async () => ({ peerId: localPeerId, privateKey: "private", publicKey: "public" }),
+      deriveKeyMaterial: async () => ({ peerId: localPeerId, privateKey: "private", publicKey: "public" }),
+    });
+    await identitySvc.get();
+    await identitySvc.admit(connectedPeerId);
+    await identitySvc.recordRemoteDeviceName(connectedPeerId, "\u0001", 5n);
+    const trust = createTrustManager({ trustRepo: createMemoryTrustedDeviceRepo(), identitySvc });
+
+    await trust.admit(connectedPeerId, { deviceName: "Stale Pairing phone", nameRevision: 4n });
+    await expect(trust.list()).resolves.toEqual([
+      expect.objectContaining({
+        deviceId: connectedPeerId,
+        displayName: await identitySvc.displayDeviceLabel(connectedPeerId),
+      }),
+    ]);
+    await identitySvc.recordRemoteDeviceName(connectedPeerId, "Pocket computer", 6n);
+    await expect(trust.admit(connectedPeerId, {
+      deviceName: "Pairing phone",
+      nameRevision: 8n,
+    })).resolves.toBe("already-active");
+    await identitySvc.recordRemoteDeviceName(connectedPeerId, "Stale reconciliation", 7n);
+    await expect(trust.list()).resolves.toEqual([
+      expect.objectContaining({ deviceId: connectedPeerId, displayName: "Pairing phone" }),
+    ]);
+    await expect(trust.rename(connectedPeerId, "My phone")).resolves.toEqual(
+      expect.objectContaining({ deviceId: connectedPeerId, displayName: "My phone" }),
+    );
+    await expect(trust.list()).resolves.toEqual([
+      expect.objectContaining({ deviceId: connectedPeerId, displayName: "My phone" }),
+    ]);
   });
 
   it("applies authenticated presentation metadata monotonically and validates names", async () => {

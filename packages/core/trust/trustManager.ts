@@ -428,11 +428,11 @@ export function createTrustManager(options: {
       identitySvc.get(),
     ]);
     const metadataByPeerId = new Map(legacyDevices.map((device) => [device.deviceId, device]));
-    return activePeerIds
+    return Promise.all(activePeerIds
       .filter((peerId) => peerId !== local.deviceId)
-      .map((peerId) => {
+      .map(async (peerId) => {
         const metadata = metadataByPeerId.get(peerId);
-        return metadata ? withDisplayName(metadata) : {
+        const device = metadata ? withDisplayName(metadata) : {
           deviceId: peerId,
           deviceName: "",
           displayName: shortenPeerId(peerId),
@@ -440,21 +440,34 @@ export function createTrustManager(options: {
           multiaddrs: [],
           createdAt: 0,
         };
-      });
+        const identityLabel = await identitySvc.displayDeviceLabel?.(peerId);
+        return {
+          ...device,
+          displayName:
+            metadata?.localAlias
+            ?? identityLabel
+            ?? device.displayName,
+        };
+      }));
   }
 
   async function rename(deviceId: string, name: string): Promise<TrustedDevice | null> {
     const normalized = normalizeDeviceName(name)
     if (!normalized) return null
+    if (identitySvc.membershipStatus && await identitySvc.membershipStatus(deviceId) !== "active") return null
     const device = await trustRepo.get(deviceId)
-    if (!device) return null
-    const updated: TrustedDevice = {
-      ...device,
-      localAlias: normalized,
+    if (!device && !identitySvc.setLocalDeviceAlias) return null
+    await identitySvc.setLocalDeviceAlias?.(deviceId, normalized)
+    if (device) {
+      await trustRepo.upsert({
+        ...device,
+        localAlias: normalized,
+      })
     }
-    await trustRepo.upsert(updated)
     log.info("Device renamed", deviceId)
-    const presented = withDisplayName(updated)
+    const presented = (await list()).find((candidate) => candidate.deviceId === deviceId)
+      ?? (device ? withDisplayName({ ...device, localAlias: normalized }) : null)
+    if (!presented) return null
     events.emit('renamed', presented)
     return presented
   }
@@ -476,6 +489,11 @@ export function createTrustManager(options: {
     const admission = await identitySvc.admit?.(deviceId) ?? "admitted";
     if (admission === "revoked" || !presentation) return admission;
     try {
+      await identitySvc.recordRemoteDeviceName?.(
+        deviceId,
+        presentation.deviceName,
+        presentation.nameRevision,
+      );
       const existing = await trustRepo.get(deviceId);
       const currentRevision = BigInt(existing?.selfReportedNameRevision ?? existing?.nameRevision ?? -1);
       if (presentation.nameRevision <= currentRevision) return admission;
