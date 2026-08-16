@@ -5,6 +5,7 @@ import path from "node:path";
 import QRCode from "qrcode";
 import { encodePairingTarget, decodePairingTarget } from "../../../packages/core/pairing/v2.js";
 import { createPairingSession } from "../../../packages/core/pairing/session.js";
+import { createPairingRuntimeCoordinator } from "../../../packages/core/pairing/runtimeCoordinator.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
 import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending.js";
@@ -368,9 +369,7 @@ async function bootstrap() {
   // TODO: why pendingRequests is part of the application and not part of trust manager?
   let pendingRequests: TrustedDevice[] = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
-  const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
-  const pairingWaitingByPeer = new Map<string, { targetPeerId: string; expiresAtUnixMs: number }>();
-  const pairingErrorSources = new Map<string, Set<string>>();
+  const pairingRuntime = createPairingRuntimeCoordinator({ onChanged: () => emitState() });
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -393,8 +392,8 @@ async function bootstrap() {
       devices,
       // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
-      waiting: [...pairingWaitingByPeer.values()],
-      pairingErrors: [...new Set([...pairingErrorSources.values()].flatMap((peers) => [...peers]))].map((targetPeerId) => ({ targetPeerId, code: "membership_persistence_failed" as const })),
+      waiting: pairingRuntime.waiting(),
+      pairingErrors: pairingRuntime.errors(),
       peers,
       peerConnections,
       relayConnections,
@@ -778,11 +777,7 @@ async function bootstrap() {
 
   async function shutdownServices() {
     quitting = true;
-    await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
-    await pairingResponseValidator.stop();
-    pairingSessions.clear();
-    pairingWaitingByPeer.clear();
-    pairingErrorSources.clear();
+    await pairingRuntime.stop(fallbackPairingSession);
     clipboardSync.stop();
     pairedConnections.stop();
     try {
@@ -859,7 +854,7 @@ async function bootstrap() {
     lifecycle: runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
-    membership: identitySvc,
+    membership: trust,
     sendResponse: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     connectionPath: (remotePeerId) => {
@@ -870,16 +865,12 @@ async function bootstrap() {
       log.warn(diagnostic.event, diagnostic);
       if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
-    onErrorsChanged: (errors) => {
-      pairingErrorSources.set("response-validator", new Set(errors.map((error) => error.targetPeerId)));
-      void emitState();
-    },
     onChanged: async (requests) => {
       pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
       await emitState();
     },
   });
-  const pairingResponseValidator = createPairingSession({
+  const fallbackPairingSession = createPairingSession({
     identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
     send: (targetPeerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
     sign: async (bytes) => {
@@ -887,7 +878,7 @@ async function bootstrap() {
       return privateKey.sign(bytes);
     },
     verify: verifyPairingTrustRequestSignature,
-    membership: identitySvc,
+    membership: trust,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
       const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -897,12 +888,14 @@ async function bootstrap() {
       log.warn(diagnostic.event, diagnostic);
       void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
+    onWaitingChanged: (waiting) => pairingRuntime.waitingForSessionChanged(fallbackPairingSession, waiting),
+    onErrorsChanged: (errors) => pairingRuntime.fallbackErrorsChanged(errors),
   });
   function bindPairingHandler(target: typeof transport) {
     target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-      const session = pairingSessions.get(from) ?? pairingResponseValidator;
+      const session = pairingRuntime.getOrAttachFallbackSession(from, fallbackPairingSession);
       if (decodePairingFrame(frame)?.kind === "response") void session.receiveResponse(from, frame).then((decision) => {
-        if (decision && decision !== "retrying" && !session.retrying(from)) pairingSessions.delete(from);
+        if (decision && decision !== "retrying" && !session.retrying(from)) void pairingRuntime.remove(from, session);
       }).catch((error) => log.warn("Pairing response processing failed", error));
     else void pairingPending?.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
     });
@@ -1023,9 +1016,6 @@ async function bootstrap() {
     "clipp:respond-trust",
     async (_evt, payload: { accept: boolean; device: any }) => {
       const { accept, device } = payload;
-      pendingRequests = pendingRequests.filter(
-        (p) => p.deviceId !== device.deviceId
-      );
       await pairingPending?.decide(device.deviceId, accept ? "accepted" : "rejected");
       // if (accept) {
       //   await trust.add(device);
@@ -1048,7 +1038,7 @@ async function bootstrap() {
       identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
       sign: async (bytes) => privateKey.sign(bytes),
       verify: verifyPairingTrustRequestSignature,
-      membership: identitySvc,
+      membership: trust,
       send: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
       clock: systemRuntimeClock,
       connectionPath: (remotePeerId) => {
@@ -1060,30 +1050,16 @@ async function bootstrap() {
         void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
       },
       onWaitingChanged: (waiting) => {
-        if (pairingSessions.get(target.targetPeerId) !== session) return;
-        const state = waiting.find((entry) => entry.targetPeerId === target.targetPeerId);
-        if (state) pairingWaitingByPeer.set(target.targetPeerId, { targetPeerId: state.targetPeerId, expiresAtUnixMs: Number(state.expiresAtUnixMs) });
-        else pairingWaitingByPeer.delete(target.targetPeerId);
-        void emitState();
+        pairingRuntime.waitingChanged(target.targetPeerId, session, waiting);
       },
-      onErrorsChanged: (errors) => {
-        pairingErrorSources.set(`session:${target.targetPeerId}`, new Set(errors.map((error) => error.targetPeerId)));
-        void emitState();
-      },
+      onErrorsChanged: (errors) => pairingRuntime.sessionErrorsChanged(target.targetPeerId, errors),
     });
     try {
-      const previousSession = pairingSessions.get(target.targetPeerId);
-      if (previousSession) await previousSession.stop();
-      pairingErrorSources.delete(`session:${target.targetPeerId}`);
-      pairingSessions.set(target.targetPeerId, session);
-      await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: session.request });
+      const activeSession = await pairingRuntime.replace(target.targetPeerId, session, fallbackPairingSession);
+      await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: activeSession.request });
       return { ok: true };
     } catch {
-      if (pairingSessions.get(target.targetPeerId) === session) {
-        pairingSessions.delete(target.targetPeerId);
-        pairingWaitingByPeer.delete(target.targetPeerId);
-        pairingErrorSources.delete(`session:${target.targetPeerId}`);
-      }
+      await pairingRuntime.remove(target.targetPeerId, session);
       return { ok: false, error: "dial_failed" as const };
     }
   });

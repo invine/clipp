@@ -8,7 +8,7 @@ import {
 } from "./protocol";
 import { encodePairingFrame } from "./protocol";
 import { createPairingRejectionReporter, type PairingConnectionPath, type PairingRejectionDiagnostic, type PairingRejectionReason } from "./diagnostics";
-import type { PairingMembership } from "./membership";
+import type { DeviceMembershipAdmissions } from "./membership";
 
 export type PendingTrustRequest = {
   initiatorPeerId: string;
@@ -85,7 +85,7 @@ export function createPendingTrustRequestCoordinator(options: {
   lifecycle: Pick<RuntimeLifecycle, "openApprovalView">;
   clock: RuntimeClock;
   verify: TrustRequestVerifier;
-  membership: PairingMembership;
+  membership: DeviceMembershipAdmissions;
   sendResponse?(peerId: string, frame: Uint8Array): Promise<void>;
   responseIdentity?(): Promise<{ deviceName: string; nameRevision: bigint }>;
   connectionPath?(peerId: string): PairingConnectionPath;
@@ -274,7 +274,10 @@ export function createPendingTrustRequestCoordinator(options: {
           return false;
         }
         if (decision === "accepted") {
-          const admission = await options.membership.admit(initiatorPeerId);
+          const admission = await options.membership.admit(initiatorPeerId, {
+            deviceName: request.deviceName,
+            nameRevision: request.nameRevision,
+          });
           if (admission === "revoked" || await options.membership.membershipStatus(initiatorPeerId) !== "active") {
             await expirePending(initiatorPeerId);
             return false;

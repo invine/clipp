@@ -44,6 +44,7 @@ import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { createPairingSession } from "../../../packages/core/pairing/session";
+import { createPairingRuntimeCoordinator } from "../../../packages/core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "../../../packages/core/pairing/v2";
 import type {
@@ -217,8 +218,9 @@ history.onNew((item) => {
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
 let pendingRequests: TrustedDevice[] = [];
-const pairingWaitingByPeer = new Map<string, { targetPeerId: string; expiresAtUnixMs: number }>();
-const pairingErrorSources = new Map<string, Set<string>>();
+const pairingRuntime = createPairingRuntimeCoordinator({
+  onChanged: () => runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current)),
+});
 trust.on("rejected", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
   log.info("Trust request rejected", d.deviceId);
@@ -343,8 +345,8 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         clips,
         devices,
         pending: pendingRequests,
-        waiting: [...pairingWaitingByPeer.values()],
-        pairingErrors: [...new Set([...pairingErrorSources.values()].flatMap((peers) => [...peers]))].map((targetPeerId) => ({ targetPeerId, code: "membership_persistence_failed" as const })),
+        waiting: pairingRuntime.waiting(),
+        pairingErrors: pairingRuntime.errors(),
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
         identity: toPublicDeviceIdentity(identity),
@@ -367,7 +369,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
   lifecycle: runtimeAdapter.lifecycle,
   clock: systemRuntimeClock,
   verify: verifyPairingTrustRequestSignature,
-  membership: identitySvc,
+  membership: trust,
   sendResponse: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
   responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
   connectionPath: (remotePeerId) => {
@@ -378,17 +380,12 @@ const pairingPending = createPendingTrustRequestCoordinator({
     log.warn(diagnostic.event, diagnostic);
     if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
   },
-  onErrorsChanged: (errors) => {
-    pairingErrorSources.set("response-validator", new Set(errors.map((error) => error.targetPeerId)));
-    void runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current));
-  },
   onChanged: async (requests) => {
     pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
     await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
   },
 });
-const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
-const pairingResponseValidator = createPairingSession({
+const fallbackPairingSession = createPairingSession({
   identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
   send: (targetPeerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
   sign: async (bytes) => {
@@ -397,7 +394,7 @@ const pairingResponseValidator = createPairingSession({
     return privateKeyFromProtobuf(base64ToBytes(identity.privateKey)).sign(bytes);
   },
   verify: verifyPairingTrustRequestSignature,
-  membership: identitySvc,
+  membership: trust,
   clock: systemRuntimeClock,
   connectionPath: (remotePeerId) => {
     const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -407,10 +404,12 @@ const pairingResponseValidator = createPairingSession({
     log.warn(diagnostic.event, diagnostic);
     void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
   },
+  onWaitingChanged: (waiting) => pairingRuntime.waitingForSessionChanged(fallbackPairingSession, waiting),
+  onErrorsChanged: (errors) => pairingRuntime.fallbackErrorsChanged(errors),
 });
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-  const session = pairingSessions.get(from) ?? pairingResponseValidator;
-  if (decodePairingFrame(frame)?.kind === "response") void pairingPending.start().then(() => session.receiveResponse(from, frame)).then((decision) => { if (decision && decision !== "retrying" && !session.retrying(from)) pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
+  const session = pairingRuntime.getOrAttachFallbackSession(from, fallbackPairingSession);
+  if (decodePairingFrame(frame)?.kind === "response") void pairingPending.start().then(() => session.receiveResponse(from, frame)).then((decision) => { if (decision && decision !== "retrying" && !session.retrying(from)) void pairingRuntime.remove(from, session); }).catch((error) => log.warn("Pairing response processing failed", error));
   else void pairingPending.start().then(() => pairingPending.receive(from, frame)).catch((error) => log.warn("Pairing request processing failed", error));
 });
 chrome.notifications?.onClicked?.addListener((id) => {
@@ -434,11 +433,7 @@ const sharedRuntime = createRuntimeOrchestrator({
     },
   }),
   stop: async () => {
-    await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
-    await pairingResponseValidator.stop();
-    pairingSessions.clear();
-    pairingWaitingByPeer.clear();
-    pairingErrorSources.clear();
+    await pairingRuntime.stop(fallbackPairingSession);
     clipboardSync.stop();
   },
 });
@@ -524,11 +519,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "respondTrust") {
-    pendingRequests = pendingRequests.filter((p) => p.deviceId !== msg.id);
-    pairingPending.decide(msg.id, msg.accept ? "accepted" : "rejected").then((handled) => {
+    void pairingPending.decide(msg.id, msg.accept ? "accepted" : "rejected").then((handled) => {
       if (!handled) log.warn("No valid pairing request to decide");
-    }).catch((error) => log.warn("Pairing response failed", error));
-    sendResponse({ ok: true });
+      sendResponse({ ok: handled });
+    }).catch((error) => {
+      log.warn("Pairing response failed", error);
+      sendResponse({ ok: false, error: "pairing_decision_failed" });
+    });
     return true;
   }
   if (msg.type === "clipboardUpdate" && msg.text) {
@@ -596,7 +593,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
           sign: async (bytes) => privateKey.sign(bytes),
           verify: verifyPairingTrustRequestSignature,
-          membership: identitySvc,
+          membership: trust,
           send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
           clock: systemRuntimeClock,
           connectionPath: (remotePeerId) => {
@@ -608,31 +605,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
           },
           onWaitingChanged: (waiting) => {
-            if (pairingSessions.get(target.targetPeerId) !== session) return;
-            const state = waiting.find((entry) => entry.targetPeerId === target.targetPeerId);
-            if (state) pairingWaitingByPeer.set(target.targetPeerId, { targetPeerId: state.targetPeerId, expiresAtUnixMs: Number(state.expiresAtUnixMs) });
-            else pairingWaitingByPeer.delete(target.targetPeerId);
-            void runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current));
+            pairingRuntime.waitingChanged(target.targetPeerId, session, waiting);
           },
-          onErrorsChanged: (errors) => {
-            pairingErrorSources.set(`session:${target.targetPeerId}`, new Set(errors.map((error) => error.targetPeerId)));
-            void runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current));
-          },
+          onErrorsChanged: (errors) => pairingRuntime.sessionErrorsChanged(target.targetPeerId, errors),
         });
         attemptedSession = session;
-        const previousSession = pairingSessions.get(target.targetPeerId);
-        if (previousSession) await previousSession.stop();
-        pairingErrorSources.delete(`session:${target.targetPeerId}`);
-        pairingSessions.set(target.targetPeerId, session);
-        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: session.request });
+        const activeSession = await pairingRuntime.replace(target.targetPeerId, session, fallbackPairingSession);
+        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: activeSession.request });
         sendResponse({ ok: true });
       } catch (error) {
         const target = decodePairingTarget(msg.pairingText);
-        if (target && attemptedSession && pairingSessions.get(target.targetPeerId) === attemptedSession) {
-          pairingSessions.delete(target.targetPeerId);
-          pairingWaitingByPeer.delete(target.targetPeerId);
-          pairingErrorSources.delete(`session:${target.targetPeerId}`);
-        }
+        if (target && attemptedSession) await pairingRuntime.remove(target.targetPeerId, attemptedSession);
         sendResponse({ ok: false, error: (error as Error).message });
       }
     })();

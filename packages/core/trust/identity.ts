@@ -35,6 +35,7 @@ export interface IdentityManager {
   rename(name: string): Promise<void>;
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
   membershipStatus(peerId: string): Promise<"active" | "revoked" | "unknown">;
+  activePeerIds(): Promise<string[]>;
   admit(peerId: string): Promise<"admitted" | "already-active" | "revoked">;
   getInitializationError(): Promise<IdentityInitializationError | undefined>;
 }
@@ -154,9 +155,17 @@ export function createIdentityManager(options: {
     }),
     membershipStatus: async (peerId) => {
       await mutation;
-      const view = completeMembershipView((await loadIdentity()).deviceId, (await loadIdentity()).membershipView);
+      const current = await options.repo.get() ?? await loadIdentity();
+      const view = completeMembershipView(current.deviceId, current.membershipView);
       if (view.revokedPeerIds.includes(peerId)) return "revoked";
       return view.admittedPeerIds.includes(peerId) ? "active" : "unknown";
+    },
+    activePeerIds: async () => {
+      await mutation;
+      const current = await options.repo.get() ?? await loadIdentity();
+      const view = completeMembershipView(current.deviceId, current.membershipView);
+      const revoked = new Set(view.revokedPeerIds);
+      return view.admittedPeerIds.filter((peerId) => !revoked.has(peerId));
     },
     admit: (peerId) => serializeMutation(async () => {
       const current = await loadIdentity();

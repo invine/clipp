@@ -13,6 +13,7 @@ import {
 } from '../protocols/clipTrust.js';
 import { TypedEventEmitter } from './events.js';
 import { DeviceIdentity, IdentityManager } from './identity.js';
+import type { DeviceMembershipAdmissions, DevicePresentation } from '../pairing/membership.js';
 
 // TODO: refactor later
 export interface TrustedDevice extends DeviceIdentity {
@@ -79,6 +80,10 @@ function normalizedPeerTarget(value: string): string {
   return value.startsWith("/") ? peerIdFromAddress(value) ?? value : value;
 }
 
+function shortenPeerId(peerId: string): string {
+  return `${peerId.slice(0, 8)}…${peerId.slice(-6)}`;
+}
+
 async function trustedDeviceAliases(device: TrustedDevice): Promise<Set<string>> {
   const aliases = new Set<string>();
   aliases.add(device.deviceId);
@@ -107,7 +112,7 @@ function dedupeDevicePayloads(devices: TrustRequestPayload[]): TrustRequestPaylo
   return out;
 }
 
-export interface TrustManager {
+export interface TrustManager extends DeviceMembershipAdmissions {
   sendTrustRequest(device: TrustedDevice): Promise<void>
   sendTrustAck(device: TrustedDevice, accepted: boolean): Promise<void>
   handleTrustMessage(msg: TrustMessage): Promise<void>
@@ -411,7 +416,23 @@ export function createTrustManager(options: {
   }
 
   async function list(): Promise<TrustedDevice[]> {
-    return trustRepo.list()
+    const [legacyDevices, activePeerIds, local] = await Promise.all([
+      trustRepo.list(),
+      identitySvc.activePeerIds?.() ?? Promise.resolve([]),
+      identitySvc.get(),
+    ]);
+    const devicesById = new Map(legacyDevices.map((device) => [device.deviceId, device]));
+    for (const peerId of activePeerIds) {
+      if (peerId === local.deviceId || devicesById.has(peerId)) continue;
+      devicesById.set(peerId, {
+        deviceId: peerId,
+        deviceName: shortenPeerId(peerId),
+        publicKey: "",
+        multiaddrs: [],
+        createdAt: 0,
+      });
+    }
+    return [...devicesById.values()]
   }
 
   async function rename(deviceId: string, name: string): Promise<TrustedDevice | null> {
@@ -438,6 +459,9 @@ export function createTrustManager(options: {
   }
 
   async function isTrusted(id: string): Promise<boolean> {
+    const membershipStatus = await identitySvc.membershipStatus?.(normalizedPeerTarget(id)) ?? "unknown";
+    if (membershipStatus === "revoked") return false;
+    if (membershipStatus === "active") return true;
     const device = await trustRepo.get(id)
     if (device) return true
 
@@ -446,6 +470,28 @@ export function createTrustManager(options: {
       if (await trustedDeviceMatchesId(candidate, id)) return true
     }
     return false
+  }
+
+  async function admit(deviceId: string, presentation?: DevicePresentation): Promise<"admitted" | "already-active" | "revoked"> {
+    const admission = await identitySvc.admit?.(deviceId) ?? "admitted";
+    if (admission === "revoked" || !presentation) return admission;
+    try {
+      const existing = await trustRepo.get(deviceId);
+      await trustRepo.upsert({
+        deviceId,
+        deviceName: presentation.deviceName,
+        nameRevision: Number(presentation.nameRevision),
+        publicKey: existing?.publicKey ?? "",
+        privateKey: undefined,
+        multiaddrs: existing?.multiaddrs ?? [],
+        createdAt: existing?.createdAt ?? clock(),
+        lastSeen: existing?.lastSeen,
+      });
+    } catch {
+      // Presentation metadata is non-authoritative. Active membership remains
+      // immediately usable and list() supplies a Peer ID fallback label.
+    }
+    return admission;
   }
 
   function on(event: keyof Events, cb: (device: TrustedDevice) => void) {
@@ -460,6 +506,8 @@ export function createTrustManager(options: {
     rename,
     remove,
     isTrusted,
+    membershipStatus: (peerId) => identitySvc.membershipStatus?.(peerId) ?? Promise.resolve("unknown"),
+    admit,
     on,
     bindMessenger: (messenger: ProtocolMessenger<TrustMessage>) => {
       current = messenger

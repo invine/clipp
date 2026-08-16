@@ -192,7 +192,8 @@ const Popup = () => {
         onAccept={(dev) =>
           chrome.runtime.sendMessage(
             { type: "respondTrust", id: dev.deviceId, accept: true, device: dev },
-            () => {
+            (response) => {
+              if (!response?.ok) return;
               setPending((p) => p.filter((d) => d.deviceId !== dev.deviceId));
               refreshDevices();
             }
@@ -201,7 +202,8 @@ const Popup = () => {
         onReject={(dev) =>
           chrome.runtime.sendMessage(
             { type: "respondTrust", id: dev.deviceId, accept: false, device: dev },
-            () => {
+            (response) => {
+              if (!response?.ok) return;
               setPending((p) => p.filter((d) => d.deviceId !== dev.deviceId));
             }
           )

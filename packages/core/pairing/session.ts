@@ -13,7 +13,7 @@ import {
   validateTrustRequestTime,
 } from "./protocol";
 import { createPairingRejectionReporter, type PairingConnectionPath, type PairingRejectionDiagnostic, type PairingRejectionReason } from "./diagnostics";
-import type { PairingMembership } from "./membership";
+import type { DeviceMembershipAdmissions } from "./membership";
 
 export type PairingIdentity = {
   peerId: string;
@@ -31,7 +31,7 @@ export function createPairingSession(options: {
   send(targetPeerId: string, frame: Uint8Array): Promise<void>;
   sign: SignTrustRequest;
   verify: VerifyTrustRequest;
-  membership: PairingMembership;
+  membership: DeviceMembershipAdmissions;
   clock: RuntimeClock;
   validityWindowMs?: number;
   clockSkewAllowanceMs?: number;
@@ -149,10 +149,18 @@ export function createPairingSession(options: {
       const now = BigInt(options.clock.now());
       if (request.issuedAtUnixMs > now + BigInt(clockSkewAllowanceMs)) return rejectResponse("premature_issued_at", authenticatedPeerId, frame);
       if (!validateTrustRequestTime(request, Number(now), { validityWindowMs, clockSkewAllowanceMs })) return rejectResponse("expired_request", authenticatedPeerId, frame);
+      const membershipStatus = await options.membership.membershipStatus(authenticatedPeerId);
+      if (membershipStatus === "revoked") {
+        await clearRetry(authenticatedPeerId);
+        return rejectResponse("revoked_peer", authenticatedPeerId, frame);
+      }
       await clear(authenticatedPeerId);
       if (message.response.decision === "accepted") {
         try {
-          const admission = await options.membership.admit(authenticatedPeerId);
+          const admission = await options.membership.admit(authenticatedPeerId, {
+            deviceName: message.response.responderDeviceName,
+            nameRevision: message.response.responderNameRevision,
+          });
           if (admission === "revoked") {
             await clearRetry(authenticatedPeerId);
             return rejectResponse("revoked_peer", authenticatedPeerId, frame);

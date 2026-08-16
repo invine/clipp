@@ -231,4 +231,29 @@ describe("Pairing session", () => {
     expect(diagnostics[0]).toMatchObject({ event: "pairing_message_rejected", reason: "invalid_signature", authenticatedPeerId: targetPeerId, messageType: "response", connectionPath: "relayed" });
     expect(session.waiting()).toHaveLength(1);
   });
+
+  it("rejects a validly signed rejected response from a revoked target", async () => {
+    let sent!: Uint8Array;
+    const diagnostics: any[] = [];
+    const session = createPairingSession({
+      identity: async () => ({ peerId: localPeerId, deviceName: "Desktop", nameRevision: 0 }),
+      send: async (_target, frame) => { sent = frame; },
+      sign: async () => new Uint8Array([7]),
+      verify: async () => true,
+      membership: {
+        membershipStatus: async () => "revoked",
+        admit: async () => "revoked",
+      },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      onRejected: (diagnostic) => void diagnostics.push(diagnostic),
+    });
+    await session.request(targetPeerId);
+    const request = decodePairingFrame(sent);
+    if (!request || request.kind !== "request") throw new Error("missing_request");
+    const response = encodePairingFrame({ kind: "response", response: { decision: "rejected", requestEnvelope: request.envelope, responderDeviceName: "Mobile", responderNameRevision: 1n } });
+
+    await expect(session.receiveResponse(targetPeerId, response)).resolves.toBeNull();
+    expect(diagnostics.at(-1)).toMatchObject({ reason: "revoked_peer", authenticatedPeerId: targetPeerId });
+    expect(session.waiting()).toHaveLength(1);
+  });
 });

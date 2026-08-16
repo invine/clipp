@@ -7,3 +7,4 @@ export * from "./testing";
 export * from "../pairing/pending";
 export * from "../pairing/session";
 export * from "../pairing/target";
+export * from "../pairing/runtimeCoordinator";

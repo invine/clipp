@@ -27,6 +27,24 @@ function sampleDevice(id: string): TrustedDevice {
 const connectedPeerId = "12D3KooWAuz1FwEK4f32DznuhrHm1BWYBhP5NcZ7sPcEFdUykNMR";
 
 describe("TrustManager", () => {
+  it("makes a newly admitted member immediately trusted and visible by Peer ID", async () => {
+    const trustRepo = createMemoryTrustedDeviceRepo();
+    const active = new Set(["me"]);
+    const identitySvc = {
+      get: async () => ({ deviceId: "me" }),
+      activePeerIds: async () => [...active],
+      membershipStatus: async (peerId: string) => active.has(peerId) ? "active" : "unknown",
+      admit: async (peerId: string) => { active.add(peerId); return "admitted" as const; },
+    } as any;
+    const trust = createTrustManager({ trustRepo, identitySvc });
+
+    await expect(trust.admit(connectedPeerId, { deviceName: "Mobile", nameRevision: 3n })).resolves.toBe("admitted");
+    await expect(trust.isTrusted(connectedPeerId)).resolves.toBe(true);
+    await expect(trust.list()).resolves.toEqual([
+      expect.objectContaining({ deviceId: connectedPeerId, deviceName: "Mobile", nameRevision: 3 }),
+    ]);
+  });
+
   it("stores device on accepted trust-ack", async () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
     const identitySvc = {
