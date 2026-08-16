@@ -53,6 +53,9 @@ export function decodePairingTarget(raw: string, maximumBytes = PAIRING_TARGET_M
     offset = key.next;
     const field = key.value >>> 3;
     const wire = key.value & 7;
+    if ((field === 1 && wire !== 0) || ((field === 2 || field === 3 || field === 4) && wire !== 2)) {
+      return null;
+    }
     if (field === 1 && wire === 0) {
       const value = readVarint(bytes, offset);
       if (!value || version !== undefined) return null;

@@ -18,9 +18,9 @@ import {
 // import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
 import {
   createElectronRuntimeAdapter,
+  createClosableRuntimeNotifications,
   createRuntimeIdentityManager,
   createRuntimeNetworkProxy,
-  createRuntimeNotificationSelection,
   createRuntimeClipboardService,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
@@ -377,7 +377,6 @@ async function bootstrap() {
   let shutdownStarted = false;
   let shutdownComplete = false;
   let runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
-  const notificationSelection = createRuntimeNotificationSelection();
   const pendingSelfPeerUpdates = new Set<Promise<void>>();
 
   async function getState() {
@@ -490,7 +489,6 @@ async function bootstrap() {
     });
 
     bindTransportHandlers(transport);
-    bindPairingHandler(transport);
     await pairingPending?.start();
 
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
@@ -544,6 +542,7 @@ async function bootstrap() {
     });
     clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
     bindTransportHandlers(transport);
+    runtimeNetwork.bindCurrent();
     clipboardSync.bindMessaging(clipMessaging as any);
     await ensureMessagingStarted();
     pairedConnections.start();
@@ -797,6 +796,21 @@ async function bootstrap() {
     }
   }
 
+  const runtimeNotifications = createClosableRuntimeNotifications({
+    create(message, events) {
+      if (!Notification.isSupported()) return undefined;
+      const notification = new Notification({
+        title: message.title,
+        body: message.body,
+        silent: false,
+      });
+      notification.on("click", events.select);
+      notification.on("close", events.closed);
+      notification.show();
+      return { close: () => notification.close() };
+    },
+  });
+  const runtimeNetwork = createRuntimeNetworkProxy(() => transport);
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,
@@ -806,22 +820,7 @@ async function bootstrap() {
       readText: async () => clipboard.readText() ?? "",
       writeText: async (text) => clipboard.writeText(text),
     },
-    notifications: {
-      async show(message) {
-        if (!Notification.isSupported()) return;
-        const notification = new Notification({
-          title: message.title,
-          body: message.body,
-          silent: false,
-        });
-        notification.on("click", () => notificationSelection.emit(message.id));
-        notification.show();
-      },
-      async dismiss() {
-        // Electron notifications are transient and have no stable close handle here.
-      },
-      onSelect: notificationSelection.onSelect,
-    },
+    notifications: runtimeNotifications,
     lifecycle: {
       onShutdown(handler) {
         runtimeShutdownHandler = handler;
@@ -831,7 +830,7 @@ async function bootstrap() {
       },
       openApprovalView: () => showWindow(),
     },
-    network: createRuntimeNetworkProxy(() => transport),
+    network: runtimeNetwork,
     clock: systemRuntimeClock,
     publicState: {
       read: getState,
@@ -856,15 +855,15 @@ async function bootstrap() {
     lifecycle: runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
-    sendResponse: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
+    sendResponse: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     connectionPath: (remotePeerId) => {
-      const path = transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+      const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
       return path === "relay" ? "relayed" : path ?? "unknown";
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return transport.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
     onChanged: async (requests) => {
       pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
@@ -878,12 +877,12 @@ async function bootstrap() {
     verify: verifyPairingTrustRequestSignature,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
-      const path = transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+      const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
       return path === "relay" ? "relayed" : path ?? "unknown";
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return transport.disconnect?.(diagnostic.authenticatedPeerId!); });
+      void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
   });
   function bindPairingHandler(target: typeof transport) {
@@ -894,7 +893,7 @@ async function bootstrap() {
     else void pairingPending?.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
     });
   }
-  bindPairingHandler(transport);
+  bindPairingHandler(runtimeNetwork);
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
     start: () => startIdentityBoundRuntimeServices({
@@ -1035,15 +1034,15 @@ async function bootstrap() {
       identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
       sign: async (bytes) => privateKey.sign(bytes),
       verify: verifyPairingTrustRequestSignature,
-      send: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
+      send: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
       clock: systemRuntimeClock,
       connectionPath: (remotePeerId) => {
-        const path = transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+        const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
         return path === "relay" ? "relayed" : path ?? "unknown";
       },
       onRejected: (diagnostic) => {
         log.warn(diagnostic.event, diagnostic);
-        void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return transport.disconnect?.(diagnostic.authenticatedPeerId!); });
+        void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
       },
       onWaitingChanged: (waiting) => {
         if (pairingSessions.get(target.targetPeerId) !== session) return;
@@ -1055,7 +1054,7 @@ async function bootstrap() {
     });
     try {
       pairingSessions.set(target.targetPeerId, session);
-      await importPairingTargetAndRequest({ text: txt, network: transport, request: session.request });
+      await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: session.request });
       return { ok: true };
     } catch {
       if (pairingSessions.get(target.targetPeerId) === session) {

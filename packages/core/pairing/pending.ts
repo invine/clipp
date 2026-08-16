@@ -171,6 +171,13 @@ export function createPendingTrustRequestCoordinator(options: {
         expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
       };
       const existing = (await options.store.list()).find((entry) => entry.initiatorPeerId === request.initiatorPeerId);
+      if (existing) {
+        const existingEnvelope = decodeTrustRequestEnvelope(existing.requestEnvelope);
+        const existingPayload = existingEnvelope ? decodeTrustRequestPayload(existingEnvelope.signedPayload) : null;
+        if (existingPayload && existingPayload.issuedAtUnixMs > payload.issuedAtUnixMs) {
+          return true;
+        }
+      }
       await options.store.save(request);
       scheduleExpiry(request);
       if (!existing) await show(request);

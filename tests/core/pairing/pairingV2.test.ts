@@ -24,4 +24,25 @@ describe("Pairing Target v2", () => {
     expect(decodePairingTarget(`${PAIRING_TARGET_PREFIX}++++`)).toBeNull();
     expect(decodePairingTarget(`${PAIRING_TARGET_PREFIX}CAU`)).toBeNull();
   });
+
+  it("rejects invalid wire encodings for recognized fields", () => {
+    const encoded = encodePairingTarget(target);
+    const payload = Buffer.from(encoded.slice(PAIRING_TARGET_PREFIX.length), "base64url");
+    const versionWithLengthDelimitedWireType = Buffer.from([0x0a, 0x00]);
+    const malformed = Buffer.concat([payload, versionWithLengthDelimitedWireType]).toString("base64url");
+
+    expect(decodePairingTarget(`${PAIRING_TARGET_PREFIX}${malformed}`)).toBeNull();
+  });
+
+  it("continues to ignore valid unknown fields", () => {
+    const encoded = encodePairingTarget(target);
+    const payload = Buffer.from(encoded.slice(PAIRING_TARGET_PREFIX.length), "base64url");
+    const unknownLengthDelimitedField = Buffer.from([0x4a, 0x00]);
+    const extended = Buffer.concat([payload, unknownLengthDelimitedField]).toString("base64url");
+
+    expect(decodePairingTarget(`${PAIRING_TARGET_PREFIX}${extended}`)).toEqual({
+      ...target,
+      version: 2,
+    });
+  });
 });

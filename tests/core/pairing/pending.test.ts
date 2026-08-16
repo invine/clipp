@@ -1,8 +1,9 @@
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
-import { encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload } from "../../../packages/core/pairing/protocol";
+import { decodePairingFrame, encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload } from "../../../packages/core/pairing/protocol";
 
 const initiatorPeerId = "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv";
 const targetPeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
+const otherInitiatorPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 describe("pending Trust Requests", () => {
   it("serializes pending records without losing byte or bigint fields", async () => {
@@ -35,6 +36,58 @@ describe("pending Trust Requests", () => {
 
     expect(shown).toEqual([`pairing-request-${initiatorPeerId}`]);
     expect(requests.get(initiatorPeerId).expiresAtUnixMs).toBe(721_100n);
+  });
+
+  it("keeps the newest coalesced request when an older valid request is replayed", async () => {
+    const requests = new Map<string, any>();
+    let now = 1_100;
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async () => undefined },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => now, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+    });
+    const frame = (issuedAt: bigint) => encodePairingFrame({ kind: "request" as const, envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: issuedAt }), signature: new Uint8Array([1]) }) });
+    const newest = frame(1_100n);
+
+    expect(await coordinator.receive(initiatorPeerId, newest)).toBe(true);
+    now = 1_150;
+    expect(await coordinator.receive(initiatorPeerId, frame(1_050n))).toBe(true);
+
+    const newestEnvelope = decodePairingFrame(newest);
+    expect(newestEnvelope?.kind).toBe("request");
+    expect(requests.get(initiatorPeerId)).toMatchObject({
+      requestEnvelope: newestEnvelope?.kind === "request" ? newestEnvelope.envelope : undefined,
+      expiresAtUnixMs: 721_100n,
+    });
+  });
+
+  it("keeps different initiators independently pending", async () => {
+    const requests = new Map<string, any>();
+    const shown: string[] = [];
+    const dismissed: string[] = [];
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async (notice) => void shown.push(notice.id), dismiss: async (id) => void dismissed.push(id), onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+    });
+    const frame = (peerId: string) => encodePairingFrame({ kind: "request" as const, envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId: peerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+
+    await coordinator.receive(initiatorPeerId, frame(initiatorPeerId));
+    await coordinator.receive(otherInitiatorPeerId, frame(otherInitiatorPeerId));
+    await coordinator.expire(initiatorPeerId);
+
+    expect([...requests.keys()]).toEqual([otherInitiatorPeerId]);
+    expect(shown).toEqual([
+      `pairing-request-${initiatorPeerId}`,
+      `pairing-request-${otherInitiatorPeerId}`,
+    ]);
+    expect(dismissed).toEqual([`pairing-request-${initiatorPeerId}`]);
   });
 
   it("checks the envelope signature before attempting to parse a signed payload", async () => {

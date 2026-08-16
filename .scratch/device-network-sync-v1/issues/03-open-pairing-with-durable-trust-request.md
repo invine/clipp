@@ -16,3 +16,15 @@
 - [x] A valid unknown initiator produces one native notification without an unsolicited application pop-up; selecting it opens an in-app approval view showing the Device Name and full Peer ID.
 - [x] Pending requests and valid notifications survive restart, while expired pending records are deleted and their notifications dismissed.
 - [x] Malformed, oversized, incorrectly signed, premature, expired, wrongly targeted, or identity-mismatched requests create no approval or response and produce privacy-limited, rate-limited rejection diagnostics.
+- [x] Electron receives each Pairing frame exactly once on the initial transport and after relay configuration replaces that transport.
+- [x] Pairing Target decoding rejects invalid wire encodings for recognized fields while continuing to ignore valid unknown fields.
+- [x] Pairing Target import, pending approval, notification lifecycle, and transport replacement pass through the runtime-adapter conformance suites.
+
+## Comments
+
+- Reopened after the Ticket 02/03 two-axis code review found that:
+  - Electron registers the initial Pairing handler twice and does not register it on the replacement transport after relay configuration changes;
+  - Electron cannot dismiss expired native Pairing notifications;
+  - an older replay can overwrite the newest coalesced request envelope and deadline;
+  - the Pairing Target decoder skips recognized fields encoded with an invalid wire type; and
+  - the ticket has core unit coverage but not the required runtime-adapter conformance coverage.
