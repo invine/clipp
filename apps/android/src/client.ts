@@ -15,6 +15,7 @@ import {
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
+import { createKVPeerRecordStore } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
@@ -131,8 +132,6 @@ export type PairingResult =
   | { ok: false; error: PairingFailureCode; diagnostics: PairingAttemptDiagnostics };
 
 const PINNED_KEY = "pinnedIds";
-const PEER_RECORDS_KEY = "signedPeerRecords";
-
 function createHistoryBackend() {
   try {
     if (typeof indexedDB === "undefined") {
@@ -320,13 +319,7 @@ export class AndroidClient {
       enableDCUtR: true,
       enableRelayReservations: true,
       allowInsecureBrowserDials: true,
-      peerRecordStore: {
-        load: async () => (await this.storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {},
-        save: async (peerId, record) => {
-          const records = (await this.storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {};
-          await this.storage.set(PEER_RECORDS_KEY, { ...records, [peerId]: Array.from(record) });
-        },
-      },
+      peerRecordStore: createKVPeerRecordStore({ storage: this.storage }),
       isPeerKnown: (remotePeerId) => this.trust.isTrusted(remotePeerId),
     });
     this.pairedConnections = createPairedPeerConnectionManager({

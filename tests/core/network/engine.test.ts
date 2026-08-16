@@ -169,6 +169,25 @@ describe("Libp2pMessagingTransport", () => {
     expect(transport.getConnectedPeers()).toEqual(["mock"]);
   });
 
+  it("redials a relay target after the previous peer connection closes", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const target = `${relay}/p2p-circuit/p2p/peer-1`;
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const connection = {
+      remotePeer: { toString: () => "peer-1" },
+      remoteAddr: { toString: () => target },
+    };
+
+    eventHandlers.get("connection:open")?.[0]?.({ detail: connection });
+    eventHandlers.get("connection:close")?.[0]?.({ detail: connection });
+    await transport.connect(target);
+
+    expect(node.dial).toHaveBeenCalledTimes(1);
+    await transport.stop();
+  });
+
   it("does not hide peers connected through a relay circuit", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
     const transport = createLibp2pMessagingTransport({ relayAddresses: [relay] });
@@ -446,6 +465,40 @@ describe("Libp2pMessagingTransport", () => {
     await transport.stop();
   });
 
+  it("resumes jittered registration refresh after a relay reservation recovers", async () => {
+    jest.useFakeTimers();
+    const random = jest.spyOn(Math, "random").mockReturnValue(0.5);
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 1_000,
+      relayReservationRetryMs: 60_000,
+    });
+
+    try {
+      await transport.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(1);
+
+      mockSelfMultiaddrs = [];
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(mockUnregisterFromRendezvous).toHaveBeenCalledTimes(1);
+
+      mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+      eventHandlers.get("self:peer:update")?.[0]?.({});
+      await jest.advanceTimersByTimeAsync(0);
+      expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(2);
+
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(3);
+    } finally {
+      await transport.stop();
+      random.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it("dispatches inbound messages to protocol handlers", async () => {
     const transport = createLibp2pMessagingTransport();
     await transport.start();
@@ -461,7 +514,7 @@ describe("Libp2pMessagingTransport", () => {
         yield new Uint8Array([7, 8, 9]);
       },
     };
-    await handler({ stream: fakeStream, connection: { remotePeer: { toString: () => "peer-1" } } });
+    await handler(fakeStream, { remotePeer: { toString: () => "peer-1" } });
 
     expect(received).toHaveLength(1);
     expect(received[0].from).toBe("peer-1");

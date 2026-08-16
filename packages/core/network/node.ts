@@ -104,6 +104,7 @@ export async function createClipboardNode(
     enableWebRTCDirect?: boolean;
     enableDCUtR?: boolean;
     enableTcp?: boolean;
+    enableWebSocketListener?: boolean;
     enableRelayReservations?: boolean;
     allowInsecureBrowserDials?: boolean;
   } = {}
@@ -124,7 +125,10 @@ export async function createClipboardNode(
     withTransportFilters(webSockets()),
     withTransportFilters(circuitRelayTransport()),
   ];
-  const listenAddrs: any[] = isBrowserDocument ? [] : [multiaddr("/ip4/0.0.0.0/tcp/0/ws")];
+  const listenAddrs: any[] =
+    isBrowserDocument || options.enableWebSocketListener === false
+      ? []
+      : [multiaddr("/ip4/0.0.0.0/tcp/0/ws")];
 
   if (enableTcp) {
     try {

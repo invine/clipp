@@ -1,6 +1,8 @@
 import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
+import { decodeSignedPeerRecordBytes } from "./peerRecords.js";
+import { CLIPP_RENDEZVOUS_PROTOCOL } from "./rendezvousProtocol.js";
 
 export type RendezvousRecord = { peer: string; signedPeerRecord: Uint8Array };
 export type RendezvousOptions = {
@@ -9,7 +11,6 @@ export type RendezvousOptions = {
   log?: (...args: any[]) => void;
 };
 
-const TOPIC = "/rendezvous/1.0.0";
 const DEFAULT_RENDEZVOUS_TIMEOUT_MS = 8_000;
 
 function asMultiaddr(value: string | Multiaddr) {
@@ -102,7 +103,7 @@ export async function registerOnRendezvous(
   let stream: any;
   try {
     const relayMa = asMultiaddr(relay);
-    stream = guardMessageStream(await node.dialProtocol(relayMa, TOPIC, options.dialOptions));
+    stream = guardMessageStream(await node.dialProtocol(relayMa, CLIPP_RENDEZVOUS_PROTOCOL, options.dialOptions));
     await writeJson(stream, { action: "register", topic, signedPeerRecord: Array.from(signedPeerRecord) });
     const msg = await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS);
     log("[rendezvous] register response", msg);
@@ -128,14 +129,12 @@ export async function lookupRendezvousPeer(
   let stream: any;
   try {
     const relayMa = asMultiaddr(relay);
-    stream = guardMessageStream(await node.dialProtocol(relayMa, TOPIC, options.dialOptions));
+    stream = guardMessageStream(await node.dialProtocol(relayMa, CLIPP_RENDEZVOUS_PROTOCOL, options.dialOptions));
     await writeJson(stream, { action: "lookup", topic, peerId });
     const msg = await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS);
     if (msg?.ok && msg.record?.peer === peerId && Array.isArray(msg.record.signedPeerRecord)) {
-      const bytes = msg.record.signedPeerRecord;
-      if (bytes.every((value: unknown) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255)) {
-        return [{ peer: peerId, signedPeerRecord: Uint8Array.from(bytes) }];
-      }
+      const signedPeerRecord = decodeSignedPeerRecordBytes(msg.record.signedPeerRecord);
+      if (signedPeerRecord) return [{ peer: peerId, signedPeerRecord }];
     }
   } catch (err: any) {
     log("[rendezvous] list failed", err?.message || err);
@@ -154,7 +153,7 @@ export async function unregisterFromRendezvous(
   const options: RendezvousOptions = typeof logOrOptions === "function" ? { log: logOrOptions } : logOrOptions;
   let stream: any;
   try {
-    stream = guardMessageStream(await node.dialProtocol(asMultiaddr(relay), TOPIC, options.dialOptions));
+    stream = guardMessageStream(await node.dialProtocol(asMultiaddr(relay), CLIPP_RENDEZVOUS_PROTOCOL, options.dialOptions));
     await writeJson(stream, { action: "unregister", topic });
     return !!(await readJsonResponse(stream, options.timeoutMs ?? DEFAULT_RENDEZVOUS_TIMEOUT_MS))?.ok;
   } catch {

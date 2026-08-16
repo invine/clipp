@@ -14,10 +14,10 @@ describe("Pairing Target import", () => {
         connect: async (target) => void calls.push(`connect:${target}`), onMessage: () => undefined,
         onPeerConnected: () => undefined, onPeerDisconnected: () => undefined, onSelfPeerUpdate: () => undefined,
         getConnectedPeers: () => [], importSignedPeerRecord: async (target, record) => void calls.push(`import:${target}:${record[0]}`),
-        lookupPeer: async (target) => void calls.push(`lookup:${target}`),
+        refreshPeerRecord: async (target) => void calls.push(`refresh:${target}`),
       },
       request: async (target) => { calls.push(`request:${target}`); return new Uint8Array(); },
     });
-    expect(calls).toEqual([`import:${peerId}:1`, `lookup:${peerId}`, `connect:${peerId}`, `request:${peerId}`]);
+    expect(calls).toEqual([`import:${peerId}:1`, `refresh:${peerId}`, `connect:${peerId}`, `request:${peerId}`]);
   });
 });

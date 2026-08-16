@@ -54,7 +54,7 @@ export function createPairedPeerConnectionManager(
     // repairs stale reachability after an offline interval without ambient
     // discovery or another Pairing ceremony.
     if (!relayOnly) {
-      await options.transport.lookupPeer?.(peer.deviceId).catch((error) => {
+      await options.transport.refreshPeerRecord?.(peer.deviceId).catch((error) => {
         log.debug("Paired peer exact lookup failed; using known reachability", {
           peerId: peer.deviceId,
           error: errorMessage(error),

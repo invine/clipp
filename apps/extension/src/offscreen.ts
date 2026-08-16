@@ -1,5 +1,6 @@
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
+import { createKVPeerRecordStore } from "../../../packages/core/network/peerRecords";
 import {
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
@@ -33,7 +34,6 @@ const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 let trust = createTrustManager({ trustRepo, identitySvc });
 let started = false;
 const OFFSCREEN_OPERATION_TIMEOUT_MS = 15_000;
-const PEER_RECORDS_KEY = "signedPeerRecords";
 
 function base64ToBytes(b64: string): Uint8Array {
   try {
@@ -80,13 +80,7 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     privateKey,
     relayAddresses: relays,
     enableDCUtR: true,
-    peerRecordStore: {
-      load: async () => (await storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {},
-      save: async (peerId, record) => {
-        const records = (await storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {};
-        await storage.set(PEER_RECORDS_KEY, { ...records, [peerId]: Array.from(record) });
-      },
-    },
+    peerRecordStore: createKVPeerRecordStore({ storage }),
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   pairedConnections = createPairedPeerConnectionManager({
@@ -196,8 +190,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ record: Array.from(await transport.getSignedPeerRecord!()) });
       return;
     }
+    if (msg.action === "runtimeGetSignedPeerRecordFor" && msg.peerId) {
+      const record = await transport.getSignedPeerRecordFor?.(msg.peerId);
+      sendResponse({ ...(record ? { record: Array.from(record) } : {}) });
+      return;
+    }
     if (msg.action === "runtimeImportSignedPeerRecord" && msg.peerId && Array.isArray(msg.record)) {
       await transport.importSignedPeerRecord!(msg.peerId, Uint8Array.from(msg.record));
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "runtimeRefreshPeerRecord" && msg.peerId) {
+      await transport.refreshPeerRecord?.(msg.peerId);
       sendResponse({ ok: true });
       return;
     }

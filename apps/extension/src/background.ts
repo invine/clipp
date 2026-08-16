@@ -51,6 +51,7 @@ import type {
   MessagingTransport,
   PeerConnectionInfo,
 } from "../../../packages/core/messaging/transport";
+import { createExtensionReachabilityBridge } from "./networkBridge";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -297,15 +298,7 @@ const extensionNetwork: MessagingTransport = {
   },
   getConnectedPeers: () => [...runtimeConnectedPeers],
   getPeerConnectionInfo: () => [...runtimePeerConnections],
-  async getSignedPeerRecord() {
-    const result = await sendOffscreen<{ record?: number[] }>({ action: "runtimeGetSignedPeerRecord" });
-    if (!Array.isArray(result?.record)) throw new Error("signed_peer_record_unavailable");
-    return Uint8Array.from(result.record);
-  },
-  async importSignedPeerRecord(peerId, record) {
-    const result = await sendOffscreen<{ ok?: boolean }>({ action: "runtimeImportSignedPeerRecord", peerId, record: Array.from(record) });
-    if (!result?.ok) throw new Error("invalid_signed_peer_record");
-  },
+  ...createExtensionReachabilityBridge(sendOffscreen),
 };
 const notificationSelection = createRuntimeNotificationSelection();
 const membershipReconciler = createMembershipReconciler({

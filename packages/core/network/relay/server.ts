@@ -13,6 +13,8 @@ import { defaultLogger } from "@libp2p/logger";
 import { FaultTolerance } from "@libp2p/interface-transport";
 import { privateKeyFromProtobuf, privateKeyFromRaw } from "@libp2p/crypto/keys";
 import { ping, type Ping } from "@libp2p/ping";
+import { consumeOrMatchSignedPeerRecord, decodeSignedPeerRecordBytes } from "../peerRecords.js";
+import { CLIPP_RENDEZVOUS_PROTOCOL } from "../rendezvousProtocol.js";
 
 // Node 20 may not yet have Promise.withResolvers; provide a polyfill so libp2p deps can run.
 if (typeof (Promise as any).withResolvers !== "function") {
@@ -496,7 +498,6 @@ function loadPrivateKeyFromEnv(): PrivateKey | undefined {
 }
 
 function registerRendezvous(node: RelayNode) {
-  const TOPIC_PREFIX = "/rendezvous/1.0.0";
   const recordTtlMs = coerceNumber(
     process.env.RENDEZVOUS_RECORD_TTL_MS || process.env.RENDEZVOUS_TTL_MS,
     2 * 60 * 1000
@@ -527,9 +528,9 @@ function registerRendezvous(node: RelayNode) {
     }
   }
 
-  node.handle(TOPIC_PREFIX, async (data: any) => {
+  node.handle(CLIPP_RENDEZVOUS_PROTOCOL, async (data: any, providedConnection?: Connection) => {
     const stream = data?.stream ?? data;
-    const connection = data?.connection ?? (stream as any)?.connection;
+    const connection = providedConnection ?? data?.connection ?? (stream as any)?.connection;
 
     log("Rendezvous handler invoked", {
       stream: describeStream(stream),
@@ -589,19 +590,17 @@ function registerRendezvous(node: RelayNode) {
         const topic: string = msg.topic === "clipp" ? msg.topic : "";
         prune(topic);
         if (msg.action === "register") {
-          const signedPeerRecord = Array.isArray(msg.signedPeerRecord) ? msg.signedPeerRecord : [];
-          const validBytes = signedPeerRecord.length > 0 && signedPeerRecord.every(
-            (value: unknown) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 255
-          );
-          if (!remotePeer || !topic || !validBytes) {
+          const signedPeerRecord = decodeSignedPeerRecordBytes(msg.signedPeerRecord);
+          if (!remotePeer || !topic || !signedPeerRecord) {
             await writeResponse(stream, encoder, { ok: false, error: "invalid_registration" }, "register-invalid");
             continue;
           }
           // peerStore verifies the envelope signature and its subject.  An
           // authenticated connection may register only its own record.
-          const verified = await (node as any).peerStore?.consumePeerRecord?.(
-            Uint8Array.from(signedPeerRecord),
-            peerIdFromString(remotePeer)
+          const verified = await consumeOrMatchSignedPeerRecord(
+            (node as any).peerStore,
+            peerIdFromString(remotePeer),
+            signedPeerRecord,
           );
           if (verified !== true) {
             await writeResponse(stream, encoder, { ok: false, error: "invalid_peer_record" }, "register-invalid-record");
@@ -609,7 +608,7 @@ function registerRendezvous(node: RelayNode) {
           }
           const record: RendezvousRecord = {
             peer: remotePeer,
-            signedPeerRecord,
+            signedPeerRecord: Array.from(signedPeerRecord),
             lastSeen: Date.now(),
           };
           touch(topic, record);
@@ -654,7 +653,7 @@ function registerRendezvous(node: RelayNode) {
 
   return () => {
     try {
-      node.unhandle?.(TOPIC_PREFIX);
+      node.unhandle?.(CLIPP_RENDEZVOUS_PROTOCOL);
     } catch {}
     topics.clear();
   };

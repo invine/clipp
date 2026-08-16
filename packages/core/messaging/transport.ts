@@ -75,6 +75,6 @@ export interface MessagingTransport {
   getSignedPeerRecordFor?(peerId: string): Promise<Uint8Array | undefined>;
   importSignedPeerRecord?(expectedPeerId: string, record: Uint8Array): Promise<void>;
 
-  /** Performs the narrow, exact pre-Admission reachability lookup for Pairing. */
-  lookupPeer?(peerId: string): Promise<void>;
+  /** Looks up, verifies, imports, and persists one peer's latest reachability record. */
+  refreshPeerRecord?(peerId: string): Promise<void>;
 }

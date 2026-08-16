@@ -32,6 +32,7 @@ import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
+import { createKVPeerRecordStore } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
@@ -68,13 +69,7 @@ async function bootstrap() {
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
-  const peerRecordStore = {
-    load: async () => (await kvStore.get<Record<string, number[]>>("signedPeerRecords")) ?? {},
-    save: async (peerId: string, record: Uint8Array) => {
-      const records = (await kvStore.get<Record<string, number[]>>("signedPeerRecords")) ?? {};
-      await kvStore.set("signedPeerRecords", { ...records, [peerId]: Array.from(record) });
-    },
-  };
+  const peerRecordStore = createKVPeerRecordStore({ storage: kvStore });
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
   const identitySvc = createRuntimeIdentityManager({
