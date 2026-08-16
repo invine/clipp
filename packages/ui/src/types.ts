@@ -9,6 +9,8 @@ export type Clip = {
 export type Device = {
   deviceId: string;
   deviceName: string;
+  displayName?: string;
+  localAlias?: string;
   publicKey: string;
   createdAt: number;
   multiaddr?: string;

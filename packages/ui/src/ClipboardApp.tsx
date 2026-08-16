@@ -346,7 +346,7 @@ export function ClipboardApp({
   const deviceNameMap = useMemo(() => {
     const map = new Map<string, string>();
     if (identity) map.set(identity.deviceId, "You");
-    devices.forEach((d) => map.set(d.deviceId, d.deviceName));
+    devices.forEach((d) => map.set(d.deviceId, d.displayName || d.deviceName));
     return map;
   }, [devices, identity]);
 
@@ -475,7 +475,7 @@ export function ClipboardApp({
   }
 
   function beginEditDeviceName(device: Device) {
-    setDeviceNameDraft(device.deviceName || "");
+    setDeviceNameDraft(device.displayName || device.deviceName || "");
     setEditingDeviceId(device.deviceId);
   }
 
@@ -486,7 +486,7 @@ export function ClipboardApp({
 
   function saveDeviceName(device: Device) {
     const trimmed = deviceNameDraft.trim();
-    if (!trimmed || trimmed === device.deviceName) {
+    if (!trimmed || trimmed === (device.displayName || device.deviceName)) {
       cancelEditDeviceName();
       return;
     }
@@ -1030,7 +1030,7 @@ export function ClipboardApp({
                   style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                 >
                   <div className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}>
-                    {dev.deviceName?.[0] || "D"}
+                    {(dev.displayName || dev.deviceName)?.[0] || "D"}
                   </div>
                   <div className="peer-meta">
                     {editingThisDevice ? (
@@ -1048,7 +1048,7 @@ export function ClipboardApp({
                     ) : (
                       <MiddleEllipsisText
                         className="peer-name"
-                        text={dev.deviceName}
+                        text={dev.displayName || dev.deviceName}
                       />
                     )}
                     <MiddleEllipsisText

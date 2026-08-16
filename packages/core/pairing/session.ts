@@ -26,7 +26,7 @@ export type PairingErrorState = { targetPeerId: string; code: "membership_persis
 export type SignTrustRequest = (bytes: Uint8Array) => Promise<Uint8Array>;
 export type VerifyTrustRequest = (bytes: Uint8Array, signature: Uint8Array, peerId: string) => Promise<boolean>;
 
-export function createPairingSession(options: {
+export type PairingSessionOptions = {
   identity(): Promise<PairingIdentity>;
   send(targetPeerId: string, frame: Uint8Array): Promise<void>;
   sign: SignTrustRequest;
@@ -41,7 +41,11 @@ export function createPairingSession(options: {
   onErrorsChanged?(state: PairingErrorState[]): void | Promise<void>;
   retryInitialDelayMs?: number;
   retryMaximumDelayMs?: number;
-}) {
+};
+
+export type PairingDecision = "accepted" | "rejected" | "retrying" | null;
+
+export function createPairingSession(options: PairingSessionOptions) {
   const waiting = new Map<string, PairingWaitingState>();
   const timers = new Map<string, unknown>();
   const retryTimers = new Map<string, unknown>();
@@ -115,12 +119,12 @@ export function createPairingSession(options: {
       retryTimers.delete(targetPeerId);
       const task = (async () => {
         if (stopped) return;
-        const status = await options.membership.membershipStatus(targetPeerId);
-        if (status !== "unknown") return clearRetry(targetPeerId);
         try {
+          const status = await options.membership.membershipStatus(targetPeerId);
+          if (status !== "unknown") return clearRetry(targetPeerId);
           await sendFreshRequest(targetPeerId);
         } catch {
-          // Reachability failures remain part of the same in-memory retry loop.
+          // Persistence and reachability failures remain in this retry loop.
         }
         scheduleRetry(targetPeerId);
       })();
@@ -136,7 +140,7 @@ export function createPairingSession(options: {
     async request(targetPeerId: string): Promise<Uint8Array> {
       return sendFreshRequest(targetPeerId);
     },
-    async receiveResponse(authenticatedPeerId: string, frame: Uint8Array): Promise<"accepted" | "rejected" | "retrying" | null> {
+    async receiveResponse(authenticatedPeerId: string, frame: Uint8Array): Promise<PairingDecision> {
       const message = decodePairingFrame(frame);
       if (!message || message.kind !== "response") return rejectResponse("protobuf_decoding_failed", authenticatedPeerId, frame);
       const envelope = decodeTrustRequestEnvelope(message.response.requestEnvelope);

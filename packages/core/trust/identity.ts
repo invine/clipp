@@ -1,4 +1,6 @@
 
+import type { AdmissionResult, MembershipStatus } from "../pairing/membership";
+
 export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
 
 export interface DeviceIdentity {
@@ -34,9 +36,9 @@ export interface IdentityManager {
   retryInitialization(): Promise<DeviceIdentity>;
   rename(name: string): Promise<void>;
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
-  membershipStatus(peerId: string): Promise<"active" | "revoked" | "unknown">;
+  membershipStatus(peerId: string): Promise<MembershipStatus>;
   activePeerIds(): Promise<string[]>;
-  admit(peerId: string): Promise<"admitted" | "already-active" | "revoked">;
+  admit(peerId: string): Promise<AdmissionResult>;
   getInitializationError(): Promise<IdentityInitializationError | undefined>;
 }
 

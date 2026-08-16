@@ -9,6 +9,7 @@ import {
 import { encodePairingFrame } from "./protocol";
 import { createPairingRejectionReporter, type PairingConnectionPath, type PairingRejectionDiagnostic, type PairingRejectionReason } from "./diagnostics";
 import type { DeviceMembershipAdmissions } from "./membership";
+import { normalizeDeviceName, shortenPeerId } from "./presentation";
 
 export type PendingTrustRequest = {
   initiatorPeerId: string;
@@ -291,9 +292,3 @@ export function createPendingTrustRequestCoordinator(options: {
     expire: (initiatorPeerId: string) => serializeMutation(initiatorPeerId, () => expirePending(initiatorPeerId)),
   };
 }
-
-function normalizeDeviceName(value: string): string | undefined {
-  const normalized = value.normalize("NFC").trim();
-  return normalized && [...normalized].length <= 64 && !/[\u0000-\u001f\u007f]/.test(normalized) ? normalized : undefined;
-}
-function shortenPeerId(peerId: string): string { return `${peerId.slice(0, 8)}…${peerId.slice(-6)}`; }

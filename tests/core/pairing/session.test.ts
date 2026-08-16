@@ -135,6 +135,55 @@ describe("Pairing session", () => {
     expect(errors.at(-1)).toEqual([]);
   });
 
+  it("keeps retrying when Membership status cannot be read temporarily", async () => {
+    const sent: Uint8Array[] = [];
+    const timers = new Map<number, () => void>();
+    const errors: unknown[] = [];
+    let timerId = 0;
+    let statusReads = 0;
+    const session = createPairingSession({
+      identity: async () => ({ peerId: localPeerId, deviceName: "Desktop", nameRevision: 0 }),
+      send: async (_target, frame) => { sent.push(frame); },
+      sign: async () => new Uint8Array([7]),
+      verify: async () => true,
+      membership: {
+        membershipStatus: async () => {
+          statusReads += 1;
+          if (statusReads === 2) throw new Error("storage_still_unavailable");
+          return "unknown";
+        },
+        admit: async () => { throw new Error("storage_failed"); },
+      },
+      clock: {
+        now: () => 1_000,
+        setTimeout: (handler) => {
+          timerId += 1;
+          const id = timerId;
+          timers.set(id, () => { timers.delete(id); handler(); });
+          return id;
+        },
+        clearTimeout: (id) => { timers.delete(id as number); },
+      },
+      retryInitialDelayMs: 10,
+      retryMaximumDelayMs: 40,
+      onErrorsChanged: (state) => { errors.push(state); },
+    });
+    await session.request(targetPeerId);
+    const request = decodePairingFrame(sent[0]);
+    if (!request || request.kind !== "request") throw new Error("missing_request");
+    const response = encodePairingFrame({ kind: "response", response: { decision: "accepted", requestEnvelope: request.envelope, responderDeviceName: "Mobile", responderNameRevision: 1n } });
+
+    await expect(session.receiveResponse(targetPeerId, response)).resolves.toBe("retrying");
+    [...timers.values()][0]();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(session.retrying(targetPeerId)).toBe(true);
+    expect(errors.at(-1)).toEqual([{ targetPeerId, code: "membership_persistence_failed" }]);
+    expect(timers.size).toBe(1);
+    expect(sent).toHaveLength(1);
+    await session.stop();
+  });
+
   it("stops Admission retry when the target becomes revoked", async () => {
     const sent: Uint8Array[] = [];
     const timers = new Map<number, () => void>();

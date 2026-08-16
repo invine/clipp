@@ -41,10 +41,9 @@ import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 import { createClipMessage } from "../../../packages/core/protocols/clip";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
+import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
-import { createPairingSession } from "../../../packages/core/pairing/session";
-import { createPairingRuntimeCoordinator } from "../../../packages/core/pairing/runtimeCoordinator";
+import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "../../../packages/core/pairing/v2";
 import type {
@@ -218,7 +217,25 @@ history.onNew((item) => {
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
 let pendingRequests: TrustedDevice[] = [];
-const pairingRuntime = createPairingRuntimeCoordinator({
+const pairingSessions = createPairingRuntimeSessions({
+  identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
+  send: (targetPeerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
+  sign: async (bytes) => {
+    const identity = await identitySvc.get();
+    if (!identity.privateKey) throw new Error("identity_unavailable");
+    return privateKeyFromProtobuf(base64ToBytes(identity.privateKey)).sign(bytes);
+  },
+  verify: verifyPairingTrustRequestSignature,
+  membership: trust,
+  clock: systemRuntimeClock,
+  connectionPath: (remotePeerId) => {
+    const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+    return path === "relay" ? "relayed" : path ?? "unknown";
+  },
+  onRejected: (diagnostic) => {
+    log.warn(diagnostic.event, diagnostic);
+    if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+  },
   onChanged: () => runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current)),
 });
 trust.on("rejected", async (d) => {
@@ -345,8 +362,8 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         clips,
         devices,
         pending: pendingRequests,
-        waiting: pairingRuntime.waiting(),
-        pairingErrors: pairingRuntime.errors(),
+        waiting: pairingSessions.waiting(),
+        pairingErrors: pairingSessions.errors(),
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
         identity: toPublicDeviceIdentity(identity),
@@ -385,32 +402,10 @@ const pairingPending = createPendingTrustRequestCoordinator({
     await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
   },
 });
-const fallbackPairingSession = createPairingSession({
-  identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-  send: (targetPeerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
-  sign: async (bytes) => {
-    const identity = await identitySvc.get();
-    if (!identity.privateKey) throw new Error("identity_unavailable");
-    return privateKeyFromProtobuf(base64ToBytes(identity.privateKey)).sign(bytes);
-  },
-  verify: verifyPairingTrustRequestSignature,
-  membership: trust,
-  clock: systemRuntimeClock,
-  connectionPath: (remotePeerId) => {
-    const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-    return path === "relay" ? "relayed" : path ?? "unknown";
-  },
-  onRejected: (diagnostic) => {
-    log.warn(diagnostic.event, diagnostic);
-    void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
-  },
-  onWaitingChanged: (waiting) => pairingRuntime.waitingForSessionChanged(fallbackPairingSession, waiting),
-  onErrorsChanged: (errors) => pairingRuntime.fallbackErrorsChanged(errors),
-});
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-  const session = pairingRuntime.getOrAttachFallbackSession(from, fallbackPairingSession);
-  if (decodePairingFrame(frame)?.kind === "response") void pairingPending.start().then(() => session.receiveResponse(from, frame)).then((decision) => { if (decision && decision !== "retrying" && !session.retrying(from)) void pairingRuntime.remove(from, session); }).catch((error) => log.warn("Pairing response processing failed", error));
-  else void pairingPending.start().then(() => pairingPending.receive(from, frame)).catch((error) => log.warn("Pairing request processing failed", error));
+  void pairingPending.start()
+    .then(() => pairingSessions.receive(from, frame, (peerId, requestFrame) => pairingPending.receive(peerId, requestFrame)))
+    .catch((error) => log.warn("Pairing message processing failed", error));
 });
 chrome.notifications?.onClicked?.addListener((id) => {
   notificationSelection.emit(id);
@@ -421,7 +416,10 @@ const sharedRuntime = createRuntimeOrchestrator({
     initializeIdentity: async () => {
       await identitySvc.get();
     },
-    startLocalServices: () => clipboardSync.start(),
+    startLocalServices: () => {
+      pairingSessions.start();
+      clipboardSync.start();
+    },
     startNetworkServices: async () => {
       offscreenInitializationGate.open();
       await offscreenReady;
@@ -433,7 +431,7 @@ const sharedRuntime = createRuntimeOrchestrator({
     },
   }),
   stop: async () => {
-    await pairingRuntime.stop(fallbackPairingSession);
+    await pairingSessions.stop();
     clipboardSync.stop();
   },
 });
@@ -581,41 +579,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
     void (async () => {
-      let attemptedSession: ReturnType<typeof createPairingSession> | undefined;
       try {
         await offscreenReady;
         const id = await identitySvc.get();
         if (!id.privateKey) throw new Error("missing_private_key");
-        const privateKey = privateKeyFromProtobuf(base64ToBytes(id.privateKey));
         const target = decodePairingTarget(msg.pairingText);
         if (!target) throw new Error("invalid_pairing_target");
-        const session = createPairingSession({
-          identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-          sign: async (bytes) => privateKey.sign(bytes),
-          verify: verifyPairingTrustRequestSignature,
-          membership: trust,
-          send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
-          clock: systemRuntimeClock,
-          connectionPath: (remotePeerId) => {
-            const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-            return path === "relay" ? "relayed" : path ?? "unknown";
-          },
-          onRejected: (diagnostic) => {
-            log.warn(diagnostic.event, diagnostic);
-            void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
-          },
-          onWaitingChanged: (waiting) => {
-            pairingRuntime.waitingChanged(target.targetPeerId, session, waiting);
-          },
-          onErrorsChanged: (errors) => pairingRuntime.sessionErrorsChanged(target.targetPeerId, errors),
-        });
-        attemptedSession = session;
-        const activeSession = await pairingRuntime.replace(target.targetPeerId, session, fallbackPairingSession);
-        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: activeSession.request });
+        await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: pairingSessions.request });
         sendResponse({ ok: true });
       } catch (error) {
-        const target = decodePairingTarget(msg.pairingText);
-        if (target && attemptedSession) await pairingRuntime.remove(target.targetPeerId, attemptedSession);
         sendResponse({ ok: false, error: (error as Error).message });
       }
     })();

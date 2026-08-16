@@ -13,11 +13,16 @@ import {
 } from '../protocols/clipTrust.js';
 import { TypedEventEmitter } from './events.js';
 import { DeviceIdentity, IdentityManager } from './identity.js';
-import type { DeviceMembershipAdmissions, DevicePresentation } from '../pairing/membership.js';
+import type { AdmissionResult, DeviceMembershipAdmissions, DevicePresentation } from '../pairing/membership.js';
+import { normalizeDeviceName, shortenPeerId } from '../pairing/presentation.js';
 
 // TODO: refactor later
 export interface TrustedDevice extends DeviceIdentity {
   lastSeen?: number
+  displayName?: string
+  localAlias?: string
+  selfReportedDeviceName?: string
+  selfReportedNameRevision?: string
 }
 
 export interface TrustedDeviceRepository {
@@ -80,8 +85,15 @@ function normalizedPeerTarget(value: string): string {
   return value.startsWith("/") ? peerIdFromAddress(value) ?? value : value;
 }
 
-function shortenPeerId(peerId: string): string {
-  return `${peerId.slice(0, 8)}…${peerId.slice(-6)}`;
+function withDisplayName(device: TrustedDevice): TrustedDevice {
+  return {
+    ...device,
+    displayName:
+      device.localAlias
+      ?? device.selfReportedDeviceName
+      ?? normalizeDeviceName(device.deviceName)
+      ?? shortenPeerId(device.deviceId),
+  };
 }
 
 async function trustedDeviceAliases(device: TrustedDevice): Promise<Set<string>> {
@@ -93,12 +105,6 @@ async function trustedDeviceAliases(device: TrustedDevice): Promise<Set<string>>
     if (peerId) aliases.add(peerId);
   }
   return aliases;
-}
-
-async function trustedDeviceMatchesId(device: TrustedDevice, id: string): Promise<boolean> {
-  const target = normalizedPeerTarget(id);
-  const aliases = await trustedDeviceAliases(device);
-  return aliases.has(id) || aliases.has(target);
 }
 
 function dedupeDevicePayloads(devices: TrustRequestPayload[]): TrustRequestPayload[] {
@@ -421,33 +427,36 @@ export function createTrustManager(options: {
       identitySvc.activePeerIds?.() ?? Promise.resolve([]),
       identitySvc.get(),
     ]);
-    const devicesById = new Map(legacyDevices.map((device) => [device.deviceId, device]));
-    for (const peerId of activePeerIds) {
-      if (peerId === local.deviceId || devicesById.has(peerId)) continue;
-      devicesById.set(peerId, {
-        deviceId: peerId,
-        deviceName: shortenPeerId(peerId),
-        publicKey: "",
-        multiaddrs: [],
-        createdAt: 0,
+    const metadataByPeerId = new Map(legacyDevices.map((device) => [device.deviceId, device]));
+    return activePeerIds
+      .filter((peerId) => peerId !== local.deviceId)
+      .map((peerId) => {
+        const metadata = metadataByPeerId.get(peerId);
+        return metadata ? withDisplayName(metadata) : {
+          deviceId: peerId,
+          deviceName: "",
+          displayName: shortenPeerId(peerId),
+          publicKey: "",
+          multiaddrs: [],
+          createdAt: 0,
+        };
       });
-    }
-    return [...devicesById.values()]
   }
 
   async function rename(deviceId: string, name: string): Promise<TrustedDevice | null> {
-    const trimmed = name.trim()
-    if (!trimmed) return null
+    const normalized = normalizeDeviceName(name)
+    if (!normalized) return null
     const device = await trustRepo.get(deviceId)
     if (!device) return null
     const updated: TrustedDevice = {
       ...device,
-      deviceName: trimmed,
+      localAlias: normalized,
     }
     await trustRepo.upsert(updated)
     log.info("Device renamed", deviceId)
-    events.emit('renamed', updated)
-    return updated
+    const presented = withDisplayName(updated)
+    events.emit('renamed', presented)
+    return presented
   }
 
   async function remove(deviceId: string): Promise<void> {
@@ -460,27 +469,25 @@ export function createTrustManager(options: {
 
   async function isTrusted(id: string): Promise<boolean> {
     const membershipStatus = await identitySvc.membershipStatus?.(normalizedPeerTarget(id)) ?? "unknown";
-    if (membershipStatus === "revoked") return false;
-    if (membershipStatus === "active") return true;
-    const device = await trustRepo.get(id)
-    if (device) return true
-
-    const devices = await trustRepo.list()
-    for (const candidate of devices) {
-      if (await trustedDeviceMatchesId(candidate, id)) return true
-    }
-    return false
+    return membershipStatus === "active";
   }
 
-  async function admit(deviceId: string, presentation?: DevicePresentation): Promise<"admitted" | "already-active" | "revoked"> {
+  async function admit(deviceId: string, presentation?: DevicePresentation): Promise<AdmissionResult> {
     const admission = await identitySvc.admit?.(deviceId) ?? "admitted";
     if (admission === "revoked" || !presentation) return admission;
     try {
       const existing = await trustRepo.get(deviceId);
+      const currentRevision = BigInt(existing?.selfReportedNameRevision ?? existing?.nameRevision ?? -1);
+      if (presentation.nameRevision <= currentRevision) return admission;
+      const reportedDeviceName = normalizeDeviceName(presentation.deviceName)
+        ?? existing?.selfReportedDeviceName
+        ?? (!existing?.localAlias && existing ? normalizeDeviceName(existing.deviceName) : undefined);
       await trustRepo.upsert({
+        ...existing,
         deviceId,
-        deviceName: presentation.deviceName,
-        nameRevision: Number(presentation.nameRevision),
+        deviceName: reportedDeviceName ?? existing?.deviceName ?? "",
+        selfReportedDeviceName: reportedDeviceName,
+        selfReportedNameRevision: presentation.nameRevision.toString(),
         publicKey: existing?.publicKey ?? "",
         privateKey: undefined,
         multiaddrs: existing?.multiaddrs ?? [],

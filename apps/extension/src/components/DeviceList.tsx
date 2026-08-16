@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 export type Device = {
   deviceId: string;
   deviceName: string;
+  displayName?: string;
   publicKey: string;
   createdAt: number;
 };
@@ -29,7 +30,9 @@ export const DeviceList = () => {
       {devices.length === 0 && <div className="text-gray-400">(No devices)</div>}
       {devices.map((d) => (
         <div key={d.deviceId} className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded p-2">
-          <span className="truncate max-w-[140px]" title={d.deviceName}>{d.deviceName}</span>
+          <span className="truncate max-w-[140px]" title={d.displayName || d.deviceName}>
+            {d.displayName || d.deviceName}
+          </span>
           <button className="text-xs text-red-600 hover:underline" onClick={() => revoke(d.deviceId)}>
             Revoke
           </button>

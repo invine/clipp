@@ -4,10 +4,9 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Notification
 import path from "node:path";
 import QRCode from "qrcode";
 import { encodePairingTarget, decodePairingTarget } from "../../../packages/core/pairing/v2.js";
-import { createPairingSession } from "../../../packages/core/pairing/session.js";
-import { createPairingRuntimeCoordinator } from "../../../packages/core/pairing/runtimeCoordinator.js";
+import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
-import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
+import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending.js";
 import "./libp2pGlobals.js";
 import {
@@ -369,7 +368,26 @@ async function bootstrap() {
   // TODO: why pendingRequests is part of the application and not part of trust manager?
   let pendingRequests: TrustedDevice[] = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
-  const pairingRuntime = createPairingRuntimeCoordinator({ onChanged: () => emitState() });
+  const pairingSessions = createPairingRuntimeSessions({
+    identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
+    send: (targetPeerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
+    sign: async (bytes) => {
+      if (!privateKey) throw new Error("identity_unavailable");
+      return privateKey.sign(bytes);
+    },
+    verify: verifyPairingTrustRequestSignature,
+    membership: trust,
+    clock: systemRuntimeClock,
+    connectionPath: (remotePeerId) => {
+      const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : path ?? "unknown";
+    },
+    onRejected: (diagnostic) => {
+      log.warn(diagnostic.event, diagnostic);
+      if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+    },
+    onChanged: () => emitState(),
+  });
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -392,8 +410,8 @@ async function bootstrap() {
       devices,
       // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
-      waiting: pairingRuntime.waiting(),
-      pairingErrors: pairingRuntime.errors(),
+      waiting: pairingSessions.waiting(),
+      pairingErrors: pairingSessions.errors(),
       peers,
       peerConnections,
       relayConnections,
@@ -485,6 +503,7 @@ async function bootstrap() {
   }
 
   async function startLocalServices() {
+    pairingSessions.start();
     history.onNew(async () => {
       await emitState();
     });
@@ -777,7 +796,7 @@ async function bootstrap() {
 
   async function shutdownServices() {
     quitting = true;
-    await pairingRuntime.stop(fallbackPairingSession);
+    await pairingSessions.stop();
     clipboardSync.stop();
     pairedConnections.stop();
     try {
@@ -870,34 +889,13 @@ async function bootstrap() {
       await emitState();
     },
   });
-  const fallbackPairingSession = createPairingSession({
-    identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-    send: (targetPeerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
-    sign: async (bytes) => {
-      if (!privateKey) throw new Error("identity_unavailable");
-      return privateKey.sign(bytes);
-    },
-    verify: verifyPairingTrustRequestSignature,
-    membership: trust,
-    clock: systemRuntimeClock,
-    connectionPath: (remotePeerId) => {
-      const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-      return path === "relay" ? "relayed" : path ?? "unknown";
-    },
-    onRejected: (diagnostic) => {
-      log.warn(diagnostic.event, diagnostic);
-      void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
-    },
-    onWaitingChanged: (waiting) => pairingRuntime.waitingForSessionChanged(fallbackPairingSession, waiting),
-    onErrorsChanged: (errors) => pairingRuntime.fallbackErrorsChanged(errors),
-  });
   function bindPairingHandler(target: typeof transport) {
     target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-      const session = pairingRuntime.getOrAttachFallbackSession(from, fallbackPairingSession);
-      if (decodePairingFrame(frame)?.kind === "response") void session.receiveResponse(from, frame).then((decision) => {
-        if (decision && decision !== "retrying" && !session.retrying(from)) void pairingRuntime.remove(from, session);
-      }).catch((error) => log.warn("Pairing response processing failed", error));
-    else void pairingPending?.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
+      void pairingSessions.receive(
+        from,
+        frame,
+        (peerId, requestFrame) => pairingPending?.receive(peerId, requestFrame) ?? Promise.resolve(false),
+      ).catch((error) => log.warn("Pairing message processing failed", error));
     });
   }
   bindPairingHandler(runtimeNetwork);
@@ -1028,38 +1026,13 @@ async function bootstrap() {
 
   ipcMain.handle("clipp:pair-text", async (_evt, txt: string) => {
     await ensureMessagingStarted();
-    const id = await identitySvc.get();
     const target = decodePairingTarget(txt);
     if (!target) return { ok: false, error: "invalid" as const };
-    const privateKey = id.privateKey ? await privateKeyFromProtobuf(Buffer.from(id.privateKey, "base64")) : null;
     if (!privateKey) return { ok: false, error: "identity_unavailable" as const };
-    let session!: ReturnType<typeof createPairingSession>;
-    session = createPairingSession({
-      identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-      sign: async (bytes) => privateKey.sign(bytes),
-      verify: verifyPairingTrustRequestSignature,
-      membership: trust,
-      send: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
-      clock: systemRuntimeClock,
-      connectionPath: (remotePeerId) => {
-        const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-        return path === "relay" ? "relayed" : path ?? "unknown";
-      },
-      onRejected: (diagnostic) => {
-        log.warn(diagnostic.event, diagnostic);
-        void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
-      },
-      onWaitingChanged: (waiting) => {
-        pairingRuntime.waitingChanged(target.targetPeerId, session, waiting);
-      },
-      onErrorsChanged: (errors) => pairingRuntime.sessionErrorsChanged(target.targetPeerId, errors),
-    });
     try {
-      const activeSession = await pairingRuntime.replace(target.targetPeerId, session, fallbackPairingSession);
-      await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: activeSession.request });
+      await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: pairingSessions.request });
       return { ok: true };
     } catch {
-      await pairingRuntime.remove(target.targetPeerId, session);
       return { ok: false, error: "dial_failed" as const };
     }
   });

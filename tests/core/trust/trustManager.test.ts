@@ -41,11 +41,138 @@ describe("TrustManager", () => {
     await expect(trust.admit(connectedPeerId, { deviceName: "Mobile", nameRevision: 3n })).resolves.toBe("admitted");
     await expect(trust.isTrusted(connectedPeerId)).resolves.toBe(true);
     await expect(trust.list()).resolves.toEqual([
-      expect.objectContaining({ deviceId: connectedPeerId, deviceName: "Mobile", nameRevision: 3 }),
+      expect.objectContaining({
+        deviceId: connectedPeerId,
+        deviceName: "Mobile",
+        displayName: "Mobile",
+        selfReportedDeviceName: "Mobile",
+        selfReportedNameRevision: "3",
+      }),
     ]);
   });
 
-  it("stores device on accepted trust-ack", async () => {
+  it("derives visible and authorized Trusted Devices only from Active Membership", async () => {
+    const trustRepo = createMemoryTrustedDeviceRepo();
+    const activePeerId = connectedPeerId;
+    const unknownPeerId = "12D3KooWUnknownLegacyMetadata";
+    const revokedPeerId = "12D3KooWRevokedLegacyMetadata";
+    await trustRepo.upsert(sampleDevice(activePeerId));
+    await trustRepo.upsert(sampleDevice(unknownPeerId));
+    await trustRepo.upsert(sampleDevice(revokedPeerId));
+    const identitySvc = {
+      get: async () => ({ deviceId: "me" }),
+      activePeerIds: async () => ["me", activePeerId],
+      membershipStatus: async (peerId: string) => {
+        if (peerId === activePeerId || peerId === "me") return "active" as const;
+        if (peerId === revokedPeerId) return "revoked" as const;
+        return "unknown" as const;
+      },
+      admit: async () => "already-active" as const,
+    } as any;
+    const trust = createTrustManager({ trustRepo, identitySvc });
+
+    await expect(trust.list()).resolves.toEqual([
+      expect.objectContaining({ deviceId: activePeerId }),
+    ]);
+    await expect(trust.isTrusted(activePeerId)).resolves.toBe(true);
+    await expect(trust.isTrusted(unknownPeerId)).resolves.toBe(false);
+    await expect(trust.isTrusted(revokedPeerId)).resolves.toBe(false);
+  });
+
+  it("applies authenticated presentation metadata monotonically and validates names", async () => {
+    const trustRepo = createMemoryTrustedDeviceRepo();
+    await trustRepo.upsert({
+      ...sampleDevice(connectedPeerId),
+      deviceName: "Current mobile",
+      nameRevision: 5,
+    });
+    const identitySvc = {
+      get: async () => ({ deviceId: "me" }),
+      activePeerIds: async () => ["me", connectedPeerId],
+      membershipStatus: async () => "active" as const,
+      admit: async () => "already-active" as const,
+    } as any;
+    const trust = createTrustManager({ trustRepo, identitySvc });
+
+    await trust.admit(connectedPeerId, { deviceName: "Stale mobile", nameRevision: 4n });
+    await trust.admit(connectedPeerId, { deviceName: "Conflicting mobile", nameRevision: 5n });
+    await expect(trustRepo.get(connectedPeerId)).resolves.toEqual(
+      expect.objectContaining({ deviceName: "Current mobile", nameRevision: 5 }),
+    );
+
+    await trust.admit(connectedPeerId, { deviceName: "Invalid\nmobile", nameRevision: 6n });
+    await expect(trustRepo.get(connectedPeerId)).resolves.toEqual(
+      expect.objectContaining({
+        deviceName: "Current mobile",
+        selfReportedDeviceName: "Current mobile",
+        selfReportedNameRevision: "6",
+      }),
+    );
+
+    await trust.admit(connectedPeerId, { deviceName: "  New mobile  ", nameRevision: 7n });
+    await expect(trustRepo.get(connectedPeerId)).resolves.toEqual(
+      expect.objectContaining({
+        deviceName: "New mobile",
+        selfReportedDeviceName: "New mobile",
+        selfReportedNameRevision: "7",
+      }),
+    );
+  });
+
+  it("keeps a Local Device Alias when a newer self-reported name arrives", async () => {
+    const trustRepo = createMemoryTrustedDeviceRepo();
+    await trustRepo.upsert({
+      ...sampleDevice(connectedPeerId),
+      deviceName: "Mobile",
+      selfReportedDeviceName: "Mobile",
+      selfReportedNameRevision: "2",
+    });
+    const identitySvc = {
+      get: async () => ({ deviceId: "me" }),
+      activePeerIds: async () => ["me", connectedPeerId],
+      membershipStatus: async () => "active" as const,
+      admit: async () => "already-active" as const,
+    } as any;
+    const trust = createTrustManager({ trustRepo, identitySvc });
+
+    await trust.rename(connectedPeerId, "My phone");
+    await trust.admit(connectedPeerId, { deviceName: "New mobile", nameRevision: 3n });
+
+    await expect(trustRepo.get(connectedPeerId)).resolves.toEqual(
+      expect.objectContaining({
+        deviceName: "New mobile",
+        localAlias: "My phone",
+        selfReportedDeviceName: "New mobile",
+        selfReportedNameRevision: "3",
+      }),
+    );
+    await expect(trust.list()).resolves.toEqual([
+      expect.objectContaining({ deviceName: "New mobile", displayName: "My phone" }),
+    ]);
+  });
+
+  it("orders self-reported name revisions losslessly beyond safe integers", async () => {
+    const trustRepo = createMemoryTrustedDeviceRepo();
+    const identitySvc = {
+      get: async () => ({ deviceId: "me" }),
+      activePeerIds: async () => ["me", connectedPeerId],
+      membershipStatus: async () => "active" as const,
+      admit: async () => "already-active" as const,
+    } as any;
+    const trust = createTrustManager({ trustRepo, identitySvc });
+
+    await trust.admit(connectedPeerId, { deviceName: "Large revision", nameRevision: 9_007_199_254_740_993n });
+    await trust.admit(connectedPeerId, { deviceName: "Next revision", nameRevision: 9_007_199_254_740_994n });
+
+    await expect(trustRepo.get(connectedPeerId)).resolves.toEqual(
+      expect.objectContaining({
+        deviceName: "Next revision",
+        selfReportedNameRevision: "9007199254740994",
+      }),
+    );
+  });
+
+  it("stores legacy trust-ack metadata without granting Device Membership", async () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
     const identitySvc = {
       get: async () => ({ deviceId: "me" }),
@@ -80,15 +207,19 @@ describe("TrustManager", () => {
       sentAt: 2,
     } as any);
 
-    expect(await trust.isTrusted("peer")).toBe(true);
+    expect(await trust.isTrusted("peer")).toBe(false);
+    await expect(trustRepo.get("peer")).resolves.toEqual(expect.objectContaining({ deviceId: "peer" }));
     expect(approved).toHaveLength(1);
     expect(approved[0].deviceId).toBe("peer");
   });
 
-  it("matches trusted devices by advertised peer multiaddr", async () => {
+  it("normalizes an authenticated multiaddr before checking Active Membership", async () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
     const identitySvc = {
       get: async () => ({ deviceId: "me" }),
+      activePeerIds: async () => ["me", connectedPeerId],
+      membershipStatus: async (peerId: string) => peerId === connectedPeerId ? "active" as const : "unknown" as const,
+      admit: async () => "already-active" as const,
       rename: async () => {},
       updateMultiaddrs: async () => {},
     } as any;
@@ -99,7 +230,7 @@ describe("TrustManager", () => {
       multiaddrs: [`/dns4/example.test/tcp/443/wss/p2p/${connectedPeerId}`],
     });
 
-    expect(await trust.isTrusted("legacy-device-id")).toBe(true);
+    expect(await trust.isTrusted("legacy-device-id")).toBe(false);
     expect(await trust.isTrusted(connectedPeerId)).toBe(true);
     expect(await trust.isTrusted(`/dns4/example.test/tcp/443/wss/p2p/${connectedPeerId}`)).toBe(true);
   });
@@ -140,6 +271,9 @@ describe("TrustManager", () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
     const identitySvc = {
       get: async () => sampleDevice("me"),
+      activePeerIds: async () => ["me", "peer"],
+      membershipStatus: async (peerId: string) => peerId === "peer" || peerId === "me" ? "active" as const : "unknown" as const,
+      admit: async () => "already-active" as const,
       getPublic: async () => ({ deviceId: "me" }),
       rename: async () => {},
       updateMultiaddrs: async () => {},
@@ -192,8 +326,12 @@ describe("TrustManager", () => {
 
   it("shares trusted peers after a new device is approved", async () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
+    const active = new Set(["me", "existing"]);
     const identitySvc = {
       get: async () => sampleDevice("me"),
+      activePeerIds: async () => [...active],
+      membershipStatus: async (peerId: string) => active.has(peerId) ? "active" as const : "unknown" as const,
+      admit: async (peerId: string) => { active.add(peerId); return "admitted" as const; },
       getPublic: async () => ({ deviceId: "me" }),
       rename: async () => {},
       updateMultiaddrs: async () => {},
@@ -226,6 +364,7 @@ describe("TrustManager", () => {
     };
 
     await trust.handleTrustMessage(request as any);
+    active.add("new");
     await trust.sendTrustAck(newDevice, true);
 
     expect(sent).toHaveLength(3);
@@ -271,6 +410,9 @@ describe("TrustManager", () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
     const identitySvc = {
       get: async () => sampleDevice("me"),
+      activePeerIds: async () => ["me", "sender"],
+      membershipStatus: async (peerId: string) => peerId === "sender" || peerId === "me" ? "active" as const : "unknown" as const,
+      admit: async () => "already-active" as const,
       getPublic: async () => ({ deviceId: "me" }),
       rename: async () => {},
       updateMultiaddrs: async () => {},
@@ -307,8 +449,8 @@ describe("TrustManager", () => {
       sentAt: 2,
     } as any);
 
-    expect(await trust.isTrusted("shared")).toBe(true);
-    expect(await trust.isTrusted("me")).toBe(false);
+    expect(await trust.isTrusted("shared")).toBe(false);
+    expect(await trust.isTrusted("me")).toBe(true);
     const importedShared = (await trustRepo.get("shared")) as any;
     expect(importedShared?.privateKey).toBeUndefined();
     expect(approved).toHaveLength(1);
@@ -401,8 +543,15 @@ describe("TrustManager", () => {
     await trustRepo.upsert(dev);
     const updated = await trust.rename("peer", "Office Mac");
 
-    expect(updated?.deviceName).toBe("Office Mac");
-    expect((await trustRepo.get("peer"))?.deviceName).toBe("Office Mac");
+    expect(updated).toMatchObject({
+      deviceName: dev.deviceName,
+      displayName: "Office Mac",
+      localAlias: "Office Mac",
+    });
+    expect(await trustRepo.get("peer")).toMatchObject({
+      deviceName: dev.deviceName,
+      localAlias: "Office Mac",
+    });
     expect(renamed).toHaveLength(1);
     expect(renamed[0].deviceId).toBe("peer");
   });

@@ -1,4 +1,5 @@
 import { peerIdFromMultihashBytes, peerIdToMultihashBytes } from "./protocol";
+import { normalizeDeviceName } from "./presentation";
 
 export const PAIRING_TARGET_PREFIX = "clipp:pair:";
 export const PAIRING_TARGET_VERSION = 2;
@@ -92,13 +93,6 @@ export function decodePairingTarget(raw: string, maximumBytes = PAIRING_TARGET_M
   }
   if (version !== PAIRING_TARGET_VERSION || !targetPeerId || !signedPeerRecord?.length) return null;
   return { version, targetPeerId, signedPeerRecord, ...(deviceNameHint ? { deviceNameHint } : {}) };
-}
-
-/** Invalid presentation metadata never invalidates an otherwise valid target. */
-function normalizeDeviceName(value: string): string | undefined {
-  const normalized = value.normalize("NFC").trim();
-  if (!normalized || [...normalized].length > 64 || /[\u0000-\u001f\u007f]/.test(normalized)) return undefined;
-  return normalized;
 }
 
 function fieldVarint(field: number, value: number): Uint8Array {
