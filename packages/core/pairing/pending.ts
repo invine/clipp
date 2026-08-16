@@ -96,7 +96,7 @@ export function createPendingTrustRequestCoordinator(options: {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
   const pendingMutations = new Map<string, Promise<void>>();
-  let started = false;
+  let startPromise: Promise<void> | undefined;
   const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
   const reject = (reason: PairingRejectionReason, authenticatedPeerId: string, frame: Uint8Array, messageType: "request" | "response" | "unknown" = "request") => {
     reportRejected({ reason, authenticatedPeerId, frameSize: frame.byteLength, messageType, connectionPath: options.connectionPath?.(authenticatedPeerId) ?? "unknown" });
@@ -115,7 +115,6 @@ export function createPendingTrustRequestCoordinator(options: {
   };
 
   const expirationFor = (issuedAt: bigint) => issuedAt + BigInt(options.validityWindowMs ?? 10 * 60 * 1000) + BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
-  const isCurrent = (request: PendingTrustRequest) => BigInt(options.clock.now()) <= request.expiresAtUnixMs;
   const isSameRequest = (left: PendingTrustRequest, right: PendingTrustRequest) => left.expiresAtUnixMs === right.expiresAtUnixMs
     && left.requestEnvelope.byteLength === right.requestEnvelope.byteLength
     && left.requestEnvelope.every((byte, index) => byte === right.requestEnvelope[index]);
@@ -166,26 +165,29 @@ export function createPendingTrustRequestCoordinator(options: {
 
   return {
     list: () => options.store.list(),
-    async start(): Promise<void> {
-      if (started) return;
-      started = true;
-      options.notifications.onSelect((id) => {
-        if (id.startsWith("pairing-request-")) return options.lifecycle.openApprovalView();
-      });
-      for (const storedRequest of await options.store.list()) {
-        const request = await revalidateStoredRequest(storedRequest);
-        if (!request) {
-          await expirePending(storedRequest.initiatorPeerId);
-          continue;
-        }
-        await options.store.save(request);
-        scheduleExpiry(request);
-        await show(request);
+    start(): Promise<void> {
+      if (!startPromise) {
+        startPromise = (async () => {
+          options.notifications.onSelect((id) => {
+            if (id.startsWith("pairing-request-")) return options.lifecycle.openApprovalView();
+          });
+          for (const storedRequest of await options.store.list()) {
+            const request = await revalidateStoredRequest(storedRequest);
+            if (!request) {
+              await expirePending(storedRequest.initiatorPeerId);
+              continue;
+            }
+            await options.store.save(request);
+            scheduleExpiry(request);
+            await show(request);
+          }
+          await publish();
+        })();
       }
-      await publish();
+      return startPromise;
     },
     receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
-      return serializeMutation(authenticatedPeerId, async () => {
+      const receive = () => serializeMutation(authenticatedPeerId, async () => {
         const parsed = decodePairingFrame(frame);
         if (!parsed || parsed.kind !== "request") return reject("protobuf_decoding_failed", authenticatedPeerId, frame, parsed?.kind ?? "unknown");
         const envelope = decodeTrustRequestEnvelope(parsed.envelope);
@@ -223,23 +225,15 @@ export function createPendingTrustRequestCoordinator(options: {
         await publish();
         return true;
       });
+      return startPromise ? startPromise.then(receive) : receive();
     },
     decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
       return serializeMutation(initiatorPeerId, async () => {
         if (!options.sendResponse || !options.responseIdentity) return false;
-        const request = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
-        if (!request) return false;
-        if (!isCurrent(request)) {
-          await expirePending(initiatorPeerId);
-          return false;
-        }
-        const envelope = decodeTrustRequestEnvelope(request.requestEnvelope);
-        if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, initiatorPeerId))) {
-          await expirePending(initiatorPeerId);
-          return false;
-        }
-        const payload = decodeTrustRequestPayload(envelope.signedPayload);
-        if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) {
+        const storedRequest = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
+        if (!storedRequest) return false;
+        const request = await revalidateStoredRequest(storedRequest);
+        if (!request) {
           await expirePending(initiatorPeerId);
           return false;
         }

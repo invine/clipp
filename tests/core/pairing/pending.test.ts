@@ -1,5 +1,5 @@
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
-import { decodePairingFrame, encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload } from "../../../packages/core/pairing/protocol";
+import { decodePairingFrame, decodeTrustRequestPayload, encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload } from "../../../packages/core/pairing/protocol";
 
 const initiatorPeerId = "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv";
 const targetPeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
@@ -277,6 +277,58 @@ describe("pending Trust Requests", () => {
     expect(requests.size).toBe(0);
     expect(shown).toEqual([]);
     expect(dismissed).toEqual([`pairing-request-${initiatorPeerId}`]);
+  });
+
+  it("makes concurrent startup callers wait before receiving a newer request", async () => {
+    const oldFrame = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Old mobile", nameRevision: 1n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    const parsedOldFrame = decodePairingFrame(oldFrame);
+    if (!parsedOldFrame || parsedOldFrame.kind !== "request") throw new Error("expected request frame");
+    const requests = new Map<string, any>([[initiatorPeerId, {
+      initiatorPeerId,
+      deviceName: "Old mobile",
+      nameRevision: 1n,
+      requestEnvelope: parsedOldFrame.envelope,
+      expiresAtUnixMs: 721_000n,
+    }]]);
+    let releaseOldVerification!: () => void;
+    let markOldVerificationStarted!: () => void;
+    const oldVerificationStarted = new Promise<void>((resolve) => { markOldVerificationStarted = resolve; });
+    const oldVerificationGate = new Promise<void>((resolve) => { releaseOldVerification = resolve; });
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => [...requests.values()],
+        save: async (request) => void requests.set(request.initiatorPeerId, request),
+        remove: async (id) => void requests.delete(id),
+      },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_100, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async (signedPayload) => {
+        if (decodeTrustRequestPayload(signedPayload)?.issuedAtUnixMs === 1_000n) {
+          markOldVerificationStarted();
+          await oldVerificationGate;
+        }
+        return true;
+      },
+    });
+    const newerFrame = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "New mobile", nameRevision: 2n, issuedAtUnixMs: 1_100n }), signature: new Uint8Array([1]) }) });
+
+    const initialStart = coordinator.start();
+    await oldVerificationStarted;
+    const inbound = (async () => {
+      await coordinator.start();
+      return coordinator.receive(initiatorPeerId, newerFrame);
+    })();
+    await new Promise((resolve) => setImmediate(resolve));
+    releaseOldVerification();
+    await Promise.all([initialStart, inbound]);
+
+    expect(requests.get(initiatorPeerId)).toMatchObject({
+      deviceName: "New mobile",
+      nameRevision: 2n,
+      expiresAtUnixMs: 721_100n,
+    });
   });
 
   it("rate-limits rejection diagnostics by authenticated peer and reason", async () => {
