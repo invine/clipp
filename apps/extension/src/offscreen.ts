@@ -1,6 +1,6 @@
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
-import { createKVPeerRecordStore } from "../../../packages/core/network/peerRecords";
+import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords";
 import {
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
@@ -18,6 +18,10 @@ import {
   createRuntimeIdentityManager,
   RUNTIME_CAPABILITIES,
 } from "../../../packages/core/runtime";
+import {
+  handleExtensionReachabilityRequest,
+  isExtensionReachabilityRequest,
+} from "./networkBridge";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
@@ -80,7 +84,7 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     privateKey,
     relayAddresses: relays,
     enableDCUtR: true,
-    peerRecordStore: createKVPeerRecordStore({ storage }),
+    signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage }),
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   pairedConnections = createPairedPeerConnectionManager({
@@ -186,23 +190,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "runtimeGetSignedPeerRecord") {
-      sendResponse({ record: Array.from(await transport.getSignedPeerRecord!()) });
-      return;
-    }
-    if (msg.action === "runtimeGetSignedPeerRecordFor" && msg.peerId) {
-      const record = await transport.getSignedPeerRecordFor?.(msg.peerId);
-      sendResponse({ ...(record ? { record: Array.from(record) } : {}) });
-      return;
-    }
-    if (msg.action === "runtimeImportSignedPeerRecord" && msg.peerId && Array.isArray(msg.record)) {
-      await transport.importSignedPeerRecord!(msg.peerId, Uint8Array.from(msg.record));
-      sendResponse({ ok: true });
-      return;
-    }
-    if (msg.action === "runtimeRefreshPeerRecord" && msg.peerId) {
-      await transport.refreshPeerRecord?.(msg.peerId);
-      sendResponse({ ok: true });
+    if (isExtensionReachabilityRequest(msg)) {
+      sendResponse(await handleExtensionReachabilityRequest(msg, transport));
       return;
     }
     if (msg.action === "runtimeRegisterProtocol" && typeof msg.protocol === "string") {

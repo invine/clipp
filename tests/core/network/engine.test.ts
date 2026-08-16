@@ -67,6 +67,10 @@ jest.mock("../../../packages/core/network/rendezvous", () => ({
   unregisterFromRendezvous: mockUnregisterFromRendezvous,
 }));
 
+jest.mock("../../../packages/core/network/peerId", () => ({
+  deviceIdToPeerIdObject: async (peerId: string) => ({ toString: () => peerId }),
+}));
+
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import { CLIP_PROTOCOL } from "../../../packages/core/network/protocol";
 
@@ -185,6 +189,21 @@ describe("Libp2pMessagingTransport", () => {
     await transport.connect(target);
 
     expect(node.dial).toHaveBeenCalledTimes(1);
+    await transport.stop();
+  });
+
+  it("dials a peer ID through its imported certified relay address", async () => {
+    const target = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit/p2p/peer-1";
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    node.peerStore.get.mockResolvedValueOnce({
+      addresses: [{ isCertified: true, multiaddr: { toString: () => target } }],
+    });
+
+    await transport.connect("peer-1");
+
+    expect(node.dial.mock.calls[0][0].toString()).toBe(target);
     await transport.stop();
   });
 
@@ -497,6 +516,35 @@ describe("Libp2pMessagingTransport", () => {
       random.mockRestore();
       jest.useRealTimers();
     }
+  });
+
+  it("queues a reservation-loss rendezvous pass while registration is in flight", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+    let finishRegistration!: (registered: boolean) => void;
+    mockRegisterOnRendezvous.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => { finishRegistration = resolve; })
+    );
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    mockSelfMultiaddrs = [];
+    eventHandlers.get("self:peer:update")?.[0]?.({});
+    finishRegistration(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockUnregisterFromRendezvous).toHaveBeenCalledWith(
+      expect.anything(),
+      relay,
+      "clipp",
+      expect.anything()
+    );
+    await transport.stop();
   });
 
   it("dispatches inbound messages to protocol handlers", async () => {

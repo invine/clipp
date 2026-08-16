@@ -7,7 +7,7 @@ import { generateKeyPair } from "@libp2p/crypto/keys";
 import { peerIdFromPrivateKey } from "@libp2p/peer-id";
 import { createLibp2pMessagingTransport } from "../../packages/core/network/engine.ts";
 import { createPairedPeerConnectionManager } from "../../packages/core/network/pairedConnections.ts";
-import type { PeerRecordStore } from "../../packages/core/network/peerRecords.ts";
+import type { SignedPeerRecordPersistence } from "../../packages/core/network/peerRecords.ts";
 import { CLIP_PROTOCOL } from "../../packages/core/network/protocol.ts";
 import { startWebsocketRelay } from "../../packages/core/network/relay/server.ts";
 import {
@@ -24,7 +24,7 @@ import { systemRuntimeClock } from "../../packages/core/runtime/clock.ts";
 const WAIT_TIMEOUT_MS = 12_000;
 const RENDEZVOUS_LEASE_MS = 750;
 
-class MemoryPeerRecordStore implements PeerRecordStore {
+class MemorySignedPeerRecordPersistence implements SignedPeerRecordPersistence {
   private readonly records = new Map<string, Uint8Array>();
 
   async load(): Promise<Record<string, Uint8Array>> {
@@ -45,21 +45,25 @@ async function bootPeer(options: {
   privateKey: any;
   relayAddress: string;
   activeMembers: Set<string>;
-  peerRecordStore: PeerRecordStore;
+  signedPeerRecordPersistence: SignedPeerRecordPersistence;
 }) {
   const peerId = peerIdFromPrivateKey(options.privateKey).toString();
+  const directUpgradeAttempts: string[] = [];
   const transport = createLibp2pMessagingTransport({
     privateKey: options.privateKey,
     relayAddresses: [options.relayAddress],
     enableDCUtR: true,
+    onDCUtRAttempt: (remotePeerId) => directUpgradeAttempts.push(remotePeerId),
+    dcutrTimeoutMs: 250,
+    dcutrRetries: 1,
     enableWebRTCDirect: false,
     enableTcp: false,
     enableWebSocketListener: false,
     enableRelayReservations: true,
     rendezvousIntervalMs: 1_000,
-    relayReservationRetryMs: 250,
-    dialTimeoutMs: 2_000,
-    peerRecordStore: options.peerRecordStore,
+    relayReservationRetryMs: 60_000,
+    dialTimeoutMs: 8_000,
+    signedPeerRecordPersistence: options.signedPeerRecordPersistence,
     isPeerKnown: async (remotePeerId) => options.activeMembers.has(remotePeerId),
   });
   await transport.start();
@@ -68,7 +72,7 @@ async function bootPeer(options: {
       .getSelfMultiaddrs?.()
       .some((address) => address.startsWith(`${options.relayAddress}/p2p-circuit`)) ?? false
   );
-  return { ...options, peerId, transport };
+  return { ...options, peerId, transport, directUpgradeAttempts };
 }
 
 async function pairOverRelay(a: HarnessPeer, b: HarnessPeer): Promise<void> {
@@ -165,23 +169,25 @@ async function main() {
     listen: ["/ip4/127.0.0.1/tcp/0/ws"],
     enableWebRTC: false,
     statusIntervalMs: 60_000,
-    debugNamespaces: "",
+    reservationTtlMs: 60_000,
+    debugNamespaces: process.env.CLIPP_HARNESS_DEBUG ?? "",
   });
   const relayAddress = relay.node.getMultiaddrs().find((address) => String(address).includes("/ws"))?.toString();
   assert(relayAddress, "relay WebSocket address must be available");
 
   const aKey = await generateKeyPair("Ed25519");
   const bKey = await generateKeyPair("Ed25519");
+  const bPeerIdObject = peerIdFromPrivateKey(bKey);
   const aMembers = new Set<string>();
   const bMembers = new Set<string>();
-  const aRecords = new MemoryPeerRecordStore();
-  const bRecords = new MemoryPeerRecordStore();
+  const aRecords = new MemorySignedPeerRecordPersistence();
+  const bRecords = new MemorySignedPeerRecordPersistence();
   let a: HarnessPeer | undefined;
   let b: HarnessPeer | undefined;
 
   try {
-    a = await bootPeer({ label: "A", privateKey: aKey, relayAddress, activeMembers: aMembers, peerRecordStore: aRecords });
-    b = await bootPeer({ label: "B", privateKey: bKey, relayAddress, activeMembers: bMembers, peerRecordStore: bRecords });
+    a = await bootPeer({ label: "A", privateKey: aKey, relayAddress, activeMembers: aMembers, signedPeerRecordPersistence: aRecords });
+    b = await bootPeer({ label: "B", privateKey: bKey, relayAddress, activeMembers: bMembers, signedPeerRecordPersistence: bRecords });
     await pairOverRelay(a, b);
     assert(hasConnectionPath(a, b.peerId, "relay"), "Pairing must begin over a Relayed Connection");
 
@@ -189,32 +195,61 @@ async function main() {
     assert(originalRecord, "A must retain B's verified record after Pairing");
     await assertApplicationTraffic(a, b);
 
-    await b.transport.stop();
+    const recordBeforeReservationLoss = await b.transport.getSignedPeerRecord?.();
+    assert(recordBeforeReservationLoss, "B must publish a record before reservation loss");
+    await b.transport.disconnect?.(relay.node.peerId.toString());
+    await waitUntil(
+      "live relay reservation loss",
+      () => !b!.transport.getSelfMultiaddrs?.().some((address) => address.includes("/p2p-circuit"))
+    );
     await waitUntil("offline member disconnect", () => !a!.transport.getConnectedPeers().includes(b!.peerId));
+    await waitUntil("new record after reservation loss", async () => {
+      const recordAfterReservationLoss = await b!.transport.getSignedPeerRecord?.();
+      return Boolean(
+        recordAfterReservationLoss &&
+        !sameBytes(recordBeforeReservationLoss, recordAfterReservationLoss)
+      );
+    });
     await delay(RENDEZVOUS_LEASE_MS + 250);
     await a.transport.refreshPeerRecord?.(b.peerId);
     assert(!a.transport.getConnectedPeers().includes(b.peerId), "expired reachability must not create a connection");
+    await b.transport.stop();
+    (relay.node.services.circuitRelay as any).reservations.delete(bPeerIdObject);
+    assert(
+      !(relay.node.services.circuitRelay as any).reservations.has(bPeerIdObject),
+      "the harness must clear B's old same-identity relay reservation before restart"
+    );
 
-    b = await bootPeer({ label: "B", privateKey: bKey, relayAddress, activeMembers: bMembers, peerRecordStore: bRecords });
+    b = await bootPeer({ label: "B", privateKey: bKey, relayAddress, activeMembers: bMembers, signedPeerRecordPersistence: bRecords });
+    await waitUntil(
+      "restarted relay reservation",
+      () => (relay.node.services.circuitRelay as any).reservations.has(bPeerIdObject)
+    );
+    const restartedRecord = await b.transport.getSignedPeerRecord?.();
+    assert(restartedRecord, "restarted B must publish its current relay reservation");
     await waitUntil("refreshed Signed Peer Record", async () => {
       await a!.transport.refreshPeerRecord?.(b!.peerId);
       const refreshed = await a!.transport.getSignedPeerRecordFor?.(b!.peerId);
-      return Boolean(refreshed && !sameBytes(refreshed, originalRecord));
+      return Boolean(refreshed && sameBytes(refreshed, restartedRecord));
     });
 
+    a.directUpgradeAttempts.length = 0;
     const reconnect = createPairedPeerConnectionManager({
       transport: a.transport,
-      getPairedPeers: async () => [{
-        deviceId: b!.peerId,
-        multiaddrs: [`${relayAddress}/p2p-circuit/p2p/${b!.peerId}`],
-      }],
+      getPairedPeers: async () => [{ deviceId: b!.peerId }],
       intervalMs: 60_000,
     });
     await reconnect.reconnectNow();
     await waitUntil("offline Active Member relay reconnect", () => hasConnectionPath(a!, b!.peerId, "relay"));
+    await waitUntil(
+      "DCUtR upgrade attempt",
+      () =>
+        a!.directUpgradeAttempts.includes(b!.peerId) ||
+        b!.directUpgradeAttempts.includes(a!.peerId)
+    );
     assert(
       !a.transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === b!.peerId)?.hasDirect,
-      "DCUtR-disabled direct transports must leave application traffic on the relay fallback"
+      "unavailable direct transports must leave application traffic on the relay fallback"
     );
     await assertApplicationTraffic(a, b);
     reconnect.stop();

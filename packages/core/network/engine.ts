@@ -8,7 +8,10 @@ import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "
 import { decodeMembershipFrame, MEMBERSHIP_MAX_FRAME_BYTES, MEMBERSHIP_PROTOCOL } from "../membership/reconciliation.js";
 import { createPairingRejectionReporter } from "../pairing/diagnostics.js";
 import { ensureLegacyMultiaddrApi, getPeerIdFromMultiaddr } from "./multiaddrCompat.js";
-import { consumeOrMatchSignedPeerRecord, type PeerRecordStore } from "./peerRecords.js";
+import {
+  consumeOrMatchSignedPeerRecord,
+  type SignedPeerRecordPersistence,
+} from "./peerRecords.js";
 import { lookupRendezvousPeer, registerOnRendezvous, unregisterFromRendezvous } from "./rendezvous.js";
 import type {
   MessagingTransport,
@@ -36,6 +39,9 @@ export type Libp2pMessagingOptions = {
   enableWebRTCStar?: boolean;
   enableWebRTCDirect?: boolean;
   enableDCUtR?: boolean;
+  onDCUtRAttempt?: (peerId: string) => void;
+  dcutrTimeoutMs?: number;
+  dcutrRetries?: number;
   enableTcp?: boolean;
   enableWebSocketListener?: boolean;
   enableRelayReservations?: boolean;
@@ -46,7 +52,7 @@ export type Libp2pMessagingOptions = {
   rendezvousTimeoutMs?: number;
   relayReservationRetryMs?: number;
   allowInsecureBrowserDials?: boolean;
-  peerRecordStore?: PeerRecordStore;
+  signedPeerRecordPersistence?: SignedPeerRecordPersistence;
   isPeerKnown?(peerId: string): Promise<boolean>;
 };
 
@@ -67,6 +73,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private started = false;
   private lastSelfMultiaddrsKey: string | null = null;
   private cachedSignedPeerRecord: Uint8Array | null = null;
+  private cachedSignedPeerRecordMultiaddrsKey: string | null = null;
+  private selfPeerRecordDirty = false;
   private readonly persistedPeerRecords = new Map<string, Uint8Array>();
   private peerRecordWrite: Promise<void> = Promise.resolve();
 
@@ -85,6 +93,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private readonly relayUpgradeLoggedPeerIds = new Set<string>();
   private rendezvousTimer: ReturnType<typeof setTimeout> | null = null;
   private rendezvousRunning = false;
+  private rendezvousPending = false;
   private rendezvousRelays: string[] = [];
   private readonly registeredRendezvousRelays = new Set<string>();
   private relayReservationRetryTimer: ReturnType<typeof setInterval> | null = null;
@@ -108,6 +117,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
       enableWebRTCStar: this.opts.enableWebRTCStar,
       enableWebRTCDirect: this.opts.enableWebRTCDirect,
       enableDCUtR: this.opts.enableDCUtR,
+      onDCUtRAttempt: this.opts.onDCUtRAttempt,
+      dcutrTimeoutMs: this.opts.dcutrTimeoutMs,
+      dcutrRetries: this.opts.dcutrRetries,
       enableTcp: this.opts.enableTcp,
       enableWebSocketListener: this.opts.enableWebSocketListener,
       enableRelayReservations: this.opts.enableRelayReservations,
@@ -130,16 +142,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
       if (!peerId) return;
       if (this.isRelayConnection(detail)) {
         this.relayConnectionBus.emit();
+        queueMicrotask(() => this.handleSelfReachabilityChanged());
         return;
       }
       this.markPeerDisconnected(peerId);
     });
     this.node.addEventListener("self:peer:update", () => {
-      this.cachedSignedPeerRecord = null;
-      this.emitSelfPeerUpdate();
-      if (this.rendezvousRelays.length > 0) {
-        this.triggerRendezvous(this.rendezvousRelays);
-      }
+      this.handleSelfReachabilityChanged();
     });
     this.node.addEventListener("peer:discovery", (evt: any) => {
       void this.handleDiscoveredPeer(evt?.detail);
@@ -198,6 +207,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
     this.observedConnectionPaths.clear();
     this.relayDialPeerIds.clear();
     this.relayUpgradeLoggedPeerIds.clear();
+    this.cachedSignedPeerRecordMultiaddrsKey = null;
+    this.selfPeerRecordDirty = false;
     log.info("Messaging transport stopped");
   }
 
@@ -269,7 +280,34 @@ class Libp2pMessagingTransport implements MessagingTransport {
       return;
     }
 
-    dialedConnection = await this.node.dial(await peerIdObjectForTarget(target), this.dialOptions());
+    const peerIdObject = await peerIdObjectForTarget(target);
+    await this.node.hangUp?.(peerIdObject).catch(() => undefined);
+    const storedPeer = await this.node.peerStore?.get?.(peerIdObject).catch(() => undefined);
+    const storedTargets = (storedPeer?.addresses ?? [])
+      .map((address: any) => address?.multiaddr?.toString?.())
+      .filter((address: unknown): address is string => typeof address === "string")
+      .sort((left: string, right: string) => {
+        const leftPriority = connectionPathForAddr(left) === "relay" ? 0 : 1;
+        const rightPriority = connectionPathForAddr(right) === "relay" ? 0 : 1;
+        return leftPriority - rightPriority;
+      });
+    log.debug("Peer ID dial resolved stored targets", { peerId, storedTargets });
+    let lastError: unknown;
+    for (const storedTarget of storedTargets) {
+      try {
+        dialedConnection = await this.node.dial(
+          ensureLegacyMultiaddrApi(multiaddr(storedTarget)),
+          { ...this.dialOptions(), force: true }
+        );
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!dialedConnection) {
+      if (storedTargets.length > 0 && lastError) throw lastError;
+      dialedConnection = await this.node.dial(peerIdObject, this.dialOptions());
+    }
     this.observePeerConnection(dialedConnection, "dial result", dialContext);
     if (peerId) this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
     if (peerId) this.markPeerConnected(peerId, true);
@@ -392,21 +430,49 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async getSignedPeerRecord(): Promise<Uint8Array> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
-    if (this.cachedSignedPeerRecord) return Uint8Array.from(this.cachedSignedPeerRecord);
+    const currentMultiaddrsKey = this.selfMultiaddrs().sort().join("\n");
+    if (
+      this.cachedSignedPeerRecord &&
+      this.cachedSignedPeerRecordMultiaddrsKey === currentMultiaddrsKey
+    ) {
+      return Uint8Array.from(this.cachedSignedPeerRecord);
+    }
+    if (this.cachedSignedPeerRecordMultiaddrsKey !== currentMultiaddrsKey) {
+      this.cachedSignedPeerRecord = null;
+      this.selfPeerRecordDirty = true;
+    }
     const existing = await this.node.peerStore?.get?.(this.node.peerId);
-    if (existing?.peerRecordEnvelope instanceof Uint8Array) {
+    if (!this.selfPeerRecordDirty && existing?.peerRecordEnvelope instanceof Uint8Array) {
       this.cachedSignedPeerRecord = Uint8Array.from(existing.peerRecordEnvelope);
+      this.cachedSignedPeerRecordMultiaddrsKey = currentMultiaddrsKey;
       await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
       return Uint8Array.from(this.cachedSignedPeerRecord);
     }
-    const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
     const privateKey = this.opts.privateKey ?? this.node.privateKey;
-    if (!privateKey) throw new Error("private_key_unavailable");
+    if (!privateKey) {
+      if (existing?.peerRecordEnvelope instanceof Uint8Array) {
+        return Uint8Array.from(existing.peerRecordEnvelope);
+      }
+      throw new Error("private_key_unavailable");
+    }
+    const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
+    let seqNumber = BigInt(Date.now());
+    if (existing?.peerRecordEnvelope instanceof Uint8Array) {
+      try {
+        const previousEnvelope = RecordEnvelope.createFromProtobuf(existing.peerRecordEnvelope);
+        const previousRecord = PeerRecord.createFromProtobuf(previousEnvelope.payload);
+        if (seqNumber <= previousRecord.seqNumber) seqNumber = previousRecord.seqNumber + 1n;
+      } catch {
+        // Invalid existing self records are replaced using the current clock.
+      }
+    }
     const envelope = await RecordEnvelope.seal(
-      new PeerRecord({ peerId: this.node.peerId, multiaddrs: this.node.getMultiaddrs(), seqNumber: BigInt(Date.now()) }),
+      new PeerRecord({ peerId: this.node.peerId, multiaddrs: this.node.getMultiaddrs(), seqNumber }),
       privateKey
     );
     this.cachedSignedPeerRecord = Uint8Array.from(envelope.marshal());
+    this.cachedSignedPeerRecordMultiaddrsKey = currentMultiaddrsKey;
+    this.selfPeerRecordDirty = false;
     await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
     return Uint8Array.from(this.cachedSignedPeerRecord);
   }
@@ -433,8 +499,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   private async restorePeerRecords(): Promise<void> {
-    const stored = this.opts.peerRecordStore
-      ? await this.opts.peerRecordStore.load().catch(() => ({}))
+    const stored = this.opts.signedPeerRecordPersistence
+      ? await this.opts.signedPeerRecordPersistence.load().catch(() => ({}))
       : {};
     const selfPeerId = safePeerId(this.node?.peerId);
     for (const [peerId, storedRecord] of Object.entries(stored)) {
@@ -457,8 +523,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private async persistPeerRecord(peerId: string | null, record: Uint8Array): Promise<void> {
     if (!peerId) return;
     this.persistedPeerRecords.set(peerId, Uint8Array.from(record));
-    if (!this.opts.peerRecordStore) return;
-    const write = async () => { await this.opts.peerRecordStore?.save(peerId, record).catch(() => undefined); };
+    if (!this.opts.signedPeerRecordPersistence) return;
+    const write = async () => {
+      await this.opts.signedPeerRecordPersistence?.save(peerId, record).catch(() => undefined);
+    };
     this.peerRecordWrite = this.peerRecordWrite.then(write, write);
     await this.peerRecordWrite;
   }
@@ -561,6 +629,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private stopRendezvous(): void {
     this.rendezvousRelays = [];
     this.registeredRendezvousRelays.clear();
+    this.rendezvousPending = false;
     if (!this.rendezvousTimer) return;
     clearTimeout(this.rendezvousTimer);
     this.rendezvousTimer = null;
@@ -573,16 +642,23 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const jitteredInterval = Math.max(1_000, Math.round(interval * (0.8 + Math.random() * 0.4)));
     this.rendezvousTimer = setTimeout(() => {
       this.rendezvousTimer = null;
-      void this.runRendezvous(relays).finally(() => {
-        this.updateRendezvousRefreshSchedule(relays);
-      });
+      this.triggerRendezvous(relays);
     }, jitteredInterval);
   }
 
   private triggerRendezvous(relays: string[]): void {
     this.updateRendezvousRefreshSchedule(relays);
+    if (this.rendezvousRunning) {
+      this.rendezvousPending = true;
+      return;
+    }
     void this.runRendezvous(relays).finally(() => {
-      this.updateRendezvousRefreshSchedule(relays);
+      if (this.rendezvousPending) {
+        this.rendezvousPending = false;
+        this.triggerRendezvous(relays);
+      } else {
+        this.updateRendezvousRefreshSchedule(relays);
+      }
     });
   }
 
@@ -1041,7 +1117,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       } else {
         log.info("Relay reservation address available", { selfAddrs: this.selfMultiaddrs() });
       }
-      this.emitSelfPeerUpdate();
+      this.handleSelfReachabilityChanged();
     } catch (err: any) {
       log.warn("Relay reservation retry failed", {
         relays: circuitAddrs,
@@ -1076,6 +1152,16 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   private relayDialAddresses(relays: string[]): string[] {
     return relays.filter((addr) => !String(addr).includes("/p2p-webrtc-star"));
+  }
+
+  private handleSelfReachabilityChanged(): void {
+    if (!this.started) return;
+    this.cachedSignedPeerRecord = null;
+    this.selfPeerRecordDirty = true;
+    this.emitSelfPeerUpdate();
+    if (this.rendezvousRelays.length > 0) {
+      this.triggerRendezvous(this.rendezvousRelays);
+    }
   }
 
   private emitSelfPeerUpdate(): void {

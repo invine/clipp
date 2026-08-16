@@ -1,5 +1,6 @@
 import * as log from "../logger.js";
 import type { MessagingTransport } from "../messaging/transport.js";
+import { verifiedSignedPeerRecordMultiaddrs } from "./peerRecords.js";
 
 export const DEFAULT_PAIRED_PEER_RECONNECT_INTERVAL_MS = 30_000;
 
@@ -53,6 +54,7 @@ export function createPairedPeerConnectionManager(
     // An Active Member is permitted to refresh only its own exact record. This
     // repairs stale reachability after an offline interval without ambient
     // discovery or another Pairing ceremony.
+    let refreshedTargets: string[] = [];
     if (!relayOnly) {
       await options.transport.refreshPeerRecord?.(peer.deviceId).catch((error) => {
         log.debug("Paired peer exact lookup failed; using known reachability", {
@@ -60,9 +62,21 @@ export function createPairedPeerConnectionManager(
           error: errorMessage(error),
         });
       });
+      const refreshedRecord = await options.transport
+        .getSignedPeerRecordFor?.(peer.deviceId)
+        .catch(() => undefined);
+      if (refreshedRecord) {
+        refreshedTargets = await verifiedSignedPeerRecordMultiaddrs(
+          refreshedRecord,
+          peer.deviceId
+        ).catch(() => []);
+      }
     }
 
-    const allTargets = peerConnectionTargets(peer);
+    const allTargets = peerConnectionTargets({
+      ...peer,
+      multiaddrs: [...refreshedTargets, ...(peer.multiaddrs ?? [])],
+    });
     const targets = relayOnly ? allTargets.filter(isDirectConnectionTarget) : allTargets;
     if (targets.length === 0) {
       log.debug("Paired peer reconnect skipped: no target", {

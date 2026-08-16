@@ -103,6 +103,9 @@ export async function createClipboardNode(
     enableWebRTCStar?: boolean;
     enableWebRTCDirect?: boolean;
     enableDCUtR?: boolean;
+    onDCUtRAttempt?: (peerId: string) => void;
+    dcutrTimeoutMs?: number;
+    dcutrRetries?: number;
     enableTcp?: boolean;
     enableWebSocketListener?: boolean;
     enableRelayReservations?: boolean;
@@ -292,7 +295,22 @@ export async function createClipboardNode(
     try {
       const { dcutr } = await import("@libp2p/dcutr");
       if (typeof dcutr === "function") {
-        services.dcutr = dcutr();
+        const createDCUtRService = dcutr({
+          ...(options.dcutrTimeoutMs !== undefined ? { timeout: options.dcutrTimeoutMs } : {}),
+          ...(options.dcutrRetries !== undefined ? { retries: options.dcutrRetries } : {}),
+        });
+        services.dcutr = (components: any) => {
+          const service: any = createDCUtRService(components);
+          for (const method of ["upgradeInbound", "upgradeOutbound"] as const) {
+            const original = service?.[method]?.bind(service);
+            if (!original) continue;
+            service[method] = async (connection: any) => {
+              options.onDCUtRAttempt?.(connection?.remotePeer?.toString?.() ?? "");
+              return original(connection);
+            };
+          }
+          return service;
+        };
       } else {
         console.warn("DCUtR service missing or invalid; skipping");
       }

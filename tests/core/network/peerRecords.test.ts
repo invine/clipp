@@ -1,6 +1,6 @@
 import {
   consumeOrMatchSignedPeerRecord,
-  createKVPeerRecordStore,
+  createKVSignedPeerRecordPersistence,
 } from "../../../packages/core/network/peerRecords";
 import type { KVStorageBackend } from "../../../packages/core/trust";
 
@@ -29,7 +29,7 @@ describe("KV Signed Peer Record storage", () => {
       fractional: [1, 2.5],
       notBytes: "AQI=",
     });
-    const records = createKVPeerRecordStore({ storage });
+    const records = createKVSignedPeerRecordPersistence({ storage });
 
     expect(await records.load()).toEqual({ valid: Uint8Array.of(1, 2, 255) });
 

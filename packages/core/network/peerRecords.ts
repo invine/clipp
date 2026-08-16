@@ -2,7 +2,7 @@ import type { KVStorageBackend } from "../trust/storage.js";
 
 export const PEER_RECORDS_KEY = "signedPeerRecords";
 
-export type PeerRecordStore = {
+export type SignedPeerRecordPersistence = {
   load(): Promise<Record<string, Uint8Array>>;
   save(peerId: string, record: Uint8Array): Promise<void>;
 };
@@ -46,10 +46,23 @@ export async function consumeOrMatchSignedPeerRecord(
   return (await peerStore.consumePeerRecord?.(record, expectedPeerId)) === true;
 }
 
-export function createKVPeerRecordStore(options: {
+export async function verifiedSignedPeerRecordMultiaddrs(
+  record: Uint8Array,
+  expectedPeerId: string
+): Promise<string[]> {
+  const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
+  const envelope = await RecordEnvelope.openAndCertify(record, PeerRecord.DOMAIN);
+  const peerRecord = PeerRecord.createFromProtobuf(envelope.payload);
+  if (peerRecord.peerId.toString() !== expectedPeerId) {
+    throw new Error("signed_peer_record_subject_mismatch");
+  }
+  return peerRecord.multiaddrs.map(String);
+}
+
+export function createKVSignedPeerRecordPersistence(options: {
   storage: KVStorageBackend;
   key?: string;
-}): PeerRecordStore {
+}): SignedPeerRecordPersistence {
   const key = options.key ?? PEER_RECORDS_KEY;
 
   return {

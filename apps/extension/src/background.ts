@@ -51,7 +51,9 @@ import type {
   MessagingTransport,
   PeerConnectionInfo,
 } from "../../../packages/core/messaging/transport";
-import { createExtensionReachabilityBridge } from "./networkBridge";
+import {
+  createExtensionReachabilityBridge,
+} from "./networkBridge";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -298,7 +300,7 @@ const extensionNetwork: MessagingTransport = {
   },
   getConnectedPeers: () => [...runtimeConnectedPeers],
   getPeerConnectionInfo: () => [...runtimePeerConnections],
-  ...createExtensionReachabilityBridge(sendOffscreen),
+  ...createExtensionReachabilityBridge((message) => sendOffscreen(message)),
 };
 const notificationSelection = createRuntimeNotificationSelection();
 const membershipReconciler = createMembershipReconciler({

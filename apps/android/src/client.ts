@@ -15,7 +15,7 @@ import {
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
-import { createKVPeerRecordStore } from "@core/network/peerRecords";
+import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
@@ -319,7 +319,7 @@ export class AndroidClient {
       enableDCUtR: true,
       enableRelayReservations: true,
       allowInsecureBrowserDials: true,
-      peerRecordStore: createKVPeerRecordStore({ storage: this.storage }),
+      signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage: this.storage }),
       isPeerKnown: (remotePeerId) => this.trust.isTrusted(remotePeerId),
     });
     this.pairedConnections = createPairedPeerConnectionManager({
