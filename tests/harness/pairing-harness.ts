@@ -1,19 +1,17 @@
 /**
  * Real-network relay-first reachability harness.
- * Run manually with a WebRTC-capable runtime (browser, or Node with `wrtc` installed):
- *   node --loader ts-node/esm tests/harness/pairing-harness.ts
- *
- * The harness starts two messaging layers, trusts each other, and sends a sample clip.
- * It will no-op if WebRTC is unavailable.
+ * Run manually: `npx tsx tests/harness/pairing-harness.ts`.
  */
 import { createLibp2pMessagingTransport } from "../../packages/core/network/engine.ts";
-import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../packages/core/network/constants.ts";
 import { startWebsocketRelay } from "../../packages/core/network/relay/server.ts";
+import { generateKeyPair } from "@libp2p/crypto/keys";
 
 async function boot(label: string, relayAddresses: string[]) {
   const transport = createLibp2pMessagingTransport({
+    privateKey: await generateKeyPair("Ed25519"),
     relayAddresses,
     enableDCUtR: true,
+    enableWebRTCDirect: false,
     enableRelayReservations: true,
   });
   await transport.start();
@@ -40,24 +38,11 @@ async function waitForPeer(transport: any, label: string, timeoutMs = 5000): Pro
   });
 }
 
-async function ensureWebRTC() {
-  if (typeof (globalThis as any).RTCPeerConnection !== "undefined") return true;
-  try {
-    const wrtc = await import("@koush/wrtc");
-    (globalThis as any).RTCPeerConnection = wrtc.RTCPeerConnection;
-    (globalThis as any).RTCSessionDescription = wrtc.RTCSessionDescription;
-    (globalThis as any).RTCIceCandidate = wrtc.RTCIceCandidate;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function main() {
   const relay = await startWebsocketRelay({ host: "127.0.0.1", port: 47_891, enableWebRTC: false });
   const relayAddress = relay.node.getMultiaddrs().find((addr) => String(addr).includes("/ws"))?.toString();
   if (!relayAddress) throw new Error("relay_websocket_address_unavailable");
-  const configuredRelay = `${relayAddress}/p2p/${relay.node.peerId}`;
+  const configuredRelay = relayAddress;
   const a = await boot("A", [configuredRelay]);
   const b = await boot("B", [configuredRelay]);
   try {
@@ -65,7 +50,7 @@ async function main() {
     const bPeerId = b.transport.getSelfMultiaddrs?.()[0]?.split("/p2p/").pop();
     if (!bRecord || !bPeerId) throw new Error("peer_record_unavailable");
     await a.transport.importSignedPeerRecord?.(bPeerId, bRecord);
-    await a.transport.connect(bPeerId);
+    await a.transport.connect(`${configuredRelay}/p2p-circuit/p2p/${bPeerId}`);
     await waitForPeer(a.transport, "relay-first connection");
     console.log("relay-first connection and DCUtR fallback verified", a.transport.getPeerConnectionInfo?.());
     await b.transport.stop();

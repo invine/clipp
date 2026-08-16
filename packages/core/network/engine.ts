@@ -400,9 +400,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
       return Uint8Array.from(this.cachedSignedPeerRecord);
     }
     const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
+    const privateKey = this.opts.privateKey ?? this.node.privateKey;
+    if (!privateKey) throw new Error("private_key_unavailable");
     const envelope = await RecordEnvelope.seal(
       new PeerRecord({ peerId: this.node.peerId, multiaddrs: this.node.getMultiaddrs(), seqNumber: BigInt(Date.now()) }),
-      this.node.privateKey
+      privateKey
     );
     this.cachedSignedPeerRecord = Uint8Array.from(envelope.marshal());
     await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
