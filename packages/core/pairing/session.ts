@@ -13,6 +13,7 @@ import {
   validateTrustRequestTime,
 } from "./protocol";
 import { createPairingRejectionReporter, type PairingConnectionPath, type PairingRejectionDiagnostic, type PairingRejectionReason } from "./diagnostics";
+import type { PairingMembership } from "./membership";
 
 export type PairingIdentity = {
   peerId: string;
@@ -21,6 +22,7 @@ export type PairingIdentity = {
 };
 
 export type PairingWaitingState = { targetPeerId: string; expiresAtUnixMs: bigint };
+export type PairingErrorState = { targetPeerId: string; code: "membership_persistence_failed" };
 export type SignTrustRequest = (bytes: Uint8Array) => Promise<Uint8Array>;
 export type VerifyTrustRequest = (bytes: Uint8Array, signature: Uint8Array, peerId: string) => Promise<boolean>;
 
@@ -29,15 +31,24 @@ export function createPairingSession(options: {
   send(targetPeerId: string, frame: Uint8Array): Promise<void>;
   sign: SignTrustRequest;
   verify: VerifyTrustRequest;
+  membership: PairingMembership;
   clock: RuntimeClock;
   validityWindowMs?: number;
   clockSkewAllowanceMs?: number;
   connectionPath?(peerId: string): PairingConnectionPath;
   onRejected?(diagnostic: PairingRejectionDiagnostic): void;
   onWaitingChanged?(state: PairingWaitingState[]): void | Promise<void>;
+  onErrorsChanged?(state: PairingErrorState[]): void | Promise<void>;
+  retryInitialDelayMs?: number;
+  retryMaximumDelayMs?: number;
 }) {
   const waiting = new Map<string, PairingWaitingState>();
   const timers = new Map<string, unknown>();
+  const retryTimers = new Map<string, unknown>();
+  const retryAttempts = new Map<string, number>();
+  const retryTasks = new Set<Promise<void>>();
+  const persistenceErrors = new Set<string>();
+  let stopped = false;
   const validityWindowMs = options.validityWindowMs ?? DEFAULT_TRUST_REQUEST_VALIDITY_MS;
   const clockSkewAllowanceMs = options.clockSkewAllowanceMs ?? DEFAULT_TRUST_REQUEST_CLOCK_SKEW_MS;
   const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
@@ -47,6 +58,7 @@ export function createPairingSession(options: {
   };
 
   const publish = () => options.onWaitingChanged?.([...waiting.values()]);
+  const publishErrors = () => options.onErrorsChanged?.([...persistenceErrors].map((targetPeerId) => ({ targetPeerId, code: "membership_persistence_failed" as const })));
   const clear = (targetPeerId: string) => {
     const timer = timers.get(targetPeerId);
     if (timer !== undefined) options.clock.clearTimeout(timer);
@@ -54,36 +66,77 @@ export function createPairingSession(options: {
     waiting.delete(targetPeerId);
     return publish();
   };
+  const clearRetry = async (targetPeerId: string) => {
+    const timer = retryTimers.get(targetPeerId);
+    if (timer !== undefined) options.clock.clearTimeout(timer);
+    retryTimers.delete(targetPeerId);
+    retryAttempts.delete(targetPeerId);
+    if (persistenceErrors.delete(targetPeerId)) await publishErrors();
+  };
+
+  const sendFreshRequest = async (targetPeerId: string): Promise<Uint8Array> => {
+    if (stopped) throw new Error("pairing_session_stopped");
+    const identity = await options.identity();
+    const issuedAtUnixMs = BigInt(options.clock.now());
+    const signedPayload = encodeTrustRequestPayload({
+      initiatorPeerId: identity.peerId,
+      targetPeerId,
+      deviceName: identity.deviceName,
+      nameRevision: BigInt(identity.nameRevision),
+      issuedAtUnixMs,
+    });
+    const signature = await options.sign(concatPairingBytes(TRUST_REQUEST_DOMAIN, signedPayload));
+    const envelope = encodeTrustRequestEnvelope({ signedPayload, signature });
+    const frame = encodePairingFrame({ kind: "request", envelope });
+    const state = { targetPeerId, expiresAtUnixMs: issuedAtUnixMs + BigInt(validityWindowMs + clockSkewAllowanceMs) };
+    const prior = timers.get(targetPeerId);
+    if (prior !== undefined) options.clock.clearTimeout(prior);
+    waiting.set(targetPeerId, state);
+    timers.set(targetPeerId, options.clock.setTimeout(() => void clear(targetPeerId), validityWindowMs + clockSkewAllowanceMs));
+    try {
+      if (stopped) throw new Error("pairing_session_stopped");
+      await options.send(targetPeerId, frame);
+      await publish();
+      return frame;
+    } catch (error) {
+      await clear(targetPeerId);
+      throw error;
+    }
+  };
+
+  const scheduleRetry = (targetPeerId: string) => {
+    if (stopped || retryTimers.has(targetPeerId)) return;
+    const attempt = retryAttempts.get(targetPeerId) ?? 0;
+    const initialDelay = options.retryInitialDelayMs ?? 1_000;
+    const maximumDelay = options.retryMaximumDelayMs ?? 30_000;
+    const delay = Math.min(initialDelay * (2 ** Math.min(attempt, 30)), maximumDelay);
+    retryAttempts.set(targetPeerId, attempt + 1);
+    retryTimers.set(targetPeerId, options.clock.setTimeout(() => {
+      retryTimers.delete(targetPeerId);
+      const task = (async () => {
+        if (stopped) return;
+        const status = await options.membership.membershipStatus(targetPeerId);
+        if (status !== "unknown") return clearRetry(targetPeerId);
+        try {
+          await sendFreshRequest(targetPeerId);
+        } catch {
+          // Reachability failures remain part of the same in-memory retry loop.
+        }
+        scheduleRetry(targetPeerId);
+      })();
+      retryTasks.add(task);
+      void task.then(
+        () => retryTasks.delete(task),
+        () => retryTasks.delete(task)
+      );
+    }, delay));
+  };
 
   return {
     async request(targetPeerId: string): Promise<Uint8Array> {
-      const identity = await options.identity();
-      const issuedAtUnixMs = BigInt(options.clock.now());
-      const signedPayload = encodeTrustRequestPayload({
-        initiatorPeerId: identity.peerId,
-        targetPeerId,
-        deviceName: identity.deviceName,
-        nameRevision: BigInt(identity.nameRevision),
-        issuedAtUnixMs,
-      });
-      const signature = await options.sign(concatPairingBytes(TRUST_REQUEST_DOMAIN, signedPayload));
-      const envelope = encodeTrustRequestEnvelope({ signedPayload, signature });
-      const frame = encodePairingFrame({ kind: "request", envelope });
-      const state = { targetPeerId, expiresAtUnixMs: issuedAtUnixMs + BigInt(validityWindowMs + clockSkewAllowanceMs) };
-      const prior = timers.get(targetPeerId);
-      if (prior !== undefined) options.clock.clearTimeout(prior);
-      waiting.set(targetPeerId, state);
-      timers.set(targetPeerId, options.clock.setTimeout(() => void clear(targetPeerId), validityWindowMs + clockSkewAllowanceMs));
-      try {
-        await options.send(targetPeerId, frame);
-        await publish();
-        return frame;
-      } catch (error) {
-        await clear(targetPeerId);
-        throw error;
-      }
+      return sendFreshRequest(targetPeerId);
     },
-    async receiveResponse(authenticatedPeerId: string, frame: Uint8Array): Promise<"accepted" | "rejected" | null> {
+    async receiveResponse(authenticatedPeerId: string, frame: Uint8Array): Promise<"accepted" | "rejected" | "retrying" | null> {
       const message = decodePairingFrame(frame);
       if (!message || message.kind !== "response") return rejectResponse("protobuf_decoding_failed", authenticatedPeerId, frame);
       const envelope = decodeTrustRequestEnvelope(message.response.requestEnvelope);
@@ -97,9 +150,32 @@ export function createPairingSession(options: {
       if (request.issuedAtUnixMs > now + BigInt(clockSkewAllowanceMs)) return rejectResponse("premature_issued_at", authenticatedPeerId, frame);
       if (!validateTrustRequestTime(request, Number(now), { validityWindowMs, clockSkewAllowanceMs })) return rejectResponse("expired_request", authenticatedPeerId, frame);
       await clear(authenticatedPeerId);
+      if (message.response.decision === "accepted") {
+        try {
+          const admission = await options.membership.admit(authenticatedPeerId);
+          if (admission === "revoked") {
+            await clearRetry(authenticatedPeerId);
+            return rejectResponse("revoked_peer", authenticatedPeerId, frame);
+          }
+          await clearRetry(authenticatedPeerId);
+        } catch {
+          if (!persistenceErrors.has(authenticatedPeerId)) {
+            persistenceErrors.add(authenticatedPeerId);
+            await publishErrors();
+          }
+          scheduleRetry(authenticatedPeerId);
+          return "retrying" as const;
+        }
+      }
       return message.response.decision;
     },
     waiting: () => [...waiting.values()],
-    stop: async () => { await Promise.all([...waiting.keys()].map(clear)); },
+    retrying: (targetPeerId: string) => persistenceErrors.has(targetPeerId),
+    stop: async () => {
+      stopped = true;
+      await Promise.all([...waiting.keys()].map(clear));
+      await Promise.all([...new Set([...retryTimers.keys(), ...persistenceErrors])].map(clearRetry));
+      await Promise.allSettled([...retryTasks]);
+    },
   };
 }

@@ -8,6 +8,7 @@ import {
 } from "./protocol";
 import { encodePairingFrame } from "./protocol";
 import { createPairingRejectionReporter, type PairingConnectionPath, type PairingRejectionDiagnostic, type PairingRejectionReason } from "./diagnostics";
+import type { PairingMembership } from "./membership";
 
 export type PendingTrustRequest = {
   initiatorPeerId: string;
@@ -77,7 +78,6 @@ export function createKVPendingTrustRequestStore(options: { storage: KVStorageBa
 }
 
 export type TrustRequestVerifier = (signedPayload: Uint8Array, signature: Uint8Array, initiatorPeerId: string) => Promise<boolean>;
-
 export function createPendingTrustRequestCoordinator(options: {
   localPeerId(): Promise<string>;
   store: PendingTrustRequestStore;
@@ -85,6 +85,7 @@ export function createPendingTrustRequestCoordinator(options: {
   lifecycle: Pick<RuntimeLifecycle, "openApprovalView">;
   clock: RuntimeClock;
   verify: TrustRequestVerifier;
+  membership: PairingMembership;
   sendResponse?(peerId: string, frame: Uint8Array): Promise<void>;
   responseIdentity?(): Promise<{ deviceName: string; nameRevision: bigint }>;
   connectionPath?(peerId: string): PairingConnectionPath;
@@ -162,6 +163,29 @@ export function createPendingTrustRequestCoordinator(options: {
       expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
     };
   };
+  const responseFrame = async (request: PendingTrustRequest, decision: "accepted" | "rejected") => {
+    if (!options.responseIdentity) return null;
+    const identity = await options.responseIdentity();
+    return encodePairingFrame({
+      kind: "response",
+      response: {
+        decision,
+        requestEnvelope: request.requestEnvelope,
+        responderDeviceName: identity.deviceName,
+        responderNameRevision: identity.nameRevision,
+      },
+    });
+  };
+  const deliverResponse = async (request: PendingTrustRequest, decision: "accepted" | "rejected") => {
+    try {
+      const frame = await responseFrame(request, decision);
+      if (!frame || !options.sendResponse) return;
+      if (decision === "accepted" && await options.membership.membershipStatus(request.initiatorPeerId) !== "active") return;
+      await options.sendResponse(request.initiatorPeerId, frame);
+    } catch {
+      // A response has one best-effort delivery attempt and no retry job.
+    }
+  };
 
   return {
     list: () => options.store.list(),
@@ -211,6 +235,14 @@ export function createPendingTrustRequestCoordinator(options: {
           requestEnvelope: Uint8Array.from(parsed.envelope),
           expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
         };
+        const membershipStatus = await options.membership.membershipStatus(authenticatedPeerId);
+        if (membershipStatus === "revoked") return false;
+        if (membershipStatus === "active") {
+          const existing = (await options.store.list()).find((entry) => entry.initiatorPeerId === authenticatedPeerId);
+          if (existing) await expirePending(authenticatedPeerId);
+          await deliverResponse(request, "accepted");
+          return true;
+        }
         const existing = (await options.store.list()).find((entry) => entry.initiatorPeerId === request.initiatorPeerId);
         if (existing) {
           const existingEnvelope = decodeTrustRequestEnvelope(existing.requestEnvelope);
@@ -237,14 +269,19 @@ export function createPendingTrustRequestCoordinator(options: {
           await expirePending(initiatorPeerId);
           return false;
         }
-        const identity = await options.responseIdentity();
-        try {
-          await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
-        } catch {
-          // A response has one best-effort delivery attempt and no retry job.
-        } finally {
+        if (await options.membership.membershipStatus(initiatorPeerId) === "revoked") {
           await expirePending(initiatorPeerId);
+          return false;
         }
+        if (decision === "accepted") {
+          const admission = await options.membership.admit(initiatorPeerId);
+          if (admission === "revoked" || await options.membership.membershipStatus(initiatorPeerId) !== "active") {
+            await expirePending(initiatorPeerId);
+            return false;
+          }
+        }
+        await deliverResponse(request, decision);
+        await expirePending(initiatorPeerId);
         return true;
       });
     },

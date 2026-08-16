@@ -10,6 +10,7 @@ const initialState: AndroidAppState = {
   devices: [],
   pending: [],
   waiting: [],
+  pairingErrors: [],
   peers: [],
   peerConnections: [],
   relayConnections: [],
@@ -124,6 +125,7 @@ function App() {
         devices={state.devices as Device[]}
         pending={state.pending as PendingRequest[]}
         waiting={state.waiting || []}
+        pairingErrors={state.pairingErrors || []}
         peers={state.peers}
         peerConnections={state.peerConnections || []}
         relayConnections={state.relayConnections || []}

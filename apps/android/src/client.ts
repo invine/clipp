@@ -41,7 +41,7 @@ import {
   type TrustedDevice,
 } from "@core/trust";
 import type { Clip } from "@core/models/Clip";
-import type { Device, Identity, PairingCode, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type { Device, Identity, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 import * as log from "@core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
@@ -53,6 +53,7 @@ export type AndroidAppState = {
   devices: Device[];
   pending: PendingRequest[];
   waiting?: Array<{ targetPeerId: string; expiresAtUnixMs: number }>;
+  pairingErrors?: PairingError[];
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -450,6 +451,7 @@ export class AndroidClient {
     lifecycle: this.runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
+    membership: this.identitySvc,
     sendResponse: async (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await this.identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     connectionPath: (remotePeerId) => {
@@ -467,11 +469,17 @@ export class AndroidClient {
   });
   private pairingInboundBound = false;
   private readonly pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
+  private readonly pairingErrorSources = new Map<string, Set<string>>();
   private readonly pairingResponseValidator = createPairingSession({
     identity: async () => { const current = await this.identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-    send: async () => undefined,
-    sign: async () => new Uint8Array(),
+    send: (targetPeerId, frame) => this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame),
+    sign: async (bytes) => {
+      const identity = await this.identitySvc.get();
+      if (!identity.privateKey) throw new Error("identity_unavailable");
+      return privateKeyFromProtobuf(Uint8Array.from(Buffer.from(identity.privateKey, "base64"))).sign(bytes);
+    },
     verify: verifyPairingTrustRequestSignature,
+    membership: this.identitySvc,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
       const path = this.transport?.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -480,6 +488,10 @@ export class AndroidClient {
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
       void this.trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
+    },
+    onErrorsChanged: (errors) => {
+      this.pairingErrorSources.set("response-validator", new Set(errors.map((error) => error.targetPeerId)));
+      void this.emitState();
     },
   });
   private readonly pairingWaitingByPeer = new Map<string, { targetPeerId: string; expiresAtUnixMs: number }>();
@@ -645,7 +657,8 @@ export class AndroidClient {
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
           this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-            if (decodePairingFrame(frame)?.kind === "response") void (this.pairingSessions.get(from) ?? this.pairingResponseValidator).receiveResponse(from, frame).then((decision) => { if (decision) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
+            const session = this.pairingSessions.get(from) ?? this.pairingResponseValidator;
+            if (decodePairingFrame(frame)?.kind === "response") void session.receiveResponse(from, frame).then((decision) => { if (decision && decision !== "retrying" && !session.retrying(from)) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
             else void this.pairingPending.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
           });
         }
@@ -661,8 +674,10 @@ export class AndroidClient {
   private async stopServices() {
     if (!this.started) return;
     await Promise.all([...this.pairingSessions.values()].map((session) => session.stop()));
+    await this.pairingResponseValidator.stop();
     this.pairingSessions.clear();
     this.pairingWaitingByPeer.clear();
+    this.pairingErrorSources.clear();
     this.clipboardSync.stop();
     this.pairedConnections?.stop();
     await this.transport?.stop();
@@ -701,6 +716,7 @@ export class AndroidClient {
       devices,
       pending: this.pendingRequests,
       waiting: [...this.pairingWaitingByPeer.values()],
+      pairingErrors: [...new Set([...this.pairingErrorSources.values()].flatMap((peers) => [...peers]))].map((targetPeerId) => ({ targetPeerId, code: "membership_persistence_failed" as const })),
       peers,
       peerConnections,
       relayConnections,
@@ -836,6 +852,7 @@ export class AndroidClient {
         identity: async () => { const current = await this.identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
         sign: async (bytes) => privateKey.sign(bytes),
         verify: verifyPairingTrustRequestSignature,
+        membership: this.identitySvc,
         send: (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
         clock: systemRuntimeClock,
         connectionPath: (remotePeerId) => {
@@ -853,8 +870,15 @@ export class AndroidClient {
           else this.pairingWaitingByPeer.delete(target.targetPeerId);
           void this.emitState();
         },
+        onErrorsChanged: (errors) => {
+          this.pairingErrorSources.set(`session:${target.targetPeerId}`, new Set(errors.map((error) => error.targetPeerId)));
+          void this.emitState();
+        },
       });
       attemptedSession = session;
+      const previousSession = this.pairingSessions.get(target.targetPeerId);
+      if (previousSession) await previousSession.stop();
+      this.pairingErrorSources.delete(`session:${target.targetPeerId}`);
       this.pairingSessions.set(target.targetPeerId, session);
       await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: session.request });
       return { ok: true, diagnostics: this.finishPairingDiagnostics(diagnostics, "succeeded", null) };
@@ -864,6 +888,7 @@ export class AndroidClient {
       if (target && attemptedSession && this.pairingSessions.get(target.targetPeerId) === attemptedSession) {
         this.pairingSessions.delete(target.targetPeerId);
         this.pairingWaitingByPeer.delete(target.targetPeerId);
+        this.pairingErrorSources.delete(`session:${target.targetPeerId}`);
       }
       logPairing("warn", "Pairing attempt failed unexpectedly", {
         attemptId: diagnostics.attemptId,

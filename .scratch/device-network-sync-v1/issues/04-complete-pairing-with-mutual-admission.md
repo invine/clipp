@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Open Pairing with a durable Trust Request.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Acceptance and rejection occur only inside Clipp and revalidate the original request, current time, authenticated identities, and current Revoked Peer ID sets at decision time.
 - [ ] A Trust Response uses an independent one-frame `/clipp/pairing/1.0.0` stream and contains a nonzero decision, the exact original request envelope bytes, and the responder's own presentation metadata.

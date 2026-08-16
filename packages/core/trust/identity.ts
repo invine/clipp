@@ -34,6 +34,8 @@ export interface IdentityManager {
   retryInitialization(): Promise<DeviceIdentity>;
   rename(name: string): Promise<void>;
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
+  membershipStatus(peerId: string): Promise<"active" | "revoked" | "unknown">;
+  admit(peerId: string): Promise<"admitted" | "already-active" | "revoked">;
   getInitializationError(): Promise<IdentityInitializationError | undefined>;
 }
 
@@ -53,6 +55,13 @@ export function createIdentityManager(options: {
   const deriveKeyMaterial = options.deriveKeyMaterial ?? deriveFromPrivateKey;
   let identity: DeviceIdentity | undefined;
   let initialization: Promise<DeviceIdentity> | undefined;
+  let mutation = Promise.resolve();
+
+  function serializeMutation<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const result = mutation.then(operation);
+    mutation = result.then(() => undefined, () => undefined);
+    return result;
+  }
 
   async function persist(value: DeviceIdentity): Promise<DeviceIdentity> {
     await options.repo.upsert(value);
@@ -73,6 +82,12 @@ export function createIdentityManager(options: {
       createdAt: clock(),
       membershipView: { admittedPeerIds: [key.peerId], revokedPeerIds: [] },
     });
+  }
+
+  async function persistMutation(value: DeviceIdentity): Promise<DeviceIdentity> {
+    await options.repo.upsert(value);
+    identity = value;
+    return value;
   }
 
   function loadIdentity(allowRetry = false): Promise<DeviceIdentity> {
@@ -129,14 +144,34 @@ export function createIdentityManager(options: {
   return {
     get: loadIdentity,
     retryInitialization: () => loadIdentity(true),
-    rename: async (name) => {
+    rename: (name) => serializeMutation(async () => {
       const current = await loadIdentity();
-      await persist({ ...current, deviceName: name, nameRevision: (current.nameRevision ?? 0) + 1 });
-    },
-    updateMultiaddrs: async (multiaddrs) => {
+      await persistMutation({ ...current, deviceName: name, nameRevision: (current.nameRevision ?? 0) + 1 });
+    }),
+    updateMultiaddrs: (multiaddrs) => serializeMutation(async () => {
       const current = await loadIdentity();
-      await persist({ ...current, multiaddrs: [...multiaddrs] });
+      await persistMutation({ ...current, multiaddrs: [...multiaddrs] });
+    }),
+    membershipStatus: async (peerId) => {
+      await mutation;
+      const view = completeMembershipView((await loadIdentity()).deviceId, (await loadIdentity()).membershipView);
+      if (view.revokedPeerIds.includes(peerId)) return "revoked";
+      return view.admittedPeerIds.includes(peerId) ? "active" : "unknown";
     },
+    admit: (peerId) => serializeMutation(async () => {
+      const current = await loadIdentity();
+      const view = completeMembershipView(current.deviceId, current.membershipView);
+      if (view.revokedPeerIds.includes(peerId)) return "revoked" as const;
+      if (view.admittedPeerIds.includes(peerId)) return "already-active" as const;
+      await persistMutation({
+        ...current,
+        membershipView: {
+          admittedPeerIds: [...view.admittedPeerIds, peerId],
+          revokedPeerIds: view.revokedPeerIds,
+        },
+      });
+      return "admitted" as const;
+    }),
     getInitializationError: async () => options.repo.loadInitializationError?.(),
   };
 }

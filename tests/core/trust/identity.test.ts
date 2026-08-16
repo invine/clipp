@@ -21,6 +21,7 @@ const generatedIdentity = {
   privateKey: "private-key",
   publicKey: "public-key",
 };
+const remotePeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
 
 function createManager(repo: IdentityRepository, initialDeviceName: string) {
   return createIdentityManager({
@@ -33,6 +34,65 @@ function createManager(repo: IdentityRepository, initialDeviceName: string) {
 }
 
 describe("Device Identity initialization", () => {
+  it("durably admits a non-revoked Device Identity before publishing it as active", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+
+    await manager.get();
+    await expect(manager.admit(remotePeerId)).resolves.toBe("admitted");
+
+    expect(stored?.membershipView).toEqual({
+      admittedPeerIds: [generatedIdentity.peerId, remotePeerId],
+      revokedPeerIds: [],
+    });
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("active");
+  });
+
+  it("publishes no partial Admission when membership persistence fails", async () => {
+    let stored: DeviceIdentity | undefined;
+    let failAdmission = true;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => {
+        if (failAdmission && identity.membershipView?.admittedPeerIds.includes(remotePeerId)) throw new Error("storage_failed");
+        stored = structuredClone(identity);
+      },
+    }, "Desktop");
+    await manager.get();
+
+    await expect(manager.admit(remotePeerId)).rejects.toThrow("storage_failed");
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("unknown");
+    expect(stored?.membershipView?.admittedPeerIds).toEqual([generatedIdentity.peerId]);
+
+    failAdmission = false;
+    await expect(manager.admit(remotePeerId)).resolves.toBe("admitted");
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("active");
+  });
+
+  it("does not admit a Peer ID already present in the Revoked Peer ID set", async () => {
+    let stored: DeviceIdentity | undefined = {
+      deviceId: generatedIdentity.peerId,
+      deviceName: "Desktop",
+      nameRevision: 0,
+      publicKey: generatedIdentity.publicKey,
+      privateKey: generatedIdentity.privateKey,
+      multiaddrs: [],
+      createdAt: 123,
+      membershipView: { admittedPeerIds: [generatedIdentity.peerId], revokedPeerIds: [remotePeerId] },
+    };
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+
+    await expect(manager.admit(remotePeerId)).resolves.toBe("revoked");
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("revoked");
+    expect(stored.membershipView?.admittedPeerIds).not.toContain(remotePeerId);
+  });
+
   it.each([
     ["Electron", createElectronRuntimeAdapter, "Desktop"],
     ["Android", createAndroidRuntimeAdapter, "Mobile"],

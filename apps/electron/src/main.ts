@@ -370,6 +370,7 @@ async function bootstrap() {
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
   const pairingWaitingByPeer = new Map<string, { targetPeerId: string; expiresAtUnixMs: number }>();
+  const pairingErrorSources = new Map<string, Set<string>>();
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -393,6 +394,7 @@ async function bootstrap() {
       // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
       waiting: [...pairingWaitingByPeer.values()],
+      pairingErrors: [...new Set([...pairingErrorSources.values()].flatMap((peers) => [...peers]))].map((targetPeerId) => ({ targetPeerId, code: "membership_persistence_failed" as const })),
       peers,
       peerConnections,
       relayConnections,
@@ -777,8 +779,10 @@ async function bootstrap() {
   async function shutdownServices() {
     quitting = true;
     await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
+    await pairingResponseValidator.stop();
     pairingSessions.clear();
     pairingWaitingByPeer.clear();
+    pairingErrorSources.clear();
     clipboardSync.stop();
     pairedConnections.stop();
     try {
@@ -855,6 +859,7 @@ async function bootstrap() {
     lifecycle: runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
+    membership: identitySvc,
     sendResponse: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     connectionPath: (remotePeerId) => {
@@ -865,6 +870,10 @@ async function bootstrap() {
       log.warn(diagnostic.event, diagnostic);
       if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
+    onErrorsChanged: (errors) => {
+      pairingErrorSources.set("response-validator", new Set(errors.map((error) => error.targetPeerId)));
+      void emitState();
+    },
     onChanged: async (requests) => {
       pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
       await emitState();
@@ -872,9 +881,13 @@ async function bootstrap() {
   });
   const pairingResponseValidator = createPairingSession({
     identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-    send: async () => undefined,
-    sign: async () => new Uint8Array(),
+    send: (targetPeerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
+    sign: async (bytes) => {
+      if (!privateKey) throw new Error("identity_unavailable");
+      return privateKey.sign(bytes);
+    },
     verify: verifyPairingTrustRequestSignature,
+    membership: identitySvc,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
       const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -887,8 +900,9 @@ async function bootstrap() {
   });
   function bindPairingHandler(target: typeof transport) {
     target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-      if (decodePairingFrame(frame)?.kind === "response") void (pairingSessions.get(from) ?? pairingResponseValidator).receiveResponse(from, frame).then((decision) => {
-        if (decision) pairingSessions.delete(from);
+      const session = pairingSessions.get(from) ?? pairingResponseValidator;
+      if (decodePairingFrame(frame)?.kind === "response") void session.receiveResponse(from, frame).then((decision) => {
+        if (decision && decision !== "retrying" && !session.retrying(from)) pairingSessions.delete(from);
       }).catch((error) => log.warn("Pairing response processing failed", error));
     else void pairingPending?.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
     });
@@ -1034,6 +1048,7 @@ async function bootstrap() {
       identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
       sign: async (bytes) => privateKey.sign(bytes),
       verify: verifyPairingTrustRequestSignature,
+      membership: identitySvc,
       send: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
       clock: systemRuntimeClock,
       connectionPath: (remotePeerId) => {
@@ -1051,8 +1066,15 @@ async function bootstrap() {
         else pairingWaitingByPeer.delete(target.targetPeerId);
         void emitState();
       },
+      onErrorsChanged: (errors) => {
+        pairingErrorSources.set(`session:${target.targetPeerId}`, new Set(errors.map((error) => error.targetPeerId)));
+        void emitState();
+      },
     });
     try {
+      const previousSession = pairingSessions.get(target.targetPeerId);
+      if (previousSession) await previousSession.stop();
+      pairingErrorSources.delete(`session:${target.targetPeerId}`);
       pairingSessions.set(target.targetPeerId, session);
       await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: session.request });
       return { ok: true };
@@ -1060,6 +1082,7 @@ async function bootstrap() {
       if (pairingSessions.get(target.targetPeerId) === session) {
         pairingSessions.delete(target.targetPeerId);
         pairingWaitingByPeer.delete(target.targetPeerId);
+        pairingErrorSources.delete(`session:${target.targetPeerId}`);
       }
       return { ok: false, error: "dial_failed" as const };
     }

@@ -6,7 +6,8 @@ export type PairingRejectionReason =
   | "authenticated_identity_mismatch"
   | "wrong_target"
   | "premature_issued_at"
-  | "expired_request";
+  | "expired_request"
+  | "revoked_peer";
 
 export type PairingConnectionPath = "direct" | "relayed" | "unknown";
 

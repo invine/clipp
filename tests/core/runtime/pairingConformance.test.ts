@@ -1,6 +1,6 @@
 import type { MessagingTransport } from "../../../packages/core/messaging/transport";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
-import { encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload, PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
+import { decodePairingFrame, encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload, PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import { encodePairingTarget } from "../../../packages/core/pairing/v2";
 import {
@@ -23,6 +23,7 @@ type AdapterFactory = typeof createElectronRuntimeAdapter<Identity, State, Publi
 
 const initiatorPeerId = "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv";
 const targetPeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
+const otherInitiatorPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 function createStorage() {
   const values = new Map<string, unknown>();
@@ -109,6 +110,7 @@ async function expectPairingConformance(factory: AdapterFactory, capabilities: R
     lifecycle: adapter.lifecycle,
     clock: adapter.clock,
     verify: async () => true,
+    membership: { membershipStatus: async () => "unknown", admit: async () => "admitted" },
     validityWindowMs: 100,
     clockSkewAllowanceMs: 0,
   });
@@ -143,6 +145,7 @@ async function expectPairingConformance(factory: AdapterFactory, capabilities: R
     lifecycle: restartedAdapter.lifecycle,
     clock: restartedAdapter.clock,
     verify: async () => true,
+    membership: { membershipStatus: async () => "unknown", admit: async () => "admitted" },
     validityWindowMs: 100,
     clockSkewAllowanceMs: 0,
   });
@@ -164,6 +167,58 @@ async function expectPairingConformance(factory: AdapterFactory, capabilities: R
   await expect(restartedCoordinator.list()).resolves.toEqual([]);
 }
 
+async function expectPairingDecisionConformance(factory: AdapterFactory, capabilities: RuntimeCapabilities) {
+  const storage = createStorage();
+  const harness = createRuntimeConformanceHarness<Identity, State, PublicState>({
+    capabilities,
+    initialApplicationState: {},
+    now: 1_000,
+    getPublicState: async () => ({}),
+  });
+  const adapter = createAdapter(factory, capabilities, storage, {
+    clipboard: harness.adapter.clipboard,
+    notifications: harness.adapter.notifications,
+    lifecycle: harness.adapter.lifecycle,
+    network: harness.adapter.network,
+    clock: harness.adapter.clock,
+    publicState: harness.adapter.publicState,
+  });
+  const active = new Set<string>();
+  const responses: Uint8Array[] = [];
+  const coordinator = createPendingTrustRequestCoordinator({
+    localPeerId: async () => targetPeerId,
+    store: createKVPendingTrustRequestStore({ storage, key: "pairing-decisions" }),
+    notifications: adapter.notifications,
+    lifecycle: adapter.lifecycle,
+    clock: adapter.clock,
+    verify: async () => true,
+    membership: {
+      membershipStatus: async (peerId) => active.has(peerId) ? "active" : "unknown",
+      admit: async (peerId) => { active.add(peerId); return "admitted"; },
+    },
+    sendResponse: async (_peerId, frame) => { responses.push(frame); },
+    responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 0n }),
+  });
+  const requestFrom = (peerId: string) => encodePairingFrame({
+    kind: "request" as const,
+    envelope: encodeTrustRequestEnvelope({
+      signedPayload: encodeTrustRequestPayload({ initiatorPeerId: peerId, targetPeerId, deviceName: "Mobile", nameRevision: 1n, issuedAtUnixMs: 1_000n }),
+      signature: new Uint8Array([1]),
+    }),
+  });
+
+  await coordinator.receive(initiatorPeerId, requestFrom(initiatorPeerId));
+  await coordinator.decide(initiatorPeerId, "accepted");
+  await coordinator.receive(otherInitiatorPeerId, requestFrom(otherInitiatorPeerId));
+  await coordinator.decide(otherInitiatorPeerId, "rejected");
+
+  expect(active).toEqual(new Set([initiatorPeerId]));
+  expect(responses.map((frame) => {
+    const decoded = decodePairingFrame(frame);
+    return decoded?.kind === "response" ? decoded.response.decision : null;
+  })).toEqual(["accepted", "rejected"]);
+}
+
 describe("Pairing runtime-adapter conformance", () => {
   it.each([
     ["electron", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron],
@@ -171,6 +226,14 @@ describe("Pairing runtime-adapter conformance", () => {
     ["chrome-extension", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension],
   ] as const)("supports Pairing import and durable approval lifecycle on %s", async (_name, factory, capabilities) => {
     await expectPairingConformance(factory as AdapterFactory, capabilities);
+  });
+
+  it.each([
+    ["electron", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron],
+    ["android", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android],
+    ["chrome-extension", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension],
+  ] as const)("commits accepted Pairing and leaves rejected Pairing unchanged on %s", async (_name, factory, capabilities) => {
+    await expectPairingDecisionConformance(factory as AdapterFactory, capabilities);
   });
 
   it("routes each Pairing frame once after the Electron transport is replaced", () => {

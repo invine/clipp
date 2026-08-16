@@ -26,6 +26,7 @@ export type Identity = {
 
 export type PendingRequest = Device;
 export type PairingWaiting = { targetPeerId: string; expiresAtUnixMs: number };
+export type PairingError = { targetPeerId: string; code: "membership_persistence_failed" };
 
 export type PeerConnectionPath = "direct" | "relay" | "unknown";
 

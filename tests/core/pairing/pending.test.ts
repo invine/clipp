@@ -1,9 +1,24 @@
-import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
+import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator as createCorePendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { decodePairingFrame, decodeTrustRequestPayload, encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload } from "../../../packages/core/pairing/protocol";
 
 const initiatorPeerId = "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv";
 const targetPeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
 const otherInitiatorPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
+
+function createPendingTrustRequestCoordinator(
+  options: Omit<Parameters<typeof createCorePendingTrustRequestCoordinator>[0], "membership"> & {
+    membership?: Parameters<typeof createCorePendingTrustRequestCoordinator>[0]["membership"];
+  }
+) {
+  const active = new Set<string>();
+  return createCorePendingTrustRequestCoordinator({
+    membership: {
+      membershipStatus: async (peerId) => active.has(peerId) ? "active" : "unknown",
+      admit: async (peerId) => { active.add(peerId); return "admitted"; },
+    },
+    ...options,
+  });
+}
 
 describe("pending Trust Requests", () => {
   it("serializes pending records without losing byte or bigint fields", async () => {
@@ -221,7 +236,136 @@ describe("pending Trust Requests", () => {
     await coordinator.receive(initiatorPeerId, frame);
     await expect(coordinator.decide(initiatorPeerId, "accepted")).resolves.toBe(true);
     expect(sent).toHaveLength(1);
+    const original = decodePairingFrame(frame);
+    const response = decodePairingFrame(sent[0]);
+    expect(response).toEqual({
+      kind: "response",
+      response: {
+        decision: "accepted",
+        requestEnvelope: original?.kind === "request" ? original.envelope : undefined,
+        responderDeviceName: "Desktop",
+        responderNameRevision: 1n,
+      },
+    });
     expect(requests.size).toBe(0);
+  });
+
+  it("persists target-side Admission before delivering an accepted response", async () => {
+    const requests = new Map<string, any>();
+    const order: string[] = [];
+    let status: "active" | "revoked" | "unknown" = "unknown";
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+      membership: {
+        membershipStatus: async () => status,
+        admit: async () => { order.push("persist Admission"); status = "active"; return "admitted"; },
+      },
+      sendResponse: async () => { order.push("deliver response"); },
+      responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 1n }),
+    });
+    const request = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, request);
+
+    await expect(coordinator.decide(initiatorPeerId, "accepted")).resolves.toBe(true);
+
+    expect(order).toEqual(["persist Admission", "deliver response"]);
+  });
+
+  it("keeps a pending decision durable when target-side Admission persistence fails", async () => {
+    const requests = new Map<string, any>();
+    const sent: Uint8Array[] = [];
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+      membership: { membershipStatus: async () => "unknown", admit: async () => { throw new Error("storage_failed"); } },
+      sendResponse: async (_peer, frame) => { sent.push(frame); },
+      responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 1n }),
+    });
+    const request = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, request);
+
+    await expect(coordinator.decide(initiatorPeerId, "accepted")).rejects.toThrow("storage_failed");
+    expect(sent).toEqual([]);
+    expect(requests.has(initiatorPeerId)).toBe(true);
+  });
+
+  it("retains Admission when accepted-response delivery fails", async () => {
+    const requests = new Map<string, any>();
+    let status: "active" | "revoked" | "unknown" = "unknown";
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+      membership: { membershipStatus: async () => status, admit: async () => { status = "active"; return "admitted"; } },
+      sendResponse: async () => { throw new Error("offline"); },
+      responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 1n }),
+    });
+    const request = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, request);
+
+    await expect(coordinator.decide(initiatorPeerId, "accepted")).resolves.toBe(true);
+    expect(status).toBe("active");
+    expect(requests.size).toBe(0);
+  });
+
+  it("automatically accepts a fresh valid request from an Active Member", async () => {
+    const requests = new Map<string, any>();
+    const shown: string[] = [];
+    const sent: Uint8Array[] = [];
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async (notice) => { shown.push(notice.id); }, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+      membership: { membershipStatus: async () => "active", admit: async () => "already-active" },
+      sendResponse: async (_peer, frame) => { sent.push(frame); },
+      responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 1n }),
+    });
+    const request = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+
+    await expect(coordinator.receive(initiatorPeerId, request)).resolves.toBe(true);
+
+    expect(shown).toEqual([]);
+    expect(requests.size).toBe(0);
+    expect(decodePairingFrame(sent[0])).toMatchObject({ kind: "response", response: { decision: "accepted" } });
+  });
+
+  it("sends an explicit rejection without changing Device Membership", async () => {
+    const requests = new Map<string, any>();
+    const sent: Uint8Array[] = [];
+    const admit = jest.fn(async () => "admitted" as const);
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+      membership: { membershipStatus: async () => "unknown", admit },
+      sendResponse: async (_peer, frame) => { sent.push(frame); },
+      responseIdentity: async () => ({ deviceName: "Desktop", nameRevision: 1n }),
+    });
+    const request = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 2n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, request);
+
+    await expect(coordinator.decide(initiatorPeerId, "rejected")).resolves.toBe(true);
+
+    expect(admit).not.toHaveBeenCalled();
+    expect(decodePairingFrame(sent[0])).toMatchObject({ kind: "response", response: { decision: "rejected" } });
   });
 
   it("publishes removal when a durable approval expires", async () => {

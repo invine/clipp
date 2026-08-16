@@ -9,6 +9,7 @@ import {
   Device,
   Identity,
   PairingCode,
+  PairingError,
   PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
@@ -20,6 +21,7 @@ const Popup = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [waiting, setWaiting] = useState<PairingWaiting[]>([]);
+  const [pairingErrors, setPairingErrors] = useState<PairingError[]>([]);
   const [peers, setPeers] = useState<string[]>([]);
   const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(null);
@@ -34,6 +36,7 @@ const Popup = () => {
     refreshPeers();
     chrome.runtime.sendMessage({ type: "getRuntimeState" }, (res) => {
       if (res?.state?.waiting) setWaiting(res.state.waiting);
+      if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
     });
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
       if (res?.identity) setIdentity(res.identity);
@@ -58,6 +61,7 @@ const Popup = () => {
       if (msg.type === "runtimeState" && msg.state) {
         setPending(msg.state.pending || []);
         setWaiting(msg.state.waiting || []);
+        setPairingErrors(msg.state.pairingErrors || []);
       }
     };
     chrome.runtime.onMessage.addListener(handler);
@@ -176,6 +180,7 @@ const Popup = () => {
         devices={devices}
         pending={pending}
         waiting={waiting}
+        pairingErrors={pairingErrors}
         peers={peers}
         peerConnections={peerConnections}
         identity={identity}
