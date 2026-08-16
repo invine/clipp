@@ -44,6 +44,10 @@ export type Libp2pMessagingOptions = {
   rendezvousTimeoutMs?: number;
   relayReservationRetryMs?: number;
   allowInsecureBrowserDials?: boolean;
+  peerRecordStore?: {
+    load(): Promise<Record<string, number[]>>;
+    save(peerId: string, record: Uint8Array): Promise<void>;
+  };
   isPeerKnown?(peerId: string): Promise<boolean>;
 };
 
@@ -64,6 +68,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private started = false;
   private lastSelfMultiaddrsKey: string | null = null;
   private cachedSignedPeerRecord: Uint8Array | null = null;
+  private readonly persistedPeerRecords = new Map<string, Uint8Array>();
+  private peerRecordWrite: Promise<void> = Promise.resolve();
 
   private readonly handlersByProtocol = new Map<string, MessageHandler[]>();
   private readonly connectBus = new EventBus<string>();
@@ -163,6 +169,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     await this.node.start();
     this.started = true;
+    await this.restorePeerRecords();
 
     // Best-effort: dial relays if explicitly configured.
     const relays = this.relayDialAddresses(this.opts.relayAddresses || []);
@@ -389,6 +396,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const existing = await this.node.peerStore?.get?.(this.node.peerId);
     if (existing?.peerRecordEnvelope instanceof Uint8Array) {
       this.cachedSignedPeerRecord = Uint8Array.from(existing.peerRecordEnvelope);
+      await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
       return Uint8Array.from(this.cachedSignedPeerRecord);
     }
     const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
@@ -397,6 +405,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       this.node.privateKey
     );
     this.cachedSignedPeerRecord = Uint8Array.from(envelope.marshal());
+    await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
     return Uint8Array.from(this.cachedSignedPeerRecord);
   }
 
@@ -404,9 +413,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     if (peerId === safePeerId(this.node.peerId)) return this.getSignedPeerRecord();
     const record = await this.node.peerStore?.get?.(await peerIdObjectForTarget(peerId));
-    return record?.peerRecordEnvelope instanceof Uint8Array
-      ? Uint8Array.from(record.peerRecordEnvelope)
-      : undefined;
+    if (record?.peerRecordEnvelope instanceof Uint8Array) {
+      const envelope = Uint8Array.from(record.peerRecordEnvelope);
+      await this.persistPeerRecord(peerId, envelope);
+      return envelope;
+    }
+    const persisted = this.persistedPeerRecords.get(peerId);
+    return persisted ? Uint8Array.from(persisted) : undefined;
   }
 
   async importSignedPeerRecord(expectedPeerId: string, record: Uint8Array): Promise<void> {
@@ -414,6 +427,34 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const peerId = await peerIdObjectForTarget(expectedPeerId);
     const imported = await this.node.peerStore?.consumePeerRecord?.(record, peerId);
     if (imported !== true) throw new Error("invalid_signed_peer_record");
+    await this.persistPeerRecord(expectedPeerId, record);
+  }
+
+  private async restorePeerRecords(): Promise<void> {
+    const stored = this.opts.peerRecordStore
+      ? await this.opts.peerRecordStore.load().catch(() => ({}))
+      : {};
+    for (const [peerId, bytes] of Object.entries(stored)) {
+      if (!Array.isArray(bytes) || !bytes.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)) continue;
+      const record = Uint8Array.from(bytes);
+      try {
+        const expectedPeerId = await peerIdObjectForTarget(peerId);
+        if (await this.node?.peerStore?.consumePeerRecord?.(record, expectedPeerId)) {
+          this.persistedPeerRecords.set(peerId, record);
+        }
+      } catch {
+        // A stale or invalid record is deliberately not restored.
+      }
+    }
+  }
+
+  private async persistPeerRecord(peerId: string | null, record: Uint8Array): Promise<void> {
+    if (!peerId) return;
+    this.persistedPeerRecords.set(peerId, Uint8Array.from(record));
+    if (!this.opts.peerRecordStore) return;
+    const write = async () => { await this.opts.peerRecordStore?.save(peerId, record).catch(() => undefined); };
+    this.peerRecordWrite = this.peerRecordWrite.then(write, write);
+    await this.peerRecordWrite;
   }
 
   async lookupPeer(peerId: string): Promise<void> {
@@ -425,7 +466,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
       log: (...args: any[]) => log.debug(...args),
     };
     for (const relay of this.relayDialAddresses(this.opts.relayAddresses || [])) {
-      const records = await lookupRendezvousPeer(this.node, relay, topic, peerId, rendezvousOptions);
+      let records: Awaited<ReturnType<typeof lookupRendezvousPeer>> = [];
+      try {
+        records = await lookupRendezvousPeer(this.node, relay, topic, peerId, rendezvousOptions);
+      } catch (error) {
+        log.debug("Rendezvous lookup relay unavailable", { peerId, relay, error: (error as Error)?.message });
+        continue;
+      }
       for (const record of records) {
         try {
           await this.importSignedPeerRecord(record.peer, record.signedPeerRecord);

@@ -131,6 +131,7 @@ export type PairingResult =
   | { ok: false; error: PairingFailureCode; diagnostics: PairingAttemptDiagnostics };
 
 const PINNED_KEY = "pinnedIds";
+const PEER_RECORDS_KEY = "signedPeerRecords";
 
 function createHistoryBackend() {
   try {
@@ -319,6 +320,13 @@ export class AndroidClient {
       enableDCUtR: true,
       enableRelayReservations: true,
       allowInsecureBrowserDials: true,
+      peerRecordStore: {
+        load: async () => (await this.storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {},
+        save: async (peerId, record) => {
+          const records = (await this.storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {};
+          await this.storage.set(PEER_RECORDS_KEY, { ...records, [peerId]: Array.from(record) });
+        },
+      },
       isPeerKnown: (remotePeerId) => this.trust.isTrusted(remotePeerId),
     });
     this.pairedConnections = createPairedPeerConnectionManager({

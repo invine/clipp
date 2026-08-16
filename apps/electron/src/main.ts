@@ -68,6 +68,13 @@ async function bootstrap() {
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
+  const peerRecordStore = {
+    load: async () => (await kvStore.get<Record<string, number[]>>("signedPeerRecords")) ?? {},
+    save: async (peerId: string, record: Uint8Array) => {
+      const records = (await kvStore.get<Record<string, number[]>>("signedPeerRecords")) ?? {};
+      await kvStore.set("signedPeerRecords", { ...records, [peerId]: Array.from(record) });
+    },
+  };
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
   const identitySvc = createRuntimeIdentityManager({
@@ -133,6 +140,7 @@ async function bootstrap() {
     enableWebRTCDirect: true,
     enableDCUtR: true,
     enableTcp: true,
+    peerRecordStore,
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   let pairedConnections = createPairedPeerConnectionManager({
@@ -556,6 +564,7 @@ async function bootstrap() {
       enableWebRTCDirect: true,
       enableDCUtR: true,
       enableTcp: true,
+      peerRecordStore,
       isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
     });
     pairedConnections = createPairedPeerConnectionManager({

@@ -33,6 +33,7 @@ const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 let trust = createTrustManager({ trustRepo, identitySvc });
 let started = false;
 const OFFSCREEN_OPERATION_TIMEOUT_MS = 15_000;
+const PEER_RECORDS_KEY = "signedPeerRecords";
 
 function base64ToBytes(b64: string): Uint8Array {
   try {
@@ -79,6 +80,13 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     privateKey,
     relayAddresses: relays,
     enableDCUtR: true,
+    peerRecordStore: {
+      load: async () => (await storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {},
+      save: async (peerId, record) => {
+        const records = (await storage.get<Record<string, number[]>>(PEER_RECORDS_KEY)) ?? {};
+        await storage.set(PEER_RECORDS_KEY, { ...records, [peerId]: Array.from(record) });
+      },
+    },
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   pairedConnections = createPairedPeerConnectionManager({

@@ -50,6 +50,18 @@ export function createPairedPeerConnectionManager(
     const relayOnly = connectionInfo?.hasRelay === true && connectionInfo.hasDirect !== true;
     if (connected.has(peer.deviceId) && !relayOnly) return;
 
+    // An Active Member is permitted to refresh only its own exact record. This
+    // repairs stale reachability after an offline interval without ambient
+    // discovery or another Pairing ceremony.
+    if (!relayOnly) {
+      await options.transport.lookupPeer?.(peer.deviceId).catch((error) => {
+        log.debug("Paired peer exact lookup failed; using known reachability", {
+          peerId: peer.deviceId,
+          error: errorMessage(error),
+        });
+      });
+    }
+
     const allTargets = peerConnectionTargets(peer);
     const targets = relayOnly ? allTargets.filter(isDirectConnectionTarget) : allTargets;
     if (targets.length === 0) {
