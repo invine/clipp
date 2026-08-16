@@ -15,7 +15,6 @@ import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
-  createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
@@ -49,6 +48,10 @@ import type {
   MessagingTransport,
   PeerConnectionInfo,
 } from "../../../packages/core/messaging/transport";
+import {
+  createExtensionIdentityManager,
+  startExtensionRuntimeServices,
+} from "./runtimeInitialization";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -65,7 +68,7 @@ const historyBackend =
 const history = new MemoryHistoryStore(historyBackend);
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
-const identitySvc = createIdentityManager({ repo: identityRepo, initialDeviceName: "Extension" });
+const identitySvc = createExtensionIdentityManager({ repo: identityRepo });
 const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 const trust = createTrustManager({ trustRepo, identitySvc });
 
@@ -111,7 +114,12 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
   });
 }
 
+let releaseOffscreenInitialization: (() => void) | undefined;
+const identityReady = new Promise<void>((resolve) => {
+  releaseOffscreenInitialization = resolve;
+});
 const offscreenReady = (async () => {
+  await identityReady;
   await ensureOffscreenDocument();
   // simple ping/handshake retry
   for (let i = 0; i < 5; i++) {
@@ -382,16 +390,22 @@ chrome.notifications?.onClicked?.addListener((id) => {
 });
 const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
-  start: async () => {
-    clipboardSync.start();
-    try {
+  start: () => startExtensionRuntimeServices({
+    initializeIdentity: async () => {
+      await identitySvc.get();
+    },
+    startCapture: () => clipboardSync.start(),
+    startNetworking: async () => {
+      releaseOffscreenInitialization?.();
+      releaseOffscreenInitialization = undefined;
       await offscreenReady;
       await extensionNetwork.start();
       await pairingPending.start();
-    } catch (error) {
+    },
+    onNetworkingFailure: (error) => {
       log.warn("Extension networking failed to start; local capture remains active", error);
-    }
-  },
+    },
+  }),
   stop: async () => {
     await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
     pairingSessions.clear();
@@ -703,4 +717,6 @@ chrome.runtime.onMessage.addListener((msg) => {
 // Kick off offscreen + clipboard
 void sharedRuntime.start().then(() => {
   log.info("Background services started (offscreen networking)");
+}).catch((error) => {
+  log.error("Extension Device Identity initialization failed", error);
 });

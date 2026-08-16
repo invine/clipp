@@ -106,7 +106,10 @@ export function createIdentityManager(options: {
       stored.nameRevision !== repaired.nameRevision ||
       !sameMembershipView(stored.membershipView, membershipView) ||
       !Array.isArray(stored.multiaddrs);
-    return needsRepair ? persist(repaired) : (identity = repaired);
+    if (needsRepair) return persist(repaired);
+    await options.repo.clearInitializationError?.();
+    identity = repaired;
+    return repaired;
   }
 
   return {

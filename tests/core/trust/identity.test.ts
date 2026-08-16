@@ -5,7 +5,10 @@ import {
   createRuntimeConformanceHarness,
   createRuntimeOrchestrator,
 } from "../../../packages/core/runtime";
-import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
+import {
+  initialDeviceNameForPlatform,
+  RUNTIME_CAPABILITIES,
+} from "../../../packages/core/runtime/capabilities";
 import {
   createIdentityManager,
   createKVIdentityRepository,
@@ -35,7 +38,7 @@ describe("Device Identity initialization", () => {
     ["Electron", createElectronRuntimeAdapter, "Desktop"],
     ["Android", createAndroidRuntimeAdapter, "Mobile"],
     ["Chrome", createChromeExtensionRuntimeAdapter, "Extension"],
-  ] as const)("creates a singleton Device Network for %s", async (_platform, createAdapter, initialDeviceName) => {
+  ] as const)("creates a singleton Device Network for %s", async (_platform, createAdapter, expectedDeviceName) => {
     const harness = createRuntimeConformanceHarness({
       capabilities: {
         platform: "electron" as const,
@@ -67,6 +70,7 @@ describe("Device Identity initialization", () => {
       publicState: harness.adapter.publicState,
       relays: { readAddresses: async () => [], updateAddresses: async (addresses) => addresses },
     });
+    const initialDeviceName = initialDeviceNameForPlatform(adapter.capabilities.platform);
     const identity = await createManager({
       get: () => adapter.identity.load() as Promise<DeviceIdentity | undefined>,
       upsert: (value) => adapter.identity.save(value),
@@ -74,7 +78,7 @@ describe("Device Identity initialization", () => {
 
     expect(identity).toMatchObject({
       deviceId: generatedIdentity.peerId,
-      deviceName: initialDeviceName,
+      deviceName: expectedDeviceName,
       nameRevision: 0,
       membershipView: { admittedPeerIds: [generatedIdentity.peerId], revokedPeerIds: [] },
     });
@@ -150,15 +154,45 @@ describe("Device Identity initialization", () => {
     expect(cleared).toEqual([undefined]);
   });
 
+  it("clears a stale initialization error when retry loads an identity committed before marker cleanup failed", async () => {
+    let stored: DeviceIdentity | undefined;
+    let initializationError: { code: "identity_initialization_failed" } | undefined;
+    let clearAttempts = 0;
+    const manager = createIdentityManager({
+      repo: {
+        get: async () => stored,
+        upsert: async (identity) => { stored = structuredClone(identity); },
+        loadInitializationError: async () => initializationError,
+        saveInitializationError: async (error) => { initializationError = error; },
+        clearInitializationError: async () => {
+          clearAttempts += 1;
+          if (clearAttempts === 1) throw new Error("marker_cleanup_failed");
+          initializationError = undefined;
+        },
+      },
+      initialDeviceName: "Desktop",
+      now: () => 123,
+      generateKeyMaterial: async () => generatedIdentity,
+      deriveKeyMaterial: async () => generatedIdentity,
+    });
+
+    await expect(manager.get()).rejects.toThrow("marker_cleanup_failed");
+    expect(stored).toMatchObject({ deviceId: generatedIdentity.peerId });
+    expect(await manager.getInitializationError()).toEqual({ code: "identity_initialization_failed" });
+
+    await expect(manager.retryInitialization()).resolves.toMatchObject({ deviceId: generatedIdentity.peerId });
+    expect(await manager.getInitializationError()).toBeUndefined();
+    expect(clearAttempts).toBe(2);
+  });
+
   it.each([
-    ["Electron", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron, "Desktop"],
-    ["Android", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android, "Mobile"],
-    ["Chrome", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension, "Extension"],
+    ["Electron", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron],
+    ["Android", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android],
+    ["Chrome", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension],
   ] as const)("keeps capture and networking stopped until %s identity initialization succeeds", async (
     _platform,
     createAdapter,
-    capabilities,
-    initialDeviceName
+    capabilities
   ) => {
     const durable = new Map<string, unknown>();
     let identitySaveAttempts = 0;
@@ -193,6 +227,7 @@ describe("Device Identity initialization", () => {
         updateAddresses: async (addresses: string[]) => addresses,
       },
     });
+    const initialDeviceName = initialDeviceNameForPlatform(adapter.capabilities.platform);
     const identity = createIdentityManager({
       repo: createKVIdentityRepository({ storage, key: "identity" }),
       initialDeviceName,

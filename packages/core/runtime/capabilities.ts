@@ -1,4 +1,14 @@
-import type { RuntimeCapabilities } from "./contract";
+import type { RuntimeCapabilities, RuntimePlatform } from "./contract";
+
+const INITIAL_DEVICE_NAMES = {
+  electron: "Desktop",
+  android: "Mobile",
+  "chrome-extension": "Extension",
+} as const satisfies Record<RuntimePlatform, string>;
+
+export function initialDeviceNameForPlatform(platform: RuntimePlatform): string {
+  return INITIAL_DEVICE_NAMES[platform];
+}
 
 export const RUNTIME_CAPABILITIES = {
   electron: {

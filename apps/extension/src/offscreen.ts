@@ -1,7 +1,6 @@
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
 import {
-  createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
   createTrustManager,
@@ -14,6 +13,7 @@ import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/const
 import { createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
+import { createExtensionIdentityManager } from "./runtimeInitialization";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
@@ -22,7 +22,7 @@ let historyMessaging: any = null;
 const runtimeRegisteredProtocols = new Set<string>();
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
-const identitySvc = createIdentityManager({ repo: identityRepo });
+const identitySvc = createExtensionIdentityManager({ repo: identityRepo });
 const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 let trust = createTrustManager({ trustRepo, identitySvc });
 let started = false;
