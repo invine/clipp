@@ -1,39 +1,10 @@
-import type { MessageHandler, MessagingTransport } from "../../../packages/core/messaging/transport";
 import { createRuntimeNetworkProxy } from "../../../packages/core/runtime/network";
-
-function createObservedTransport() {
-  const handlers = new Map<string, MessageHandler[]>();
-  const disconnect = jest.fn(async () => undefined);
-  const transport: MessagingTransport = {
-    start: async () => undefined,
-    stop: async () => undefined,
-    send: async () => undefined,
-    connect: async () => undefined,
-    disconnect,
-    onMessage(protocol, handler) {
-      handlers.set(protocol, [...(handlers.get(protocol) ?? []), handler]);
-    },
-    onPeerConnected: () => undefined,
-    onPeerDisconnected: () => undefined,
-    onSelfPeerUpdate: () => undefined,
-    getConnectedPeers: () => [],
-  };
-  return {
-    transport,
-    disconnect,
-    receive(protocol: string, from: string, data: Uint8Array) {
-      handlers.get(protocol)?.forEach((handler) => handler(from, data));
-    },
-    handlerCount(protocol: string) {
-      return handlers.get(protocol)?.length ?? 0;
-    },
-  };
-}
+import { createObservedRuntimeTransport } from "./observedTransport";
 
 describe("replaceable runtime network", () => {
   it("binds each protocol handler once to the initial and replacement transports", () => {
-    const initial = createObservedTransport();
-    const replacement = createObservedTransport();
+    const initial = createObservedRuntimeTransport();
+    const replacement = createObservedRuntimeTransport();
     let current = initial.transport;
     const network = createRuntimeNetworkProxy(() => current);
     const received: string[] = [];
@@ -53,11 +24,11 @@ describe("replaceable runtime network", () => {
   });
 
   it("forwards disconnect to the current transport", async () => {
-    const observed = createObservedTransport();
+    const observed = createObservedRuntimeTransport();
     const network = createRuntimeNetworkProxy(() => observed.transport);
 
     await network.disconnect?.("peer-a");
 
-    expect(observed.disconnect).toHaveBeenCalledWith("peer-a");
+    expect(observed.disconnectedPeers).toEqual(["peer-a"]);
   });
 });

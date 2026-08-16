@@ -1,4 +1,4 @@
-import type { MessageHandler, MessagingTransport } from "../../../packages/core/messaging/transport";
+import type { MessagingTransport } from "../../../packages/core/messaging/transport";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
 import { encodePairingFrame, encodeTrustRequestEnvelope, encodeTrustRequestPayload, PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
@@ -14,6 +14,7 @@ import {
   type RuntimePlatformAdapterDependencies,
 } from "../../../packages/core/runtime";
 import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
+import { createObservedRuntimeTransport } from "./observedTransport";
 
 type Identity = { deviceId: string };
 type State = Record<string, never>;
@@ -152,6 +153,11 @@ async function expectPairingConformance(factory: AdapterFactory, capabilities: R
 
   restartedHarness.advanceTimeBy(100);
   await new Promise((resolve) => setImmediate(resolve));
+  expect(restartedHarness.observed.dismissedNotifications).toEqual([]);
+  await expect(restartedCoordinator.list()).resolves.toHaveLength(1);
+
+  restartedHarness.advanceTimeBy(1);
+  await new Promise((resolve) => setImmediate(resolve));
   expect(restartedHarness.observed.dismissedNotifications).toEqual([
     `pairing-request-${initiatorPeerId}`,
   ]);
@@ -168,30 +174,8 @@ describe("Pairing runtime-adapter conformance", () => {
   });
 
   it("routes each Pairing frame once after the Electron transport is replaced", () => {
-    const createTransport = () => {
-      const handlers: MessageHandler[] = [];
-      const transport: MessagingTransport = {
-        start: async () => undefined,
-        stop: async () => undefined,
-        send: async () => undefined,
-        connect: async () => undefined,
-        onMessage: (protocol, handler) => {
-          if (protocol === PAIRING_PROTOCOL) handlers.push(handler);
-        },
-        onPeerConnected: () => undefined,
-        onPeerDisconnected: () => undefined,
-        onSelfPeerUpdate: () => undefined,
-        getConnectedPeers: () => [],
-      };
-      return {
-        transport,
-        receive(from: string) {
-          handlers.forEach((handler) => handler(from, new Uint8Array([1])));
-        },
-      };
-    };
-    const initial = createTransport();
-    const replacement = createTransport();
+    const initial = createObservedRuntimeTransport();
+    const replacement = createObservedRuntimeTransport();
     let current = initial.transport;
     const network = createRuntimeNetworkProxy(() => current);
     const harness = createRuntimeConformanceHarness<Identity, State, PublicState>({
@@ -210,10 +194,10 @@ describe("Pairing runtime-adapter conformance", () => {
     const received: string[] = [];
     adapter.network.onMessage(PAIRING_PROTOCOL, (from) => received.push(from));
 
-    initial.receive("initial-peer");
+    initial.receive(PAIRING_PROTOCOL, "initial-peer", new Uint8Array([1]));
     current = replacement.transport;
     network.bindCurrent();
-    replacement.receive("replacement-peer");
+    replacement.receive(PAIRING_PROTOCOL, "replacement-peer", new Uint8Array([1]));
 
     expect(received).toEqual(["initial-peer", "replacement-peer"]);
   });

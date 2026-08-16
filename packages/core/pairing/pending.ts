@@ -95,6 +95,7 @@ export function createPendingTrustRequestCoordinator(options: {
 }) {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
+  const receiveMutations = new Map<string, Promise<void>>();
   let started = false;
   const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
   const reject = (reason: PairingRejectionReason, authenticatedPeerId: string, frame: Uint8Array, messageType: "request" | "response" | "unknown" = "request") => {
@@ -118,7 +119,7 @@ export function createPendingTrustRequestCoordinator(options: {
   };
   const scheduleExpiry = (request: PendingTrustRequest) => {
     clearTimer(request.initiatorPeerId);
-    const delay = Number(request.expiresAtUnixMs - BigInt(options.clock.now()));
+    const delay = Number(request.expiresAtUnixMs - BigInt(options.clock.now())) + 1;
     expiryTimers.set(request.initiatorPeerId, options.clock.setTimeout(() => { void expire(request.initiatorPeerId).catch(() => undefined); }, Math.max(0, delay)));
   };
   const show = async (request: PendingTrustRequest) => {
@@ -127,6 +128,20 @@ export function createPendingTrustRequestCoordinator(options: {
       title: "Pairing request",
       body: `${request.deviceName} (${request.initiatorPeerId}) wants to pair.`,
     });
+  };
+  const revalidateStoredRequest = async (request: PendingTrustRequest): Promise<PendingTrustRequest | null> => {
+    const envelope = decodeTrustRequestEnvelope(request.requestEnvelope);
+    if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, request.initiatorPeerId))) return null;
+    const payload = decodeTrustRequestPayload(envelope.signedPayload);
+    if (!payload || payload.initiatorPeerId !== request.initiatorPeerId || payload.targetPeerId !== await options.localPeerId()) return null;
+    if (!validateTrustRequestTime(payload, options.clock.now(), options)) return null;
+    return {
+      initiatorPeerId: payload.initiatorPeerId,
+      deviceName: normalizeDeviceName(payload.deviceName) ?? shortenPeerId(payload.initiatorPeerId),
+      nameRevision: payload.nameRevision,
+      requestEnvelope: Uint8Array.from(request.requestEnvelope),
+      expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
+    };
   };
 
   return {
@@ -137,52 +152,64 @@ export function createPendingTrustRequestCoordinator(options: {
       options.notifications.onSelect((id) => {
         if (id.startsWith("pairing-request-")) return options.lifecycle.openApprovalView();
       });
-      for (const request of await options.store.list()) {
-        if (!isCurrent(request)) await expire(request.initiatorPeerId);
-        else {
-          scheduleExpiry(request);
-          await show(request);
+      for (const storedRequest of await options.store.list()) {
+        const request = await revalidateStoredRequest(storedRequest);
+        if (!request) {
+          await expire(storedRequest.initiatorPeerId);
+          continue;
         }
+        await options.store.save(request);
+        scheduleExpiry(request);
+        await show(request);
       }
       await publish();
     },
-    async receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
-      const parsed = decodePairingFrame(frame);
-      if (!parsed || parsed.kind !== "request") return reject("protobuf_decoding_failed", authenticatedPeerId, frame, parsed?.kind ?? "unknown");
-      const envelope = decodeTrustRequestEnvelope(parsed.envelope);
-      if (!envelope) return reject("protobuf_decoding_failed", authenticatedPeerId, frame);
-      // The authenticated stream peer supplies the verification key; never
-      // parse attacker-controlled signed fields before their signature holds.
-      if (!(await options.verify(envelope.signedPayload, envelope.signature, authenticatedPeerId))) return reject("invalid_signature", authenticatedPeerId, frame);
-      const payload = decodeTrustRequestPayload(envelope.signedPayload);
-      if (!payload) return reject("protobuf_decoding_failed", authenticatedPeerId, frame);
-      if (payload.initiatorPeerId !== authenticatedPeerId) return reject("authenticated_identity_mismatch", authenticatedPeerId, frame);
-      if (payload.targetPeerId !== await options.localPeerId()) return reject("wrong_target", authenticatedPeerId, frame);
-      const now = BigInt(options.clock.now());
-      const skew = BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
-      if (payload.issuedAtUnixMs > now + skew) return reject("premature_issued_at", authenticatedPeerId, frame);
-      if (!validateTrustRequestTime(payload, Number(now), options)) return reject("expired_request", authenticatedPeerId, frame);
+    receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
+      const previous = receiveMutations.get(authenticatedPeerId) ?? Promise.resolve();
+      const result = previous.then(async () => {
+        const parsed = decodePairingFrame(frame);
+        if (!parsed || parsed.kind !== "request") return reject("protobuf_decoding_failed", authenticatedPeerId, frame, parsed?.kind ?? "unknown");
+        const envelope = decodeTrustRequestEnvelope(parsed.envelope);
+        if (!envelope) return reject("protobuf_decoding_failed", authenticatedPeerId, frame);
+        // The authenticated stream peer supplies the verification key; never
+        // parse attacker-controlled signed fields before their signature holds.
+        if (!(await options.verify(envelope.signedPayload, envelope.signature, authenticatedPeerId))) return reject("invalid_signature", authenticatedPeerId, frame);
+        const payload = decodeTrustRequestPayload(envelope.signedPayload);
+        if (!payload) return reject("protobuf_decoding_failed", authenticatedPeerId, frame);
+        if (payload.initiatorPeerId !== authenticatedPeerId) return reject("authenticated_identity_mismatch", authenticatedPeerId, frame);
+        if (payload.targetPeerId !== await options.localPeerId()) return reject("wrong_target", authenticatedPeerId, frame);
+        const now = BigInt(options.clock.now());
+        const skew = BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
+        if (payload.issuedAtUnixMs > now + skew) return reject("premature_issued_at", authenticatedPeerId, frame);
+        if (!validateTrustRequestTime(payload, Number(now), options)) return reject("expired_request", authenticatedPeerId, frame);
 
-      const request: PendingTrustRequest = {
-        initiatorPeerId: payload.initiatorPeerId,
-        deviceName: normalizeDeviceName(payload.deviceName) ?? shortenPeerId(payload.initiatorPeerId),
-        nameRevision: payload.nameRevision,
-        requestEnvelope: Uint8Array.from(parsed.envelope),
-        expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
-      };
-      const existing = (await options.store.list()).find((entry) => entry.initiatorPeerId === request.initiatorPeerId);
-      if (existing) {
-        const existingEnvelope = decodeTrustRequestEnvelope(existing.requestEnvelope);
-        const existingPayload = existingEnvelope ? decodeTrustRequestPayload(existingEnvelope.signedPayload) : null;
-        if (existingPayload && existingPayload.issuedAtUnixMs > payload.issuedAtUnixMs) {
-          return true;
+        const request: PendingTrustRequest = {
+          initiatorPeerId: payload.initiatorPeerId,
+          deviceName: normalizeDeviceName(payload.deviceName) ?? shortenPeerId(payload.initiatorPeerId),
+          nameRevision: payload.nameRevision,
+          requestEnvelope: Uint8Array.from(parsed.envelope),
+          expiresAtUnixMs: expirationFor(payload.issuedAtUnixMs),
+        };
+        const existing = (await options.store.list()).find((entry) => entry.initiatorPeerId === request.initiatorPeerId);
+        if (existing) {
+          const existingEnvelope = decodeTrustRequestEnvelope(existing.requestEnvelope);
+          const existingPayload = existingEnvelope ? decodeTrustRequestPayload(existingEnvelope.signedPayload) : null;
+          if (existingPayload && existingPayload.issuedAtUnixMs > payload.issuedAtUnixMs) {
+            return true;
+          }
         }
-      }
-      await options.store.save(request);
-      scheduleExpiry(request);
-      if (!existing) await show(request);
-      await publish();
-      return true;
+        await options.store.save(request);
+        scheduleExpiry(request);
+        if (!existing) await show(request);
+        await publish();
+        return true;
+      });
+      const settled = result.then(() => undefined, () => undefined);
+      receiveMutations.set(authenticatedPeerId, settled);
+      void settled.then(() => {
+        if (receiveMutations.get(authenticatedPeerId) === settled) receiveMutations.delete(authenticatedPeerId);
+      });
+      return result;
     },
     async decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
       if (!options.sendResponse || !options.responseIdentity) return false;
