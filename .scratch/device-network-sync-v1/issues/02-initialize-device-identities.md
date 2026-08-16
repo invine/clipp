@@ -18,3 +18,8 @@
 ## Comments
 
 - Implemented durable v1 identity initialization, singleton membership state, platform defaults, metadata repair, and failure-safe runtime startup sequencing.
+- Reopened after the Ticket 02/03 two-axis code review found that:
+  - runtimes publish the complete Device Identity into public UI state, including private key material;
+  - the persisted initialization-error marker has no production reader, user-visible retry state, or retry action; and
+  - the conformance suite covers successful adapter persistence, but failure behavior only through the identity manager rather than all three runtime adapters.
+- Resolved the review findings: public identity projections omit private keys, each runtime exposes an initialization-retry path, extension offscreen initialization reads its private key from durable storage rather than a runtime message, and adapter conformance covers fail-then-retry startup sequencing for Electron, Android, and Chrome.

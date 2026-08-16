@@ -44,7 +44,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_STAR_RELAYS) {
+async function initMessaging(relays: string[] = DEFAULT_WEBRTC_STAR_RELAYS) {
   if (transport && started) {
     pairedConnections?.start();
     return;
@@ -61,6 +61,7 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
     clipMessaging = null;
     historyMessaging = null;
   }
+  const identity = await identitySvc.get();
   const peerId = await deviceIdToPeerIdObject(identity.deviceId);
   const privateKey =
     identity?.privateKey && typeof identity.privateKey === "string"
@@ -138,7 +139,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== "offscreen") return;
   (async () => {
     if (msg.action === "init") {
-      await initMessaging(msg.identity, msg.relays);
+      await initMessaging(msg.relays);
       sendResponse({ ok: true });
       return;
     }

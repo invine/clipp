@@ -125,7 +125,6 @@ const offscreenReady = (async () => {
   }
   await sendOffscreen({
     action: "init",
-    identity,
     relays: DEFAULT_WEBRTC_STAR_RELAYS,
   });
 })();
