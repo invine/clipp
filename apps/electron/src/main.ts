@@ -80,7 +80,26 @@ async function bootstrap() {
     ((await kvStore.get<string[]>("relayAddresses")) ?? []).filter(Boolean)
     // (relayAddrEnv ? [relayAddrEnv] : [])
   );
-  const localIdentity = await identitySvc.get();
+  let localIdentity;
+  try {
+    localIdentity = await identitySvc.get();
+  } catch (error) {
+    (log as any).error?.("Device identity initialization failed", { error: (error as Error).message });
+    await app.whenReady();
+    ipcMain.handle("clipp:get-state", async () => { throw error; });
+    ipcMain.handle("clipp:get-initialization-error", async () => ({ code: "identity_initialization_failed" }));
+    ipcMain.handle("clipp:retry-identity-initialization", async () => {
+      app.relaunch();
+      app.exit(0);
+    });
+    const window = new BrowserWindow({
+      width: 1080,
+      height: 760,
+      webPreferences: { preload: preloadPath, contextIsolation: true },
+    });
+    await window.loadFile(path.join(__dirnameFallback, "renderer", "index.html"));
+    return;
+  }
   // const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   (log as any).info?.("Loaded identity", {
     deviceId: localIdentity.deviceId,
@@ -1081,19 +1100,6 @@ async function bootstrap() {
   });
 }
 
-void bootstrap().catch(async (error) => {
-  (log as any).error?.("Device identity initialization failed", { error: (error as Error).message });
-  await app.whenReady();
-  ipcMain.handle("clipp:get-state", async () => { throw error; });
-  ipcMain.handle("clipp:get-initialization-error", async () => ({ code: "identity_initialization_failed" }));
-  ipcMain.handle("clipp:retry-identity-initialization", async () => {
-    app.relaunch();
-    app.exit(0);
-  });
-  const window = new BrowserWindow({
-    width: 1080,
-    height: 760,
-    webPreferences: { preload: preloadPath, contextIsolation: true },
-  });
-  await window.loadFile(path.join(__dirnameFallback, "renderer", "index.html"));
+void bootstrap().catch((error) => {
+  (log as any).error?.("Clipp bootstrap failed", { error: (error as Error).message });
 });

@@ -113,7 +113,6 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
 
 const offscreenReady = (async () => {
   await ensureOffscreenDocument();
-  const identity = await identitySvc.get();
   // simple ping/handshake retry
   for (let i = 0; i < 5; i++) {
     try {
@@ -384,10 +383,14 @@ chrome.notifications?.onClicked?.addListener((id) => {
 const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
   start: async () => {
-    await offscreenReady;
     clipboardSync.start();
-    await extensionNetwork.start();
-    await pairingPending.start();
+    try {
+      await offscreenReady;
+      await extensionNetwork.start();
+      await pairingPending.start();
+    } catch (error) {
+      log.warn("Extension networking failed to start; local capture remains active", error);
+    }
   },
   stop: async () => {
     await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
