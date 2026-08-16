@@ -43,15 +43,16 @@ export type IdentityInitializationError = { code: "identity_initialization_faile
 export function createIdentityManager(options: {
   repo: IdentityRepository;
   now?: () => number;
-  initialDeviceName?: string;
+  initialDeviceName: string;
   generateKeyMaterial?: () => Promise<IdentityKeyMaterial>;
   deriveKeyMaterial?: (privateKey: string) => Promise<IdentityKeyMaterial>;
 }): IdentityManager {
   const clock = options.now ?? Date.now;
-  const initialDeviceName = options.initialDeviceName ?? "Desktop";
+  const initialDeviceName = options.initialDeviceName;
   const generateKeyMaterial = options.generateKeyMaterial ?? createLibp2pIdentity;
   const deriveKeyMaterial = options.deriveKeyMaterial ?? deriveFromPrivateKey;
   let identity: DeviceIdentity | undefined;
+  let initialization: Promise<DeviceIdentity> | undefined;
 
   async function persist(value: DeviceIdentity): Promise<DeviceIdentity> {
     await options.repo.upsert(value);
@@ -74,13 +75,19 @@ export function createIdentityManager(options: {
     });
   }
 
-  async function loadIdentity(): Promise<DeviceIdentity> {
-    try {
-      return await loadIdentityOrThrow();
-    } catch (error) {
-      await options.repo.saveInitializationError?.({ code: "identity_initialization_failed" });
-      throw error;
+  function loadIdentity(): Promise<DeviceIdentity> {
+    if (identity) return Promise.resolve(identity);
+    if (!initialization) {
+      initialization = loadIdentityOrThrow()
+        .catch(async (error) => {
+          await options.repo.saveInitializationError?.({ code: "identity_initialization_failed" });
+          throw error;
+        })
+        .finally(() => {
+          initialization = undefined;
+        });
     }
+    return initialization;
   }
 
   async function loadIdentityOrThrow(): Promise<DeviceIdentity> {

@@ -3,12 +3,11 @@ import {
   createChromeExtensionRuntimeAdapter,
   createElectronRuntimeAdapter,
   createRuntimeConformanceHarness,
+  createRuntimeIdentityManager,
   createRuntimeOrchestrator,
+  startIdentityBoundRuntimeServices,
 } from "../../../packages/core/runtime";
-import {
-  initialDeviceNameForPlatform,
-  RUNTIME_CAPABILITIES,
-} from "../../../packages/core/runtime/capabilities";
+import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
 import {
   createIdentityManager,
   createKVIdentityRepository,
@@ -70,11 +69,16 @@ describe("Device Identity initialization", () => {
       publicState: harness.adapter.publicState,
       relays: { readAddresses: async () => [], updateAddresses: async (addresses) => addresses },
     });
-    const initialDeviceName = initialDeviceNameForPlatform(adapter.capabilities.platform);
-    const identity = await createManager({
-      get: () => adapter.identity.load() as Promise<DeviceIdentity | undefined>,
-      upsert: (value) => adapter.identity.save(value),
-    }, initialDeviceName).get();
+    const identity = await createRuntimeIdentityManager({
+      repo: {
+        get: () => adapter.identity.load() as Promise<DeviceIdentity | undefined>,
+        upsert: (value) => adapter.identity.save(value),
+      },
+      capabilities: adapter.capabilities,
+      now: () => 123,
+      generateKeyMaterial: async () => generatedIdentity,
+      deriveKeyMaterial: async () => generatedIdentity,
+    }).get();
 
     expect(identity).toMatchObject({
       deviceId: generatedIdentity.peerId,
@@ -129,6 +133,38 @@ describe("Device Identity initialization", () => {
     expect(initializationErrors).toEqual([{ code: "identity_initialization_failed" }]);
   });
 
+  it("initializes a fresh Device Identity once for concurrent callers", async () => {
+    let stored: DeviceIdentity | undefined;
+    let generationCount = 0;
+    let persistenceCount = 0;
+    const manager = createIdentityManager({
+      repo: {
+        get: async () => stored,
+        upsert: async (identity) => {
+          persistenceCount += 1;
+          stored = structuredClone(identity);
+        },
+      },
+      initialDeviceName: "Desktop",
+      generateKeyMaterial: async () => {
+        generationCount += 1;
+        await Promise.resolve();
+        return {
+          peerId: `${generatedIdentity.peerId}-${generationCount}`,
+          privateKey: `${generatedIdentity.privateKey}-${generationCount}`,
+          publicKey: `${generatedIdentity.publicKey}-${generationCount}`,
+        };
+      },
+    });
+
+    const [first, second] = await Promise.all([manager.get(), manager.get()]);
+
+    expect(second).toEqual(first);
+    expect(generationCount).toBe(1);
+    expect(persistenceCount).toBe(1);
+    expect(stored).toEqual(first);
+  });
+
   it("clears a persisted initialization error after a retry succeeds", async () => {
     let attempts = 0;
     const errors: unknown[] = [];
@@ -140,6 +176,7 @@ describe("Device Identity initialization", () => {
         saveInitializationError: async (error) => { errors.push(error); },
         clearInitializationError: async () => { cleared.push(undefined); },
       },
+      initialDeviceName: "Desktop",
       generateKeyMaterial: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("key_generation_failed");
@@ -227,21 +264,20 @@ describe("Device Identity initialization", () => {
         updateAddresses: async (addresses: string[]) => addresses,
       },
     });
-    const initialDeviceName = initialDeviceNameForPlatform(adapter.capabilities.platform);
-    const identity = createIdentityManager({
+    const identity = createRuntimeIdentityManager({
       repo: createKVIdentityRepository({ storage, key: "identity" }),
-      initialDeviceName,
+      capabilities: adapter.capabilities,
       generateKeyMaterial: async () => generatedIdentity,
     });
     const startCapture = jest.fn();
     const startNetworking = jest.fn();
     const runtime = createRuntimeOrchestrator({
       adapter,
-      start: async () => {
-        await identity.get();
-        startCapture();
-        startNetworking();
-      },
+      start: () => startIdentityBoundRuntimeServices({
+        initializeIdentity: () => identity.get(),
+        startLocalServices: startCapture,
+        startNetworkServices: startNetworking,
+      }),
     });
 
     await expect(runtime.start()).rejects.toThrow("identity_persistence_failed");

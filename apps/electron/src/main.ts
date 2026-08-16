@@ -18,11 +18,13 @@ import {
 // import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
 import {
   createElectronRuntimeAdapter,
+  createRuntimeIdentityManager,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
   createRuntimeClipboardService,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
+  startIdentityBoundRuntimeServices,
   systemRuntimeClock,
 } from "../../../packages/core/runtime/index.js";
 import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
@@ -41,7 +43,6 @@ import {
   peerIdFromPrivateKeyBase64,
 } from "../../../packages/core/network/peerId.js";
 import {
-  createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
@@ -67,7 +68,10 @@ async function bootstrap() {
   const kvStore = new SQLiteKVStore(db);
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
-  const identitySvc = createIdentityManager({ repo: identityRepo, initialDeviceName: "Desktop" })
+  const identitySvc = createRuntimeIdentityManager({
+    repo: identityRepo,
+    capabilities: RUNTIME_CAPABILITIES.electron,
+  })
   const trustRepo = createKVTrustedDeviceRepository({ storage: kvStore, key: TRUST_KEY })
   const trust = createTrustManager({ trustRepo: trustRepo, identitySvc: identitySvc });
   // TODO: remove relayAddrEnv
@@ -479,7 +483,7 @@ async function bootstrap() {
     }
   }
 
-  async function startServices() {
+  async function startLocalServices() {
     history.onNew(async () => {
       await emitState();
     });
@@ -508,13 +512,12 @@ async function bootstrap() {
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("removed", () => emitState());
 
-    try {
-      await ensureMessagingStarted();
-      pairedConnections.start();
-    } catch (err) {
-      (log as any).warn("Messaging start failed", err);
-    }
     clipboardSync.start();
+  }
+
+  async function startNetworkServices() {
+    await ensureMessagingStarted();
+    pairedConnections.start();
   }
 
   async function restartMessaging() {
@@ -893,7 +896,16 @@ async function bootstrap() {
   bindPairingHandler(transport);
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
-    start: startServices,
+    start: () => startIdentityBoundRuntimeServices({
+      initializeIdentity: async () => {
+        await identitySvc.get();
+      },
+      startLocalServices,
+      startNetworkServices,
+      onNetworkingFailure: (error) => {
+        (log as any).warn("Messaging start failed", error);
+      },
+    }),
     stop: shutdownServices,
   });
 

@@ -27,10 +27,13 @@ import { ChromeStorageBackend } from "./chromeStorage";
 import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import {
   createChromeExtensionRuntimeAdapter,
+  createRuntimeIdentityManager,
   createRuntimeClipboardService,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
+  createRuntimeStartupGate,
   RUNTIME_CAPABILITIES,
+  startIdentityBoundRuntimeServices,
   systemRuntimeClock,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
@@ -48,10 +51,6 @@ import type {
   MessagingTransport,
   PeerConnectionInfo,
 } from "../../../packages/core/messaging/transport";
-import {
-  createExtensionIdentityManager,
-  startExtensionRuntimeServices,
-} from "./runtimeInitialization";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -68,7 +67,10 @@ const historyBackend =
 const history = new MemoryHistoryStore(historyBackend);
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
-const identitySvc = createExtensionIdentityManager({ repo: identityRepo });
+const identitySvc = createRuntimeIdentityManager({
+  repo: identityRepo,
+  capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+});
 const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 const trust = createTrustManager({ trustRepo, identitySvc });
 
@@ -114,12 +116,9 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
   });
 }
 
-let releaseOffscreenInitialization: (() => void) | undefined;
-const identityReady = new Promise<void>((resolve) => {
-  releaseOffscreenInitialization = resolve;
-});
+const offscreenInitializationGate = createRuntimeStartupGate();
 const offscreenReady = (async () => {
-  await identityReady;
+  await offscreenInitializationGate.ready;
   await ensureOffscreenDocument();
   // simple ping/handshake retry
   for (let i = 0; i < 5; i++) {
@@ -390,14 +389,13 @@ chrome.notifications?.onClicked?.addListener((id) => {
 });
 const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
-  start: () => startExtensionRuntimeServices({
+  start: () => startIdentityBoundRuntimeServices({
     initializeIdentity: async () => {
       await identitySvc.get();
     },
-    startCapture: () => clipboardSync.start(),
-    startNetworking: async () => {
-      releaseOffscreenInitialization?.();
-      releaseOffscreenInitialization = undefined;
+    startLocalServices: () => clipboardSync.start(),
+    startNetworkServices: async () => {
+      offscreenInitializationGate.open();
       await offscreenReady;
       await extensionNetwork.start();
       await pairingPending.start();

@@ -315,7 +315,7 @@ async function main() {
     storage,
     key: TRUST_KEY,
   });
-  const identitySvc = createIdentityManager({ repo: identityRepo });
+  const identitySvc = createIdentityManager({ repo: identityRepo, initialDeviceName: "Desktop" });
   const trust = createTrustManager({ trustRepo, identitySvc });
   const trustBinder = createTrustProtocolBinder({ trust });
 

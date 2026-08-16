@@ -3,11 +3,13 @@ import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import QRCode from "qrcode";
 import {
   createAndroidRuntimeAdapter,
+  createRuntimeIdentityManager,
   createRuntimeClipboardService,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
+  startIdentityBoundRuntimeServices,
   systemRuntimeClock,
 } from "@core/runtime";
 import { normalizeClipboardContent } from "@core/clipboard/normalize";
@@ -30,7 +32,6 @@ import { createPairingSession } from "@core/pairing/session";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
-  createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
@@ -261,7 +262,10 @@ export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
   private readonly history = new MemoryHistoryStore(createHistoryBackend());
   private readonly identityRepo = createKVIdentityRepository({ storage: this.storage, key: IDENTITY_KEY });
-  private readonly identitySvc = createIdentityManager({ repo: this.identityRepo, initialDeviceName: "Mobile" });
+  private readonly identitySvc = createRuntimeIdentityManager({
+    repo: this.identityRepo,
+    capabilities: RUNTIME_CAPABILITIES.android,
+  });
   private readonly trustRepo = createKVTrustedDeviceRepository({ storage: this.storage, key: TRUST_KEY });
   private readonly trust = createTrustManager({ trustRepo: this.trustRepo, identitySvc: this.identitySvc });
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
@@ -625,25 +629,33 @@ export class AndroidClient {
 
   private async startServices() {
     if (this.started) return;
-    this.bindEvents();
-    this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
-    await this.ensureMessaging();
-    if (!this.pairingInboundBound) {
-      this.pairingInboundBound = true;
-      this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-        if (decodePairingFrame(frame)?.kind === "response") void (this.pairingSessions.get(from) ?? this.pairingResponseValidator).receiveResponse(from, frame).then((decision) => { if (decision) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
-        else void this.pairingPending.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
-      });
-    }
-    await this.pairingPending.start();
-    this.started = true;
-    try {
-      await this.transport!.start();
-      this.pairedConnections?.start();
-    } catch (err) {
-      log.warn("Messaging transport failed to start", err);
-    }
-    this.clipboardSync.start();
+    await startIdentityBoundRuntimeServices({
+      initializeIdentity: async () => {
+        await this.identitySvc.get();
+      },
+      startLocalServices: async () => {
+        this.bindEvents();
+        this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
+        await this.pairingPending.start();
+        this.started = true;
+        this.clipboardSync.start();
+      },
+      startNetworkServices: async () => {
+        await this.ensureMessaging();
+        if (!this.pairingInboundBound) {
+          this.pairingInboundBound = true;
+          this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+            if (decodePairingFrame(frame)?.kind === "response") void (this.pairingSessions.get(from) ?? this.pairingResponseValidator).receiveResponse(from, frame).then((decision) => { if (decision) this.pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
+            else void this.pairingPending.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
+          });
+        }
+        await this.transport!.start();
+        this.pairedConnections?.start();
+      },
+      onNetworkingFailure: (error) => {
+        log.warn("Messaging transport failed to start", error);
+      },
+    });
   }
 
   private async stopServices() {
