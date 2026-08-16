@@ -34,6 +34,7 @@ function App() {
   const client = useMemo<AndroidClient>(() => createAndroidClient(), []);
   const [state, setState] = useState<AndroidAppState>(initialState);
   const [error, setError] = useState<string | null>(null);
+  const [initializationError, setInitializationError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +48,13 @@ function App() {
       .catch((err) => {
         console.error("Failed to start Android client", err);
         void client.getInitializationError().then((initialization) => {
-          if (!cancelled) setError(initialization ? "Device identity could not be initialized." : "Unable to start background services. Check clipboard permissions.");
+          if (cancelled) return;
+          if (initialization) {
+            setInitializationError(true);
+            setError(null);
+          } else {
+            setError("Unable to start background services. Check clipboard permissions.");
+          }
         });
       });
 
@@ -109,14 +116,6 @@ function App() {
           }}
         >
           {error}
-          {error === "Device identity could not be initialized." && (
-            <button
-              style={{ marginLeft: 12, padding: "4px 8px" }}
-              onClick={() => void client.retryIdentityInitialization().then(setState).then(() => setError(null)).catch(() => {})}
-            >
-              Retry
-            </button>
-          )}
         </div>
       )}
       <PairingDiagnosticsPanel attempt={state.diagnostics?.lastPairingAttempt || null} />
@@ -131,6 +130,7 @@ function App() {
         identity={state.identity as Identity | null}
         pinnedIds={state.pinnedIds || []}
         relayAddresses={state.relayAddresses || []}
+        initializationError={initializationError}
         onDeleteClip={(id) => client.deleteClip(id)}
         onUnpair={(id) => client.unpairDevice(id)}
         onRenameDevice={(id, name) => client.renameDevice(id, name)}
@@ -144,6 +144,14 @@ function App() {
           await client.togglePin(id);
         }}
         onClearAll={() => client.clearHistory()}
+        onRetryInitialization={async () => {
+          try {
+            setState(await client.retryIdentityInitialization());
+            setInitializationError(false);
+          } catch {
+            setInitializationError(true);
+          }
+        }}
       />
     </div>
   );

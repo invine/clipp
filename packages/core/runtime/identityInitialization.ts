@@ -34,20 +34,3 @@ export async function startIdentityBoundRuntimeServices(options: {
     await options.onNetworkingFailure?.(error);
   }
 }
-
-export function createRuntimeStartupGate(): {
-  ready: Promise<void>;
-  open(): void;
-} {
-  let open: (() => void) | undefined;
-  const ready = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  return {
-    ready,
-    open() {
-      open?.();
-      open = undefined;
-    },
-  };
-}

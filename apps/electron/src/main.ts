@@ -93,6 +93,7 @@ async function bootstrap() {
     ipcMain.handle("clipp:get-state", async () => { throw error; });
     ipcMain.handle("clipp:get-initialization-error", async () => ({ code: "identity_initialization_failed" }));
     ipcMain.handle("clipp:retry-identity-initialization", async () => {
+      await identitySvc.retryInitialization();
       app.relaunch();
       app.exit(0);
     });

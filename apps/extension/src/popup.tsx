@@ -171,14 +171,6 @@ const Popup = () => {
       style={{ width: "100%", height: "100%" }}
       className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-black"
     >
-      {initializationError && (
-        <div className="m-2 rounded border border-red-400/40 bg-red-950/40 p-2 text-xs text-red-100">
-          Device identity could not be initialized. Clipboard capture and networking are paused.
-          <button className="ml-2 rounded bg-red-200 px-2 py-1 text-red-950" onClick={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}>
-            Retry
-          </button>
-        </div>
-      )}
       <ClipboardApp
         clips={clips}
         devices={devices}
@@ -188,6 +180,7 @@ const Popup = () => {
         peerConnections={peerConnections}
         identity={identity}
         pinnedIds={pinnedIds}
+        initializationError={initializationError}
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
         onRenameDevice={handleRenameDevice}
@@ -224,6 +217,7 @@ const Popup = () => {
           chrome.runtime.sendMessage({ type: "clearHistory" }, () => {});
         }}
         onRenameIdentity={handleRenameIdentity}
+        onRetryInitialization={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}
       />
     </div>
   );

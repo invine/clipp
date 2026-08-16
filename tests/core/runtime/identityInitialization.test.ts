@@ -1,5 +1,4 @@
 import {
-  createRuntimeStartupGate,
   startIdentityBoundRuntimeServices,
 } from "../../../packages/core/runtime";
 
@@ -38,18 +37,5 @@ describe("runtime identity initialization", () => {
       "network",
       "network-failed:network_unavailable",
     ]);
-  });
-
-  it("holds deferred runtime work until the startup gate opens", async () => {
-    const gate = createRuntimeStartupGate();
-    const calls: string[] = [];
-    const deferredStart = gate.ready.then(() => { calls.push("started"); });
-
-    await Promise.resolve();
-    expect(calls).toEqual([]);
-
-    gate.open();
-    await deferredStart;
-    expect(calls).toEqual(["started"]);
   });
 });

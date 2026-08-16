@@ -221,6 +221,7 @@ export type ClipboardAppProps = {
   identity: Identity | null;
   pinnedIds: string[];
   relayAddresses?: string[];
+  initializationError?: boolean;
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): void | Promise<void>;
@@ -233,6 +234,7 @@ export type ClipboardAppProps = {
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
+  onRetryInitialization?(): void | Promise<void>;
 };
 
 export function ClipboardApp({
@@ -246,6 +248,7 @@ export function ClipboardApp({
   identity,
   pinnedIds,
   relayAddresses = [],
+  initializationError = false,
   onDeleteClip,
   onUnpair,
   onAccept,
@@ -258,6 +261,7 @@ export function ClipboardApp({
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
+  onRetryInitialization,
 }: ClipboardAppProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -1096,7 +1100,7 @@ export function ClipboardApp({
   }
 
   return (
-    <div className="app-shell">
+    <div className={initializationError ? "app-shell app-shell-with-initialization-error" : "app-shell"}>
       <header className="app-bar">
         <div className="app-bar-left">
           <div
@@ -1137,6 +1141,17 @@ export function ClipboardApp({
 
         </div>
       </header>
+
+      {initializationError && (
+        <div className="initialization-error" role="alert">
+          <span>Device identity could not be initialized. Clipboard capture and networking are paused.</span>
+          {onRetryInitialization && (
+            <button type="button" onClick={() => void onRetryInitialization()}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
 
       <main className="app-main">
         <aside className="surface nav-pane" style={{ display: navHidden ? "none" : undefined }}>

@@ -133,6 +133,36 @@ describe("Device Identity initialization", () => {
     expect(initializationErrors).toEqual([{ code: "identity_initialization_failed" }]);
   });
 
+  it("requires an explicit retry after initialization fails", async () => {
+    let attempts = 0;
+    let initializationError: { code: "identity_initialization_failed" } | undefined;
+    const manager = createIdentityManager({
+      repo: {
+        get: async () => undefined,
+        upsert: async () => undefined,
+        loadInitializationError: async () => initializationError,
+        saveInitializationError: async (error) => { initializationError = error; },
+        clearInitializationError: async () => { initializationError = undefined; },
+      },
+      initialDeviceName: "Desktop",
+      generateKeyMaterial: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("key_generation_failed");
+        return generatedIdentity;
+      },
+    });
+
+    await expect(manager.get()).rejects.toThrow("key_generation_failed");
+    await expect(manager.get()).rejects.toThrow("identity_initialization_failed");
+    expect(attempts).toBe(1);
+
+    await expect(manager.retryInitialization()).resolves.toMatchObject({
+      deviceId: generatedIdentity.peerId,
+    });
+    expect(attempts).toBe(2);
+    expect(await manager.getInitializationError()).toBeUndefined();
+  });
+
   it("initializes a fresh Device Identity once for concurrent callers", async () => {
     let stored: DeviceIdentity | undefined;
     let generationCount = 0;

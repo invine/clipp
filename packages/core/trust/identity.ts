@@ -75,14 +75,21 @@ export function createIdentityManager(options: {
     });
   }
 
-  function loadIdentity(): Promise<DeviceIdentity> {
+  function loadIdentity(allowRetry = false): Promise<DeviceIdentity> {
     if (identity) return Promise.resolve(identity);
     if (!initialization) {
-      initialization = loadIdentityOrThrow()
-        .catch(async (error) => {
+      initialization = (async () => {
+        if (!allowRetry) {
+          const initializationError = await options.repo.loadInitializationError?.();
+          if (initializationError) throw new Error(initializationError.code);
+        }
+        try {
+          return await loadIdentityOrThrow();
+        } catch (error) {
           await options.repo.saveInitializationError?.({ code: "identity_initialization_failed" });
           throw error;
-        })
+        }
+      })()
         .finally(() => {
           initialization = undefined;
         });
@@ -121,7 +128,7 @@ export function createIdentityManager(options: {
 
   return {
     get: loadIdentity,
-    retryInitialization: loadIdentity,
+    retryInitialization: () => loadIdentity(true),
     rename: async (name) => {
       const current = await loadIdentity();
       await persist({ ...current, deviceName: name, nameRevision: (current.nameRevision ?? 0) + 1 });

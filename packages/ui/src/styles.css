@@ -58,6 +58,34 @@ body {
   color: var(--md-sys-color-on-surface);
 }
 
+.app-shell-with-initialization-error {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.initialization-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-spacing-md);
+  padding: var(--md-spacing-sm) var(--md-spacing-xl);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(69, 10, 10, 0.9);
+  color: #fee2e2;
+  font-size: 13px;
+}
+
+.initialization-error button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--md-radius-sm);
+  padding: 6px 10px;
+  background: #fecaca;
+  color: #450a0a;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
 .app-bar {
   display: flex;
   align-items: center;

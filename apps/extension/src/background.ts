@@ -31,7 +31,6 @@ import {
   createRuntimeClipboardService,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
-  createRuntimeStartupGate,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
   systemRuntimeClock,
@@ -76,6 +75,23 @@ const trust = createTrustManager({ trustRepo, identitySvc });
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 
+function createOffscreenStartupGate(): {
+  ready: Promise<void>;
+  open(): void;
+} {
+  let resolveReady: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+  return {
+    ready,
+    open() {
+      resolveReady?.();
+      resolveReady = undefined;
+    },
+  };
+}
+
 async function ensureOffscreenDocument(): Promise<void> {
   if (!chrome.offscreen || typeof chrome.offscreen.createDocument !== "function") return;
   const has = (chrome.offscreen as any).hasDocument
@@ -116,7 +132,7 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
   });
 }
 
-const offscreenInitializationGate = createRuntimeStartupGate();
+const offscreenInitializationGate = createOffscreenStartupGate();
 const offscreenReady = (async () => {
   await offscreenInitializationGate.ready;
   await ensureOffscreenDocument();
