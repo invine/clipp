@@ -37,6 +37,7 @@ const initialState: AppState = {
 const App = () => {
   const [state, setState] = useState<AppState>(initialState);
   const [, setError] = useState<string | null>(null);
+  const [initializationError, setInitializationError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +52,8 @@ const App = () => {
         if (!cancelled) setState(s);
       } catch (err) {
         if (!cancelled) setError("Failed to load state");
+        const initialization = await api.getInitializationError?.().catch(() => null);
+        if (!cancelled) setInitializationError(initialization?.code === "identity_initialization_failed");
         console.error("Failed to load state", err);
       }
     }
@@ -78,6 +81,14 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-black text-white">
+      {initializationError && (
+        <div className="m-3 rounded border border-red-400/40 bg-red-950/40 p-3 text-sm text-red-100">
+          Device identity could not be initialized. Clipboard capture and networking are paused.
+          <button className="ml-3 rounded bg-red-200 px-2 py-1 text-red-950" onClick={() => void window.clipp.retryIdentityInitialization()}>
+            Retry
+          </button>
+        </div>
+      )}
       <ClipboardApp
         clips={state.clips}
         devices={state.devices}

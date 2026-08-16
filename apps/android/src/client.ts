@@ -763,6 +763,16 @@ export class AndroidClient {
     return toPublicDeviceIdentity(await this.ensureIdentityAddrs(id));
   }
 
+  async getInitializationError() {
+    return this.identitySvc.getInitializationError();
+  }
+
+  async retryIdentityInitialization(): Promise<AndroidAppState> {
+    await this.identitySvc.retryInitialization();
+    await this.runtime.start();
+    return this.getState();
+  }
+
   async getPairingCode(): Promise<PairingCode | null> {
     const id = await this.ensureIdentityAddrs(await this.identitySvc.get());
     await this.ensureMessaging();

@@ -24,6 +24,7 @@ const Popup = () => {
   const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [initializationError, setInitializationError] = useState(false);
   const lastClipboardRef = useRef("");
 
   useEffect(() => {
@@ -36,6 +37,9 @@ const Popup = () => {
     });
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
       if (res?.identity) setIdentity(res.identity);
+    });
+    chrome.runtime.sendMessage({ type: "getInitializationError" }, (res) => {
+      setInitializationError(res?.error?.code === "identity_initialization_failed");
     });
 
     const handler = (msg: any) => {
@@ -167,6 +171,14 @@ const Popup = () => {
       style={{ width: "100%", height: "100%" }}
       className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-black"
     >
+      {initializationError && (
+        <div className="m-2 rounded border border-red-400/40 bg-red-950/40 p-2 text-xs text-red-100">
+          Device identity could not be initialized. Clipboard capture and networking are paused.
+          <button className="ml-2 rounded bg-red-200 px-2 py-1 text-red-950" onClick={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}>
+            Retry
+          </button>
+        </div>
+      )}
       <ClipboardApp
         clips={clips}
         devices={devices}

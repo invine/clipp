@@ -406,6 +406,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runtimeAdapter.publicState.read().then((state) => sendResponse({ state })).catch((error) => sendResponse({ error: (error as Error).message }));
     return true;
   }
+  if (msg.type === "getInitializationError") {
+    identitySvc.getInitializationError().then((error) => sendResponse({ error: error ?? null }));
+    return true;
+  }
+  if (msg.type === "retryIdentityInitialization") {
+    identitySvc.retryInitialization().then(() => {
+      sendResponse({ ok: true });
+      chrome.runtime.reload();
+    }).catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+    return true;
+  }
   if (msg.type === "getLatestClip") {
     history.query({ limit: 1 }).then((items) => {
       sendResponse({ clip: items[0]?.clip || null });

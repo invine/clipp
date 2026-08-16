@@ -46,7 +46,9 @@ function App() {
       })
       .catch((err) => {
         console.error("Failed to start Android client", err);
-        if (!cancelled) setError("Unable to start background services. Check clipboard permissions.");
+        void client.getInitializationError().then((initialization) => {
+          if (!cancelled) setError(initialization ? "Device identity could not be initialized." : "Unable to start background services. Check clipboard permissions.");
+        });
       });
 
     const unsubscribe = client.onUpdate((next) => {
@@ -107,6 +109,14 @@ function App() {
           }}
         >
           {error}
+          {error === "Device identity could not be initialized." && (
+            <button
+              style={{ marginLeft: 12, padding: "4px 8px" }}
+              onClick={() => void client.retryIdentityInitialization().then(setState).then(() => setError(null)).catch(() => {})}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
       <PairingDiagnosticsPanel attempt={state.diagnostics?.lastPairingAttempt || null} />
