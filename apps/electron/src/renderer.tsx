@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import type { Clip, Device, Identity, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type { Clip, Device, Identity, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 
 type AppState = {
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
+  waiting: PairingWaiting[];
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -24,6 +25,7 @@ const initialState: AppState = {
   clips: [],
   devices: [],
   pending: [],
+  waiting: [],
   peers: [],
   peerConnections: [],
   relayConnections: [],
@@ -80,6 +82,7 @@ const App = () => {
         clips={state.clips}
         devices={state.devices}
         pending={state.pending}
+        waiting={state.waiting}
         peers={state.peers}
         peerConnections={state.peerConnections || []}
         relayConnections={state.relayConnections || []}

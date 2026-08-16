@@ -4,6 +4,7 @@ import type {
   Device,
   Identity,
   PairingCode,
+  PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
   RelayConnectionInfo,
@@ -13,6 +14,7 @@ type AppState = {
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
+  waiting: PairingWaiting[];
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];

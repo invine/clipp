@@ -3,8 +3,9 @@ import { multiaddr } from "@multiformats/multiaddr";
 import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
-import { CLIP_PROTOCOL, CLIP_TRUST_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
-import { decodePairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
+import { CLIP_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
+import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
+import { createPairingRejectionReporter } from "../pairing/diagnostics.js";
 import { ensureLegacyMultiaddrApi, getPeerIdFromMultiaddr } from "./multiaddrCompat.js";
 import { listRendezvousPeers, registerOnRendezvous } from "./rendezvous.js";
 import type {
@@ -42,6 +43,7 @@ export type Libp2pMessagingOptions = {
   rendezvousTimeoutMs?: number;
   relayReservationRetryMs?: number;
   allowInsecureBrowserDials?: boolean;
+  isPeerKnown?(peerId: string): Promise<boolean>;
 };
 
 const DEFAULT_RENDEZVOUS_TOPIC = "clipp";
@@ -79,6 +81,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private rendezvousRelays: string[] = [];
   private relayReservationRetryTimer: ReturnType<typeof setInterval> | null = null;
   private relayReservationRunning = false;
+  private readonly reportPairingRejection = createPairingRejectionReporter({
+    emit: (diagnostic) => log.warn(diagnostic.event, diagnostic),
+  });
 
   constructor(private readonly opts: Libp2pMessagingOptions = {}) {
     this.relayPeerIds = buildRelayPeerIdSet(opts.relayAddresses || []);
@@ -148,7 +153,6 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     const handler = (protocol: string) => this.handleIncoming(protocol);
     this.node.handle(CLIP_PROTOCOL, handler(CLIP_PROTOCOL), { runOnLimitedConnection: true });
-    this.node.handle(CLIP_TRUST_PROTOCOL, handler(CLIP_TRUST_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(PAIRING_PROTOCOL, handler(PAIRING_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(HISTORY_PROTOCOL, handler(HISTORY_PROTOCOL), { runOnLimitedConnection: true });
 
@@ -257,6 +261,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
     this.observePeerConnection(dialedConnection, "dial result", dialContext);
     if (peerId) this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
     if (peerId) this.markPeerConnected(peerId, true);
+  }
+
+  async disconnect(peerId: string): Promise<void> {
+    if (!this.node || !this.started) return;
+    await this.node.hangUp?.(await peerIdObjectForTarget(peerId));
   }
 
   onMessage(protocol: string, cb: MessageHandler): void {
@@ -711,6 +720,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
       const iterable = getStreamIterable(stream);
       if (!iterable) {
+        if (protocol === PAIRING_PROTOCOL) {
+          const connectionPath = describeConnection(conn).path;
+          const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
+          this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from ?? undefined, frameSize: 0, messageType: "unknown", connectionPath: path });
+          await this.closeInvalidPairingConnection(from, conn);
+        }
         log.warn("Incoming stream missing async iterator", {
           protocol,
           from,
@@ -724,21 +739,37 @@ class Libp2pMessagingTransport implements MessagingTransport {
         log.debug("Incoming protocol stream", { protocol, from });
         if (protocol === PAIRING_PROTOCOL) {
           // Pairing is intentionally one authenticated, bounded frame per stream.
+          const connectionPath = describeConnection(conn).path;
+          const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
           if (!from) {
-            log.warn("Pairing stream missing authenticated peer id");
+            this.reportPairingRejection({ reason: "authenticated_identity_mismatch", frameSize: 0, messageType: "unknown", connectionPath: path });
+            await this.closeInvalidPairingConnection(from, conn);
             return;
           }
           const chunks: Uint8Array[] = [];
           let size = 0;
           for await (const chunk of iterable) {
             const bytes = toU8(chunk);
-            if (!bytes) return;
+            if (!bytes) {
+              this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from, frameSize: size, messageType: "unknown", connectionPath: path });
+              await this.closeInvalidPairingConnection(from, conn);
+              return;
+            }
             size += bytes.length;
-            if (size > PAIRING_MAX_FRAME_BYTES + 10) return;
+            if (size > PAIRING_MAX_FRAME_BYTES + 10) {
+              this.reportPairingRejection({ reason: "oversized_frame", authenticatedPeerId: from, frameSize: size, messageType: "unknown", connectionPath: path });
+              await this.closeInvalidPairingConnection(from, conn);
+              return;
+            }
             chunks.push(bytes);
           }
           const frame = concatBytes(chunks, size);
-          if (!decodePairingFrame(frame)) return;
+          const inspected = inspectPairingFrame(frame);
+          if (!inspected.ok) {
+            this.reportPairingRejection({ reason: inspected.reason, authenticatedPeerId: from, frameSize: size, messageType: "unknown", connectionPath: path });
+            await this.closeInvalidPairingConnection(from, conn);
+            return;
+          }
           for (const handler of handlers) handler(from, frame);
           return;
         }
@@ -766,9 +797,25 @@ class Libp2pMessagingTransport implements MessagingTransport {
           for (const h of handlers) h(msgFrom, buf);
         }
       } catch (err: any) {
+        if (protocol === PAIRING_PROTOCOL) {
+          const connectionPath = describeConnection(conn).path;
+          const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
+          this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from ?? undefined, frameSize: 0, messageType: "unknown", connectionPath: path });
+          await this.closeInvalidPairingConnection(from, conn);
+        }
         log.debug("Incoming stream failed", { protocol, from, error: err?.message || err });
       }
     };
+  }
+
+  private async closeInvalidPairingConnection(peerId: string | null, conn: any): Promise<void> {
+    try {
+      if (peerId && await (this.opts.isPeerKnown?.(peerId) ?? Promise.resolve(false))) return;
+      if (peerId) await this.disconnect(peerId);
+      else await conn?.close?.();
+    } catch {
+      // The invalid stream is already closed; connection cleanup is best-effort.
+    }
   }
 
   private async connectRelays(relays: string[]) {

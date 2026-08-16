@@ -43,6 +43,9 @@ export interface MessagingTransport {
    */
   connect(target: string): Promise<void>;
 
+  /** Close authenticated connections to a peer after an invalid unknown-peer message. */
+  disconnect?(peerId: string): Promise<void>;
+
   /**
    * Receive message payloads for a protocol.
    */

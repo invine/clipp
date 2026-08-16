@@ -11,14 +11,13 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
-import { createTrustMessenger, createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging";
+import { createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
 let clipMessaging: any = null;
-let trustMessaging: any = null;
 let historyMessaging: any = null;
 const runtimeRegisteredProtocols = new Set<string>();
 const storage = new ChromeStorageBackend();
@@ -60,7 +59,6 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
     transport = null;
     pairedConnections = null;
     clipMessaging = null;
-    trustMessaging = null;
     historyMessaging = null;
   }
   const peerId = await deviceIdToPeerIdObject(identity.deviceId);
@@ -74,6 +72,7 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
     privateKey,
     relayAddresses: relays,
     enableWebRTCStar: true,
+    isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   pairedConnections = createPairedPeerConnectionManager({
     transport,
@@ -81,13 +80,9 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
   });
 
   clipMessaging = createTrustedClipMessenger(transport, (id) => trust.isTrusted(id));
-  trustMessaging = createTrustMessenger(transport);
   historyMessaging = createTrustedHistoryMessenger(transport, (id) => trust.isTrusted(id));
 
   clipMessaging.onMessage((msg: any) => {
-    chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
-  });
-  trustMessaging.onMessage((msg: any) => {
     chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
   });
   historyMessaging.onMessage((msg: any) => {
@@ -119,7 +114,6 @@ async function initMessaging(identity: any, relays: string[] = DEFAULT_WEBRTC_ST
     transport = null;
     pairedConnections = null;
     clipMessaging = null;
-    trustMessaging = null;
     historyMessaging = null;
     started = false;
     throw err;
@@ -163,20 +157,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (m?.type === "history-sync") {
         await withOperationTimeout("history_broadcast", () => historyMessaging.broadcast(m));
       } else {
-        await withOperationTimeout("trust_broadcast", () => trustMessaging.broadcast(m));
-      }
-      sendResponse({ ok: true });
-      return;
-    }
-    if (msg.action === "sendMessage" && msg.peerTarget && msg.msg) {
-      const target = msg.peerTarget as string;
-      const m = msg.msg as any;
-      if (m?.type === "clip") {
-        await withOperationTimeout("clip_send", () => clipMessaging.send(target, m));
-      } else if (m?.type === "history-sync") {
-        await withOperationTimeout("history_send", () => historyMessaging.send(target, m));
-      } else {
-        await withOperationTimeout("trust_send", () => trustMessaging.send(target, m));
+        throw new Error("unsupported_message_type");
       }
       sendResponse({ ok: true });
       return;
@@ -188,6 +169,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.action === "runtimeConnect" && msg.peerTarget) {
       await transport.connect(msg.peerTarget);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "runtimeDisconnect" && msg.peerId) {
+      await transport.disconnect?.(msg.peerId);
       sendResponse({ ok: true });
       return;
     }

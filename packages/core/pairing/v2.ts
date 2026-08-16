@@ -39,11 +39,13 @@ export function decodePairingTarget(raw: string, maximumBytes = PAIRING_TARGET_M
   if (encoded.length > Math.ceil(maximumBytes * 4 / 3)) return null;
   const bytes = fromBase64Url(encoded);
   if (!bytes || bytes.length > maximumBytes) return null;
+  if (toBase64Url(bytes) !== encoded) return null;
 
   let version: number | undefined;
   let targetPeerId: string | undefined;
   let signedPeerRecord: Uint8Array | undefined;
   let deviceNameHint: string | undefined;
+  let deviceNameHintSeen = false;
   let offset = 0;
   while (offset < bytes.length) {
     const key = readVarint(bytes, offset);
@@ -71,8 +73,13 @@ export function decodePairingTarget(raw: string, maximumBytes = PAIRING_TARGET_M
         if (signedPeerRecord !== undefined) return null;
         signedPeerRecord = value.value;
       } else {
-        if (deviceNameHint !== undefined) return null;
-        deviceNameHint = normalizeDeviceName(decodeUtf8(value.value));
+        if (deviceNameHintSeen) return null;
+        deviceNameHintSeen = true;
+        try {
+          deviceNameHint = normalizeDeviceName(decodeUtf8(value.value));
+        } catch {
+          deviceNameHint = undefined;
+        }
       }
     } else {
       const next = skipField(bytes, offset, wire);
@@ -117,7 +124,10 @@ function readVarint(bytes: Uint8Array, start: number): { value: number; next: nu
     const byte = bytes[index];
     value += (byte & 127) * factor;
     if (value > Number.MAX_SAFE_INTEGER) return null;
-    if ((byte & 128) === 0) return { value, next: index + 1 };
+    if ((byte & 128) === 0) {
+      const next = index + 1;
+      return writeVarint(value).length === next - start ? { value, next } : null;
+    }
     factor *= 128;
   }
   return null;

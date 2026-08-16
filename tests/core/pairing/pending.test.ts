@@ -53,6 +53,24 @@ describe("pending Trust Requests", () => {
     expect(verifierCalled).toBe(true);
   });
 
+  it("ignores invalid incoming name bytes and falls back to the shortened Peer ID", async () => {
+    const requests = new Map<string, any>();
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async () => undefined },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+    });
+    const payload = encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 0n, issuedAtUnixMs: 1_000n });
+    const nameOffset = payload.findIndex((byte, index) => byte === 0x4d && payload[index + 1] === 0x6f);
+    payload[nameOffset] = 0xff;
+    const frame = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: payload, signature: new Uint8Array([1]) }) });
+    await expect(coordinator.receive(initiatorPeerId, frame)).resolves.toBe(true);
+    expect(requests.get(initiatorPeerId).deviceName).toBe(`${initiatorPeerId.slice(0, 8)}…${initiatorPeerId.slice(-6)}`);
+  });
+
   it("revalidates and sends one framed response when a request is decided", async () => {
     const requests = new Map<string, any>();
     const sent: Uint8Array[] = [];
@@ -68,5 +86,45 @@ describe("pending Trust Requests", () => {
     await expect(coordinator.decide(initiatorPeerId, "accepted")).resolves.toBe(true);
     expect(sent).toHaveLength(1);
     expect(requests.size).toBe(0);
+  });
+
+  it("publishes removal when a durable approval expires", async () => {
+    const requests = new Map<string, any>();
+    let expiry!: () => void;
+    const changes: number[] = [];
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [...requests.values()], save: async (request) => void requests.set(request.initiatorPeerId, request), remove: async (id) => void requests.delete(id) },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: (handler) => { expiry = handler; return 1; }, clearTimeout: () => undefined },
+      verify: async () => true,
+      onChanged: (next) => void changes.push(next.length),
+    });
+    const frame = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: encodeTrustRequestPayload({ initiatorPeerId, targetPeerId, deviceName: "Mobile", nameRevision: 0n, issuedAtUnixMs: 1_000n }), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, frame);
+    expiry();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(changes).toEqual([1, 0]);
+  });
+
+  it("rate-limits rejection diagnostics by authenticated peer and reason", async () => {
+    const diagnostics: any[] = [];
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [], save: async () => undefined, remove: async () => undefined },
+      notifications: { show: async () => undefined, dismiss: async () => undefined, onSelect: () => () => undefined },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => false,
+      connectionPath: () => "direct",
+      onRejected: (diagnostic) => void diagnostics.push(diagnostic),
+    });
+    const frame = encodePairingFrame({ kind: "request", envelope: encodeTrustRequestEnvelope({ signedPayload: new Uint8Array([1]), signature: new Uint8Array([1]) }) });
+    await coordinator.receive(initiatorPeerId, frame);
+    await coordinator.receive(initiatorPeerId, frame);
+    await coordinator.receive(targetPeerId, frame);
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics[0]).toMatchObject({ event: "pairing_message_rejected", reason: "invalid_signature", authenticatedPeerId: initiatorPeerId, connectionPath: "direct", suppressedCount: 0 });
   });
 });

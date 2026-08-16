@@ -34,15 +34,10 @@ import {
   systemRuntimeClock,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
-import { createTrustProtocolBinder } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants";
 import { createClipMessage } from "../../../packages/core/protocols/clip";
-import {
-  createSignedTrustRequestFromKey,
-  toTrustRequestPayload,
-} from "../../../packages/core/protocols/clipTrust";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { decodePairingFrame, PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending";
@@ -151,7 +146,6 @@ function createExtensionClipboardService() {
 
 const clipboard = createExtensionClipboardService();
 const messageHandlers: Array<(msg: any) => void> = [];
-const trustMessageHandlers: Array<(msg: any) => void> = [];
 const offscreenMessaging = {
   async broadcast(msg: any) {
     log.debug("Broadcasting clip");
@@ -162,21 +156,6 @@ const offscreenMessaging = {
     messageHandlers.push(cb);
   },
 };
-const offscreenTrustMessaging = {
-  async send(target: string, msg: any) {
-    await offscreenReady;
-    await sendOffscreen({ action: "sendMessage", peerTarget: target, msg });
-  },
-  async broadcast(msg: any) {
-    await offscreenReady;
-    await sendOffscreen({ action: "broadcast", msg });
-  },
-  onMessage(cb: (msg: any) => void) {
-    trustMessageHandlers.push(cb);
-  },
-};
-const trustBinder = createTrustProtocolBinder({ trust });
-trustBinder.bind(offscreenTrustMessaging as any);
 function emitIncomingMessage(msg: any) {
   for (const h of messageHandlers) h(msg);
 }
@@ -195,19 +174,6 @@ function base64ToBytes(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
-}
-
-async function createServiceWorkerTrustRequest(id: any, peerId: string) {
-  if (!id?.privateKey || typeof id.privateKey !== "string") {
-    throw new Error("missing_private_key");
-  }
-  const privateKey = privateKeyFromProtobuf(base64ToBytes(id.privateKey));
-  return await createSignedTrustRequestFromKey({
-    from: id.deviceId,
-    to: peerId,
-    payload: toTrustRequestPayload(id),
-    privateKey: privateKey as any,
-  });
 }
 
 const clipboardSync = createClipboardSyncManager({
@@ -229,25 +195,7 @@ history.onNew((item) => {
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
 let pendingRequests: TrustedDevice[] = [];
-let pairingWaiting: Array<{ targetPeerId: string; expiresAtUnixMs: bigint }> = [];
-
-function showPairingRequestNotification(device: TrustedDevice) {
-  const deviceName = device.deviceName?.trim() || "Unknown device";
-  void runtimeAdapter.notifications.show({
-    id: `pairing-request-${device.deviceId}`,
-    title: "New pairing request",
-    body: `${deviceName} wants to pair with Clipp.`,
-  });
-}
-
-trust.on("request", (d) => {
-  if (pendingRequests.some((p) => p.deviceId === d.deviceId)) return;
-  pendingRequests.push(d);
-  // @ts-ignore
-  chrome.runtime.sendMessage({ type: "trustRequest", device: d });
-  showPairingRequestNotification(d);
-  log.info("Trust request received", d.deviceId);
-});
+const pairingWaitingByPeer = new Map<string, { targetPeerId: string; expiresAtUnixMs: number }>();
 trust.on("rejected", async (d) => {
   pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
   log.info("Trust request rejected", d.deviceId);
@@ -265,6 +213,7 @@ const runtimePeerConnectedHandlers = new Set<(peerId: string) => void>();
 const runtimePeerDisconnectedHandlers = new Set<(peerId: string) => void>();
 const runtimeSelfPeerUpdateHandlers = new Set<(multiaddrs: string[]) => void>();
 let runtimeConnectedPeers = new Set<string>();
+let runtimePeerConnections: PeerConnectionInfo[] = [];
 
 const extensionNetwork: MessagingTransport = {
   async start() {
@@ -280,6 +229,10 @@ const extensionNetwork: MessagingTransport = {
   async connect(target) {
     await offscreenReady;
     await sendOffscreen({ action: "runtimeConnect", peerTarget: target });
+  },
+  async disconnect(peerId) {
+    await offscreenReady;
+    await sendOffscreen({ action: "runtimeDisconnect", peerId });
   },
   onMessage(protocol, handler) {
     const handlers = runtimeProtocolHandlers.get(protocol) ?? [];
@@ -300,6 +253,7 @@ const extensionNetwork: MessagingTransport = {
     runtimeSelfPeerUpdateHandlers.add(handler);
   },
   getConnectedPeers: () => [...runtimeConnectedPeers],
+  getPeerConnectionInfo: () => [...runtimePeerConnections],
   async getSignedPeerRecord() {
     const result = await sendOffscreen<{ record?: number[] }>({ action: "runtimeGetSignedPeerRecord" });
     if (!Array.isArray(result?.record)) throw new Error("signed_peer_record_unavailable");
@@ -366,7 +320,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         clips,
         devices,
         pending: pendingRequests,
-        waiting: pairingWaiting,
+        waiting: [...pairingWaitingByPeer.values()],
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
         identity,
@@ -391,17 +345,38 @@ const pairingPending = createPendingTrustRequestCoordinator({
   verify: verifyPairingTrustRequestSignature,
   sendResponse: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
   responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
-  onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
+  connectionPath: (remotePeerId) => {
+    const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+    return path === "relay" ? "relayed" : path ?? "unknown";
+  },
+  onRejected: (diagnostic) => {
+    log.warn(diagnostic.event, diagnostic);
+    if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+  },
+  onChanged: async (requests) => {
+    pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
+    await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
+  },
 });
 const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
+const pairingResponseValidator = createPairingSession({
+  identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
+  send: async () => undefined,
+  sign: async () => new Uint8Array(),
+  verify: verifyPairingTrustRequestSignature,
+  clock: systemRuntimeClock,
+  connectionPath: (remotePeerId) => {
+    const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+    return path === "relay" ? "relayed" : path ?? "unknown";
+  },
+  onRejected: (diagnostic) => {
+    log.warn(diagnostic.event, diagnostic);
+    void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+  },
+});
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-  if (decodePairingFrame(frame)?.kind === "response") void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => { if (decision) pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
-  else void pairingPending.receive(from, frame).then(async (accepted) => {
-    if (!accepted) return;
-    const requests = await pairingPending.list();
-    pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
-    await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
-  }).catch((error) => log.warn("Pairing request processing failed", error));
+  if (decodePairingFrame(frame)?.kind === "response") void pairingPending.start().then(() => (pairingSessions.get(from) ?? pairingResponseValidator).receiveResponse(from, frame)).then((decision) => { if (decision) pairingSessions.delete(from); }).catch((error) => log.warn("Pairing response processing failed", error));
+  else void pairingPending.start().then(() => pairingPending.receive(from, frame)).catch((error) => log.warn("Pairing request processing failed", error));
 });
 chrome.notifications?.onClicked?.addListener((id) => {
   notificationSelection.emit(id);
@@ -413,10 +388,11 @@ const sharedRuntime = createRuntimeOrchestrator({
     clipboardSync.start();
     await extensionNetwork.start();
     await pairingPending.start();
-    const requests = await pairingPending.list();
-    pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
   },
   stop: async () => {
+    await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
+    pairingSessions.clear();
+    pairingWaitingByPeer.clear();
     clipboardSync.stop();
   },
 });
@@ -425,6 +401,10 @@ const sharedRuntime = createRuntimeOrchestrator({
 // Listen for messages from popup/options
 // @ts-ignore
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "getRuntimeState") {
+    runtimeAdapter.publicState.read().then((state) => sendResponse({ state })).catch((error) => sendResponse({ error: (error as Error).message }));
+    return true;
+  }
   if (msg.type === "getLatestClip") {
     history.query({ limit: 1 }).then((items) => {
       sendResponse({ clip: items[0]?.clip || null });
@@ -530,6 +510,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         await offscreenReady;
         const identity = await identitySvc.get();
+        if (!extensionNetwork.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
         const signedPeerRecord = await extensionNetwork.getSignedPeerRecord();
         sendResponse({ text: encodePairingTarget({ targetPeerId: await deviceIdToPeerId(identity.deviceId), signedPeerRecord, deviceNameHint: identity.deviceName }) });
       } catch (error) {
@@ -546,27 +527,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
     void (async () => {
+      let attemptedSession: ReturnType<typeof createPairingSession> | undefined;
       try {
         await offscreenReady;
         const id = await identitySvc.get();
         if (!id.privateKey) throw new Error("missing_private_key");
         const privateKey = privateKeyFromProtobuf(base64ToBytes(id.privateKey));
+        const target = decodePairingTarget(msg.pairingText);
+        if (!target) throw new Error("invalid_pairing_target");
         const session = createPairingSession({
-          identity: async () => ({ peerId: await deviceIdToPeerId(id.deviceId), deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
+          identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
           sign: async (bytes) => privateKey.sign(bytes),
           verify: verifyPairingTrustRequestSignature,
           send: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
           clock: systemRuntimeClock,
-          onWaitingChanged: (waiting) => { pairingWaiting = waiting; void runtimeAdapter.publicState.publish(runtimeAdapter.publicState.read() as any); },
+          connectionPath: (remotePeerId) => {
+            const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+            return path === "relay" ? "relayed" : path ?? "unknown";
+          },
+          onRejected: (diagnostic) => {
+            log.warn(diagnostic.event, diagnostic);
+            void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+          },
+          onWaitingChanged: (waiting) => {
+            if (pairingSessions.get(target.targetPeerId) !== session) return;
+            const state = waiting.find((entry) => entry.targetPeerId === target.targetPeerId);
+            if (state) pairingWaitingByPeer.set(target.targetPeerId, { targetPeerId: state.targetPeerId, expiresAtUnixMs: Number(state.expiresAtUnixMs) });
+            else pairingWaitingByPeer.delete(target.targetPeerId);
+            void runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current));
+          },
         });
-        const target = decodePairingTarget(msg.pairingText);
-        if (!target) throw new Error("invalid_pairing_target");
+        attemptedSession = session;
         pairingSessions.set(target.targetPeerId, session);
         await importPairingTargetAndRequest({ text: msg.pairingText, network: extensionNetwork, request: session.request });
         sendResponse({ ok: true });
       } catch (error) {
         const target = decodePairingTarget(msg.pairingText);
-        if (target) pairingSessions.delete(target.targetPeerId);
+        if (target && attemptedSession && pairingSessions.get(target.targetPeerId) === attemptedSession) {
+          pairingSessions.delete(target.targetPeerId);
+          pairingWaitingByPeer.delete(target.targetPeerId);
+        }
         sendResponse({ ok: false, error: (error as Error).message });
       }
     })();
@@ -678,18 +678,12 @@ chrome.runtime.onMessage.addListener((msg) => {
       }
     });
     runtimeConnectedPeers = nextPeers;
+    runtimePeerConnections = Array.isArray(msg.peerConnections) ? msg.peerConnections : [];
     return;
   }
   if (msg?.action !== "incoming") return;
   const payload = msg.msg;
   emitIncomingMessage(payload);
-  if (
-    payload?.type === "trust-request" ||
-    payload?.type === "trust-ack" ||
-    payload?.type === "trusted-peers"
-  ) {
-    for (const h of trustMessageHandlers) h(payload);
-  }
 });
 
 // Kick off offscreen + clipboard

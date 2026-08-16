@@ -5,6 +5,9 @@ import {
   encodePairingFrame,
   encodeTrustRequestEnvelope,
   encodeTrustRequestPayload,
+  inspectPairingFrame,
+  peerIdFromMultihashBytes,
+  peerIdToMultihashBytes,
   validateTrustRequestTime,
 } from "../../../packages/core/pairing/protocol";
 
@@ -54,5 +57,12 @@ describe("Pairing protocol", () => {
     // field 99 / fixed64, twice: extension data must not affect signed-field decoding.
     const extended = new Uint8Array([...payload, 0x99, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0x99, 0x06, 0, 0, 0, 0, 0, 0, 0, 0]);
     expect(decodeTrustRequestPayload(extended)).toEqual({ initiatorPeerId, targetPeerId, deviceName: "Desktop", nameRevision: 0n, issuedAtUnixMs: 1n });
+  });
+
+  it("rejects non-multihash peer ids and classifies framing failures", () => {
+    expect(() => peerIdToMultihashBytes("2")).toThrow("invalid_peer_id");
+    expect(() => peerIdFromMultihashBytes(new Uint8Array([1, 1]))).toThrow("invalid_peer_id");
+    const frame = encodePairingFrame({ kind: "request", envelope: new Uint8Array([1]) });
+    expect(inspectPairingFrame(new Uint8Array([...frame, 0]))).toEqual({ ok: false, reason: "invalid_framing" });
   });
 });

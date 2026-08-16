@@ -7,6 +7,7 @@ import {
   validateTrustRequestTime,
 } from "./protocol";
 import { encodePairingFrame } from "./protocol";
+import { createPairingRejectionReporter, type PairingConnectionPath, type PairingRejectionDiagnostic, type PairingRejectionReason } from "./diagnostics";
 
 export type PendingTrustRequest = {
   initiatorPeerId: string;
@@ -86,22 +87,21 @@ export function createPendingTrustRequestCoordinator(options: {
   verify: TrustRequestVerifier;
   sendResponse?(peerId: string, frame: Uint8Array): Promise<void>;
   responseIdentity?(): Promise<{ deviceName: string; nameRevision: bigint }>;
-  onRejected?(reason: "malformed" | "signature" | "identity" | "time"): void;
+  connectionPath?(peerId: string): PairingConnectionPath;
+  onRejected?(diagnostic: PairingRejectionDiagnostic): void;
+  onChanged?(requests: PendingTrustRequest[]): void | Promise<void>;
   validityWindowMs?: number;
   clockSkewAllowanceMs?: number;
 }) {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
   let started = false;
-  const lastDiagnostic = new Map<string, number>();
-  const reject = (reason: "malformed" | "signature" | "identity" | "time") => {
-    const now = options.clock.now();
-    if ((lastDiagnostic.get(reason) ?? -Infinity) + 60_000 <= now) {
-      lastDiagnostic.set(reason, now);
-      options.onRejected?.(reason);
-    }
+  const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
+  const reject = (reason: PairingRejectionReason, authenticatedPeerId: string, frame: Uint8Array, messageType: "request" | "response" | "unknown" = "request") => {
+    reportRejected({ reason, authenticatedPeerId, frameSize: frame.byteLength, messageType, connectionPath: options.connectionPath?.(authenticatedPeerId) ?? "unknown" });
     return false;
   };
+  const publish = async () => options.onChanged?.(await options.store.list());
 
   const expirationFor = (issuedAt: bigint) => issuedAt + BigInt(options.validityWindowMs ?? 10 * 60 * 1000) + BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
   const isCurrent = (request: PendingTrustRequest) => BigInt(options.clock.now()) <= request.expiresAtUnixMs;
@@ -114,11 +114,12 @@ export function createPendingTrustRequestCoordinator(options: {
     clearTimer(peerId);
     await options.store.remove(peerId);
     await options.notifications.dismiss(notificationId(peerId));
+    await publish();
   };
   const scheduleExpiry = (request: PendingTrustRequest) => {
     clearTimer(request.initiatorPeerId);
     const delay = Number(request.expiresAtUnixMs - BigInt(options.clock.now()));
-    expiryTimers.set(request.initiatorPeerId, options.clock.setTimeout(() => void expire(request.initiatorPeerId), Math.max(0, delay)));
+    expiryTimers.set(request.initiatorPeerId, options.clock.setTimeout(() => { void expire(request.initiatorPeerId).catch(() => undefined); }, Math.max(0, delay)));
   };
   const show = async (request: PendingTrustRequest) => {
     await options.notifications.show({
@@ -143,18 +144,24 @@ export function createPendingTrustRequestCoordinator(options: {
           await show(request);
         }
       }
+      await publish();
     },
     async receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
       const parsed = decodePairingFrame(frame);
-      if (!parsed || parsed.kind !== "request") return reject("malformed");
+      if (!parsed || parsed.kind !== "request") return reject("protobuf_decoding_failed", authenticatedPeerId, frame, parsed?.kind ?? "unknown");
       const envelope = decodeTrustRequestEnvelope(parsed.envelope);
-      if (!envelope) return reject("malformed");
+      if (!envelope) return reject("protobuf_decoding_failed", authenticatedPeerId, frame);
       // The authenticated stream peer supplies the verification key; never
       // parse attacker-controlled signed fields before their signature holds.
-      if (!(await options.verify(envelope.signedPayload, envelope.signature, authenticatedPeerId))) return reject("signature");
+      if (!(await options.verify(envelope.signedPayload, envelope.signature, authenticatedPeerId))) return reject("invalid_signature", authenticatedPeerId, frame);
       const payload = decodeTrustRequestPayload(envelope.signedPayload);
-      if (!payload || payload.initiatorPeerId !== authenticatedPeerId || payload.targetPeerId !== await options.localPeerId()) return reject("identity");
-      if (!validateTrustRequestTime(payload, options.clock.now(), options)) return reject("time");
+      if (!payload) return reject("protobuf_decoding_failed", authenticatedPeerId, frame);
+      if (payload.initiatorPeerId !== authenticatedPeerId) return reject("authenticated_identity_mismatch", authenticatedPeerId, frame);
+      if (payload.targetPeerId !== await options.localPeerId()) return reject("wrong_target", authenticatedPeerId, frame);
+      const now = BigInt(options.clock.now());
+      const skew = BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
+      if (payload.issuedAtUnixMs > now + skew) return reject("premature_issued_at", authenticatedPeerId, frame);
+      if (!validateTrustRequestTime(payload, Number(now), options)) return reject("expired_request", authenticatedPeerId, frame);
 
       const request: PendingTrustRequest = {
         initiatorPeerId: payload.initiatorPeerId,
@@ -167,23 +174,36 @@ export function createPendingTrustRequestCoordinator(options: {
       await options.store.save(request);
       scheduleExpiry(request);
       if (!existing) await show(request);
+      await publish();
       return true;
     },
     async decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
       if (!options.sendResponse || !options.responseIdentity) return false;
       const request = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
-      if (!request || !isCurrent(request)) return false;
+      if (!request) return false;
+      if (!isCurrent(request)) {
+        await expire(initiatorPeerId);
+        return false;
+      }
       const envelope = decodeTrustRequestEnvelope(request.requestEnvelope);
-      if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, initiatorPeerId))) return false;
+      if (!envelope || !(await options.verify(envelope.signedPayload, envelope.signature, initiatorPeerId))) {
+        await expire(initiatorPeerId);
+        return false;
+      }
       const payload = decodeTrustRequestPayload(envelope.signedPayload);
-      if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) return false;
+      if (!payload || payload.initiatorPeerId !== initiatorPeerId || payload.targetPeerId !== await options.localPeerId() || !validateTrustRequestTime(payload, options.clock.now(), options)) {
+        await expire(initiatorPeerId);
+        return false;
+      }
       const identity = await options.responseIdentity();
       try {
         await options.sendResponse(initiatorPeerId, encodePairingFrame({ kind: "response", response: { decision, requestEnvelope: request.requestEnvelope, responderDeviceName: identity.deviceName, responderNameRevision: identity.nameRevision } }));
-        return true;
+      } catch {
+        // A response has one best-effort delivery attempt and no retry job.
       } finally {
         await expire(initiatorPeerId);
       }
+      return true;
     },
     expire,
   };

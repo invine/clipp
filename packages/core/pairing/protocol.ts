@@ -44,7 +44,7 @@ export function decodeTrustRequestPayload(bytes: Uint8Array): TrustRequestPayloa
     return {
       initiatorPeerId: peerIdFromBytes(initiator),
       targetPeerId: peerIdFromBytes(target),
-      deviceName: new TextDecoder("utf-8", { fatal: true }).decode(name),
+      deviceName: decodePresentationName(name),
       nameRevision: revision,
       issuedAtUnixMs: issuedAt,
     };
@@ -74,16 +74,29 @@ export function encodePairingFrame(message: { kind: "request"; envelope: Uint8Ar
 }
 
 export function decodePairingFrame(frame: Uint8Array, maximumBytes = PAIRING_MAX_FRAME_BYTES): { kind: "request"; envelope: Uint8Array } | { kind: "response"; response: TrustResponse } | null {
+  const result = inspectPairingFrame(frame, maximumBytes);
+  return result.ok ? result.message : null;
+}
+
+export type PairingFrameInspection =
+  | { ok: true; message: { kind: "request"; envelope: Uint8Array } | { kind: "response"; response: TrustResponse } }
+  | { ok: false; reason: "invalid_framing" | "oversized_frame" | "protobuf_decoding_failed" };
+
+/** Decode a pairing stream while preserving a privacy-safe rejection category. */
+export function inspectPairingFrame(frame: Uint8Array, maximumBytes = PAIRING_MAX_FRAME_BYTES): PairingFrameInspection {
   const prefix = decodeVarint(frame, 0);
-  if (!prefix || prefix.value > BigInt(maximumBytes) || prefix.value !== BigInt(frame.length - prefix.next)) return null;
+  if (!prefix || prefix.value !== BigInt(frame.length - prefix.next)) return { ok: false, reason: "invalid_framing" };
+  if (prefix.value > BigInt(maximumBytes)) return { ok: false, reason: "oversized_frame" };
   const fields = decodeFields(frame.slice(prefix.next), new Set([1, 2]));
-  if (!fields) return null;
+  if (!fields) return { ok: false, reason: "protobuf_decoding_failed" };
   const request = optionalBytes(fields, 1);
   const response = optionalBytes(fields, 2);
-  if (!!request === !!response) return null;
-  if (request) return { kind: "request", envelope: request };
+  if (!!request === !!response) return { ok: false, reason: "protobuf_decoding_failed" };
+  if (request) return { ok: true, message: { kind: "request", envelope: request } };
   const parsed = response && decodeTrustResponse(response);
-  return parsed ? { kind: "response", response: parsed } : null;
+  return parsed
+    ? { ok: true, message: { kind: "response", response: parsed } }
+    : { ok: false, reason: "protobuf_decoding_failed" };
 }
 
 export function validateTrustRequestTime(payload: TrustRequestPayload, now: number, options: { validityWindowMs?: number; clockSkewAllowanceMs?: number } = {}): boolean {
@@ -117,7 +130,7 @@ function decodeTrustResponse(bytes: Uint8Array): TrustResponse | null {
   const name = requiredBytes(fields, 3);
   const revision = requiredVarint(fields, 4);
   if ((decision !== 1n && decision !== 2n) || !requestEnvelope || !name || revision === null) return null;
-  try { return { decision: decision === 1n ? "accepted" : "rejected", requestEnvelope, responderDeviceName: new TextDecoder("utf-8", { fatal: true }).decode(name), responderNameRevision: revision }; } catch { return null; }
+  return { decision: decision === 1n ? "accepted" : "rejected", requestEnvelope, responderDeviceName: decodePresentationName(name), responderNameRevision: revision };
 }
 
 // Peer IDs are protobuf multihash bytes.  The libp2p textual form is base58btc;
@@ -126,29 +139,44 @@ function decodeTrustResponse(bytes: Uint8Array): TrustResponse | null {
 /** Convert libp2p's canonical base58 peer-id text to its multihash bytes. */
 export function peerIdToMultihashBytes(value: string): Uint8Array {
   const decoded = base58Decode(value);
-  if (!decoded.length) throw new Error("invalid_peer_id");
+  validateMultihashBytes(decoded);
+  if (base58Encode(decoded) !== value) throw new Error("invalid_peer_id");
   return decoded;
 }
 /** Convert canonical peer-id multihash bytes back to base58 text. */
 export function peerIdFromMultihashBytes(value: Uint8Array): string {
+  validateMultihashBytes(value);
   const text = base58Encode(value);
   // Round-trip to reject non-canonical encodings (for example a leading zero).
   const canonical = base58Decode(text);
   if (canonical.length !== value.length || canonical.some((byte, index) => byte !== value[index])) throw new Error("invalid_peer_id");
   return text;
 }
+function validateMultihashBytes(value: Uint8Array): void {
+  const code = decodeVarint(value, 0);
+  if (!code || code.value < 0n || encodeVarint(code.value).length !== code.next) throw new Error("invalid_peer_id");
+  const length = decodeVarint(value, code.next);
+  if (!length || length.value <= 0n || encodeVarint(length.value).length !== length.next - code.next) throw new Error("invalid_peer_id");
+  if (length.value !== BigInt(value.length - length.next)) throw new Error("invalid_peer_id");
+  // Device Network Sync v1 identities are Ed25519 Peer IDs: an identity
+  // multihash containing the canonical protobuf-encoded 32-byte public key.
+  const digest = value.slice(length.next);
+  if (code.value !== 0n || digest.length !== 36 || digest[0] !== 0x08 || digest[1] !== 0x01 || digest[2] !== 0x12 || digest[3] !== 0x20) throw new Error("invalid_peer_id");
+}
 const peerIdBytes = peerIdToMultihashBytes;
 const peerIdFromBytes = peerIdFromMultihashBytes;
-function varintField(field: number, value: bigint): Uint8Array { return concatPairingBytes(encodeVarint(BigInt(field << 3)), encodeVarint(value)); }
+const MAX_UINT64 = (1n << 64n) - 1n;
+function varintField(field: number, value: bigint): Uint8Array { if (value > MAX_UINT64) throw new Error("invalid_uint64"); return concatPairingBytes(encodeVarint(BigInt(field << 3)), encodeVarint(value)); }
 function bytesField(field: number, value: Uint8Array): Uint8Array { return concatPairingBytes(encodeVarint(BigInt((field << 3) | 2)), encodeVarint(BigInt(value.length)), value); }
 function encodeVarint(value: bigint): Uint8Array { if (value < 0n) throw new Error("invalid_varint"); const out: number[] = []; do { const byte = Number(value & 127n); value >>= 7n; out.push(value ? byte | 128 : byte); } while (value); return Uint8Array.from(out); }
-function decodeVarint(bytes: Uint8Array, start: number): { value: bigint; next: number } | null { let value = 0n; for (let index = start, shift = 0n; index < bytes.length && index < start + 10; index += 1, shift += 7n) { const byte = bytes[index]; value |= BigInt(byte & 127) << shift; if ((byte & 128) === 0) return { value, next: index + 1 }; } return null; }
+function decodeVarint(bytes: Uint8Array, start: number): { value: bigint; next: number } | null { let value = 0n; for (let index = start, shift = 0n; index < bytes.length && index < start + 10; index += 1, shift += 7n) { const byte = bytes[index]; value |= BigInt(byte & 127) << shift; if ((byte & 128) === 0) { const next = index + 1; return encodeVarint(value).length === next - start ? { value, next } : null; } } return null; }
 type Field = { wire: number; value: Uint8Array | bigint };
 function decodeFields(bytes: Uint8Array, recognizedFields: Set<number>): Map<number, Field> | null { const result = new Map<number, Field>(); for (let offset = 0; offset < bytes.length;) { const key = decodeVarint(bytes, offset); if (!key || key.value > BigInt(Number.MAX_SAFE_INTEGER)) return null; offset = key.next; const field = Number(key.value >> 3n); const wire = Number(key.value & 7n); if (field === 0) return null; const recognized = recognizedFields.has(field); if (recognized && result.has(field)) return null; if (wire === 0) { const value = decodeVarint(bytes, offset); if (!value) return null; if (recognized) result.set(field, { wire, value: value.value }); offset = value.next; } else if (wire === 1) { if (offset + 8 > bytes.length) return null; offset += 8; } else if (wire === 2) { const length = decodeVarint(bytes, offset); if (!length || length.value > BigInt(bytes.length - length.next)) return null; const end = length.next + Number(length.value); if (recognized) result.set(field, { wire, value: bytes.slice(length.next, end) }); offset = end; } else if (wire === 5) { if (offset + 4 > bytes.length) return null; offset += 4; } else return null; } return result; }
 function requiredBytes(fields: Map<number, Field>, field: number): Uint8Array | null { return optionalBytes(fields, field); }
 function optionalBytes(fields: Map<number, Field>, field: number): Uint8Array | null { const value = fields.get(field); return value?.wire === 2 && value.value instanceof Uint8Array ? value.value : null; }
-function requiredVarint(fields: Map<number, Field>, field: number): bigint | null { const value = fields.get(field); return value?.wire === 0 && typeof value.value === "bigint" ? value.value : null; }
+function requiredVarint(fields: Map<number, Field>, field: number): bigint | null { const value = fields.get(field); return value?.wire === 0 && typeof value.value === "bigint" && value.value <= MAX_UINT64 ? value.value : null; }
 export function concatPairingBytes(...parts: Uint8Array[]): Uint8Array { const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0)); let offset = 0; for (const part of parts) { result.set(part, offset); offset += part.length; } return result; }
+function decodePresentationName(value: Uint8Array): string { try { return new TextDecoder("utf-8", { fatal: true }).decode(value); } catch { return ""; } }
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58Decode(value: string): Uint8Array {
   if (!value) return new Uint8Array();

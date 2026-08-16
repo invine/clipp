@@ -34,8 +34,6 @@ import { createClipboardSyncManager } from "../../../packages/core/sync/clipboar
 import * as log from "../../../packages/core/logger.js";
 import {
   createTrustedClipMessenger,
-  createTrustMessenger,
-  createTrustProtocolBinder,
 } from "../../../packages/core/messaging/index.js";
 import {
   deviceIdToPeerId,
@@ -101,7 +99,6 @@ async function bootstrap() {
       ? await privateKeyFromProtobuf(Buffer.from(localIdentity.privateKey, "base64"))
       : undefined;
 
-  const trustBinder = createTrustProtocolBinder({ trust });
   let transport = createLibp2pMessagingTransport({
     peerId,
     privateKey,
@@ -109,14 +106,13 @@ async function bootstrap() {
     enableWebRTCDirect: true,
     enableDCUtR: true,
     enableTcp: true,
+    isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
   });
   let pairedConnections = createPairedPeerConnectionManager({
     transport,
     getPairedPeers: () => trust.list(),
   });
   let clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
-  let trustMessaging = createTrustMessenger(transport);
-  trustBinder.bind(trustMessaging);
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
@@ -348,7 +344,7 @@ async function bootstrap() {
   let pendingRequests: TrustedDevice[] = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const pairingSessions = new Map<string, ReturnType<typeof createPairingSession>>();
-  let pairingWaiting: Array<{ targetPeerId: string; expiresAtUnixMs: bigint }> = [];
+  const pairingWaitingByPeer = new Map<string, { targetPeerId: string; expiresAtUnixMs: number }>();
   let mainWindow: BrowserWindow | null = null;
   let relayWindow: BrowserWindow | null = null;
   let tray: Tray | null = null;
@@ -372,7 +368,7 @@ async function bootstrap() {
       devices,
       // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
-      waiting: pairingWaiting,
+      waiting: [...pairingWaitingByPeer.values()],
       peers,
       peerConnections,
       relayConnections,
@@ -405,15 +401,6 @@ async function bootstrap() {
     BrowserWindow.getAllWindows().forEach((win) =>
       win.webContents.send("clipp:log", { level, message, data })
     );
-  }
-
-  function showPairingRequestNotification(device: TrustedDevice) {
-    const deviceName = device.deviceName?.trim() || "Unknown device";
-    void runtimeAdapter.notifications.show({
-      id: `pairing-request-${device.deviceId}`,
-      title: "New pairing request",
-      body: `${deviceName} wants to pair with Clipp.`,
-    });
   }
 
   function scheduleSelfPeerUpdate(multiaddrs: string[]) {
@@ -480,20 +467,7 @@ async function bootstrap() {
     bindTransportHandlers(transport);
     bindPairingHandler(transport);
     await pairingPending?.start();
-    if (pairingPending) {
-      const requests = await pairingPending.list();
-      pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
-    }
 
-    // TODO: refactor pendingRequests as it's currently owned by trustManager
-    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
-    trust.on("request", (d: any) => {
-      if (pendingRequests.some((p) => p.deviceId === d.deviceId)) return;
-      pendingRequests.push(d);
-      emitState();
-      showPairingRequestNotification(d);
-      (log as any).info("Trust request received", d.deviceId);
-    });
     // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
     trust.on("approved", async (d: any) => {
       pendingRequests = pendingRequests.filter(
@@ -538,14 +512,13 @@ async function bootstrap() {
       enableWebRTCDirect: true,
       enableDCUtR: true,
       enableTcp: true,
+      isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
     });
     pairedConnections = createPairedPeerConnectionManager({
       transport,
       getPairedPeers: () => trust.list(),
     });
     clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
-    trustMessaging = createTrustMessenger(transport);
-    trustBinder.bind(trustMessaging);
     bindTransportHandlers(transport);
     clipboardSync.bindMessaging(clipMessaging as any);
     await ensureMessagingStarted();
@@ -780,6 +753,9 @@ async function bootstrap() {
 
   async function shutdownServices() {
     quitting = true;
+    await Promise.all([...pairingSessions.values()].map((session) => session.stop()));
+    pairingSessions.clear();
+    pairingWaitingByPeer.clear();
     clipboardSync.stop();
     pairedConnections.stop();
     try {
@@ -858,19 +834,40 @@ async function bootstrap() {
     verify: verifyPairingTrustRequestSignature,
     sendResponse: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
-    onRejected: (reason) => log.warn("Pairing request rejected", { reason }),
+    connectionPath: (remotePeerId) => {
+      const path = transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : path ?? "unknown";
+    },
+    onRejected: (diagnostic) => {
+      log.warn(diagnostic.event, diagnostic);
+      if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return transport.disconnect?.(diagnostic.authenticatedPeerId!); });
+    },
+    onChanged: async (requests) => {
+      pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
+      await emitState();
+    },
+  });
+  const pairingResponseValidator = createPairingSession({
+    identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
+    send: async () => undefined,
+    sign: async () => new Uint8Array(),
+    verify: verifyPairingTrustRequestSignature,
+    clock: systemRuntimeClock,
+    connectionPath: (remotePeerId) => {
+      const path = transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : path ?? "unknown";
+    },
+    onRejected: (diagnostic) => {
+      log.warn(diagnostic.event, diagnostic);
+      void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return transport.disconnect?.(diagnostic.authenticatedPeerId!); });
+    },
   });
   function bindPairingHandler(target: typeof transport) {
     target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-      if (decodePairingFrame(frame)?.kind === "response") void pairingSessions.get(from)?.receiveResponse(from, frame).then((decision) => {
+      if (decodePairingFrame(frame)?.kind === "response") void (pairingSessions.get(from) ?? pairingResponseValidator).receiveResponse(from, frame).then((decision) => {
         if (decision) pairingSessions.delete(from);
       }).catch((error) => log.warn("Pairing response processing failed", error));
-    else void pairingPending?.receive(from, frame).then(async (accepted) => {
-      if (!accepted || !pairingPending) return;
-      const requests = await pairingPending.list();
-      pendingRequests = [...pendingRequests.filter((pending) => !requests.some((request) => request.initiatorPeerId === pending.deviceId)), ...requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", createdAt: Number(request.expiresAtUnixMs) }))];
-      await emitState();
-    }).catch((error) => log.warn("Pairing request processing failed", error));
+    else void pairingPending?.receive(from, frame).catch((error) => log.warn("Pairing request processing failed", error));
     });
   }
   bindPairingHandler(transport);
@@ -990,20 +987,38 @@ async function bootstrap() {
     if (!target) return { ok: false, error: "invalid" as const };
     const privateKey = id.privateKey ? await privateKeyFromProtobuf(Buffer.from(id.privateKey, "base64")) : null;
     if (!privateKey) return { ok: false, error: "identity_unavailable" as const };
-    const session = createPairingSession({
-      identity: async () => ({ peerId: peerId.toString(), deviceName: id.deviceName, nameRevision: id.nameRevision ?? 0 }),
+    let session!: ReturnType<typeof createPairingSession>;
+    session = createPairingSession({
+      identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
       sign: async (bytes) => privateKey.sign(bytes),
       verify: verifyPairingTrustRequestSignature,
       send: (peerId, frame) => transport.send(PAIRING_PROTOCOL, peerId, frame),
       clock: systemRuntimeClock,
-      onWaitingChanged: (waiting) => { pairingWaiting = waiting; void emitState(); },
+      connectionPath: (remotePeerId) => {
+        const path = transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
+        return path === "relay" ? "relayed" : path ?? "unknown";
+      },
+      onRejected: (diagnostic) => {
+        log.warn(diagnostic.event, diagnostic);
+        void trust.isTrusted(diagnostic.authenticatedPeerId!).then((trusted) => { if (!trusted) return transport.disconnect?.(diagnostic.authenticatedPeerId!); });
+      },
+      onWaitingChanged: (waiting) => {
+        if (pairingSessions.get(target.targetPeerId) !== session) return;
+        const state = waiting.find((entry) => entry.targetPeerId === target.targetPeerId);
+        if (state) pairingWaitingByPeer.set(target.targetPeerId, { targetPeerId: state.targetPeerId, expiresAtUnixMs: Number(state.expiresAtUnixMs) });
+        else pairingWaitingByPeer.delete(target.targetPeerId);
+        void emitState();
+      },
     });
     try {
       pairingSessions.set(target.targetPeerId, session);
       await importPairingTargetAndRequest({ text: txt, network: transport, request: session.request });
       return { ok: true };
     } catch {
-      pairingSessions.delete(target.targetPeerId);
+      if (pairingSessions.get(target.targetPeerId) === session) {
+        pairingSessions.delete(target.targetPeerId);
+        pairingWaitingByPeer.delete(target.targetPeerId);
+      }
       return { ok: false, error: "dial_failed" as const };
     }
   });
@@ -1044,8 +1059,9 @@ async function bootstrap() {
     if (currentAddrs.length) {
       scheduleSelfPeerUpdate(currentAddrs);
     }
+    if (!transport.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
     const signedPeerRecord = await transport.getSignedPeerRecord();
-    const txt = encodePairingTarget({ targetPeerId: id.deviceId, signedPeerRecord, deviceNameHint: id.deviceName });
+    const txt = encodePairingTarget({ targetPeerId: peerId.toString(), signedPeerRecord, deviceNameHint: id.deviceName });
     const img = await QRCode.toDataURL(txt, { errorCorrectionLevel: "L", margin: 0, scale: 2 });
     return {
       image: img,
