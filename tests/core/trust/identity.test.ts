@@ -3,8 +3,16 @@ import {
   createChromeExtensionRuntimeAdapter,
   createElectronRuntimeAdapter,
   createRuntimeConformanceHarness,
+  createRuntimeOrchestrator,
 } from "../../../packages/core/runtime";
-import { createIdentityManager, type DeviceIdentity, type IdentityRepository } from "../../../packages/core/trust";
+import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
+import {
+  createIdentityManager,
+  createKVIdentityRepository,
+  toPublicDeviceIdentity,
+  type DeviceIdentity,
+  type IdentityRepository,
+} from "../../../packages/core/trust";
 
 const generatedIdentity = {
   peerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
@@ -115,5 +123,116 @@ describe("Device Identity initialization", () => {
     await expect(manager.get()).rejects.toThrow("key_generation_failed");
     expect(saved).toEqual([]);
     expect(initializationErrors).toEqual([{ code: "identity_initialization_failed" }]);
+  });
+
+  it("clears a persisted initialization error after a retry succeeds", async () => {
+    let attempts = 0;
+    const errors: unknown[] = [];
+    const cleared: unknown[] = [];
+    const manager = createIdentityManager({
+      repo: {
+        get: async () => undefined,
+        upsert: async () => undefined,
+        saveInitializationError: async (error) => { errors.push(error); },
+        clearInitializationError: async () => { cleared.push(undefined); },
+      },
+      generateKeyMaterial: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("key_generation_failed");
+        return generatedIdentity;
+      },
+    });
+
+    await expect(manager.get()).rejects.toThrow("key_generation_failed");
+    await expect(manager.retryInitialization()).resolves.toMatchObject({ deviceId: generatedIdentity.peerId });
+
+    expect(errors).toEqual([{ code: "identity_initialization_failed" }]);
+    expect(cleared).toEqual([undefined]);
+  });
+
+  it.each([
+    ["Electron", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron, "Desktop"],
+    ["Android", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android, "Mobile"],
+    ["Chrome", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension, "Extension"],
+  ] as const)("keeps capture and networking stopped until %s identity initialization succeeds", async (
+    _platform,
+    createAdapter,
+    capabilities,
+    initialDeviceName
+  ) => {
+    const durable = new Map<string, unknown>();
+    let identitySaveAttempts = 0;
+    const storage = {
+      get: async <Value>(key: string) => durable.get(key) as Value | undefined,
+      set: async <Value>(key: string, value: Value) => {
+        if (key === "identity" && ++identitySaveAttempts === 1) {
+          throw new Error("identity_persistence_failed");
+        }
+        durable.set(key, structuredClone(value));
+      },
+      remove: async (key: string) => { durable.delete(key); },
+    };
+    const harness = createRuntimeConformanceHarness({
+      capabilities,
+      initialApplicationState: {},
+      getPublicState: async () => ({}),
+    });
+    const adapter = createAdapter({
+      storage,
+      identityKey: "identity",
+      applicationStateKey: "runtime-state",
+      initialApplicationState: () => ({}),
+      clipboard: harness.adapter.clipboard,
+      notifications: harness.adapter.notifications,
+      lifecycle: harness.adapter.lifecycle,
+      network: harness.adapter.network,
+      clock: harness.adapter.clock,
+      publicState: harness.adapter.publicState,
+      relays: {
+        readAddresses: async () => [],
+        updateAddresses: async (addresses: string[]) => addresses,
+      },
+    });
+    const identity = createIdentityManager({
+      repo: createKVIdentityRepository({ storage, key: "identity" }),
+      initialDeviceName,
+      generateKeyMaterial: async () => generatedIdentity,
+    });
+    const startCapture = jest.fn();
+    const startNetworking = jest.fn();
+    const runtime = createRuntimeOrchestrator({
+      adapter,
+      start: async () => {
+        await identity.get();
+        startCapture();
+        startNetworking();
+      },
+    });
+
+    await expect(runtime.start()).rejects.toThrow("identity_persistence_failed");
+    expect(startCapture).not.toHaveBeenCalled();
+    expect(startNetworking).not.toHaveBeenCalled();
+    expect(await identity.getInitializationError()).toEqual({ code: "identity_initialization_failed" });
+    expect(await adapter.identity.load()).toBeUndefined();
+
+    await expect(identity.retryInitialization()).resolves.toMatchObject({ deviceId: generatedIdentity.peerId });
+    await runtime.start();
+    expect(startCapture).toHaveBeenCalledTimes(1);
+    expect(startNetworking).toHaveBeenCalledTimes(1);
+    expect(await identity.getInitializationError()).toBeUndefined();
+  });
+
+  it("creates a public identity without private key material", () => {
+    const publicIdentity = toPublicDeviceIdentity({
+      deviceId: generatedIdentity.peerId,
+      deviceName: "Desktop",
+      publicKey: generatedIdentity.publicKey,
+      privateKey: generatedIdentity.privateKey,
+      multiaddrs: [],
+      createdAt: 123,
+    });
+
+    expect(publicIdentity).not.toHaveProperty("privateKey");
+    expect(JSON.stringify(publicIdentity)).not.toContain(generatedIdentity.privateKey);
   });
 });

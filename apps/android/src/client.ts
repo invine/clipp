@@ -33,6 +33,7 @@ import {
   createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
+  toPublicDeviceIdentity,
   createTrustManager,
   IDENTITY_KEY,
   TRUST_KEY,
@@ -677,7 +678,7 @@ export class AndroidClient {
   async getState(): Promise<AndroidAppState> {
     const clips = await this.history.exportAll();
     const devices = await this.trust.list();
-    const identity = await this.ensureIdentityAddrs(await this.identitySvc.get());
+    const identity = toPublicDeviceIdentity(await this.ensureIdentityAddrs(await this.identitySvc.get()));
     const peers = this.transport?.getConnectedPeers?.() ?? [];
     const peerConnections = this.transport?.getPeerConnectionInfo?.() ?? [];
     const relayConnections = this.transport?.getRelayConnectionInfo?.() ?? [];
@@ -759,7 +760,7 @@ export class AndroidClient {
 
   async getIdentity(): Promise<Identity | null> {
     const id = await this.identitySvc.get();
-    return this.ensureIdentityAddrs(id);
+    return toPublicDeviceIdentity(await this.ensureIdentityAddrs(id));
   }
 
   async getPairingCode(): Promise<PairingCode | null> {

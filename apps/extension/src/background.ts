@@ -18,6 +18,7 @@ import {
   createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
+  toPublicDeviceIdentity,
   createTrustManager,
   IDENTITY_KEY,
   TRUST_KEY,
@@ -323,7 +324,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         waiting: [...pairingWaitingByPeer.values()],
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
-        identity,
+        identity: toPublicDeviceIdentity(identity),
         pinnedIds: [],
         relayAddresses: DEFAULT_WEBRTC_STAR_RELAYS,
       };
@@ -501,7 +502,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "getLocalIdentity") {
     identitySvc.get().then((id) => {
-      sendResponse({ identity: id });
+      sendResponse({ identity: toPublicDeviceIdentity(id) });
     });
     return true;
   }
@@ -521,7 +522,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "renameLocalIdentity" && typeof msg.name === "string") {
     identitySvc.rename(msg.name).then(async () => {
-      sendResponse({ identity: await identitySvc.get() });
+      sendResponse({ identity: toPublicDeviceIdentity(await identitySvc.get()) });
     });
     return true;
   }

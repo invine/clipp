@@ -44,6 +44,7 @@ import {
   createIdentityManager,
   createKVIdentityRepository,
   createKVTrustedDeviceRepository,
+  toPublicDeviceIdentity,
   createTrustManager,
   IDENTITY_KEY,
   TRUST_KEY,
@@ -362,7 +363,7 @@ async function bootstrap() {
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
     // const identity = await ensureIdentityAddrs(await identitySvc.get());
-    const identity = await identitySvc.get();
+    const identity = toPublicDeviceIdentity(await identitySvc.get());
     return {
       clips,
       devices,
@@ -912,14 +913,14 @@ async function bootstrap() {
   ipcMain.handle("clipp:get-identity", async () => {
     const id = await identitySvc.get();
     // const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
-    return id;
+    return toPublicDeviceIdentity(id);
   });
 
   ipcMain.handle("clipp:rename-identity", async (_evt, name: string) => {
-    const id = await identitySvc.rename(name);
+    await identitySvc.rename(name);
     await emitState();
     // return await ensureIdentityAddrs(id);
-    return id
+    return toPublicDeviceIdentity(await identitySvc.get());
   });
 
   ipcMain.handle("clipp:set-relay-addresses", async (_evt, addrs: string[]) => {

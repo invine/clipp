@@ -12,6 +12,15 @@ export interface DeviceIdentity {
   membershipView?: MembershipView;
 }
 
+/** The identity shape that may cross a runtime's public/UI boundary. */
+export type PublicDeviceIdentity = Omit<DeviceIdentity, "privateKey">;
+
+export function toPublicDeviceIdentity(identity: DeviceIdentity): PublicDeviceIdentity {
+  const publicIdentity: Partial<DeviceIdentity> = { ...identity };
+  delete publicIdentity.privateKey;
+  return publicIdentity as PublicDeviceIdentity;
+}
+
 export interface IdentityRepository {
   get(): Promise<DeviceIdentity | undefined>;
   upsert(identity: DeviceIdentity): Promise<void>;
@@ -22,6 +31,7 @@ export interface IdentityRepository {
 
 export interface IdentityManager {
   get(): Promise<DeviceIdentity>;
+  retryInitialization(): Promise<DeviceIdentity>;
   rename(name: string): Promise<void>;
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
   getInitializationError(): Promise<IdentityInitializationError | undefined>;
@@ -101,6 +111,7 @@ export function createIdentityManager(options: {
 
   return {
     get: loadIdentity,
+    retryInitialization: loadIdentity,
     rename: async (name) => {
       const current = await loadIdentity();
       await persist({ ...current, deviceName: name, nameRevision: (current.nameRevision ?? 0) + 1 });
