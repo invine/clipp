@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Initialize Device Identities across all runtimes.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] The shared Clip model contains a valid 16-byte UUIDv4, canonical `originPeerId`, precise `capturedAt`, finite `shareExpiresAt`, and exactly one text or HTTP(S) URL content alternative.
 - [ ] Text preserves the exact non-empty clipboard value; URL classification requires the entire untrimmed value to parse as HTTP(S) and stores the original string without canonicalization.

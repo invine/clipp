@@ -1,4 +1,4 @@
-import { Clip } from "../models/Clip";
+import { clipCapturedAt, Clip } from "../models/Clip";
 import { HistoryItem } from "../models/HistoryItem";
 
 export function byType(type?: Clip["type"]) {
@@ -11,5 +11,5 @@ export function bySearch(search?: string) {
 }
 
 export function bySince(since?: number) {
-  return (item: HistoryItem) => !since || item.clip.timestamp >= since;
+  return (item: HistoryItem) => !since || clipCapturedAt(item.clip) >= since;
 }

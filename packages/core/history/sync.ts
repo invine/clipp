@@ -21,7 +21,9 @@ export function initHistorySync(
     synced.add(device.deviceId);
     const local = await identity.get();
     const items = await history.query({ since: Date.now() - RETENTION_MS });
-    const clips = items.filter((i) => i.isLocal).map((i) => i.clip);
+    const clips = items
+      .filter((item) => item.clip.originPeerId ? item.clip.originPeerId === local.deviceId : item.liveHandled)
+      .map((item) => item.clip);
     const chunkSize = 100;
     for (let i = 0; i < clips.length; i += chunkSize) {
       const chunk = clips.slice(i, i + chunkSize);

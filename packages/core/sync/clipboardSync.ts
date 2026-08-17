@@ -54,9 +54,15 @@ export function createClipboardSyncManager(
     if (!running) return;
     const localId = await getLocalId();
     try {
-      await options.history.add(clip, localId, true);
+      if ("accept" in options.history && typeof options.history.accept === "function") {
+        const accepted = await options.history.accept(clip, { liveHandled: true });
+        if (accepted.kind !== "newly-stored") return;
+      } else {
+        await options.history.add(clip, localId, true);
+      }
     } catch (err) {
       log.warn("Failed to store local clip", err);
+      return;
     }
     if (!autoSync) return;
     const messaging = currentMessaging;
@@ -86,16 +92,17 @@ export function createClipboardSyncManager(
     inFlightRemote.add(clip.id);
     try {
       try {
-        const existing = await options.history.getById(clip.id);
-        if (existing) return;
-      } catch (err) {
-        log.warn("Failed to check history for clip", err);
-      }
-
-      try {
-        await options.history.add(clip, msg.from, false);
+        if ("accept" in options.history && typeof options.history.accept === "function") {
+          const accepted = await options.history.accept(clip, { liveHandled: true });
+          if (accepted.kind !== "newly-stored" && !accepted.liveHandled) return;
+        } else {
+          const existing = await options.history.getById(clip.id);
+          if (existing) return;
+          await options.history.add(clip, msg.from, false);
+        }
       } catch (err) {
         log.warn("Failed to store remote clip", err);
+        return;
       }
 
       try {

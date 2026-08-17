@@ -145,11 +145,12 @@ describe("ClipboardSyncManager", () => {
     sync.start();
 
     const clip: Clip = {
-      id: "r1",
+      id: "00000000-0000-4000-8000-000000000011",
       type: "text",
       content: "remote",
-      timestamp: 1,
-      senderId: "peer",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
     };
     const msg: ClipMessage = createClipMessage({
       from: "peer",

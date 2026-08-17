@@ -1,6 +1,7 @@
 import { normalizeClipboardContent } from "./normalize";
 import { Clip } from "../models/Clip";
 import { ClipType } from "../models/enums";
+import type { ClipCaptureCoordinator } from "./captureCoordinator";
 import * as log from "../logger";
 
 export interface ClipboardService {
@@ -26,6 +27,7 @@ export type ClipboardServiceBaseOptions = {
   writeText?: ClipboardWriteFn;
   now?: () => number;
   makeId?: () => string;
+  captureCoordinator?: ClipCaptureCoordinator;
 };
 
 export type PollingClipboardOptions = ClipboardServiceBaseOptions & {
@@ -85,26 +87,30 @@ function createClipboardService(
   const makeId = options.makeId;
   const pollIntervalMs = options.pollIntervalMs;
 
-  // Custom simple hash function to detect clipboard changes
-  function hashString(str: string): string {
-    let hash = 2166136261;
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      hash +=
-        (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    return (hash >>> 0).toString(16);
-  }
-
   const localHandlers: Array<(c: Clip) => void> = [];
   const remoteHandlers: Array<(c: Clip) => void> = [];
   let lastLocal: Clip | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
-  let lastHash = "";
+  let baseline: string | undefined;
+  let operation = Promise.resolve();
+  const serialize = async <Result>(work: () => Promise<Result>): Promise<Result> => {
+    const next = operation.then(work, work);
+    operation = next.then(() => undefined, () => undefined);
+    return next;
+  };
 
   async function processLocalText(text: string): Promise<void> {
     log.debug("Processing local clipboard text");
+    if (options.captureCoordinator) {
+      const clip = await options.captureCoordinator.capture(text);
+      if (clip) {
+        lastLocal = clip;
+        localHandlers.forEach((handler) => handler(clip));
+      }
+      return;
+    }
     const senderId = await Promise.resolve(getSenderId());
+    if (!text) return;
     const clip = normalizeClipboardContent(text, senderId, { now, makeId });
     if (!clip) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
@@ -114,13 +120,18 @@ function createClipboardService(
 
   async function checkOnce(): Promise<void> {
     try {
-      const text = await read();
-      const hash = hashString(text || "");
-      if (hash !== lastHash) {
-        lastHash = hash;
+      await serialize(async () => {
+        const text = await read();
+        if (baseline === undefined) {
+          baseline = text;
+          return;
+        }
+        if (text === baseline) return;
+        baseline = text;
+        if (!text) return;
         log.debug("Clipboard changed");
         await processLocalText(text);
-      }
+      });
     } catch {
       // ignore read errors
     }
@@ -131,15 +142,21 @@ function createClipboardService(
     if (clip.id === lastLocal?.id) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     log.debug("Writing clip to clipboard");
-    const previousHash = lastHash;
-    lastHash = hashString(clip.content || "");
-    try {
+    await serialize(async () => {
+      if (options.captureCoordinator) {
+        await options.captureCoordinator.writeRemote(clip, write, read);
+        remoteHandlers.forEach((handler) => handler(clip));
+        return;
+      }
       await write(clip.content);
-    } catch (err) {
-      lastHash = previousHash;
-      throw err;
-    }
-    remoteHandlers.forEach((h) => h(clip));
+      try {
+        baseline = await read();
+      } catch {
+        // The next successful observation establishes a safe baseline without capture.
+        baseline = undefined;
+      }
+      remoteHandlers.forEach((h) => h(clip));
+    });
   }
 
   return {

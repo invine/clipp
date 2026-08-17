@@ -24,7 +24,6 @@ import {
   TrustedDevice,
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
-import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize";
 import {
   createChromeExtensionRuntimeAdapter,
   createRuntimeIdentityManager,
@@ -39,7 +38,6 @@ import { createClipboardSyncManager } from "../../../packages/core/sync/clipboar
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
-import { createClipMessage } from "../../../packages/core/protocols/clip";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol";
 import { createMembershipPeerRecordBridge, createMembershipReconciler } from "../../../packages/core/membership/reconciliation";
@@ -160,6 +158,7 @@ const offscreenReady = (async () => {
 function createExtensionClipboardService() {
   return createRuntimeClipboardService({
     capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+    history,
     getSenderId: async () => {
       const id = await identitySvc.get();
       return id.deviceId;
@@ -466,16 +465,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Handle shareClip from popup
   if (msg.type === "shareClip" && msg.clip) {
-    identitySvc.get().then(async (id) => {
-      const message = createClipMessage({
-        from: id.deviceId,
-        clip: msg.clip,
-        sentAt: Date.now(),
-      });
-      log.debug("Broadcasting clip");
-      await offscreenReady;
-      await sendOffscreen({ action: "broadcast", msg: message });
-      history.add(msg.clip, msg.clip.senderId, true);
+    Promise.resolve(clipboard.processLocalText(msg.clip.content)).then(async () => {
       sendResponse({ ok: true });
     });
     return true;
@@ -537,19 +527,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "shareNow") {
     navigator.clipboard.readText().then(async (text) => {
-      const id = await identitySvc.get();
-      const clip = normalizeClipboardContent(text, id.deviceId);
-      if (clip) {
-        history.add(clip, id.deviceId, true);
-        const message = createClipMessage({
-          from: id.deviceId,
-          clip,
-          sentAt: Date.now(),
-        });
-        log.debug("Broadcasting clip");
-        await offscreenReady;
-        await sendOffscreen({ action: "broadcast", msg: message });
-      }
+      await clipboard.processLocalText(text);
       sendResponse({ ok: true });
     });
     return true;

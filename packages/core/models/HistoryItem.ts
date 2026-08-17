@@ -4,14 +4,18 @@
 import { Clip } from "./Clip";
 
 export interface HistoryItem {
-  /** The clipboard item */
+  /** Immutable clipboard event. */
   clip: Clip;
-  /** Peer ID from which the clip was received */
-  receivedFrom: string;
-  /** When the clip was synced (epoch ms) */
-  syncedAt: number;
-  /** True if the clip originated locally */
-  isLocal: boolean;
+  /** Local retention start; never exchanged or refreshed by duplicates. */
+  firstStoredAt: number;
+  /** Local-only first-live-delivery marker. */
+  liveHandled: boolean;
+  /** @deprecated Legacy transition metadata; v1 storage never writes it. */
+  receivedFrom?: string;
+  /** @deprecated Legacy transition metadata; v1 storage never writes it. */
+  syncedAt?: number;
+  /** @deprecated Local/Remote is derived from originPeerId in v1. */
+  isLocal?: boolean;
 }
 
 /**
@@ -19,8 +23,7 @@ export interface HistoryItem {
  */
 export function validateHistoryItem(item: HistoryItem): boolean {
   return (
-    typeof item.receivedFrom === "string" &&
-    typeof item.syncedAt === "number" &&
-    typeof item.isLocal === "boolean"
+    (typeof item.firstStoredAt === "number" || typeof item.syncedAt === "number") &&
+    (typeof item.liveHandled === "boolean" || typeof item.isLocal === "boolean")
   );
 }

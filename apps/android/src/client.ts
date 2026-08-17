@@ -12,7 +12,6 @@ import {
   startIdentityBoundRuntimeServices,
   systemRuntimeClock,
 } from "@core/runtime";
-import { normalizeClipboardContent } from "@core/clipboard/normalize";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
 import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
@@ -26,7 +25,6 @@ import { createClipboardSyncManager } from "@core/sync/clipboardSync";
 import {
   createTrustedClipMessenger,
 } from "@core/messaging";
-import { createClipMessage } from "@core/protocols/clip";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
 import { createMembershipPeerRecordBridge, createMembershipReconciler } from "@core/membership/reconciliation";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
@@ -346,6 +344,7 @@ export class AndroidClient {
   private createAndroidClipboardService() {
     return createRuntimeClipboardService({
       capabilities: RUNTIME_CAPABILITIES.android,
+      history: this.history,
       pollIntervalMs: 1500,
       getSenderId: async () => {
         const id = await this.identitySvc.get();
@@ -862,19 +861,9 @@ export class AndroidClient {
     try {
       await this.ensureMessaging();
       const text = await readClipboardText();
-      const id = await this.identitySvc.get();
-      const clip = normalizeClipboardContent(text, id.deviceId);
-      if (clip) {
-        await this.history.add(clip, id.deviceId, true);
-        const message = createClipMessage({
-          from: id.deviceId,
-          clip,
-          sentAt: Date.now(),
-        });
-        await this.clipMessaging!.broadcast(message as any);
-        await this.emitState();
-        return { ok: true };
-      }
+      await this.clipboard.processLocalText(text);
+      await this.emitState();
+      return { ok: text.length > 0 };
     } catch (err) {
       log.warn("Share clipboard failed", err);
     }

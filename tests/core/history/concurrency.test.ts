@@ -12,10 +12,9 @@ describe("History concurrency", () => {
       const clip: Clip = { id: `c${i}`, type: "text", content: "x", timestamp: now + i, senderId: "me" };
       adds.push(store.add(clip, "me", true));
     }
-    const q = store.query({ limit: 100 });
     jest.runAllTimers();
     await Promise.all(adds);
-    const res = await q;
+    const res = await store.query({ limit: 100 });
     expect(res.length).toBe(100);
     jest.useRealTimers();
   });

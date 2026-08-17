@@ -21,12 +21,16 @@ describe("ClipboardService", () => {
     });
     const events: Clip[] = [];
     service.onLocalClip((c) => events.push(c));
-    readValue = "first";
+    readValue = "";
     service.start();
+    await jest.runOnlyPendingTimersAsync();
+    expect(events.length).toBe(0);
+    readValue = "first";
+    jest.advanceTimersByTime(60);
     await jest.runOnlyPendingTimersAsync();
     expect(events.length).toBe(1);
     expect(events[0].content).toBe("first");
-    expect(events[0].senderId).toBe("me");
+    expect(events[0].originPeerId).toBe("me");
     readValue = "second";
     jest.advanceTimersByTime(60);
     await jest.runOnlyPendingTimersAsync();

@@ -13,7 +13,7 @@ function item(id: string, opts: Partial<Clip> = {}): HistoryItem {
     senderId: "me",
     ...opts,
   } as Clip;
-  return { clip, receivedFrom: "me", syncedAt: clip.timestamp, isLocal: true };
+  return { clip, firstStoredAt: clip.timestamp ?? now, liveHandled: true };
 }
 
 describe("pruneHistoryItems", () => {

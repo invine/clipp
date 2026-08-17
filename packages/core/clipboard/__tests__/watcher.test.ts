@@ -53,7 +53,7 @@ describe("ClipboardService watcher", () => {
 
     jest.advanceTimersByTime(10000);
     await jest.runOnlyPendingTimersAsync();
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(0);
   });
 
   test("W-5 stop halts polling", async () => {

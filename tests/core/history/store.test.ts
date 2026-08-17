@@ -49,6 +49,26 @@ describe("ClipHistoryStore", () => {
     expect(count).toBe(1);
   });
 
+  it("atomically distinguishes exact duplicates from immutable conflicts", async () => {
+    const clip = {
+      id: "00000000-0000-4000-8000-000000000010",
+      type: "text" as const,
+      content: "first",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 1_000,
+      shareExpiresAt: 86_401_000,
+    };
+    expect((await history.accept(clip)).kind).toBe("newly-stored");
+    expect((await history.accept(clip, { liveHandled: true }))).toMatchObject({
+      kind: "exact-duplicate",
+      liveHandled: true,
+    });
+    expect((await history.accept({ ...clip, content: "conflict" }))).toMatchObject({
+      kind: "immutable-conflict",
+      clip: expect.objectContaining({ content: "first" }),
+    });
+  });
+
   it("clears all clips", async () => {
     const now = Date.now();
     await history.add(sampleClip(now + 4, "c1"), sender, true);

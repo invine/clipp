@@ -335,6 +335,7 @@ async function bootstrap() {
   function createElectronClipboardService() {
     return createRuntimeClipboardService({
       capabilities: RUNTIME_CAPABILITIES.electron,
+      history,
       pollIntervalMs: 1200,
       getSenderId: async () => {
         const id = await identitySvc.get();

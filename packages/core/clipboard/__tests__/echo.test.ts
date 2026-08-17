@@ -34,6 +34,7 @@ describe("Echo prevention", () => {
       localClip = c;
     });
     service.start();
+    await jest.runOnlyPendingTimersAsync();
     clipboard = "X";
     jest.advanceTimersByTime(1000);
     await jest.runOnlyPendingTimersAsync();

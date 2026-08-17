@@ -1,10 +1,11 @@
-import { Clip } from "../models/Clip";
+import { clipCapturedAt, clipsHaveEqualImmutableFields, Clip } from "../models/Clip";
 import { HistoryItem } from "../models/HistoryItem";
 import { HistoryStorageBackend, InMemoryHistoryBackend } from "./types";
 
 export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface ClipHistoryStore {
+  accept(clip: Clip, options?: { liveHandled?: boolean }): Promise<HistoryAcceptance>;
   add(clip: Clip, source: string, isLocal: boolean): Promise<void>;
   getById(id: string): Promise<HistoryItem | null>;
   query(opts?: { type?: Clip["type"]; search?: string; since?: number; limit?: number }): Promise<HistoryItem[]>;
@@ -16,23 +17,52 @@ export interface ClipHistoryStore {
   clearAll(): Promise<void>;
 }
 
+export type HistoryAcceptance = {
+  kind: "newly-stored" | "exact-duplicate" | "immutable-conflict" | "locally-suppressed";
+  clip: Clip;
+  liveHandled: boolean;
+};
+
 export class MemoryHistoryStore implements ClipHistoryStore {
   private backend: HistoryStorageBackend;
   private listeners: Array<(item: HistoryItem) => void> = [];
+  private acceptanceQueue = Promise.resolve();
 
   constructor(backend: HistoryStorageBackend = new InMemoryHistoryBackend()) {
     this.backend = backend;
   }
 
   async add(clip: Clip, source: string, isLocal: boolean): Promise<void> {
-    const item: HistoryItem = {
-      clip,
-      receivedFrom: source,
-      syncedAt: Date.now(),
-      isLocal,
+    void source;
+    await this.accept(clip, { liveHandled: isLocal });
+  }
+
+  async accept(clip: Clip, options: { liveHandled?: boolean } = {}): Promise<HistoryAcceptance> {
+    const run = async (): Promise<HistoryAcceptance> => {
+      const existing = await this.backend.get(clip.id) as HistoryItem | null;
+      if (existing) {
+        if (!clipsHaveEqualImmutableFields(existing.clip, clip)) {
+          return { kind: "immutable-conflict", clip: existing.clip, liveHandled: false };
+        }
+        const needsLiveHandled = options.liveHandled === true && !existing.liveHandled;
+        if (needsLiveHandled) {
+          const updated = { ...existing, liveHandled: true };
+          await this.backend.set(clip.id, updated);
+        }
+        return { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled };
+      }
+      const item: HistoryItem = {
+        clip,
+        firstStoredAt: Date.now(),
+        liveHandled: options.liveHandled === true,
+      };
+      await this.backend.set(clip.id, item);
+      for (const listener of this.listeners) listener(item);
+      return { kind: "newly-stored", clip, liveHandled: item.liveHandled };
     };
-    await this.backend.set(clip.id, item);
-    for (const l of this.listeners) l(item);
+    const next = this.acceptanceQueue.then(run, run);
+    this.acceptanceQueue = next.then(() => undefined, () => undefined);
+    return next;
   }
 
   async getById(id: string): Promise<HistoryItem | null> {
@@ -51,8 +81,8 @@ export class MemoryHistoryStore implements ClipHistoryStore {
       items = items.filter((i) => i.clip.content.toLowerCase().includes(q));
     }
     const since = opts.since;
-    if (since !== undefined) items = items.filter((i) => i.clip.timestamp >= since);
-    items.sort((a, b) => b.clip.timestamp - a.clip.timestamp);
+    if (since !== undefined) items = items.filter((i) => clipCapturedAt(i.clip) >= since);
+    items.sort((a, b) => clipCapturedAt(b.clip) - clipCapturedAt(a.clip));
     if (opts.limit) items = items.slice(0, opts.limit);
     return items;
   }
@@ -75,8 +105,8 @@ export class MemoryHistoryStore implements ClipHistoryStore {
     const now = Date.now();
     const items = await this.allItems();
     for (const item of items) {
-      const ts = item.clip.timestamp;
-      if (ts < now - RETENTION_MS) {
+      const retentionStart = item.clip.originPeerId ? item.firstStoredAt : clipCapturedAt(item.clip);
+      if (retentionStart < now - RETENTION_MS) {
         await this.backend.remove(item.clip.id);
       }
     }
