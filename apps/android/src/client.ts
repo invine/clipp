@@ -859,7 +859,6 @@ export class AndroidClient {
 
   async shareCurrentClipboard() {
     try {
-      await this.ensureMessaging();
       const text = await readClipboardText();
       await this.clipboard.processLocalText(text);
       await this.emitState();

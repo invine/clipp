@@ -38,9 +38,42 @@ export function clipContentType(value: string): Clip["type"] {
 }
 
 export function isCanonicalPeerId(value: string): boolean {
-  // The capture boundary receives the already-canonical textual Peer ID from
-  // the identity service. Wire codecs perform byte-level multihash validation.
-  return /^(?:12D3KooW|Qm)[1-9A-HJ-NP-Za-km-z]+$/.test(value);
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  if (value.length === 0) return false;
+
+  const bytes = [0];
+  for (const character of value) {
+    const digit = alphabet.indexOf(character);
+    if (digit < 0) return false;
+    let carry = digit;
+    for (let index = 0; index < bytes.length; index += 1) {
+      const next = bytes[index] * 58 + carry;
+      bytes[index] = next & 0xff;
+      carry = next >> 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+
+  for (let index = 0; index < value.length - 1 && value[index] === "1"; index += 1) bytes.push(0);
+  bytes.reverse();
+  const readVarint = (start: number): { value: number; next: number } | null => {
+    let decoded = 0;
+    let shift = 0;
+    for (let index = start; index < bytes.length && shift <= 28; index += 1) {
+      const byte = bytes[index];
+      decoded |= (byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return { value: decoded, next: index + 1 };
+      shift += 7;
+    }
+    return null;
+  };
+  const code = readVarint(0);
+  const digestLength = code && readVarint(code.next);
+  if (!code || !digestLength || digestLength.value <= 0) return false;
+  return digestLength.next + digestLength.value === bytes.length;
 }
 
 /** Validate structural v1 invariants without making a local-clock decision. */

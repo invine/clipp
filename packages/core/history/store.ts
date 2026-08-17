@@ -1,6 +1,6 @@
-import { clipCapturedAt, clipsHaveEqualImmutableFields, Clip } from "../models/Clip";
+import { clipCapturedAt, Clip } from "../models/Clip";
 import { HistoryItem } from "../models/HistoryItem";
-import { HistoryStorageBackend, InMemoryHistoryBackend } from "./types";
+import { AtomicHistoryAcceptance, HistoryStorageBackend, InMemoryHistoryBackend } from "./types";
 
 export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -14,14 +14,21 @@ export interface ClipHistoryStore {
   pruneExpired(): Promise<void>;
   onNew(cb: (item: HistoryItem) => void): void;
   remove(id: string): Promise<void>;
+  suppress(id: string, suppressedUntil: number): Promise<void>;
   clearAll(): Promise<void>;
 }
 
-export type HistoryAcceptance = {
-  kind: "newly-stored" | "exact-duplicate" | "immutable-conflict" | "locally-suppressed";
-  clip: Clip;
-  liveHandled: boolean;
-};
+export type HistoryAcceptance = AtomicHistoryAcceptance;
+
+const SUPPRESSION_KEY_PREFIX = "__clipp_suppression__:";
+
+function suppressionKey(id: string): string {
+  return `${SUPPRESSION_KEY_PREFIX}${id}`;
+}
+
+function isHistoryItem(value: unknown): value is HistoryItem {
+  return value !== null && typeof value === "object" && "clip" in value && "firstStoredAt" in value;
+}
 
 export class MemoryHistoryStore implements ClipHistoryStore {
   private backend: HistoryStorageBackend;
@@ -39,26 +46,23 @@ export class MemoryHistoryStore implements ClipHistoryStore {
 
   async accept(clip: Clip, options: { liveHandled?: boolean } = {}): Promise<HistoryAcceptance> {
     const run = async (): Promise<HistoryAcceptance> => {
-      const existing = await this.backend.get(clip.id) as HistoryItem | null;
-      if (existing) {
-        if (!clipsHaveEqualImmutableFields(existing.clip, clip)) {
-          return { kind: "immutable-conflict", clip: existing.clip, liveHandled: false };
-        }
-        const needsLiveHandled = options.liveHandled === true && !existing.liveHandled;
-        if (needsLiveHandled) {
-          const updated = { ...existing, liveHandled: true };
-          await this.backend.set(clip.id, updated);
-        }
-        return { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled };
-      }
-      const item: HistoryItem = {
+      const firstStoredAt = Date.now();
+      const result = await this.backend.acceptClip({
         clip,
-        firstStoredAt: Date.now(),
+        suppressionKey: suppressionKey(clip.id),
+        firstStoredAt,
         liveHandled: options.liveHandled === true,
-      };
-      await this.backend.set(clip.id, item);
-      for (const listener of this.listeners) listener(item);
-      return { kind: "newly-stored", clip, liveHandled: item.liveHandled };
+        now: Date.now(),
+      });
+      if (result.kind === "newly-stored") {
+        const item: HistoryItem = {
+          clip,
+          firstStoredAt,
+          liveHandled: options.liveHandled === true,
+        };
+        for (const listener of this.listeners) listener(item);
+      }
+      return result;
     };
     const next = this.acceptanceQueue.then(run, run);
     this.acceptanceQueue = next.then(() => undefined, () => undefined);
@@ -66,11 +70,12 @@ export class MemoryHistoryStore implements ClipHistoryStore {
   }
 
   async getById(id: string): Promise<HistoryItem | null> {
-    return (await this.backend.get(id)) ?? null;
+    const item = await this.backend.get(id);
+    return isHistoryItem(item) ? item : null;
   }
 
   private async allItems(): Promise<HistoryItem[]> {
-    return await this.backend.getAll();
+    return (await this.backend.getAll()).filter(isHistoryItem);
   }
 
   async query(opts: { type?: Clip["type"]; search?: string; since?: number; limit?: number } = {}): Promise<HistoryItem[]> {
@@ -114,6 +119,17 @@ export class MemoryHistoryStore implements ClipHistoryStore {
 
   async remove(id: string): Promise<void> {
     await this.backend.remove(id);
+  }
+
+  async suppress(id: string, suppressedUntil: number): Promise<void> {
+    const run = () => this.backend.suppressClip({
+      clipId: id,
+      suppressionKey: suppressionKey(id),
+      suppressedUntil,
+    });
+    const next = this.acceptanceQueue.then(run, run);
+    this.acceptanceQueue = next.then(() => undefined, () => undefined);
+    await next;
   }
 
   async clearAll(): Promise<void> {

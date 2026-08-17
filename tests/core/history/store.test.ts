@@ -1,4 +1,5 @@
 import { MemoryHistoryStore, RETENTION_MS } from "../../../packages/core/history/store";
+import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import { Clip } from "../../../packages/core/models/Clip";
 
 describe("ClipHistoryStore", () => {
@@ -67,6 +68,29 @@ describe("ClipHistoryStore", () => {
       kind: "immutable-conflict",
       clip: expect.objectContaining({ content: "first" }),
     });
+  });
+
+  it("atomically rejects a Clip covered by a durable local suppression", async () => {
+    const backend = new InMemoryHistoryBackend();
+    const firstStore = new MemoryHistoryStore(backend);
+    const secondStore = new MemoryHistoryStore(backend);
+    const clip = {
+      id: "00000000-0000-4000-8000-000000000011",
+      type: "text" as const,
+      content: "do not restore",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 1_000,
+      shareExpiresAt: 86_401_000,
+    };
+
+    await firstStore.suppress(clip.id, Date.now() + 1_000);
+
+    await expect(secondStore.accept(clip)).resolves.toMatchObject({
+      kind: "locally-suppressed",
+      clip,
+      liveHandled: false,
+    });
+    await expect(secondStore.getById(clip.id)).resolves.toBeNull();
   });
 
   it("clears all clips", async () => {

@@ -1,4 +1,12 @@
-import { HistoryStorageBackend } from "./types";
+import {
+  AtomicHistoryAcceptance,
+  AtomicHistoryAcceptInput,
+  AtomicHistorySuppressInput,
+  ClipSuppression,
+  HistoryStorageBackend,
+} from "./types";
+import { clipsHaveEqualImmutableFields } from "../models/Clip";
+import { HistoryItem } from "../models/HistoryItem";
 
 const DB_NAME = "clipp-history";
 const STORE_NAME = "history";
@@ -63,5 +71,74 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
 
   async clearAll(): Promise<void> {
     await runTx(this.dbPromise, "readwrite", (store) => store.clear());
+  }
+
+  async acceptClip(input: AtomicHistoryAcceptInput): Promise<AtomicHistoryAcceptance> {
+    const db = await this.dbPromise;
+    return await new Promise<AtomicHistoryAcceptance>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const existingRequest = store.get(input.clip.id);
+      const suppressionRequest = store.get(input.suppressionKey);
+      let existing: HistoryItem | undefined;
+      let suppression: ClipSuppression | undefined;
+      let reads = 2;
+      let result: AtomicHistoryAcceptance | undefined;
+      const finishReads = () => {
+        reads -= 1;
+        if (reads !== 0) return;
+        if (suppression && suppression.suppressedUntil > input.now) {
+          result = { kind: "locally-suppressed", clip: input.clip, liveHandled: false };
+          return;
+        }
+        if (suppression) store.delete(input.suppressionKey);
+        if (existing) {
+          if (!clipsHaveEqualImmutableFields(existing.clip, input.clip)) {
+            result = { kind: "immutable-conflict", clip: existing.clip, liveHandled: false };
+            return;
+          }
+          const needsLiveHandled = input.liveHandled && !existing.liveHandled;
+          if (needsLiveHandled) store.put({ ...existing, liveHandled: true }, input.clip.id);
+          result = { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled };
+          return;
+        }
+        store.put({
+          clip: input.clip,
+          firstStoredAt: input.firstStoredAt,
+          liveHandled: input.liveHandled,
+        } satisfies HistoryItem, input.clip.id);
+        result = { kind: "newly-stored", clip: input.clip, liveHandled: input.liveHandled };
+      };
+      existingRequest.onsuccess = () => {
+        existing = existingRequest.result as HistoryItem | undefined;
+        finishReads();
+      };
+      suppressionRequest.onsuccess = () => {
+        suppression = suppressionRequest.result as ClipSuppression | undefined;
+        finishReads();
+      };
+      tx.oncomplete = () => {
+        if (result) resolve(result);
+        else reject(new Error("IndexedDB atomic acceptance completed without a result"));
+      };
+      tx.onerror = () => reject(tx.error || new Error("IndexedDB atomic acceptance failed"));
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB atomic acceptance aborted"));
+    });
+  }
+
+  async suppressClip(input: AtomicHistorySuppressInput): Promise<void> {
+    const db = await this.dbPromise;
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(input.clipId);
+      store.put({
+        clipId: input.clipId,
+        suppressedUntil: input.suppressedUntil,
+      } satisfies ClipSuppression, input.suppressionKey);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("IndexedDB suppression failed"));
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB suppression aborted"));
+    });
   }
 }

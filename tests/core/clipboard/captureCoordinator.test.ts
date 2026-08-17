@@ -138,4 +138,44 @@ describe("Clip capture coordinator", () => {
     expect(stored).toEqual([expect.objectContaining({ id: validUuid(8), content: "queued" })]);
     expect(coordinator.pending()).toEqual([]);
   });
+
+  it("retries a locally suppressed UUID with a fresh candidate ID", async () => {
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockResolvedValueOnce({ kind: "locally-suppressed", clip: {} as Clip, liveHandled: false })
+        .mockImplementation(async (clip) => ({ kind: "newly-stored", clip, liveHandled: true })),
+    };
+    const ids = [validUuid(9), validUuid(10)];
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => ids.shift()!,
+    });
+
+    await coordinator.capture("value");
+
+    expect((history.accept as jest.Mock).mock.calls.map(([clip]) => (clip as Clip).id)).toEqual([
+      validUuid(9),
+      validUuid(10),
+    ]);
+  });
+
+  it("bounds pending storage failures by encoded Clip size", async () => {
+    const diagnostics: string[] = [];
+    const coordinator = createClipCaptureCoordinator({
+      history: { accept: async () => { throw new Error("storage unavailable"); } },
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(11),
+      pendingMaxBytes: 1,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    await coordinator.capture("too large for the configured queue");
+
+    expect(coordinator.pending()).toEqual([]);
+    expect(diagnostics).toEqual(["pending_capture_dropped"]);
+  });
 });

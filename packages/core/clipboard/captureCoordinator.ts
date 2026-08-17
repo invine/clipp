@@ -22,10 +22,21 @@ export function createClipCaptureCoordinator(options: {
   makeId?: () => string;
   sharingLifetimeMs?: () => number;
   onStored?: (clip: Clip) => void | Promise<void>;
-  onDiagnostic?: (diagnostic: "clip_id_collision_exhausted" | "invalid_capture") => void;
+  pendingMaxClips?: number;
+  pendingMaxBytes?: number;
+  pendingRetryLimit?: number;
+  onDiagnostic?: (diagnostic:
+    | "clip_id_collision_exhausted"
+    | "invalid_capture"
+    | "pending_capture_dropped"
+    | "pending_retry_exhausted") => void;
 }): ClipCaptureCoordinator {
   let baseline: string | undefined;
-  const pending: Clip[] = [];
+  const pending: Array<{ clip: Clip; bytes: number; retries: number }> = [];
+  let pendingBytes = 0;
+  const pendingMaxClips = options.pendingMaxClips ?? 100;
+  const pendingMaxBytes = options.pendingMaxBytes ?? 10 * 1024 * 1024;
+  const pendingRetryLimit = options.pendingRetryLimit ?? 3;
   let operation = Promise.resolve();
   const serialize = async <Result>(work: () => Promise<Result>): Promise<Result> => {
     const next = operation.then(work, work);
@@ -36,8 +47,39 @@ export function createClipCaptureCoordinator(options: {
     try {
       return await options.history.accept(clip, { liveHandled: true });
     } catch {
-      if (pending.length < 100) pending.push(clip);
+      const bytes = new TextEncoder().encode(JSON.stringify(clip)).byteLength;
+      if (bytes > pendingMaxBytes || pendingMaxClips <= 0) {
+        options.onDiagnostic?.("pending_capture_dropped");
+        return null;
+      }
+      while (pending.length > 0 && (pending.length >= pendingMaxClips || pendingBytes + bytes > pendingMaxBytes)) {
+        const discarded = pending.shift()!;
+        pendingBytes -= discarded.bytes;
+        options.onDiagnostic?.("pending_capture_dropped");
+      }
+      pending.push({ clip, bytes, retries: 0 });
+      pendingBytes += bytes;
       return null;
+    }
+  };
+  const retryPendingUnserialized = async (): Promise<void> => {
+    for (let index = 0; index < pending.length;) {
+      const capture = pending[index];
+      try {
+        const accepted = await options.history.accept(capture.clip, { liveHandled: true });
+        if (accepted.kind === "newly-stored") await options.onStored?.(capture.clip);
+        pending.splice(index, 1);
+        pendingBytes -= capture.bytes;
+      } catch {
+        capture.retries += 1;
+        if (capture.retries >= pendingRetryLimit) {
+          pending.splice(index, 1);
+          pendingBytes -= capture.bytes;
+          options.onDiagnostic?.("pending_retry_exhausted");
+        } else {
+          index += 1;
+        }
+      }
     }
   };
   const captureUnserialized = async (value: string): Promise<Clip | null> => {
@@ -74,9 +116,11 @@ export function createClipCaptureCoordinator(options: {
     observe: async (value) => serialize(async () => {
       if (value === baseline) return null;
       baseline = value;
+      await retryPendingUnserialized();
       return value.length === 0 ? null : captureUnserialized(value);
     }),
     capture: async (value) => serialize(async () => {
+      await retryPendingUnserialized();
       const result = await captureUnserialized(value);
       baseline = value;
       return result;
@@ -90,18 +134,7 @@ export function createClipCaptureCoordinator(options: {
       try { baseline = await readBack(); } catch { baseline = undefined; }
     }),
     baselineValue: () => baseline,
-    pending: () => pending.slice(),
-    retryPending: async () => serialize(async () => {
-      for (let index = 0; index < pending.length;) {
-        const clip = pending[index];
-        try {
-          const accepted = await options.history.accept(clip, { liveHandled: true });
-          if (accepted.kind === "newly-stored") await options.onStored?.(clip);
-          pending.splice(index, 1);
-        } catch {
-          index += 1;
-        }
-      }
-    }),
+    pending: () => pending.map((capture) => capture.clip),
+    retryPending: async () => serialize(retryPendingUnserialized),
   };
 }
