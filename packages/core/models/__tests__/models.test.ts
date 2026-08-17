@@ -40,5 +40,6 @@ describe("Data-model sanity", () => {
   it("rejects Peer ID-shaped strings that do not contain a complete multihash", () => {
     expect(isCanonicalPeerId("12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy")).toBe(true);
     expect(isCanonicalPeerId("12D3KooWnot-a-complete-peer-id")).toBe(false);
+    expect(isCanonicalPeerId("LZM")).toBe(false);
   });
 });

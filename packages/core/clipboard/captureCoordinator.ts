@@ -1,4 +1,4 @@
-import { DEFAULT_CLIP_SHARING_LIFETIME_MS, type Clip } from "../models/Clip";
+import { DEFAULT_CLIP_SHARING_LIFETIME_MS, isCanonicalPeerId, type Clip } from "../models/Clip";
 import type { ClipHistoryStore, HistoryAcceptance } from "../history/store";
 import { normalizeClipboardContent } from "./normalize";
 
@@ -13,6 +13,9 @@ export type ClipCaptureCoordinator = {
   baselineValue(): string | undefined;
   pending(): readonly Clip[];
   retryPending(): Promise<void>;
+  start(): void;
+  stop(): void;
+  onRecovered(cb: (clip: Clip) => void | Promise<void>): void;
 };
 
 export function createClipCaptureCoordinator(options: {
@@ -24,25 +27,28 @@ export function createClipCaptureCoordinator(options: {
   onStored?: (clip: Clip) => void | Promise<void>;
   pendingMaxClips?: number;
   pendingMaxBytes?: number;
-  pendingRetryLimit?: number;
   onDiagnostic?: (diagnostic:
     | "clip_id_collision_exhausted"
     | "invalid_capture"
     | "pending_capture_dropped"
-    | "pending_retry_exhausted") => void;
+    | "live_delivery_failed") => void;
 }): ClipCaptureCoordinator {
   let baseline: string | undefined;
-  const pending: Array<{ clip: Clip; bytes: number; retries: number }> = [];
+  const pending: Array<{ clip: Clip; bytes: number }> = [];
   let pendingBytes = 0;
   const pendingMaxClips = options.pendingMaxClips ?? 100;
   const pendingMaxBytes = options.pendingMaxBytes ?? 10 * 1024 * 1024;
-  const pendingRetryLimit = options.pendingRetryLimit ?? 3;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let running = false;
+  let retryDelayMs = 1_000;
+  const recoveredListeners: Array<(clip: Clip) => void | Promise<void>> = [];
   let operation = Promise.resolve();
   const serialize = async <Result>(work: () => Promise<Result>): Promise<Result> => {
     const next = operation.then(work, work);
     operation = next.then(() => undefined, () => undefined);
     return next;
   };
+  let schedulePendingRetry = (): void => {};
   const store = async (clip: Clip): Promise<HistoryAcceptance | null> => {
     try {
       return await options.history.accept(clip, { liveHandled: true });
@@ -57,30 +63,47 @@ export function createClipCaptureCoordinator(options: {
         pendingBytes -= discarded.bytes;
         options.onDiagnostic?.("pending_capture_dropped");
       }
-      pending.push({ clip, bytes, retries: 0 });
+      pending.push({ clip, bytes });
       pendingBytes += bytes;
+      schedulePendingRetry();
       return null;
     }
   };
   const retryPendingUnserialized = async (): Promise<void> => {
+    let newestCurrentRecovered: Clip | undefined;
     for (let index = 0; index < pending.length;) {
       const capture = pending[index];
       try {
         const accepted = await options.history.accept(capture.clip, { liveHandled: true });
-        if (accepted.kind === "newly-stored") await options.onStored?.(capture.clip);
         pending.splice(index, 1);
         pendingBytes -= capture.bytes;
+        if (accepted.kind === "newly-stored" && capture.clip.content === baseline) {
+          newestCurrentRecovered = capture.clip;
+        }
       } catch {
-        capture.retries += 1;
-        if (capture.retries >= pendingRetryLimit) {
-          pending.splice(index, 1);
-          pendingBytes -= capture.bytes;
-          options.onDiagnostic?.("pending_retry_exhausted");
-        } else {
-          index += 1;
+        index += 1;
+      }
+    }
+    if (newestCurrentRecovered) {
+      for (const listener of recoveredListeners) {
+        try {
+          await listener(newestCurrentRecovered);
+        } catch {
+          options.onDiagnostic?.("live_delivery_failed");
         }
       }
     }
+    if (pending.length === 0) retryDelayMs = 1_000;
+    schedulePendingRetry();
+  };
+  schedulePendingRetry = () => {
+    if (!running || retryTimer || pending.length === 0) return;
+    const delayMs = retryDelayMs;
+    retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      void serialize(retryPendingUnserialized);
+    }, delayMs);
   };
   const captureUnserialized = async (value: string): Promise<Clip | null> => {
     if (value.length === 0) return null;
@@ -89,6 +112,10 @@ export function createClipCaptureCoordinator(options: {
       capturedAt: (options.now ?? Date.now)(),
       sharingLifetimeMs: options.sharingLifetimeMs?.() ?? DEFAULT_CLIP_SHARING_LIFETIME_MS,
     };
+    if (!isCanonicalPeerId(immutable.originPeerId)) {
+      options.onDiagnostic?.("invalid_capture");
+      return null;
+    }
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const clip = normalizeClipboardContent(value, immutable.originPeerId, {
         now: () => immutable.capturedAt,
@@ -102,7 +129,11 @@ export function createClipCaptureCoordinator(options: {
       const accepted = await store(clip);
       if (!accepted) return null;
       if (accepted.kind === "newly-stored") {
-        await options.onStored?.(clip);
+        try {
+          await options.onStored?.(clip);
+        } catch {
+          options.onDiagnostic?.("live_delivery_failed");
+        }
         return clip;
       }
       if (accepted.kind === "exact-duplicate") return accepted.clip;
@@ -120,9 +151,9 @@ export function createClipCaptureCoordinator(options: {
       return value.length === 0 ? null : captureUnserialized(value);
     }),
     capture: async (value) => serialize(async () => {
+      baseline = value;
       await retryPendingUnserialized();
       const result = await captureUnserialized(value);
-      baseline = value;
       return result;
     }),
     writeRemote: async (clip, write, readBack) => serialize(async () => {
@@ -136,5 +167,15 @@ export function createClipCaptureCoordinator(options: {
     baselineValue: () => baseline,
     pending: () => pending.map((capture) => capture.clip),
     retryPending: async () => serialize(retryPendingUnserialized),
+    start: () => {
+      running = true;
+      schedulePendingRetry();
+    },
+    stop: () => {
+      running = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = undefined;
+    },
+    onRecovered: (listener) => recoveredListeners.push(listener),
   };
 }

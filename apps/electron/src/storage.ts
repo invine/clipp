@@ -3,9 +3,9 @@ import {
   AtomicHistoryAcceptInput,
   AtomicHistorySuppressInput,
   ClipSuppression,
+  decideAtomicHistoryAcceptance,
   HistoryStorageBackend,
 } from "../../../packages/core/history/types";
-import { clipsHaveEqualImmutableFields } from "../../../packages/core/models/Clip";
 import type { HistoryItem } from "../../../packages/core/models/HistoryItem";
 // import type { StorageBackend } from "../../../packages/core/trust";
 import type { KVStorageBackend } from "../../../packages/core/trust"
@@ -109,30 +109,16 @@ export class SQLiteHistoryBackend implements HistoryStorageBackend {
         return row ? JSON.parse(row.value) : null;
       };
       const suppression = read(value.suppressionKey) as ClipSuppression | null;
-      if (suppression && suppression.suppressedUntil > value.now) {
-        return { kind: "locally-suppressed", clip: value.clip, liveHandled: false };
-      }
-      if (suppression) this.db.prepare("DELETE FROM history WHERE id = ?").run(value.suppressionKey);
-
       const existing = read(value.clip.id) as HistoryItem | null;
-      if (existing) {
-        if (!clipsHaveEqualImmutableFields(existing.clip, value.clip)) {
-          return { kind: "immutable-conflict", clip: existing.clip, liveHandled: false };
-        }
-        const needsLiveHandled = value.liveHandled && !existing.liveHandled;
-        if (needsLiveHandled) {
-          this.db.prepare("UPDATE history SET value = ? WHERE id = ?")
-            .run(JSON.stringify({ ...existing, liveHandled: true }), value.clip.id);
-        }
-        return { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled };
+      const transition = decideAtomicHistoryAcceptance(value, existing, suppression);
+      if (transition.deleteSuppression) {
+        this.db.prepare("DELETE FROM history WHERE id = ?").run(value.suppressionKey);
       }
-
-      this.db.prepare("INSERT INTO history(id, value) VALUES(?, ?)").run(value.clip.id, JSON.stringify({
-        clip: value.clip,
-        firstStoredAt: value.firstStoredAt,
-        liveHandled: value.liveHandled,
-      } satisfies HistoryItem));
-      return { kind: "newly-stored", clip: value.clip, liveHandled: value.liveHandled };
+      if (transition.storedItem) {
+        this.db.prepare("INSERT OR REPLACE INTO history(id, value) VALUES(?, ?)")
+          .run(value.clip.id, JSON.stringify(transition.storedItem satisfies HistoryItem));
+      }
+      return transition.acceptance;
     })(input);
   }
 

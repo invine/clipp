@@ -73,7 +73,18 @@ export function isCanonicalPeerId(value: string): boolean {
   const code = readVarint(0);
   const digestLength = code && readVarint(code.next);
   if (!code || !digestLength || digestLength.value <= 0) return false;
-  return digestLength.next + digestLength.value === bytes.length;
+  if (digestLength.next + digestLength.value !== bytes.length) return false;
+  // libp2p Peer IDs are either sha2-256 hashes of RSA keys or identity
+  // multihashes containing the protobuf-encoded Ed25519/secp256k1 public key.
+  if (code.value === 0x12) return digestLength.value === 32;
+  if (code.value !== 0) return false;
+  const typeTag = readVarint(digestLength.next);
+  const keyType = typeTag && readVarint(typeTag.next);
+  const dataTag = keyType && readVarint(keyType.next);
+  const keyLength = dataTag && readVarint(dataTag.next);
+  if (typeTag?.value !== 0x08 || dataTag?.value !== 0x12 || !keyType || !keyLength) return false;
+  if (keyLength.next + keyLength.value !== bytes.length) return false;
+  return (keyType.value === 1 && keyLength.value === 32) || (keyType.value === 2 && keyLength.value === 33);
 }
 
 /** Validate structural v1 invariants without making a local-clock decision. */

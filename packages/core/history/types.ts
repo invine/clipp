@@ -26,6 +26,50 @@ export type AtomicHistorySuppressInput = {
   suppressedUntil: number;
 };
 
+export type AtomicHistoryTransition = {
+  acceptance: AtomicHistoryAcceptance;
+  deleteSuppression: boolean;
+  storedItem?: HistoryItem;
+};
+
+/** Applies the shared immutable-Clip/suppression policy inside a backend transaction. */
+export function decideAtomicHistoryAcceptance(
+  input: AtomicHistoryAcceptInput,
+  existing: HistoryItem | null | undefined,
+  suppression: ClipSuppression | null | undefined,
+): AtomicHistoryTransition {
+  if (suppression && suppression.suppressedUntil > input.now) {
+    return {
+      acceptance: { kind: "locally-suppressed", clip: input.clip, liveHandled: false },
+      deleteSuppression: false,
+    };
+  }
+  if (existing) {
+    if (!clipsHaveEqualImmutableFields(existing.clip, input.clip)) {
+      return {
+        acceptance: { kind: "immutable-conflict", clip: existing.clip, liveHandled: false },
+        deleteSuppression: Boolean(suppression),
+      };
+    }
+    const needsLiveHandled = input.liveHandled && !existing.liveHandled;
+    return {
+      acceptance: { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled },
+      deleteSuppression: Boolean(suppression),
+      storedItem: needsLiveHandled ? { ...existing, liveHandled: true } : undefined,
+    };
+  }
+  const storedItem: HistoryItem = {
+    clip: input.clip,
+    firstStoredAt: input.firstStoredAt,
+    liveHandled: input.liveHandled,
+  };
+  return {
+    acceptance: { kind: "newly-stored", clip: input.clip, liveHandled: input.liveHandled },
+    deleteSuppression: Boolean(suppression),
+    storedItem,
+  };
+}
+
 /**
  * Storage backend interface for clipboard history.
  */
@@ -63,28 +107,11 @@ export class InMemoryHistoryBackend implements HistoryStorageBackend {
 
   async acceptClip(input: AtomicHistoryAcceptInput): Promise<AtomicHistoryAcceptance> {
     const suppression = this.store.get(input.suppressionKey) as ClipSuppression | undefined;
-    if (suppression && suppression.suppressedUntil > input.now) {
-      return { kind: "locally-suppressed", clip: input.clip, liveHandled: false };
-    }
-    if (suppression) this.store.delete(input.suppressionKey);
-
     const existing = this.store.get(input.clip.id) as HistoryItem | undefined;
-    if (existing) {
-      if (!clipsHaveEqualImmutableFields(existing.clip, input.clip)) {
-        return { kind: "immutable-conflict", clip: existing.clip, liveHandled: false };
-      }
-      const needsLiveHandled = input.liveHandled && !existing.liveHandled;
-      if (needsLiveHandled) this.store.set(input.clip.id, { ...existing, liveHandled: true });
-      return { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled };
-    }
-
-    const item: HistoryItem = {
-      clip: input.clip,
-      firstStoredAt: input.firstStoredAt,
-      liveHandled: input.liveHandled,
-    };
-    this.store.set(input.clip.id, item);
-    return { kind: "newly-stored", clip: input.clip, liveHandled: input.liveHandled };
+    const transition = decideAtomicHistoryAcceptance(input, existing, suppression);
+    if (transition.deleteSuppression) this.store.delete(input.suppressionKey);
+    if (transition.storedItem) this.store.set(input.clip.id, transition.storedItem);
+    return transition.acceptance;
   }
 
   async suppressClip(input: AtomicHistorySuppressInput): Promise<void> {

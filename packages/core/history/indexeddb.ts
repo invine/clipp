@@ -3,9 +3,9 @@ import {
   AtomicHistoryAcceptInput,
   AtomicHistorySuppressInput,
   ClipSuppression,
+  decideAtomicHistoryAcceptance,
   HistoryStorageBackend,
 } from "./types";
-import { clipsHaveEqualImmutableFields } from "../models/Clip";
 import { HistoryItem } from "../models/HistoryItem";
 
 const DB_NAME = "clipp-history";
@@ -87,27 +87,10 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
       const finishReads = () => {
         reads -= 1;
         if (reads !== 0) return;
-        if (suppression && suppression.suppressedUntil > input.now) {
-          result = { kind: "locally-suppressed", clip: input.clip, liveHandled: false };
-          return;
-        }
-        if (suppression) store.delete(input.suppressionKey);
-        if (existing) {
-          if (!clipsHaveEqualImmutableFields(existing.clip, input.clip)) {
-            result = { kind: "immutable-conflict", clip: existing.clip, liveHandled: false };
-            return;
-          }
-          const needsLiveHandled = input.liveHandled && !existing.liveHandled;
-          if (needsLiveHandled) store.put({ ...existing, liveHandled: true }, input.clip.id);
-          result = { kind: "exact-duplicate", clip: existing.clip, liveHandled: needsLiveHandled };
-          return;
-        }
-        store.put({
-          clip: input.clip,
-          firstStoredAt: input.firstStoredAt,
-          liveHandled: input.liveHandled,
-        } satisfies HistoryItem, input.clip.id);
-        result = { kind: "newly-stored", clip: input.clip, liveHandled: input.liveHandled };
+        const transition = decideAtomicHistoryAcceptance(input, existing, suppression);
+        if (transition.deleteSuppression) store.delete(input.suppressionKey);
+        if (transition.storedItem) store.put(transition.storedItem satisfies HistoryItem, input.clip.id);
+        result = transition.acceptance;
       };
       existingRequest.onsuccess = () => {
         existing = existingRequest.result as HistoryItem | undefined;

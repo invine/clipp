@@ -1,4 +1,5 @@
-import { createPollingClipboardService } from "../../../packages/core/clipboard/service";
+import { createManualClipboardService, createPollingClipboardService } from "../../../packages/core/clipboard/service";
+import { createClipCaptureCoordinator, type ClipHistoryWriter } from "../../../packages/core/clipboard/captureCoordinator";
 import { Clip } from "../../../packages/core/models/Clip";
 
 let readValue = "";
@@ -58,5 +59,32 @@ describe("ClipboardService", () => {
     };
     await service.writeRemoteClip(clip);
     expect(writeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a recovered pending capture through local handlers", async () => {
+    jest.useFakeTimers();
+    const peerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn()
+        .mockRejectedValueOnce(new Error("storage unavailable"))
+        .mockImplementation(async (clip: Clip) => ({ kind: "newly-stored", clip, liveHandled: true })),
+    };
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: () => peerId,
+      makeId: () => "00000000-0000-4000-8000-000000000099",
+    });
+    const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
+    const events: Clip[] = [];
+    service.onLocalClip((clip) => events.push(clip));
+    service.start();
+
+    await service.processLocalText("recovered");
+    await jest.advanceTimersByTimeAsync(1_000);
+
+    expect(events).toEqual([expect.objectContaining({ content: "recovered" })]);
+    service.stop();
+    jest.useRealTimers();
   });
 });

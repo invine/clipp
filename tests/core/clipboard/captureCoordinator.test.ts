@@ -42,6 +42,18 @@ describe("Clip capture coordinator", () => {
     expect(coordinator.baselineValue()).toBe("");
   });
 
+  it("rejects a capture when the runtime identity is not a canonical Peer ID", async () => {
+    const diagnostics: string[] = [];
+    const coordinator = createClipCaptureCoordinator({
+      history: acceptingHistory(),
+      originPeerId: async () => "LZM",
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    await expect(coordinator.capture("value")).resolves.toBeNull();
+    expect(diagnostics).toEqual(["invalid_capture"]);
+  });
+
   it("captures exact text after an intervening change and persists it before publishing", async () => {
     const events: Clip[] = [];
     const history = acceptingHistory();
@@ -177,5 +189,48 @@ describe("Clip capture coordinator", () => {
 
     expect(coordinator.pending()).toEqual([]);
     expect(diagnostics).toEqual(["pending_capture_dropped"]);
+  });
+
+  it("retries a pending immutable Clip with capped backoff while active", async () => {
+    jest.useFakeTimers();
+    const recovered: Clip[] = [];
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockRejectedValueOnce(new Error("storage unavailable"))
+        .mockImplementation(async (clip) => ({ kind: "newly-stored", clip, liveHandled: true })),
+    };
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(12),
+    });
+    coordinator.onRecovered((clip) => { recovered.push(clip); });
+    coordinator.start();
+
+    await coordinator.capture("queued");
+    await jest.advanceTimersByTimeAsync(1_000);
+
+    expect(recovered).toEqual([expect.objectContaining({ id: validUuid(12), content: "queued" })]);
+    expect(coordinator.pending()).toEqual([]);
+    coordinator.stop();
+    jest.useRealTimers();
+  });
+
+  it("does not turn a post-storage notification failure into a storage retry", async () => {
+    const diagnostics: string[] = [];
+    const coordinator = createClipCaptureCoordinator({
+      history: acceptingHistory(),
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(13),
+      onStored: async () => { throw new Error("delivery unavailable"); },
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    await expect(coordinator.capture("durable")).resolves.toMatchObject({ id: validUuid(13) });
+    expect(coordinator.pending()).toEqual([]);
+    expect(diagnostics).toEqual(["live_delivery_failed"]);
   });
 });

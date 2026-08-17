@@ -65,12 +65,9 @@ export function createManualClipboardService(
   });
   return {
     ...svc,
-    start: () => {
-      // no-op: manual mode never polls
-    },
-    stop: () => {
-      // no-op: manual mode never polls
-    },
+    // The shared service starts capture recovery but still never polls.
+    start: svc.start,
+    stop: svc.stop,
   };
 }
 
@@ -98,6 +95,11 @@ function createClipboardService(
     operation = next.then(() => undefined, () => undefined);
     return next;
   };
+
+  options.captureCoordinator?.onRecovered((clip) => {
+    lastLocal = clip;
+    localHandlers.forEach((handler) => handler(clip));
+  });
 
   async function processLocalText(text: string): Promise<void> {
     log.debug("Processing local clipboard text");
@@ -173,6 +175,7 @@ function createClipboardService(
   return {
     start: () => {
       log.info("Clipboard service started");
+      options.captureCoordinator?.start();
       if (timer) return;
       if (pollIntervalMs <= 0) return;
       void (async () => {
@@ -184,6 +187,7 @@ function createClipboardService(
     },
     stop: () => {
       log.info("Clipboard service stopped");
+      options.captureCoordinator?.stop();
       if (timer) {
         clearInterval(timer);
         timer = undefined;
