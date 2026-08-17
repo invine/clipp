@@ -50,6 +50,9 @@ describe("ClipboardService", () => {
       id: "1",
       type: "text",
       content: "hi",
+      originPeerId: "remote",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
       timestamp: Date.now(),
       senderId: "remote",
     };

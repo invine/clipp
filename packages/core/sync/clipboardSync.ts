@@ -56,7 +56,7 @@ export function createClipboardSyncManager(
     try {
       if ("accept" in options.history && typeof options.history.accept === "function") {
         const accepted = await options.history.accept(clip, { liveHandled: true });
-        if (accepted.kind !== "newly-stored") return;
+        if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
       } else {
         await options.history.add(clip, localId, true);
       }

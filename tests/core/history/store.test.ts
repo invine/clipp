@@ -6,7 +6,7 @@ describe("ClipHistoryStore", () => {
   const sender = "me";
 
   function sampleClip(ts: number, id = `c${ts}`): Clip {
-    return { id, type: "text", content: `clip-${id}`, timestamp: ts, senderId: sender };
+    return { id, type: "text", content: `clip-${id}`, originPeerId: sender, capturedAt: ts, shareExpiresAt: ts + 86_400_000, timestamp: ts, senderId: sender };
   }
 
   beforeEach(async () => {
@@ -21,13 +21,13 @@ describe("ClipHistoryStore", () => {
     expect(got).not.toBeNull();
   });
 
-  it("retention", async () => {
+  it("does not use origin capture time as local retention time", async () => {
     const oldTs = Date.now() - RETENTION_MS - 1000;
     const oldClip = sampleClip(oldTs, "old");
     await history.add(oldClip, sender, true);
     await history.pruneExpired();
     const res = await history.getById("old");
-    expect(res).toBeNull();
+    expect(res).not.toBeNull();
   });
 
   it("query by type and search", async () => {

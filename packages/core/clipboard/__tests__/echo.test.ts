@@ -68,6 +68,9 @@ describe("Echo prevention", () => {
       id: "remote-1",
       type: "text",
       content: "from android",
+      originPeerId: "android",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
       timestamp: 1,
       senderId: "android",
     });

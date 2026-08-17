@@ -50,6 +50,9 @@ describe("ClipboardSyncManager", () => {
       id: "c1",
       type: "text",
       content: "hello",
+      originPeerId: "me",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
       timestamp: 1,
       senderId: "me",
     };
@@ -102,6 +105,9 @@ describe("ClipboardSyncManager", () => {
       id: "c2",
       type: "text",
       content: "hello",
+      originPeerId: "me",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
       timestamp: 1,
       senderId: "me",
     };
@@ -110,6 +116,29 @@ describe("ClipboardSyncManager", () => {
 
     expect(history.add).toHaveBeenCalled();
     expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  test("broadcasts a coordinator-stored local Clip after its idempotent acceptance", async () => {
+    const localHandlers: Array<(clip: Clip) => void> = [];
+    const clipboard = {
+      start: jest.fn(), stop: jest.fn(), onLocalClip: (cb: (clip: Clip) => void) => localHandlers.push(cb),
+      onRemoteClipWritten: jest.fn(), processLocalText: jest.fn(), writeRemoteClip: jest.fn(),
+    } as any;
+    const clip = {
+      id: "00000000-0000-4000-8000-000000000013", type: "text" as const, content: "durable",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy", capturedAt: 1_000, shareExpiresAt: 86_401_000,
+    };
+    const history = {
+      accept: jest.fn(async () => ({ kind: "exact-duplicate", clip, liveHandled: false })),
+    } as any;
+    const broadcast = jest.fn(async () => {});
+    const sync = createClipboardSyncManager({
+      clipboard, history, messaging: { broadcast, onMessage: jest.fn() }, getLocalDeviceId: async () => "me",
+    });
+    sync.start();
+    localHandlers.forEach((handler) => handler(clip));
+    await flushPromises();
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ payload: { clip } }));
   });
 
   test("deduplicates remote clips using history", async () => {

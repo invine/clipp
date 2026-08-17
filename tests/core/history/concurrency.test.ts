@@ -9,7 +9,7 @@ describe("History concurrency", () => {
     const adds: Promise<void>[] = [];
     const now = Date.now();
     for (let i = 0; i < 100; i++) {
-      const clip: Clip = { id: `c${i}`, type: "text", content: "x", timestamp: now + i, senderId: "me" };
+      const clip: Clip = { id: `c${i}`, type: "text", content: "x", originPeerId: "me", capturedAt: now + i, shareExpiresAt: now + 86_400_000, timestamp: now + i, senderId: "me" };
       adds.push(store.add(clip, "me", true));
     }
     jest.runAllTimers();

@@ -35,6 +35,9 @@ describe("protocol message shapes", () => {
         id: "c1",
         type: "text",
         content: "hello",
+        originPeerId: "me",
+        capturedAt: 1,
+        shareExpiresAt: 86_400_001,
         timestamp: 1,
         senderId: "me",
       },
@@ -59,7 +62,7 @@ describe("protocol message shapes", () => {
   it("uses the normalized history sync wire shape", () => {
     const normalized = createHistorySyncMessage({
       from: "me",
-      clips: [{ id: "c2", type: "text", content: "y", timestamp: 2, senderId: "me" }],
+      clips: [{ id: "c2", type: "text", content: "y", originPeerId: "me", capturedAt: 2, shareExpiresAt: 86_400_002, timestamp: 2, senderId: "me" }],
       sentAt: 4,
     });
 

@@ -7,11 +7,11 @@ export interface Clip {
   /** Exact, uncanonicalized clipboard string. */
   content: string;
   /** Canonical libp2p Peer ID of the device that captured this event. */
-  originPeerId?: string;
+  originPeerId: string;
   /** Immutable UTC capture time in Unix milliseconds. */
-  capturedAt?: number;
+  capturedAt: number;
   /** Immutable UTC sharing deadline in Unix milliseconds. */
-  shareExpiresAt?: number;
+  shareExpiresAt: number;
   /** @deprecated Legacy transition fields; v1 capture never writes them. */
   timestamp?: number;
   /** @deprecated Legacy transition fields; v1 capture never writes them. */
@@ -86,5 +86,5 @@ export function clipsHaveEqualImmutableFields(left: Clip, right: Clip): boolean 
 }
 
 export function clipCapturedAt(clip: Clip): number {
-  return clip.capturedAt ?? clip.timestamp ?? 0;
+  return clip.capturedAt;
 }

@@ -1,15 +1,9 @@
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS, type Clip } from "../models/Clip";
+import type { ClipHistoryStore, HistoryAcceptance } from "../history/store";
 import { normalizeClipboardContent } from "./normalize";
 
-export type ClipHistoryAcceptance = {
-  kind: "newly-stored" | "exact-duplicate" | "immutable-conflict" | "locally-suppressed";
-  clip: Clip;
-  liveHandled: boolean;
-};
-
-export interface ClipHistoryWriter {
-  accept(clip: Clip, options?: { liveHandled?: boolean }): Promise<ClipHistoryAcceptance>;
-}
+export type ClipHistoryAcceptance = HistoryAcceptance;
+export type ClipHistoryWriter = Pick<ClipHistoryStore, "accept">;
 
 export type ClipCaptureCoordinator = {
   baseline(value: string): Promise<void>;
@@ -38,7 +32,7 @@ export function createClipCaptureCoordinator(options: {
     operation = next.then(() => undefined, () => undefined);
     return next;
   };
-  const store = async (clip: Clip): Promise<ClipHistoryAcceptance | null> => {
+  const store = async (clip: Clip): Promise<HistoryAcceptance | null> => {
     try {
       return await options.history.accept(clip, { liveHandled: true });
     } catch {

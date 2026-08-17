@@ -25,7 +25,7 @@ describe("history sync", () => {
     initHistorySync(messaging, identity, trust, history);
     const now = Date.now();
     for (let i = 0; i < 3; i++) {
-      const clip: Clip = { id: `${i}`, type: "text", content: "x", timestamp: now, senderId: "me" };
+      const clip: Clip = { id: `${i}`, type: "text", content: "x", originPeerId: "me", capturedAt: now, shareExpiresAt: now + 86_400_000, timestamp: now, senderId: "me" };
       await history.add(clip, "me", true);
     }
     trust.emit("approved", { deviceId: "peer" });
@@ -49,7 +49,7 @@ describe("history sync", () => {
           from: "peer",
           sentAt: Date.now(),
           payload: {
-            clips: [{ id: "1", type: "text", content: "a", timestamp: Date.now(), senderId: "r" }],
+            clips: [{ id: "1", type: "text", content: "a", originPeerId: "r", capturedAt: Date.now(), shareExpiresAt: Date.now() + 86_400_000, timestamp: Date.now(), senderId: "r" }],
           },
         });
       },
@@ -57,7 +57,7 @@ describe("history sync", () => {
     const identity = { get: async () => ({ deviceId: "me" }) } as any;
     const trust = mockTrustManager();
     initHistorySync(messaging, identity, trust, history);
-    await history.importBatch([{ id: "1", type: "text", content: "a", timestamp: Date.now(), senderId: "r" }]);
+    await history.importBatch([{ id: "1", type: "text", content: "a", originPeerId: "r", capturedAt: Date.now(), shareExpiresAt: Date.now() + 86_400_000, timestamp: Date.now(), senderId: "r" }]);
     const all = await history.query({});
     expect(all.length).toBe(1);
   });
@@ -83,7 +83,7 @@ describe("history sync", () => {
     initHistorySync(messaging, identity, trust, history);
     const now = Date.now();
     for (let i = 0; i < 1000; i++) {
-      await history.add({ id: `c${i}`, type: "text", content: "x", timestamp: now, senderId: "me" }, "me", true);
+      await history.add({ id: `c${i}`, type: "text", content: "x", originPeerId: "me", capturedAt: now, shareExpiresAt: now + 86_400_000, timestamp: now, senderId: "me" }, "me", true);
     }
     trust.emit("approved", { deviceId: "peer" });
     await new Promise((r) => setImmediate(r));

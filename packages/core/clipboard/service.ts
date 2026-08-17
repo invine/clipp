@@ -122,6 +122,17 @@ function createClipboardService(
     try {
       await serialize(async () => {
         const text = await read();
+        if (options.captureCoordinator) {
+          const clip = baseline === undefined
+            ? (await options.captureCoordinator.baseline(text), null)
+            : await options.captureCoordinator.observe(text);
+          baseline = text;
+          if (clip) {
+            lastLocal = clip;
+            localHandlers.forEach((handler) => handler(clip));
+          }
+          return;
+        }
         if (baseline === undefined) {
           baseline = text;
           return;
