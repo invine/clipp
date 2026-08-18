@@ -10,6 +10,8 @@ export interface HistoryItem {
   firstStoredAt: number;
   /** Local-only first-live-delivery marker. */
   liveHandled: boolean;
+  /** Local-only retention exemption; never exchanged with a Clip. */
+  pinned?: boolean;
   /** @deprecated Legacy transition metadata; v1 storage never writes it. */
   receivedFrom?: string;
   /** @deprecated Legacy transition metadata; v1 storage never writes it. */

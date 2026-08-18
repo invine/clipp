@@ -1,12 +1,9 @@
 import {
-  AtomicHistoryAcceptance,
-  AtomicHistoryAcceptInput,
-  AtomicHistorySuppressInput,
-  ClipSuppression,
-  decideAtomicHistoryAcceptance,
+  decideAtomicHistoryMutation,
+  HistoryMutation,
+  HistoryMutationResult,
   HistoryStorageBackend,
 } from "../../../packages/core/history/types";
-import type { HistoryItem } from "../../../packages/core/models/HistoryItem";
 // import type { StorageBackend } from "../../../packages/core/trust";
 import type { KVStorageBackend } from "../../../packages/core/trust"
 import Database from "better-sqlite3";
@@ -102,36 +99,23 @@ export class SQLiteHistoryBackend implements HistoryStorageBackend {
     this.db.prepare("DELETE FROM history").run();
   }
 
-  async acceptClip(input: AtomicHistoryAcceptInput): Promise<AtomicHistoryAcceptance> {
-    return this.db.transaction((value: AtomicHistoryAcceptInput): AtomicHistoryAcceptance => {
-      const read = (key: string): any => {
-        const row = this.db.prepare("SELECT value FROM history WHERE id = ?").get(key);
-        return row ? JSON.parse(row.value) : null;
-      };
-      const suppression = read(value.suppressionKey) as ClipSuppression | null;
-      const existing = read(value.clip.id) as HistoryItem | null;
-      const transition = decideAtomicHistoryAcceptance(value, existing, suppression);
-      if (transition.deleteSuppression) {
-        this.db.prepare("DELETE FROM history WHERE id = ?").run(value.suppressionKey);
+  async applyHistoryMutation(input: HistoryMutation): Promise<HistoryMutationResult> {
+    return this.db.transaction((value: HistoryMutation): HistoryMutationResult => {
+      const entries = new Map<string, unknown>();
+      for (const row of this.db.prepare("SELECT id, value FROM history").all()) {
+        try {
+          entries.set(row.id, JSON.parse(row.value));
+        } catch {
+          entries.set(row.id, row.value);
+        }
       }
-      if (transition.storedItem) {
+      const plan = decideAtomicHistoryMutation(entries, value);
+      for (const key of plan.deletes) this.db.prepare("DELETE FROM history WHERE id = ?").run(key);
+      for (const [key, stored] of plan.writes) {
         this.db.prepare("INSERT OR REPLACE INTO history(id, value) VALUES(?, ?)")
-          .run(value.clip.id, JSON.stringify(transition.storedItem satisfies HistoryItem));
+          .run(key, JSON.stringify(stored));
       }
-      return transition.acceptance;
-    })(input);
-  }
-
-  async suppressClip(input: AtomicHistorySuppressInput): Promise<void> {
-    this.db.transaction((value: AtomicHistorySuppressInput) => {
-      this.db.prepare("DELETE FROM history WHERE id = ?").run(value.clipId);
-      this.db.prepare("INSERT OR REPLACE INTO history(id, value) VALUES(?, ?)").run(
-        value.suppressionKey,
-        JSON.stringify({
-          clipId: value.clipId,
-          suppressedUntil: value.suppressedUntil,
-        } satisfies ClipSuppression),
-      );
+      return plan.result;
     })(input);
   }
 }

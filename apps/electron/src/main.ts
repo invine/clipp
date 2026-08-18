@@ -28,7 +28,7 @@ import {
   startIdentityBoundRuntimeServices,
   systemRuntimeClock,
 } from "../../../packages/core/runtime/index.js";
-import { MemoryHistoryStore } from "../../../packages/core/history/store.js";
+import { MAX_RETENTION_MS, MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
@@ -70,7 +70,9 @@ async function bootstrap() {
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({ storage: kvStore });
-  const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db));
+  let localRetentionMs = (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
+  const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db), { retentionMs: localRetentionMs });
+  const stopHistoryRetentionCleanup = startHistoryRetentionCleanup(history);
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
@@ -159,7 +161,6 @@ async function bootstrap() {
   // let lastClipboardCheck: number | null = null;
   // let lastClipboardPreview: string | null = null;
   // let lastClipboardError: string | null = null;
-  let pinnedIds: string[] = (await kvStore.get("pinnedIds")) || [];
   // TODO: improve icon import
   const iconRoot = app.isPackaged
     ? path.dirname(app.getPath("exe"))
@@ -422,7 +423,8 @@ async function bootstrap() {
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds,
+      pinnedIds: await history.pinnedIds(),
+      localRetentionMs,
       relayAddresses,
       // TODO: remove diagnostics
       // diagnostics: {
@@ -803,6 +805,7 @@ async function bootstrap() {
 
   async function shutdownServices() {
     quitting = true;
+    stopHistoryRetentionCleanup();
     await pairingSessions.stop();
     clipboardSync.stop();
     pairedConnections.stop();
@@ -988,6 +991,14 @@ async function bootstrap() {
     return { ok: true, relayAddresses };
   });
 
+  ipcMain.handle("clipp:set-local-retention", async (_evt, retentionMs: number) => {
+    await history.setRetention(retentionMs);
+    localRetentionMs = Math.min(retentionMs, MAX_RETENTION_MS);
+    await kvStore.set("localRetentionMs", localRetentionMs);
+    await emitState();
+    return { localRetentionMs };
+  });
+
   ipcMain.handle("clipp:delete-clip", async (_evt, id: string) => {
     await history.remove(id);
     await emitState();
@@ -995,7 +1006,8 @@ async function bootstrap() {
 
   ipcMain.handle("clipp:clear-history", async () => {
     try {
-      db.prepare("DELETE FROM history").run();
+      await history.clearAll();
+      await clipboardSvc.discardPending?.();
       await emitState();
     } catch (err) {
       (log as any).error?.("Failed to clear history", err);
@@ -1015,11 +1027,9 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:toggle-pin", async (_evt, id: string) => {
-    const set = new Set(pinnedIds);
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    pinnedIds = Array.from(set);
-    await kvStore.set("pinnedIds", pinnedIds);
+    const item = await history.getById(id);
+    if (item) await history.setPinned(id, !item.pinned);
+    const pinnedIds = await history.pinnedIds();
     await emitState();
     return { pinnedIds };
   });

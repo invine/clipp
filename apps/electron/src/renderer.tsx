@@ -15,6 +15,7 @@ type AppState = {
   identity: Identity | null;
   relayAddresses: string[];
   pinnedIds?: string[];
+  localRetentionMs?: number;
   diagnostics?: {
     lastClipboardCheck: number | null;
     lastClipboardPreview: string | null;
@@ -94,6 +95,7 @@ const App = () => {
         relayConnections={state.relayConnections || []}
         identity={state.identity}
         pinnedIds={state.pinnedIds || []}
+        localRetentionMs={state.localRetentionMs}
         relayAddresses={state.relayAddresses || []}
         initializationError={initializationError}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
@@ -105,6 +107,7 @@ const App = () => {
         onRequestPairingCode={() => window.clipp.openQrWindow()}
         onTogglePin={(id) => window.clipp.togglePin(id)}
         onClearAll={() => window.clipp.clearHistory()}
+        onSetLocalRetention={(retentionMs) => window.clipp.setLocalRetention(retentionMs)}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
         onSetRelayAddresses={async (addrs) => {

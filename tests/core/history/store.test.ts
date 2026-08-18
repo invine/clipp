@@ -93,6 +93,76 @@ describe("ClipHistoryStore", () => {
     await expect(secondStore.getById(clip.id)).resolves.toBeNull();
   });
 
+  it("locally deletes a still-shareable Clip with a suppression tombstone", async () => {
+    const clip = {
+      id: "00000000-0000-4000-8000-000000000013",
+      type: "text" as const,
+      content: "delete me",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: Date.now(),
+      shareExpiresAt: Date.now() + 60_000,
+    };
+    await history.accept(clip);
+
+    await history.remove(clip.id);
+
+    await expect(history.getById(clip.id)).resolves.toBeNull();
+    await expect(history.accept(clip)).resolves.toMatchObject({ kind: "locally-suppressed" });
+  });
+
+  it("keeps pinned Clips through retention, then atomically applies policy on unpin", async () => {
+    let now = 10_000;
+    const localHistory = new MemoryHistoryStore(new InMemoryHistoryBackend(), {
+      now: () => now,
+      retentionMs: 1_000,
+    });
+    const clip = sampleClip(1, "pinned");
+    await localHistory.accept(clip);
+    await localHistory.setPinned(clip.id, true);
+    now += 1_001;
+
+    await localHistory.pruneExpired();
+    await expect(localHistory.getById(clip.id)).resolves.toMatchObject({ pinned: true });
+
+    await localHistory.setPinned(clip.id, false);
+    await expect(localHistory.getById(clip.id)).resolves.toBeNull();
+    await expect(localHistory.accept(clip)).resolves.toMatchObject({ kind: "locally-suppressed" });
+  });
+
+  it("gives new local Clips capacity priority and suppresses rejected historical imports", async () => {
+    const localHistory = new MemoryHistoryStore(new InMemoryHistoryBackend(), {
+      maxUnpinnedClips: 1,
+      maxUnpinnedBytes: 10_000,
+    });
+    const shareExpiresAt = Date.now() + 60_000;
+    const retained = { ...sampleClip(20, "00000000-0000-4000-8000-000000000020"), shareExpiresAt };
+    const local = { ...sampleClip(10, "00000000-0000-4000-8000-000000000010"), shareExpiresAt };
+    const historical = { ...sampleClip(5, "00000000-0000-4000-8000-000000000005"), shareExpiresAt };
+    await localHistory.accept(retained);
+
+    await expect(localHistory.accept(local)).resolves.toMatchObject({ kind: "newly-stored" });
+    await expect(localHistory.getById(retained.id)).resolves.toBeNull();
+    await localHistory.importBatch([historical]);
+
+    await expect(localHistory.getById(historical.id)).resolves.toBeNull();
+    await expect(localHistory.accept(historical)).resolves.toMatchObject({ kind: "locally-suppressed" });
+  });
+
+  it("fails Clear History atomically when the required tombstones exceed capacity", async () => {
+    const localHistory = new MemoryHistoryStore(new InMemoryHistoryBackend(), {
+      maxSuppressionRecords: 1,
+      maxSuppressionBytes: 10_000,
+    });
+    const first = sampleClip(Date.now(), "clear-first");
+    const second = sampleClip(Date.now() + 1, "clear-second");
+    await localHistory.accept(first);
+    await localHistory.accept(second);
+
+    await expect(localHistory.clearAll()).rejects.toMatchObject({ code: "suppression_capacity" });
+    await expect(localHistory.getById(first.id)).resolves.not.toBeNull();
+    await expect(localHistory.getById(second.id)).resolves.not.toBeNull();
+  });
+
   it("clears all clips", async () => {
     const now = Date.now();
     await history.add(sampleClip(now + 4, "c1"), sender, true);

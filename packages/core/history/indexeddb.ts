@@ -1,12 +1,9 @@
 import {
-  AtomicHistoryAcceptance,
-  AtomicHistoryAcceptInput,
-  AtomicHistorySuppressInput,
-  ClipSuppression,
-  decideAtomicHistoryAcceptance,
-  HistoryStorageBackend,
+  decideAtomicHistoryMutation,
+  type HistoryMutation,
+  type HistoryMutationResult,
+  type HistoryStorageBackend,
 } from "./types";
-import { HistoryItem } from "../models/HistoryItem";
 
 const DB_NAME = "clipp-history";
 const STORE_NAME = "history";
@@ -23,9 +20,7 @@ function openDb(): Promise<any> {
     req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
     };
     req.onsuccess = () => resolve(req.result);
   });
@@ -34,94 +29,69 @@ function openDb(): Promise<any> {
 async function runTx<T>(
   dbPromise: Promise<any>,
   mode: "readonly" | "readwrite",
-  fn: (store: any) => any
+  fn: (store: any) => any,
 ): Promise<T> {
   const db = await dbPromise;
   return await new Promise<T>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, mode);
     const store = tx.objectStore(STORE_NAME);
-    const req: any = fn(store);
+    const req = fn(store);
     req.onsuccess = () => resolve(req.result as T);
     req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
   });
 }
 
 export class IndexedDBHistoryBackend implements HistoryStorageBackend {
-  private dbPromise: Promise<any>;
-
-  constructor() {
-    this.dbPromise = openDb();
-  }
+  private readonly dbPromise = openDb();
 
   async set(key: string, value: any): Promise<void> {
     await runTx(this.dbPromise, "readwrite", (store) => store.put(value, key));
   }
-
   async get(key: string): Promise<any> {
     return await runTx(this.dbPromise, "readonly", (store) => store.get(key));
   }
-
   async getAll(): Promise<any[]> {
     return await runTx(this.dbPromise, "readonly", (store) => store.getAll());
   }
-
   async remove(key: string): Promise<void> {
     await runTx(this.dbPromise, "readwrite", (store) => store.delete(key));
   }
-
   async clearAll(): Promise<void> {
     await runTx(this.dbPromise, "readwrite", (store) => store.clear());
   }
 
-  async acceptClip(input: AtomicHistoryAcceptInput): Promise<AtomicHistoryAcceptance> {
+  async applyHistoryMutation(input: HistoryMutation): Promise<HistoryMutationResult> {
     const db = await this.dbPromise;
-    return await new Promise<AtomicHistoryAcceptance>((resolve, reject) => {
+    return await new Promise<HistoryMutationResult>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
-      const existingRequest = store.get(input.clip.id);
-      const suppressionRequest = store.get(input.suppressionKey);
-      let existing: HistoryItem | undefined;
-      let suppression: ClipSuppression | undefined;
-      let reads = 2;
-      let result: AtomicHistoryAcceptance | undefined;
-      const finishReads = () => {
-        reads -= 1;
-        if (reads !== 0) return;
-        const transition = decideAtomicHistoryAcceptance(input, existing, suppression);
-        if (transition.deleteSuppression) store.delete(input.suppressionKey);
-        if (transition.storedItem) store.put(transition.storedItem satisfies HistoryItem, input.clip.id);
-        result = transition.acceptance;
+      const valuesRequest = store.getAll();
+      const keysRequest = store.getAllKeys();
+      let values: unknown[] | undefined;
+      let keys: string[] | undefined;
+      let result: HistoryMutationResult | undefined;
+      const plan = () => {
+        if (!values || !keys) return;
+        const entries = new Map<string, unknown>();
+        keys.forEach((key, index) => entries.set(String(key), values![index]));
+        const mutation = decideAtomicHistoryMutation(entries, input);
+        for (const key of mutation.deletes) store.delete(key);
+        for (const [key, value] of mutation.writes) store.put(value, key);
+        result = mutation.result;
       };
-      existingRequest.onsuccess = () => {
-        existing = existingRequest.result as HistoryItem | undefined;
-        finishReads();
+      valuesRequest.onsuccess = () => {
+        values = valuesRequest.result as unknown[];
+        plan();
       };
-      suppressionRequest.onsuccess = () => {
-        suppression = suppressionRequest.result as ClipSuppression | undefined;
-        finishReads();
+      keysRequest.onsuccess = () => {
+        keys = keysRequest.result as string[];
+        plan();
       };
-      tx.oncomplete = () => {
-        if (result) resolve(result);
-        else reject(new Error("IndexedDB atomic acceptance completed without a result"));
-      };
-      tx.onerror = () => reject(tx.error || new Error("IndexedDB atomic acceptance failed"));
-      tx.onabort = () => reject(tx.error || new Error("IndexedDB atomic acceptance aborted"));
-    });
-  }
-
-  async suppressClip(input: AtomicHistorySuppressInput): Promise<void> {
-    const db = await this.dbPromise;
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      store.delete(input.clipId);
-      store.put({
-        clipId: input.clipId,
-        suppressedUntil: input.suppressedUntil,
-      } satisfies ClipSuppression, input.suppressionKey);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error("IndexedDB suppression failed"));
-      tx.onabort = () => reject(tx.error || new Error("IndexedDB suppression aborted"));
+      tx.oncomplete = () => result
+        ? resolve(result)
+        : reject(new Error("IndexedDB history mutation completed without a result"));
+      tx.onerror = () => reject(tx.error || new Error("IndexedDB history mutation failed"));
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB history mutation aborted"));
     });
   }
 }

@@ -26,6 +26,7 @@ const Popup = () => {
   const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [localRetentionMs, setLocalRetentionMs] = useState(30 * 24 * 60 * 60 * 1000);
   const [initializationError, setInitializationError] = useState(false);
   const lastClipboardRef = useRef("");
 
@@ -43,6 +44,9 @@ const Popup = () => {
     });
     chrome.runtime.sendMessage({ type: "getInitializationError" }, (res) => {
       setInitializationError(res?.error?.code === "identity_initialization_failed");
+    });
+    chrome.runtime.sendMessage({ type: "getSettings" }, (res) => {
+      if (typeof res?.localRetentionMs === "number") setLocalRetentionMs(res.localRetentionMs);
     });
 
     const handler = (msg: any) => {
@@ -117,10 +121,22 @@ const Popup = () => {
     });
   }
 
-  async function handleDeleteClip(id: string) {
-    chrome.runtime.sendMessage({ type: "deleteClip", id }, () => {
-      setClips((prev) => prev.filter((c) => c.id !== id));
+  async function runHistoryOperation(message: Record<string, unknown>): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        const error = chrome.runtime.lastError;
+        if (error || !response?.ok) {
+          reject(error ?? new Error(response?.error || "history_operation_failed"));
+          return;
+        }
+        resolve();
+      });
     });
+  }
+
+  async function handleDeleteClip(id: string) {
+    await runHistoryOperation({ type: "deleteClip", id });
+    setClips((prev) => prev.filter((c) => c.id !== id));
   }
 
   async function handleUnpair(id: string) {
@@ -185,6 +201,7 @@ const Popup = () => {
         peerConnections={peerConnections}
         identity={identity}
         pinnedIds={pinnedIds}
+        localRetentionMs={localRetentionMs}
         initializationError={initializationError}
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
@@ -218,10 +235,14 @@ const Popup = () => {
             return Array.from(set);
           });
         }}
-        onClearAll={() => {
+        onClearAll={async () => {
+          await runHistoryOperation({ type: "clearHistory" });
           setClips([]);
           setPinnedIds([]);
-          chrome.runtime.sendMessage({ type: "clearHistory" }, () => {});
+        }}
+        onSetLocalRetention={async (retentionMs) => {
+          await runHistoryOperation({ type: "setLocalRetention", retentionMs });
+          setLocalRetentionMs(retentionMs);
         }}
         onRenameIdentity={handleRenameIdentity}
         onRetryInitialization={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}

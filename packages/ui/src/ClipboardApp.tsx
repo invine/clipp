@@ -221,6 +221,7 @@ export type ClipboardAppProps = {
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  localRetentionMs?: number;
   relayAddresses?: string[];
   initializationError?: boolean;
   onDeleteClip(id: string): void | Promise<void>;
@@ -232,6 +233,7 @@ export type ClipboardAppProps = {
   onRequestPairingCode(): Promise<PairingCode | null>;
   onTogglePin(id: string): void | Promise<void>;
   onClearAll(): void | Promise<void>;
+  onSetLocalRetention?(retentionMs: number): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
@@ -249,6 +251,7 @@ export function ClipboardApp({
   relayConnections = [],
   identity,
   pinnedIds,
+  localRetentionMs = 30 * 24 * 60 * 60 * 1000,
   relayAddresses = [],
   initializationError = false,
   onDeleteClip,
@@ -260,6 +263,7 @@ export function ClipboardApp({
   onRequestPairingCode,
   onTogglePin,
   onClearAll,
+  onSetLocalRetention,
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
@@ -295,6 +299,8 @@ export function ClipboardApp({
   const [relayDraft, setRelayDraft] = useState("");
   const [relaySaving, setRelaySaving] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [retryHistoryOperation, setRetryHistoryOperation] = useState<(() => void) | null>(null);
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -415,19 +421,35 @@ export function ClipboardApp({
       return next;
     });
     setTimeout(() => {
-      Promise.resolve(onDeleteClip(id)).finally(() =>
-        setRemovingIds((prev) => {
+      Promise.resolve(onDeleteClip(id))
+        .then(() => {
+          setHistoryError(null);
+          setRetryHistoryOperation(null);
+        })
+        .catch(() => {
+          setHistoryError("Could not delete this Clip. It is still in your history.");
+          setRetryHistoryOperation(() => () => handleDelete(id));
+        })
+        .finally(() => setRemovingIds((prev) => {
           const next = new Set(prev);
           next.delete(id);
           return next;
-        }),
-      );
+        }));
     }, 180);
   }
 
   function clearAllHistory() {
     setRemovingIds(new Set(clips.map((c) => c.id)));
-    Promise.resolve(onClearAll()).finally(() => setRemovingIds(new Set()));
+    Promise.resolve(onClearAll())
+      .then(() => {
+        setHistoryError(null);
+        setRetryHistoryOperation(null);
+      })
+      .catch(() => {
+        setHistoryError("Could not clear history. Your Clips are still available.");
+        setRetryHistoryOperation(() => clearAllHistory);
+      })
+      .finally(() => setRemovingIds(new Set()));
   }
 
   function toggleFilters() {
@@ -562,6 +584,17 @@ export function ClipboardApp({
   async function removeRelay(index: number) {
     const next = relayAddresses.filter((_, i) => i !== index);
     await updateRelayAddresses(next);
+  }
+
+  async function updateLocalRetention(retentionMs: number) {
+    if (!onSetLocalRetention) return;
+    try {
+      await onSetLocalRetention(retentionMs);
+      setHistoryError(null);
+    } catch {
+      setHistoryError("Could not save the history retention setting.");
+      setRetryHistoryOperation(() => () => void updateLocalRetention(retentionMs));
+    }
   }
 
   function sourceOptionLabel(src: string): string {
@@ -1098,6 +1131,22 @@ export function ClipboardApp({
         </div>
 
         {renderRelaysSection()}
+
+        {onSetLocalRetention && (
+          <div className="relay-settings">
+            <label className="peer-sub" htmlFor="history-retention">Keep unpinned history</label>
+            <select
+              id="history-retention"
+              value={localRetentionMs}
+              onChange={(event) => void updateLocalRetention(Number(event.target.value))}
+            >
+              <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
+              <option value={30 * 24 * 60 * 60 * 1000}>30 days</option>
+              <option value={90 * 24 * 60 * 60 * 1000}>90 days</option>
+              <option value={365 * 24 * 60 * 60 * 1000}>1 year</option>
+            </select>
+          </div>
+        )}
       </>
     );
   }
@@ -1150,6 +1199,22 @@ export function ClipboardApp({
           <span>Device identity could not be initialized. Clipboard capture and networking are paused.</span>
           {onRetryInitialization && (
             <button type="button" onClick={() => void onRetryInitialization()}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
+      {historyError && (
+        <div className="initialization-error" role="alert">
+          <span>{historyError}</span>
+          {retryHistoryOperation && (
+            <button type="button" onClick={() => {
+              const retry = retryHistoryOperation;
+              setHistoryError(null);
+              setRetryHistoryOperation(null);
+              retry();
+            }}>
               Retry
             </button>
           )}

@@ -276,4 +276,36 @@ describe("ClipboardSyncManager", () => {
     expect(history.add).toHaveBeenCalledTimes(1);
     expect(clipboard.writeRemoteClip).toHaveBeenCalledTimes(1);
   });
+
+  test("cancels a queued remote clipboard write after local removal", async () => {
+    const apply = jest.fn(async () => {});
+    const clipboard = {
+      start: jest.fn(), stop: jest.fn(), onLocalClip: jest.fn(), onRemoteClipWritten: jest.fn(),
+      processLocalText: jest.fn(),
+      writeRemoteClip: jest.fn(async (_clip: Clip, beforeWrite?: () => Promise<boolean>) => {
+        if (!beforeWrite || await beforeWrite()) await apply();
+      }),
+    } as any;
+    const handlers: Array<(msg: ClipMessage) => void> = [];
+    const clip: Clip = {
+      id: "00000000-0000-4000-8000-000000000015", type: "text", content: "removed",
+      originPeerId, capturedAt: 1, shareExpiresAt: 86_400_001,
+    };
+    const history = {
+      accept: jest.fn(async () => ({ kind: "newly-stored", clip, liveHandled: true })),
+      getById: jest.fn(async () => null),
+    } as any;
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      messaging: { broadcast: jest.fn(), onMessage: (cb: (msg: ClipMessage) => void) => handlers.push(cb) },
+      getLocalDeviceId: async () => "me",
+    });
+    sync.start();
+
+    handlers.forEach((handler) => handler(createClipMessage({ from: "peer", clip, sentAt: 1 })));
+    await flushPromises();
+
+    expect(apply).not.toHaveBeenCalled();
+  });
 });

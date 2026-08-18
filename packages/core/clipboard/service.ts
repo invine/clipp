@@ -10,7 +10,9 @@ export interface ClipboardService {
   stop(): void;
   onLocalClip(cb: (clip: Clip, options?: LocalClipOptions) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
-  writeRemoteClip(clip: Clip): Promise<void>;
+  writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void>;
+  /** Drops captures that never reached durable history, after a successful Clear History. */
+  discardPending?(): Promise<void>;
   /**
    * Manually process a clipboard text value as if it were read by the watcher.
    * Useful for environments where the background script cannot directly read
@@ -149,12 +151,13 @@ function createClipboardService(
     }
   }
 
-  async function writeRemoteClip(clip: Clip): Promise<void> {
+  async function writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void> {
     log.debug("Writing remote clip", clip.id);
     if (clip.id === lastLocal?.id) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     log.debug("Writing clip to clipboard");
     await serialize(async () => {
+      if (beforeWrite && !(await beforeWrite())) return;
       if (options.captureCoordinator) {
         await options.captureCoordinator.writeRemote(clip, write, read);
         remoteHandlers.forEach((handler) => handler(clip));
@@ -196,5 +199,8 @@ function createClipboardService(
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
     processLocalText,
     writeRemoteClip,
+    discardPending: options.captureCoordinator
+      ? () => options.captureCoordinator!.discardPending()
+      : undefined,
   };
 }

@@ -30,4 +30,17 @@ describe("IndexedDB history acceptance", () => {
     await first.suppress(clip.id, Date.now() + 1_000);
     await expect(second.accept(clip)).resolves.toMatchObject({ kind: "locally-suppressed" });
   });
+
+  it("atomically clears records before exposing their durable suppression", async () => {
+    const backend = new IndexedDBHistoryBackend();
+    const first = new MemoryHistoryStore(backend);
+    const second = new MemoryHistoryStore(backend);
+    const clearable = { ...clip, id: "00000000-0000-4000-8000-000000000014", shareExpiresAt: Date.now() + 60_000 };
+    await first.accept(clearable);
+
+    await first.clearAll();
+
+    await expect(second.getById(clearable.id)).resolves.toBeNull();
+    await expect(second.accept(clearable)).resolves.toMatchObject({ kind: "locally-suppressed" });
+  });
 });

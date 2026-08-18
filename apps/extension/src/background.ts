@@ -11,7 +11,7 @@ if (typeof globalThis.navigator === "undefined") {
   globalThis.navigator = { userAgent: "chrome-extension" };
 }
 
-import { MemoryHistoryStore } from "../../../packages/core/history/store";
+import { MAX_RETENTION_MS, MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup } from "../../../packages/core/history/store";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
@@ -66,6 +66,11 @@ const historyBackend =
     ? new IndexedDBHistoryBackend()
     : new InMemoryHistoryBackend();
 const history = new MemoryHistoryStore(historyBackend);
+let stopHistoryRetentionCleanup: (() => void) | undefined;
+let resolveHistoryPolicyReady: (() => void) | undefined;
+const historyPolicyReady = new Promise<void>((resolve) => {
+  resolveHistoryPolicyReady = resolve;
+});
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
@@ -214,6 +219,21 @@ const clipboardSync = createClipboardSyncManager({
 chrome.storage.local.get(["autoSync"], (res) => {
   clipboardSync.setAutoSync(res.autoSync !== false);
 });
+chrome.storage.local.get(["localRetentionMs"], (res) => {
+  const storedRetentionMs = res.localRetentionMs;
+  const retentionMs =
+    typeof storedRetentionMs === "number" && Number.isFinite(storedRetentionMs) && storedRetentionMs >= 0
+      ? storedRetentionMs
+      : RETENTION_MS;
+  void history
+    .setRetention(retentionMs)
+    .catch((error) => log.warn("Failed to apply stored local history retention", error))
+    .finally(() => {
+      stopHistoryRetentionCleanup ??= startHistoryRetentionCleanup(history);
+      resolveHistoryPolicyReady?.();
+      resolveHistoryPolicyReady = undefined;
+    });
+});
 history.onNew((item) => {
   // Notify all extension pages about the new clip
   // @ts-ignore
@@ -352,7 +372,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   publicState: {
     async read() {
       const [clips, devices, identity, peerState] = await Promise.all([
-        history.exportAll(),
+        historyPolicyReady.then(() => history.exportAll()),
         trust.list(),
         identitySvc.get(),
         offscreenReady
@@ -417,7 +437,8 @@ const sharedRuntime = createRuntimeOrchestrator({
     initializeIdentity: async () => {
       await identitySvc.get();
     },
-    startLocalServices: () => {
+    startLocalServices: async () => {
+      await historyPolicyReady;
       pairingSessions.start();
       clipboardSync.start();
     },
@@ -458,14 +479,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "getLatestClip") {
-    history.query({ limit: 1 }).then((items) => {
+    historyPolicyReady.then(() => history.query({ limit: 1 })).then((items) => {
       sendResponse({ clip: items[0]?.clip || null });
     });
     return true;
   }
   // Handle shareClip from popup
   if (msg.type === "shareClip" && msg.clip) {
-    Promise.resolve(clipboard.processLocalText(msg.clip.content)).then(async () => {
+    historyPolicyReady.then(() => clipboard.processLocalText(msg.clip.content)).then(async () => {
       sendResponse({ ok: true });
     });
     return true;
@@ -484,15 +505,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Handle clipboard history for options page
   if (msg.type === "getClipHistory") {
-    history.exportAll().then((clips) => {
+    historyPolicyReady.then(() => history.exportAll()).then((clips) => {
       sendResponse({ clips });
     });
     return true;
   }
   if (msg.type === "clearHistory") {
-    history
-      .clearAll()
-      .then(() => sendResponse({ ok: true }))
+    historyPolicyReady
+      .then(() => history.clearAll())
+      .then(async () => {
+        await clipboard.discardPending?.();
+        sendResponse({ ok: true });
+      })
       .catch((err) => {
         log.warn("Failed to clear history", err);
         sendResponse({ ok: false, error: "clear_failed" });
@@ -500,7 +524,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "searchClipHistory") {
-    history.query({ search: msg.query || "" }).then((items) => {
+    historyPolicyReady.then(() => history.query({ search: msg.query || "" })).then((items) => {
       sendResponse({ clips: items.map((i) => i.clip) });
     });
     return true;
@@ -520,13 +544,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "clipboardUpdate" && msg.text) {
-    void clipboard.processLocalText(msg.text).then(() => {
+    void historyPolicyReady.then(() => clipboard.processLocalText(msg.text)).then(() => {
       sendResponse({ ok: true });
     });
     return true;
   }
   if (msg.type === "shareNow") {
-    navigator.clipboard.readText().then(async (text) => {
+    historyPolicyReady.then(() => navigator.clipboard.readText()).then(async (text) => {
       await clipboard.processLocalText(text, { shareNow: true });
       sendResponse({ ok: true });
     });
@@ -604,7 +628,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "deleteClip" && msg.id) {
-    history.remove(msg.id).then(() => sendResponse({ ok: true }));
+    historyPolicyReady
+      .then(() => history.remove(msg.id))
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+    return true;
+  }
+  if (msg.type === "setLocalRetention" && typeof msg.retentionMs === "number") {
+    historyPolicyReady
+      .then(() => history.setRetention(msg.retentionMs))
+      .then(async () => {
+        await storage.set("localRetentionMs", Math.min(msg.retentionMs, MAX_RETENTION_MS));
+        sendResponse({ ok: true });
+      })
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }
   if (msg.type === "revokeDevice" && msg.id) {
@@ -619,11 +656,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "getSettings") {
     // @ts-ignore
     chrome.storage.local.get(
-      ["autoSync", "expiryDays", "typesEnabled", "logLevel"],
+      ["autoSync", "expiryDays", "typesEnabled", "logLevel", "localRetentionMs"],
       (res) => {
         sendResponse({
           autoSync: res.autoSync !== false,
           expiryDays: res.expiryDays || 365,
+          localRetentionMs: typeof res.localRetentionMs === "number" ? res.localRetentionMs : RETENTION_MS,
           typesEnabled: res.typesEnabled || {
             text: true,
             image: true,

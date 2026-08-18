@@ -18,7 +18,7 @@ import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
-import { MemoryHistoryStore } from "@core/history/store";
+import { MAX_RETENTION_MS, MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
@@ -59,6 +59,7 @@ export type AndroidAppState = {
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  localRetentionMs?: number;
   relayAddresses: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
@@ -129,7 +130,6 @@ export type PairingResult =
   | { ok: true; diagnostics: PairingAttemptDiagnostics }
   | { ok: false; error: PairingFailureCode; diagnostics: PairingAttemptDiagnostics };
 
-const PINNED_KEY = "pinnedIds";
 function createHistoryBackend() {
   try {
     if (typeof indexedDB === "undefined") {
@@ -380,7 +380,7 @@ export class AndroidClient {
   });
 
   private pendingRequests: TrustedDevice[] = [];
-  private pinnedIds: string[] = [];
+  private localRetentionMs = RETENTION_MS;
   private listeners: Array<(state: AndroidAppState) => void> = [];
   private started = false;
   private eventsBound = false;
@@ -390,6 +390,7 @@ export class AndroidClient {
   private lastPairingAttempt: PairingAttemptDiagnostics | null = null;
   private pairingAttemptSeq = 0;
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
+  private stopHistoryRetentionCleanup: (() => void) | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
@@ -651,7 +652,9 @@ export class AndroidClient {
       startLocalServices: async () => {
         this.pairingSessions.start();
         this.bindEvents();
-        this.pinnedIds = (await this.storage.get<string[]>(PINNED_KEY)) || [];
+        this.localRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
+        await this.history.setRetention(this.localRetentionMs);
+        this.stopHistoryRetentionCleanup ??= startHistoryRetentionCleanup(this.history);
         await this.pairingPending.start();
         this.started = true;
         this.clipboardSync.start();
@@ -676,6 +679,8 @@ export class AndroidClient {
 
   private async stopServices() {
     if (!this.started) return;
+    this.stopHistoryRetentionCleanup?.();
+    this.stopHistoryRetentionCleanup = null;
     await this.pairingSessions.stop();
     this.clipboardSync.stop();
     this.pairedConnections?.stop();
@@ -722,7 +727,8 @@ export class AndroidClient {
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds: this.pinnedIds,
+      pinnedIds: await this.history.pinnedIds(),
+      localRetentionMs: this.localRetentionMs,
       relayAddresses,
       diagnostics: {
         lastClipboardCheck: this.lastClipboardCheck,
@@ -739,8 +745,8 @@ export class AndroidClient {
   }
 
   async clearHistory() {
-    const clips = await this.history.exportAll();
-    await Promise.all(clips.map((c) => this.history.remove(c.id)));
+    await this.history.clearAll();
+    await this.clipboard.discardPending?.();
     await this.emitState();
   }
 
@@ -776,13 +782,19 @@ export class AndroidClient {
   }
 
   async togglePin(id: string) {
-    const set = new Set(this.pinnedIds);
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    this.pinnedIds = Array.from(set);
-    await this.storage.set(PINNED_KEY, this.pinnedIds);
+    const item = await this.history.getById(id);
+    if (item) await this.history.setPinned(id, !item.pinned);
+    const pinnedIds = await this.history.pinnedIds();
     await this.emitState();
-    return this.pinnedIds;
+    return pinnedIds;
+  }
+
+  async setLocalRetention(retentionMs: number) {
+    await this.history.setRetention(retentionMs);
+    this.localRetentionMs = Math.min(retentionMs, MAX_RETENTION_MS);
+    await this.storage.set("localRetentionMs", this.localRetentionMs);
+    await this.emitState();
+    return this.localRetentionMs;
   }
 
   async getIdentity(): Promise<Identity | null> {

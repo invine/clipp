@@ -28,6 +28,7 @@ type AppState = {
     lastClipboardError: string | null;
   };
   pinnedIds?: string[];
+  localRetentionMs?: number;
 };
 
 const api = {
@@ -50,6 +51,7 @@ const api = {
   togglePin: (id: string) => ipcRenderer.invoke("clipp:toggle-pin", id),
   renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
   setRelayAddresses: (addrs: string[]) => ipcRenderer.invoke("clipp:set-relay-addresses", addrs),
+  setLocalRetention: (retentionMs: number) => ipcRenderer.invoke("clipp:set-local-retention", retentionMs),
   onUpdate: (cb: (state: AppState) => void) => {
     const listener = (_event: any, state: AppState) => cb(state);
     ipcRenderer.on("clipp:update", listener);

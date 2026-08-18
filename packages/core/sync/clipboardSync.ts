@@ -1,10 +1,11 @@
 import type { ClipboardService, LocalClipOptions } from "../clipboard/service";
 import type { ClipHistoryStore } from "../history/store";
+import type { HistoryItem } from "../models/HistoryItem";
 import {
   createClipMessage,
   type ClipMessage,
 } from "../protocols/clip";
-import { isClipAcceptable, validateClip, type Clip } from "../models/Clip";
+import { clipsHaveEqualImmutableFields, isClipAcceptable, validateClip, type Clip } from "../models/Clip";
 import * as log from "../logger";
 
 export type MessagingPort = {
@@ -107,7 +108,18 @@ export function createClipboardSyncManager(
       }
 
       try {
-        await options.clipboard.writeRemoteClip(clip);
+        await options.clipboard.writeRemoteClip(clip, async () => {
+          // The service evaluates this within its serialized write just before
+          // touching the platform clipboard, closing Delete/Clear's queue race.
+          let retained: HistoryItem | null;
+          try {
+            retained = await options.history.getById(clip.id);
+          } catch (err) {
+            log.warn("Failed to recheck remote clip before clipboard application", err);
+            return false;
+          }
+          return Boolean(retained && clipsHaveEqualImmutableFields(retained.clip, clip));
+        });
       } catch (err) {
         log.warn("Failed to apply remote clip to clipboard", err);
       }

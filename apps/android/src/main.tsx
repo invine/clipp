@@ -131,6 +131,7 @@ function App() {
         relayConnections={state.relayConnections || []}
         identity={state.identity as Identity | null}
         pinnedIds={state.pinnedIds || []}
+        localRetentionMs={state.localRetentionMs}
         relayAddresses={state.relayAddresses || []}
         initializationError={initializationError}
         onDeleteClip={(id) => client.deleteClip(id)}
@@ -146,6 +147,7 @@ function App() {
           await client.togglePin(id);
         }}
         onClearAll={() => client.clearHistory()}
+        onSetLocalRetention={(retentionMs) => client.setLocalRetention(retentionMs)}
         onRetryInitialization={async () => {
           try {
             setState(await client.retryIdentityInitialization());

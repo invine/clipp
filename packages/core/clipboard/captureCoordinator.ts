@@ -1,5 +1,6 @@
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS, isCanonicalPeerId, type Clip } from "../models/Clip";
 import type { ClipHistoryStore, HistoryAcceptance } from "../history/store";
+import { HistoryPolicyError } from "../history/types";
 import { normalizeClipboardContent } from "./normalize";
 import { createSerializedExecutor } from "./serial";
 
@@ -16,6 +17,7 @@ export type ClipCaptureCoordinator = {
   writeRemote(clip: Clip, write: (value: string) => Promise<void>, readBack?: () => Promise<string>): Promise<void>;
   baselineValue(): string | undefined;
   pending(): readonly Clip[];
+  discardPending(): Promise<void>;
   retryPending(): Promise<void>;
   start(): void;
   stop(): void;
@@ -34,6 +36,7 @@ export function createClipCaptureCoordinator(options: {
   onDiagnostic?: (diagnostic:
     | "clip_id_collision_exhausted"
     | "invalid_capture"
+    | "clip_too_large"
     | "pending_capture_dropped"
     | "live_delivery_failed") => void;
 }): ClipCaptureCoordinator {
@@ -51,7 +54,11 @@ export function createClipCaptureCoordinator(options: {
   const store = async (clip: Clip, captureOptions?: ClipCaptureOptions): Promise<HistoryAcceptance | null> => {
     try {
       return await options.history.accept(clip, { liveHandled: true });
-    } catch {
+    } catch (error) {
+      if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
+        options.onDiagnostic?.("clip_too_large");
+        return null;
+      }
       const bytes = new TextEncoder().encode(JSON.stringify(clip)).byteLength;
       if (bytes > pendingMaxBytes || pendingMaxClips <= 0) {
         options.onDiagnostic?.("pending_capture_dropped");
@@ -165,6 +172,12 @@ export function createClipCaptureCoordinator(options: {
     }),
     baselineValue: () => baseline,
     pending: () => pending.map((capture) => capture.clip),
+    discardPending: async () => serialize(async () => {
+      pending.splice(0, pending.length);
+      pendingBytes = 0;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }),
     retryPending: async () => serialize(retryPendingUnserialized),
     start: () => {
       running = true;
