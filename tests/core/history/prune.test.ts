@@ -18,9 +18,9 @@ function item(id: string, opts: Partial<Clip> = {}): HistoryItem {
 }
 
 describe("pruneHistoryItems", () => {
-  it("prunes expired clips", () => {
+  it("retains history after its sharing lifetime expires", () => {
     const expired = item("exp", { shareExpiresAt: now - 1 });
-    expect(shouldPrune(expired, now)).toBe(true);
+    expect(shouldPrune(expired, now)).toBe(false);
   });
 
   it("prunes very old clips", () => {
@@ -33,7 +33,7 @@ describe("pruneHistoryItems", () => {
     const expired = item("exp", { shareExpiresAt: now - 1 });
     const old = item("old", { capturedAt: now - 366 * 24 * 60 * 60 * 1000 });
     const res = pruneHistoryItems([keep, expired, old], now);
-    expect(res).toHaveLength(1);
+    expect(res).toHaveLength(2);
     expect(res[0].clip.id).toBe("keep");
   });
 });

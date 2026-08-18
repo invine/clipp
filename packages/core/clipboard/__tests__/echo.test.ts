@@ -7,6 +7,7 @@ const readMock = jest.fn(async () => clipboard);
 const writeMock = jest.fn(async (text: string) => {
   void text;
 });
+const peerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 describe("Echo prevention", () => {
   beforeEach(() => {
@@ -25,7 +26,7 @@ describe("Echo prevention", () => {
   test("ignores echoed remote clip", async () => {
     const service = createPollingClipboardService({
       pollIntervalMs: 1000,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });
@@ -51,7 +52,7 @@ describe("Echo prevention", () => {
     });
     const service = createPollingClipboardService({
       pollIntervalMs: 1000,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });

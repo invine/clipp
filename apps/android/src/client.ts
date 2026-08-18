@@ -860,7 +860,7 @@ export class AndroidClient {
   async shareCurrentClipboard() {
     try {
       const text = await readClipboardText();
-      await this.clipboard.processLocalText(text);
+      await this.clipboard.processLocalText(text, { shareNow: true });
       await this.emitState();
       return { ok: text.length > 0 };
     } catch (err) {

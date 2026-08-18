@@ -42,4 +42,16 @@ describe("Data-model sanity", () => {
     expect(isCanonicalPeerId("12D3KooWnot-a-complete-peer-id")).toBe(false);
     expect(isCanonicalPeerId("LZM")).toBe(false);
   });
+
+  it("rejects a URL whose declared alternative is text", () => {
+    const clip: Clip = {
+      id: "00000000-0000-4000-8000-000000000003",
+      type: ClipType.Text,
+      content: "https://example.com",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 1_000,
+      shareExpiresAt: 2_000,
+    };
+    expect(validateClip(clip)).toBe(false);
+  });
 });

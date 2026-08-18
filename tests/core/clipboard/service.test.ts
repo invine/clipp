@@ -5,6 +5,7 @@ import { Clip } from "../../../packages/core/models/Clip";
 let readValue = "";
 const readMock = jest.fn(async () => readValue);
 const writeMock = jest.fn(async (_text: string) => {});
+const peerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 describe("ClipboardService", () => {
   afterEach(() => {
@@ -16,7 +17,7 @@ describe("ClipboardService", () => {
     jest.useFakeTimers();
     const service = createPollingClipboardService({
       pollIntervalMs: 50,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });
@@ -31,7 +32,7 @@ describe("ClipboardService", () => {
     await jest.runOnlyPendingTimersAsync();
     expect(events.length).toBe(1);
     expect(events[0].content).toBe("first");
-    expect(events[0].originPeerId).toBe("me");
+    expect(events[0].originPeerId).toBe(peerId);
     readValue = "second";
     jest.advanceTimersByTime(60);
     await jest.runOnlyPendingTimersAsync();
@@ -43,7 +44,7 @@ describe("ClipboardService", () => {
   it("writes remote clip to clipboard", async () => {
     const service = createPollingClipboardService({
       pollIntervalMs: 50,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });
@@ -63,7 +64,6 @@ describe("ClipboardService", () => {
 
   it("sends a recovered pending capture through local handlers", async () => {
     jest.useFakeTimers();
-    const peerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
     const history: ClipHistoryWriter = {
       accept: jest
         .fn()
@@ -84,6 +84,35 @@ describe("ClipboardService", () => {
     await jest.advanceTimersByTimeAsync(1_000);
 
     expect(events).toEqual([expect.objectContaining({ content: "recovered" })]);
+    service.stop();
+    jest.useRealTimers();
+  });
+
+  it("preserves Share Now intent when a pending capture recovers", async () => {
+    jest.useFakeTimers();
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn()
+        .mockRejectedValueOnce(new Error("storage unavailable"))
+        .mockImplementation(async (clip: Clip) => ({ kind: "newly-stored", clip, liveHandled: true })),
+    };
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: () => peerId,
+      makeId: () => "00000000-0000-4000-8000-000000000100",
+    });
+    const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
+    const events: Array<{ clip: Clip; shareNow?: boolean }> = [];
+    service.onLocalClip((clip, options) => events.push({ clip, shareNow: options?.shareNow }));
+    service.start();
+
+    await service.processLocalText("recover and share", { shareNow: true });
+    await jest.advanceTimersByTimeAsync(1_000);
+
+    expect(events).toEqual([expect.objectContaining({
+      clip: expect.objectContaining({ content: "recover and share" }),
+      shareNow: true,
+    })]);
     service.stop();
     jest.useRealTimers();
   });

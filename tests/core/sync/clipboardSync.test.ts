@@ -5,6 +5,8 @@ import {
 } from "../../../packages/core/protocols/clip";
 import type { Clip } from "../../../packages/core/models/Clip";
 
+const originPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
+
 describe("ClipboardSyncManager", () => {
   async function flushPromises(times = 6) {
     for (let i = 0; i < times; i++) {
@@ -43,14 +45,15 @@ describe("ClipboardSyncManager", () => {
       history,
       messaging,
       getLocalDeviceId: async () => "me",
+      now: () => 1_000,
     });
     sync.start();
 
     const clip: Clip = {
-      id: "c1",
+      id: "00000000-0000-4000-8000-000000000001",
       type: "text",
       content: "hello",
-      originPeerId: "me",
+      originPeerId,
       capturedAt: 1,
       shareExpiresAt: 86_400_001,
       timestamp: 1,
@@ -118,6 +121,83 @@ describe("ClipboardSyncManager", () => {
     expect(broadcast).not.toHaveBeenCalled();
   });
 
+  test("broadcasts a Share Now Clip when Auto Sync is disabled", async () => {
+    const localHandlers: Array<(clip: Clip, options?: { shareNow?: boolean }) => void> = [];
+    const clipboard = {
+      start: jest.fn(),
+      stop: jest.fn(),
+      onLocalClip: (cb: (clip: Clip, options?: { shareNow?: boolean }) => void) => localHandlers.push(cb),
+      onRemoteClipWritten: jest.fn(),
+      processLocalText: jest.fn(),
+      writeRemoteClip: jest.fn(async () => {}),
+    } as any;
+    const history = {
+      add: jest.fn(async () => {}),
+      getById: jest.fn(async () => null),
+    } as any;
+    const broadcast = jest.fn(async () => {});
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      messaging: { broadcast, onMessage: jest.fn() },
+      getLocalDeviceId: async () => "me",
+      now: () => 1_000,
+    });
+    sync.setAutoSync(false);
+    sync.start();
+
+    const clip: Clip = {
+      id: "00000000-0000-4000-8000-000000000003",
+      type: "text",
+      content: "share once",
+      originPeerId,
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
+    };
+    localHandlers.forEach((handler) => handler(clip, { shareNow: true }));
+    await flushPromises();
+
+    expect(history.add).toHaveBeenCalledWith(clip, "me", true);
+    expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ payload: { clip } }));
+  });
+
+  test("keeps an expired recovered Share Now Clip local-only", async () => {
+    const localHandlers: Array<(clip: Clip, options?: { shareNow?: boolean }) => void> = [];
+    const clipboard = {
+      start: jest.fn(),
+      stop: jest.fn(),
+      onLocalClip: (cb: (clip: Clip, options?: { shareNow?: boolean }) => void) => localHandlers.push(cb),
+      onRemoteClipWritten: jest.fn(),
+      processLocalText: jest.fn(),
+      writeRemoteClip: jest.fn(async () => {}),
+    } as any;
+    const history = { add: jest.fn(async () => {}), getById: jest.fn(async () => null) } as any;
+    const broadcast = jest.fn(async () => {});
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      messaging: { broadcast, onMessage: jest.fn() },
+      getLocalDeviceId: async () => "me",
+      now: () => 200_000,
+    });
+    sync.setAutoSync(false);
+    sync.start();
+
+    const clip: Clip = {
+      id: "00000000-0000-4000-8000-000000000004",
+      type: "text",
+      content: "expired share once",
+      originPeerId,
+      capturedAt: 1,
+      shareExpiresAt: 2,
+    };
+    localHandlers.forEach((handler) => handler(clip, { shareNow: true }));
+    await flushPromises();
+
+    expect(history.add).toHaveBeenCalledWith(clip, "me", true);
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
   test("broadcasts a coordinator-stored local Clip after its idempotent acceptance", async () => {
     const localHandlers: Array<(clip: Clip) => void> = [];
     const clipboard = {
@@ -133,7 +213,7 @@ describe("ClipboardSyncManager", () => {
     } as any;
     const broadcast = jest.fn(async () => {});
     const sync = createClipboardSyncManager({
-      clipboard, history, messaging: { broadcast, onMessage: jest.fn() }, getLocalDeviceId: async () => "me",
+      clipboard, history, messaging: { broadcast, onMessage: jest.fn() }, getLocalDeviceId: async () => "me", now: () => 1_000,
     });
     sync.start();
     localHandlers.forEach((handler) => handler(clip));

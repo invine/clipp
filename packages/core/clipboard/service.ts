@@ -1,13 +1,14 @@
 import { normalizeClipboardContent } from "./normalize";
 import { Clip } from "../models/Clip";
 import { ClipType } from "../models/enums";
-import type { ClipCaptureCoordinator } from "./captureCoordinator";
+import type { ClipCaptureCoordinator, ClipCaptureOptions } from "./captureCoordinator";
+import { createSerializedExecutor } from "./serial";
 import * as log from "../logger";
 
 export interface ClipboardService {
   start(): void;
   stop(): void;
-  onLocalClip(cb: (clip: Clip) => void): void;
+  onLocalClip(cb: (clip: Clip, options?: LocalClipOptions) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
   writeRemoteClip(clip: Clip): Promise<void>;
   /**
@@ -15,8 +16,11 @@ export interface ClipboardService {
    * Useful for environments where the background script cannot directly read
    * from the clipboard (e.g. Chrome MV3 service workers).
    */
-  processLocalText(text: string): Promise<void>;
+  processLocalText(text: string, options?: LocalClipOptions): Promise<void>;
 }
+
+/** Delivery intent for an explicitly initiated local capture. */
+export type LocalClipOptions = ClipCaptureOptions;
 
 export type ClipboardReadFn = () => Promise<string>;
 export type ClipboardWriteFn = (text: string) => Promise<void>;
@@ -84,30 +88,25 @@ function createClipboardService(
   const makeId = options.makeId;
   const pollIntervalMs = options.pollIntervalMs;
 
-  const localHandlers: Array<(c: Clip) => void> = [];
+  const localHandlers: Array<(clip: Clip, options?: LocalClipOptions) => void> = [];
   const remoteHandlers: Array<(c: Clip) => void> = [];
   let lastLocal: Clip | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let baseline: string | undefined;
-  let operation = Promise.resolve();
-  const serialize = async <Result>(work: () => Promise<Result>): Promise<Result> => {
-    const next = operation.then(work, work);
-    operation = next.then(() => undefined, () => undefined);
-    return next;
-  };
+  const serialize = createSerializedExecutor();
 
-  options.captureCoordinator?.onRecovered((clip) => {
+  options.captureCoordinator?.onRecovered((clip, captureOptions) => {
     lastLocal = clip;
-    localHandlers.forEach((handler) => handler(clip));
+    localHandlers.forEach((handler) => handler(clip, captureOptions));
   });
 
-  async function processLocalText(text: string): Promise<void> {
+  async function processLocalText(text: string, captureOptions?: LocalClipOptions): Promise<void> {
     log.debug("Processing local clipboard text");
     if (options.captureCoordinator) {
-      const clip = await options.captureCoordinator.capture(text);
+      const clip = await options.captureCoordinator.capture(text, captureOptions);
       if (clip) {
         lastLocal = clip;
-        localHandlers.forEach((handler) => handler(clip));
+        localHandlers.forEach((handler) => handler(clip, captureOptions));
       }
       return;
     }
@@ -117,7 +116,7 @@ function createClipboardService(
     if (!clip) return;
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
     lastLocal = clip;
-    localHandlers.forEach((h) => h(clip));
+    localHandlers.forEach((handler) => handler(clip, captureOptions));
   }
 
   async function checkOnce(): Promise<void> {

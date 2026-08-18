@@ -1,10 +1,10 @@
-import type { ClipboardService } from "../clipboard/service";
+import type { ClipboardService, LocalClipOptions } from "../clipboard/service";
 import type { ClipHistoryStore } from "../history/store";
 import {
   createClipMessage,
   type ClipMessage,
 } from "../protocols/clip";
-import { validateClip, type Clip } from "../models/Clip";
+import { isClipAcceptable, validateClip, type Clip } from "../models/Clip";
 import * as log from "../logger";
 
 export type MessagingPort = {
@@ -50,7 +50,7 @@ export function createClipboardSyncManager(
     return await localIdPromise;
   }
 
-  async function handleLocalClip(clip: Clip): Promise<void> {
+  async function handleLocalClip(clip: Clip, captureOptions?: LocalClipOptions): Promise<void> {
     if (!running) return;
     const localId = await getLocalId();
     try {
@@ -64,7 +64,8 @@ export function createClipboardSyncManager(
       log.warn("Failed to store local clip", err);
       return;
     }
-    if (!autoSync) return;
+    if (!autoSync && !captureOptions?.shareNow) return;
+    if (!isClipAcceptable(clip, now())) return;
     const messaging = currentMessaging;
     if (!messaging) return;
     const msg: ClipMessage = createClipMessage({
@@ -115,8 +116,8 @@ export function createClipboardSyncManager(
     }
   }
 
-  options.clipboard.onLocalClip((clip) => {
-    void handleLocalClip(clip);
+  options.clipboard.onLocalClip((clip, captureOptions) => {
+    void handleLocalClip(clip, captureOptions);
   });
 
   function bindMessaging(messaging: MessagingPort): void {

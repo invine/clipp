@@ -4,6 +4,7 @@ import {
   DEFAULT_CLIP_SHARING_LIFETIME_MS,
   MAX_CLIP_SHARING_LIFETIME_MS,
   type Clip,
+  validateClip,
 } from "../models/Clip.js";
 
 /** v1 has no text sanitization: clipboard content is an event payload. */
@@ -36,7 +37,7 @@ export function normalizeClipboardContent(
     sharingLifetimeMs > MAX_CLIP_SHARING_LIFETIME_MS
   ) return null;
 
-  return {
+  const clip: Clip = {
     id: (deps.makeId ?? uuidv4)(),
     type: clipContentType(input),
     content: input,
@@ -44,4 +45,5 @@ export function normalizeClipboardContent(
     capturedAt,
     shareExpiresAt: capturedAt + sharingLifetimeMs,
   };
+  return validateClip(clip) ? clip : null;
 }

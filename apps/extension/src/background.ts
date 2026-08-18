@@ -527,7 +527,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "shareNow") {
     navigator.clipboard.readText().then(async (text) => {
-      await clipboard.processLocalText(text);
+      await clipboard.processLocalText(text, { shareNow: true });
       sendResponse({ ok: true });
     });
     return true;

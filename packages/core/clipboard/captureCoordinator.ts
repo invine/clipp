@@ -1,21 +1,25 @@
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS, isCanonicalPeerId, type Clip } from "../models/Clip";
 import type { ClipHistoryStore, HistoryAcceptance } from "../history/store";
 import { normalizeClipboardContent } from "./normalize";
+import { createSerializedExecutor } from "./serial";
 
 export type ClipHistoryAcceptance = HistoryAcceptance;
 export type ClipHistoryWriter = Pick<ClipHistoryStore, "accept">;
+export type ClipCaptureOptions = {
+  shareNow?: boolean;
+};
 
 export type ClipCaptureCoordinator = {
   baseline(value: string): Promise<void>;
   observe(value: string): Promise<Clip | null>;
-  capture(value: string): Promise<Clip | null>;
+  capture(value: string, options?: ClipCaptureOptions): Promise<Clip | null>;
   writeRemote(clip: Clip, write: (value: string) => Promise<void>, readBack?: () => Promise<string>): Promise<void>;
   baselineValue(): string | undefined;
   pending(): readonly Clip[];
   retryPending(): Promise<void>;
   start(): void;
   stop(): void;
-  onRecovered(cb: (clip: Clip) => void | Promise<void>): void;
+  onRecovered(cb: (clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>): void;
 };
 
 export function createClipCaptureCoordinator(options: {
@@ -34,22 +38,17 @@ export function createClipCaptureCoordinator(options: {
     | "live_delivery_failed") => void;
 }): ClipCaptureCoordinator {
   let baseline: string | undefined;
-  const pending: Array<{ clip: Clip; bytes: number }> = [];
+  const pending: Array<{ clip: Clip; bytes: number; options?: ClipCaptureOptions }> = [];
   let pendingBytes = 0;
   const pendingMaxClips = options.pendingMaxClips ?? 100;
   const pendingMaxBytes = options.pendingMaxBytes ?? 10 * 1024 * 1024;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let running = false;
   let retryDelayMs = 1_000;
-  const recoveredListeners: Array<(clip: Clip) => void | Promise<void>> = [];
-  let operation = Promise.resolve();
-  const serialize = async <Result>(work: () => Promise<Result>): Promise<Result> => {
-    const next = operation.then(work, work);
-    operation = next.then(() => undefined, () => undefined);
-    return next;
-  };
+  const recoveredListeners: Array<(clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>> = [];
+  const serialize = createSerializedExecutor();
   let schedulePendingRetry = (): void => {};
-  const store = async (clip: Clip): Promise<HistoryAcceptance | null> => {
+  const store = async (clip: Clip, captureOptions?: ClipCaptureOptions): Promise<HistoryAcceptance | null> => {
     try {
       return await options.history.accept(clip, { liveHandled: true });
     } catch {
@@ -63,14 +62,14 @@ export function createClipCaptureCoordinator(options: {
         pendingBytes -= discarded.bytes;
         options.onDiagnostic?.("pending_capture_dropped");
       }
-      pending.push({ clip, bytes });
+      pending.push({ clip, bytes, options: captureOptions });
       pendingBytes += bytes;
       schedulePendingRetry();
       return null;
     }
   };
   const retryPendingUnserialized = async (): Promise<void> => {
-    let newestCurrentRecovered: Clip | undefined;
+    let newestCurrentRecovered: { clip: Clip; options?: ClipCaptureOptions } | undefined;
     for (let index = 0; index < pending.length;) {
       const capture = pending[index];
       try {
@@ -78,7 +77,7 @@ export function createClipCaptureCoordinator(options: {
         pending.splice(index, 1);
         pendingBytes -= capture.bytes;
         if (accepted.kind === "newly-stored" && capture.clip.content === baseline) {
-          newestCurrentRecovered = capture.clip;
+          newestCurrentRecovered = { clip: capture.clip, options: capture.options };
         }
       } catch {
         index += 1;
@@ -87,7 +86,7 @@ export function createClipCaptureCoordinator(options: {
     if (newestCurrentRecovered) {
       for (const listener of recoveredListeners) {
         try {
-          await listener(newestCurrentRecovered);
+          await listener(newestCurrentRecovered.clip, newestCurrentRecovered.options);
         } catch {
           options.onDiagnostic?.("live_delivery_failed");
         }
@@ -105,7 +104,7 @@ export function createClipCaptureCoordinator(options: {
       void serialize(retryPendingUnserialized);
     }, delayMs);
   };
-  const captureUnserialized = async (value: string): Promise<Clip | null> => {
+  const captureUnserialized = async (value: string, captureOptions?: ClipCaptureOptions): Promise<Clip | null> => {
     if (value.length === 0) return null;
     const immutable = {
       originPeerId: await options.originPeerId(),
@@ -126,7 +125,7 @@ export function createClipCaptureCoordinator(options: {
         options.onDiagnostic?.("invalid_capture");
         return null;
       }
-      const accepted = await store(clip);
+      const accepted = await store(clip, captureOptions);
       if (!accepted) return null;
       if (accepted.kind === "newly-stored") {
         try {
@@ -150,10 +149,10 @@ export function createClipCaptureCoordinator(options: {
       await retryPendingUnserialized();
       return value.length === 0 ? null : captureUnserialized(value);
     }),
-    capture: async (value) => serialize(async () => {
+    capture: async (value, captureOptions) => serialize(async () => {
       baseline = value;
       await retryPendingUnserialized();
-      const result = await captureUnserialized(value);
+      const result = await captureUnserialized(value, captureOptions);
       return result;
     }),
     writeRemote: async (clip, write, readBack) => serialize(async () => {

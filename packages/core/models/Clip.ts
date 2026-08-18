@@ -107,7 +107,7 @@ export function validateClip(clip: unknown, maxSharingLifetimeMs = MAX_CLIP_SHAR
   const shareExpiresAt = candidate.shareExpiresAt as number;
   if (shareExpiresAt <= capturedAt || shareExpiresAt - capturedAt > maxSharingLifetimeMs) return false;
 
-  return candidate.type === ClipType.Text || clipContentType(candidate.content) === ClipType.Url;
+  return candidate.type === clipContentType(candidate.content);
 }
 
 export function isClipAcceptable(

@@ -29,4 +29,14 @@ describe("v1 Clipboard Normalizer", () => {
     expect(normalizeClipboardContent("", originPeerId)).toBeNull();
     expect(normalizeClipboardContent("value", originPeerId, { sharingLifetimeMs: 0 })).toBeNull();
   });
+
+  it("rejects invalid immutable values before a Clip can be emitted", () => {
+    expect(normalizeClipboardContent("value", "not-a-peer-id", {
+      makeId: () => "not-a-uuid",
+    })).toBeNull();
+    expect(normalizeClipboardContent("value", originPeerId, {
+      now: () => Number.MAX_SAFE_INTEGER,
+      makeId: () => "00000000-0000-4000-8000-000000000002",
+    })).toBeNull();
+  });
 });

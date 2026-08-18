@@ -5,6 +5,7 @@ import { jest } from "@jest/globals";
 let clipboard = "init";
 const readMock = jest.fn(async () => clipboard);
 const writeMock = jest.fn(async (_: string) => {});
+const peerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 describe("ClipboardService watcher", () => {
   beforeEach(() => {
@@ -20,7 +21,7 @@ describe("ClipboardService watcher", () => {
   test("W-1 emits local clip on change", async () => {
     const service = createPollingClipboardService({
       pollIntervalMs: 1000,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });
@@ -41,7 +42,7 @@ describe("ClipboardService watcher", () => {
   test("W-3 ignores duplicate value", async () => {
     const service = createPollingClipboardService({
       pollIntervalMs: 1000,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });
@@ -59,7 +60,7 @@ describe("ClipboardService watcher", () => {
   test("W-5 stop halts polling", async () => {
     const service = createPollingClipboardService({
       pollIntervalMs: 1000,
-      getSenderId: () => "me",
+      getSenderId: () => peerId,
       readText: readMock,
       writeText: writeMock,
     });
