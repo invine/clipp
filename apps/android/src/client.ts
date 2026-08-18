@@ -11,6 +11,7 @@ import {
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
   systemRuntimeClock,
+  type RuntimeClipboardHistoryError,
 } from "@core/runtime";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
@@ -18,7 +19,7 @@ import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
-import { MAX_RETENTION_MS, MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup } from "@core/history/store";
+import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
@@ -41,7 +42,7 @@ import {
   type TrustedDevice,
 } from "@core/trust";
 import type { Clip } from "@core/models/Clip";
-import type { Device, Identity, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type { Device, HistoryPolicyError, Identity, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 import * as log from "@core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
@@ -60,6 +61,8 @@ export type AndroidAppState = {
   identity: Identity | null;
   pinnedIds: string[];
   localRetentionMs?: number;
+  clipboardHistoryError?: RuntimeClipboardHistoryError | null;
+  historyPolicyError?: HistoryPolicyError | null;
   relayAddresses: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
@@ -366,6 +369,10 @@ export class AndroidClient {
       writeText: async (text: string) => {
         await writeClipboardText(text);
       },
+      onHistoryErrorChanged: (error) => {
+        this.clipboardHistoryError = error;
+        void this.emitState();
+      },
     });
   }
 
@@ -381,6 +388,8 @@ export class AndroidClient {
 
   private pendingRequests: TrustedDevice[] = [];
   private localRetentionMs = RETENTION_MS;
+  private clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
+  private historyPolicyError: HistoryPolicyError | null = null;
   private listeners: Array<(state: AndroidAppState) => void> = [];
   private started = false;
   private eventsBound = false;
@@ -390,7 +399,8 @@ export class AndroidClient {
   private lastPairingAttempt: PairingAttemptDiagnostics | null = null;
   private pairingAttemptSeq = 0;
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
-  private stopHistoryRetentionCleanup: (() => void) | null = null;
+  private historyRetentionCleanup: HistoryRetentionCleanup | null = null;
+  private pendingRetentionMs: number | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
@@ -652,9 +662,34 @@ export class AndroidClient {
       startLocalServices: async () => {
         this.pairingSessions.start();
         this.bindEvents();
-        this.localRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
-        await this.history.setRetention(this.localRetentionMs);
-        this.stopHistoryRetentionCleanup ??= startHistoryRetentionCleanup(this.history);
+        const storedRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
+        const applyStoredRetention = async (): Promise<void> => {
+          this.localRetentionMs = await this.history.setRetention(storedRetentionMs);
+          this.pendingRetentionMs = null;
+          if (this.localRetentionMs !== storedRetentionMs) {
+            await this.storage.set("localRetentionMs", this.localRetentionMs);
+          }
+        };
+        try {
+          await applyStoredRetention();
+        } catch (error) {
+          this.pendingRetentionMs = storedRetentionMs;
+          this.historyPolicyError = "history_cleanup_failed";
+          log.warn("Initial local history cleanup failed; runtime will retry", error);
+        }
+        this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
+          {
+            pruneExpired: async () => {
+              if (this.pendingRetentionMs !== null) await applyStoredRetention();
+              else await this.history.pruneExpired();
+            },
+          },
+          undefined,
+          (error) => {
+            this.historyPolicyError = error ? "history_cleanup_failed" : null;
+            void this.emitState();
+          },
+        );
         await this.pairingPending.start();
         this.started = true;
         this.clipboardSync.start();
@@ -679,8 +714,8 @@ export class AndroidClient {
 
   private async stopServices() {
     if (!this.started) return;
-    this.stopHistoryRetentionCleanup?.();
-    this.stopHistoryRetentionCleanup = null;
+    this.historyRetentionCleanup?.stop();
+    this.historyRetentionCleanup = null;
     await this.pairingSessions.stop();
     this.clipboardSync.stop();
     this.pairedConnections?.stop();
@@ -729,6 +764,8 @@ export class AndroidClient {
       identity,
       pinnedIds: await this.history.pinnedIds(),
       localRetentionMs: this.localRetentionMs,
+      clipboardHistoryError: this.clipboardHistoryError,
+      historyPolicyError: this.historyPolicyError,
       relayAddresses,
       diagnostics: {
         lastClipboardCheck: this.lastClipboardCheck,
@@ -745,8 +782,7 @@ export class AndroidClient {
   }
 
   async clearHistory() {
-    await this.history.clearAll();
-    await this.clipboard.discardPending?.();
+    await this.clipboard.clearHistory(() => this.history.clearAll());
     await this.emitState();
   }
 
@@ -781,17 +817,23 @@ export class AndroidClient {
     await this.emitState();
   }
 
-  async togglePin(id: string) {
-    const item = await this.history.getById(id);
-    if (item) await this.history.setPinned(id, !item.pinned);
-    const pinnedIds = await this.history.pinnedIds();
+  async setPinned(id: string, pinned: boolean) {
+    const pinnedIds = await this.history.setPinned(id, pinned);
     await this.emitState();
     return pinnedIds;
   }
 
+  dismissClipboardHistoryError() {
+    this.clipboard.dismissHistoryError?.();
+  }
+
+  async retryHistoryCleanup() {
+    await this.historyRetentionCleanup?.retry();
+  }
+
   async setLocalRetention(retentionMs: number) {
-    await this.history.setRetention(retentionMs);
-    this.localRetentionMs = Math.min(retentionMs, MAX_RETENTION_MS);
+    this.localRetentionMs = await this.history.setRetention(retentionMs);
+    this.pendingRetentionMs = null;
     await this.storage.set("localRetentionMs", this.localRetentionMs);
     await this.emitState();
     return this.localRetentionMs;

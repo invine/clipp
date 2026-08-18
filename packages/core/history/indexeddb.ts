@@ -70,14 +70,20 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
       let values: unknown[] | undefined;
       let keys: string[] | undefined;
       let result: HistoryMutationResult | undefined;
+      let planningError: unknown;
       const plan = () => {
         if (!values || !keys) return;
-        const entries = new Map<string, unknown>();
-        keys.forEach((key, index) => entries.set(String(key), values![index]));
-        const mutation = decideAtomicHistoryMutation(entries, input);
-        for (const key of mutation.deletes) store.delete(key);
-        for (const [key, value] of mutation.writes) store.put(value, key);
-        result = mutation.result;
+        try {
+          const entries = new Map<string, unknown>();
+          keys.forEach((key, index) => entries.set(String(key), values![index]));
+          const mutation = decideAtomicHistoryMutation(entries, input);
+          for (const key of mutation.deletes) store.delete(key);
+          for (const [key, value] of mutation.writes) store.put(value, key);
+          result = mutation.result;
+        } catch (error) {
+          planningError = error;
+          tx.abort();
+        }
       };
       valuesRequest.onsuccess = () => {
         values = valuesRequest.result as unknown[];
@@ -91,7 +97,7 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
         ? resolve(result)
         : reject(new Error("IndexedDB history mutation completed without a result"));
       tx.onerror = () => reject(tx.error || new Error("IndexedDB history mutation failed"));
-      tx.onabort = () => reject(tx.error || new Error("IndexedDB history mutation aborted"));
+      tx.onabort = () => reject(planningError ?? tx.error ?? new Error("IndexedDB history mutation aborted"));
     });
   }
 }

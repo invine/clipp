@@ -1,6 +1,14 @@
-import { MemoryHistoryStore, RETENTION_MS } from "../../../packages/core/history/store";
+import {
+  MAX_RETENTION_MS,
+  MemoryHistoryStore,
+  RETENTION_MS,
+  startHistoryRetentionCleanup,
+} from "../../../packages/core/history/store";
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import { Clip } from "../../../packages/core/models/Clip";
+import { runHistoryBackendConformance } from "./backendConformance";
+
+runHistoryBackendConformance("In-memory", () => ({ backend: new InMemoryHistoryBackend() }));
 
 describe("ClipHistoryStore", () => {
   const history = new MemoryHistoryStore();
@@ -29,6 +37,14 @@ describe("ClipHistoryStore", () => {
     await history.pruneExpired();
     const res = await history.getById("old");
     expect(res).not.toBeNull();
+  });
+
+  it("returns the normalized retention setting applied by shared policy", async () => {
+    const localHistory = new MemoryHistoryStore();
+
+    await expect(localHistory.setRetention(MAX_RETENTION_MS + 1)).resolves.toBe(
+      MAX_RETENTION_MS,
+    );
   });
 
   it("query by type and search", async () => {
@@ -127,6 +143,65 @@ describe("ClipHistoryStore", () => {
     await localHistory.setPinned(clip.id, false);
     await expect(localHistory.getById(clip.id)).resolves.toBeNull();
     await expect(localHistory.accept(clip)).resolves.toMatchObject({ kind: "locally-suppressed" });
+  });
+
+  it("sets durable local pin state through the shared history contract", async () => {
+    const backend = new InMemoryHistoryBackend();
+    const firstRuntime = new MemoryHistoryStore(backend);
+    const clip = sampleClip(Date.now(), "set-pin");
+    await firstRuntime.accept(clip);
+
+    await expect(firstRuntime.setPinned(clip.id, true)).resolves.toEqual([clip.id]);
+    await expect(new MemoryHistoryStore(backend).pinnedIds()).resolves.toEqual([clip.id]);
+    await expect(firstRuntime.setPinned(clip.id, false)).resolves.toEqual([]);
+  });
+
+  it("keeps Chrome-style pins session-only while applying policy during the session", async () => {
+    const backend = new InMemoryHistoryBackend();
+    let now = 1_000;
+    const session = new MemoryHistoryStore(backend, {
+      now: () => now,
+      retentionMs: 100,
+      pinPersistence: "session",
+    });
+    const pinned = sampleClip(now, "session-pin");
+    await session.accept(pinned);
+
+    await expect(session.setPinned(pinned.id, true)).resolves.toEqual([pinned.id]);
+    await expect(session.setPinned(pinned.id, true)).resolves.toEqual([pinned.id]);
+    now += 101;
+    await session.pruneExpired();
+    await expect(session.getById(pinned.id)).resolves.toMatchObject({ pinned: true });
+
+    const restartedSession = new MemoryHistoryStore(backend, {
+      now: () => now,
+      retentionMs: 100,
+      pinPersistence: "session",
+    });
+    await expect(restartedSession.pinnedIds()).resolves.toEqual([]);
+    await restartedSession.pruneExpired();
+    await expect(restartedSession.getById(pinned.id)).resolves.toBeNull();
+  });
+
+  it("reports automatic cleanup failure and supports an explicit retry", async () => {
+    const storageError = new Error("storage unavailable");
+    const pruneExpired = jest
+      .fn<Promise<void>, []>()
+      .mockRejectedValueOnce(storageError)
+      .mockResolvedValue(undefined);
+    const errors: Array<unknown | null> = [];
+
+    const cleanup = startHistoryRetentionCleanup(
+      { pruneExpired },
+      60_000,
+      (error) => errors.push(error),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(errors).toEqual([storageError]);
+    await cleanup.retry();
+    expect(errors).toEqual([storageError, null]);
+    cleanup.stop();
   });
 
   it("gives new local Clips capacity priority and suppresses rejected historical imports", async () => {

@@ -50,7 +50,7 @@ Electron is the most complete runtime and is usually the best reference implemen
 - Electron uses `createPollingClipboardService`, stores state in SQLite, and wires relay-address changes into persisted runtime state.
 - Android uses `createPollingClipboardService`, stores preferences in Capacitor Preferences or local storage fallback, and currently relies on the default relay list.
 - Extension uses `createManualClipboardService` because the MV3 service worker cannot poll the clipboard directly; the popup feeds local text into that service.
-- Electron and Android persist `pinnedIds`. Extension pinning is currently popup-local UI state and is not persisted.
+- Electron and Android persist pin state in history storage. Extension pins live in shared history policy for the active service-worker session and are not persisted.
 - Extension is the only runtime currently wiring the history messenger in the offscreen document. Clip sync and trust flows are shared more broadly.
 
 ## Commands

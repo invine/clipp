@@ -11,7 +11,7 @@ if (typeof globalThis.navigator === "undefined") {
   globalThis.navigator = { userAgent: "chrome-extension" };
 }
 
-import { MAX_RETENTION_MS, MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup } from "../../../packages/core/history/store";
+import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "../../../packages/core/history/store";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
@@ -33,6 +33,7 @@ import {
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
   systemRuntimeClock,
+  type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import * as log from "../../../packages/core/logger";
@@ -65,8 +66,12 @@ const historyBackend =
   typeof (globalThis as any).indexedDB !== "undefined"
     ? new IndexedDBHistoryBackend()
     : new InMemoryHistoryBackend();
-const history = new MemoryHistoryStore(historyBackend);
-let stopHistoryRetentionCleanup: (() => void) | undefined;
+const history = new MemoryHistoryStore(historyBackend, { pinPersistence: "session" });
+let localRetentionMs = RETENTION_MS;
+let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
+let historyPolicyError: "history_cleanup_failed" | null = null;
+let historyRetentionCleanup: HistoryRetentionCleanup | undefined;
+let pendingRetentionMs: number | null = null;
 let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
   resolveHistoryPolicyReady = resolve;
@@ -171,6 +176,11 @@ function createExtensionClipboardService() {
     writeText: async (text: string) => {
       await navigator.clipboard.writeText(text);
     },
+    onHistoryErrorChanged: (error) => {
+      clipboardHistoryError = error;
+      void runtimeAdapter.publicState.read()
+        .then((state) => runtimeAdapter.publicState.publish(state));
+    },
   });
 }
 
@@ -227,9 +237,18 @@ chrome.storage.local.get(["localRetentionMs"], (res) => {
       : RETENTION_MS;
   void history
     .setRetention(retentionMs)
-    .catch((error) => log.warn("Failed to apply stored local history retention", error))
+    .then(async (appliedRetentionMs) => {
+      localRetentionMs = appliedRetentionMs;
+      if (appliedRetentionMs !== storedRetentionMs) {
+        await storage.set("localRetentionMs", appliedRetentionMs);
+      }
+    })
+    .catch((error) => {
+      pendingRetentionMs = retentionMs;
+      historyPolicyError = "history_cleanup_failed";
+      log.warn("Initial local history cleanup failed; runtime will retry", error);
+    })
     .finally(() => {
-      stopHistoryRetentionCleanup ??= startHistoryRetentionCleanup(history);
       resolveHistoryPolicyReady?.();
       resolveHistoryPolicyReady = undefined;
     });
@@ -371,8 +390,9 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   clock: systemRuntimeClock,
   publicState: {
     async read() {
-      const [clips, devices, identity, peerState] = await Promise.all([
+      const [clips, pinnedIds, devices, identity, peerState] = await Promise.all([
         historyPolicyReady.then(() => history.exportAll()),
+        historyPolicyReady.then(() => history.pinnedIds()),
         trust.list(),
         identitySvc.get(),
         offscreenReady
@@ -388,7 +408,9 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
         identity: toPublicDeviceIdentity(identity),
-        pinnedIds: [],
+        pinnedIds,
+        clipboardHistoryError,
+        historyPolicyError,
         relayAddresses: DEFAULT_CIRCUIT_RELAY_ADDRESSES,
       };
     },
@@ -439,6 +461,26 @@ const sharedRuntime = createRuntimeOrchestrator({
     },
     startLocalServices: async () => {
       await historyPolicyReady;
+      historyRetentionCleanup ??= startHistoryRetentionCleanup(
+        {
+          pruneExpired: async () => {
+            if (pendingRetentionMs === null) {
+              await history.pruneExpired();
+              return;
+            }
+            const appliedRetentionMs = await history.setRetention(pendingRetentionMs);
+            localRetentionMs = appliedRetentionMs;
+            pendingRetentionMs = null;
+            await storage.set("localRetentionMs", appliedRetentionMs);
+          },
+        },
+        undefined,
+        (error) => {
+          historyPolicyError = error ? "history_cleanup_failed" : null;
+          void runtimeAdapter.publicState.read()
+            .then((state) => runtimeAdapter.publicState.publish(state));
+        },
+      );
       pairingSessions.start();
       clipboardSync.start();
     },
@@ -454,6 +496,8 @@ const sharedRuntime = createRuntimeOrchestrator({
     },
   }),
   stop: async () => {
+    historyRetentionCleanup?.stop();
+    historyRetentionCleanup = undefined;
     await pairingSessions.stop();
     clipboardSync.stop();
   },
@@ -512,9 +556,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "clearHistory") {
     historyPolicyReady
-      .then(() => history.clearAll())
-      .then(async () => {
-        await clipboard.discardPending?.();
+      .then(() => clipboard.clearHistory(() => history.clearAll()))
+      .then(() => {
         sendResponse({ ok: true });
       })
       .catch((err) => {
@@ -634,12 +677,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }
+  if (msg.type === "setPin" && msg.id && typeof msg.pinned === "boolean") {
+    historyPolicyReady
+      .then(() => history.setPinned(msg.id, msg.pinned))
+      .then((pinnedIds) => sendResponse({ ok: true, pinnedIds }))
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+    return true;
+  }
+  if (msg.type === "dismissClipboardHistoryError") {
+    clipboard.dismissHistoryError?.();
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.type === "retryHistoryCleanup") {
+    historyRetentionCleanup?.retry()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+    return true;
+  }
   if (msg.type === "setLocalRetention" && typeof msg.retentionMs === "number") {
     historyPolicyReady
       .then(() => history.setRetention(msg.retentionMs))
-      .then(async () => {
-        await storage.set("localRetentionMs", Math.min(msg.retentionMs, MAX_RETENTION_MS));
-        sendResponse({ ok: true });
+      .then(async (appliedRetentionMs) => {
+        localRetentionMs = appliedRetentionMs;
+        pendingRetentionMs = null;
+        await storage.set("localRetentionMs", appliedRetentionMs);
+        sendResponse({ ok: true, localRetentionMs: appliedRetentionMs });
       })
       .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
@@ -654,23 +717,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Settings: auto-sync, expiry, type filters
   if (msg.type === "getSettings") {
-    // @ts-ignore
-    chrome.storage.local.get(
-      ["autoSync", "expiryDays", "typesEnabled", "logLevel", "localRetentionMs"],
-      (res) => {
-        sendResponse({
-          autoSync: res.autoSync !== false,
-          expiryDays: res.expiryDays || 365,
-          localRetentionMs: typeof res.localRetentionMs === "number" ? res.localRetentionMs : RETENTION_MS,
-          typesEnabled: res.typesEnabled || {
-            text: true,
-            image: true,
-            file: true,
-          },
-          logLevel: res.logLevel || "info",
-        });
-      }
-    );
+    void historyPolicyReady.then(() => {
+      // @ts-ignore
+      chrome.storage.local.get(
+        ["autoSync", "expiryDays", "typesEnabled", "logLevel", "localRetentionMs"],
+        (res) => {
+          sendResponse({
+            autoSync: res.autoSync !== false,
+            expiryDays: res.expiryDays || 365,
+            localRetentionMs,
+            typesEnabled: res.typesEnabled || {
+              text: true,
+              image: true,
+              file: true,
+            },
+            logLevel: res.logLevel || "info",
+          });
+        }
+      );
+    });
     return true;
   }
   if (msg.type === "setSettings" && msg.settings) {

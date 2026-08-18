@@ -61,3 +61,11 @@ export type PeerState = {
 };
 
 export type PinnedState = string[];
+
+export type ClipboardHistoryError =
+  | "clip_too_large"
+  | "pending_capture_too_large"
+  | "pending_capture_failed"
+  | "pending_capture_dropped";
+
+export type HistoryPolicyError = "history_cleanup_failed";

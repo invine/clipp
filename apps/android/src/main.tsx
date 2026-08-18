@@ -132,6 +132,8 @@ function App() {
         identity={state.identity as Identity | null}
         pinnedIds={state.pinnedIds || []}
         localRetentionMs={state.localRetentionMs}
+        clipboardHistoryError={state.clipboardHistoryError}
+        historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
         initializationError={initializationError}
         onDeleteClip={(id) => client.deleteClip(id)}
@@ -143,10 +145,12 @@ function App() {
         onPairText={handlePairText}
         onScanPairingCode={handleScanPairingCode}
         onRequestPairingCode={() => client.getPairingCode()}
-        onTogglePin={async (id) => {
-          await client.togglePin(id);
+        onSetPinned={async (id, pinned) => {
+          await client.setPinned(id, pinned);
         }}
         onClearAll={() => client.clearHistory()}
+        onDismissClipboardHistoryError={() => client.dismissClipboardHistoryError()}
+        onRetryHistoryCleanup={() => client.retryHistoryCleanup()}
         onSetLocalRetention={(retentionMs) => client.setLocalRetention(retentionMs)}
         onRetryInitialization={async () => {
           try {

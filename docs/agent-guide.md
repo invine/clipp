@@ -132,21 +132,20 @@ Peer reporting intentionally filters out relay-only connections. If a peer seems
 - Storage implementation: `apps/electron/src/storage.ts`
 - Database file: `app.getPath("userData")/clipp.sqlite`
 - Tables:
-  - `kv` for identity, trust, relay addresses, pinned IDs, and other key/value state
-  - `history` for serialized clip history items
+  - `kv` for identity, trust, relay addresses, and other key/value state
+  - `history` for serialized clip history items, including pin state
 
 Notable persisted keys used by Electron:
 
 - `IDENTITY_KEY`
 - `TRUST_KEY`
 - `relayAddresses`
-- `pinnedIds`
 
 ### Extension
 
 - Trust and preferences: `chrome.storage.local` via `ChromeStorageBackend`
 - History: IndexedDB when available, otherwise in-memory fallback
-- Clipboard pin state: popup-local only, not persisted today
+- Clipboard pin state: shared history-policy state for the active service-worker session; it is not persisted
 
 ### Android
 
@@ -155,7 +154,7 @@ Notable persisted keys used by Electron:
   1. Capacitor Preferences
   2. `localStorage`
   3. in-memory map
-- Pinned IDs are persisted under `PINNED_KEY`
+- Clipboard history, including pin state, uses IndexedDB when available and otherwise falls back to in-memory storage
 
 ## 7. Shared UI And Bridge Boundaries
 

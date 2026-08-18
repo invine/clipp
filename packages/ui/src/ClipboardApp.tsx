@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Clip, Device, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
+import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
@@ -41,6 +41,19 @@ function truncateMiddle(text: string, max = 28): string {
   const lead = Math.ceil(available / 2);
   const tail = Math.floor(available / 2);
   return `${text.slice(0, lead)}...${text.slice(text.length - tail)}`;
+}
+
+function clipboardHistoryErrorMessage(error: ClipboardHistoryError): string {
+  if (error === "clip_too_large") {
+    return "A clipboard value was too large to save in Clipboard History.";
+  }
+  if (error === "pending_capture_too_large") {
+    return "A pending clipboard item was too large to keep for a later storage retry.";
+  }
+  if (error === "pending_capture_dropped") {
+    return "Clipboard History storage is unavailable. One or more pending Clips could not be saved.";
+  }
+  return "Clipboard History storage is unavailable. Clipp will retry pending Clips automatically.";
 }
 
 function connectionStatusFor(connection: PeerConnectionInfo | undefined, online: boolean) {
@@ -222,6 +235,8 @@ export type ClipboardAppProps = {
   identity: Identity | null;
   pinnedIds: string[];
   localRetentionMs?: number;
+  clipboardHistoryError?: ClipboardHistoryError | null;
+  historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
   initializationError?: boolean;
   onDeleteClip(id: string): void | Promise<void>;
@@ -231,8 +246,10 @@ export type ClipboardAppProps = {
   onPairText(txt: string): void | Promise<void>;
   onScanPairingCode?(): Promise<string | null> | string | null;
   onRequestPairingCode(): Promise<PairingCode | null>;
-  onTogglePin(id: string): void | Promise<void>;
+  onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
+  onDismissClipboardHistoryError?(): void | Promise<void>;
+  onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
@@ -252,6 +269,8 @@ export function ClipboardApp({
   identity,
   pinnedIds,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
+  clipboardHistoryError = null,
+  historyPolicyError = null,
   relayAddresses = [],
   initializationError = false,
   onDeleteClip,
@@ -261,8 +280,10 @@ export function ClipboardApp({
   onPairText,
   onScanPairingCode,
   onRequestPairingCode,
-  onTogglePin,
+  onSetPinned,
   onClearAll,
+  onDismissClipboardHistoryError,
+  onRetryHistoryCleanup,
   onSetLocalRetention,
   onRenameIdentity,
   onRenameDevice,
@@ -410,8 +431,18 @@ export function ClipboardApp({
     return list;
   }, [clips, search, timeFilter, sourceFilter, deviceNameMap, filterMode, pinnedSet, identity]);
 
-  function togglePin(id: string) {
-    onTogglePin(id);
+  function setPinned(id: string, pinned: boolean) {
+    setOpenMenuId(null);
+    void Promise.resolve()
+      .then(() => onSetPinned(id, pinned))
+      .then(() => {
+        setHistoryError(null);
+        setRetryHistoryOperation(null);
+      })
+      .catch(() => {
+        setHistoryError("Could not confirm this Clip's pin state. Retry to apply it again.");
+        setRetryHistoryOperation(() => () => setPinned(id, pinned));
+      });
   }
 
   function handleDelete(id: string) {
@@ -1221,6 +1252,28 @@ export function ClipboardApp({
         </div>
       )}
 
+      {clipboardHistoryError && (
+        <div className="initialization-error" role="alert">
+          <span>{clipboardHistoryErrorMessage(clipboardHistoryError)}</span>
+          {clipboardHistoryError !== "pending_capture_failed" && onDismissClipboardHistoryError && (
+            <button type="button" onClick={() => void onDismissClipboardHistoryError()}>
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+
+      {historyPolicyError && (
+        <div className="initialization-error" role="alert">
+          <span>Clipboard History cleanup could not finish. Existing Clips remain available.</span>
+          {onRetryHistoryCleanup && (
+            <button type="button" onClick={() => void onRetryHistoryCleanup()}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
       <main className="app-main">
         <aside className="surface nav-pane" style={{ display: navHidden ? "none" : undefined }}>
           {renderNavContent(false)}
@@ -1352,7 +1405,7 @@ export function ClipboardApp({
                       <button
                         className="icon-button"
                         title={pinned ? "Unpin" : "Pin"}
-                        onClick={() => togglePin(clip.id)}
+                        onClick={() => setPinned(clip.id, !pinned)}
                         style={{
                           transform: pinned ? "rotate(18deg)" : "none",
                         }}

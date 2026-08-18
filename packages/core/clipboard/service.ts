@@ -13,6 +13,9 @@ export interface ClipboardService {
   writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void>;
   /** Drops captures that never reached durable history, after a successful Clear History. */
   discardPending?(): Promise<void>;
+  /** Serializes durable Clear History with pending capture retries. */
+  clearHistory(clearDurable: () => Promise<void>): Promise<void>;
+  dismissHistoryError?(): void;
   /**
    * Manually process a clipboard text value as if it were read by the watcher.
    * Useful for environments where the background script cannot directly read
@@ -199,6 +202,9 @@ function createClipboardService(
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
     processLocalText,
     writeRemoteClip,
+    clearHistory: options.captureCoordinator
+      ? (clearDurable) => options.captureCoordinator!.clearHistory(clearDurable)
+      : (clearDurable) => clearDurable(),
     discardPending: options.captureCoordinator
       ? () => options.captureCoordinator!.discardPending()
       : undefined,

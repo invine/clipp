@@ -1,6 +1,12 @@
 import { indexedDB } from "fake-indexeddb";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
+import { runHistoryBackendConformance } from "./backendConformance";
+
+runHistoryBackendConformance("IndexedDB (Chrome and Android)", () => {
+  (globalThis as { indexedDB?: IDBFactory }).indexedDB = indexedDB;
+  return { backend: new IndexedDBHistoryBackend() };
+});
 
 const clip = {
   id: "00000000-0000-4000-8000-000000000012",

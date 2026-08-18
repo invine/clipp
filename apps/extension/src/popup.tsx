@@ -6,7 +6,9 @@ import "./styles/tailwind-built.css";
 import {
   ClipboardApp,
   Clip,
+  ClipboardHistoryError,
   Device,
+  HistoryPolicyError,
   Identity,
   PairingCode,
   PairingError,
@@ -27,6 +29,8 @@ const Popup = () => {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [localRetentionMs, setLocalRetentionMs] = useState(30 * 24 * 60 * 60 * 1000);
+  const [clipboardHistoryError, setClipboardHistoryError] = useState<ClipboardHistoryError | null>(null);
+  const [historyPolicyError, setHistoryPolicyError] = useState<HistoryPolicyError | null>(null);
   const [initializationError, setInitializationError] = useState(false);
   const lastClipboardRef = useRef("");
 
@@ -38,6 +42,9 @@ const Popup = () => {
     chrome.runtime.sendMessage({ type: "getRuntimeState" }, (res) => {
       if (res?.state?.waiting) setWaiting(res.state.waiting);
       if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
+      if (res?.state?.pinnedIds) setPinnedIds(res.state.pinnedIds);
+      setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
+      setHistoryPolicyError(res?.state?.historyPolicyError || null);
     });
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
       if (res?.identity) setIdentity(res.identity);
@@ -66,6 +73,9 @@ const Popup = () => {
         setPending(msg.state.pending || []);
         setWaiting(msg.state.waiting || []);
         setPairingErrors(msg.state.pairingErrors || []);
+        setPinnedIds(msg.state.pinnedIds || []);
+        setClipboardHistoryError(msg.state.clipboardHistoryError || null);
+        setHistoryPolicyError(msg.state.historyPolicyError || null);
       }
     };
     chrome.runtime.onMessage.addListener(handler);
@@ -121,15 +131,17 @@ const Popup = () => {
     });
   }
 
-  async function runHistoryOperation(message: Record<string, unknown>): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+  async function runHistoryOperation<Result extends { ok: true } = { ok: true }>(
+    message: Record<string, unknown>,
+  ): Promise<Result> {
+    return await new Promise<Result>((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
         const error = chrome.runtime.lastError;
         if (error || !response?.ok) {
           reject(error ?? new Error(response?.error || "history_operation_failed"));
           return;
         }
-        resolve();
+        resolve(response as Result);
       });
     });
   }
@@ -202,6 +214,8 @@ const Popup = () => {
         identity={identity}
         pinnedIds={pinnedIds}
         localRetentionMs={localRetentionMs}
+        clipboardHistoryError={clipboardHistoryError}
+        historyPolicyError={historyPolicyError}
         initializationError={initializationError}
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
@@ -227,13 +241,13 @@ const Popup = () => {
         }
         onPairText={handlePairingText}
         onRequestPairingCode={handleRequestPairingCode}
-        onTogglePin={(id) => {
-          setPinnedIds((prev) => {
-            const set = new Set(prev);
-            if (set.has(id)) set.delete(id);
-            else set.add(id);
-            return Array.from(set);
+        onSetPinned={async (id, pinned) => {
+          const response = await runHistoryOperation<{ ok: true; pinnedIds: string[] }>({
+            type: "setPin",
+            id,
+            pinned,
           });
+          setPinnedIds(response.pinnedIds);
         }}
         onClearAll={async () => {
           await runHistoryOperation({ type: "clearHistory" });
@@ -241,8 +255,18 @@ const Popup = () => {
           setPinnedIds([]);
         }}
         onSetLocalRetention={async (retentionMs) => {
-          await runHistoryOperation({ type: "setLocalRetention", retentionMs });
-          setLocalRetentionMs(retentionMs);
+          const response = await runHistoryOperation<{ ok: true; localRetentionMs: number }>({
+            type: "setLocalRetention",
+            retentionMs,
+          });
+          setLocalRetentionMs(response.localRetentionMs);
+        }}
+        onDismissClipboardHistoryError={async () => {
+          await runHistoryOperation({ type: "dismissClipboardHistoryError" });
+          setClipboardHistoryError(null);
+        }}
+        onRetryHistoryCleanup={async () => {
+          await runHistoryOperation({ type: "retryHistoryCleanup" });
         }}
         onRenameIdentity={handleRenameIdentity}
         onRetryInitialization={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}

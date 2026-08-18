@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import type { Clip, Device, Identity, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 
 type AppState = {
   clips: Clip[];
@@ -16,6 +16,8 @@ type AppState = {
   relayAddresses: string[];
   pinnedIds?: string[];
   localRetentionMs?: number;
+  clipboardHistoryError?: ClipboardHistoryError | null;
+  historyPolicyError?: HistoryPolicyError | null;
   diagnostics?: {
     lastClipboardCheck: number | null;
     lastClipboardPreview: string | null;
@@ -96,6 +98,8 @@ const App = () => {
         identity={state.identity}
         pinnedIds={state.pinnedIds || []}
         localRetentionMs={state.localRetentionMs}
+        clipboardHistoryError={state.clipboardHistoryError}
+        historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
         initializationError={initializationError}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
@@ -105,8 +109,10 @@ const App = () => {
         onReject={(dev) => window.clipp.rejectRequest(dev)}
         onPairText={handlePairText}
         onRequestPairingCode={() => window.clipp.openQrWindow()}
-        onTogglePin={(id) => window.clipp.togglePin(id)}
+        onSetPinned={(id, pinned) => window.clipp.setPinned(id, pinned)}
         onClearAll={() => window.clipp.clearHistory()}
+        onDismissClipboardHistoryError={() => window.clipp.dismissClipboardHistoryError()}
+        onRetryHistoryCleanup={() => window.clipp.retryHistoryCleanup()}
         onSetLocalRetention={(retentionMs) => window.clipp.setLocalRetention(retentionMs)}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}

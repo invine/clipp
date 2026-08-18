@@ -4,6 +4,8 @@ import {
   type ClipHistoryWriter,
 } from "../../../packages/core/clipboard/captureCoordinator";
 import type { Clip } from "../../../packages/core/models/Clip";
+import { HistoryPolicyError } from "../../../packages/core/history/types";
+import * as log from "../../../packages/core/logger";
 
 const originPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
@@ -151,6 +153,77 @@ describe("Clip capture coordinator", () => {
     expect(coordinator.pending()).toEqual([]);
   });
 
+  it("drops a pending Clip when retry proves it exceeds history capacity", async () => {
+    const diagnostics: string[] = [];
+    const warn = jest.spyOn(log, "warn").mockImplementation(() => {});
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockRejectedValueOnce(new Error("storage unavailable"))
+        .mockRejectedValueOnce(new HistoryPolicyError("clip_capacity")),
+    };
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(15),
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    await coordinator.capture("queued until capacity is known");
+    await coordinator.retryPending();
+
+    expect(coordinator.pending()).toEqual([]);
+    expect(diagnostics).toEqual([
+      "pending_capture_storage_error",
+      "pending_capture_storage_recovered",
+      "clip_too_large",
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      "Pending clipboard capture exceeds history capacity",
+      expect.objectContaining({ clipId: validUuid(15), encodedBytes: expect.any(Number) }),
+    );
+    warn.mockRestore();
+  });
+
+  it("uses the final queue length after mixed capacity rejection and recovery", async () => {
+    const diagnostics: Array<{ code: string; pendingCount?: number }> = [];
+    const warn = jest.spyOn(log, "warn").mockImplementation(() => {});
+    const recovered: Clip[] = [];
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockRejectedValueOnce(new Error("first unavailable"))
+        .mockRejectedValueOnce(new Error("first still unavailable"))
+        .mockRejectedValueOnce(new Error("second unavailable"))
+        .mockRejectedValueOnce(new HistoryPolicyError("clip_capacity"))
+        .mockImplementationOnce(async (clip) => {
+          recovered.push(clip);
+          return { kind: "newly-stored", clip, liveHandled: true };
+        }),
+    };
+    const ids = [validUuid(16), validUuid(17)];
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => ids.shift()!,
+      onDiagnostic: (diagnostic, details) => diagnostics.push({ code: diagnostic, pendingCount: details?.pendingCount }),
+    });
+    await coordinator.capture("first");
+    await coordinator.capture("second");
+
+    await coordinator.retryPending();
+
+    expect(recovered).toEqual([expect.objectContaining({ id: validUuid(17) })]);
+    expect(coordinator.pending()).toEqual([]);
+    expect(diagnostics.slice(-2)).toEqual([
+      { code: "pending_capture_storage_recovered", pendingCount: undefined },
+      { code: "clip_too_large", pendingCount: 0 },
+    ]);
+    warn.mockRestore();
+  });
+
   it("retries a locally suppressed UUID with a fresh candidate ID", async () => {
     const history: ClipHistoryWriter = {
       accept: jest
@@ -175,20 +248,63 @@ describe("Clip capture coordinator", () => {
   });
 
   it("bounds pending storage failures by encoded Clip size", async () => {
-    const diagnostics: string[] = [];
+    const diagnostics: Array<{ code: string; clipId?: string; encodedBytes?: number }> = [];
+    const warn = jest.spyOn(log, "warn").mockImplementation(() => {});
     const coordinator = createClipCaptureCoordinator({
       history: { accept: async () => { throw new Error("storage unavailable"); } },
       originPeerId: async () => originPeerId,
       now: () => 1_000,
       makeId: () => validUuid(11),
       pendingMaxBytes: 1,
-      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      onDiagnostic: (diagnostic, details) => diagnostics.push({ code: diagnostic, ...details }),
     });
 
     await coordinator.capture("too large for the configured queue");
 
     expect(coordinator.pending()).toEqual([]);
-    expect(diagnostics).toEqual(["pending_capture_dropped"]);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "pending_capture_too_large",
+        clipId: validUuid(11),
+        encodedBytes: expect.any(Number),
+      }),
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      "Pending clipboard capture dropped",
+      expect.objectContaining({ clipId: validUuid(11), encodedBytes: expect.any(Number) }),
+    );
+    warn.mockRestore();
+  });
+
+  it("serializes Clear History with an in-flight pending retry", async () => {
+    let releaseRetry: (() => void) | undefined;
+    const retryGate = new Promise<void>((resolve) => { releaseRetry = resolve; });
+    const durable: Clip[] = [];
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockRejectedValueOnce(new Error("storage unavailable"))
+        .mockImplementation(async (clip) => {
+          await retryGate;
+          durable.push(clip);
+          return { kind: "newly-stored", clip, liveHandled: true };
+        }),
+    };
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(14),
+    });
+    await coordinator.capture("queued");
+
+    const retry = coordinator.retryPending();
+    const clear = coordinator.clearHistory(async () => { durable.splice(0, durable.length); });
+    releaseRetry?.();
+    await Promise.all([retry, clear]);
+
+    expect(durable).toEqual([]);
+    expect(coordinator.pending()).toEqual([]);
   });
 
   it("retries a pending immutable Clip with capped backoff while active", async () => {

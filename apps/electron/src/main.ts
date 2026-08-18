@@ -27,8 +27,9 @@ import {
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
   systemRuntimeClock,
+  type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime/index.js";
-import { MAX_RETENTION_MS, MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup } from "../../../packages/core/history/store.js";
+import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
@@ -72,7 +73,15 @@ async function bootstrap() {
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({ storage: kvStore });
   let localRetentionMs = (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db), { retentionMs: localRetentionMs });
-  const stopHistoryRetentionCleanup = startHistoryRetentionCleanup(history);
+  let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
+  let historyPolicyError: "history_cleanup_failed" | null = null;
+  let historyRetentionCleanup: HistoryRetentionCleanup | null = null;
+  try {
+    localRetentionMs = await history.setRetention(localRetentionMs);
+  } catch (error) {
+    historyPolicyError = "history_cleanup_failed";
+    (log as any).warn?.("Initial local history cleanup failed; runtime will retry", error);
+  }
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
@@ -358,6 +367,10 @@ async function bootstrap() {
       writeText: async (text: string) => {
         clipboard.writeText(text);
       },
+      onHistoryErrorChanged: (error) => {
+        clipboardHistoryError = error;
+        void emitState();
+      },
     });
   }
 
@@ -425,6 +438,8 @@ async function bootstrap() {
       identity,
       pinnedIds: await history.pinnedIds(),
       localRetentionMs,
+      clipboardHistoryError,
+      historyPolicyError,
       relayAddresses,
       // TODO: remove diagnostics
       // diagnostics: {
@@ -511,6 +526,14 @@ async function bootstrap() {
   }
 
   async function startLocalServices() {
+    historyRetentionCleanup ??= startHistoryRetentionCleanup(
+      history,
+      undefined,
+      (error) => {
+        historyPolicyError = error ? "history_cleanup_failed" : null;
+        void emitState();
+      },
+    );
     pairingSessions.start();
     history.onNew(async () => {
       await emitState();
@@ -805,7 +828,8 @@ async function bootstrap() {
 
   async function shutdownServices() {
     quitting = true;
-    stopHistoryRetentionCleanup();
+    historyRetentionCleanup?.stop();
+    historyRetentionCleanup = null;
     await pairingSessions.stop();
     clipboardSync.stop();
     pairedConnections.stop();
@@ -992,8 +1016,7 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:set-local-retention", async (_evt, retentionMs: number) => {
-    await history.setRetention(retentionMs);
-    localRetentionMs = Math.min(retentionMs, MAX_RETENTION_MS);
+    localRetentionMs = await history.setRetention(retentionMs);
     await kvStore.set("localRetentionMs", localRetentionMs);
     await emitState();
     return { localRetentionMs };
@@ -1006,8 +1029,7 @@ async function bootstrap() {
 
   ipcMain.handle("clipp:clear-history", async () => {
     try {
-      await history.clearAll();
-      await clipboardSvc.discardPending?.();
+      await clipboardSvc.clearHistory(() => history.clearAll());
       await emitState();
     } catch (err) {
       (log as any).error?.("Failed to clear history", err);
@@ -1026,12 +1048,18 @@ async function bootstrap() {
     return device;
   });
 
-  ipcMain.handle("clipp:toggle-pin", async (_evt, id: string) => {
-    const item = await history.getById(id);
-    if (item) await history.setPinned(id, !item.pinned);
-    const pinnedIds = await history.pinnedIds();
+  ipcMain.handle("clipp:set-pin", async (_evt, payload: { id: string; pinned: boolean }) => {
+    const pinnedIds = await history.setPinned(payload.id, payload.pinned);
     await emitState();
     return { pinnedIds };
+  });
+
+  ipcMain.handle("clipp:dismiss-clipboard-history-error", async () => {
+    clipboardSvc.dismissHistoryError?.();
+  });
+
+  ipcMain.handle("clipp:retry-history-cleanup", async () => {
+    await historyRetentionCleanup?.retry();
   });
 
   ipcMain.handle(

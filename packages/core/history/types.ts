@@ -19,6 +19,8 @@ export type HistoryPolicy = {
   clockSkewAllowanceMs: number;
   maxSuppressionRecords: number;
   maxSuppressionBytes: number;
+  pinPersistence?: "durable" | "session";
+  sessionPinnedIds?: readonly string[];
 };
 
 export type AtomicHistoryAcceptance = {
@@ -51,6 +53,7 @@ export type HistoryMutation =
 
 export type HistoryMutationResult = {
   acceptance?: AtomicHistoryAcceptance;
+  pinnedIds?: string[];
 };
 
 export type HistoryMutationPlan = {
@@ -117,6 +120,9 @@ export function decideAtomicHistoryMutation(
     deletes.add(key);
   };
   const policy = input.policy;
+  const sessionPinnedIds = new Set(policy.sessionPinnedIds ?? []);
+  const isPinned = (id: string, item: HistoryItem): boolean =>
+    policy.pinPersistence === "session" ? sessionPinnedIds.has(id) : item.pinned === true;
 
   for (const [key, value] of next) {
     if (isClipSuppression(value) && value.suppressedUntil <= input.now) remove(key);
@@ -126,6 +132,13 @@ export function decideAtomicHistoryMutation(
     Array.from(next.entries()).filter((entry): entry is [string, HistoryItem] => isHistoryItem(entry[1]));
   const suppressions = (): Array<[string, ClipSuppression]> =>
     Array.from(next.entries()).filter((entry): entry is [string, ClipSuppression] => isClipSuppression(entry[1]));
+  const assertSuppressionCapacity = (): void => {
+    const allSuppressions = suppressions();
+    const bytes = allSuppressions.reduce((total, [, suppression]) => total + encodedBytes(suppression), 0);
+    if (allSuppressions.length > policy.maxSuppressionRecords || bytes > policy.maxSuppressionBytes) {
+      throw new HistoryPolicyError("suppression_capacity");
+    }
+  };
 
   const addSuppressionsAndRemove = (clips: Clip[]): void => {
     const required = clips.filter((clip) => isSuppressionRequired(clip, input.now, policy));
@@ -137,21 +150,17 @@ export function decideAtomicHistoryMutation(
         set(key, { clipId: clip.id, suppressedUntil } satisfies ClipSuppression);
       }
     }
-    const allSuppressions = suppressions();
-    const bytes = allSuppressions.reduce((total, [, suppression]) => total + encodedBytes(suppression), 0);
-    if (allSuppressions.length > policy.maxSuppressionRecords || bytes > policy.maxSuppressionBytes) {
-      throw new HistoryPolicyError("suppression_capacity");
-    }
+    assertSuppressionCapacity();
     for (const clip of clips) remove(clip.id);
   };
 
   const cleanup = (admissionPriorityId?: string): string[] => {
     const expired = historyItems()
-      .filter(([, item]) => !item.pinned && item.firstStoredAt <= input.now - policy.retentionMs)
+      .filter(([id, item]) => !isPinned(id, item) && item.firstStoredAt <= input.now - policy.retentionMs)
       .map(([, item]) => item.clip);
     const expiredIds = new Set(expired.map((clip) => clip.id));
     const unpinned = historyItems()
-      .filter(([id, item]) => !item.pinned && !expiredIds.has(id))
+      .filter(([id, item]) => !isPinned(id, item) && !expiredIds.has(id))
       .map(([, item]) => item);
     const byEvictionOrder = (left: HistoryItem, right: HistoryItem): number =>
       left.clip.capturedAt - right.clip.capturedAt || compareClipIds(left.clip.id, right.clip.id);
@@ -230,20 +239,26 @@ export function decideAtomicHistoryMutation(
     if (isHistoryItem(existing)) remove(input.clipId);
     if (input.suppressedUntil > input.now) {
       set(historySuppressionKey(input.clipId), { clipId: input.clipId, suppressedUntil: input.suppressedUntil } satisfies ClipSuppression);
-      const allSuppressions = suppressions();
-      const bytes = allSuppressions.reduce((total, [, suppression]) => total + encodedBytes(suppression), 0);
-      if (allSuppressions.length > policy.maxSuppressionRecords || bytes > policy.maxSuppressionBytes) {
-        throw new HistoryPolicyError("suppression_capacity");
-      }
+      assertSuppressionCapacity();
     }
     return { writes, deletes, result: {} };
   }
 
   if (input.kind === "set-pin") {
     const existing = next.get(input.clipId);
-    if (isHistoryItem(existing)) set(input.clipId, { ...existing, pinned: input.pinned });
-    if (!input.pinned) cleanup();
-    return { writes, deletes, result: {} };
+    if (!isHistoryItem(existing)) {
+      const pinnedIds = historyItems()
+        .filter(([id, item]) => isPinned(id, item))
+        .map(([, item]) => item.clip.id);
+      return { writes, deletes, result: { pinnedIds } };
+    }
+    const pinned = input.pinned;
+    set(input.clipId, { ...existing, pinned });
+    if (!pinned) cleanup();
+    const pinnedIds = historyItems()
+      .filter(([id, item]) => isPinned(id, item))
+      .map(([, item]) => item.clip.id);
+    return { writes, deletes, result: { pinnedIds } };
   }
 
   cleanup();

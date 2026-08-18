@@ -7,6 +7,7 @@ import {
   createRuntimeOrchestrator,
 } from "../../../packages/core/runtime";
 import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
+import { HistoryPolicyError } from "../../../packages/core/history/types";
 import type {
   RuntimeAdapter,
   RuntimePlatformAdapterDependencies,
@@ -140,6 +141,126 @@ async function expectAdapterConformance(
 }
 
 describe("shared runtime seam", () => {
+  it("publishes pending history failures until durable storage recovers", async () => {
+    let storageAvailable = false;
+    const historyErrors: Array<string | null> = [];
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      makeId: (() => {
+        let id = 0;
+        return () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`;
+      })(),
+      history: {
+        accept: async (clip) => {
+          if (!storageAvailable) throw new Error("storage unavailable");
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+      onHistoryErrorChanged: (error) => {
+        historyErrors.push(error);
+      },
+    });
+
+    await clipboard.processLocalText?.("queued");
+    clipboard.dismissHistoryError?.();
+    expect(historyErrors).toEqual(["pending_capture_failed"]);
+    storageAvailable = true;
+    await clipboard.processLocalText?.("stored");
+
+    expect(historyErrors).toEqual(["pending_capture_failed", null]);
+  });
+
+  it("publishes a content-free error when a Clip exceeds local capacity", async () => {
+    const historyErrors: Array<string | null> = [];
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      makeId: () => "00000000-0000-4000-8000-000000000099",
+      history: {
+        accept: async () => {
+          throw new HistoryPolicyError("clip_capacity");
+        },
+      },
+      onHistoryErrorChanged: (error) => {
+        historyErrors.push(error);
+      },
+    });
+
+    await clipboard.processLocalText?.("secret clipboard content");
+
+    expect(historyErrors).toEqual(["clip_too_large"]);
+    expect(JSON.stringify(historyErrors)).not.toContain("secret clipboard content");
+    clipboard.dismissHistoryError?.();
+    expect(historyErrors).toEqual(["clip_too_large", null]);
+  });
+
+  it("keeps a pending-storage error visible when a later oversized candidate is dropped", async () => {
+    const historyErrors: Array<string | null> = [];
+    let nextId = 200;
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+      pendingMaxBytes: 500,
+      history: { accept: async () => { throw new Error("storage unavailable"); } },
+      onHistoryErrorChanged: (error) => { historyErrors.push(error); },
+    });
+
+    await clipboard.processLocalText("queued");
+    await clipboard.processLocalText("x".repeat(1_000));
+    clipboard.dismissHistoryError?.();
+
+    expect(historyErrors).toEqual([
+      "pending_capture_failed",
+      "pending_capture_failed",
+    ]);
+  });
+
+  it("keeps a pending-storage error visible when a later Clip exceeds history capacity", async () => {
+    const historyErrors: Array<string | null> = [];
+    let accepts = 0;
+    let nextId = 210;
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+      history: {
+        accept: async () => {
+          accepts += 1;
+          if (accepts >= 3) throw new HistoryPolicyError("clip_capacity");
+          throw new Error("storage unavailable");
+        },
+      },
+      onHistoryErrorChanged: (error) => { historyErrors.push(error); },
+    });
+
+    await clipboard.processLocalText("queued");
+    await clipboard.processLocalText("too large for history");
+    clipboard.dismissHistoryError?.();
+
+    expect(historyErrors).toEqual([
+      "pending_capture_failed",
+      "pending_capture_failed",
+    ]);
+  });
+
+  it("distinguishes an oversized pending candidate when no older capture is queued", async () => {
+    const historyErrors: Array<string | null> = [];
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      makeId: () => "00000000-0000-4000-8000-000000000220",
+      pendingMaxBytes: 1,
+      history: { accept: async () => { throw new Error("storage unavailable"); } },
+      onHistoryErrorChanged: (error) => { historyErrors.push(error); },
+    });
+
+    await clipboard.processLocalText("too large for pending storage");
+
+    expect(historyErrors).toEqual(["pending_capture_too_large"]);
+  });
+
   it("assembles orchestration with observable runtime adapters", async () => {
     const received: Array<{ from: string; data: Uint8Array }> = [];
     const harness = createRuntimeConformanceHarness({

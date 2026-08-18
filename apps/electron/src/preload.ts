@@ -9,6 +9,8 @@ import type {
   PeerConnectionInfo,
   PendingRequest,
   RelayConnectionInfo,
+  ClipboardHistoryError,
+  HistoryPolicyError,
 } from "../../../packages/ui/src/types.js";
 
 type AppState = {
@@ -29,6 +31,8 @@ type AppState = {
   };
   pinnedIds?: string[];
   localRetentionMs?: number;
+  clipboardHistoryError?: ClipboardHistoryError | null;
+  historyPolicyError?: HistoryPolicyError | null;
 };
 
 const api = {
@@ -48,7 +52,9 @@ const api = {
   // TODO: confirm that it's not used anywhere
   // shareNow: () => ipcRenderer.invoke("clipp:share-now"),
   openQrWindow: () => ipcRenderer.invoke("clipp:open-qr-window") as Promise<PairingCode>,
-  togglePin: (id: string) => ipcRenderer.invoke("clipp:toggle-pin", id),
+  setPinned: (id: string, pinned: boolean) => ipcRenderer.invoke("clipp:set-pin", { id, pinned }),
+  dismissClipboardHistoryError: () => ipcRenderer.invoke("clipp:dismiss-clipboard-history-error"),
+  retryHistoryCleanup: () => ipcRenderer.invoke("clipp:retry-history-cleanup"),
   renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
   setRelayAddresses: (addrs: string[]) => ipcRenderer.invoke("clipp:set-relay-addresses", addrs),
   setLocalRetention: (retentionMs: number) => ipcRenderer.invoke("clipp:set-local-retention", retentionMs),

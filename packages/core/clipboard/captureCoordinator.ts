@@ -3,11 +3,28 @@ import type { ClipHistoryStore, HistoryAcceptance } from "../history/store";
 import { HistoryPolicyError } from "../history/types";
 import { normalizeClipboardContent } from "./normalize";
 import { createSerializedExecutor } from "./serial";
+import * as log from "../logger";
 
 export type ClipHistoryAcceptance = HistoryAcceptance;
 export type ClipHistoryWriter = Pick<ClipHistoryStore, "accept">;
 export type ClipCaptureOptions = {
   shareNow?: boolean;
+};
+
+export type ClipCaptureDiagnostic =
+  | "clip_id_collision_exhausted"
+  | "invalid_capture"
+  | "clip_too_large"
+  | "pending_capture_too_large"
+  | "pending_capture_storage_error"
+  | "pending_capture_storage_recovered"
+  | "pending_capture_dropped"
+  | "live_delivery_failed";
+
+export type ClipCaptureDiagnosticDetails = {
+  clipId?: string;
+  encodedBytes?: number;
+  pendingCount?: number;
 };
 
 export type ClipCaptureCoordinator = {
@@ -18,6 +35,7 @@ export type ClipCaptureCoordinator = {
   baselineValue(): string | undefined;
   pending(): readonly Clip[];
   discardPending(): Promise<void>;
+  clearHistory(clearDurable: () => Promise<void>): Promise<void>;
   retryPending(): Promise<void>;
   start(): void;
   stop(): void;
@@ -33,12 +51,7 @@ export function createClipCaptureCoordinator(options: {
   onStored?: (clip: Clip) => void | Promise<void>;
   pendingMaxClips?: number;
   pendingMaxBytes?: number;
-  onDiagnostic?: (diagnostic:
-    | "clip_id_collision_exhausted"
-    | "invalid_capture"
-    | "clip_too_large"
-    | "pending_capture_dropped"
-    | "live_delivery_failed") => void;
+  onDiagnostic?: (diagnostic: ClipCaptureDiagnostic, details?: ClipCaptureDiagnosticDetails) => void;
 }): ClipCaptureCoordinator {
   let baseline: string | undefined;
   const pending: Array<{ clip: Clip; bytes: number; options?: ClipCaptureOptions }> = [];
@@ -56,27 +69,34 @@ export function createClipCaptureCoordinator(options: {
       return await options.history.accept(clip, { liveHandled: true });
     } catch (error) {
       if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
-        options.onDiagnostic?.("clip_too_large");
+        options.onDiagnostic?.("clip_too_large", { pendingCount: pending.length });
         return null;
       }
       const bytes = new TextEncoder().encode(JSON.stringify(clip)).byteLength;
       if (bytes > pendingMaxBytes || pendingMaxClips <= 0) {
-        options.onDiagnostic?.("pending_capture_dropped");
+        const details = { clipId: clip.id, encodedBytes: bytes, pendingCount: pending.length };
+        log.warn("Pending clipboard capture dropped", details);
+        options.onDiagnostic?.("pending_capture_too_large", details);
         return null;
       }
       while (pending.length > 0 && (pending.length >= pendingMaxClips || pendingBytes + bytes > pendingMaxBytes)) {
         const discarded = pending.shift()!;
         pendingBytes -= discarded.bytes;
-        options.onDiagnostic?.("pending_capture_dropped");
+        const details = { clipId: discarded.clip.id, encodedBytes: discarded.bytes, pendingCount: pending.length };
+        log.warn("Pending clipboard capture evicted", details);
+        options.onDiagnostic?.("pending_capture_dropped", details);
       }
       pending.push({ clip, bytes, options: captureOptions });
       pendingBytes += bytes;
+      options.onDiagnostic?.("pending_capture_storage_error");
       schedulePendingRetry();
       return null;
     }
   };
   const retryPendingUnserialized = async (): Promise<void> => {
+    const hadPendingCaptures = pending.length > 0;
     let newestCurrentRecovered: { clip: Clip; options?: ClipCaptureOptions } | undefined;
+    const capacityRejected: ClipCaptureDiagnosticDetails[] = [];
     for (let index = 0; index < pending.length;) {
       const capture = pending[index];
       try {
@@ -86,7 +106,19 @@ export function createClipCaptureCoordinator(options: {
         if (accepted.kind === "newly-stored" && capture.clip.content === baseline) {
           newestCurrentRecovered = { clip: capture.clip, options: capture.options };
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
+          pending.splice(index, 1);
+          pendingBytes -= capture.bytes;
+          const details = {
+            clipId: capture.clip.id,
+            encodedBytes: capture.bytes,
+            pendingCount: pending.length,
+          };
+          log.warn("Pending clipboard capture exceeds history capacity", details);
+          capacityRejected.push(details);
+          continue;
+        }
         index += 1;
       }
     }
@@ -99,7 +131,13 @@ export function createClipCaptureCoordinator(options: {
         }
       }
     }
-    if (pending.length === 0) retryDelayMs = 1_000;
+    if (pending.length === 0) {
+      retryDelayMs = 1_000;
+      if (hadPendingCaptures) options.onDiagnostic?.("pending_capture_storage_recovered");
+    }
+    for (const details of capacityRejected) {
+      options.onDiagnostic?.("clip_too_large", { ...details, pendingCount: pending.length });
+    }
     schedulePendingRetry();
   };
   schedulePendingRetry = () => {
@@ -147,6 +185,14 @@ export function createClipCaptureCoordinator(options: {
     options.onDiagnostic?.("clip_id_collision_exhausted");
     return null;
   };
+  const discardPendingUnserialized = (): void => {
+    const hadPendingCaptures = pending.length > 0;
+    pending.splice(0, pending.length);
+    pendingBytes = 0;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = undefined;
+    if (hadPendingCaptures) options.onDiagnostic?.("pending_capture_storage_recovered");
+  };
 
   return {
     baseline: async (value) => { await serialize(async () => { baseline = value; }); },
@@ -172,11 +218,10 @@ export function createClipCaptureCoordinator(options: {
     }),
     baselineValue: () => baseline,
     pending: () => pending.map((capture) => capture.clip),
-    discardPending: async () => serialize(async () => {
-      pending.splice(0, pending.length);
-      pendingBytes = 0;
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = undefined;
+    discardPending: async () => serialize(async () => discardPendingUnserialized()),
+    clearHistory: async (clearDurable) => serialize(async () => {
+      await clearDurable();
+      discardPendingUnserialized();
     }),
     retryPending: async () => serialize(retryPendingUnserialized),
     start: () => {
