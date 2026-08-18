@@ -103,7 +103,10 @@ export function createClipCaptureCoordinator(options: {
         const accepted = await options.history.accept(capture.clip, { liveHandled: true });
         pending.splice(index, 1);
         pendingBytes -= capture.bytes;
-        if (accepted.kind === "newly-stored" && capture.clip.content === baseline) {
+        if (
+          (accepted.kind === "newly-stored" || accepted.kind === "exact-duplicate") &&
+          capture.clip.content === baseline
+        ) {
           newestCurrentRecovered = { clip: capture.clip, options: capture.options };
         }
       } catch (error) {

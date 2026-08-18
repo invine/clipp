@@ -153,6 +153,29 @@ describe("Clip capture coordinator", () => {
     expect(coordinator.pending()).toEqual([]);
   });
 
+  it("re-enters the live path when a pending capture was committed before storage reported failure", async () => {
+    const recovered: Clip[] = [];
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockRejectedValueOnce(new Error("storage response lost"))
+        .mockImplementation(async (clip) => ({ kind: "exact-duplicate", clip, liveHandled: false })),
+    };
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(18),
+    });
+    coordinator.onRecovered((clip) => { recovered.push(clip); });
+
+    await coordinator.capture("committed before failure");
+    await coordinator.retryPending();
+
+    expect(recovered).toEqual([expect.objectContaining({ id: validUuid(18), content: "committed before failure" })]);
+    expect(coordinator.pending()).toEqual([]);
+  });
+
   it("drops a pending Clip when retry proves it exceeds history capacity", async () => {
     const diagnostics: string[] = [];
     const warn = jest.spyOn(log, "warn").mockImplementation(() => {});

@@ -22,4 +22,5 @@
 ## Comments
 
 - Verified against the shared capture-coordinator and runtime-clipboard seams. The existing implementation preserves failed immutable captures in a bounded oldest-first queue, retries them with capped active-runtime backoff, advances the observation baseline before queuing, and emits at most the newest recovered capture whose exact content remains current.
-- Confirmed with the focused capture/runtime suites and the full Jest suite (43 passing suites, 249 passing tests; 5 skipped). No additional production change was required because the behavior was already delivered by the prior capture and history-policy work.
+- Recovery now also re-enters the eligible live path when a write committed before its storage call reported failure. A retry then observes the same immutable Clip as an exact duplicate rather than a newly stored record.
+- Confirmed with the focused capture/runtime suites and the full Jest suite (43 passing suites, 249 passing tests; 5 skipped).
