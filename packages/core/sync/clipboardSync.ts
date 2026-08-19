@@ -32,6 +32,7 @@ export function createClipboardSyncManager(
   const now = options.now ?? Date.now;
   let running = false;
   let autoSync = options.autoSync ?? true;
+  let autoSyncGeneration = 0;
 
   let localIdPromise: Promise<string> | null = null;
   const inFlightRemote = new Set<string>();
@@ -50,6 +51,7 @@ export function createClipboardSyncManager(
 
   async function handleLocalClip(clip: Clip, captureOptions?: LocalClipOptions): Promise<void> {
     if (!running) return;
+    const generation = autoSyncGeneration;
     try {
       const accepted = await options.history.accept(clip, { liveHandled: true });
       if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
@@ -61,30 +63,52 @@ export function createClipboardSyncManager(
     if (!isClipAcceptable(clip, now())) return;
     const liveGossip = currentLiveGossip;
     if (liveGossip) {
-      void forwardLiveClip(clip, undefined, captureOptions?.shareNow === true);
+      const shareNow = captureOptions?.shareNow === true;
+      void forwardLiveClip(clip, undefined, shareNow, shareNow ? undefined : generation);
     }
   }
 
-  async function isLiveSideEffectEligible(clip: Clip, from?: string, allowAutoSyncOverride = false): Promise<boolean> {
-    if (!running || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return false;
+  async function isLiveSideEffectEligible(
+    clip: Clip,
+    from?: string,
+    allowAutoSyncOverride = false,
+    expectedAutoSyncGeneration?: number,
+  ): Promise<boolean> {
+    const generationChanged = (): boolean =>
+      expectedAutoSyncGeneration !== undefined && expectedAutoSyncGeneration !== autoSyncGeneration;
+    if (generationChanged() || !running || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return false;
     if (from && options.isActiveMember && !(await options.isActiveMember(from))) return false;
+    if (generationChanged() || (!autoSync && !allowAutoSyncOverride)) return false;
     try {
       const retained = await options.history.getById(clip.id);
-      return Boolean(retained && clipsHaveEqualImmutableFields(retained.clip, clip));
+      return !generationChanged()
+        && (autoSync || allowAutoSyncOverride)
+        && Boolean(retained && clipsHaveEqualImmutableFields(retained.clip, clip));
     } catch (error) {
       log.warn("Failed to recheck Clip before live side effect", error);
       return false;
     }
   }
 
-  async function forwardLiveClip(clip: Clip, immediateSender?: string, allowAutoSyncOverride = false): Promise<void> {
+  async function forwardLiveClip(
+    clip: Clip,
+    immediateSender?: string,
+    allowAutoSyncOverride = false,
+    expectedAutoSyncGeneration?: number,
+  ): Promise<void> {
     const liveGossip = currentLiveGossip;
-    if (!liveGossip || !(await isLiveSideEffectEligible(clip, undefined, allowAutoSyncOverride))) return;
+    if (!liveGossip || !(await isLiveSideEffectEligible(
+      clip,
+      undefined,
+      allowAutoSyncOverride,
+      expectedAutoSyncGeneration,
+    ))) return;
     await liveGossip.forward(clip, immediateSender, allowAutoSyncOverride);
   }
 
   async function handleIncomingLiveClip(from: string, clip: Clip): Promise<void> {
     if (!running || !autoSync || !validateClip(clip) || !isClipAcceptable(clip, now())) return;
+    const generation = autoSyncGeneration;
     const localId = await getLocalId();
     if (from === localId || inFlightRemote.has(clip.id)) return;
     inFlightRemote.add(clip.id);
@@ -93,7 +117,7 @@ export function createClipboardSyncManager(
       // second check immediately before atomic persistence, covering revocation
       // that races with stream receipt.
       if (options.isActiveMember && !(await options.isActiveMember(from))) return;
-      if (!autoSync || !isClipAcceptable(clip, now())) return;
+      if (!autoSync || generation !== autoSyncGeneration || !isClipAcceptable(clip, now())) return;
       let accepted;
       try {
         accepted = await options.history.accept(clip, { liveHandled: true, admissionPriority: true });
@@ -102,11 +126,11 @@ export function createClipboardSyncManager(
         return;
       }
       if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
-      if (accepted.kind === "newly-stored") void forwardLiveClip(clip, from);
+      if (accepted.kind === "newly-stored") void forwardLiveClip(clip, from, false, generation);
       if (!accepted.liveHandled) return;
       try {
         await options.clipboard.writeRemoteClip(clip, async () =>
-          await isLiveSideEffectEligible(clip, from)
+          await isLiveSideEffectEligible(clip, from, false, generation)
         );
       } catch (error) {
         // The durable record remains and there is deliberately no automatic retry.
@@ -158,6 +182,7 @@ export function createClipboardSyncManager(
     setAutoSync(enabled: boolean) {
       if (autoSync === enabled) return;
       autoSync = enabled;
+      autoSyncGeneration += 1;
       currentLiveGossip?.setAutoSync(enabled);
       options.onAutoSyncChanged?.(enabled);
     },

@@ -1,6 +1,7 @@
 import {
   createExtensionStreamReceiver,
   relayExtensionStream,
+  sendBufferedExtensionStream,
 } from "../../../apps/extension/src/streamBridge";
 
 describe("Chrome extension stream bridge", () => {
@@ -31,5 +32,40 @@ describe("Chrome extension stream bridge", () => {
 
     expect(consumed).toEqual([0x80]);
     expect(produced).toBe(1);
+  });
+
+  it("forwards outbound cancellation to the offscreen transport", async () => {
+    const messages: Array<{ action: string; streamId?: string }> = [];
+    let rejectSending!: (error: Error) => void;
+    let markStreamStarted!: () => void;
+    const streamStarted = new Promise<void>((resolve) => { markStreamStarted = resolve; });
+    const send = jest.fn(async (message: { action: string; streamId?: string }) => {
+      messages.push(message);
+      if (message.action === "runtimeCancelSendStream") {
+        rejectSending(new Error("stream_cancelled"));
+        return { ok: true };
+      }
+      markStreamStarted();
+      return await new Promise<{ ok: true }>((_resolve, reject) => {
+        rejectSending = reject;
+      });
+    });
+    const controller = new AbortController();
+    const sending = sendBufferedExtensionStream({
+      protocol: "/clipp/history/1.0.0",
+      target: "active-member",
+      frames: (async function *() { yield Uint8Array.of(1); })(),
+      signal: controller.signal,
+      streamId: "outbound-1",
+      send,
+    });
+    await streamStarted;
+
+    controller.abort();
+    await expect(sending).rejects.toThrow("stream_cancelled");
+    expect(messages.map((message) => message.action)).toEqual([
+      "runtimeSendStream",
+      "runtimeCancelSendStream",
+    ]);
   });
 });

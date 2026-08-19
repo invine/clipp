@@ -26,6 +26,7 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import {
   createChromeExtensionRuntimeAdapter,
+  createAutoSyncPreference,
   createRuntimeIdentityManager,
   createRuntimeClipboardService,
   createRuntimeNotificationSelection,
@@ -58,6 +59,7 @@ import {
 import {
   createExtensionStreamReceiver,
   isExtensionStreamMessage,
+  sendBufferedExtensionStream,
 } from "./streamBridge";
 
 // Initialize log level from storage
@@ -78,18 +80,16 @@ let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
 let historyPolicyError: "history_cleanup_failed" | null = null;
 let historyRetentionCleanup: HistoryRetentionCleanup | undefined;
 let pendingRetentionMs: number | null = null;
+const storage = new ChromeStorageBackend();
+const autoSyncPreference = createAutoSyncPreference({ storage });
 let autoSync = true;
-const autoSyncReady = new Promise<void>((resolve) => {
-  chrome.storage.local.get(["autoSync"], (res) => {
-    autoSync = res.autoSync !== false;
-    resolve();
-  });
+const autoSyncReady = autoSyncPreference.load().then((persisted) => {
+  autoSync = persisted;
 });
 let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
   resolveHistoryPolicyReady = resolve;
 });
-const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
@@ -307,11 +307,15 @@ const extensionNetwork: StreamingMessagingTransport = {
     await offscreenReady;
     await sendOffscreen({ action: "runtimeSend", protocol, peerTarget: target, data: Array.from(data) });
   },
-  async sendStream(protocol, target, frames) {
+  async sendStream(protocol, target, frames, options) {
     await offscreenReady;
-    const encoded: number[][] = [];
-    for await (const frame of frames) encoded.push(Array.from(frame));
-    await sendOffscreen({ action: "runtimeSendStream", protocol, peerTarget: target, frames: encoded });
+    await sendBufferedExtensionStream({
+      protocol,
+      target,
+      frames,
+      signal: options?.signal,
+      send: (message) => sendOffscreen(message),
+    });
   },
   async connect(target) {
     await offscreenReady;
@@ -768,16 +772,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "setSettings" && msg.settings) {
-    // @ts-ignore
-    chrome.storage.local.set(msg.settings, () => sendResponse({ ok: true }));
-    if (msg.settings.logLevel) {
-      log.setLogLevel(msg.settings.logLevel);
-    }
-    if (msg.settings.autoSync !== undefined) {
-      autoSync = msg.settings.autoSync !== false;
-      clipboardSync.setAutoSync(autoSync);
-      void runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state));
-    }
+    void new Promise<void>((resolve) => {
+      // @ts-ignore
+      chrome.storage.local.set(msg.settings, resolve);
+    }).then(async () => {
+      if (msg.settings.logLevel) log.setLogLevel(msg.settings.logLevel);
+      if (msg.settings.autoSync !== undefined) {
+        autoSync = await autoSyncPreference.set(msg.settings.autoSync);
+        clipboardSync.setAutoSync(autoSync);
+        await runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state));
+      }
+      sendResponse({ ok: true });
+    });
     return true;
   }
   // Add more message handlers as needed

@@ -48,9 +48,9 @@ export function createRuntimeNetworkProxy(
     },
     stop: async () => current()?.stop(),
     send: (protocol, target, data) => requireNetwork().send(protocol, target, data),
-    sendStream: (protocol, target, frames) => {
+    sendStream: (protocol, target, frames, options) => {
       const network = requireNetwork();
-      return network.sendStream(protocol, target, frames);
+      return network.sendStream(protocol, target, frames, options);
     },
     connect: (target) => requireNetwork().connect(target),
     async disconnect(peerId) {

@@ -209,6 +209,32 @@ describe("ClipboardSyncManager", () => {
     expect(await history.getById(clip.id)).toBeNull();
   });
 
+  test("keeps a committed clipboard write canceled after Auto Sync is disabled then re-enabled", async () => {
+    const history = createHistory();
+    const clip = makeClip("00000000-0000-4000-8000-000000000018", "stale live effect");
+    let sync!: ReturnType<typeof createClipboardSyncManager>;
+    const { clipboard, applied } = createClipboardHarness(async () => {
+      sync.setAutoSync(false);
+      sync.setAutoSync(true);
+    });
+    const { gossip, deliver } = createGossipHarness([]);
+    sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      liveGossip: gossip,
+      isActiveMember: async () => true,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    sync.start();
+
+    deliver("sender", clip);
+    await flush();
+
+    expect(await history.exportAll()).toEqual([clip]);
+    expect(applied).toEqual([]);
+  });
+
   test("forwards a newly stored Remote Clip and applies it locally", async () => {
     const history = createHistory();
     const { clipboard, applied } = createClipboardHarness();

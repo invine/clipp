@@ -5,8 +5,11 @@ import {
 } from "../../../packages/core/protocols/liveClip";
 import {
   HISTORY_PROTOCOL,
+  HISTORY_REQUEST_PROTOCOL,
   decodeHistorySnapshot,
   encodeHistoryBatchFrame,
+  encodeHistoryRequestFrame,
+  readHistoryRequest,
 } from "../../../packages/core/protocols/history";
 import { encodeClip } from "../../../packages/core/protocols/clipCodec";
 import { bytesField, concatBytes, varint } from "../../../packages/core/protocols/protobuf";
@@ -111,6 +114,17 @@ describe("protocol message shapes", () => {
     ]);
     expect(new TextDecoder().decode(frame)).not.toContain("from");
     expect(new TextDecoder().decode(frame)).not.toContain(historyClip.id);
+  });
+
+  it("uses one empty, length-prefixed frame for a History Request", async () => {
+    const frame = encodeHistoryRequestFrame();
+
+    expect(HISTORY_REQUEST_PROTOCOL).toBe("/clipp/history-request/1.0.0");
+    expect(Array.from(frame)).toEqual([0]);
+    await expect(readHistoryRequest((async function *() { yield frame; })())).resolves.toBeUndefined();
+    await expect(readHistoryRequest((async function *() {
+      yield Uint8Array.of(0, 0);
+    })())).rejects.toThrow("invalid_history_request");
   });
 
   it("rejects an overflowing varint in one Clip without losing valid siblings", () => {

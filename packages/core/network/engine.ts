@@ -21,12 +21,13 @@ import type {
   PeerConnectionInfo,
   PeerConnectionPath,
   RelayConnectionInfo,
+  StreamSendOptions,
   StreamingMessagingTransport,
 } from "../messaging/transport.js";
 import * as log from "../logger.js";
 
 type Libp2pNode = any;
-const DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS = 30_000;
+const DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS = 30_000;
 
 function concatBytes(parts: Uint8Array[], size: number): Uint8Array {
   const result = new Uint8Array(size);
@@ -113,6 +114,21 @@ class Libp2pMessagingTransport implements MessagingTransport {
   constructor(private readonly opts: Libp2pMessagingOptions = {}) {
     this.relayPeerIds = buildRelayPeerIdSet(opts.relayAddresses || []);
     this.relayAddrSet = new Set((opts.relayAddresses || []).map(String));
+  }
+
+  private applicationStreamPolicy(protocol: string): {
+    enforceProgressTimeout: boolean;
+    idleTimeoutMs: number;
+    timeoutError: Error;
+  } {
+    const history = isHistoryProtocol(protocol);
+    return {
+      enforceProgressTimeout: history,
+      idleTimeoutMs: history
+        ? this.opts.historyStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS
+        : this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS,
+      timeoutError: applicationStreamTimeoutError(protocol),
+    };
   }
 
   async start(): Promise<void> {
@@ -238,18 +254,28 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     try {
       const isLiveClip = protocol === CLIP_PROTOCOL;
-      const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
+      const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS;
       const opening = this.openStream(protocol, target);
       const stream = guardMessageStream(isLiveClip
-        ? await openLiveClipStreamWithTimeout(opening, idleTimeoutMs)
+        ? await openApplicationStreamWithTimeout(
+          opening,
+          idleTimeoutMs,
+          applicationStreamTimeoutError(protocol),
+        )
         : await opening);
 
       if (isLiveClip) {
-        await liveClipOperationWithTimeout(writeMessageStream(stream, data), idleTimeoutMs, stream);
-        await liveClipOperationWithTimeout(
+        await applicationStreamOperationWithTimeout(
+          writeMessageStream(stream, data),
+          idleTimeoutMs,
+          stream,
+          applicationStreamTimeoutError(protocol),
+        );
+        await applicationStreamOperationWithTimeout(
           closeMessageStream(stream, { ignoreClosedDataChannel: true }),
           idleTimeoutMs,
-          stream
+          stream,
+          applicationStreamTimeoutError(protocol),
         );
       } else {
         await writeMessageStream(stream, data);
@@ -266,35 +292,65 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
   }
 
-  async sendStream(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void> {
+  async sendStream(
+    protocol: string,
+    target: string,
+    frames: AsyncIterable<Uint8Array>,
+    options?: StreamSendOptions,
+  ): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     const peerId = await this.targetPeerId(target);
     const context = { protocol, target, peerId };
-    const isHistoryStream = protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
-    const idleTimeoutMs = this.opts.historyStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
+    const policy = this.applicationStreamPolicy(protocol);
     let stream: any;
     try {
       const opening = this.openStream(protocol, target);
-      stream = guardMessageStream(isHistoryStream
-        ? await openLiveClipStreamWithTimeout(opening, idleTimeoutMs)
+      stream = guardMessageStream(policy.enforceProgressTimeout || options?.signal
+        ? await openApplicationStreamWithTimeout(
+          opening,
+          policy.idleTimeoutMs,
+          policy.timeoutError,
+          options?.signal,
+        )
         : await opening);
       const iterator = frames[Symbol.asyncIterator]();
       try {
-        while (true) {
-          const next = isHistoryStream
-            ? await nextBeforeDeadline(iterator, Date.now() + idleTimeoutMs)
+        for (;;) {
+          const next = policy.enforceProgressTimeout || options?.signal
+            ? await applicationStreamOperationWithTimeout(
+              iterator.next(),
+              policy.idleTimeoutMs,
+              stream,
+              policy.timeoutError,
+              options?.signal,
+            )
             : await iterator.next();
           if (next.done) break;
           const frame = next.value;
-        if (!(frame instanceof Uint8Array) || frame.length === 0) throw new Error("invalid_stream_frame");
-        if (isHistoryStream) await liveClipOperationWithTimeout(writeMessageStream(stream, frame), idleTimeoutMs, stream);
-        else await writeMessageStream(stream, frame);
+          if (!(frame instanceof Uint8Array) || frame.length === 0) throw new Error("invalid_stream_frame");
+          if (policy.enforceProgressTimeout || options?.signal) {
+            await applicationStreamOperationWithTimeout(
+              writeMessageStream(stream, frame),
+              policy.idleTimeoutMs,
+              stream,
+              policy.timeoutError,
+              options?.signal,
+            );
+          } else {
+            await writeMessageStream(stream, frame);
+          }
         }
       } finally {
         await iterator.return?.().catch(() => undefined);
       }
-      if (isHistoryStream) {
-        await liveClipOperationWithTimeout(closeMessageStream(stream, { ignoreClosedDataChannel: true }), idleTimeoutMs, stream);
+      if (policy.enforceProgressTimeout || options?.signal) {
+        await applicationStreamOperationWithTimeout(
+          closeMessageStream(stream, { ignoreClosedDataChannel: true }),
+          policy.idleTimeoutMs,
+          stream,
+          policy.timeoutError,
+          options?.signal,
+        );
       } else {
         await closeMessageStream(stream, { ignoreClosedDataChannel: true });
       }
@@ -1031,14 +1087,17 @@ class Libp2pMessagingTransport implements MessagingTransport {
             await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
             return;
           }
-          const isHistoryStream = protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
-          const idleTimeoutMs = this.opts.historyStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
+          const policy = this.applicationStreamPolicy(protocol);
           const byteChunks = async function *(): AsyncIterable<Uint8Array> {
             const iterator = iterable[Symbol.asyncIterator]();
             try {
               while (true) {
-                const next = isHistoryStream
-                  ? await nextBeforeDeadline(iterator, Date.now() + idleTimeoutMs)
+                const next = policy.enforceProgressTimeout
+                  ? await nextBeforeDeadline(
+                    iterator,
+                    Date.now() + policy.idleTimeoutMs,
+                    policy.timeoutError,
+                  )
                   : await iterator.next();
                 if (next.done) return;
                 const chunk = next.value;
@@ -1116,7 +1175,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
             return;
           }
           const maximumBytes = this.opts.liveClipMaxFrameBytes ?? LIVE_CLIP_MAX_FRAME_BYTES;
-          const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
+          const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS;
           const frame = await readBoundedLiveClipFrame(iterable, maximumBytes, idleTimeoutMs);
           if (!frame || !decodeLiveClipFrame(frame, maximumBytes)) {
             await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
@@ -1559,50 +1618,93 @@ function decodeCanonicalLengthPrefix(bytes: number[]): number | null {
 
 async function nextBeforeDeadline<T>(
   iterator: AsyncIterator<T>,
-  deadline: number
+  deadline: number,
+  timeoutError = applicationStreamTimeoutError(CLIP_PROTOCOL),
 ): Promise<IteratorResult<T>> {
   const remainingMs = Math.max(0, deadline - Date.now());
-  return await promiseWithTimeout(iterator.next(), remainingMs, () => undefined);
+  return await promiseWithTimeout(iterator.next(), remainingMs, timeoutError, () => undefined);
 }
 
-async function openLiveClipStreamWithTimeout(opening: Promise<any>, timeoutMs: number): Promise<any> {
-  let timedOut = false;
+async function openApplicationStreamWithTimeout(
+  opening: Promise<any>,
+  timeoutMs: number,
+  timeoutError: Error,
+  signal?: AbortSignal,
+): Promise<any> {
+  let lateFailure: Error | null = null;
   const guardedOpening = opening.then((stream) => {
-    if (timedOut) abortMessageStream(stream, liveClipStreamTimeoutError());
+    if (lateFailure) abortMessageStream(stream, lateFailure);
     return stream;
   });
-  return await promiseWithTimeout(guardedOpening, timeoutMs, () => { timedOut = true; });
+  try {
+    return await promiseWithTimeout(
+      guardedOpening,
+      timeoutMs,
+      timeoutError,
+      () => { lateFailure = timeoutError; },
+      signal,
+      (error) => { lateFailure = error; },
+    );
+  } catch (error) {
+    lateFailure = error instanceof Error ? error : new Error(String(error));
+    throw error;
+  }
 }
 
-async function liveClipOperationWithTimeout<T>(
+async function applicationStreamOperationWithTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
-  stream: any
+  stream: any,
+  timeoutError: Error,
+  signal?: AbortSignal,
 ): Promise<T> {
-  return await promiseWithTimeout(operation, timeoutMs, () => {
-    abortMessageStream(stream, liveClipStreamTimeoutError());
-  });
+  return await promiseWithTimeout(
+    operation,
+    timeoutMs,
+    timeoutError,
+    () => abortMessageStream(stream, timeoutError),
+    signal,
+    (error) => abortMessageStream(stream, error),
+  );
 }
 
 async function promiseWithTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
-  onTimeout: () => void
+  timeoutError: Error,
+  onTimeout: () => void,
+  signal?: AbortSignal,
+  onAbort: (error: Error) => void = () => undefined,
 ): Promise<T> {
+  if (signal?.aborted) {
+    const error = streamCancelledError();
+    onAbort(error);
+    throw error;
+  }
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutError = liveClipStreamTimeoutError();
+  let abortListener: (() => void) | undefined;
+  const operations: Array<Promise<T>> = [operation];
+  operations.push(new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      onTimeout();
+      reject(timeoutError);
+    }, timeoutMs);
+  }));
+  if (signal) {
+    operations.push(new Promise<never>((_resolve, reject) => {
+      abortListener = () => {
+        const error = streamCancelledError();
+        onAbort(error);
+        reject(error);
+      };
+      signal.addEventListener("abort", abortListener, { once: true });
+    }));
+  }
   try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => {
-          onTimeout();
-          reject(timeoutError);
-        }, timeoutMs);
-      }),
-    ]);
+    return await Promise.race(operations);
   } finally {
     if (timeout) clearTimeout(timeout);
+    if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
 }
 
@@ -1610,8 +1712,16 @@ function abortMessageStream(stream: any, error: Error): void {
   try { stream?.abort?.(error); } catch { /* the affected stream is already closed */ }
 }
 
-function liveClipStreamTimeoutError(): Error {
-  return new Error("live_clip_stream_timeout");
+function isHistoryProtocol(protocol: string): boolean {
+  return protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
+}
+
+function applicationStreamTimeoutError(protocol: string): Error {
+  return new Error(isHistoryProtocol(protocol) ? "history_stream_timeout" : "live_clip_stream_timeout");
+}
+
+function streamCancelledError(): Error {
+  return new Error("stream_cancelled");
 }
 
 function describeStream(stream: any) {

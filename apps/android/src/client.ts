@@ -3,6 +3,7 @@ import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import QRCode from "qrcode";
 import {
   createAndroidRuntimeAdapter,
+  createAutoSyncPreference,
   createRuntimeIdentityManager,
   createRuntimeClipboardService,
   createRuntimeNetworkProxy,
@@ -263,6 +264,7 @@ function serializeLogPayload(data: unknown): string {
 
 export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
+  private readonly autoSyncPreference = createAutoSyncPreference({ storage: this.storage });
   private readonly history = new MemoryHistoryStore(createHistoryBackend());
   private readonly identityRepo = createKVIdentityRepository({ storage: this.storage, key: IDENTITY_KEY });
   private readonly identitySvc = createRuntimeIdentityManager({
@@ -677,7 +679,7 @@ export class AndroidClient {
       startLocalServices: async () => {
         this.pairingSessions.start();
         this.bindEvents();
-        this.autoSync = (await this.storage.get<boolean>("autoSync")) !== false;
+        this.autoSync = await this.autoSyncPreference.load();
         this.clipboardSync.setAutoSync(this.autoSync);
         const storedRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
         const applyStoredRetention = async (): Promise<void> => {
@@ -861,8 +863,7 @@ export class AndroidClient {
   }
 
   async setAutoSync(enabled: boolean) {
-    this.autoSync = enabled !== false;
-    await this.storage.set("autoSync", this.autoSync);
+    this.autoSync = await this.autoSyncPreference.set(enabled);
     this.clipboardSync.setAutoSync(this.autoSync);
     await this.emitState();
     return this.autoSync;

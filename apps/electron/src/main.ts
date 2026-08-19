@@ -19,6 +19,7 @@ import {
 // import { normalizeClipboardContent } from "../../../packages/core/clipboard/normalize.js";
 import {
   createElectronRuntimeAdapter,
+  createAutoSyncPreference,
   createClosableRuntimeNotifications,
   createRuntimeIdentityManager,
   createRuntimeNetworkProxy,
@@ -69,9 +70,10 @@ async function bootstrap() {
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
+  const autoSyncPreference = createAutoSyncPreference({ storage: kvStore });
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({ storage: kvStore });
   let localRetentionMs = (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
-  let autoSync = (await kvStore.get<boolean>("autoSync")) !== false;
+  let autoSync = await autoSyncPreference.load();
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db), { retentionMs: localRetentionMs });
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
@@ -1053,8 +1055,7 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:set-auto-sync", async (_evt, enabled: boolean) => {
-    autoSync = enabled !== false;
-    await kvStore.set("autoSync", autoSync);
+    autoSync = await autoSyncPreference.set(enabled);
     clipboardSync.setAutoSync(autoSync);
     await emitState();
     return { autoSync };

@@ -26,23 +26,32 @@ export function createLiveClipGossip(options: {
   let started = false;
   let stopped = false;
   let autoSync = true;
+  let autoSyncGeneration = 0;
 
   const isActive = async (peerId: string): Promise<boolean> =>
     await options.membershipStatus(peerId) === "active";
 
   const receive = async (from: string, frame: Uint8Array): Promise<void> => {
     if (stopped || !autoSync) return;
+    const generation = autoSyncGeneration;
     const decoded = decodeLiveClipFrame(frame);
     if (!decoded || !isClipAcceptable(decoded.clip, now())) return;
     // This check is deliberately immediately before publication to the
     // history-acceptance consumer; payload data never establishes authority.
-    if (!(await isActive(from)) || stopped || !autoSync) return;
+    if (!(await isActive(from)) || stopped || !autoSync || generation !== autoSyncGeneration) return;
     for (const listener of listeners) listener({ from, clip: decoded.clip });
   };
 
-  const sendTo = async (peerId: string, clip: Clip, allowAutoSyncOverride = false): Promise<void> => {
-    if (stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return;
-    if (!(await isActive(peerId)) || stopped || (!autoSync && !allowAutoSyncOverride)) return;
+  const sendTo = async (
+    peerId: string,
+    clip: Clip,
+    allowAutoSyncOverride = false,
+    expectedAutoSyncGeneration?: number,
+  ): Promise<void> => {
+    const generationChanged = (): boolean =>
+      expectedAutoSyncGeneration !== undefined && expectedAutoSyncGeneration !== autoSyncGeneration;
+    if (generationChanged() || stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return;
+    if (!(await isActive(peerId)) || generationChanged() || stopped || (!autoSync && !allowAutoSyncOverride)) return;
     try {
       await options.transport.send(LIVE_CLIP_PROTOCOL, peerId, encodeLiveClipFrame({ clip }));
     } catch (error) {
@@ -58,9 +67,14 @@ export function createLiveClipGossip(options: {
       options.transport.onMessage(LIVE_CLIP_PROTOCOL, (from, frame) => { void receive(from, frame); });
     },
     stop(): void { stopped = true; },
-    setAutoSync(enabled): void { autoSync = enabled; },
+    setAutoSync(enabled): void {
+      if (autoSync === enabled) return;
+      autoSync = enabled;
+      autoSyncGeneration += 1;
+    },
     async forward(clip, immediateSender, allowAutoSyncOverride = false): Promise<void> {
       if (stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return;
+      const generation = allowAutoSyncOverride ? undefined : autoSyncGeneration;
       // Reject an oversized frame before creating any recipient side effect.
       try {
         encodeLiveClipFrame({ clip });
@@ -71,7 +85,9 @@ export function createLiveClipGossip(options: {
         return;
       }
       const peers = options.transport.getConnectedPeers().filter((peerId) => peerId !== immediateSender);
-      await Promise.all(peers.map((peerId) => sendTo(peerId, clip, allowAutoSyncOverride)));
+      await Promise.all(peers.map((peerId) =>
+        sendTo(peerId, clip, allowAutoSyncOverride, generation)
+      ));
     },
     onClip(listener): void { listeners.push(listener); },
   };

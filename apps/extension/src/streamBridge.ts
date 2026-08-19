@@ -10,6 +10,16 @@ export type ExtensionStreamResponse = { ok: true } | { ok: false; error: string 
 
 type SendStreamMessage = (message: ExtensionStreamMessage) => Promise<ExtensionStreamResponse>;
 
+type OutboundExtensionStreamMessage =
+  | {
+      action: "runtimeSendStream";
+      streamId: string;
+      protocol: string;
+      peerTarget: string;
+      frames: number[][];
+    }
+  | { action: "runtimeCancelSendStream"; streamId: string };
+
 export function createExtensionStreamReceiver() {
   const handlers = new Map<string, MessageStreamHandler>();
   const streams = new Map<string, { chunks: RelayedChunks; handling: Promise<void> }>();
@@ -92,6 +102,44 @@ export async function relayExtensionStream(options: {
     await options.send({ action: "runtimeStreamCancel", streamId }).catch(() => undefined);
     throw error;
   }
+}
+
+export async function sendBufferedExtensionStream(options: {
+  protocol: string;
+  target: string;
+  frames: AsyncIterable<Uint8Array>;
+  signal?: AbortSignal;
+  streamId?: string;
+  send(message: OutboundExtensionStreamMessage): Promise<unknown>;
+}): Promise<void> {
+  const streamId = options.streamId ?? createStreamId();
+  const encoded: number[][] = [];
+  const iterator = options.frames[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      const next = await withAbortSignal(iterator.next(), options.signal);
+      if (next.done) break;
+      if (!(next.value instanceof Uint8Array) || next.value.length === 0) {
+        throw new Error("invalid_stream_frame");
+      }
+      encoded.push(Array.from(next.value));
+    }
+  } finally {
+    await iterator.return?.().catch(() => undefined);
+  }
+
+  const response = await withAbortSignal(
+    options.send({
+      action: "runtimeSendStream",
+      streamId,
+      protocol: options.protocol,
+      peerTarget: options.target,
+      frames: encoded,
+    }),
+    options.signal,
+    () => { void options.send({ action: "runtimeCancelSendStream", streamId }); },
+  );
+  if (isFailedResponse(response)) throw new Error(response.error);
 }
 
 export function isExtensionStreamMessage(value: unknown): value is ExtensionStreamMessage {
@@ -195,4 +243,35 @@ function createStreamId(): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function withAbortSignal<T>(
+  operation: Promise<T>,
+  signal?: AbortSignal,
+  onAbort: () => void = () => undefined,
+): Promise<T> {
+  if (!signal) return await operation;
+  if (signal.aborted) {
+    onAbort();
+    throw new Error("stream_cancelled");
+  }
+  let abortListener!: () => void;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        abortListener = () => {
+          onAbort();
+          reject(new Error("stream_cancelled"));
+        };
+        signal.addEventListener("abort", abortListener, { once: true });
+      }),
+    ]);
+  } finally {
+    signal.removeEventListener("abort", abortListener);
+  }
+}
+
+function isFailedResponse(value: unknown): value is { ok: false; error: string } {
+  return Boolean(value && typeof value === "object" && (value as { ok?: unknown }).ok === false);
 }

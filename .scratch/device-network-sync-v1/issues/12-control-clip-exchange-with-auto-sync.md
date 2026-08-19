@@ -9,17 +9,17 @@
 - [x] Auto Sync defaults enabled, persists across restart, and survives Identity Rotation as an identity-independent installation preference.
 - [x] Disabling Auto Sync keeps local capture and Clipboard History active while suppressing outbound live Clips, outbound snapshots, inbound live acceptance, and inbound History Batch acceptance.
 - [x] Disabling Auto Sync does not stop Pairing, Membership Reconciliation, Device Revocation, discovery, reachability, or other non-Clip protocols.
-- [x] Disabling cancels pending outbound snapshots without retracting already transmitted Clips.
+- [x] Disabling immediately cancels in-progress outbound snapshots and clears their pending-follow-up state without retracting already transmitted Clips.
 - [x] Receive paths recheck Auto Sync before persistence; queued post-commit live side effects recheck it before starting and remain canceled if it was disabled.
 - [x] Enabling Auto Sync sends a full snapshot and one History Request to every currently connected Active Member without waiting for reconnection.
 - [x] A History Request is a separate one-frame control stream, carries no identity or inventory fields, and receives a separate ordinary snapshot only when the recipient currently has Auto Sync enabled.
 - [x] One outbound snapshot may run per target; concurrent triggers coalesce into one pending follow-up after successful EOF, while failure clears follow-up and waits for another ordinary trigger.
 - [x] Re-enabling makes all retained unexpired eligible Clips available through history regardless of capture-time Auto Sync state.
 - [x] Re-enabling never replays retained history through the live protocol or overwrites the current clipboard.
-- [x] Snapshot and request streams retain the shared history transport's progress timeout behavior and recover through later ordinary triggers.
+- [x] Snapshot and request streams enforce the shared progress-based idle timeout and recover only through later ordinary triggers.
 - [x] Runtime state and UI consistently expose the persisted preference and current synchronization behavior.
 
 ## Answer
 
 - Added a persisted, identity-independent Auto Sync setting for Electron, Android, and the extension, with a shared settings control.
-- Added history request control streams, re-enable repair for connected Active Members, disabled-path receive/send guards, and coalesced outbound snapshots.
+- Added history request control streams, cancelable re-enable repair for connected Active Members, generation-bound receive/send guards, and coalesced outbound snapshots.

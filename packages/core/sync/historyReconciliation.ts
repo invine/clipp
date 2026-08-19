@@ -20,6 +20,13 @@ export type HistoryReconciliation = {
   setAutoSync(enabled: boolean): void;
 };
 
+type OutboundSnapshotState = {
+  controller: AbortController;
+  generation: number;
+  pending: boolean;
+  restartAfterCompletion: boolean;
+};
+
 export function createHistoryReconciliation(options: {
   transport: Pick<StreamingMessagingTransport, "getConnectedPeers" | "onPeerConnected" | "sendStream" | "onStream">;
   history: Pick<ClipHistoryStore, "accept" | "getById" | "query">;
@@ -32,7 +39,8 @@ export function createHistoryReconciliation(options: {
 }): HistoryReconciliation {
   const now = options.now ?? Date.now;
   const maximumFrameBytes = options.maximumFrameBytes ?? HISTORY_MAX_FRAME_BYTES;
-  const outbound = new Map<string, { pending: boolean }>();
+  const outbound = new Map<string, OutboundSnapshotState>();
+  const outboundRequests = new Set<AbortController>();
   const inbound = new Set<string>();
   let started = false;
   let stopped = false;
@@ -43,7 +51,14 @@ export function createHistoryReconciliation(options: {
   const isActive = async (peerId: string): Promise<boolean> =>
     await options.membershipStatus(peerId) === "active";
 
-  const canExchange = (): boolean => !stopped && autoSync;
+  const canExchange = (generation = autoSyncGeneration): boolean =>
+    !stopped && autoSync && generation === autoSyncGeneration;
+
+  const isActiveForExchange = async (peerId: string, generation: number): Promise<boolean> => {
+    if (!canExchange(generation)) return false;
+    const active = await isActive(peerId);
+    return active && canExchange(generation);
+  };
 
   async function *snapshotFrames(peerId: string, generation: number): AsyncIterable<Uint8Array> {
     const items = await options.history.query();
@@ -53,7 +68,7 @@ export function createHistoryReconciliation(options: {
       .map((clip) => clip.id);
     let batch: Clip[] = [];
     for (const id of ids) {
-      if (!canExchange() || generation !== autoSyncGeneration || !(await isActive(peerId))) return;
+      if (!(await isActiveForExchange(peerId, generation))) return;
       let retained;
       try {
         retained = await options.history.getById(id);
@@ -87,45 +102,68 @@ export function createHistoryReconciliation(options: {
     if (!canExchange()) return;
     const activeSnapshot = outbound.get(peerId);
     if (activeSnapshot) {
-      activeSnapshot.pending = true;
+      if (activeSnapshot.generation === autoSyncGeneration) activeSnapshot.pending = true;
+      else activeSnapshot.restartAfterCompletion = true;
       return;
     }
-    const state = { pending: false };
+    const state: OutboundSnapshotState = {
+      controller: new AbortController(),
+      generation: autoSyncGeneration,
+      pending: false,
+      restartAfterCompletion: false,
+    };
     outbound.set(peerId, state);
     try {
-      if (peerId === await options.getLocalDeviceId() || !(await isActive(peerId))) return;
-      while (canExchange()) {
-        const generation = autoSyncGeneration;
+      if (peerId === await options.getLocalDeviceId() || !(await isActiveForExchange(peerId, state.generation))) return;
+      while (canExchange(state.generation)) {
         try {
-          await options.transport.sendStream(HISTORY_PROTOCOL, peerId, snapshotFrames(peerId, generation));
+          await options.transport.sendStream(
+            HISTORY_PROTOCOL,
+            peerId,
+            snapshotFrames(peerId, state.generation),
+            { signal: state.controller.signal },
+          );
         } catch (error) {
           state.pending = false;
-          log.warn("History snapshot delivery failed", { peerId, error: errorMessage(error) });
+          if (!state.controller.signal.aborted) {
+            log.warn("History snapshot delivery failed", { peerId, error: errorMessage(error) });
+          }
           return;
         }
-        if (!canExchange() || generation !== autoSyncGeneration || !state.pending) return;
+        if (!canExchange(state.generation) || !state.pending) return;
         state.pending = false;
       }
     } catch (error) {
       log.warn("History snapshot delivery failed", { peerId, error: errorMessage(error) });
     } finally {
       outbound.delete(peerId);
+      if (state.restartAfterCompletion && canExchange()) void snapshotTo(peerId);
     }
   }
 
   async function requestSnapshotFrom(peerId: string): Promise<void> {
-    if (!canExchange() || peerId === await options.getLocalDeviceId() || !(await isActive(peerId))) return;
+    const generation = autoSyncGeneration;
+    if (!canExchange(generation)
+      || peerId === await options.getLocalDeviceId()
+      || !(await isActiveForExchange(peerId, generation))) return;
+    const controller = new AbortController();
+    outboundRequests.add(controller);
     try {
       await options.transport.sendStream(HISTORY_REQUEST_PROTOCOL, peerId, (async function *() {
-        yield encodeHistoryRequestFrame();
-      })());
+        if (canExchange(generation)) yield encodeHistoryRequestFrame();
+      })(), { signal: controller.signal });
     } catch (error) {
-      log.warn("History request delivery failed", { peerId, error: errorMessage(error) });
+      if (!controller.signal.aborted) {
+        log.warn("History request delivery failed", { peerId, error: errorMessage(error) });
+      }
+    } finally {
+      outboundRequests.delete(controller);
     }
   }
 
   async function receive(from: string, chunks: AsyncIterable<Uint8Array>): Promise<void> {
     if (!canExchange()) return;
+    const generation = autoSyncGeneration;
     if (inbound.has(from)) {
       log.warn("History snapshot busy", { peerId: from });
       throw new Error("history_snapshot_busy");
@@ -135,11 +173,11 @@ export function createHistoryReconciliation(options: {
     let failure: unknown;
     let storageFailed = false;
     try {
-      if (!canExchange() || !(await isActive(from))) throw new Error("history_sender_inactive");
+      if (!(await isActiveForExchange(from, generation))) throw new Error("history_sender_inactive");
       for await (const batch of readHistorySnapshot(chunks, maximumFrameBytes)) {
-        if (!canExchange() || !(await isActive(from))) throw new Error("history_sender_inactive");
+        if (!(await isActiveForExchange(from, generation))) throw new Error("history_sender_inactive");
         for (const clip of batch.clips) {
-          if (!canExchange() || !(await isActive(from))) throw new Error("history_sender_inactive");
+          if (!(await isActiveForExchange(from, generation))) throw new Error("history_sender_inactive");
           if (!validateClip(clip) || !isClipAcceptable(clip, now())) continue;
           let accepted;
           try {
@@ -187,9 +225,10 @@ export function createHistoryReconciliation(options: {
   }
 
   async function receiveRequest(from: string, chunks: AsyncIterable<Uint8Array>): Promise<void> {
-    if (!canExchange() || !(await isActive(from))) return;
+    const generation = autoSyncGeneration;
+    if (!(await isActiveForExchange(from, generation))) return;
     await readHistoryRequest(chunks);
-    if (canExchange() && await isActive(from)) await snapshotTo(from);
+    if (await isActiveForExchange(from, generation)) await snapshotTo(from);
   }
 
   return {
@@ -204,8 +243,11 @@ export function createHistoryReconciliation(options: {
     },
     stop(): void {
       stopped = true;
+      for (const state of outbound.values()) state.controller.abort();
+      for (const controller of outboundRequests) controller.abort();
       inbound.clear();
       outbound.clear();
+      outboundRequests.clear();
       stopMembershipListener?.();
       stopMembershipListener = undefined;
     },
@@ -215,7 +257,11 @@ export function createHistoryReconciliation(options: {
       autoSync = enabled;
       autoSyncGeneration += 1;
       if (!enabled) {
-        for (const state of outbound.values()) state.pending = false;
+        for (const state of outbound.values()) {
+          state.pending = false;
+          state.controller.abort();
+        }
+        for (const controller of outboundRequests) controller.abort();
         return;
       }
       snapshotConnected();

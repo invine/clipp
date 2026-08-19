@@ -54,6 +54,54 @@ function createControlledStream() {
 }
 
 describe("History reconciliation", () => {
+  it("aborts a stale snapshot and starts fresh repair after disable then re-enable", async () => {
+    const sent: Array<{ protocol: string; signal?: AbortSignal }> = [];
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [peerIds.extension],
+        onStream: () => {},
+        onPeerConnected: () => {},
+        async sendStream(protocol, _target, frames, options?: { signal?: AbortSignal }) {
+          sent.push({ protocol, signal: options?.signal });
+          if (protocol === HISTORY_REQUEST_PROTOCOL) {
+            for await (const _frame of frames) {
+              // Drain the one-frame control stream.
+            }
+            return;
+          }
+          if (sent.filter((entry) => entry.protocol === HISTORY_PROTOCOL).length > 1) {
+            for await (const _frame of frames) {
+              // Drain the fresh repair snapshot.
+            }
+            return;
+          }
+          await new Promise<void>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => reject(new Error("stream_cancelled")),
+              { once: true },
+            );
+          });
+        },
+      },
+      history: new MemoryHistoryStore(undefined, { now: () => 2_000 }),
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+
+    reconciliation.start();
+    await flush();
+    reconciliation.setAutoSync(false);
+    reconciliation.setAutoSync(true);
+    await flush();
+
+    const snapshots = sent.filter((entry) => entry.protocol === HISTORY_PROTOCOL);
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[0].signal?.aborted).toBe(true);
+    expect(sent.filter((entry) => entry.protocol === HISTORY_REQUEST_PROTOCOL)).toHaveLength(1);
+  });
+
   it("repairs connected Active Members with a snapshot and request when Auto Sync is re-enabled", async () => {
     const sent: Array<{ protocol: string; target: string }> = [];
     const reconciliation = createHistoryReconciliation({
@@ -85,6 +133,77 @@ describe("History reconciliation", () => {
       { protocol: HISTORY_PROTOCOL, target: peerIds.extension },
       { protocol: HISTORY_REQUEST_PROTOCOL, target: peerIds.extension },
     ]);
+  });
+
+  it("coalesces concurrent snapshot triggers into one follow-up after successful EOF", async () => {
+    let finishFirst!: () => void;
+    const firstFinished = new Promise<void>((resolve) => { finishFirst = resolve; });
+    let attempts = 0;
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: () => {},
+        onPeerConnected: () => {},
+        async sendStream(_protocol, _target, frames) {
+          attempts += 1;
+          if (attempts === 1) await firstFinished;
+          for await (const _frame of frames) {
+            // Drain the snapshot through EOF.
+          }
+        },
+      },
+      history: new MemoryHistoryStore(undefined, { now: () => 2_000 }),
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    const first = reconciliation.snapshotTo(peerIds.extension);
+    await flush();
+    await reconciliation.snapshotTo(peerIds.extension);
+    expect(attempts).toBe(1);
+    finishFirst();
+    await first;
+
+    expect(attempts).toBe(2);
+  });
+
+  it("clears a coalesced follow-up after failure until another ordinary trigger", async () => {
+    let failFirst!: () => void;
+    const firstFailed = new Promise<void>((_resolve, reject) => {
+      failFirst = () => reject(new Error("offline"));
+    });
+    let attempts = 0;
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: () => {},
+        onPeerConnected: () => {},
+        async sendStream(_protocol, _target, frames) {
+          attempts += 1;
+          if (attempts === 1) await firstFailed;
+          for await (const _frame of frames) {
+            // Drain a later ordinary snapshot.
+          }
+        },
+      },
+      history: new MemoryHistoryStore(undefined, { now: () => 2_000 }),
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    const first = reconciliation.snapshotTo(peerIds.extension);
+    await flush();
+    await reconciliation.snapshotTo(peerIds.extension);
+    failFirst();
+    await first;
+    expect(attempts).toBe(1);
+
+    await reconciliation.snapshotTo(peerIds.extension);
+    expect(attempts).toBe(2);
   });
 
   it("imports a complete History Batch before the inbound snapshot reaches EOF", async () => {
@@ -333,6 +452,48 @@ describe("History reconciliation", () => {
     expect(produced).toBe(2);
   });
 
+  it("does not persist a History Clip when Auto Sync is disabled during authorization", async () => {
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    let membershipChecks = 0;
+    let authorizationStarted!: () => void;
+    const started = new Promise<void>((resolve) => { authorizationStarted = resolve; });
+    let finishAuthorization!: () => void;
+    const authorization = new Promise<void>((resolve) => { finishAuthorization = resolve; });
+    const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: (protocol, handler) => {
+          if (protocol === HISTORY_PROTOCOL) incoming = handler;
+        },
+        onPeerConnected: () => {},
+        sendStream: async () => {},
+      },
+      history,
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => {
+        membershipChecks += 1;
+        if (membershipChecks === 3) {
+          authorizationStarted();
+          await authorization;
+        }
+        return "active";
+      },
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    const receiving = incoming!(peerIds.extension, (async function *() {
+      yield encodeHistoryBatchFrame({ clips: [clip] });
+    })());
+    await started;
+    reconciliation.setAutoSync(false);
+    finishAuthorization();
+    await expect(receiving).rejects.toThrow("history_sender_inactive");
+
+    expect(await history.exportAll()).toEqual([]);
+  });
+
   it("rechecks membership for a batch containing only malformed Clips", async () => {
     let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
     let membershipChecks = 0;
@@ -390,6 +551,11 @@ describe("History reconciliation", () => {
     membershipChanged!();
     await flush();
 
-    expect(sendStream).toHaveBeenCalledWith(HISTORY_PROTOCOL, peerIds.extension, expect.anything());
+    expect(sendStream).toHaveBeenCalledWith(
+      HISTORY_PROTOCOL,
+      peerIds.extension,
+      expect.anything(),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

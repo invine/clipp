@@ -68,6 +68,30 @@ describe("LiveClipGossip", () => {
     expect(send).toHaveBeenCalledWith(LIVE_CLIP_PROTOCOL, "active", expect.any(Uint8Array));
   });
 
+  it("keeps a queued live send canceled after Auto Sync is disabled then re-enabled", async () => {
+    let resolveMembership!: (status: "active") => void;
+    const membership = new Promise<"active">((resolve) => { resolveMembership = resolve; });
+    const send = jest.fn(async () => {});
+    const gossip = createLiveClipGossip({
+      transport: {
+        send,
+        onMessage: jest.fn(),
+        getConnectedPeers: () => ["active"],
+      } as any,
+      membershipStatus: async () => await membership,
+      now: () => 1_000,
+    });
+
+    const forwarding = gossip.forward(clip);
+    await Promise.resolve();
+    gossip.setAutoSync(false);
+    gossip.setAutoSync(true);
+    resolveMembership("active");
+    await forwarding;
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("gossips across all runtime adapters and remains idempotent after durable restart", async () => {
     type Identity = { deviceId: string };
     type EmptyState = Record<string, never>;

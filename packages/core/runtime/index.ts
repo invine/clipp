@@ -1,4 +1,5 @@
 export * from "./adapters";
+export * from "./autoSyncPreference";
 export * from "./capabilities";
 export * from "./contract";
 export * from "./identityInitialization";

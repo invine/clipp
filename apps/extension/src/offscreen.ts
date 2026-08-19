@@ -36,6 +36,7 @@ const identitySvc = createRuntimeIdentityManager({
 const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
 let trust = createTrustManager({ trustRepo, identitySvc });
 let started = false;
+const runtimeOutboundStreamControllers = new Map<string, AbortController>();
 
 function base64ToBytes(b64: string): Uint8Array {
   try {
@@ -140,15 +141,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "runtimeSendStream" && msg.peerTarget && msg.protocol && Array.isArray(msg.frames)) {
+    if (msg.action === "runtimeCancelSendStream" && typeof msg.streamId === "string") {
+      runtimeOutboundStreamControllers.get(msg.streamId)?.abort();
+      sendResponse({ ok: true });
+      return;
+    }
+    if (
+      msg.action === "runtimeSendStream"
+      && typeof msg.streamId === "string"
+      && msg.peerTarget
+      && msg.protocol
+      && Array.isArray(msg.frames)
+    ) {
+      if (runtimeOutboundStreamControllers.has(msg.streamId)) {
+        throw new Error("stream_already_started");
+      }
+      const controller = new AbortController();
+      runtimeOutboundStreamControllers.set(msg.streamId, controller);
       const frames = async function *(): AsyncIterable<Uint8Array> {
         for (const frame of msg.frames) {
           if (!Array.isArray(frame)) throw new Error("invalid_stream_frame");
           yield Uint8Array.from(frame);
         }
       };
-      await transport.sendStream?.(msg.protocol, msg.peerTarget, frames());
-      sendResponse({ ok: true });
+      try {
+        await transport.sendStream?.(
+          msg.protocol,
+          msg.peerTarget,
+          frames(),
+          { signal: controller.signal },
+        );
+        sendResponse({ ok: true });
+      } finally {
+        runtimeOutboundStreamControllers.delete(msg.streamId);
+      }
       return;
     }
     if (msg.action === "runtimeConnect" && msg.peerTarget) {

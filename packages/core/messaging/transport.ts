@@ -1,6 +1,10 @@
 export type MessageHandler = (from: string, data: Uint8Array) => void;
 export type MessageStreamHandler = (from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>;
 
+export type StreamSendOptions = {
+  signal?: AbortSignal;
+};
+
 export type PeerConnectionPath = "direct" | "relay" | "unknown";
 
 export type PeerConnectionInfo = {
@@ -37,7 +41,12 @@ export interface MessagingTransport {
   send(protocol: string, target: string, data: Uint8Array): Promise<void>;
 
   /** Send multiple frames on one short-lived application stream, then close it. */
-  sendStream?(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void>;
+  sendStream?(
+    protocol: string,
+    target: string,
+    frames: AsyncIterable<Uint8Array>,
+    options?: StreamSendOptions,
+  ): Promise<void>;
 
   /**
    * Establish a best-effort connection to a peer without opening an application
@@ -87,6 +96,11 @@ export interface MessagingTransport {
 }
 
 export interface StreamingMessagingTransport extends MessagingTransport {
-  sendStream(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void>;
+  sendStream(
+    protocol: string,
+    target: string,
+    frames: AsyncIterable<Uint8Array>,
+    options?: StreamSendOptions,
+  ): Promise<void>;
   onStream(protocol: string, cb: MessageStreamHandler): void;
 }

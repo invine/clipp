@@ -223,6 +223,68 @@ describe("Libp2pMessagingTransport", () => {
     }
   });
 
+  it("aborts an in-progress outbound History stream when its signal is canceled", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({ historyStreamIdleTimeoutMs: 25 });
+      await transport.start();
+      const node = await createClipboardNode.mock.results[0].value;
+      const stream = {
+        abort: jest.fn(),
+        send: jest.fn(() => false),
+        onDrain: jest.fn(() => new Promise<void>(() => {})),
+        close: jest.fn(async () => {}),
+      };
+      node.dialProtocol.mockResolvedValueOnce(stream);
+      const controller = new AbortController();
+
+      const sending = transport.sendStream(
+        HISTORY_PROTOCOL,
+        "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+        (async function *() { yield Uint8Array.of(1); })(),
+        { signal: controller.signal },
+      );
+      const rejection = expect(sending).rejects.toThrow("stream_cancelled");
+      await jest.advanceTimersByTimeAsync(0);
+      controller.abort();
+      await jest.advanceTimersByTimeAsync(0);
+
+      await rejection;
+      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "stream_cancelled" }));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("enforces the History progress timeout and aborts a stalled stream", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({ historyStreamIdleTimeoutMs: 25 });
+      await transport.start();
+      const node = await createClipboardNode.mock.results[0].value;
+      const stream = {
+        abort: jest.fn(),
+        send: jest.fn(() => false),
+        onDrain: jest.fn(() => new Promise<void>(() => {})),
+        close: jest.fn(async () => {}),
+      };
+      node.dialProtocol.mockResolvedValueOnce(stream);
+
+      const sending = transport.sendStream(
+        HISTORY_PROTOCOL,
+        "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+        (async function *() { yield Uint8Array.of(1); })(),
+      );
+      const rejection = expect(sending).rejects.toThrow("history_stream_timeout");
+      await jest.advanceTimersByTimeAsync(25);
+
+      await rejection;
+      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "history_stream_timeout" }));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("rejects when a queued WebRTC stream write fails after the data channel closes", async () => {
     const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
