@@ -19,7 +19,7 @@
 - [x] The visible storage error remains until no capture requires persistence.
 - [x] Restart loses the in-memory queue and follows the ordinary startup-baseline rule without manufacturing replacement events.
 
-## Comments
+## Answer
 
 - Verified against the shared capture-coordinator and runtime-clipboard seams. The existing implementation preserves failed immutable captures in a bounded oldest-first queue, retries them with capped active-runtime backoff, advances the observation baseline before queuing, and emits at most the newest recovered capture whose exact content remains current.
 - Recovery now also re-enters the eligible live path when a write committed before its storage call reported failure. A retry then observes the same immutable Clip as an exact duplicate rather than a newly stored record.
