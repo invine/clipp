@@ -106,12 +106,12 @@ Shared trust logic lives in `packages/core/trust`, but each runtime decides how 
 Live Clip delivery uses the settled v1 protobuf boundary; do not reintroduce the removed JSON Clip envelope or payload-supplied sender metadata.
 
 - Live Clip sync uses `/clipp/clip/1.0.0`, with one bounded length-prefixed protobuf `LiveClip` frame per stream. `LiveClip` contains one nested `Clip`; immediate-sender authority comes only from the authenticated libp2p connection.
-- History sync uses `/clipboard/history/1.0.0` with a message shaped like `{ type: "history-sync", from, sentAt, payload: { clips } }`.
+- Clipboard History Reconciliation uses `/clipp/history/1.0.0`, with one one-way stream of bounded, non-empty length-prefixed protobuf `HistoryBatch` frames followed by EOF. Each batch contains nested `Clip` records; sender authority comes only from the authenticated libp2p connection.
 - Trust uses `/clipboard/trust/1.0.0`.
 - Trust request shape: `{ type: "trust-request", from, to, sentAt, payload: { device, sig } }`.
 - Trust ack shape: `{ type: "trust-ack", from, to, sentAt, payload: { accepted, request, responder? } }`.
 
-If you are touching protocol code, do not reintroduce the older wire shapes like top-level `clip`, array `payload` for history sync, or top-level `sig` on trust requests.
+If you are touching protocol code, do not reintroduce the older JSON History Sync envelope, top-level `clip`, array `payload` for history sync, or top-level `sig` on trust requests.
 
 ### Transport startup
 

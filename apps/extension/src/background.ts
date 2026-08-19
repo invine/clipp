@@ -343,6 +343,7 @@ const historyReconciliation = createHistoryReconciliation({
   history,
   getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
   membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+  onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
 });
 const notificationSelection = createRuntimeNotificationSelection();
 const membershipReconciler = createMembershipReconciler({

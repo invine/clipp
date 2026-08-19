@@ -16,6 +16,7 @@ export function createHistoryReconciliation(options: {
   history: Pick<ClipHistoryStore, "accept" | "getById" | "query">;
   getLocalDeviceId: () => Promise<string>;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
+  onMembershipChanged?: (listener: () => void) => () => void;
   now?: () => number;
   maximumFrameBytes?: number;
 }): HistoryReconciliation {
@@ -25,6 +26,7 @@ export function createHistoryReconciliation(options: {
   const inbound = new Set<string>();
   let started = false;
   let stopped = false;
+  let stopMembershipListener: (() => void) | undefined;
 
   const isActive = async (peerId: string): Promise<boolean> =>
     await options.membershipStatus(peerId) === "active";
@@ -112,18 +114,25 @@ export function createHistoryReconciliation(options: {
     }
   }
 
+  function snapshotConnected(): void {
+    for (const peerId of options.transport.getConnectedPeers()) void snapshotTo(peerId);
+  }
+
   return {
     start(): void {
       if (started) return;
       started = true;
       options.transport.onMessage(HISTORY_PROTOCOL, (from, data) => { void receive(from, data); });
       options.transport.onPeerConnected((peerId) => { void snapshotTo(peerId); });
-      for (const peerId of options.transport.getConnectedPeers()) void snapshotTo(peerId);
+      stopMembershipListener = options.onMembershipChanged?.(snapshotConnected);
+      snapshotConnected();
     },
     stop(): void {
       stopped = true;
       inbound.clear();
       outbound.clear();
+      stopMembershipListener?.();
+      stopMembershipListener = undefined;
     },
     snapshotTo,
   };

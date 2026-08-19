@@ -111,4 +111,34 @@ describe("History reconciliation", () => {
 
     expect(await history.exportAll()).toEqual([clip]);
   });
+
+  it("offers a snapshot when an already connected device becomes an Active Member", async () => {
+    let active = false;
+    let membershipChanged: (() => void) | undefined;
+    const sendStream = jest.fn(async () => {});
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [peerIds.extension],
+        onMessage: () => {},
+        onPeerConnected: () => {},
+        sendStream,
+      },
+      history: new MemoryHistoryStore(undefined, { now: () => 2_000 }),
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => active ? "active" : "unknown",
+      onMembershipChanged: (listener) => {
+        membershipChanged = listener;
+        return () => { membershipChanged = undefined; };
+      },
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    expect(sendStream).not.toHaveBeenCalled();
+    active = true;
+    membershipChanged!();
+    await flush();
+
+    expect(sendStream).toHaveBeenCalledWith(HISTORY_PROTOCOL, peerIds.extension, expect.anything());
+  });
 });

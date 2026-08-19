@@ -336,6 +336,7 @@ export class AndroidClient {
       history: this.history,
       getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
       membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
+      onMembershipChanged: (listener) => this.identitySvc.onMembershipChanged(listener),
     });
     this.clipboardSync.bindLiveGossip(this.liveClipGossip);
     this.membershipReconciler = createMembershipReconciler({

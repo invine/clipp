@@ -161,6 +161,7 @@ async function bootstrap() {
     history,
     getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
     membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+    onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
   });
   let messagingStarted = false;
 
@@ -612,6 +613,7 @@ async function bootstrap() {
       history,
       getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
       membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+      onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
     });
     bindTransportHandlers(transport);
     runtimeNetwork.bindCurrent();
