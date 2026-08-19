@@ -68,14 +68,18 @@ export function createHistoryReconciliation(options: {
   }
 
   async function snapshotTo(peerId: string): Promise<void> {
-    if (stopped || outbound.has(peerId) || peerId === await options.getLocalDeviceId() || !(await isActive(peerId))) return;
-    outbound.add(peerId);
+    if (stopped || outbound.has(peerId)) return;
+    let markedOutbound = false;
     try {
+      if (peerId === await options.getLocalDeviceId() || !(await isActive(peerId))) return;
+      if (stopped || outbound.has(peerId)) return;
+      outbound.add(peerId);
+      markedOutbound = true;
       await options.transport.sendStream(HISTORY_PROTOCOL, peerId, snapshotFrames(peerId));
     } catch (error) {
       log.warn("History snapshot delivery failed", { peerId, error: errorMessage(error) });
     } finally {
-      outbound.delete(peerId);
+      if (markedOutbound) outbound.delete(peerId);
     }
   }
 
@@ -92,6 +96,7 @@ export function createHistoryReconciliation(options: {
     try {
       if (!(await isActive(from))) throw new Error("history_sender_inactive");
       for await (const batch of readHistorySnapshot(chunks, maximumFrameBytes)) {
+        if (!(await isActive(from))) throw new Error("history_sender_inactive");
         for (const clip of batch.clips) {
           if (!(await isActive(from))) throw new Error("history_sender_inactive");
           if (!validateClip(clip) || !isClipAcceptable(clip, now())) continue;
@@ -120,7 +125,9 @@ export function createHistoryReconciliation(options: {
       const peers = options.transport.getConnectedPeers().filter((peerId) => peerId !== from);
       const propagation = Promise.all(peers.map((peerId) => snapshotTo(peerId)));
       if (failure) {
-        void propagation;
+        void propagation.catch((error) => {
+          log.warn("History snapshot propagation failed", { peerId: from, error: errorMessage(error) });
+        });
         throw failure;
       }
       await propagation;

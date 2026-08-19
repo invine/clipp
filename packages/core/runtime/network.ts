@@ -5,6 +5,12 @@ export interface RuntimeNetworkProxy extends StreamingMessagingTransport {
   bindCurrent(): void;
 }
 
+type StreamHandlerRegistration = {
+  protocol: string;
+  handler: MessageStreamHandler;
+  boundTransports: WeakSet<MessagingTransport>;
+};
+
 export function createRuntimeNetworkProxy(
   current: () => StreamingMessagingTransport | null | undefined
 ): RuntimeNetworkProxy {
@@ -13,11 +19,7 @@ export function createRuntimeNetworkProxy(
     handler: MessageHandler;
     boundTransports: WeakSet<MessagingTransport>;
   }> = [];
-  const streamHandlers: Array<{
-    protocol: string;
-    handler: MessageStreamHandler;
-    boundTransports: WeakSet<MessagingTransport>;
-  }> = [];
+  const streamHandlers = new Map<string, StreamHandlerRegistration>();
   const requireNetwork = (): StreamingMessagingTransport => {
     const network = current();
     if (!network) throw new Error("runtime_network_unavailable");
@@ -32,7 +34,7 @@ export function createRuntimeNetworkProxy(
     registration.boundTransports.add(network);
   };
   const bindStreamHandler = (
-    registration: (typeof streamHandlers)[number],
+    registration: StreamHandlerRegistration,
     network: StreamingMessagingTransport
   ) => {
     if (registration.boundTransports.has(network)) return;
@@ -55,16 +57,20 @@ export function createRuntimeNetworkProxy(
       await requireNetwork().disconnect?.(peerId);
     },
     onMessage(protocol, handler) {
+      if (streamHandlers.has(protocol)) throw new Error("protocol_stream_handler_already_registered");
       const registration = { protocol, handler, boundTransports: new WeakSet<MessagingTransport>() };
-      protocolHandlers.push(registration);
       const network = current();
       if (network) bindProtocolHandler(registration, network);
+      protocolHandlers.push(registration);
     },
     onStream(protocol, handler) {
+      if (streamHandlers.has(protocol) || protocolHandlers.some((registration) => registration.protocol === protocol)) {
+        throw new Error("protocol_handler_already_registered");
+      }
       const registration = { protocol, handler, boundTransports: new WeakSet<MessagingTransport>() };
-      streamHandlers.push(registration);
       const network = current();
       if (network) bindStreamHandler(registration, network);
+      streamHandlers.set(protocol, registration);
     },
     onPeerConnected: (handler) => requireNetwork().onPeerConnected(handler),
     onPeerDisconnected: (handler) => requireNetwork().onPeerDisconnected(handler),

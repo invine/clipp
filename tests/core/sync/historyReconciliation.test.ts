@@ -248,7 +248,7 @@ describe("History reconciliation", () => {
         sendStream: async () => await new Promise<void>(() => {}),
       },
       history,
-      getLocalDeviceId: async () => peerIds.android,
+      getLocalDeviceId: async () => { throw new Error("identity_failed"); },
       membershipStatus: async () => "active",
       now: () => 2_000,
     });
@@ -298,6 +298,36 @@ describe("History reconciliation", () => {
 
     expect(stored).toEqual([clip]);
     expect(produced).toBe(2);
+  });
+
+  it("rechecks membership for a batch containing only malformed Clips", async () => {
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    let membershipChecks = 0;
+    let produced = 0;
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: (_protocol, handler) => { incoming = handler; },
+        onPeerConnected: () => {},
+        sendStream: async () => {},
+      },
+      history: new MemoryHistoryStore(undefined, { now: () => 2_000 }),
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => ++membershipChecks === 1 ? "active" : "revoked",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+    const malformedClipFrame = Uint8Array.from(encodeHistoryBatchFrame({ clips: [clip] }));
+    malformedClipFrame[13] = 0;
+
+    await expect(incoming!(peerIds.extension, (async function *() {
+      produced += 1;
+      yield malformedClipFrame;
+      produced += 1;
+      yield Uint8Array.of(0x80);
+    })())).rejects.toThrow("history_sender_inactive");
+
+    expect(produced).toBe(1);
   });
 
   it("offers a snapshot when an already connected device becomes an Active Member", async () => {

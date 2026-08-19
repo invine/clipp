@@ -40,6 +40,8 @@ describe("replaceable runtime network", () => {
     const received: string[] = [];
 
     network.onStream("/clipp/history/1.0.0", async (from) => { received.push(from); });
+    expect(() => network.onStream("/clipp/history/1.0.0", async () => {}))
+      .toThrow("protocol_handler_already_registered");
     current = replacement.transport;
     network.bindCurrent();
     network.bindCurrent();
