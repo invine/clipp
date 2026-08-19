@@ -24,7 +24,7 @@ import type {
 import * as log from "../logger.js";
 
 type Libp2pNode = any;
-const LIVE_CLIP_STREAM_TIMEOUT_MS = 15_000;
+const DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS = 30_000;
 
 function concatBytes(parts: Uint8Array[], size: number): Uint8Array {
   const result = new Uint8Array(size);
@@ -53,6 +53,8 @@ export type Libp2pMessagingOptions = {
   rendezvousIntervalMs?: number;
   rendezvousTimeoutMs?: number;
   relayReservationRetryMs?: number;
+  liveClipMaxFrameBytes?: number;
+  liveClipStreamIdleTimeoutMs?: number;
   allowInsecureBrowserDials?: boolean;
   signedPeerRecordPersistence?: SignedPeerRecordPersistence;
   isPeerKnown?(peerId: string): Promise<boolean>;
@@ -230,10 +232,24 @@ class Libp2pMessagingTransport implements MessagingTransport {
     log.debug("Messaging send requested", context);
 
     try {
-      const stream = guardMessageStream(await this.openStream(protocol, target));
+      const isLiveClip = protocol === CLIP_PROTOCOL;
+      const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
+      const opening = this.openStream(protocol, target);
+      const stream = guardMessageStream(isLiveClip
+        ? await openLiveClipStreamWithTimeout(opening, idleTimeoutMs)
+        : await opening);
 
-      await writeMessageStream(stream, data);
-      await closeMessageStream(stream, { ignoreClosedDataChannel: true });
+      if (isLiveClip) {
+        await liveClipOperationWithTimeout(writeMessageStream(stream, data), idleTimeoutMs, stream);
+        await liveClipOperationWithTimeout(
+          closeMessageStream(stream, { ignoreClosedDataChannel: true }),
+          idleTimeoutMs,
+          stream
+        );
+      } else {
+        await writeMessageStream(stream, data);
+        await closeMessageStream(stream, { ignoreClosedDataChannel: true });
+      }
       if (peerId) this.logPeerConnectionSnapshot(peerId, "send completed", context);
       log.debug("Messaging send completed", context);
     } catch (err: any) {
@@ -1018,8 +1034,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
             await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
             return;
           }
-          const frame = await readBoundedLiveClipFrame(iterable);
-          if (!frame || !decodeLiveClipFrame(frame)) {
+          const maximumBytes = this.opts.liveClipMaxFrameBytes ?? LIVE_CLIP_MAX_FRAME_BYTES;
+          const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
+          const frame = await readBoundedLiveClipFrame(iterable, maximumBytes, idleTimeoutMs);
+          if (!frame || !decodeLiveClipFrame(frame, maximumBytes)) {
             await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
             return;
           }
@@ -1390,21 +1408,52 @@ function getStreamIterable(stream: any): AsyncIterable<any> | undefined {
 }
 
 /** Reads exactly one bounded LiveClip stream and releases stalled streams. */
-async function readBoundedLiveClipFrame(iterable: AsyncIterable<any>): Promise<Uint8Array | null> {
+async function readBoundedLiveClipFrame(
+  iterable: AsyncIterable<any>,
+  maximumBytes: number,
+  idleTimeoutMs: number,
+): Promise<Uint8Array | null> {
   const iterator = iterable[Symbol.asyncIterator]();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let expectedSize: number | null = null;
+  const prefixBytes: number[] = [];
+  let deadline = Date.now() + idleTimeoutMs;
   try {
-    let next = await nextWithTimeout(iterator, LIVE_CLIP_STREAM_TIMEOUT_MS);
-    while (!next.done) {
+    while (size <= (expectedSize ?? maximumBytes + 10)) {
+      const next = await nextBeforeDeadline(iterator, deadline);
+      if (next.done) {
+        return expectedSize !== null && size === expectedSize
+          ? concatBytes(chunks, size)
+          : null;
+      }
       const bytes = toU8(next.value);
       if (!bytes) return null;
+      if (expectedSize !== null && size === expectedSize && bytes.length > 0) return null;
+
+      if (expectedSize === null) {
+        for (const byte of bytes) {
+          prefixBytes.push(byte);
+          if (prefixBytes.length > 10) return null;
+          if ((byte & 0x80) === 0) {
+            const payloadLength = decodeCanonicalLengthPrefix(prefixBytes);
+            if (payloadLength === null || payloadLength > maximumBytes) return null;
+            expectedSize = prefixBytes.length + payloadLength;
+            break;
+          }
+        }
+      }
+
       size += bytes.length;
-      if (size > LIVE_CLIP_MAX_FRAME_BYTES + 10) return null;
+      if (expectedSize !== null && size > expectedSize) return null;
       chunks.push(bytes);
-      next = await nextWithTimeout(iterator, LIVE_CLIP_STREAM_TIMEOUT_MS);
+      if (expectedSize !== null && size === expectedSize) {
+        // A complete frame is the only progress event for this one-frame
+        // protocol. Give the sender one fresh idle period to close the stream.
+        deadline = Date.now() + idleTimeoutMs;
+      }
     }
-    return concatBytes(chunks, size);
+    return null;
   } catch {
     return null;
   } finally {
@@ -1412,18 +1461,72 @@ async function readBoundedLiveClipFrame(iterable: AsyncIterable<any>): Promise<U
   }
 }
 
-async function nextWithTimeout<T>(iterator: AsyncIterator<T>, timeoutMs: number): Promise<IteratorResult<T>> {
+function decodeCanonicalLengthPrefix(bytes: number[]): number | null {
+  let value = 0n;
+  for (let index = 0; index < bytes.length; index += 1) {
+    value |= BigInt(bytes[index] & 0x7f) << BigInt(index * 7);
+  }
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  let canonicalLength = 1;
+  for (let remaining = value; remaining >= 0x80n; remaining >>= 7n) canonicalLength += 1;
+  return canonicalLength === bytes.length ? Number(value) : null;
+}
+
+async function nextBeforeDeadline<T>(
+  iterator: AsyncIterator<T>,
+  deadline: number
+): Promise<IteratorResult<T>> {
+  const remainingMs = Math.max(0, deadline - Date.now());
+  return await promiseWithTimeout(iterator.next(), remainingMs, () => undefined);
+}
+
+async function openLiveClipStreamWithTimeout(opening: Promise<any>, timeoutMs: number): Promise<any> {
+  let timedOut = false;
+  const guardedOpening = opening.then((stream) => {
+    if (timedOut) abortLiveClipStream(stream, liveClipStreamTimeoutError());
+    return stream;
+  });
+  return await promiseWithTimeout(guardedOpening, timeoutMs, () => { timedOut = true; });
+}
+
+async function liveClipOperationWithTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  stream: any
+): Promise<T> {
+  return await promiseWithTimeout(operation, timeoutMs, () => {
+    abortLiveClipStream(stream, liveClipStreamTimeoutError());
+  });
+}
+
+async function promiseWithTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void
+): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = liveClipStreamTimeoutError();
   try {
     return await Promise.race([
-      iterator.next(),
+      operation,
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new Error("live_clip_stream_timeout")), timeoutMs);
+        timeout = setTimeout(() => {
+          onTimeout();
+          reject(timeoutError);
+        }, timeoutMs);
       }),
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+function abortLiveClipStream(stream: any, error: Error): void {
+  try { stream?.abort?.(error); } catch { /* the affected stream is already closed */ }
+}
+
+function liveClipStreamTimeoutError(): Error {
+  return new Error("live_clip_stream_timeout");
 }
 
 function describeStream(stream: any) {

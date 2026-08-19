@@ -45,7 +45,8 @@ interface ClipboardService <<Port>>
 interface ClipHistoryStore <<Port>>
 
 ' Interface Adapters (Types)
-class ClipMessage <<Adapter>>
+class LiveClip <<Adapter>>
+class LiveClipGossip <<Adapter>>
 class TrustMessage <<Adapter>>
 class MemoryHistoryStore <<Adapter>>
 class EventBus <<Adapter>>
@@ -73,7 +74,7 @@ ElectronMain ..> TrustManager : uses
 ElectronMain ..> IdentityManager : uses
 ElectronMain ..> ClipboardService : uses
 ElectronMain ..> ProtocolMessenger : uses
-ElectronMain ..> ClipMessage : uses
+ElectronMain ..> LiveClipGossip : uses
 ElectronMain ..> TrustMessage : uses
 ElectronMain ..> QRPayload : encodes
 
@@ -97,14 +98,15 @@ TrustedDeviceRepository ..> KVStorageBackend : uses storage
 TrustManager *-- TypedEventEmitter
 
 ProtocolMessenger ..> MessagingTransport
-ProtocolMessenger ..> ClipMessage : Msg
 ProtocolMessenger ..> TrustMessage : Msg
 Libp2pMessagingTransport *-- EventBus
+LiveClipGossip ..> MessagingTransport
+LiveClipGossip ..> LiveClip
 
 ClipboardSyncManager ..> ClipboardService
 ClipboardSyncManager ..> ClipHistoryStore
-ClipboardSyncManager ..> ProtocolMessenger
-ClipboardSyncManager ..> ClipMessage
+ClipboardSyncManager ..> LiveClipGossip
+ClipboardSyncManager ..> LiveClip
 
 ClipboardService --> Clip
 ClipHistoryStore --> Clip

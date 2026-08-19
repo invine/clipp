@@ -1,18 +1,8 @@
 import type { ClipboardService, LocalClipOptions } from "../clipboard/service";
 import type { ClipHistoryStore } from "../history/store";
-import type { HistoryItem } from "../models/HistoryItem";
-import {
-  createClipMessage,
-  type ClipMessage,
-} from "../protocols/clip";
 import { clipsHaveEqualImmutableFields, isClipAcceptable, validateClip, type Clip } from "../models/Clip";
 import type { LiveClipGossip } from "./liveClipGossip";
 import * as log from "../logger";
-
-export type MessagingPort = {
-  broadcast(msg: ClipMessage): Promise<void>;
-  onMessage(cb: (msg: ClipMessage) => void): void;
-};
 
 export type ClipboardSyncManagerOptions = {
   clipboard: ClipboardService;
@@ -24,14 +14,11 @@ export type ClipboardSyncManagerOptions = {
   liveGossip?: LiveClipGossip;
   /** Rechecked immediately before a received live Clip is durably accepted. */
   isActiveMember?: (peerId: string) => Promise<boolean>;
-  /** @deprecated Legacy JSON clip messaging, retained only for transition tests. */
-  messaging?: MessagingPort;
 };
 
 export interface ClipboardSyncManager {
   start(): void;
   stop(): void;
-  bindMessaging(messaging: MessagingPort): void;
   bindLiveGossip(liveGossip: LiveClipGossip): void;
   setAutoSync(enabled: boolean): void;
   isAutoSync(): boolean;
@@ -47,8 +34,6 @@ export function createClipboardSyncManager(
   let localIdPromise: Promise<string> | null = null;
   const inFlightRemote = new Set<string>();
 
-  let currentMessaging: MessagingPort | null = null;
-  const boundMessaging = new WeakSet<object>();
   let currentLiveGossip: LiveClipGossip | null = null;
   const boundLiveGossip = new WeakSet<object>();
   let liveReceiveQueue = Promise.resolve();
@@ -63,14 +48,9 @@ export function createClipboardSyncManager(
 
   async function handleLocalClip(clip: Clip, captureOptions?: LocalClipOptions): Promise<void> {
     if (!running) return;
-    const localId = await getLocalId();
     try {
-      if ("accept" in options.history && typeof options.history.accept === "function") {
-        const accepted = await options.history.accept(clip, { liveHandled: true });
-        if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
-      } else {
-        await options.history.add(clip, localId, true);
-      }
+      const accepted = await options.history.accept(clip, { liveHandled: true });
+      if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
     } catch (err) {
       log.warn("Failed to store local clip", err);
       return;
@@ -80,66 +60,6 @@ export function createClipboardSyncManager(
     const liveGossip = currentLiveGossip;
     if (liveGossip) {
       void forwardLiveClip(clip, undefined, captureOptions?.shareNow === true);
-      return;
-    }
-    const messaging = currentMessaging;
-    if (!messaging) return;
-    const msg: ClipMessage = createClipMessage({
-      from: localId,
-      clip,
-      sentAt: now(),
-    });
-    try {
-      await messaging.broadcast(msg);
-    } catch (err) {
-      log.warn("Failed to broadcast clip", err);
-    }
-  }
-
-  async function handleIncomingMessage(msg: ClipMessage): Promise<void> {
-    if (!running) return;
-    if (!msg || msg.type !== "clip") return;
-    const clip = msg.payload.clip;
-    if (!validateClip(clip)) return;
-
-    const localId = await getLocalId();
-    if (msg.from === localId) return;
-
-    if (inFlightRemote.has(clip.id)) return;
-    inFlightRemote.add(clip.id);
-    try {
-      try {
-        if ("accept" in options.history && typeof options.history.accept === "function") {
-          const accepted = await options.history.accept(clip, { liveHandled: true });
-          if (accepted.kind !== "newly-stored" && !accepted.liveHandled) return;
-        } else {
-          const existing = await options.history.getById(clip.id);
-          if (existing) return;
-          await options.history.add(clip, msg.from, false);
-        }
-      } catch (err) {
-        log.warn("Failed to store remote clip", err);
-        return;
-      }
-
-      try {
-        await options.clipboard.writeRemoteClip(clip, async () => {
-          // The service evaluates this within its serialized write just before
-          // touching the platform clipboard, closing Delete/Clear's queue race.
-          let retained: HistoryItem | null;
-          try {
-            retained = await options.history.getById(clip.id);
-          } catch (err) {
-            log.warn("Failed to recheck remote clip before clipboard application", err);
-            return false;
-          }
-          return Boolean(retained && clipsHaveEqualImmutableFields(retained.clip, clip));
-        });
-      } catch (err) {
-        log.warn("Failed to apply remote clip to clipboard", err);
-      }
-    } finally {
-      inFlightRemote.delete(clip.id);
     }
   }
 
@@ -162,7 +82,7 @@ export function createClipboardSyncManager(
   }
 
   async function handleIncomingLiveClip(from: string, clip: Clip): Promise<void> {
-    if (!running || !validateClip(clip) || !isClipAcceptable(clip, now())) return;
+    if (!running || !autoSync || !validateClip(clip) || !isClipAcceptable(clip, now())) return;
     const localId = await getLocalId();
     if (from === localId || inFlightRemote.has(clip.id)) return;
     inFlightRemote.add(clip.id);
@@ -171,6 +91,7 @@ export function createClipboardSyncManager(
       // second check immediately before atomic persistence, covering revocation
       // that races with stream receipt.
       if (options.isActiveMember && !(await options.isActiveMember(from))) return;
+      if (!autoSync || !isClipAcceptable(clip, now())) return;
       let accepted;
       try {
         accepted = await options.history.accept(clip, { liveHandled: true, admissionPriority: true });
@@ -206,16 +127,6 @@ export function createClipboardSyncManager(
     void handleLocalClip(clip, captureOptions);
   });
 
-  function bindMessaging(messaging: MessagingPort): void {
-    currentMessaging = messaging;
-    const obj = messaging as unknown as object;
-    if (boundMessaging.has(obj)) return;
-    boundMessaging.add(obj);
-    messaging.onMessage((msg) => {
-      void handleIncomingMessage(msg);
-    });
-  }
-
   function bindLiveGossip(liveGossip: LiveClipGossip): void {
     currentLiveGossip = liveGossip;
     const object = liveGossip as unknown as object;
@@ -226,9 +137,6 @@ export function createClipboardSyncManager(
     if (running) liveGossip.start();
   }
 
-  if (options.messaging) {
-    bindMessaging(options.messaging);
-  }
   if (options.liveGossip) bindLiveGossip(options.liveGossip);
 
   return {
@@ -243,7 +151,6 @@ export function createClipboardSyncManager(
       currentLiveGossip?.stop();
       options.clipboard.stop();
     },
-    bindMessaging,
     bindLiveGossip,
     setAutoSync(enabled: boolean) {
       autoSync = enabled;

@@ -14,14 +14,14 @@ export type LiveClip = { clip: Clip };
 export function encodeLiveClipFrame(message: LiveClip, maximumBytes = LIVE_CLIP_MAX_FRAME_BYTES): Uint8Array {
   if (!validateClip(message.clip)) throw new Error("invalid_live_clip");
   const clip = message.clip;
-  const payload = concatBytes([
-    bytesField(1, utf8(clip.id)),
-    varintField(2, clip.type === "text" ? 1n : 2n),
-    bytesField(3, utf8(clip.content)),
-    bytesField(4, peerIdToMultihashBytes(clip.originPeerId)),
-    varintField(5, BigInt(clip.capturedAt)),
-    varintField(6, BigInt(clip.shareExpiresAt)),
+  const encodedClip = concatBytes([
+    bytesField(1, uuidToBytes(clip.id)),
+    bytesField(2, peerIdToMultihashBytes(clip.originPeerId)),
+    varintField(3, BigInt(clip.capturedAt)),
+    varintField(4, BigInt(clip.shareExpiresAt)),
+    bytesField(clip.type === "text" ? 5 : 6, utf8(clip.content)),
   ]);
+  const payload = bytesField(1, encodedClip);
   if (payload.length > maximumBytes) throw new Error("live_clip_frame_too_large");
   return concatBytes([varint(BigInt(payload.length)), payload]);
 }
@@ -29,20 +29,25 @@ export function encodeLiveClipFrame(message: LiveClip, maximumBytes = LIVE_CLIP_
 export function decodeLiveClipFrame(frame: Uint8Array, maximumBytes = LIVE_CLIP_MAX_FRAME_BYTES): LiveClip | null {
   const prefix = readVarint(frame, 0);
   if (!prefix || prefix.value > BigInt(maximumBytes) || prefix.value !== BigInt(frame.length - prefix.next)) return null;
-  const fields = readFields(frame.slice(prefix.next), new Set([1, 2, 3, 4, 5, 6]));
+  const liveFields = readFields(frame.slice(prefix.next), new Map([[1, 2]]));
+  const encodedClip = liveFields && singleBytes(liveFields, 1);
+  if (!encodedClip) return null;
+
+  const fields = readFields(encodedClip, new Map([[1, 2], [2, 2], [3, 0], [4, 0], [5, 2], [6, 2]]));
   if (!fields) return null;
-  const id = decodeUtf8(singleBytes(fields, 1));
-  const type = singleVarint(fields, 2);
-  const content = decodeUtf8(singleBytes(fields, 3));
-  const origin = singleBytes(fields, 4);
-  const capturedAt = safeNumber(singleVarint(fields, 5));
-  const shareExpiresAt = safeNumber(singleVarint(fields, 6));
-  if (!id || !content || !origin || capturedAt === null || shareExpiresAt === null) return null;
-  if (type !== 1n && type !== 2n) return null;
+  const idBytes = singleBytes(fields, 1);
+  const origin = singleBytes(fields, 2);
+  const capturedAt = safeNumber(singleVarint(fields, 3));
+  const shareExpiresAt = safeNumber(singleVarint(fields, 4));
+  const text = optionalSingleBytes(fields, 5);
+  const url = optionalSingleBytes(fields, 6);
+  if (!idBytes || !origin || capturedAt === null || shareExpiresAt === null || (text === null) === (url === null)) return null;
   try {
+    const content = decodeUtf8((text ?? url)!);
+    if (content === null) return null;
     const clip: Clip = {
-      id,
-      type: type === 1n ? "text" : "url",
+      id: bytesToUuid(idBytes),
+      type: text ? "text" : "url",
       content,
       originPeerId: peerIdFromMultihashBytes(origin),
       capturedAt,
@@ -55,6 +60,16 @@ export function decodeLiveClipFrame(frame: Uint8Array, maximumBytes = LIVE_CLIP_
 }
 
 function utf8(value: string): Uint8Array { return new TextEncoder().encode(value); }
+function uuidToBytes(value: string): Uint8Array {
+  const hex = value.replace(/-/g, "");
+  if (hex.length !== 32) throw new Error("invalid_clip_id");
+  return Uint8Array.from({ length: 16 }, (_unused, index) => Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16));
+}
+function bytesToUuid(value: Uint8Array): string {
+  if (value.length !== 16) throw new Error("invalid_clip_id");
+  const hex = Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 function decodeUtf8(value: Uint8Array | null): string | null {
   if (!value) return null;
   try { return new TextDecoder("utf-8", { fatal: true }).decode(value); } catch { return null; }
@@ -93,7 +108,7 @@ function readVarint(bytes: Uint8Array, start: number): { value: bigint; next: nu
   }
   return null;
 }
-function readFields(bytes: Uint8Array, recognized: Set<number>): Map<number, Array<Uint8Array | bigint>> | null {
+function readFields(bytes: Uint8Array, recognized: Map<number, number>): Map<number, Array<Uint8Array | bigint>> | null {
   const result = new Map<number, Array<Uint8Array | bigint>>();
   for (let offset = 0; offset < bytes.length;) {
     const key = readVarint(bytes, offset);
@@ -101,6 +116,8 @@ function readFields(bytes: Uint8Array, recognized: Set<number>): Map<number, Arr
     offset = key.next;
     const field = Number(key.value >> 3n);
     const wire = Number(key.value & 7n);
+    const recognizedWire = recognized.get(field);
+    if (recognizedWire !== undefined && wire !== recognizedWire) return null;
     let value: Uint8Array | bigint;
     if (wire === 0) {
       const parsed = readVarint(bytes, offset);
@@ -113,9 +130,16 @@ function readFields(bytes: Uint8Array, recognized: Set<number>): Map<number, Arr
       const end = length.next + Number(length.value);
       value = bytes.slice(length.next, end);
       offset = end;
+    } else if (wire === 1) {
+      if (offset + 8 > bytes.length) return null;
+      value = bytes.slice(offset, offset + 8);
+      offset += 8;
+    } else if (wire === 5) {
+      if (offset + 4 > bytes.length) return null;
+      value = bytes.slice(offset, offset + 4);
+      offset += 4;
     } else return null;
-    if (!recognized.has(field)) return null;
-    result.set(field, [...(result.get(field) ?? []), value]);
+    if (recognizedWire !== undefined) result.set(field, [...(result.get(field) ?? []), value]);
   }
   return result;
 }
@@ -126,4 +150,9 @@ function singleBytes(fields: Map<number, Array<Uint8Array | bigint>>, field: num
 function singleVarint(fields: Map<number, Array<Uint8Array | bigint>>, field: number): bigint | undefined {
   const values = fields.get(field);
   return values?.length === 1 && typeof values[0] === "bigint" ? values[0] : undefined;
+}
+function optionalSingleBytes(fields: Map<number, Array<Uint8Array | bigint>>, field: number): Uint8Array | null | undefined {
+  const values = fields.get(field);
+  if (!values) return null;
+  return values.length === 1 && values[0] instanceof Uint8Array ? values[0] : undefined;
 }

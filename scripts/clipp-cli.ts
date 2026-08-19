@@ -12,7 +12,8 @@ import {
   deviceIdToPeerIdObject,
   peerIdFromPrivateKeyBase64,
 } from "../packages/core/network/peerId.js";
-import { createTrustMessenger, createTrustedClipMessenger } from "../packages/core/messaging/channels.js";
+import { createTrustMessenger } from "../packages/core/messaging/channels.js";
+import { createLiveClipGossip } from "../packages/core/sync/liveClipGossip.js";
 import { createTrustProtocolBinder } from "../packages/core/messaging/trustBinder.js";
 import { createTrustManager, type TrustedDevice } from "../packages/core/trust/trustManager.js";
 import { createIdentityManager } from "../packages/core/trust/identity.js";
@@ -26,7 +27,7 @@ import {
 import { decodePairing } from "../packages/core/pairing/decode.js";
 import { encodePairing } from "../packages/core/pairing/encode.js";
 import { createSignedTrustRequest, type TrustMessage } from "../packages/core/protocols/clipTrust.js";
-import type { ClipMessage } from "../packages/core/protocols/clip.js";
+import type { Clip } from "../packages/core/models/Clip.js";
 
 type Mode = "request" | "host";
 
@@ -176,10 +177,9 @@ function validMultiaddrs(addrs: string[]): Multiaddr[] {
   return out;
 }
 
-function printClip(msg: ClipMessage): void {
-  const clip = msg.clip;
-  const stamp = new Date(msg.sentAt || clip.timestamp || Date.now()).toISOString();
-  console.log(`[clip] from=${msg.from} type=${clip.type} id=${clip.id} sentAt=${stamp}`);
+function printClip(from: string, clip: Clip): void {
+  const stamp = new Date(clip.capturedAt).toISOString();
+  console.log(`[clip] from=${from} type=${clip.type} id=${clip.id} capturedAt=${stamp}`);
   console.log(clip.content);
   console.log("");
 }
@@ -351,7 +351,10 @@ async function main() {
     privateKey,
     relayAddresses,
   });
-  const clipMessaging = createTrustedClipMessenger(transport, (id) => trust.isTrusted(id));
+  const liveClipGossip = createLiveClipGossip({
+    transport,
+    membershipStatus: async (id) => await trust.isTrusted(id) ? "active" : "unknown",
+  });
   const trustMessaging = createTrustMessenger(transport);
   trustBinder.bind(trustMessaging);
 
@@ -434,9 +437,8 @@ async function main() {
     console.error("[cli] Trust rejected", d.deviceId);
   });
 
-  clipMessaging.onMessage((msg) => {
-    printClip(msg);
-  });
+  liveClipGossip.onClip(({ from, clip }) => printClip(from, clip));
+  liveClipGossip.start();
 
   trustMessaging.onMessage((msg: TrustMessage) => {
     if (msg.type !== "trust-ack") return;
@@ -456,6 +458,7 @@ async function main() {
     return;
   }
   const stopTransport = async () => {
+    liveClipGossip.stop();
     try {
       await transport.stop();
     } catch {

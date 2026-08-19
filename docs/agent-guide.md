@@ -103,9 +103,9 @@ Shared trust logic lives in `packages/core/trust`, but each runtime decides how 
 
 ### Protocol envelopes
 
-The current wire format matches the normalized internal protocol types directly. The protocol IDs remain at `1.0.0` because this format has not shipped to production yet.
+Live Clip delivery uses the settled v1 protobuf boundary; do not reintroduce the removed JSON Clip envelope or payload-supplied sender metadata.
 
-- Clip sync uses `/clipboard/1.0.0` with a message shaped like `{ type: "clip", from, sentAt, payload: { clip } }`.
+- Live Clip sync uses `/clipp/clip/1.0.0`, with one bounded length-prefixed protobuf `LiveClip` frame per stream. `LiveClip` contains one nested `Clip`; immediate-sender authority comes only from the authenticated libp2p connection.
 - History sync uses `/clipboard/history/1.0.0` with a message shaped like `{ type: "history-sync", from, sentAt, payload: { clips } }`.
 - Trust uses `/clipboard/trust/1.0.0`.
 - Trust request shape: `{ type: "trust-request", from, to, sentAt, payload: { device, sig } }`.
@@ -207,7 +207,7 @@ Use npm workspace commands from the repo root.
 - `apps/electron/src/main.ts` is large and owns bootstrap, tray setup, transport lifecycle, persistence, and IPC. Expect many cross-cutting changes there.
 - Relay code still contains legacy comments about WebRTC-star removal. Read the current call sites before simplifying anything.
 - History sync protocol support exists in `packages/core/history` and extension offscreen messaging, but clip sync plus trust flows are the more widely integrated paths.
-- Protocol codecs now serialize the normalized envelope shapes directly. If you change message fields, update both the codec tests and the runtime bridges that route by `msg.type`.
+- The Live Clip codec uses the fixed nested protobuf schema. If you change protocol fields, update codec tests and every runtime transport bridge together.
 
 ## 10. Safe Change Strategy For Agents
 

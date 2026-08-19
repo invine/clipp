@@ -1,9 +1,4 @@
 import {
-  createClipMessage,
-  decodeClipMessage,
-  encodeClipMessage,
-} from "../../../packages/core/protocols/clip";
-import {
   decodeLiveClipFrame,
   encodeLiveClipFrame,
   LIVE_CLIP_PROTOCOL,
@@ -47,39 +42,49 @@ describe("protocol message shapes", () => {
 
     expect(LIVE_CLIP_PROTOCOL).toBe("/clipp/clip/1.0.0");
     expect(decodeLiveClipFrame(frame)).toEqual({ clip });
+    // LiveClip has exactly one nested `Clip clip = 1`, whose first field is
+    // the UUID's 16 raw bytes rather than its 36-byte diagnostic string.
+    expect(frame[1]).toBe(0x0a);
+    expect(frame[2]).toBe(frame.length - 3);
+    expect(Array.from(frame.slice(3, 5))).toEqual([0x0a, 0x10]);
+    expect(Array.from(frame.slice(5, 21))).toEqual([
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+      0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ]);
     expect(new TextDecoder().decode(frame)).not.toContain("from");
     expect(new TextDecoder().decode(frame)).not.toContain("sentAt");
+    expect(new TextDecoder().decode(frame)).not.toContain(clip.id);
   });
 
-  it("uses the normalized clip wire shape", () => {
-    const msg = createClipMessage({
-      from: "me",
-      clip: {
-        id: "c1",
-        type: "text",
-        content: "hello",
-        originPeerId: "me",
-        capturedAt: 1,
-        shareExpiresAt: 86_400_001,
-        timestamp: 1,
-        senderId: "me",
-      },
-      sentAt: 2,
-    });
+  it("ignores unknown fields in LiveClip and its nested Clip", () => {
+    const clip = {
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "text" as const,
+      content: "hello",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
+    };
+    const frame = encodeLiveClipFrame({ clip });
+    expect(frame[0]).toBeLessThan(0x80);
+    expect(frame[2]).toBeLessThan(0x80);
 
-    const encoded = new TextDecoder().decode(encodeClipMessage(msg));
-    expect(JSON.parse(encoded)).toEqual(msg);
+    const unknownVarint = [0x38, 0x01]; // optional field 7
+    const nestedUnknown = Uint8Array.from([
+      frame[0] + unknownVarint.length,
+      frame[1],
+      frame[2] + unknownVarint.length,
+      ...frame.slice(3),
+      ...unknownVarint,
+    ]);
+    const liveUnknown = Uint8Array.from([
+      frame[0] + unknownVarint.length,
+      ...frame.slice(1),
+      ...unknownVarint,
+    ]);
 
-    expect(
-      decodeClipMessage(new TextEncoder().encode(encoded), "peer")
-    ).toEqual({
-      type: "clip",
-      from: "peer",
-      payload: {
-        clip: msg.payload.clip,
-      },
-      sentAt: 2,
-    });
+    expect(decodeLiveClipFrame(nestedUnknown)).toEqual({ clip });
+    expect(decodeLiveClipFrame(liveUnknown)).toEqual({ clip });
   });
 
   it("uses the normalized history sync wire shape", () => {

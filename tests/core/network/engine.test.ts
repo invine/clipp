@@ -131,6 +131,98 @@ describe("Libp2pMessagingTransport", () => {
     expect(stream.close).toHaveBeenCalledTimes(1);
   });
 
+  it("times out and aborts a stalled outbound live stream write", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({ liveClipStreamIdleTimeoutMs: 25 });
+      await transport.start();
+      const node = await createClipboardNode.mock.results[0].value;
+      const stream = {
+        abort: jest.fn(),
+        send: jest.fn(() => false),
+        onDrain: jest.fn(() => new Promise<void>(() => {})),
+        close: jest.fn(async () => {}),
+      };
+      node.dialProtocol.mockResolvedValueOnce(stream);
+
+      const sending = transport.send(
+        CLIP_PROTOCOL,
+        "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+        new Uint8Array([1, 2, 3])
+      );
+      const rejection = expect(sending).rejects.toThrow("live_clip_stream_timeout");
+      await jest.advanceTimersByTimeAsync(25);
+
+      await rejection;
+      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "live_clip_stream_timeout" }));
+      expect(stream.close).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("times out and aborts a stalled outbound live stream close", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({ liveClipStreamIdleTimeoutMs: 25 });
+      await transport.start();
+      const node = await createClipboardNode.mock.results[0].value;
+      const stream = {
+        abort: jest.fn(),
+        send: jest.fn(() => true),
+        close: jest.fn(() => new Promise<void>(() => {})),
+      };
+      node.dialProtocol.mockResolvedValueOnce(stream);
+
+      const sending = transport.send(
+        CLIP_PROTOCOL,
+        "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+        new Uint8Array([1, 2, 3])
+      );
+      const rejection = expect(sending).rejects.toThrow("live_clip_stream_timeout");
+      await jest.advanceTimersByTimeAsync(25);
+
+      await rejection;
+      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "live_clip_stream_timeout" }));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("times out opening an outbound live stream and aborts it if it opens late", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({ liveClipStreamIdleTimeoutMs: 25 });
+      await transport.start();
+      const node = await createClipboardNode.mock.results[0].value;
+      const stream = {
+        abort: jest.fn(),
+        send: jest.fn(() => true),
+        close: jest.fn(async () => {}),
+      };
+      const resolveOpening = jest.fn();
+      node.dialProtocol.mockReturnValueOnce(new Promise<typeof stream>((resolve) => {
+        resolveOpening.mockImplementation(resolve);
+      }));
+
+      const sending = transport.send(
+        CLIP_PROTOCOL,
+        "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+        new Uint8Array([1, 2, 3])
+      );
+      const rejection = expect(sending).rejects.toThrow("live_clip_stream_timeout");
+      await jest.advanceTimersByTimeAsync(25);
+      await rejection;
+
+      resolveOpening(stream);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "live_clip_stream_timeout" }));
+      expect(stream.send).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("rejects when a queued WebRTC stream write fails after the data channel closes", async () => {
     const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
@@ -595,5 +687,106 @@ describe("Libp2pMessagingTransport", () => {
 
     expect(close).toHaveBeenCalled();
     expect(received).not.toHaveBeenCalled();
+  });
+
+  it("uses the injected progress idle timeout for stalled live streams", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({
+        isPeerKnown: async () => true,
+        liveClipStreamIdleTimeoutMs: 25,
+      });
+      await transport.start();
+      const received = jest.fn();
+      transport.onMessage(CLIP_PROTOCOL, received);
+      const close = jest.fn(async () => {});
+      const frame = encodeLiveClipFrame({
+        clip: {
+          id: "00000000-0000-4000-8000-000000000001",
+          type: "text",
+          content: "inbound",
+          originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+          capturedAt: 1,
+          shareExpiresAt: 86_400_001,
+        },
+      });
+      let readCount = 0;
+      const handler = protocolHandlers.get(CLIP_PROTOCOL);
+      const handling = handler({
+        close,
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => {
+              readCount += 1;
+              return readCount === 1
+                ? Promise.resolve({ done: false as const, value: frame })
+                : new Promise<IteratorResult<Uint8Array>>(() => {});
+            },
+            return: async () => ({ done: true as const, value: undefined }),
+          };
+        },
+      }, { remotePeer: { toString: () => "peer-1" } });
+
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(24);
+      expect(close).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(1);
+      await handling;
+
+      expect(close).toHaveBeenCalled();
+      expect(received).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does not reset the live stream idle timeout for partial-frame chunks", async () => {
+    jest.useFakeTimers();
+    try {
+      const transport = createLibp2pMessagingTransport({
+        isPeerKnown: async () => true,
+        liveClipStreamIdleTimeoutMs: 25,
+      });
+      await transport.start();
+      const received = jest.fn();
+      transport.onMessage(CLIP_PROTOCOL, received);
+      const close = jest.fn(async () => {});
+      const frame = encodeLiveClipFrame({
+        clip: {
+          id: "00000000-0000-4000-8000-000000000001",
+          type: "text",
+          content: "inbound",
+          originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+          capturedAt: 1,
+          shareExpiresAt: 86_400_001,
+        },
+      });
+      let offset = 0;
+      const handler = protocolHandlers.get(CLIP_PROTOCOL);
+      const handling = handler({
+        close,
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => {
+              if (offset >= 3) return new Promise<IteratorResult<Uint8Array>>(() => {});
+              const value = frame.slice(offset, offset + 1);
+              offset += 1;
+              return new Promise<IteratorResult<Uint8Array>>((resolve) => {
+                setTimeout(() => resolve({ done: false, value }), offset * 8);
+              });
+            },
+            return: async () => ({ done: true as const, value: undefined }),
+          };
+        },
+      }, { remotePeer: { toString: () => "peer-1" } });
+
+      await jest.advanceTimersByTimeAsync(25);
+      await handling;
+
+      expect(close).toHaveBeenCalled();
+      expect(received).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

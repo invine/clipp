@@ -5,9 +5,17 @@ A cross-platform clipboard watcher and writer used for synchronizing clipboard i
 ```
 import { createPollingClipboardService } from './service'
 import { createClipboardSyncManager } from '../sync/clipboardSync'
+import { createLiveClipGossip } from '../sync/liveClipGossip'
 
 const clipboard = createPollingClipboardService({ readText, writeText, getSenderId })
-const sync = createClipboardSyncManager({ clipboard, history, messaging, getLocalDeviceId })
+const liveGossip = createLiveClipGossip({ transport, membershipStatus })
+const sync = createClipboardSyncManager({
+  clipboard,
+  history,
+  liveGossip,
+  getLocalDeviceId,
+  isActiveMember: async (peerId) => await membershipStatus(peerId) === 'active',
+})
 sync.start()
 ```
 
