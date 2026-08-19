@@ -68,4 +68,26 @@ describe("Chrome extension stream bridge", () => {
       "runtimeCancelSendStream",
     ]);
   });
+
+  it("times out stalled frame production before opening the offscreen stream", async () => {
+    const send = jest.fn(async () => ({ ok: true }));
+    const frames: AsyncIterable<Uint8Array> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => await new Promise<IteratorResult<Uint8Array>>(() => undefined),
+          return: async () => await new Promise<IteratorResult<Uint8Array>>(() => undefined),
+        };
+      },
+    };
+
+    await expect(sendBufferedExtensionStream({
+      protocol: "/clipp/history/1.0.0",
+      target: "active-member",
+      frames,
+      idleTimeoutMs: 5,
+      send,
+    })).rejects.toThrow("history_stream_timeout");
+
+    expect(send).not.toHaveBeenCalled();
+  });
 });

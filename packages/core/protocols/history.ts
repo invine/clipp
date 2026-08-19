@@ -7,6 +7,11 @@ export const HISTORY_PROTOCOL = "/clipp/history/1.0.0";
 /** A one-frame, empty control stream asking the recipient to send its snapshot. */
 export const HISTORY_REQUEST_PROTOCOL = "/clipp/history-request/1.0.0";
 export const HISTORY_MAX_FRAME_BYTES = 256 * 1024;
+export const HISTORY_STREAM_IDLE_TIMEOUT_MS = 30_000;
+
+export function isHistoryProtocol(protocol: string): boolean {
+  return protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
+}
 
 export type HistoryBatch = { clips: Clip[] };
 

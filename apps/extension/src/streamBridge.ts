@@ -1,4 +1,5 @@
 import type { MessageStreamHandler } from "../../../packages/core/messaging/transport";
+import { isHistoryProtocol } from "../../../packages/core/protocols/history";
 
 export type ExtensionStreamMessage =
   | { action: "runtimeStreamStart"; streamId: string; protocol: string; from: string }
@@ -17,6 +18,7 @@ type OutboundExtensionStreamMessage =
       protocol: string;
       peerTarget: string;
       frames: number[][];
+      idleTimeoutMs?: number;
     }
   | { action: "runtimeCancelSendStream"; streamId: string };
 
@@ -109,23 +111,37 @@ export async function sendBufferedExtensionStream(options: {
   target: string;
   frames: AsyncIterable<Uint8Array>;
   signal?: AbortSignal;
+  idleTimeoutMs?: number;
   streamId?: string;
   send(message: OutboundExtensionStreamMessage): Promise<unknown>;
 }): Promise<void> {
   const streamId = options.streamId ?? createStreamId();
   const encoded: number[][] = [];
   const iterator = options.frames[Symbol.asyncIterator]();
+  let iteratorCompleted = false;
   try {
     for (;;) {
-      const next = await withAbortSignal(iterator.next(), options.signal);
-      if (next.done) break;
+      const next = await withProgressTimeout(
+        iterator.next(),
+        options.idleTimeoutMs,
+        options.protocol,
+        options.signal,
+      );
+      if (next.done) {
+        iteratorCompleted = true;
+        break;
+      }
       if (!(next.value instanceof Uint8Array) || next.value.length === 0) {
         throw new Error("invalid_stream_frame");
       }
       encoded.push(Array.from(next.value));
     }
   } finally {
-    await iterator.return?.().catch(() => undefined);
+    const returning = iterator.return?.();
+    if (returning) {
+      if (iteratorCompleted) await returning.catch(() => undefined);
+      else void returning.catch(() => undefined);
+    }
   }
 
   const response = await withAbortSignal(
@@ -135,11 +151,34 @@ export async function sendBufferedExtensionStream(options: {
       protocol: options.protocol,
       peerTarget: options.target,
       frames: encoded,
+      idleTimeoutMs: options.idleTimeoutMs,
     }),
     options.signal,
     () => { void options.send({ action: "runtimeCancelSendStream", streamId }); },
   );
   if (isFailedResponse(response)) throw new Error(response.error);
+}
+
+async function withProgressTimeout<T>(
+  operation: Promise<T>,
+  idleTimeoutMs: number | undefined,
+  protocol: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (idleTimeoutMs === undefined) return await withAbortSignal(operation, signal);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await withAbortSignal(Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(
+          isHistoryProtocol(protocol) ? "history_stream_timeout" : "stream_progress_timeout",
+        )), idleTimeoutMs);
+      }),
+    ]), signal);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function isExtensionStreamMessage(value: unknown): value is ExtensionStreamMessage {

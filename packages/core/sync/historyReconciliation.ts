@@ -5,6 +5,7 @@ import {
   HISTORY_MAX_FRAME_BYTES,
   HISTORY_PROTOCOL,
   HISTORY_REQUEST_PROTOCOL,
+  HISTORY_STREAM_IDLE_TIMEOUT_MS,
   encodeHistoryBatchFrame,
   encodeHistoryRequestFrame,
   readHistoryRequest,
@@ -35,10 +36,12 @@ export function createHistoryReconciliation(options: {
   onMembershipChanged?: (listener: () => void) => () => void;
   now?: () => number;
   maximumFrameBytes?: number;
+  streamIdleTimeoutMs?: number;
   autoSync?: boolean;
 }): HistoryReconciliation {
   const now = options.now ?? Date.now;
   const maximumFrameBytes = options.maximumFrameBytes ?? HISTORY_MAX_FRAME_BYTES;
+  const streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? HISTORY_STREAM_IDLE_TIMEOUT_MS;
   const outbound = new Map<string, OutboundSnapshotState>();
   const outboundRequests = new Set<AbortController>();
   const inbound = new Set<string>();
@@ -121,7 +124,7 @@ export function createHistoryReconciliation(options: {
             HISTORY_PROTOCOL,
             peerId,
             snapshotFrames(peerId, state.generation),
-            { signal: state.controller.signal },
+            { signal: state.controller.signal, idleTimeoutMs: streamIdleTimeoutMs },
           );
         } catch (error) {
           state.pending = false;
@@ -151,7 +154,7 @@ export function createHistoryReconciliation(options: {
     try {
       await options.transport.sendStream(HISTORY_REQUEST_PROTOCOL, peerId, (async function *() {
         if (canExchange(generation)) yield encodeHistoryRequestFrame();
-      })(), { signal: controller.signal });
+      })(), { signal: controller.signal, idleTimeoutMs: streamIdleTimeoutMs });
     } catch (error) {
       if (!controller.signal.aborted) {
         log.warn("History request delivery failed", { peerId, error: errorMessage(error) });

@@ -233,23 +233,39 @@ describe("Libp2pMessagingTransport", () => {
         abort: jest.fn(),
         send: jest.fn(() => false),
         onDrain: jest.fn(() => new Promise<void>(() => {})),
-        close: jest.fn(async () => {}),
+        close: jest.fn(() => new Promise<void>(() => {})),
       };
       node.dialProtocol.mockResolvedValueOnce(stream);
       const controller = new AbortController();
+      const frames = {
+        [Symbol.asyncIterator]() {
+          let sent = false;
+          return {
+            next: async () => {
+              if (sent) return await new Promise<IteratorResult<Uint8Array>>(() => {});
+              sent = true;
+              return { done: false as const, value: Uint8Array.of(1) };
+            },
+            return: async () => await new Promise<IteratorResult<Uint8Array>>(() => {}),
+          };
+        },
+      };
 
       const sending = transport.sendStream(
         HISTORY_PROTOCOL,
         "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
-        (async function *() { yield Uint8Array.of(1); })(),
+        frames,
         { signal: controller.signal },
       );
-      const rejection = expect(sending).rejects.toThrow("stream_cancelled");
       await jest.advanceTimersByTimeAsync(0);
       controller.abort();
-      await jest.advanceTimersByTimeAsync(0);
+      const result = Promise.race([
+        sending.then(() => "resolved", (error) => error instanceof Error ? error.message : String(error)),
+        new Promise<string>((resolve) => setTimeout(() => resolve("cleanup_stalled"), 1)),
+      ]);
+      await jest.advanceTimersByTimeAsync(1);
 
-      await rejection;
+      await expect(result).resolves.toBe("stream_cancelled");
       expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "stream_cancelled" }));
     } finally {
       jest.useRealTimers();

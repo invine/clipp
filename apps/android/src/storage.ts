@@ -1,7 +1,13 @@
 import { Preferences } from "@capacitor/preferences";
-import type { KVStorageBackend } from "@core/trust";
+import type { KVStorageBackend } from "../../../packages/core/trust";
 
 const memory = new Map<string, string>();
+export type CapacitorPreferencesStore = {
+  get(options: { key: string }): Promise<{ value: string | null }>;
+  set(options: { key: string; value: string }): Promise<void>;
+  remove(options: { key: string }): Promise<void>;
+};
+
 const hasLocalStorage = () => {
   try {
     return typeof localStorage !== "undefined";
@@ -10,9 +16,9 @@ const hasLocalStorage = () => {
   }
 };
 
-async function readItem(key: string): Promise<string | null> {
+async function readItem(key: string, preferences: CapacitorPreferencesStore): Promise<string | null> {
   try {
-    const res = await Preferences.get({ key });
+    const res = await preferences.get({ key });
     if (res.value !== null && res.value !== undefined) return res.value;
   } catch {
     // fall through to web/local fallback
@@ -28,9 +34,13 @@ async function readItem(key: string): Promise<string | null> {
   return memory.get(key) ?? null;
 }
 
-async function writeItem(key: string, value: string): Promise<void> {
+async function writeItem(
+  key: string,
+  value: string,
+  preferences: CapacitorPreferencesStore,
+): Promise<void> {
   try {
-    await Preferences.set({ key, value });
+    await preferences.set({ key, value });
     return;
   } catch {
     // fall through to web/local fallback
@@ -47,9 +57,9 @@ async function writeItem(key: string, value: string): Promise<void> {
   memory.set(key, value);
 }
 
-async function removeItem(key: string): Promise<void> {
+async function removeItem(key: string, preferences: CapacitorPreferencesStore): Promise<void> {
   try {
-    await Preferences.remove({ key });
+    await preferences.remove({ key });
   } catch {
     // fall through to web/local fallback
   }
@@ -68,10 +78,13 @@ async function removeItem(key: string): Promise<void> {
  * falling back to localStorage or in-memory storage for web preview.
  */
 export class LocalStorageBackend implements KVStorageBackend {
-  constructor(private prefix = "clipp-android:") {}
+  constructor(
+    private prefix = "clipp-android:",
+    private readonly preferences: CapacitorPreferencesStore = Preferences,
+  ) {}
 
   async get<T = any>(key: string): Promise<T | undefined> {
-    const raw = await readItem(this.prefix + key);
+    const raw = await readItem(this.prefix + key, this.preferences);
     if (raw === null || raw === undefined) return undefined;
     try {
       return JSON.parse(raw) as T;
@@ -81,10 +94,10 @@ export class LocalStorageBackend implements KVStorageBackend {
   }
 
   async set<T = any>(key: string, value: T): Promise<void> {
-    await writeItem(this.prefix + key, JSON.stringify(value));
+    await writeItem(this.prefix + key, JSON.stringify(value), this.preferences);
   }
 
   async remove(key: string): Promise<void> {
-    await removeItem(this.prefix + key);
+    await removeItem(this.prefix + key, this.preferences);
   }
 }

@@ -3,6 +3,7 @@ export type MessageStreamHandler = (from: string, chunks: AsyncIterable<Uint8Arr
 
 export type StreamSendOptions = {
   signal?: AbortSignal;
+  idleTimeoutMs?: number;
 };
 
 export type PeerConnectionPath = "direct" | "relay" | "unknown";

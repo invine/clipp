@@ -169,7 +169,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           msg.protocol,
           msg.peerTarget,
           frames(),
-          { signal: controller.signal },
+          {
+            signal: controller.signal,
+            idleTimeoutMs: typeof msg.idleTimeoutMs === "number" ? msg.idleTimeoutMs : undefined,
+          },
         );
         sendResponse({ ok: true });
       } finally {

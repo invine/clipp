@@ -314,6 +314,7 @@ const extensionNetwork: StreamingMessagingTransport = {
       target,
       frames,
       signal: options?.signal,
+      idleTimeoutMs: options?.idleTimeoutMs,
       send: (message) => sendOffscreen(message),
     });
   },

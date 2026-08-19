@@ -3,7 +3,13 @@ import { multiaddr } from "@multiformats/multiaddr";
 import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
-import { CLIP_PROTOCOL, HISTORY_PROTOCOL, HISTORY_REQUEST_PROTOCOL } from "./protocol.js";
+import {
+  CLIP_PROTOCOL,
+  HISTORY_PROTOCOL,
+  HISTORY_REQUEST_PROTOCOL,
+  HISTORY_STREAM_IDLE_TIMEOUT_MS,
+  isHistoryProtocol,
+} from "./protocol.js";
 import { decodeLiveClipFrame, LIVE_CLIP_MAX_FRAME_BYTES } from "../protocols/liveClip.js";
 import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
 import { decodeMembershipFrame, MEMBERSHIP_MAX_FRAME_BYTES, MEMBERSHIP_PROTOCOL } from "../membership/reconciliation.js";
@@ -116,7 +122,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     this.relayAddrSet = new Set((opts.relayAddresses || []).map(String));
   }
 
-  private applicationStreamPolicy(protocol: string): {
+  private applicationStreamPolicy(protocol: string, idleTimeoutOverride?: number): {
     enforceProgressTimeout: boolean;
     idleTimeoutMs: number;
     timeoutError: Error;
@@ -124,9 +130,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const history = isHistoryProtocol(protocol);
     return {
       enforceProgressTimeout: history,
-      idleTimeoutMs: history
-        ? this.opts.historyStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS
-        : this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS,
+      idleTimeoutMs: idleTimeoutOverride ?? (history
+        ? this.opts.historyStreamIdleTimeoutMs ?? HISTORY_STREAM_IDLE_TIMEOUT_MS
+        : this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS),
       timeoutError: applicationStreamTimeoutError(protocol),
     };
   }
@@ -301,7 +307,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     const peerId = await this.targetPeerId(target);
     const context = { protocol, target, peerId };
-    const policy = this.applicationStreamPolicy(protocol);
+    const policy = this.applicationStreamPolicy(protocol, options?.idleTimeoutMs);
     let stream: any;
     try {
       const opening = this.openStream(protocol, target);
@@ -314,6 +320,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
         )
         : await opening);
       const iterator = frames[Symbol.asyncIterator]();
+      let iteratorCompleted = false;
       try {
         for (;;) {
           const next = policy.enforceProgressTimeout || options?.signal
@@ -325,7 +332,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
               options?.signal,
             )
             : await iterator.next();
-          if (next.done) break;
+          if (next.done) {
+            iteratorCompleted = true;
+            break;
+          }
           const frame = next.value;
           if (!(frame instanceof Uint8Array) || frame.length === 0) throw new Error("invalid_stream_frame");
           if (policy.enforceProgressTimeout || options?.signal) {
@@ -341,7 +351,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
           }
         }
       } finally {
-        await iterator.return?.().catch(() => undefined);
+        const returning = iterator.return?.();
+        if (returning) {
+          if (iteratorCompleted) await returning.catch(() => undefined);
+          else void returning.catch(() => undefined);
+        }
       }
       if (policy.enforceProgressTimeout || options?.signal) {
         await applicationStreamOperationWithTimeout(
@@ -355,7 +369,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
         await closeMessageStream(stream, { ignoreClosedDataChannel: true });
       }
     } catch (err: any) {
-      await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+      const failure = err instanceof Error ? err : new Error(String(err));
+      abortMessageStream(stream, failure);
+      void closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
       log.warn("Messaging stream send failed", { ...context, error: err?.message || err });
       throw err;
     }
@@ -1710,10 +1726,6 @@ async function promiseWithTimeout<T>(
 
 function abortMessageStream(stream: any, error: Error): void {
   try { stream?.abort?.(error); } catch { /* the affected stream is already closed */ }
-}
-
-function isHistoryProtocol(protocol: string): boolean {
-  return protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
 }
 
 function applicationStreamTimeoutError(protocol: string): Error {
