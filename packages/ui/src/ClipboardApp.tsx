@@ -235,6 +235,7 @@ export type ClipboardAppProps = {
   identity: Identity | null;
   pinnedIds: string[];
   localRetentionMs?: number;
+  autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
@@ -251,6 +252,7 @@ export type ClipboardAppProps = {
   onDismissClipboardHistoryError?(): void | Promise<void>;
   onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
+  onSetAutoSync?(enabled: boolean): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
@@ -269,6 +271,7 @@ export function ClipboardApp({
   identity,
   pinnedIds,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
+  autoSync = true,
   clipboardHistoryError = null,
   historyPolicyError = null,
   relayAddresses = [],
@@ -285,6 +288,7 @@ export function ClipboardApp({
   onDismissClipboardHistoryError,
   onRetryHistoryCleanup,
   onSetLocalRetention,
+  onSetAutoSync,
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
@@ -1175,6 +1179,20 @@ export function ClipboardApp({
               <option value={30 * 24 * 60 * 60 * 1000}>30 days</option>
               <option value={90 * 24 * 60 * 60 * 1000}>90 days</option>
               <option value={365 * 24 * 60 * 60 * 1000}>1 year</option>
+            </select>
+          </div>
+        )}
+
+        {onSetAutoSync && (
+          <div className="relay-settings">
+            <label className="peer-sub" htmlFor="auto-sync">Auto Sync</label>
+            <select
+              id="auto-sync"
+              value={autoSync ? "enabled" : "disabled"}
+              onChange={(event) => void onSetAutoSync(event.target.value === "enabled")}
+            >
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled — keep Clips local</option>
             </select>
           </div>
         )}

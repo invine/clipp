@@ -3,7 +3,7 @@ import { multiaddr } from "@multiformats/multiaddr";
 import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
-import { CLIP_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
+import { CLIP_PROTOCOL, HISTORY_PROTOCOL, HISTORY_REQUEST_PROTOCOL } from "./protocol.js";
 import { decodeLiveClipFrame, LIVE_CLIP_MAX_FRAME_BYTES } from "../protocols/liveClip.js";
 import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
 import { decodeMembershipFrame, MEMBERSHIP_MAX_FRAME_BYTES, MEMBERSHIP_PROTOCOL } from "../membership/reconciliation.js";
@@ -57,6 +57,7 @@ export type Libp2pMessagingOptions = {
   relayReservationRetryMs?: number;
   liveClipMaxFrameBytes?: number;
   liveClipStreamIdleTimeoutMs?: number;
+  historyStreamIdleTimeoutMs?: number;
   allowInsecureBrowserDials?: boolean;
   signedPeerRecordPersistence?: SignedPeerRecordPersistence;
   isPeerKnown?(peerId: string): Promise<boolean>;
@@ -182,6 +183,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     this.node.handle(PAIRING_PROTOCOL, handler(PAIRING_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(MEMBERSHIP_PROTOCOL, handler(MEMBERSHIP_PROTOCOL), { runOnLimitedConnection: true });
     this.node.handle(HISTORY_PROTOCOL, handler(HISTORY_PROTOCOL), { runOnLimitedConnection: true });
+    this.node.handle(HISTORY_REQUEST_PROTOCOL, handler(HISTORY_REQUEST_PROTOCOL), { runOnLimitedConnection: true });
 
     await this.node.start();
     this.started = true;
@@ -268,14 +270,34 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     const peerId = await this.targetPeerId(target);
     const context = { protocol, target, peerId };
+    const isHistoryStream = protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
+    const idleTimeoutMs = this.opts.historyStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
     let stream: any;
     try {
-      stream = guardMessageStream(await this.openStream(protocol, target));
-      for await (const frame of frames) {
+      const opening = this.openStream(protocol, target);
+      stream = guardMessageStream(isHistoryStream
+        ? await openLiveClipStreamWithTimeout(opening, idleTimeoutMs)
+        : await opening);
+      const iterator = frames[Symbol.asyncIterator]();
+      try {
+        while (true) {
+          const next = isHistoryStream
+            ? await nextBeforeDeadline(iterator, Date.now() + idleTimeoutMs)
+            : await iterator.next();
+          if (next.done) break;
+          const frame = next.value;
         if (!(frame instanceof Uint8Array) || frame.length === 0) throw new Error("invalid_stream_frame");
-        await writeMessageStream(stream, frame);
+        if (isHistoryStream) await liveClipOperationWithTimeout(writeMessageStream(stream, frame), idleTimeoutMs, stream);
+        else await writeMessageStream(stream, frame);
+        }
+      } finally {
+        await iterator.return?.().catch(() => undefined);
       }
-      await closeMessageStream(stream, { ignoreClosedDataChannel: true });
+      if (isHistoryStream) {
+        await liveClipOperationWithTimeout(closeMessageStream(stream, { ignoreClosedDataChannel: true }), idleTimeoutMs, stream);
+      } else {
+        await closeMessageStream(stream, { ignoreClosedDataChannel: true });
+      }
     } catch (err: any) {
       await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
       log.warn("Messaging stream send failed", { ...context, error: err?.message || err });
@@ -1009,11 +1031,23 @@ class Libp2pMessagingTransport implements MessagingTransport {
             await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
             return;
           }
+          const isHistoryStream = protocol === HISTORY_PROTOCOL || protocol === HISTORY_REQUEST_PROTOCOL;
+          const idleTimeoutMs = this.opts.historyStreamIdleTimeoutMs ?? DEFAULT_LIVE_CLIP_STREAM_IDLE_TIMEOUT_MS;
           const byteChunks = async function *(): AsyncIterable<Uint8Array> {
-            for await (const chunk of iterable) {
+            const iterator = iterable[Symbol.asyncIterator]();
+            try {
+              while (true) {
+                const next = isHistoryStream
+                  ? await nextBeforeDeadline(iterator, Date.now() + idleTimeoutMs)
+                  : await iterator.next();
+                if (next.done) return;
+                const chunk = next.value;
               const bytes = toU8(chunk);
               if (!bytes) throw new Error("invalid_stream_chunk");
               yield bytes;
+              }
+            } finally {
+              await iterator.return?.().catch(() => undefined);
             }
           };
           await streamHandler(from, byteChunks());

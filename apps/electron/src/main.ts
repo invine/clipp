@@ -71,6 +71,7 @@ async function bootstrap() {
   const kvStore = new SQLiteKVStore(db);
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({ storage: kvStore });
   let localRetentionMs = (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
+  let autoSync = (await kvStore.get<boolean>("autoSync")) !== false;
   const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db), { retentionMs: localRetentionMs });
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
@@ -162,6 +163,7 @@ async function bootstrap() {
     getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
     membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
     onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
+    autoSync,
   });
   let messagingStarted = false;
 
@@ -393,6 +395,8 @@ async function bootstrap() {
       const id = await identitySvc.get();
       return id.deviceId;
     },
+    autoSync,
+    onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
 
   // TODO: why pendingRequests is part of the application and not part of trust manager?
@@ -448,6 +452,7 @@ async function bootstrap() {
       identity,
       pinnedIds: await history.pinnedIds(),
       localRetentionMs,
+      autoSync: clipboardSync.isAutoSync(),
       clipboardHistoryError,
       historyPolicyError,
       relayAddresses,
@@ -614,6 +619,7 @@ async function bootstrap() {
       getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
       membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
       onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
+      autoSync,
     });
     bindTransportHandlers(transport);
     runtimeNetwork.bindCurrent();
@@ -1044,6 +1050,14 @@ async function bootstrap() {
     await kvStore.set("localRetentionMs", localRetentionMs);
     await emitState();
     return { localRetentionMs };
+  });
+
+  ipcMain.handle("clipp:set-auto-sync", async (_evt, enabled: boolean) => {
+    autoSync = enabled !== false;
+    await kvStore.set("autoSync", autoSync);
+    clipboardSync.setAutoSync(autoSync);
+    await emitState();
+    return { autoSync };
   });
 
   ipcMain.handle("clipp:delete-clip", async (_evt, id: string) => {

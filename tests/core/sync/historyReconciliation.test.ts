@@ -1,7 +1,7 @@
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import type { MessagingTransport } from "../../../packages/core/messaging/transport";
 import type { Clip } from "../../../packages/core/models/Clip";
-import { HISTORY_PROTOCOL } from "../../../packages/core/protocols/history";
+import { HISTORY_PROTOCOL, HISTORY_REQUEST_PROTOCOL } from "../../../packages/core/protocols/history";
 import { encodeHistoryBatchFrame } from "../../../packages/core/protocols/history";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
 
@@ -54,6 +54,39 @@ function createControlledStream() {
 }
 
 describe("History reconciliation", () => {
+  it("repairs connected Active Members with a snapshot and request when Auto Sync is re-enabled", async () => {
+    const sent: Array<{ protocol: string; target: string }> = [];
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [peerIds.extension],
+        onStream: () => {},
+        onPeerConnected: () => {},
+        async sendStream(protocol, target, frames) {
+          sent.push({ protocol, target });
+          for await (const _frame of frames) {
+            // Drain the independently framed stream.
+          }
+        },
+      },
+      history: new MemoryHistoryStore(undefined, { now: () => 2_000 }),
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+    await flush();
+    sent.length = 0;
+
+    reconciliation.setAutoSync(false);
+    reconciliation.setAutoSync(true);
+    await flush();
+
+    expect(sent).toEqual([
+      { protocol: HISTORY_PROTOCOL, target: peerIds.extension },
+      { protocol: HISTORY_REQUEST_PROTOCOL, target: peerIds.extension },
+    ]);
+  });
+
   it("imports a complete History Batch before the inbound snapshot reaches EOF", async () => {
     let incomingStream: ((from: string, chunks: AsyncIterable<Uint8Array>) => void | Promise<void>) | undefined;
     const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });

@@ -78,6 +78,13 @@ let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
 let historyPolicyError: "history_cleanup_failed" | null = null;
 let historyRetentionCleanup: HistoryRetentionCleanup | undefined;
 let pendingRetentionMs: number | null = null;
+let autoSync = true;
+const autoSyncReady = new Promise<void>((resolve) => {
+  chrome.storage.local.get(["autoSync"], (res) => {
+    autoSync = res.autoSync !== false;
+    resolve();
+  });
+});
 let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
   resolveHistoryPolicyReady = resolve;
@@ -215,10 +222,7 @@ const clipboardSync = createClipboardSyncManager({
     const id = await identitySvc.get();
     return id.deviceId;
   },
-});
-// Initialize auto-sync state from storage
-chrome.storage.local.get(["autoSync"], (res) => {
-  clipboardSync.setAutoSync(res.autoSync !== false);
+  onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
 });
 chrome.storage.local.get(["localRetentionMs"], (res) => {
   const storedRetentionMs = res.localRetentionMs;
@@ -358,6 +362,7 @@ const historyReconciliation = createHistoryReconciliation({
   getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
   membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
   onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
+  autoSync,
 });
 const notificationSelection = createRuntimeNotificationSelection();
 const membershipReconciler = createMembershipReconciler({
@@ -430,6 +435,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         pinnedIds,
         clipboardHistoryError,
         historyPolicyError,
+        autoSync: clipboardSync.isAutoSync(),
         relayAddresses: DEFAULT_CIRCUIT_RELAY_ADDRESSES,
       };
     },
@@ -479,6 +485,8 @@ const sharedRuntime = createRuntimeOrchestrator({
       await identitySvc.get();
     },
     startLocalServices: async () => {
+      await autoSyncReady;
+      clipboardSync.setAutoSync(autoSync);
       await historyPolicyReady;
       historyRetentionCleanup ??= startHistoryRetentionCleanup(
         {
@@ -766,7 +774,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       log.setLogLevel(msg.settings.logLevel);
     }
     if (msg.settings.autoSync !== undefined) {
-      clipboardSync.setAutoSync(msg.settings.autoSync !== false);
+      autoSync = msg.settings.autoSync !== false;
+      clipboardSync.setAutoSync(autoSync);
+      void runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state));
     }
     return true;
   }

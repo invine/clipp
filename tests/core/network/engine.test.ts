@@ -72,7 +72,7 @@ jest.mock("../../../packages/core/network/peerId", () => ({
 }));
 
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
-import { CLIP_PROTOCOL, HISTORY_PROTOCOL } from "../../../packages/core/network/protocol";
+import { CLIP_PROTOCOL, HISTORY_PROTOCOL, HISTORY_REQUEST_PROTOCOL } from "../../../packages/core/network/protocol";
 import { encodeLiveClipFrame } from "../../../packages/core/protocols/liveClip";
 
 const { createClipboardNode } = jest.requireMock("../../../packages/core/network/node");
@@ -670,6 +670,14 @@ describe("Libp2pMessagingTransport", () => {
     expect(received).toHaveLength(1);
     expect(received[0].from).toBe("peer-1");
     expect(received[0].data).toEqual(frame);
+  });
+
+  it("registers the History Request control protocol", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    transport.onStream(HISTORY_REQUEST_PROTOCOL, async () => {});
+
+    expect(protocolHandlers.get(HISTORY_REQUEST_PROTOCOL)).toEqual(expect.any(Function));
   });
 
   it("stops an inbound history stream when incremental processing fails", async () => {

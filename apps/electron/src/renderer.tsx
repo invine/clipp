@@ -16,6 +16,7 @@ type AppState = {
   relayAddresses: string[];
   pinnedIds?: string[];
   localRetentionMs?: number;
+  autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   diagnostics?: {
@@ -98,6 +99,7 @@ const App = () => {
         identity={state.identity}
         pinnedIds={state.pinnedIds || []}
         localRetentionMs={state.localRetentionMs}
+        autoSync={state.autoSync}
         clipboardHistoryError={state.clipboardHistoryError}
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
@@ -114,6 +116,7 @@ const App = () => {
         onDismissClipboardHistoryError={() => window.clipp.dismissClipboardHistoryError()}
         onRetryHistoryCleanup={() => window.clipp.retryHistoryCleanup()}
         onSetLocalRetention={(retentionMs) => window.clipp.setLocalRetention(retentionMs)}
+        onSetAutoSync={(enabled) => window.clipp.setAutoSync(enabled)}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
         onSetRelayAddresses={async (addrs) => {

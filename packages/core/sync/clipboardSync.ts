@@ -10,6 +10,8 @@ export type ClipboardSyncManagerOptions = {
   getLocalDeviceId: () => Promise<string>;
   now?: () => number;
   autoSync?: boolean;
+  /** Coordinates history reconciliation when the persisted preference changes. */
+  onAutoSyncChanged?: (enabled: boolean) => void;
   /** v1 live delivery. The authenticated sender is supplied out-of-band. */
   liveGossip?: LiveClipGossip;
   /** Rechecked immediately before a received live Clip is durably accepted. */
@@ -78,7 +80,7 @@ export function createClipboardSyncManager(
   async function forwardLiveClip(clip: Clip, immediateSender?: string, allowAutoSyncOverride = false): Promise<void> {
     const liveGossip = currentLiveGossip;
     if (!liveGossip || !(await isLiveSideEffectEligible(clip, undefined, allowAutoSyncOverride))) return;
-    await liveGossip.forward(clip, immediateSender);
+    await liveGossip.forward(clip, immediateSender, allowAutoSyncOverride);
   }
 
   async function handleIncomingLiveClip(from: string, clip: Clip): Promise<void> {
@@ -129,6 +131,7 @@ export function createClipboardSyncManager(
 
   function bindLiveGossip(liveGossip: LiveClipGossip): void {
     currentLiveGossip = liveGossip;
+    liveGossip.setAutoSync(autoSync);
     const object = liveGossip as unknown as object;
     if (!boundLiveGossip.has(object)) {
       boundLiveGossip.add(object);
@@ -153,7 +156,10 @@ export function createClipboardSyncManager(
     },
     bindLiveGossip,
     setAutoSync(enabled: boolean) {
+      if (autoSync === enabled) return;
       autoSync = enabled;
+      currentLiveGossip?.setAutoSync(enabled);
+      options.onAutoSyncChanged?.(enabled);
     },
     isAutoSync() {
       return autoSync;

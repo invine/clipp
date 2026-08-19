@@ -60,6 +60,7 @@ export type AndroidAppState = {
   identity: Identity | null;
   pinnedIds: string[];
   localRetentionMs?: number;
+  autoSync?: boolean;
   clipboardHistoryError?: RuntimeClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses: string[];
@@ -337,6 +338,7 @@ export class AndroidClient {
       getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
       membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
       onMembershipChanged: (listener) => this.identitySvc.onMembershipChanged(listener),
+      autoSync: this.autoSync,
     });
     this.clipboardSync.bindLiveGossip(this.liveClipGossip);
     this.membershipReconciler = createMembershipReconciler({
@@ -395,10 +397,12 @@ export class AndroidClient {
       const id = await this.identitySvc.get();
       return id.deviceId;
     },
+    onAutoSyncChanged: (enabled) => this.historyReconciliation?.setAutoSync(enabled),
   });
 
   private pendingRequests: TrustedDevice[] = [];
   private localRetentionMs = RETENTION_MS;
+  private autoSync = true;
   private clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   private historyPolicyError: HistoryPolicyError | null = null;
   private listeners: Array<(state: AndroidAppState) => void> = [];
@@ -673,6 +677,8 @@ export class AndroidClient {
       startLocalServices: async () => {
         this.pairingSessions.start();
         this.bindEvents();
+        this.autoSync = (await this.storage.get<boolean>("autoSync")) !== false;
+        this.clipboardSync.setAutoSync(this.autoSync);
         const storedRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
         const applyStoredRetention = async (): Promise<void> => {
           this.localRetentionMs = await this.history.setRetention(storedRetentionMs);
@@ -778,6 +784,7 @@ export class AndroidClient {
       identity,
       pinnedIds: await this.history.pinnedIds(),
       localRetentionMs: this.localRetentionMs,
+      autoSync: this.clipboardSync.isAutoSync(),
       clipboardHistoryError: this.clipboardHistoryError,
       historyPolicyError: this.historyPolicyError,
       relayAddresses,
@@ -851,6 +858,14 @@ export class AndroidClient {
     await this.storage.set("localRetentionMs", this.localRetentionMs);
     await this.emitState();
     return this.localRetentionMs;
+  }
+
+  async setAutoSync(enabled: boolean) {
+    this.autoSync = enabled !== false;
+    await this.storage.set("autoSync", this.autoSync);
+    this.clipboardSync.setAutoSync(this.autoSync);
+    await this.emitState();
+    return this.autoSync;
   }
 
   async getIdentity(): Promise<Identity | null> {

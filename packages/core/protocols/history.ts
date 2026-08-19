@@ -4,9 +4,26 @@ import { bytesField, concatBytes, readFields, readVarint, singleBytes, varint } 
 
 /** One stream contains zero or more length-prefixed HistoryFrame batch bodies, then EOF. */
 export const HISTORY_PROTOCOL = "/clipp/history/1.0.0";
+/** A one-frame, empty control stream asking the recipient to send its snapshot. */
+export const HISTORY_REQUEST_PROTOCOL = "/clipp/history-request/1.0.0";
 export const HISTORY_MAX_FRAME_BYTES = 256 * 1024;
 
 export type HistoryBatch = { clips: Clip[] };
+
+/** The request deliberately has no payload fields: authority is the authenticated stream peer. */
+export function encodeHistoryRequestFrame(): Uint8Array {
+  return Uint8Array.of(0);
+}
+
+export async function readHistoryRequest(chunks: AsyncIterable<Uint8Array>): Promise<void> {
+  let frame: Uint8Array | undefined;
+  for await (const chunk of chunks) {
+    if (!(chunk instanceof Uint8Array)) throw new Error("invalid_history_request");
+    frame = frame ? concatBytes([frame, chunk]) : chunk;
+    if (frame.length > 1) throw new Error("invalid_history_request");
+  }
+  if (!frame || frame.length !== 1 || frame[0] !== 0) throw new Error("invalid_history_request");
+}
 
 export function encodeHistoryBatchFrame(batch: HistoryBatch, maximumBytes = HISTORY_MAX_FRAME_BYTES): Uint8Array {
   if (batch.clips.length === 0) throw new Error("empty_history_batch");

@@ -31,6 +31,7 @@ type AppState = {
   };
   pinnedIds?: string[];
   localRetentionMs?: number;
+  autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
 };
@@ -58,6 +59,7 @@ const api = {
   renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
   setRelayAddresses: (addrs: string[]) => ipcRenderer.invoke("clipp:set-relay-addresses", addrs),
   setLocalRetention: (retentionMs: number) => ipcRenderer.invoke("clipp:set-local-retention", retentionMs),
+  setAutoSync: (enabled: boolean) => ipcRenderer.invoke("clipp:set-auto-sync", enabled),
   onUpdate: (cb: (state: AppState) => void) => {
     const listener = (_event: any, state: AppState) => cb(state);
     ipcRenderer.on("clipp:update", listener);
