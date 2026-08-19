@@ -90,10 +90,11 @@ export function createHistoryReconciliation(options: {
     let failure: unknown;
     let storageFailed = false;
     try {
-      if (!(await isActive(from))) return;
+      if (!(await isActive(from))) throw new Error("history_sender_inactive");
       for await (const batch of readHistorySnapshot(chunks, maximumFrameBytes)) {
         for (const clip of batch.clips) {
-          if (!validateClip(clip) || !isClipAcceptable(clip, now()) || !(await isActive(from))) continue;
+          if (!(await isActive(from))) throw new Error("history_sender_inactive");
+          if (!validateClip(clip) || !isClipAcceptable(clip, now())) continue;
           let accepted;
           try {
             accepted = await options.history.accept(clip, { liveHandled: false, admissionPriority: false });
@@ -106,14 +107,23 @@ export function createHistoryReconciliation(options: {
         }
       }
     } catch (error) {
-      if (!storageFailed) log.warn("History snapshot framing failed", { peerId: from, error: errorMessage(error) });
+      if (!storageFailed) {
+        const message = errorMessage(error);
+        if (message === "history_sender_inactive") log.warn("History snapshot sender inactive", { peerId: from });
+        else log.warn("History snapshot framing failed", { peerId: from, error: message });
+      }
       failure = error;
     } finally {
       inbound.delete(from);
     }
     if (imported) {
       const peers = options.transport.getConnectedPeers().filter((peerId) => peerId !== from);
-      await Promise.all(peers.map((peerId) => snapshotTo(peerId)));
+      const propagation = Promise.all(peers.map((peerId) => snapshotTo(peerId)));
+      if (failure) {
+        void propagation;
+        throw failure;
+      }
+      await propagation;
     }
     if (failure) throw failure;
   }

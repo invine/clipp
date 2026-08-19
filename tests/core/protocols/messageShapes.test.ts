@@ -8,6 +8,8 @@ import {
   decodeHistorySnapshot,
   encodeHistoryBatchFrame,
 } from "../../../packages/core/protocols/history";
+import { encodeClip } from "../../../packages/core/protocols/clipCodec";
+import { bytesField, concatBytes, varint } from "../../../packages/core/protocols/protobuf";
 import {
   createTrustedPeersMessage,
   createSignedTrustRequestFromKey,
@@ -109,6 +111,29 @@ describe("protocol message shapes", () => {
     ]);
     expect(new TextDecoder().decode(frame)).not.toContain("from");
     expect(new TextDecoder().decode(frame)).not.toContain(historyClip.id);
+  });
+
+  it("rejects an overflowing varint in one Clip without losing valid siblings", () => {
+    const validClip = {
+      id: "00000000-0000-4000-8000-000000000002",
+      type: "text" as const,
+      content: "valid sibling",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 2,
+      shareExpiresAt: 86_400_002,
+    };
+    const overflowingCapturedAt = Uint8Array.of(
+      0x18,
+      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02,
+    );
+    const batch = concatBytes([
+      bytesField(1, overflowingCapturedAt),
+      bytesField(1, encodeClip(validClip)),
+    ]);
+    const historyFrame = bytesField(1, batch);
+    const frame = concatBytes([varint(BigInt(historyFrame.length)), historyFrame]);
+
+    expect(decodeHistorySnapshot(frame)).toEqual([{ clips: [validClip] }]);
   });
 
   it("uses the normalized trust request wire shape", async () => {

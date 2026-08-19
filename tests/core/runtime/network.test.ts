@@ -31,4 +31,22 @@ describe("replaceable runtime network", () => {
 
     expect(observed.disconnectedPeers).toEqual(["peer-a"]);
   });
+
+  it("binds each stream handler once to replacement streaming transports", async () => {
+    const initial = createObservedRuntimeTransport();
+    const replacement = createObservedRuntimeTransport();
+    let current = initial.transport;
+    const network = createRuntimeNetworkProxy(() => current);
+    const received: string[] = [];
+
+    network.onStream("/clipp/history/1.0.0", async (from) => { received.push(from); });
+    current = replacement.transport;
+    network.bindCurrent();
+    network.bindCurrent();
+    await replacement.receiveStream("/clipp/history/1.0.0", "replacement-peer", (async function *() {})());
+
+    expect(initial.streamHandlerCount("/clipp/history/1.0.0")).toBe(1);
+    expect(replacement.streamHandlerCount("/clipp/history/1.0.0")).toBe(1);
+    expect(received).toEqual(["replacement-peer"]);
+  });
 });

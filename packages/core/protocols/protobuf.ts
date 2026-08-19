@@ -1,6 +1,8 @@
 export type ProtobufField = Uint8Array | bigint;
 export type ProtobufFields = Map<number, ProtobufField[]>;
 
+const MAX_UINT64 = (1n << 64n) - 1n;
+
 export function concatBytes(parts: Uint8Array[]): Uint8Array {
   const length = parts.reduce((total, part) => total + part.length, 0);
   const result = new Uint8Array(length);
@@ -21,7 +23,7 @@ export function varintField(field: number, value: bigint): Uint8Array {
 }
 
 export function varint(value: bigint): Uint8Array {
-  if (value < 0n || value > (1n << 64n) - 1n) throw new Error("invalid_varint");
+  if (value < 0n || value > MAX_UINT64) throw new Error("invalid_varint");
   const out: number[] = [];
   do {
     const byte = Number(value & 127n);
@@ -38,6 +40,7 @@ export function readVarint(bytes: Uint8Array, start: number): { value: bigint; n
     value |= BigInt(byte & 127) << shift;
     if ((byte & 128) === 0) {
       const next = index + 1;
+      if (value > MAX_UINT64) return null;
       return varint(value).length === next - start ? { value, next } : null;
     }
   }
@@ -77,7 +80,11 @@ export function readFields(bytes: Uint8Array, recognized: Map<number, number>): 
     } else {
       return null;
     }
-    if (recognizedWire !== undefined) result.set(field, [...(result.get(field) ?? []), value]);
+    if (recognizedWire !== undefined) {
+      const values = result.get(field);
+      if (values) values.push(value);
+      else result.set(field, [value]);
+    }
   }
   return result;
 }

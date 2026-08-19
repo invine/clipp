@@ -1,11 +1,30 @@
+import {
+  createExtensionStreamReceiver,
+  relayExtensionStream,
+} from "../../../apps/extension/src/streamBridge";
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
 import type { StreamingMessagingTransport } from "../../../packages/core/messaging/transport";
 import type { Clip } from "../../../packages/core/models/Clip";
 import { decodeHistorySnapshot, encodeHistoryBatchFrame, HISTORY_PROTOCOL } from "../../../packages/core/protocols/history";
+import {
+  createAndroidRuntimeAdapter,
+  createChromeExtensionRuntimeAdapter,
+  createElectronRuntimeAdapter,
+  createRuntimeConformanceHarness,
+  createRuntimeNetworkProxy,
+  createRuntimeOrchestrator,
+  RUNTIME_CAPABILITIES,
+  type RuntimeCapabilities,
+  type RuntimePlatformAdapterDependencies,
+} from "../../../packages/core/runtime";
 import { createRuntimeClipboardService } from "../../../packages/core/runtime/clipboard";
-import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
+
+type Identity = { deviceId: string };
+type State = Record<string, never>;
+type PublicState = Record<string, never>;
+type AdapterFactory = typeof createElectronRuntimeAdapter<Identity, State, PublicState>;
 
 const localPeerId = "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy";
 const senderPeerId = "12D3KooWSuG4bhX3bg3oS1P2eS6NWRmArz98sQ5ALbqK2ABu54mF";
@@ -20,67 +39,144 @@ const historicalClip: Clip = {
 };
 
 describe.each([
-  ["Desktop", RUNTIME_CAPABILITIES.electron],
-  ["Mobile", RUNTIME_CAPABILITIES.android],
-  ["Extension", RUNTIME_CAPABILITIES.chromeExtension],
-] as const)("%s Clipboard History Reconciliation", (_name, capabilities) => {
-  it("imports without changing the clipboard, re-exports, and remains idempotent", async () => {
+  ["Desktop", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron, false],
+  ["Mobile", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android, false],
+  ["Extension", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension, true],
+] as const)("%s Clipboard History Reconciliation", (_name, factory, capabilities, usesExtensionBridge) => {
+  it("repairs through runtime startup without clipboard effects, re-exports, and remains idempotent", async () => {
     const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
-    const clipboardWrites: string[] = [];
-    const clipboard = createRuntimeClipboardService({
+    const outbound: Uint8Array[] = [];
+    let directInbound: Parameters<StreamingMessagingTransport["onStream"]>[1] | undefined;
+    const extensionReceiver = createExtensionStreamReceiver();
+    const baseTransport: StreamingMessagingTransport = {
+      start: async () => {},
+      stop: async () => {},
+      send: async () => {},
+      async sendStream(protocol, target, frames) {
+        expect({ protocol, target }).toEqual({ protocol: HISTORY_PROTOCOL, target: targetPeerId });
+        for await (const frame of frames) outbound.push(Uint8Array.from(frame));
+      },
+      connect: async () => {},
+      onMessage: () => {},
+      onStream(protocol, handler) {
+        if (usesExtensionBridge) extensionReceiver.onStream(protocol, handler);
+        else directInbound = handler;
+      },
+      onPeerConnected: () => {},
+      onPeerDisconnected: () => {},
+      onSelfPeerUpdate: () => {},
+      getConnectedPeers: () => [targetPeerId],
+    };
+    const network = usesExtensionBridge
+      ? baseTransport
+      : createRuntimeNetworkProxy(() => baseTransport);
+    const harness = createRuntimeConformanceHarness<Identity, State, PublicState>({
       capabilities,
+      initialIdentity: { deviceId: localPeerId },
+      initialApplicationState: {},
+      initialClipboardText: "current clipboard",
+      now: 2_000,
+      getPublicState: async () => ({}),
+    });
+    const adapter = createPlatformAdapter(factory as AdapterFactory, harness.adapter.capabilities, {
+      clipboard: harness.adapter.clipboard,
+      notifications: harness.adapter.notifications,
+      lifecycle: harness.adapter.lifecycle,
+      network,
+      clock: harness.adapter.clock,
+      publicState: harness.adapter.publicState,
+    });
+    const clipboard = createRuntimeClipboardService({
+      capabilities: adapter.capabilities,
       history,
       getSenderId: () => localPeerId,
-      readText: capabilities.clipboardCapture === "polling" ? async () => "current clipboard" : undefined,
-      writeText: async (text) => { clipboardWrites.push(text); },
-      pollIntervalMs: 0,
-      now: () => 2_000,
+      readText: adapter.capabilities.clipboardCapture === "polling"
+        ? () => adapter.clipboard.readText()
+        : undefined,
+      writeText: (text) => adapter.clipboard.writeText(text),
+      pollIntervalMs: 60_000,
+      now: adapter.clock.now,
     });
     const clipboardSync = createClipboardSyncManager({
       clipboard,
       history,
       getLocalDeviceId: async () => localPeerId,
-      now: () => 2_000,
+      now: adapter.clock.now,
     });
-    clipboardSync.start();
-
-    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
-    const outbound: Uint8Array[] = [];
-    const connectedPeers = [targetPeerId];
-    const transport: Pick<StreamingMessagingTransport, "getConnectedPeers" | "onPeerConnected" | "sendStream" | "onStream"> = {
-      getConnectedPeers: () => connectedPeers,
-      onPeerConnected: () => {},
-      onStream: (protocol, handler) => {
-        if (protocol === HISTORY_PROTOCOL) incoming = handler;
-      },
-      async sendStream(protocol, target, frames) {
-        expect({ protocol, target }).toEqual({ protocol: HISTORY_PROTOCOL, target: targetPeerId });
-        for await (const frame of frames) outbound.push(frame);
-      },
-    };
     const reconciliation = createHistoryReconciliation({
-      transport,
+      transport: network,
       history,
       getLocalDeviceId: async () => localPeerId,
       membershipStatus: async () => "active",
-      now: () => 2_000,
+      now: adapter.clock.now,
     });
-    reconciliation.start();
+    const runtime = createRuntimeOrchestrator({
+      adapter,
+      start: async () => {
+        clipboardSync.start();
+        reconciliation.start();
+      },
+      stop: async () => {
+        reconciliation.stop();
+        clipboardSync.stop();
+      },
+    });
+    await runtime.start();
 
-    const inboundSnapshot = async function *(): AsyncIterable<Uint8Array> {
-      yield encodeHistoryBatchFrame({ clips: [historicalClip] });
+    const deliver = async (): Promise<void> => {
+      const chunks = (async function *(): AsyncIterable<Uint8Array> {
+        yield encodeHistoryBatchFrame({ clips: [historicalClip] });
+      })();
+      if (!usesExtensionBridge) {
+        await directInbound!(senderPeerId, chunks);
+        return;
+      }
+      await relayExtensionStream({
+        protocol: HISTORY_PROTOCOL,
+        from: senderPeerId,
+        chunks,
+        streamId: globalThis.crypto.randomUUID(),
+        send: (message) => extensionReceiver.handle(message),
+      });
     };
-    await incoming!(senderPeerId, inboundSnapshot());
-    await incoming!(senderPeerId, inboundSnapshot());
+    await deliver();
+    await deliver();
 
     expect(await history.exportAll()).toEqual([historicalClip]);
-    expect(clipboardWrites).toEqual([]);
+    expect(harness.observed.clipboardWrites).toEqual([]);
     expect(decodeHistorySnapshot(concat(outbound))).toEqual([{ clips: [historicalClip] }]);
 
-    reconciliation.stop();
-    clipboardSync.stop();
+    await runtime.stop();
   });
 });
+
+function createPlatformAdapter(
+  factory: AdapterFactory,
+  capabilities: RuntimeCapabilities,
+  ports: Pick<
+    RuntimePlatformAdapterDependencies<Identity, State, PublicState>,
+    "clipboard" | "notifications" | "lifecycle" | "network" | "clock" | "publicState"
+  >,
+) {
+  const values = new Map<string, unknown>();
+  return factory({
+    ...ports,
+    storage: {
+      get: async <Value>(key: string) => values.get(key) as Value | undefined,
+      set: async <Value>(key: string, value: Value) => void values.set(key, structuredClone(value)),
+      remove: async (key: string) => void values.delete(key),
+    },
+    identityKey: "identity",
+    applicationStateKey: "state",
+    initialApplicationState: () => ({}),
+    relays: {
+      readAddresses: async () => [],
+      ...(capabilities.relayConfiguration === "editable"
+        ? { updateAddresses: async (addresses: string[]) => addresses }
+        : {}),
+    },
+  });
+}
 
 function concat(parts: Uint8Array[]): Uint8Array {
   const output = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));

@@ -701,6 +701,16 @@ describe("Libp2pMessagingTransport", () => {
     expect(close).toHaveBeenCalled();
   });
 
+  it("enforces one stream owner per protocol", () => {
+    const transport = createLibp2pMessagingTransport();
+    transport.onStream(HISTORY_PROTOCOL, async () => {});
+
+    expect(() => transport.onStream(HISTORY_PROTOCOL, async () => {}))
+      .toThrow("protocol_handler_already_registered");
+    expect(() => transport.onMessage(HISTORY_PROTOCOL, () => {}))
+      .toThrow("protocol_stream_handler_already_registered");
+  });
+
   it("closes an unauthorised live stream without dispatching it", async () => {
     const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => false });
     await transport.start();

@@ -237,6 +237,69 @@ describe("History reconciliation", () => {
     expect(snapshotTargets).toEqual([peerIds.electron]);
   });
 
+  it("rejects a failed inbound snapshot without waiting for re-export", async () => {
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [peerIds.electron],
+        onStream: (_protocol, handler) => { incoming = handler; },
+        onPeerConnected: () => {},
+        sendStream: async () => await new Promise<void>(() => {}),
+      },
+      history,
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    await expect(incoming!(peerIds.extension, (async function *() {
+      yield encodeHistoryBatchFrame({ clips: [clip] });
+      yield Uint8Array.of(0x80);
+    })())).rejects.toThrow("invalid_history_framing");
+  });
+
+  it("terminates an inbound snapshot when the sender loses membership", async () => {
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    let active = true;
+    let produced = 0;
+    const stored: Clip[] = [];
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: (_protocol, handler) => { incoming = handler; },
+        onPeerConnected: () => {},
+        sendStream: async () => {},
+      },
+      history: {
+        query: async () => [],
+        getById: async () => null,
+        accept: async (accepted) => {
+          stored.push(accepted);
+          active = false;
+          return { kind: "newly-stored" as const, clip: accepted, liveHandled: false };
+        },
+      },
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => active ? "active" : "revoked",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    await expect(incoming!(peerIds.extension, (async function *() {
+      produced += 1;
+      yield encodeHistoryBatchFrame({ clips: [clip] });
+      produced += 1;
+      yield encodeHistoryBatchFrame({ clips: [{ ...clip, id: "00000000-0000-4000-8000-000000000002" }] });
+      produced += 1;
+      yield Uint8Array.of(0x80);
+    })())).rejects.toThrow("history_sender_inactive");
+
+    expect(stored).toEqual([clip]);
+    expect(produced).toBe(2);
+  });
+
   it("offers a snapshot when an already connected device becomes an Active Member", async () => {
     let active = false;
     let membershipChanged: (() => void) | undefined;

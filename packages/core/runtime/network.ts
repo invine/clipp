@@ -6,7 +6,7 @@ export interface RuntimeNetworkProxy extends StreamingMessagingTransport {
 }
 
 export function createRuntimeNetworkProxy(
-  current: () => MessagingTransport | null | undefined
+  current: () => StreamingMessagingTransport | null | undefined
 ): RuntimeNetworkProxy {
   const protocolHandlers: Array<{
     protocol: string;
@@ -18,14 +18,14 @@ export function createRuntimeNetworkProxy(
     handler: MessageStreamHandler;
     boundTransports: WeakSet<MessagingTransport>;
   }> = [];
-  const requireNetwork = (): MessagingTransport => {
+  const requireNetwork = (): StreamingMessagingTransport => {
     const network = current();
     if (!network) throw new Error("runtime_network_unavailable");
     return network;
   };
   const bindProtocolHandler = (
     registration: (typeof protocolHandlers)[number],
-    network: MessagingTransport
+    network: StreamingMessagingTransport
   ) => {
     if (registration.boundTransports.has(network)) return;
     network.onMessage(registration.protocol, registration.handler);
@@ -33,10 +33,9 @@ export function createRuntimeNetworkProxy(
   };
   const bindStreamHandler = (
     registration: (typeof streamHandlers)[number],
-    network: MessagingTransport
+    network: StreamingMessagingTransport
   ) => {
     if (registration.boundTransports.has(network)) return;
-    if (!network.onStream) throw new Error("stream_messaging_unavailable");
     network.onStream(registration.protocol, registration.handler);
     registration.boundTransports.add(network);
   };
@@ -49,7 +48,6 @@ export function createRuntimeNetworkProxy(
     send: (protocol, target, data) => requireNetwork().send(protocol, target, data),
     sendStream: (protocol, target, frames) => {
       const network = requireNetwork();
-      if (!network.sendStream) throw new Error("stream_messaging_unavailable");
       return network.sendStream(protocol, target, frames);
     },
     connect: (target) => requireNetwork().connect(target),
