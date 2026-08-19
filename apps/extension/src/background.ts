@@ -49,12 +49,16 @@ import { createPairingRuntimeSessions } from "../../../packages/core/pairing/run
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "../../../packages/core/pairing/v2";
 import type {
-  MessagingTransport,
   PeerConnectionInfo,
+  StreamingMessagingTransport,
 } from "../../../packages/core/messaging/transport";
 import {
   createExtensionReachabilityBridge,
 } from "./networkBridge";
+import {
+  createExtensionStreamReceiver,
+  isExtensionStreamMessage,
+} from "./streamBridge";
 
 // Initialize log level from storage
 chrome.storage.local.get(["logLevel"], (res) => {
@@ -280,13 +284,15 @@ trust.on("approved", async (d) => {
 });
 
 const runtimeProtocolHandlers = new Map<string, Array<(from: string, data: Uint8Array) => void>>();
+const extensionStreamReceiver = createExtensionStreamReceiver();
+const runtimeRegisteredStreamProtocols = new Set<string>();
 const runtimePeerConnectedHandlers = new Set<(peerId: string) => void>();
 const runtimePeerDisconnectedHandlers = new Set<(peerId: string) => void>();
 const runtimeSelfPeerUpdateHandlers = new Set<(multiaddrs: string[]) => void>();
 let runtimeConnectedPeers = new Set<string>();
 let runtimePeerConnections: PeerConnectionInfo[] = [];
 
-const extensionNetwork: MessagingTransport = {
+const extensionNetwork: StreamingMessagingTransport = {
   async start() {
     await offscreenReady;
   },
@@ -319,6 +325,14 @@ const extensionNetwork: MessagingTransport = {
         .then(() => sendOffscreen({ action: "runtimeRegisterProtocol", protocol }))
         .catch(() => {});
     }
+  },
+  onStream(protocol, handler) {
+    extensionStreamReceiver.onStream(protocol, handler);
+    if (runtimeRegisteredStreamProtocols.has(protocol)) return;
+    runtimeRegisteredStreamProtocols.add(protocol);
+    void offscreenReady
+      .then(() => sendOffscreen({ action: "runtimeRegisterStreamProtocol", protocol }))
+      .catch(() => {});
   },
   onPeerConnected(handler) {
     runtimePeerConnectedHandlers.add(handler);
@@ -760,8 +774,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Listen for messages forwarded from offscreen (libp2p)
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.source !== "offscreen") return;
+  if (isExtensionStreamMessage(msg)) {
+    void extensionStreamReceiver.handle(msg).then(sendResponse);
+    return true;
+  }
   if (msg?.action === "selfPeerUpdate" && Array.isArray(msg.multiaddrs)) {
     void identitySvc.updateMultiaddrs(msg.multiaddrs);
     runtimeSelfPeerUpdateHandlers.forEach((handler) => handler(msg.multiaddrs));

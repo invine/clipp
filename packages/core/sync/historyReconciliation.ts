@@ -1,7 +1,7 @@
 import { isClipAcceptable, validateClip, type Clip } from "../models/Clip.js";
 import type { ClipHistoryStore } from "../history/store.js";
-import type { MessagingTransport } from "../messaging/transport.js";
-import { HISTORY_MAX_FRAME_BYTES, HISTORY_PROTOCOL, encodeHistoryBatchFrame, iterateHistorySnapshot } from "../protocols/history.js";
+import type { StreamingMessagingTransport } from "../messaging/transport.js";
+import { HISTORY_MAX_FRAME_BYTES, HISTORY_PROTOCOL, encodeHistoryBatchFrame, readHistorySnapshot } from "../protocols/history.js";
 import type { MembershipStatus } from "../pairing/membership.js";
 import * as log from "../logger.js";
 
@@ -12,7 +12,7 @@ export type HistoryReconciliation = {
 };
 
 export function createHistoryReconciliation(options: {
-  transport: Pick<MessagingTransport, "getConnectedPeers" | "onMessage" | "onPeerConnected" | "sendStream">;
+  transport: Pick<StreamingMessagingTransport, "getConnectedPeers" | "onPeerConnected" | "sendStream" | "onStream">;
   history: Pick<ClipHistoryStore, "accept" | "getById" | "query">;
   getLocalDeviceId: () => Promise<string>;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
@@ -69,14 +69,9 @@ export function createHistoryReconciliation(options: {
 
   async function snapshotTo(peerId: string): Promise<void> {
     if (stopped || outbound.has(peerId) || peerId === await options.getLocalDeviceId() || !(await isActive(peerId))) return;
-    const sendStream = options.transport.sendStream;
-    if (!sendStream) {
-      log.warn("History reconciliation transport does not support streams", { peerId });
-      return;
-    }
     outbound.add(peerId);
     try {
-      await sendStream(HISTORY_PROTOCOL, peerId, snapshotFrames(peerId));
+      await options.transport.sendStream(HISTORY_PROTOCOL, peerId, snapshotFrames(peerId));
     } catch (error) {
       log.warn("History snapshot delivery failed", { peerId, error: errorMessage(error) });
     } finally {
@@ -84,27 +79,35 @@ export function createHistoryReconciliation(options: {
     }
   }
 
-  async function receive(from: string, data: Uint8Array): Promise<void> {
-    if (stopped || inbound.has(from) || !(await isActive(from))) return;
+  async function receive(from: string, chunks: AsyncIterable<Uint8Array>): Promise<void> {
+    if (stopped) return;
+    if (inbound.has(from)) {
+      log.warn("History snapshot busy", { peerId: from });
+      throw new Error("history_snapshot_busy");
+    }
     inbound.add(from);
     let imported = false;
+    let failure: unknown;
+    let storageFailed = false;
     try {
-      for (const batch of iterateHistorySnapshot(data, maximumFrameBytes)) {
+      if (!(await isActive(from))) return;
+      for await (const batch of readHistorySnapshot(chunks, maximumFrameBytes)) {
         for (const clip of batch.clips) {
           if (!validateClip(clip) || !isClipAcceptable(clip, now()) || !(await isActive(from))) continue;
           let accepted;
           try {
             accepted = await options.history.accept(clip, { liveHandled: false, admissionPriority: false });
           } catch (error) {
+            storageFailed = true;
             log.warn("History snapshot storage failed", { peerId: from, clipId: clip.id, error: errorMessage(error) });
-            return;
+            throw error;
           }
           if (accepted.kind === "newly-stored") imported = true;
         }
       }
     } catch (error) {
-      log.warn("History snapshot framing failed", { peerId: from, error: errorMessage(error) });
-      return;
+      if (!storageFailed) log.warn("History snapshot framing failed", { peerId: from, error: errorMessage(error) });
+      failure = error;
     } finally {
       inbound.delete(from);
     }
@@ -112,6 +115,7 @@ export function createHistoryReconciliation(options: {
       const peers = options.transport.getConnectedPeers().filter((peerId) => peerId !== from);
       await Promise.all(peers.map((peerId) => snapshotTo(peerId)));
     }
+    if (failure) throw failure;
   }
 
   function snapshotConnected(): void {
@@ -122,7 +126,7 @@ export function createHistoryReconciliation(options: {
     start(): void {
       if (started) return;
       started = true;
-      options.transport.onMessage(HISTORY_PROTOCOL, (from, data) => { void receive(from, data); });
+      options.transport.onStream(HISTORY_PROTOCOL, receive);
       options.transport.onPeerConnected((peerId) => { void snapshotTo(peerId); });
       stopMembershipListener = options.onMembershipChanged?.(snapshotConnected);
       snapshotConnected();

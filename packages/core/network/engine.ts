@@ -17,9 +17,11 @@ import { lookupRendezvousPeer, registerOnRendezvous, unregisterFromRendezvous } 
 import type {
   MessagingTransport,
   MessageHandler,
+  MessageStreamHandler,
   PeerConnectionInfo,
   PeerConnectionPath,
   RelayConnectionInfo,
+  StreamingMessagingTransport,
 } from "../messaging/transport.js";
 import * as log from "../logger.js";
 
@@ -83,6 +85,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private peerRecordWrite: Promise<void> = Promise.resolve();
 
   private readonly handlersByProtocol = new Map<string, MessageHandler[]>();
+  private readonly streamHandlersByProtocol = new Map<string, MessageStreamHandler[]>();
   private readonly connectBus = new EventBus<string>();
   private readonly disconnectBus = new EventBus<string>();
   private readonly relayConnectionBus = new EventBus<void>();
@@ -362,6 +365,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (list.length === 1) {
       log.debug("Registered protocol handler", { protocol });
     }
+  }
+
+  onStream(protocol: string, cb: MessageStreamHandler): void {
+    const list = this.streamHandlersByProtocol.get(protocol) || [];
+    list.push(cb);
+    this.streamHandlersByProtocol.set(protocol, list);
+    if (list.length === 1) log.debug("Registered protocol stream handler", { protocol });
   }
 
   onPeerConnected(cb: (peerId: string) => void): void {
@@ -966,8 +976,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
         });
       }
 
-      const handlers = this.handlersByProtocol.get(protocol);
-      if (!handlers || handlers.length === 0) {
+      const handlers = this.handlersByProtocol.get(protocol) ?? [];
+      const streamHandlers = this.streamHandlersByProtocol.get(protocol) ?? [];
+      if (handlers.length === 0 && streamHandlers.length === 0) {
         log.debug("No handlers for incoming protocol", { protocol, from });
         return;
       }
@@ -1068,15 +1079,15 @@ class Libp2pMessagingTransport implements MessagingTransport {
             await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
             return;
           }
-          const chunks: Uint8Array[] = [];
-          let size = 0;
-          for await (const chunk of iterable) {
-            const bytes = toU8(chunk);
-            if (!bytes) return;
-            size += bytes.length;
-            chunks.push(bytes);
-          }
-          for (const handler of handlers) handler(from, concatBytes(chunks, size));
+          if (streamHandlers.length !== 1) throw new Error("invalid_history_stream_handler_count");
+          const byteChunks = async function *(): AsyncIterable<Uint8Array> {
+            for await (const chunk of iterable) {
+              const bytes = toU8(chunk);
+              if (!bytes) throw new Error("invalid_history_framing");
+              yield bytes;
+            }
+          };
+          await streamHandlers[0](from, byteChunks());
           return;
         }
         for await (const chunk of iterable) {
@@ -1108,6 +1119,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
           const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
           this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from ?? undefined, frameSize: 0, messageType: "unknown", connectionPath: path });
           await this.closeInvalidPairingConnection(from, conn);
+        }
+        if (protocol === HISTORY_PROTOCOL) {
+          abortMessageStream(stream, err);
+          await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
         }
         log.debug("Incoming stream failed", { protocol, from, error: err?.message || err });
       }
@@ -1280,7 +1295,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 }
 
-export function createLibp2pMessagingTransport(options?: Libp2pMessagingOptions): MessagingTransport {
+export function createLibp2pMessagingTransport(options?: Libp2pMessagingOptions): StreamingMessagingTransport {
   return new Libp2pMessagingTransport(options);
 }
 
@@ -1518,7 +1533,7 @@ async function nextBeforeDeadline<T>(
 async function openLiveClipStreamWithTimeout(opening: Promise<any>, timeoutMs: number): Promise<any> {
   let timedOut = false;
   const guardedOpening = opening.then((stream) => {
-    if (timedOut) abortLiveClipStream(stream, liveClipStreamTimeoutError());
+    if (timedOut) abortMessageStream(stream, liveClipStreamTimeoutError());
     return stream;
   });
   return await promiseWithTimeout(guardedOpening, timeoutMs, () => { timedOut = true; });
@@ -1530,7 +1545,7 @@ async function liveClipOperationWithTimeout<T>(
   stream: any
 ): Promise<T> {
   return await promiseWithTimeout(operation, timeoutMs, () => {
-    abortLiveClipStream(stream, liveClipStreamTimeoutError());
+    abortMessageStream(stream, liveClipStreamTimeoutError());
   });
 }
 
@@ -1556,7 +1571,7 @@ async function promiseWithTimeout<T>(
   }
 }
 
-function abortLiveClipStream(stream: any, error: Error): void {
+function abortMessageStream(stream: any, error: Error): void {
   try { stream?.abort?.(error); } catch { /* the affected stream is already closed */ }
 }
 

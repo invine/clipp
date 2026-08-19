@@ -1,6 +1,6 @@
-import type { MessageHandler, MessagingTransport } from "../messaging/transport";
+import type { MessageHandler, MessageStreamHandler, MessagingTransport, StreamingMessagingTransport } from "../messaging/transport";
 
-export interface RuntimeNetworkProxy extends MessagingTransport {
+export interface RuntimeNetworkProxy extends StreamingMessagingTransport {
   /** Attach registered protocol handlers to the currently active transport. */
   bindCurrent(): void;
 }
@@ -11,6 +11,11 @@ export function createRuntimeNetworkProxy(
   const protocolHandlers: Array<{
     protocol: string;
     handler: MessageHandler;
+    boundTransports: WeakSet<MessagingTransport>;
+  }> = [];
+  const streamHandlers: Array<{
+    protocol: string;
+    handler: MessageStreamHandler;
     boundTransports: WeakSet<MessagingTransport>;
   }> = [];
   const requireNetwork = (): MessagingTransport => {
@@ -24,6 +29,15 @@ export function createRuntimeNetworkProxy(
   ) => {
     if (registration.boundTransports.has(network)) return;
     network.onMessage(registration.protocol, registration.handler);
+    registration.boundTransports.add(network);
+  };
+  const bindStreamHandler = (
+    registration: (typeof streamHandlers)[number],
+    network: MessagingTransport
+  ) => {
+    if (registration.boundTransports.has(network)) return;
+    if (!network.onStream) throw new Error("stream_messaging_unavailable");
+    network.onStream(registration.protocol, registration.handler);
     registration.boundTransports.add(network);
   };
   const proxy: RuntimeNetworkProxy = {
@@ -48,6 +62,12 @@ export function createRuntimeNetworkProxy(
       const network = current();
       if (network) bindProtocolHandler(registration, network);
     },
+    onStream(protocol, handler) {
+      const registration = { protocol, handler, boundTransports: new WeakSet<MessagingTransport>() };
+      streamHandlers.push(registration);
+      const network = current();
+      if (network) bindStreamHandler(registration, network);
+    },
     onPeerConnected: (handler) => requireNetwork().onPeerConnected(handler),
     onPeerDisconnected: (handler) => requireNetwork().onPeerDisconnected(handler),
     onRelayConnectionChanged: (handler) => requireNetwork().onRelayConnectionChanged?.(handler),
@@ -69,6 +89,7 @@ export function createRuntimeNetworkProxy(
     bindCurrent() {
       const network = requireNetwork();
       protocolHandlers.forEach((registration) => bindProtocolHandler(registration, network));
+      streamHandlers.forEach((registration) => bindStreamHandler(registration, network));
     },
   };
   return proxy;

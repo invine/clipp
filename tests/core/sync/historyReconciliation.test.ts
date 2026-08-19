@@ -26,9 +26,106 @@ async function flush(times = 4): Promise<void> {
   }
 }
 
+function createControlledStream() {
+  const values: Array<IteratorResult<Uint8Array>> = [];
+  const waiting: Array<(value: IteratorResult<Uint8Array>) => void> = [];
+  return {
+    stream: {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () => {
+            const value = values.shift();
+            return value ? Promise.resolve(value) : new Promise<IteratorResult<Uint8Array>>((resolve) => waiting.push(resolve));
+          },
+        };
+      },
+    } satisfies AsyncIterable<Uint8Array>,
+    push(value: Uint8Array) {
+      const resolve = waiting.shift();
+      if (resolve) resolve({ done: false, value });
+      else values.push({ done: false, value });
+    },
+    end() {
+      const resolve = waiting.shift();
+      if (resolve) resolve({ done: true, value: undefined });
+      else values.push({ done: true, value: undefined });
+    },
+  };
+}
+
 describe("History reconciliation", () => {
+  it("imports a complete History Batch before the inbound snapshot reaches EOF", async () => {
+    let incomingStream: ((from: string, chunks: AsyncIterable<Uint8Array>) => void | Promise<void>) | undefined;
+    const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onMessage: () => {},
+        onStream: (_protocol: string, handler: typeof incomingStream) => { incomingStream = handler; },
+        onPeerConnected: () => {},
+        sendStream: async () => {},
+      } as any,
+      history,
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+    expect(incomingStream).toBeDefined();
+
+    const controlled = createControlledStream();
+    const receiving = Promise.resolve(incomingStream!(peerIds.extension, controlled.stream));
+    controlled.push(encodeHistoryBatchFrame({ clips: [clip] }));
+    await flush();
+
+    expect(await history.exportAll()).toEqual([clip]);
+    controlled.end();
+    await receiving;
+  });
+
+  it("does not consume a second inbound snapshot from the same Active Member", async () => {
+    let incomingStream: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: (_protocol, handler) => { incomingStream = handler; },
+        onPeerConnected: () => {},
+        sendStream: async () => {},
+      },
+      history,
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    const first = createControlledStream();
+    const firstReceiving = incomingStream!(peerIds.extension, first.stream);
+    first.push(encodeHistoryBatchFrame({ clips: [clip] }));
+    await flush();
+
+    let secondReads = 0;
+    const secondClip: Clip = {
+      ...clip,
+      id: "00000000-0000-4000-8000-000000000002",
+      content: "must remain unread",
+    };
+    const second = async function *(): AsyncIterable<Uint8Array> {
+      secondReads += 1;
+      yield encodeHistoryBatchFrame({ clips: [secondClip] });
+    };
+
+    await expect(incomingStream!(peerIds.extension, second())).rejects.toThrow("history_snapshot_busy");
+    expect(secondReads).toBe(0);
+    expect(await history.exportAll()).toEqual([clip]);
+
+    first.end();
+    await firstReceiving;
+  });
+
   it("repairs an offline Clip through history only, re-exports it, and remains idempotent", async () => {
-    const handlers = new Map<string, (from: string, data: Uint8Array) => void>();
+    const handlers = new Map<string, (from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>>();
     const stores = new Map(Object.values(peerIds).map((peerId) => [peerId, new MemoryHistoryStore(undefined, { now: () => 2_000 })]));
     const clipboardWrites = new Map(Object.values(peerIds).map((peerId) => [peerId, 0]));
     const connected = new Map<string, string[]>([
@@ -37,26 +134,18 @@ describe("History reconciliation", () => {
       [peerIds.android, []],
     ]);
 
-    const transportFor = (from: string): Pick<MessagingTransport, "getConnectedPeers" | "onMessage" | "onPeerConnected"> & {
+    const transportFor = (from: string): Pick<MessagingTransport, "getConnectedPeers" | "onPeerConnected"> & {
+      onStream: NonNullable<MessagingTransport["onStream"]>;
       sendStream(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void>;
     } => ({
       getConnectedPeers: () => connected.get(from) ?? [],
-      onMessage: (protocol, handler) => {
+      onStream: (protocol, handler) => {
         if (protocol === HISTORY_PROTOCOL) handlers.set(from, handler);
       },
       onPeerConnected: () => {},
       async sendStream(protocol, target, frames) {
         expect(protocol).toBe(HISTORY_PROTOCOL);
-        const chunks: Uint8Array[] = [];
-        for await (const frame of frames) chunks.push(frame);
-        const size = chunks.reduce((total, frame) => total + frame.byteLength, 0);
-        const stream = new Uint8Array(size);
-        let offset = 0;
-        for (const frame of chunks) {
-          stream.set(frame, offset);
-          offset += frame.byteLength;
-        }
-        handlers.get(target)?.(from, stream);
+        await handlers.get(target)?.(from, frames);
       },
     });
 
@@ -89,12 +178,12 @@ describe("History reconciliation", () => {
   });
 
   it("retains a valid earlier batch when a later frame is malformed", async () => {
-    let incoming: ((from: string, data: Uint8Array) => void) | undefined;
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
     const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
     const reconciliation = createHistoryReconciliation({
       transport: {
         getConnectedPeers: () => [],
-        onMessage: (_protocol, handler) => { incoming = handler; },
+        onStream: (_protocol, handler) => { incoming = handler; },
         onPeerConnected: () => {},
         sendStream: async () => {},
       },
@@ -106,10 +195,46 @@ describe("History reconciliation", () => {
     reconciliation.start();
 
     const valid = encodeHistoryBatchFrame({ clips: [clip] });
-    incoming!(peerIds.extension, Uint8Array.from([...valid, 0x80]));
-    await flush();
+    await expect(incoming!(peerIds.extension, (async function *() {
+      yield Uint8Array.from([...valid, 0x80]);
+    })())).rejects.toThrow("invalid_history_framing");
 
     expect(await history.exportAll()).toEqual([clip]);
+  });
+
+  it("re-exports a committed import after a later frame terminates the snapshot", async () => {
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    const snapshotTargets: string[] = [];
+    let connectedPeers: string[] = [];
+    const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => connectedPeers,
+        onStream: (_protocol, handler) => { incoming = handler; },
+        onPeerConnected: () => {},
+        async sendStream(_protocol, target, frames) {
+          snapshotTargets.push(target);
+          for await (const _frame of frames) {
+            // Drain the ordinary outbound snapshot.
+          }
+        },
+      },
+      history,
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => "active",
+      now: () => 2_000,
+    });
+    reconciliation.start();
+    connectedPeers = [peerIds.extension, peerIds.electron];
+
+    const valid = encodeHistoryBatchFrame({ clips: [clip] });
+    await expect(incoming!(peerIds.extension, (async function *() {
+      yield valid;
+      yield Uint8Array.of(0x80);
+    })())).rejects.toThrow("invalid_history_framing");
+
+    expect(await history.exportAll()).toEqual([clip]);
+    expect(snapshotTargets).toEqual([peerIds.electron]);
   });
 
   it("offers a snapshot when an already connected device becomes an Active Member", async () => {
@@ -119,7 +244,7 @@ describe("History reconciliation", () => {
     const reconciliation = createHistoryReconciliation({
       transport: {
         getConnectedPeers: () => [peerIds.extension],
-        onMessage: () => {},
+        onStream: () => {},
         onPeerConnected: () => {},
         sendStream,
       },

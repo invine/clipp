@@ -100,6 +100,13 @@ describe("protocol message shapes", () => {
 
     expect(HISTORY_PROTOCOL).toBe("/clipp/history/1.0.0");
     expect(decodeHistorySnapshot(frame)).toEqual([{ clips: [historyClip] }]);
+    // HistoryFrame.batch -> HistoryBatch.clips -> Clip.id. These known field
+    // tags independently pin the required two nested history envelopes.
+    expect(Array.from(frame.slice(1, 7))).toEqual([
+      0x0a, frame.length - 3,
+      0x0a, frame.length - 5,
+      0x0a, 0x10,
+    ]);
     expect(new TextDecoder().decode(frame)).not.toContain("from");
     expect(new TextDecoder().decode(frame)).not.toContain(historyClip.id);
   });

@@ -72,7 +72,7 @@ jest.mock("../../../packages/core/network/peerId", () => ({
 }));
 
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
-import { CLIP_PROTOCOL } from "../../../packages/core/network/protocol";
+import { CLIP_PROTOCOL, HISTORY_PROTOCOL } from "../../../packages/core/network/protocol";
 import { encodeLiveClipFrame } from "../../../packages/core/protocols/liveClip";
 
 const { createClipboardNode } = jest.requireMock("../../../packages/core/network/node");
@@ -670,6 +670,35 @@ describe("Libp2pMessagingTransport", () => {
     expect(received).toHaveLength(1);
     expect(received[0].from).toBe("peer-1");
     expect(received[0].data).toEqual(frame);
+  });
+
+  it("stops an inbound history stream when incremental processing fails", async () => {
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    await transport.start();
+    let producedChunks = 0;
+    transport.onStream!(HISTORY_PROTOCOL, async (_from, chunks) => {
+      for await (const _chunk of chunks) {
+        throw new Error("invalid_history_framing");
+      }
+    });
+    const abort = jest.fn();
+    const close = jest.fn(async () => {});
+    const handler = protocolHandlers.get(HISTORY_PROTOCOL);
+
+    await handler({
+      abort,
+      close,
+      async *[Symbol.asyncIterator]() {
+        producedChunks += 1;
+        yield Uint8Array.of(0x80);
+        producedChunks += 1;
+        yield Uint8Array.of(0x01);
+      },
+    }, { remotePeer: { toString: () => "peer-1" } });
+
+    expect(producedChunks).toBe(1);
+    expect(abort).toHaveBeenCalledWith(expect.objectContaining({ message: "invalid_history_framing" }));
+    expect(close).toHaveBeenCalled();
   });
 
   it("closes an unauthorised live stream without dispatching it", async () => {

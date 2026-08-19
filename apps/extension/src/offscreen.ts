@@ -21,10 +21,12 @@ import {
   handleExtensionReachabilityRequest,
   isExtensionReachabilityRequest,
 } from "./networkBridge";
+import { relayExtensionStream, type ExtensionStreamResponse } from "./streamBridge";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
 const runtimeRegisteredProtocols = new Set<string>();
+const runtimeRegisteredStreamProtocols = new Set<string>();
 const storage = new ChromeStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
@@ -73,6 +75,7 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
       ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
       : undefined;
   runtimeRegisteredProtocols.clear();
+  runtimeRegisteredStreamProtocols.clear();
   transport = createLibp2pMessagingTransport({
     peerId,
     privateKey,
@@ -179,6 +182,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           })
           .catch(() => {});
       });
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "runtimeRegisterStreamProtocol" && typeof msg.protocol === "string") {
+      if (runtimeRegisteredStreamProtocols.has(msg.protocol)) {
+        sendResponse({ ok: true });
+        return;
+      }
+      runtimeRegisteredStreamProtocols.add(msg.protocol);
+      transport.onStream(msg.protocol, (from, chunks) => relayExtensionStream({
+        protocol: msg.protocol,
+        from,
+        chunks,
+        send: async (message) => await chrome.runtime.sendMessage({
+          source: "offscreen",
+          ...message,
+        }) as ExtensionStreamResponse,
+      }));
       sendResponse({ ok: true });
       return;
     }

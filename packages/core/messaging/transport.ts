@@ -1,4 +1,5 @@
 export type MessageHandler = (from: string, data: Uint8Array) => void;
+export type MessageStreamHandler = (from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>;
 
 export type PeerConnectionPath = "direct" | "relay" | "unknown";
 
@@ -54,6 +55,9 @@ export interface MessagingTransport {
    */
   onMessage(protocol: string, cb: MessageHandler): void;
 
+  /** Consume one authenticated inbound application stream incrementally. */
+  onStream?(protocol: string, cb: MessageStreamHandler): void;
+
   onPeerConnected(cb: (peerId: string) => void): void;
   onPeerDisconnected(cb: (peerId: string) => void): void;
   onRelayConnectionChanged?(cb: () => void): void;
@@ -80,4 +84,9 @@ export interface MessagingTransport {
 
   /** Looks up, verifies, imports, and persists one peer's latest reachability record. */
   refreshPeerRecord?(peerId: string): Promise<void>;
+}
+
+export interface StreamingMessagingTransport extends MessagingTransport {
+  sendStream(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void>;
+  onStream(protocol: string, cb: MessageStreamHandler): void;
 }
