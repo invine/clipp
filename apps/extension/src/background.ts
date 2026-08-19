@@ -36,6 +36,7 @@ import {
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
+import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
@@ -296,6 +297,12 @@ const extensionNetwork: MessagingTransport = {
     await offscreenReady;
     await sendOffscreen({ action: "runtimeSend", protocol, peerTarget: target, data: Array.from(data) });
   },
+  async sendStream(protocol, target, frames) {
+    await offscreenReady;
+    const encoded: number[][] = [];
+    for await (const frame of frames) encoded.push(Array.from(frame));
+    await sendOffscreen({ action: "runtimeSendStream", protocol, peerTarget: target, frames: encoded });
+  },
   async connect(target) {
     await offscreenReady;
     await sendOffscreen({ action: "runtimeConnect", peerTarget: target });
@@ -331,6 +338,12 @@ const liveClipGossip = createLiveClipGossip({
   membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
 });
 clipboardSync.bindLiveGossip(liveClipGossip);
+const historyReconciliation = createHistoryReconciliation({
+  transport: extensionNetwork,
+  history,
+  getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
+  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+});
 const notificationSelection = createRuntimeNotificationSelection();
 const membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,
@@ -480,6 +493,7 @@ const sharedRuntime = createRuntimeOrchestrator({
       await offscreenReady;
       await extensionNetwork.start();
       membershipReconciler.start();
+      historyReconciliation.start();
       await pairingPending.start();
     },
     onNetworkingFailure: (error) => {
@@ -491,6 +505,7 @@ const sharedRuntime = createRuntimeOrchestrator({
     historyRetentionCleanup = undefined;
     await pairingSessions.stop();
     clipboardSync.stop();
+    historyReconciliation.stop();
   },
 });
 

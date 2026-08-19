@@ -23,6 +23,7 @@ import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type Hi
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
+import { createHistoryReconciliation } from "@core/sync/historyReconciliation";
 import { createLiveClipGossip } from "@core/sync/liveClipGossip";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
 import { createMembershipPeerRecordBridge, createMembershipReconciler } from "@core/membership/reconciliation";
@@ -272,6 +273,7 @@ export class AndroidClient {
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
   private pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
   private liveClipGossip: ReturnType<typeof createLiveClipGossip> | null = null;
+  private historyReconciliation: ReturnType<typeof createHistoryReconciliation> | null = null;
   private membershipReconciler: ReturnType<typeof createMembershipReconciler> | null = null;
 
   constructor() {
@@ -327,6 +329,12 @@ export class AndroidClient {
     });
     this.liveClipGossip = createLiveClipGossip({
       transport: this.transport,
+      membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
+    });
+    this.historyReconciliation = createHistoryReconciliation({
+      transport: this.transport,
+      history: this.history,
+      getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
       membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
     });
     this.clipboardSync.bindLiveGossip(this.liveClipGossip);
@@ -707,6 +715,7 @@ export class AndroidClient {
         }
         await this.transport!.start();
         this.pairedConnections?.start();
+        this.historyReconciliation?.start();
       },
       onNetworkingFailure: (error) => {
         log.warn("Messaging transport failed to start", error);
@@ -720,6 +729,8 @@ export class AndroidClient {
     this.historyRetentionCleanup = null;
     await this.pairingSessions.stop();
     this.clipboardSync.stop();
+    this.historyReconciliation?.stop();
+    this.historyReconciliation = null;
     this.pairedConnections?.stop();
     await this.transport?.stop();
     this.membershipReconciler?.stop();

@@ -33,6 +33,11 @@ export function createRuntimeNetworkProxy(
     },
     stop: async () => current()?.stop(),
     send: (protocol, target, data) => requireNetwork().send(protocol, target, data),
+    sendStream: (protocol, target, frames) => {
+      const network = requireNetwork();
+      if (!network.sendStream) throw new Error("stream_messaging_unavailable");
+      return network.sendStream(protocol, target, frames);
+    },
     connect: (target) => requireNetwork().connect(target),
     async disconnect(peerId) {
       await requireNetwork().disconnect?.(peerId);

@@ -35,6 +35,7 @@ import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/
 import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
+import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation.js";
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
 import * as log from "../../../packages/core/logger.js";
@@ -153,6 +154,12 @@ async function bootstrap() {
   });
   let liveClipGossip = createLiveClipGossip({
     transport,
+    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+  });
+  let historyReconciliation = createHistoryReconciliation({
+    transport,
+    history,
+    getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
     membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
   });
   let messagingStarted = false;
@@ -570,10 +577,12 @@ async function bootstrap() {
   async function startNetworkServices() {
     await ensureMessagingStarted();
     pairedConnections.start();
+    historyReconciliation.start();
   }
 
   async function restartMessaging() {
     try {
+      historyReconciliation.stop();
       pairedConnections.stop();
       await transport.stop();
     } catch {
@@ -598,11 +607,18 @@ async function bootstrap() {
       transport,
       membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
     });
+    historyReconciliation = createHistoryReconciliation({
+      transport,
+      history,
+      getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
+      membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+    });
     bindTransportHandlers(transport);
     runtimeNetwork.bindCurrent();
     clipboardSync.bindLiveGossip(liveClipGossip);
     await ensureMessagingStarted();
     pairedConnections.start();
+    historyReconciliation.start();
     await emitState();
   }
 
@@ -837,6 +853,7 @@ async function bootstrap() {
     historyRetentionCleanup = null;
     await pairingSessions.stop();
     clipboardSync.stop();
+    historyReconciliation.stop();
     pairedConnections.stop();
     try {
       await transport.stop();

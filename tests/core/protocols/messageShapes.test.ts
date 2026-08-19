@@ -4,9 +4,9 @@ import {
   LIVE_CLIP_PROTOCOL,
 } from "../../../packages/core/protocols/liveClip";
 import {
-  createHistorySyncMessage,
-  decodeHistorySyncMessage,
-  encodeHistorySyncMessage,
+  HISTORY_PROTOCOL,
+  decodeHistorySnapshot,
+  encodeHistoryBatchFrame,
 } from "../../../packages/core/protocols/history";
 import {
   createTrustedPeersMessage,
@@ -87,21 +87,21 @@ describe("protocol message shapes", () => {
     expect(decodeLiveClipFrame(liveUnknown)).toEqual({ clip });
   });
 
-  it("uses the normalized history sync wire shape", () => {
-    const normalized = createHistorySyncMessage({
-      from: "me",
-      clips: [{ id: "c2", type: "text", content: "y", originPeerId: "me", capturedAt: 2, shareExpiresAt: 86_400_002, timestamp: 2, senderId: "me" }],
-      sentAt: 4,
-    });
+  it("uses bounded protobuf HistoryBatch frames without routing metadata", () => {
+    const historyClip = {
+      id: "00000000-0000-4000-8000-000000000002",
+      type: "text" as const,
+      content: "y",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 2,
+      shareExpiresAt: 86_400_002,
+    };
+    const frame = encodeHistoryBatchFrame({ clips: [historyClip] });
 
-    const encoded = new TextDecoder().decode(encodeHistorySyncMessage(normalized));
-    expect(JSON.parse(encoded)).toEqual(normalized);
-    expect(
-      decodeHistorySyncMessage(new TextEncoder().encode(encoded), "peer")
-    ).toEqual({
-      ...normalized,
-      from: "peer",
-    });
+    expect(HISTORY_PROTOCOL).toBe("/clipp/history/1.0.0");
+    expect(decodeHistorySnapshot(frame)).toEqual([{ clips: [historyClip] }]);
+    expect(new TextDecoder().decode(frame)).not.toContain("from");
+    expect(new TextDecoder().decode(frame)).not.toContain(historyClip.id);
   });
 
   it("uses the normalized trust request wire shape", async () => {

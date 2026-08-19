@@ -261,6 +261,25 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
   }
 
+  async sendStream(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void> {
+    if (!this.node || !this.started) throw new Error("messaging_not_started");
+    const peerId = await this.targetPeerId(target);
+    const context = { protocol, target, peerId };
+    let stream: any;
+    try {
+      stream = guardMessageStream(await this.openStream(protocol, target));
+      for await (const frame of frames) {
+        if (!(frame instanceof Uint8Array) || frame.length === 0) throw new Error("invalid_stream_frame");
+        await writeMessageStream(stream, frame);
+      }
+      await closeMessageStream(stream, { ignoreClosedDataChannel: true });
+    } catch (err: any) {
+      await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+      log.warn("Messaging stream send failed", { ...context, error: err?.message || err });
+      throw err;
+    }
+  }
+
   async connect(target: string): Promise<void> {
     if (!this.node || !this.started) {
       throw new Error("messaging_not_started");
@@ -1042,6 +1061,22 @@ class Libp2pMessagingTransport implements MessagingTransport {
             return;
           }
           for (const handler of handlers) handler(from, frame);
+          return;
+        }
+        if (protocol === HISTORY_PROTOCOL) {
+          if (!from || (this.opts.isPeerKnown && !(await this.opts.isPeerKnown(from)))) {
+            await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+            return;
+          }
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          for await (const chunk of iterable) {
+            const bytes = toU8(chunk);
+            if (!bytes) return;
+            size += bytes.length;
+            chunks.push(bytes);
+          }
+          for (const handler of handlers) handler(from, concatBytes(chunks, size));
           return;
         }
         for await (const chunk of iterable) {

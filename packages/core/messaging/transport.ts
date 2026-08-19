@@ -35,6 +35,9 @@ export interface MessagingTransport {
    */
   send(protocol: string, target: string, data: Uint8Array): Promise<void>;
 
+  /** Send multiple frames on one short-lived application stream, then close it. */
+  sendStream?(protocol: string, target: string, frames: AsyncIterable<Uint8Array>): Promise<void>;
+
   /**
    * Establish a best-effort connection to a peer without opening an application
    * protocol stream.
