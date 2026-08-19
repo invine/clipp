@@ -23,9 +23,7 @@ import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type Hi
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
-import {
-  createTrustedClipMessenger,
-} from "@core/messaging";
+import { createLiveClipGossip } from "@core/sync/liveClipGossip";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
 import { createMembershipPeerRecordBridge, createMembershipReconciler } from "@core/membership/reconciliation";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
@@ -273,7 +271,7 @@ export class AndroidClient {
   private readonly trust = createTrustManager({ trustRepo: this.trustRepo, identitySvc: this.identitySvc });
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
   private pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
-  private clipMessaging: ReturnType<typeof createTrustedClipMessenger> | null = null;
+  private liveClipGossip: ReturnType<typeof createLiveClipGossip> | null = null;
   private membershipReconciler: ReturnType<typeof createMembershipReconciler> | null = null;
 
   constructor() {
@@ -287,7 +285,7 @@ export class AndroidClient {
   }
 
   private async ensureMessaging(): Promise<void> {
-    if (this.transport && this.clipMessaging) {
+    if (this.transport && this.liveClipGossip) {
       if (!this.pairedConnections) {
         this.pairedConnections = createPairedPeerConnectionManager({
           transport: this.transport,
@@ -327,8 +325,11 @@ export class AndroidClient {
       transport: this.transport,
       getPairedPeers: () => this.trust.list(),
     });
-    this.clipMessaging = createTrustedClipMessenger(this.transport, (id) => this.trust.isTrusted(id));
-    this.clipboardSync.bindMessaging(this.clipMessaging as any);
+    this.liveClipGossip = createLiveClipGossip({
+      transport: this.transport,
+      membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
+    });
+    this.clipboardSync.bindLiveGossip(this.liveClipGossip);
     this.membershipReconciler = createMembershipReconciler({
       transport: this.transport,
       identity: this.identitySvc,
@@ -380,6 +381,7 @@ export class AndroidClient {
   private readonly clipboardSync = createClipboardSyncManager({
     clipboard: this.clipboard,
     history: this.history,
+    isActiveMember: async (peerId) => await this.identitySvc.membershipStatus(peerId) === "active",
     getLocalDeviceId: async () => {
       const id = await this.identitySvc.get();
       return id.deviceId;

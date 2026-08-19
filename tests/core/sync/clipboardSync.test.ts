@@ -60,7 +60,7 @@ describe("ClipboardSyncManager", () => {
       senderId: "me",
     };
     localHandlers.forEach((h) => h(clip));
-    await flushPromises();
+    await flushPromises(24);
 
     expect(history.add).toHaveBeenCalledWith(clip, "me", true);
     expect(broadcast).toHaveBeenCalledTimes(1);
@@ -307,5 +307,40 @@ describe("ClipboardSyncManager", () => {
     await flushPromises();
 
     expect(apply).not.toHaveBeenCalled();
+  });
+
+  test("forwards a newly stored remote Clip once without blocking its local application", async () => {
+    const incoming: Array<(event: { from: string; clip: Clip }) => void> = [];
+    const forward = jest.fn(async () => {});
+    const clip: Clip = {
+      id: "00000000-0000-4000-8000-000000000016", type: "text", content: "gossip",
+      originPeerId, capturedAt: 1, shareExpiresAt: 86_400_001,
+    };
+    const clipboard = {
+      start: jest.fn(), stop: jest.fn(), onLocalClip: jest.fn(), onRemoteClipWritten: jest.fn(), processLocalText: jest.fn(),
+      writeRemoteClip: jest.fn(async (_clip: Clip, beforeWrite?: () => Promise<boolean>) => {
+        if (!beforeWrite || await beforeWrite()) return;
+      }),
+    } as any;
+    const history = {
+      accept: jest.fn(async () => ({ kind: "newly-stored", clip, liveHandled: true })),
+      getById: jest.fn(async () => ({ clip })),
+    } as any;
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      liveGossip: { start: jest.fn(), stop: jest.fn(), forward, onClip: (listener: (event: { from: string; clip: Clip }) => void) => incoming.push(listener) },
+      isActiveMember: async () => true,
+      getLocalDeviceId: async () => "me",
+      now: () => 1_000,
+    });
+    sync.start();
+
+    incoming[0]({ from: "sender", clip });
+    await flushPromises(24);
+
+    expect(history.accept).toHaveBeenCalledWith(clip, { liveHandled: true, admissionPriority: true });
+    expect(clipboard.writeRemoteClip).toHaveBeenCalledWith(clip, expect.any(Function));
+    expect(forward).toHaveBeenCalledWith(clip, "sender");
   });
 });

@@ -73,6 +73,7 @@ jest.mock("../../../packages/core/network/peerId", () => ({
 
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import { CLIP_PROTOCOL } from "../../../packages/core/network/protocol";
+import { encodeLiveClipFrame } from "../../../packages/core/protocols/liveClip";
 
 const { createClipboardNode } = jest.requireMock("../../../packages/core/network/node");
 
@@ -557,15 +558,42 @@ describe("Libp2pMessagingTransport", () => {
     const handler = protocolHandlers.get(CLIP_PROTOCOL);
     expect(typeof handler).toBe("function");
 
+    const frame = encodeLiveClipFrame({
+      clip: {
+        id: "00000000-0000-4000-8000-000000000001",
+        type: "text",
+        content: "inbound",
+        originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+        capturedAt: 1,
+        shareExpiresAt: 86_400_001,
+      },
+    });
     const fakeStream = {
       async *[Symbol.asyncIterator]() {
-        yield new Uint8Array([7, 8, 9]);
+        yield frame;
       },
     };
     await handler(fakeStream, { remotePeer: { toString: () => "peer-1" } });
 
     expect(received).toHaveLength(1);
     expect(received[0].from).toBe("peer-1");
-    expect(Array.from(received[0].data)).toEqual([7, 8, 9]);
+    expect(received[0].data).toEqual(frame);
+  });
+
+  it("closes an unauthorised live stream without dispatching it", async () => {
+    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => false });
+    await transport.start();
+    const received = jest.fn();
+    transport.onMessage(CLIP_PROTOCOL, received);
+    const close = jest.fn(async () => {});
+    const handler = protocolHandlers.get(CLIP_PROTOCOL);
+
+    await handler({
+      close,
+      async *[Symbol.asyncIterator]() { yield new Uint8Array(); },
+    }, { remotePeer: { toString: () => "unknown-peer" } });
+
+    expect(close).toHaveBeenCalled();
+    expect(received).not.toHaveBeenCalled();
   });
 });

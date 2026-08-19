@@ -4,6 +4,11 @@ import {
   encodeClipMessage,
 } from "../../../packages/core/protocols/clip";
 import {
+  decodeLiveClipFrame,
+  encodeLiveClipFrame,
+  LIVE_CLIP_PROTOCOL,
+} from "../../../packages/core/protocols/liveClip";
+import {
   createHistorySyncMessage,
   decodeHistorySyncMessage,
   encodeHistorySyncMessage,
@@ -28,6 +33,24 @@ const fakePrivateKey = {
 };
 
 describe("protocol message shapes", () => {
+  it("encodes one length-prefixed LiveClip frame without routing metadata", () => {
+    const clip = {
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "text" as const,
+      content: "hello",
+      originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
+    };
+
+    const frame = encodeLiveClipFrame({ clip });
+
+    expect(LIVE_CLIP_PROTOCOL).toBe("/clipp/clip/1.0.0");
+    expect(decodeLiveClipFrame(frame)).toEqual({ clip });
+    expect(new TextDecoder().decode(frame)).not.toContain("from");
+    expect(new TextDecoder().decode(frame)).not.toContain("sentAt");
+  });
+
   it("uses the normalized clip wire shape", () => {
     const msg = createClipMessage({
       from: "me",

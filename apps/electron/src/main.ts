@@ -38,9 +38,7 @@ import { createClipboardSyncManager } from "../../../packages/core/sync/clipboar
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
 import * as log from "../../../packages/core/logger.js";
-import {
-  createTrustedClipMessenger,
-} from "../../../packages/core/messaging/index.js";
+import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip.js";
 import {
   deviceIdToPeerId,
   deviceIdToPeerIdObject,
@@ -153,7 +151,10 @@ async function bootstrap() {
     transport,
     getPairedPeers: () => trust.list(),
   });
-  let clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
+  let liveClipGossip = createLiveClipGossip({
+    transport,
+    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+  });
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
@@ -378,12 +379,13 @@ async function bootstrap() {
   const clipboardSync = createClipboardSyncManager({
     clipboard: clipboardSvc,
     history,
+    liveGossip: liveClipGossip,
+    isActiveMember: async (peerId) => await identitySvc.membershipStatus(peerId) === "active",
     getLocalDeviceId: async () => {
       const id = await identitySvc.get();
       return id.deviceId;
     },
   });
-  clipboardSync.bindMessaging(clipMessaging as any);
 
   // TODO: why pendingRequests is part of the application and not part of trust manager?
   let pendingRequests: TrustedDevice[] = [];
@@ -592,10 +594,13 @@ async function bootstrap() {
       transport,
       getPairedPeers: () => trust.list(),
     });
-    clipMessaging = createTrustedClipMessenger(transport, (id: string) => trust.isTrusted(id));
+    liveClipGossip = createLiveClipGossip({
+      transport,
+      membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+    });
     bindTransportHandlers(transport);
     runtimeNetwork.bindCurrent();
-    clipboardSync.bindMessaging(clipMessaging as any);
+    clipboardSync.bindLiveGossip(liveClipGossip);
     await ensureMessagingStarted();
     pairedConnections.start();
     await emitState();

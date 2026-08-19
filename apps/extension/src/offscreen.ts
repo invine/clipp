@@ -11,7 +11,7 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
-import { createTrustedClipMessenger, createTrustedHistoryMessenger } from "../../../packages/core/messaging";
+import { createTrustedHistoryMessenger } from "../../../packages/core/messaging";
 import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import {
@@ -25,7 +25,6 @@ import {
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
-let clipMessaging: any = null;
 let historyMessaging: any = null;
 const runtimeRegisteredProtocols = new Set<string>();
 const storage = new ChromeStorageBackend();
@@ -69,7 +68,6 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     }
     transport = null;
     pairedConnections = null;
-    clipMessaging = null;
     historyMessaging = null;
   }
   const identity = await identitySvc.get();
@@ -92,12 +90,8 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     getPairedPeers: () => trust.list(),
   });
 
-  clipMessaging = createTrustedClipMessenger(transport, (id) => trust.isTrusted(id));
   historyMessaging = createTrustedHistoryMessenger(transport, (id) => trust.isTrusted(id));
 
-  clipMessaging.onMessage((msg: any) => {
-    chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
-  });
   historyMessaging.onMessage((msg: any) => {
     chrome.runtime.sendMessage({ source: "offscreen", action: "incoming", msg }).catch(() => {});
   });
@@ -126,7 +120,6 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     pairedConnections?.stop();
     transport = null;
     pairedConnections = null;
-    clipMessaging = null;
     historyMessaging = null;
     started = false;
     throw err;
@@ -165,9 +158,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.action === "broadcast" && msg.msg) {
       const m = msg.msg as any;
-      if (m?.type === "clip") {
-        await withOperationTimeout("clip_broadcast", () => clipMessaging.broadcast(m));
-      } else if (m?.type === "history-sync") {
+      if (m?.type === "history-sync") {
         await withOperationTimeout("history_broadcast", () => historyMessaging.broadcast(m));
       } else {
         throw new Error("unsupported_message_type");

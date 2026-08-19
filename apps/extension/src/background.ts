@@ -36,6 +36,7 @@ import {
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
+import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
@@ -185,21 +186,6 @@ function createExtensionClipboardService() {
 }
 
 const clipboard = createExtensionClipboardService();
-const messageHandlers: Array<(msg: any) => void> = [];
-const offscreenMessaging = {
-  async broadcast(msg: any) {
-    log.debug("Broadcasting clip");
-    await offscreenReady;
-    await sendOffscreen({ action: "broadcast", msg });
-  },
-  onMessage(cb: (msg: any) => void) {
-    messageHandlers.push(cb);
-  },
-};
-function emitIncomingMessage(msg: any) {
-  for (const h of messageHandlers) h(msg);
-}
-
 function base64ToBytes(b64: string): Uint8Array {
   try {
     // eslint-disable-next-line no-undef
@@ -219,7 +205,7 @@ function base64ToBytes(b64: string): Uint8Array {
 const clipboardSync = createClipboardSyncManager({
   clipboard,
   history,
-  messaging: offscreenMessaging as any,
+  isActiveMember: async (peerId) => await identitySvc.membershipStatus(peerId) === "active",
   getLocalDeviceId: async () => {
     const id = await identitySvc.get();
     return id.deviceId;
@@ -340,6 +326,11 @@ const extensionNetwork: MessagingTransport = {
   getPeerConnectionInfo: () => [...runtimePeerConnections],
   ...createExtensionReachabilityBridge((message) => sendOffscreen(message)),
 };
+const liveClipGossip = createLiveClipGossip({
+  transport: extensionNetwork,
+  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+});
+clipboardSync.bindLiveGossip(liveClipGossip);
 const notificationSelection = createRuntimeNotificationSelection();
 const membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,
@@ -786,9 +777,6 @@ chrome.runtime.onMessage.addListener((msg) => {
     runtimePeerConnections = Array.isArray(msg.peerConnections) ? msg.peerConnections : [];
     return;
   }
-  if (msg?.action !== "incoming") return;
-  const payload = msg.msg;
-  emitIncomingMessage(payload);
 });
 
 // Kick off offscreen + clipboard

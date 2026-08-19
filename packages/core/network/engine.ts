@@ -4,6 +4,7 @@ import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
 import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
 import { CLIP_PROTOCOL, HISTORY_PROTOCOL } from "./protocol.js";
+import { decodeLiveClipFrame, LIVE_CLIP_MAX_FRAME_BYTES } from "../protocols/liveClip.js";
 import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
 import { decodeMembershipFrame, MEMBERSHIP_MAX_FRAME_BYTES, MEMBERSHIP_PROTOCOL } from "../membership/reconciliation.js";
 import { createPairingRejectionReporter } from "../pairing/diagnostics.js";
@@ -23,6 +24,7 @@ import type {
 import * as log from "../logger.js";
 
 type Libp2pNode = any;
+const LIVE_CLIP_STREAM_TIMEOUT_MS = 15_000;
 
 function concatBytes(parts: Uint8Array[], size: number): Uint8Array {
   const result = new Uint8Array(size);
@@ -1008,6 +1010,22 @@ class Libp2pMessagingTransport implements MessagingTransport {
           for (const handler of handlers) handler(from, frame);
           return;
         }
+        if (protocol === CLIP_PROTOCOL) {
+          // Live Clip delivery is one bounded frame per stream.  A malformed
+          // stream is isolated to this protocol stream; the authenticated
+          // connection remains usable for Membership and Pairing.
+          if (!from || (this.opts.isPeerKnown && !(await this.opts.isPeerKnown(from)))) {
+            await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+            return;
+          }
+          const frame = await readBoundedLiveClipFrame(iterable);
+          if (!frame || !decodeLiveClipFrame(frame)) {
+            await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+            return;
+          }
+          for (const handler of handlers) handler(from, frame);
+          return;
+        }
         for await (const chunk of iterable) {
           const buf = toU8(chunk);
           if (!buf || buf.length === 0) {
@@ -1369,6 +1387,43 @@ function getStreamIterable(stream: any): AsyncIterable<any> | undefined {
     return inner;
   }
   return undefined;
+}
+
+/** Reads exactly one bounded LiveClip stream and releases stalled streams. */
+async function readBoundedLiveClipFrame(iterable: AsyncIterable<any>): Promise<Uint8Array | null> {
+  const iterator = iterable[Symbol.asyncIterator]();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    let next = await nextWithTimeout(iterator, LIVE_CLIP_STREAM_TIMEOUT_MS);
+    while (!next.done) {
+      const bytes = toU8(next.value);
+      if (!bytes) return null;
+      size += bytes.length;
+      if (size > LIVE_CLIP_MAX_FRAME_BYTES + 10) return null;
+      chunks.push(bytes);
+      next = await nextWithTimeout(iterator, LIVE_CLIP_STREAM_TIMEOUT_MS);
+    }
+    return concatBytes(chunks, size);
+  } catch {
+    return null;
+  } finally {
+    await iterator.return?.().catch(() => undefined);
+  }
+}
+
+async function nextWithTimeout<T>(iterator: AsyncIterator<T>, timeoutMs: number): Promise<IteratorResult<T>> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      iterator.next(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("live_clip_stream_timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function describeStream(stream: any) {
