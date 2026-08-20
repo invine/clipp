@@ -4,6 +4,7 @@ import { normalizeDeviceName, shortenPeerId } from "../pairing/presentation";
 
 export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
 export type RemoteDeviceName = { deviceName: string; nameRevision: string };
+export type RevocationResult = "revoked" | "already-revoked" | "not-active";
 const MAX_UINT64 = (1n << 64n) - 1n;
 
 export interface DeviceIdentity {
@@ -45,6 +46,7 @@ export interface IdentityManager {
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   activePeerIds(): Promise<string[]>;
   admit(peerId: string): Promise<AdmissionResult>;
+  revoke(peerId: string): Promise<RevocationResult>;
   membershipView(): Promise<MembershipView>;
   mergeMembershipView(view: MembershipView): Promise<boolean>;
   recordRemoteDeviceName(peerId: string, name: string, revision: bigint): Promise<void>;
@@ -201,6 +203,22 @@ export function createIdentityManager(options: {
         },
       });
       return "admitted" as const;
+    }),
+    revoke: (peerId) => serializeMutation(async () => {
+      const current = await loadIdentity();
+      const view = completeMembershipView(current.deviceId, current.membershipView);
+      if (view.revokedPeerIds.includes(peerId)) return "already-revoked" as const;
+      if (!view.admittedPeerIds.includes(peerId)) return "not-active" as const;
+      // persistMutation publishes membership listeners only after the complete
+      // remove-wins Membership View has committed successfully.
+      await persistMutation({
+        ...current,
+        membershipView: {
+          admittedPeerIds: view.admittedPeerIds,
+          revokedPeerIds: [...view.revokedPeerIds, peerId],
+        },
+      });
+      return "revoked" as const;
     }),
     membershipView: async () => {
       await mutation;

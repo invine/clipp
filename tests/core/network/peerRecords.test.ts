@@ -41,6 +41,17 @@ describe("KV Signed Peer Record storage", () => {
     });
   });
 
+  it("removes a revoked peer's cached reachability record without affecting other peers", async () => {
+    const storage = new MemoryKVStorage();
+    const records = createKVSignedPeerRecordPersistence({ storage });
+    await records.save("revoked-peer", Uint8Array.of(1));
+    await records.save("active-peer", Uint8Array.of(2));
+
+    await records.remove("revoked-peer");
+
+    expect(await records.load()).toEqual({ "active-peer": Uint8Array.of(2) });
+  });
+
   it("accepts an already-consumed exact record as an idempotent refresh", async () => {
     const record = Uint8Array.of(1, 2, 3);
     const peerStore = {

@@ -91,6 +91,8 @@ export interface MessagingTransport {
   getSignedPeerRecord?(): Promise<Uint8Array>;
   getSignedPeerRecordFor?(peerId: string): Promise<Uint8Array | undefined>;
   importSignedPeerRecord?(expectedPeerId: string, record: Uint8Array): Promise<void>;
+  /** Remove cached and persisted reachability after Device Revocation. */
+  forgetPeer?(peerId: string): Promise<void>;
 
   /** Looks up, verifies, imports, and persists one peer's latest reachability record. */
   refreshPeerRecord?(peerId: string): Promise<void>;

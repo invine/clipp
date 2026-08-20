@@ -36,6 +36,10 @@ class MemorySignedPeerRecordPersistence implements SignedPeerRecordPersistence {
   async save(peerId: string, record: Uint8Array): Promise<void> {
     this.records.set(peerId, Uint8Array.from(record));
   }
+
+  async remove(peerId: string): Promise<void> {
+    this.records.delete(peerId);
+  }
 }
 
 type HarnessPeer = Awaited<ReturnType<typeof bootPeer>>;

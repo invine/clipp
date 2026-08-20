@@ -156,8 +156,15 @@ const Popup = () => {
   }
 
   async function handleUnpair(id: string) {
-    chrome.runtime.sendMessage({ type: "revokeDevice", id }, () => {
-      setDevices((prev) => prev.filter((d) => d.deviceId !== id));
+    await new Promise<void>((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "revokeDevice", id }, (response) => {
+        if (!response?.ok) {
+          reject(new Error(response?.error || "device_revocation_failed"));
+          return;
+        }
+        setDevices((prev) => prev.filter((d) => d.deviceId !== id));
+        resolve();
+      });
     });
   }
 

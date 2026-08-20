@@ -318,6 +318,7 @@ export class AndroidClient {
       allowInsecureBrowserDials: true,
       signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage: this.storage }),
       isPeerKnown: (remotePeerId) => this.trust.isTrusted(remotePeerId),
+      isPeerRevoked: async (remotePeerId) => await this.identitySvc.membershipStatus(remotePeerId) === "revoked",
     });
     this.pairedConnections = createPairedPeerConnectionManager({
       transport: this.transport,
@@ -340,6 +341,17 @@ export class AndroidClient {
       transport: this.transport,
       identity: this.identitySvc,
       ...createMembershipPeerRecordBridge({ transport: this.transport, identity: this.identitySvc }),
+      onPeerRevoked: async (peerId) => {
+        await Promise.allSettled([
+          this.transport?.forgetPeer?.(peerId),
+          this.transport?.disconnect?.(peerId),
+        ]);
+      },
+      onLocalRevoked: async () => {
+        this.pairedConnections?.stop();
+        this.historyReconciliation?.stop();
+        await this.transport?.stop();
+      },
       onChanged: () => this.emitState(),
     });
     this.membershipReconciler.start();

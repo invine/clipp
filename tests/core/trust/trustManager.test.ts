@@ -548,12 +548,18 @@ describe("TrustManager", () => {
 
   it("remove emits removed", async () => {
     const trustRepo = createMemoryTrustedDeviceRepo();
-    const identitySvc = {
-      get: async () => ({ deviceId: "me" }),
-      getPublic: async () => ({ deviceId: "me" }),
-      rename: async () => {},
-      updateMultiaddrs: async () => {},
-    } as any;
+    let stored: DeviceIdentity | undefined;
+    const identitySvc = createIdentityManager({
+      repo: {
+        get: async () => stored,
+        upsert: async (identity) => { stored = structuredClone(identity); },
+      },
+      initialDeviceName: "Desktop",
+      generateKeyMaterial: async () => ({ peerId: localPeerId, privateKey: "private", publicKey: "public" }),
+      deriveKeyMaterial: async () => ({ peerId: localPeerId, privateKey: "private", publicKey: "public" }),
+    });
+    await identitySvc.get();
+    await identitySvc.admit("peer");
     const trust = createTrustManager({ trustRepo, identitySvc });
 
     const removed: TrustedDevice[] = [];
@@ -564,6 +570,7 @@ describe("TrustManager", () => {
     await trust.remove("peer");
 
     expect(await trust.isTrusted("peer")).toBe(false);
+    expect(await identitySvc.membershipStatus("peer")).toBe("revoked");
     expect(removed).toHaveLength(1);
     expect(removed[0].deviceId).toBe("peer");
   });

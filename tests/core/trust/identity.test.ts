@@ -93,6 +93,50 @@ describe("Device Identity initialization", () => {
     expect(stored.membershipView?.admittedPeerIds).not.toContain(remotePeerId);
   });
 
+  it("durably revokes an Active Member before publishing the remove-wins tombstone", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    await manager.get();
+    await manager.admit(remotePeerId);
+
+    await expect(manager.revoke(remotePeerId)).resolves.toBe("revoked");
+    expect(stored?.membershipView).toEqual({
+      admittedPeerIds: [remotePeerId, generatedIdentity.peerId],
+      revokedPeerIds: [remotePeerId],
+    });
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("revoked");
+    await expect(manager.admit(remotePeerId)).resolves.toBe("revoked");
+  });
+
+  it("does not publish a revocation or side-effect notification when tombstone persistence fails", async () => {
+    let stored: DeviceIdentity | undefined;
+    let failRevocation = true;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => {
+        if (failRevocation && identity.membershipView?.revokedPeerIds.includes(remotePeerId)) {
+          throw new Error("storage_failed");
+        }
+        stored = structuredClone(identity);
+      },
+    }, "Desktop");
+    await manager.get();
+    await manager.admit(remotePeerId);
+    const changes = jest.fn();
+    manager.onMembershipChanged(changes);
+
+    await expect(manager.revoke(remotePeerId)).rejects.toThrow("storage_failed");
+    await expect(manager.membershipStatus(remotePeerId)).resolves.toBe("active");
+    expect(changes).not.toHaveBeenCalled();
+    expect(stored?.membershipView?.revokedPeerIds).toEqual([]);
+
+    failRevocation = false;
+    await expect(manager.revoke(remotePeerId)).resolves.toBe("revoked");
+  });
+
   it("merges complete Membership Views atomically with revocation taking precedence", async () => {
     let stored: DeviceIdentity | undefined;
     const manager = createManager({

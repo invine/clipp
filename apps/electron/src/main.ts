@@ -151,6 +151,7 @@ async function bootstrap() {
     enableTcp: true,
     signedPeerRecordPersistence,
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
+    isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
   });
   let pairedConnections = createPairedPeerConnectionManager({
     transport,
@@ -607,6 +608,7 @@ async function bootstrap() {
       enableTcp: true,
       signedPeerRecordPersistence,
       isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
+      isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
     });
     pairedConnections = createPairedPeerConnectionManager({
       transport,
@@ -900,6 +902,17 @@ async function bootstrap() {
     transport: runtimeNetwork,
     identity: identitySvc,
     ...createMembershipPeerRecordBridge({ transport: runtimeNetwork, identity: identitySvc }),
+    onPeerRevoked: async (peerId) => {
+      await Promise.allSettled([
+        runtimeNetwork.forgetPeer?.(peerId),
+        runtimeNetwork.disconnect?.(peerId),
+      ]);
+    },
+    onLocalRevoked: async () => {
+      pairedConnections.stop();
+      historyReconciliation.stop();
+      await runtimeNetwork.stop();
+    },
     onChanged: emitState,
   });
   const runtimeAdapter = createElectronRuntimeAdapter({

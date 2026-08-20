@@ -5,6 +5,7 @@ export const PEER_RECORDS_KEY = "signedPeerRecords";
 export type SignedPeerRecordPersistence = {
   load(): Promise<Record<string, Uint8Array>>;
   save(peerId: string, record: Uint8Array): Promise<void>;
+  remove(peerId: string): Promise<void>;
 };
 
 export function decodeSignedPeerRecordBytes(value: unknown): Uint8Array | undefined {
@@ -82,6 +83,14 @@ export function createKVSignedPeerRecordPersistence(options: {
       const stored = await options.storage.get<Record<string, unknown>>(key);
       const records = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
       await options.storage.set(key, { ...records, [peerId]: Array.from(record) });
+    },
+
+    async remove(peerId) {
+      const stored = await options.storage.get<Record<string, unknown>>(key);
+      if (!stored || typeof stored !== "object" || Array.isArray(stored) || !(peerId in stored)) return;
+      const remaining = { ...stored };
+      delete remaining[peerId];
+      await options.storage.set(key, remaining);
     },
   };
 }

@@ -12,6 +12,7 @@ export type ExtensionReachabilityRequestMap = {
     peerId: string;
     record: number[];
   };
+  runtimeForgetPeer: { action: "runtimeForgetPeer"; peerId: string };
   runtimeRefreshPeerRecord: { action: "runtimeRefreshPeerRecord"; peerId: string };
 };
 
@@ -19,6 +20,7 @@ export type ExtensionReachabilityResponseMap = {
   runtimeGetSignedPeerRecord: { record: number[] };
   runtimeGetSignedPeerRecordFor: { record?: number[] };
   runtimeImportSignedPeerRecord: { ok: boolean };
+  runtimeForgetPeer: { ok: boolean };
   runtimeRefreshPeerRecord: { ok: boolean };
 };
 
@@ -35,6 +37,7 @@ export type ExtensionReachabilityBridge = Required<
     | "getSignedPeerRecord"
     | "getSignedPeerRecordFor"
     | "importSignedPeerRecord"
+    | "forgetPeer"
     | "refreshPeerRecord"
   >
 >;
@@ -64,6 +67,11 @@ export function createExtensionReachabilityBridge(
       if (!result?.ok) throw new Error("invalid_signed_peer_record");
     },
 
+    async forgetPeer(peerId) {
+      const result = await request({ action: "runtimeForgetPeer", peerId });
+      if (!result?.ok) throw new Error("peer_record_forget_failed");
+    },
+
     async refreshPeerRecord(peerId) {
       const result = await request({ action: "runtimeRefreshPeerRecord", peerId });
       if (!result?.ok) throw new Error("peer_record_refresh_failed");
@@ -81,6 +89,7 @@ export function isExtensionReachabilityRequest(
       return true;
     case "runtimeGetSignedPeerRecordFor":
     case "runtimeRefreshPeerRecord":
+    case "runtimeForgetPeer":
       return typeof message.peerId === "string" && message.peerId.length > 0;
     case "runtimeImportSignedPeerRecord":
       return (
@@ -95,20 +104,35 @@ export function isExtensionReachabilityRequest(
 
 export async function handleExtensionReachabilityRequest(
   request: ExtensionReachabilityRequest,
-  transport: ExtensionReachabilityBridge
+  transport: Pick<
+    MessagingTransport,
+    "getSignedPeerRecord" | "getSignedPeerRecordFor" | "importSignedPeerRecord" | "forgetPeer" | "refreshPeerRecord"
+  >
 ): Promise<ExtensionReachabilityResponse> {
   switch (request.action) {
-    case "runtimeGetSignedPeerRecord":
+    case "runtimeGetSignedPeerRecord": {
+      if (!transport.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
       return { record: Array.from(await transport.getSignedPeerRecord()) };
+    }
     case "runtimeGetSignedPeerRecordFor": {
+      if (!transport.getSignedPeerRecordFor) throw new Error("signed_peer_record_unavailable");
       const record = await transport.getSignedPeerRecordFor(request.peerId);
       return record ? { record: Array.from(record) } : {};
     }
-    case "runtimeImportSignedPeerRecord":
+    case "runtimeImportSignedPeerRecord": {
+      if (!transport.importSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
       await transport.importSignedPeerRecord(request.peerId, Uint8Array.from(request.record));
       return { ok: true };
-    case "runtimeRefreshPeerRecord":
+    }
+    case "runtimeForgetPeer": {
+      if (!transport.forgetPeer) throw new Error("peer_record_forget_unavailable");
+      await transport.forgetPeer(request.peerId);
+      return { ok: true };
+    }
+    case "runtimeRefreshPeerRecord": {
+      if (!transport.refreshPeerRecord) throw new Error("peer_record_refresh_unavailable");
       await transport.refreshPeerRecord(request.peerId);
       return { ok: true };
+    }
   }
 }

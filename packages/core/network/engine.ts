@@ -68,6 +68,7 @@ export type Libp2pMessagingOptions = {
   allowInsecureBrowserDials?: boolean;
   signedPeerRecordPersistence?: SignedPeerRecordPersistence;
   isPeerKnown?(peerId: string): Promise<boolean>;
+  isPeerRevoked?(peerId: string): Promise<boolean>;
 };
 
 const DEFAULT_RENDEZVOUS_TOPIC = "clipp";
@@ -635,10 +636,23 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async importSignedPeerRecord(expectedPeerId: string, record: Uint8Array): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
+    if (await this.opts.isPeerRevoked?.(expectedPeerId)) throw new Error("revoked_peer");
     const peerId = await peerIdObjectForTarget(expectedPeerId);
     const imported = await consumeOrMatchSignedPeerRecord(this.node.peerStore, peerId, record);
     if (imported !== true) throw new Error("invalid_signed_peer_record");
     await this.persistPeerRecord(expectedPeerId, record);
+  }
+
+  async forgetPeer(peerId: string): Promise<void> {
+    this.persistedPeerRecords.delete(peerId);
+    const write = async () => {
+      await this.opts.signedPeerRecordPersistence?.remove(peerId).catch(() => undefined);
+    };
+    this.peerRecordWrite = this.peerRecordWrite.then(write, write);
+    await this.peerRecordWrite;
+    if (!this.node || !this.started) return;
+    const peerIdObject = await peerIdObjectForTarget(peerId);
+    await this.node.peerStore?.delete?.(peerIdObject).catch(() => undefined);
   }
 
   private async restorePeerRecords(): Promise<void> {
@@ -676,6 +690,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async refreshPeerRecord(peerId: string): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
+    if (await this.opts.isPeerRevoked?.(peerId)) throw new Error("revoked_peer");
     const topic = this.opts.rendezvousTopic ?? DEFAULT_RENDEZVOUS_TOPIC;
     const rendezvousOptions = {
       timeoutMs: this.opts.rendezvousTimeoutMs ?? this.opts.dialTimeoutMs ?? 12_000,

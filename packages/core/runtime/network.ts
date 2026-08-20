@@ -90,6 +90,7 @@ export function createRuntimeNetworkProxy(
       if (!network.importSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
       return network.importSignedPeerRecord(expectedPeerId, record);
     },
+    forgetPeer: (peerId) => current()?.forgetPeer?.(peerId) ?? Promise.resolve(),
     bindCurrent() {
       const network = requireNetwork();
       protocolHandlers.forEach((registration) => bindProtocolHandler(registration, network));

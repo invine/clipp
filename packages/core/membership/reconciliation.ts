@@ -57,12 +57,37 @@ export function createMembershipReconciler(options: {
   identity: MembershipReconciliationIdentity;
   signedPeerRecords?: () => Promise<MembershipPeerRecord[]>;
   importSignedPeerRecord?: (record: MembershipPeerRecord) => Promise<void>;
+  /** Runs after a complete Membership View commits and its revocation proof is sent. */
+  onPeerRevoked?: (peerId: string) => void | Promise<void>;
+  /** Stops runtime network work after this identity learns it is revoked. */
+  onLocalRevoked?: () => void | Promise<void>;
   onChanged?: () => void | Promise<void>;
+  retryBaseMs?: number;
+  retryMaxMs?: number;
 }) {
   let started = false;
   let stopped = false;
   let observesMembershipChanges = false;
   let unsubscribeMembership: (() => void) | undefined;
+  let membershipChange = Promise.resolve();
+  let localRevocationHandled = false;
+  const retryBaseMs = options.retryBaseMs ?? 1_000;
+  const retryMaxMs = options.retryMaxMs ?? 60_000;
+  const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const retryAttempts = new Map<string, number>();
+
+  const isConnected = (peerId: string): boolean => options.transport.getConnectedPeers().includes(peerId);
+
+  const scheduleRetry = (peerId: string): void => {
+    if (stopped || !isConnected(peerId) || retryTimers.has(peerId)) return;
+    const attempt = retryAttempts.get(peerId) ?? 0;
+    retryAttempts.set(peerId, attempt + 1);
+    const delay = Math.min(retryBaseMs * 2 ** attempt, retryMaxMs);
+    retryTimers.set(peerId, setTimeout(() => {
+      retryTimers.delete(peerId);
+      void attemptPush(peerId).catch(() => undefined);
+    }, delay));
+  };
 
   const push = async (targetPeerId: string): Promise<void> => {
     const status = await options.identity.membershipStatus(targetPeerId);
@@ -74,19 +99,57 @@ export function createMembershipReconciler(options: {
       options.identity.membershipView(),
       options.signedPeerRecords?.() ?? Promise.resolve([]),
     ]);
-    await options.transport.send(MEMBERSHIP_PROTOCOL, targetPeerId, encodeMembershipFrame({
-      ...view,
-      senderPresentation: {
-        deviceName: local.deviceName,
-        nameRevision: BigInt(local.nameRevision ?? 0),
-      },
-      signedPeerRecords: records,
-    }));
+    try {
+      await options.transport.send(MEMBERSHIP_PROTOCOL, targetPeerId, encodeMembershipFrame({
+        ...view,
+        senderPresentation: {
+          deviceName: local.deviceName,
+          nameRevision: BigInt(local.nameRevision ?? 0),
+        },
+        signedPeerRecords: records,
+      }));
+      retryAttempts.delete(targetPeerId);
+    } catch (error) {
+      scheduleRetry(targetPeerId);
+      throw error;
+    }
+  };
+
+  const attemptPush = async (peerId: string): Promise<void> => {
+    await push(peerId);
+    if (await options.identity.membershipStatus(peerId) === "revoked") {
+      await options.onPeerRevoked?.(peerId);
+    }
   };
 
   const pushConnected = async (): Promise<void> => {
-    await Promise.allSettled(options.transport.getConnectedPeers()
-      .map(push));
+    const connected = options.transport.getConnectedPeers();
+    await Promise.allSettled(connected.map(async (peerId) => {
+      if (await options.identity.membershipStatus(peerId) === "active") await attemptPush(peerId);
+    }));
+  };
+
+  const enforceCommittedRevocations = async (): Promise<void> => {
+    const local = await options.identity.get();
+    if (await options.identity.membershipStatus(local.deviceId) === "revoked") {
+      if (!localRevocationHandled) {
+        localRevocationHandled = true;
+        await options.onLocalRevoked?.();
+      }
+      return;
+    }
+    const revokedConnectedPeers = (await Promise.all(options.transport.getConnectedPeers().map(async (peerId) =>
+      (await options.identity.membershipStatus(peerId)) === "revoked" ? peerId : undefined
+    ))).filter((peerId): peerId is string => Boolean(peerId));
+
+    // A revoked identity gets one authenticated complete view showing the
+    // tombstone before its reachability and connection are discarded.
+    await Promise.allSettled(revokedConnectedPeers.map(attemptPush));
+    await pushConnected();
+  };
+
+  const scheduleCommittedRevocationEnforcement = (): void => {
+    membershipChange = membershipChange.then(enforceCommittedRevocations, enforceCommittedRevocations);
   };
 
   const receive = async (authenticatedPeerId: string, frame: Uint8Array): Promise<void> => {
@@ -94,11 +157,21 @@ export function createMembershipReconciler(options: {
     if (!message || stopped) return;
     // Check immediately before persistence, against the receiver's pre-merge
     // view.  In particular, a peer self-asserted by this message has no power.
-    if (await options.identity.membershipStatus(authenticatedPeerId) !== "active") return;
+    const local = await options.identity.get();
+    if (
+      await options.identity.membershipStatus(authenticatedPeerId) !== "active" ||
+      await options.identity.membershipStatus(local.deviceId) !== "active"
+    ) return;
     const changed = await options.identity.mergeMembershipView({
       admittedPeerIds: message.admittedPeerIds,
       revokedPeerIds: message.revokedPeerIds,
     });
+    if (changed && await options.identity.membershipStatus(local.deviceId) === "revoked") {
+      await options.onChanged?.();
+      if (observesMembershipChanges) await membershipChange;
+      else await enforceCommittedRevocations();
+      return;
+    }
     // Membership is committed above before presentation, reachability, UI, or
     // any propagation side effect.  Invalid presentation data is nonfatal.
     if (message.senderPresentation) {
@@ -123,7 +196,8 @@ export function createMembershipReconciler(options: {
     });
     if (!changed) return;
     await options.onChanged?.();
-    if (!observesMembershipChanges) await pushConnected();
+    if (observesMembershipChanges) await membershipChange;
+    else await enforceCommittedRevocations();
   };
 
   return {
@@ -131,17 +205,22 @@ export function createMembershipReconciler(options: {
       if (started) return;
       started = true;
       options.transport.onMessage(MEMBERSHIP_PROTOCOL, (from, frame) => { void receive(from, frame); });
-      options.transport.onPeerConnected((peerId) => { void push(peerId); });
+      options.transport.onPeerConnected((peerId) => { void attemptPush(peerId).catch(() => undefined); });
       if (options.identity.onMembershipChanged) {
         observesMembershipChanges = true;
-        unsubscribeMembership = options.identity.onMembershipChanged(() => { void pushConnected(); });
+        unsubscribeMembership = options.identity.onMembershipChanged(scheduleCommittedRevocationEnforcement);
       }
       void pushConnected();
     },
     push,
     pushConnected,
     receive,
-    stop(): void { stopped = true; unsubscribeMembership?.(); },
+    stop(): void {
+      stopped = true;
+      unsubscribeMembership?.();
+      retryTimers.forEach((timer) => clearTimeout(timer));
+      retryTimers.clear();
+    },
   };
 }
 

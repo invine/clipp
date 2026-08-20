@@ -79,6 +79,7 @@ function identity(peerId: string, admitted = [peerId]): MembershipReconciliation
 function network() {
   const handlers = new Map<string, (from: string, frame: Uint8Array) => void>();
   const sent: Array<{ from: string; to: string; protocol: string; frame: Uint8Array }> = [];
+  let pendingSendFailures = 0;
   const connected = new Map<string, Set<string>>();
   const connectedHandlers = new Map<string, Set<(peerId: string) => void>>();
   function endpoint(peerId: string): MessagingTransport {
@@ -87,6 +88,10 @@ function network() {
       stop: async () => undefined,
       connect: async () => undefined,
       send: async (protocol: string, target: string, frame: Uint8Array) => {
+        if (pendingSendFailures > 0) {
+          pendingSendFailures -= 1;
+          throw new Error("send_failed");
+        }
         sent.push({ from: peerId, to: target, protocol, frame });
         handlers.get(`${target}:${protocol}`)?.(peerId, frame);
       },
@@ -116,7 +121,13 @@ function network() {
     connectedHandlers.get(left)?.forEach((handler) => handler(right));
     connectedHandlers.get(right)?.forEach((handler) => handler(left));
   }
-  return { endpoint, sent, setConnected, connect };
+  return {
+    endpoint,
+    sent,
+    setConnected,
+    connect,
+    failNextSend: () => { pendingSendFailures += 1; },
+  };
 }
 
 describe("Membership Reconciliation", () => {
@@ -396,6 +407,74 @@ describe("Membership Reconciliation", () => {
       admittedPeerIds: [bob, alice, charlie],
       revokedPeerIds: [],
     });
+  });
+
+  it("retries a failed Membership View send with exponential backoff while connected", async () => {
+    jest.useFakeTimers();
+    try {
+      const wired = network();
+      wired.setConnected(alice, [bob]);
+      wired.failNextSend();
+      const reconciler = createMembershipReconciler({
+        transport: wired.endpoint(alice),
+        identity: identity(alice, [alice, bob]),
+        retryBaseMs: 10,
+      });
+      reconciler.start();
+      await settleAsyncWork();
+      expect(wired.sent).toEqual([]);
+
+      await jest.advanceTimersByTimeAsync(10);
+      await settleAsyncWork();
+      expect(wired.sent.filter((message) => message.protocol === MEMBERSHIP_PROTOCOL)).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("sends the committed revocation view once before cleaning up a revoked connection", async () => {
+    const wired = network();
+    wired.setConnected(alice, [bob]);
+    const aliceIdentity = identity(alice, [alice, bob]);
+    const events: string[] = [];
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+      onPeerRevoked: async (peerId) => { events.push(`cleanup:${peerId}`); },
+    });
+    reconciler.start();
+    await settleAsyncWork();
+    wired.sent.length = 0;
+
+    await aliceIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [bob] });
+    await settleAsyncWork();
+
+    const revocationMessages = wired.sent.filter((message) => message.to === bob && message.protocol === MEMBERSHIP_PROTOCOL);
+    expect(revocationMessages).toHaveLength(1);
+    expect(decodeMembershipFrame(revocationMessages[0].frame)).toMatchObject({ revokedPeerIds: [bob] });
+    expect(events).toEqual([`cleanup:${bob}`]);
+  });
+
+  it("finishes the triggering merge before stopping a locally revoked identity", async () => {
+    const wired = network();
+    wired.setConnected(alice, [bob]);
+    const aliceIdentity = identity(alice, [alice, bob]);
+    const localRevocations: string[] = [];
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+      onLocalRevoked: async () => { localRevocations.push("stopped"); },
+    });
+    reconciler.start();
+    await settleAsyncWork();
+
+    await reconciler.receive(bob, encodeMembershipFrame({
+      admittedPeerIds: [alice, bob],
+      revokedPeerIds: [alice],
+    }));
+
+    await expect(aliceIdentity.membershipStatus(alice)).resolves.toBe("revoked");
+    expect(localRevocations).toEqual(["stopped"]);
   });
 
   it("rejects a Membership View from a sender that is not Active before persistence", async () => {

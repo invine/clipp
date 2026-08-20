@@ -88,6 +88,7 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     enableDCUtR: true,
     signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage }),
     isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
+    isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
   });
   pairedConnections = createPairedPeerConnectionManager({
     transport,

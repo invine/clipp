@@ -379,6 +379,16 @@ const membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,
   identity: identitySvc,
   ...createMembershipPeerRecordBridge({ transport: extensionNetwork, identity: identitySvc }),
+  onPeerRevoked: async (peerId) => {
+    await Promise.allSettled([
+      extensionNetwork.forgetPeer?.(peerId),
+      extensionNetwork.disconnect?.(peerId),
+    ]);
+  },
+  onLocalRevoked: async () => {
+    historyReconciliation.stop();
+    await Promise.allSettled(extensionNetwork.getConnectedPeers().map((peerId) => extensionNetwork.disconnect?.(peerId)));
+  },
   onChanged: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
 });
 
@@ -755,7 +765,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "revokeDevice" && msg.id) {
-    trust.remove(msg.id).then(() => sendResponse({ ok: true }));
+    trust.remove(msg.id)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }
   if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {

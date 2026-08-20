@@ -322,6 +322,7 @@ export function ClipboardApp({
   const [localNameDraft, setLocalNameDraft] = useState("");
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
   const [deviceNameDraft, setDeviceNameDraft] = useState("");
+  const [revocationError, setRevocationError] = useState<{ deviceId: string } | null>(null);
   const [relaysOpen, setRelaysOpen] = useState(true);
   const [addingRelay, setAddingRelay] = useState(false);
   const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(null);
@@ -557,6 +558,19 @@ export function ClipboardApp({
       .finally(() => {
         cancelEditDeviceName();
       });
+  }
+
+  async function revokeDevice(device: Device): Promise<void> {
+    const confirmed = globalThis.confirm(
+      `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    try {
+      await onUnpair(device.deviceId);
+      setRevocationError(null);
+    } catch {
+      setRevocationError({ deviceId: device.deviceId });
+    }
   }
 
   function reuseClip(id: string) {
@@ -1098,6 +1112,20 @@ export function ClipboardApp({
             }}
           >
             {devices.length === 0 && <div className="content-subtitle">No devices yet.</div>}
+            {revocationError && (
+              <div className="content-subtitle" role="alert">
+                Could not revoke this device. It remains trusted.
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    const device = devices.find((candidate) => candidate.deviceId === revocationError.deviceId);
+                    if (device) void revokeDevice(device);
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {devices.map((dev) => {
               const editingThisDevice = editingDeviceId === dev.deviceId;
               const devicePeerIds = [
@@ -1177,8 +1205,8 @@ export function ClipboardApp({
                     )}
                     <button
                       className="icon-button"
-                      title="Unpair this device"
-                      onClick={() => onUnpair(dev.deviceId)}
+                      title="Revoke this device"
+                      onClick={() => void revokeDevice(dev)}
                     >
                       <span className="icon" style={{ fontSize: 16 }}>
                         link_off

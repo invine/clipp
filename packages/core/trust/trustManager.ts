@@ -473,11 +473,23 @@ export function createTrustManager(options: {
   }
 
   async function remove(deviceId: string): Promise<void> {
-    const device = await trustRepo.get(deviceId)
-    if (!device) return
-    await trustRepo.remove(deviceId)
-    log.info("Device removed", deviceId)
-    events.emit('removed', device)
+    const device = await trustRepo.get(deviceId);
+    const revocation = await identitySvc.revoke(deviceId);
+    if (revocation === "not-active") return;
+    // Device Membership is already durably revoked. Legacy presentation data
+    // is only a local cache, so its cleanup cannot roll back the tombstone.
+    await trustRepo.remove(deviceId).catch((error) => {
+      log.warn("Revoked device metadata cleanup failed", { deviceId, error });
+    });
+    const removed = device ?? {
+      deviceId,
+      deviceName: "",
+      publicKey: "",
+      multiaddrs: [],
+      createdAt: 0,
+    };
+    log.info("Device revoked", deviceId);
+    events.emit('removed', removed);
   }
 
   async function isTrusted(id: string): Promise<boolean> {

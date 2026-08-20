@@ -21,10 +21,12 @@ describe("Chrome extension reachability bridge", () => {
       Uint8Array.of(4, 5, 6)
     );
     await bridge.refreshPeerRecord("pairing-target");
+    await bridge.forgetPeer("revoked-peer");
 
     expect(requests).toEqual([
       { action: "runtimeGetSignedPeerRecordFor", peerId: "member-peer" },
       { action: "runtimeRefreshPeerRecord", peerId: "pairing-target" },
+      { action: "runtimeForgetPeer", peerId: "revoked-peer" },
     ]);
   });
 
@@ -33,6 +35,7 @@ describe("Chrome extension reachability bridge", () => {
       getSignedPeerRecord: jest.fn(async () => Uint8Array.of(1)),
       getSignedPeerRecordFor: jest.fn(async () => Uint8Array.of(4, 5)),
       importSignedPeerRecord: jest.fn(async () => undefined),
+      forgetPeer: jest.fn(async () => undefined),
       refreshPeerRecord: jest.fn(async () => undefined),
     };
     const request = { action: "runtimeRefreshPeerRecord", peerId: "peer" } as const;

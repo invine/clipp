@@ -92,6 +92,14 @@ describe("Libp2pMessagingTransport", () => {
     expect(transport.getConnectedPeers()).toEqual([]);
   });
 
+  it("refuses to restore reachability for a revoked Peer ID", async () => {
+    const transport = createLibp2pMessagingTransport({ isPeerRevoked: async () => true });
+    await transport.start();
+
+    await expect(transport.importSignedPeerRecord?.("revoked-peer", Uint8Array.of(1))).rejects.toThrow("revoked_peer");
+    await expect(transport.refreshPeerRecord?.("revoked-peer")).rejects.toThrow("revoked_peer");
+  });
+
   it("start and stop are idempotent", async () => {
     const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
     await transport.start();
