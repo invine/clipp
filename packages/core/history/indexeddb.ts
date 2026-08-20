@@ -66,9 +66,18 @@ async function runTx<T>(
   return await new Promise<T>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, mode);
     const store = tx.objectStore(STORE_NAME);
-    const req = fn(store);
-    req.onsuccess = () => resolve(req.result as T);
-    req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
+    let result: T;
+    try {
+      const req = fn(store);
+      req.onsuccess = () => { result = req.result as T; };
+      req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error || new Error("IndexedDB transaction failed"));
+    tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
   });
 }
 
@@ -184,30 +193,27 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
     });
   }
 
-  async prepareIdentityRotation(backupId: string): Promise<IdentityRotationCheckpoint> {
-    return {
+  readonly identityRotation = {
+    prepare: async (backupId: string): Promise<IdentityRotationCheckpoint> => ({
       kind: "indexeddb-history-generation",
       previousGeneration: await this.currentGeneration(),
       replacementGeneration: `rotation-${backupId}`,
-    };
-  }
-
-  async commitIdentityRotation(checkpoint: unknown): Promise<void> {
-    if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
-    await runTx(this.dbPromise, "readwrite", (store) =>
-      store.put(checkpoint.replacementGeneration, GENERATION_META_KEY));
-  }
-
-  async rollbackIdentityRotation(checkpoint: unknown): Promise<void> {
-    if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
-    await runTx(this.dbPromise, "readwrite", (store) => checkpoint.previousGeneration === LEGACY_GENERATION
-      ? store.delete(GENERATION_META_KEY)
-      : store.put(checkpoint.previousGeneration, GENERATION_META_KEY));
-    await this.deleteGeneration(checkpoint.replacementGeneration);
-  }
-
-  async finalizeIdentityRotation(checkpoint: unknown): Promise<void> {
-    if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
-    await this.deleteGeneration(checkpoint.previousGeneration);
-  }
+    }),
+    commit: async (checkpoint: unknown): Promise<void> => {
+      if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
+      await runTx(this.dbPromise, "readwrite", (store) =>
+        store.put(checkpoint.replacementGeneration, GENERATION_META_KEY));
+    },
+    rollback: async (checkpoint: unknown): Promise<void> => {
+      if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
+      await runTx(this.dbPromise, "readwrite", (store) => checkpoint.previousGeneration === LEGACY_GENERATION
+        ? store.delete(GENERATION_META_KEY)
+        : store.put(checkpoint.previousGeneration, GENERATION_META_KEY));
+      await this.deleteGeneration(checkpoint.replacementGeneration);
+    },
+    finalize: async (checkpoint: unknown): Promise<void> => {
+      if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
+      await this.deleteGeneration(checkpoint.previousGeneration);
+    },
+  };
 }

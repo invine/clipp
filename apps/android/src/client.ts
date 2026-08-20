@@ -708,6 +708,7 @@ export class AndroidClient {
         }
         this.identityRotationRecovery = Boolean(rotation.recovery);
         await this.identitySvc.get();
+        return { networkingEnabled: !this.identityRotationRecovery };
       },
       startLocalServices: async () => {
         this.bindEvents();
@@ -751,7 +752,6 @@ export class AndroidClient {
         this.clipboardSync.start();
       },
       startNetworkServices: async () => {
-        if (this.identityRotationRecovery) return;
         await this.ensureMessaging();
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;

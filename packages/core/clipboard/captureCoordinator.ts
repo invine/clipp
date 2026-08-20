@@ -43,7 +43,7 @@ export type ClipCaptureCoordinator = {
   clearHistory(clearDurable: () => Promise<void>): Promise<void>;
   retryPending(): Promise<void>;
   start(): void;
-  stop(): void;
+  stop(): Promise<void>;
   onRecovered(cb: (clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>): void;
 };
 
@@ -245,10 +245,11 @@ export function createClipCaptureCoordinator(options: {
       running = true;
       schedulePendingRetry();
     },
-    stop: () => {
+    stop: async () => {
       running = false;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = undefined;
+      await serialize.drain();
     },
     onRecovered: (listener) => recoveredListeners.push(listener),
   };

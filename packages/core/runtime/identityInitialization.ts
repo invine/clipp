@@ -41,8 +41,14 @@ export async function startIdentityBoundRuntimeServices(options: {
   // eslint-disable-next-line no-unused-vars
   onNetworkingFailure?(error: unknown): void | Promise<void>;
 }): Promise<void> {
-  await options.initializeIdentity();
+  const initialization = await options.initializeIdentity();
   await options.startLocalServices();
+  if (
+    typeof initialization === "object"
+    && initialization !== null
+    && "networkingEnabled" in initialization
+    && initialization.networkingEnabled === false
+  ) return;
   try {
     await options.startNetworkServices();
   } catch (error) {

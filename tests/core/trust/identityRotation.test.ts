@@ -263,6 +263,51 @@ describe("Identity Rotation", () => {
     expect(await history.getAll()).toEqual([]);
   });
 
+  it("keeps the history backup when persisting the rolled-back marker fails", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    await history.set(historyItem.clip.id, historyItem);
+    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    let failMarkerAfterRollback = true;
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: {
+        ...baseCommitter,
+        async rollback(backup) {
+          await baseCommitter.rollback(backup);
+          if (failMarkerAfterRollback) {
+            failMarkerAfterRollback = false;
+            storage.failNextSetFor = "identity-rotation";
+          }
+        },
+      },
+      stateKey: "identity-rotation",
+      initialDeviceName: "Desktop",
+      now: () => 42,
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+      shutdown: async () => undefined,
+      retry: false,
+    });
+    storage.failNextSetFor = "identity";
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      recovery: { code: "identity_rotation_recovery" },
+    });
+    const marker = await storage.get<IdentityRotationState>("identity-rotation");
+    expect(marker).toMatchObject({ phase: "committing" });
+
+    await baseCommitter.rollback(marker!.backup!);
+    expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
+  });
+
   it("rolls back an interrupted cleanup before retrying the same staged candidate", async () => {
     const storage = new MemoryStorage();
     const history = new InMemoryHistoryBackend();

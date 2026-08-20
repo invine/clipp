@@ -49,4 +49,23 @@ describe("IndexedDB history acceptance", () => {
     await expect(second.getById(clearable.id)).resolves.toBeNull();
     await expect(second.accept(clearable)).resolves.toMatchObject({ kind: "locally-suppressed" });
   });
+
+  it("acknowledges a generation switch only after its transaction commits", async () => {
+    const backend = new IndexedDBHistoryBackend();
+    const db = await (backend as unknown as { dbPromise: Promise<IDBDatabase> }).dbPromise;
+    const originalTransaction = db.transaction.bind(db);
+    let transactionCompleted = false;
+    (db as unknown as { transaction: typeof db.transaction }).transaction = ((...args: Parameters<IDBDatabase["transaction"]>) => {
+      const transaction = originalTransaction(...args);
+      if (args[1] === "readwrite") {
+        transaction.addEventListener("complete", () => { transactionCompleted = true; });
+      }
+      return transaction;
+    }) as typeof db.transaction;
+    const checkpoint = await backend.identityRotation.prepare("transaction-proof");
+
+    await backend.identityRotation.commit(checkpoint);
+
+    expect(transactionCompleted).toBe(true);
+  });
 });

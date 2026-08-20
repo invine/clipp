@@ -194,7 +194,7 @@ export function createClipboardSyncManager(
       running = false;
       networkingEnabled = false;
       currentLiveGossip?.stop();
-      options.clipboard.stop();
+      await options.clipboard.stop();
       await Promise.all([localCaptureQueue, liveReceiveQueue]);
       inFlightRemote.clear();
     },

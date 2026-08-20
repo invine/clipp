@@ -554,6 +554,7 @@ const sharedRuntime = createRuntimeOrchestrator({
       }
       identityRotationRecovery = Boolean(rotation.recovery);
       await identitySvc.get();
+      return { networkingEnabled: !identityRotationRecovery };
     },
     startLocalServices: async () => {
       await autoSyncReady;
@@ -587,7 +588,6 @@ const sharedRuntime = createRuntimeOrchestrator({
       clipboardSync.start();
     },
     startNetworkServices: async () => {
-      if (identityRotationRecovery) return;
       offscreenInitializationGate.open();
       await offscreenReady;
       await extensionNetwork.start();

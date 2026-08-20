@@ -106,22 +106,14 @@ export function createIdentityRotationCommitter(options: {
     | "getAll"
     | "set"
     | "remove"
-    | "prepareIdentityRotation"
-    | "commitIdentityRotation"
-    | "rollbackIdentityRotation"
-    | "finalizeIdentityRotation"
+    | "identityRotation"
   >;
   storageKeys?: readonly string[];
 }): IdentityRotationCommitter {
   const noticeKey = IDENTITY_ROTATION_NOTICE_KEY;
   const storageKeys = options.storageKeys ?? IDENTITY_ROTATION_SCOPED_STORAGE_KEYS;
   const backupKeys = [...new Set([...storageKeys, noticeKey])];
-  const usesHistoryCheckpoint = Boolean(
-    options.history.prepareIdentityRotation
-    && options.history.commitIdentityRotation
-    && options.history.rollbackIdentityRotation
-    && options.history.finalizeIdentityRotation,
-  );
+  const historyRotation = options.history.identityRotation;
 
   const restoreValue = async (key: string, value: unknown): Promise<void> => {
     if (value === undefined) await options.storage.remove(key);
@@ -139,8 +131,8 @@ export function createIdentityRotationCommitter(options: {
   };
 
   const rollback = async (backup: IdentityRotationBackup): Promise<void> => {
-    if (backup.historyCheckpoint !== undefined && options.history.rollbackIdentityRotation) {
-      await options.history.rollbackIdentityRotation(backup.historyCheckpoint);
+    if (backup.historyCheckpoint !== undefined && historyRotation) {
+      await historyRotation.rollback(backup.historyCheckpoint);
     } else {
       const allValues = await options.history.getAll();
       const backupEntries = allValues.filter((value): value is RotationHistoryBackupEntry =>
@@ -151,24 +143,23 @@ export function createIdentityRotationCommitter(options: {
     }
     for (const entry of backup.storageEntries) await restoreValue(entry.key, entry.value);
     if (backup.identity) await options.repository.upsert(backup.identity);
-    if (backup.historyCheckpoint === undefined) await removeStoredBackup(backup.backupId);
   };
 
   return {
     async prepare(backupId): Promise<IdentityRotationBackup> {
-      if (!usesHistoryCheckpoint) await removeStoredBackup(backupId);
+      if (!historyRotation) await removeStoredBackup(backupId);
       const [identity, historyValues, ...storageValues] = await Promise.all([
         options.repository.get(),
-        usesHistoryCheckpoint ? Promise.resolve([]) : options.history.getAll(),
+        historyRotation ? Promise.resolve([]) : options.history.getAll(),
         ...backupKeys.map((key) => options.storage.get(key)),
       ]);
       const historyEntries = historyValues
         .filter((value) => !isRotationHistoryBackupEntry(value))
         .map((value) => ({ originalKey: historyEntryKey(value), value }));
-      const historyCheckpoint = usesHistoryCheckpoint
-        ? await options.history.prepareIdentityRotation!(backupId)
+      const historyCheckpoint = historyRotation
+        ? await historyRotation.prepare(backupId)
         : undefined;
-      if (!usesHistoryCheckpoint) {
+      if (!historyRotation) {
         for (const [index, entry] of historyEntries.entries()) {
           const storageKey = rotationHistoryBackupKey(backupId, index);
           await options.history.set(storageKey, {
@@ -187,8 +178,8 @@ export function createIdentityRotationCommitter(options: {
       };
     },
     async commit(candidate, notice, backup): Promise<void> {
-      if (backup.historyCheckpoint !== undefined && options.history.commitIdentityRotation) {
-        await options.history.commitIdentityRotation(backup.historyCheckpoint);
+      if (backup.historyCheckpoint !== undefined && historyRotation) {
+        await historyRotation.commit(backup.historyCheckpoint);
       } else {
         const historyEntries = await storedBackupEntries(backup.backupId);
         await Promise.all(historyEntries.map((entry) => options.history.remove(entry.originalKey)));
@@ -201,8 +192,8 @@ export function createIdentityRotationCommitter(options: {
     },
     rollback,
     finalize: async (backup) => {
-      if (backup.historyCheckpoint !== undefined && options.history.finalizeIdentityRotation) {
-        await options.history.finalizeIdentityRotation(backup.historyCheckpoint);
+      if (backup.historyCheckpoint !== undefined && historyRotation) {
+        await historyRotation.finalize(backup.historyCheckpoint);
       } else {
         await removeStoredBackup(backup.backupId);
       }

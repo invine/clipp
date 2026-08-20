@@ -7,7 +7,7 @@ import * as log from "../logger";
 
 export interface ClipboardService {
   start(): void;
-  stop(): void;
+  stop(): Promise<void>;
   onLocalClip(cb: (clip: Clip, options?: LocalClipOptions) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
   reuseLocalClip(clip: Clip): Promise<Clip | null>;
@@ -109,6 +109,7 @@ function createClipboardService(
   let lastLocal: Clip | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let baseline: string | undefined;
+  let acceptingCaptures = true;
   const serialize = createSerializedExecutor();
 
   options.captureCoordinator?.onRecovered((clip, captureOptions) => {
@@ -130,7 +131,10 @@ function createClipboardService(
     return clip;
   }
 
-  async function processLocalText(text: string, captureOptions?: LocalClipOptions): Promise<Clip | null> {
+  async function processLocalTextUnserialized(
+    text: string,
+    captureOptions?: LocalClipOptions,
+  ): Promise<Clip | null> {
     log.debug("Processing local clipboard text");
     if (options.captureCoordinator) {
       const capture = () => captureMode === "manual" && !captureOptions?.shareNow
@@ -171,7 +175,7 @@ function createClipboardService(
         baseline = text;
         if (!text) return;
         log.debug("Clipboard changed");
-        await processLocalText(text);
+        await processLocalTextUnserialized(text);
       });
     } catch {
       // ignore read errors
@@ -224,7 +228,7 @@ function createClipboardService(
       }
       await write(clip.content);
       try { baseline = await read(); } catch { baseline = undefined; }
-      const reused = await processLocalText(clip.content);
+      const reused = await processLocalTextUnserialized(clip.content);
       if (!reused) throw new Error("clip_capture_failed");
       return reused;
     });
@@ -233,27 +237,33 @@ function createClipboardService(
   return {
     start: () => {
       log.info("Clipboard service started");
+      acceptingCaptures = true;
       options.captureCoordinator?.start();
       if (timer) return;
       if (pollIntervalMs <= 0) return;
       void (async () => {
         await checkOnce();
+        if (!acceptingCaptures) return;
         timer = setInterval(() => {
           void checkOnce();
         }, pollIntervalMs);
       })();
     },
-    stop: () => {
+    stop: async () => {
       log.info("Clipboard service stopped");
-      options.captureCoordinator?.stop();
+      acceptingCaptures = false;
       if (timer) {
         clearInterval(timer);
         timer = undefined;
       }
+      await serialize.drain();
+      await options.captureCoordinator?.stop();
     },
     onLocalClip: (cb) => localHandlers.push(cb),
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
-    processLocalText,
+    processLocalText: (text, captureOptions) => serialize(() => acceptingCaptures
+      ? processLocalTextUnserialized(text, captureOptions)
+      : Promise.resolve(null)),
     reuseLocalClip,
     writeRemoteClip,
     clearHistory: options.captureCoordinator

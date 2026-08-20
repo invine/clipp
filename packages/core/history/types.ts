@@ -265,6 +265,13 @@ export function decideAtomicHistoryMutation(
   return { writes, deletes, result: {} };
 }
 
+export interface HistoryIdentityRotation {
+  prepare(backupId: string): Promise<unknown>;
+  commit(checkpoint: unknown): Promise<void>;
+  rollback(checkpoint: unknown): Promise<void>;
+  finalize(checkpoint: unknown): Promise<void>;
+}
+
 export interface HistoryStorageBackend {
   set(key: string, value: any): Promise<void>;
   get(key: string): Promise<any>;
@@ -272,10 +279,7 @@ export interface HistoryStorageBackend {
   remove(key: string): Promise<void>;
   clearAll(): Promise<void>;
   applyHistoryMutation(input: HistoryMutation): Promise<HistoryMutationResult>;
-  prepareIdentityRotation?(backupId: string): Promise<unknown>;
-  commitIdentityRotation?(checkpoint: unknown): Promise<void>;
-  rollbackIdentityRotation?(checkpoint: unknown): Promise<void>;
-  finalizeIdentityRotation?(checkpoint: unknown): Promise<void>;
+  identityRotation?: HistoryIdentityRotation;
 }
 
 export class InMemoryHistoryBackend implements HistoryStorageBackend {

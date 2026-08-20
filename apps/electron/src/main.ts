@@ -609,7 +609,6 @@ async function bootstrap() {
   }
 
   async function startNetworkServices() {
-    if (identityRotationRecovery) return;
     await ensureMessagingStarted();
     membershipReconciler.start();
     pairedConnections.start();
@@ -1045,6 +1044,7 @@ async function bootstrap() {
         }
         identityRotationRecovery = Boolean(rotation.recovery);
         await identitySvc.get();
+        return { networkingEnabled: !identityRotationRecovery };
       },
       startLocalServices,
       startNetworkServices,

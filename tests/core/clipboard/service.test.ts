@@ -242,4 +242,35 @@ describe("ClipboardService", () => {
     service.stop();
     jest.useRealTimers();
   });
+
+  it("waits for an in-flight capture before completing shutdown", async () => {
+    let markCaptureStarted!: () => void;
+    let releaseCapture!: () => void;
+    const captureStarted = new Promise<void>((resolve) => { markCaptureStarted = resolve; });
+    const captureGate = new Promise<void>((resolve) => { releaseCapture = resolve; });
+    const coordinator = createClipCaptureCoordinator({
+      history: {
+        accept: async (clip) => {
+          markCaptureStarted();
+          await captureGate;
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+      originPeerId: () => peerId,
+      makeId: () => "00000000-0000-4000-8000-000000000700",
+    });
+    const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
+    const capture = service.processLocalText("captured before shutdown");
+    await captureStarted;
+
+    let stopped = false;
+    const stopping = service.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    releaseCapture();
+
+    await expect(capture).resolves.toMatchObject({ content: "captured before shutdown" });
+    await stopping;
+    await expect(service.processLocalText("captured after shutdown")).resolves.toBeNull();
+  });
 });
