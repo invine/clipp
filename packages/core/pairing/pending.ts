@@ -304,7 +304,7 @@ export function createPendingTrustRequestCoordinator(options: {
       expiryTimers.forEach((_timer, peerId) => clearTimer(peerId));
       await Promise.allSettled([...pendingMutations.values()]);
       const requests = await options.store.list();
-      await Promise.allSettled(requests.map((request) => options.notifications.dismiss(notificationId(request.initiatorPeerId))));
+      await Promise.all(requests.map((request) => options.notifications.dismiss(notificationId(request.initiatorPeerId))));
     },
   };
 }

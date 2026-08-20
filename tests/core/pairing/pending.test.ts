@@ -49,6 +49,34 @@ describe("pending Trust Requests", () => {
     expect(approvalViewsOpened).toBe(1);
   });
 
+  it("reports notification cleanup failure when stopped with pending requests", async () => {
+    const dismissFailure = new Error("notification_dismiss_failed");
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => [{
+          initiatorPeerId,
+          deviceName: "Mobile",
+          nameRevision: 1n,
+          requestEnvelope: new Uint8Array([1]),
+          expiresAtUnixMs: 10_000n,
+        }],
+        save: async () => undefined,
+        remove: async () => undefined,
+      },
+      notifications: {
+        show: async () => undefined,
+        dismiss: async () => { throw dismissFailure; },
+        onSelect: () => () => undefined,
+      },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+    });
+
+    await expect(coordinator.stop()).rejects.toBe(dismissFailure);
+  });
+
   it("serializes pending records without losing byte or bigint fields", async () => {
     let value: unknown;
     const store = createKVPendingTrustRequestStore({

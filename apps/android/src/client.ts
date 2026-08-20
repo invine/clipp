@@ -6,12 +6,14 @@ import {
   createAutoSyncPreference,
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
+  createRuntimeIdentityRotationLifecycle,
   createRuntimeClipboardService,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
+  stopIdentityBoundRuntimeServices,
   systemRuntimeClock,
   type RuntimeClipboardHistoryError,
 } from "@core/runtime";
@@ -269,12 +271,23 @@ export class AndroidClient {
     repository: this.identityRepo,
     storage: this.storage,
     capabilities: RUNTIME_CAPABILITIES.android,
-    shutdown: () => this.stopServices(),
+    shutdown: () => this.stopIdentityBoundServices(),
     committer: createIdentityRotationCommitter({
       repository: this.identityRepo,
       storage: this.storage,
       history: this.historyBackend,
     }),
+  });
+  private readonly identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
+    rotation: this.identityRotation,
+    loadIdentity: () => this.identitySvc.get(),
+    restart: () => window.location.reload(),
+    startLocalRecovery: () => {
+      this.clipboardSync.startLocalOnly();
+      this.started = true;
+    },
+    publishState: () => this.emitState(),
+    onRecoveryChanged: (recovering) => { this.identityRotationRecovery = recovering; },
   });
   private readonly identitySvc = createRuntimeIdentityManager({
     repo: this.identityRepo,
@@ -289,18 +302,6 @@ export class AndroidClient {
   private membershipReconciler: ReturnType<typeof createMembershipReconciler> | null = null;
 
   constructor() {
-    this.identityRotation.onStatusChanged((status) => {
-      if (status.kind === "rotated") {
-        window.location.reload();
-        return;
-      }
-      this.identityRotationRecovery = status.kind === "recovering";
-      if (this.identityRotationRecovery) {
-        this.clipboardSync.startLocalOnly();
-        this.started = true;
-      }
-      void this.emitState();
-    });
     // messaging is initialised lazily in `start()`
     void LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
       const id = event.notification.extra?.runtimeNotificationId;
@@ -369,10 +370,7 @@ export class AndroidClient {
       transport: this.transport,
       identity: this.identitySvc,
       ...createMembershipPeerRecordBridge({ transport: this.transport, identity: this.identitySvc }),
-      onLocalRevoked: async () => {
-        const rotation = await this.identityRotation.rotate("revoked");
-        if (rotation.rotated) window.location.reload();
-      },
+      onLocalRevoked: () => this.identityRotationLifecycle.rotateRevoked(),
       onChanged: () => this.emitState(),
     });
     this.membershipReconciler.start();
@@ -483,7 +481,7 @@ export class AndroidClient {
         }
       },
       async dismiss(id) {
-        await LocalNotifications.cancel({ notifications: [{ id: nativeNotificationId(id) }] }).catch(() => {});
+        await LocalNotifications.cancel({ notifications: [{ id: nativeNotificationId(id) }] });
       },
       onSelect: this.notificationSelection.onSelect,
     },
@@ -700,16 +698,7 @@ export class AndroidClient {
   private async startServices() {
     if (this.started) return;
     await startIdentityBoundRuntimeServices({
-      initializeIdentity: async () => {
-        const rotation = await this.identityRotation.recoverOrRotate();
-        if (rotation.rotated) {
-          window.location.reload();
-          throw new Error("identity_rotated_restart_required");
-        }
-        this.identityRotationRecovery = Boolean(rotation.recovery);
-        await this.identitySvc.get();
-        return { networkingEnabled: !this.identityRotationRecovery };
-      },
+      initializeIdentity: () => this.identityRotationLifecycle.initialize(),
       startLocalServices: async () => {
         this.bindEvents();
         this.autoSync = await this.autoSyncPreference.load();
@@ -743,10 +732,7 @@ export class AndroidClient {
           },
         );
         this.started = true;
-        if (this.identityRotationRecovery) {
-          this.clipboardSync.startLocalOnly();
-          return;
-        }
+        if (this.identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
         this.pairingSessions.start();
         await this.pairingPending.start();
         this.clipboardSync.start();
@@ -772,19 +758,27 @@ export class AndroidClient {
 
   private async stopServices() {
     if (!this.started) return;
+    await this.stopIdentityBoundServices();
+  }
+
+  private async stopIdentityBoundServices() {
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
-    await this.pairingSessions.stop();
-    await this.pairingPending.stop();
-    await this.clipboardSync.stop();
-    await this.historyReconciliation?.stop();
-    this.historyReconciliation = null;
-    const reconnectsStopped = this.pairedConnections?.stop();
-    await this.transport?.stop();
-    await reconnectsStopped;
     this.membershipReconciler?.stop();
-    this.membershipReconciler = null;
-    this.started = false;
+    try {
+      await stopIdentityBoundRuntimeServices([
+        () => this.pairingSessions.stop(),
+        () => this.pairingPending.stop(),
+        () => this.clipboardSync.stop(),
+        () => this.historyReconciliation?.stop(),
+        () => this.pairedConnections?.stop(),
+        () => this.transport?.stop(),
+      ]);
+    } finally {
+      this.historyReconciliation = null;
+      this.membershipReconciler = null;
+      this.started = false;
+    }
   }
 
   start() {

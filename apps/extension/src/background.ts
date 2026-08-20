@@ -30,11 +30,13 @@ import {
   createAutoSyncPreference,
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
+  createRuntimeIdentityRotationLifecycle,
   createRuntimeClipboardService,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
+  stopIdentityBoundRuntimeServices,
   systemRuntimeClock,
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime";
@@ -393,6 +395,7 @@ const historyReconciliation = createHistoryReconciliation({
 const notificationSelection = createRuntimeNotificationSelection();
 let membershipReconciler: ReturnType<typeof createMembershipReconciler>;
 let identityRotationRecovery = false;
+let identityRotationLifecycle: ReturnType<typeof createRuntimeIdentityRotationLifecycle>;
 const identityRotation = createRuntimeIdentityRotationCoordinator({
   repository: identityRepo,
   storage,
@@ -402,11 +405,13 @@ const identityRotation = createRuntimeIdentityRotationCoordinator({
     historyRetentionCleanup = undefined;
     await historyPolicyReady;
     membershipReconciler?.stop();
-    await pairingSessions.stop();
-    await pairingPending.stop();
-    await clipboardSync.stop();
-    await historyReconciliation.stop();
-    await extensionNetwork.stop();
+    await stopIdentityBoundRuntimeServices([
+      () => pairingSessions.stop(),
+      () => pairingPending.stop(),
+      () => clipboardSync.stop(),
+      () => historyReconciliation.stop(),
+      () => extensionNetwork.stop(),
+    ]);
   },
   committer: createIdentityRotationCommitter({
     repository: identityRepo,
@@ -418,10 +423,7 @@ membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,
   identity: identitySvc,
   ...createMembershipPeerRecordBridge({ transport: extensionNetwork, identity: identitySvc }),
-  onLocalRevoked: async () => {
-    const rotation = await identityRotation.rotate("revoked");
-    if (rotation.rotated) chrome.runtime.reload();
-  },
+  onLocalRevoked: () => identityRotationLifecycle.rotateRevoked(),
   onChanged: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
 });
 
@@ -526,14 +528,13 @@ const pairingPending = createPendingTrustRequestCoordinator({
     await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
   },
 });
-identityRotation.onStatusChanged((status) => {
-  if (status.kind === "rotated") {
-    chrome.runtime.reload();
-    return;
-  }
-  identityRotationRecovery = status.kind === "recovering";
-  if (identityRotationRecovery) clipboardSync.startLocalOnly();
-  void runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state));
+identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
+  rotation: identityRotation,
+  loadIdentity: () => identitySvc.get(),
+  restart: () => chrome.runtime.reload(),
+  startLocalRecovery: () => clipboardSync.startLocalOnly(),
+  publishState: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
+  onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
 });
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
   void pairingPending.start()
@@ -546,16 +547,7 @@ chrome.notifications?.onClicked?.addListener((id) => {
 const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
   start: () => startIdentityBoundRuntimeServices({
-    initializeIdentity: async () => {
-      const rotation = await identityRotation.recoverOrRotate();
-      if (rotation.rotated) {
-        chrome.runtime.reload();
-        throw new Error("identity_rotated_restart_required");
-      }
-      identityRotationRecovery = Boolean(rotation.recovery);
-      await identitySvc.get();
-      return { networkingEnabled: !identityRotationRecovery };
-    },
+    initializeIdentity: () => identityRotationLifecycle.initialize(),
     startLocalServices: async () => {
       await autoSyncReady;
       clipboardSync.setAutoSync(autoSync);
@@ -580,10 +572,7 @@ const sharedRuntime = createRuntimeOrchestrator({
             .then((state) => runtimeAdapter.publicState.publish(state));
         },
       );
-      if (identityRotationRecovery) {
-        clipboardSync.startLocalOnly();
-        return;
-      }
+      if (identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
       pairingSessions.start();
       clipboardSync.start();
     },

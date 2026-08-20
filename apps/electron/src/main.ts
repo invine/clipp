@@ -24,11 +24,13 @@ import {
   createClosableRuntimeNotifications,
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
+  createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeClipboardService,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
+  stopIdentityBoundRuntimeServices,
   systemRuntimeClock,
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime/index.js";
@@ -102,6 +104,7 @@ async function bootstrap() {
     }),
   });
   let identityRotationRecovery = false;
+  let identityRotationLifecycle: ReturnType<typeof createRuntimeIdentityRotationLifecycle>;
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
     capabilities: RUNTIME_CAPABILITIES.electron,
@@ -575,10 +578,7 @@ async function bootstrap() {
       await emitState();
     });
 
-    if (identityRotationRecovery) {
-      clipboardSync.startLocalOnly();
-      return;
-    }
+    if (identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
 
     pairingSessions.start();
 
@@ -928,39 +928,35 @@ async function bootstrap() {
     transport: runtimeNetwork,
     identity: identitySvc,
     ...createMembershipPeerRecordBridge({ transport: runtimeNetwork, identity: identitySvc }),
-    onLocalRevoked: async () => {
-      const rotation = await identityRotation.rotate("revoked");
-      if (rotation.rotated) {
-        app.relaunch();
-        app.exit(0);
-      }
-    },
+    onLocalRevoked: () => identityRotationLifecycle.rotateRevoked(),
     onChanged: emitState,
   });
   stopIdentityBoundServicesForRotation = async () => {
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     membershipReconciler.stop();
-    await pairingSessions.stop();
-    await pairingPending?.stop();
-    await clipboardSync.stop();
-    await historyReconciliation.stop();
-    const reconnectsStopped = pairedConnections.stop();
-    await runtimeNetwork.stop();
-    await reconnectsStopped;
+    await stopIdentityBoundRuntimeServices([
+      () => pairingSessions.stop(),
+      () => pairingPending?.stop(),
+      () => clipboardSync.stop(),
+      () => historyReconciliation.stop(),
+      () => pairedConnections.stop(),
+      () => runtimeNetwork.stop(),
+    ]);
     if (pendingSelfPeerUpdates.size > 0) {
       await Promise.allSettled(Array.from(pendingSelfPeerUpdates));
     }
   };
-  identityRotation.onStatusChanged((status) => {
-    if (status.kind === "rotated") {
+  identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
+    rotation: identityRotation,
+    loadIdentity: () => identitySvc.get(),
+    restart: () => {
       app.relaunch();
       app.exit(0);
-      return;
-    }
-    identityRotationRecovery = status.kind === "recovering";
-    if (identityRotationRecovery) clipboardSync.startLocalOnly();
-    void emitState();
+    },
+    startLocalRecovery: () => clipboardSync.startLocalOnly(),
+    publishState: emitState,
+    onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
   });
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
@@ -1035,17 +1031,7 @@ async function bootstrap() {
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
     start: () => startIdentityBoundRuntimeServices({
-      initializeIdentity: async () => {
-        const rotation = await identityRotation.recoverOrRotate();
-        if (rotation.rotated) {
-          app.relaunch();
-          app.exit(0);
-          throw new Error("identity_rotated_restart_required");
-        }
-        identityRotationRecovery = Boolean(rotation.recovery);
-        await identitySvc.get();
-        return { networkingEnabled: !identityRotationRecovery };
-      },
+      initializeIdentity: () => identityRotationLifecycle.initialize(),
       startLocalServices,
       startNetworkServices,
       onNetworkingFailure: (error) => {

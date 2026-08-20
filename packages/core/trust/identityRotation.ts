@@ -260,6 +260,17 @@ export function createIdentityRotationCoordinator(options: {
     };
   };
 
+  const rollbackForRetry = async (state: IdentityRotationState & { backup: IdentityRotationBackup }): Promise<void> => {
+    try {
+      await options.committer.rollback(state.backup);
+      const prepared: IdentityRotationState = { ...state, phase: "prepared", backup: undefined };
+      await options.storage.set(stateKey, prepared);
+    } catch {
+      // Keep the durable committing marker and backup so the next retry can
+      // finish rollback before attempting cleanup again.
+    }
+  };
+
   const execute = async (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
     const storedState = await options.storage.get<IdentityRotationState>(stateKey);
     if (storedState !== undefined && !validState(storedState)) {
@@ -273,7 +284,12 @@ export function createIdentityRotationCoordinator(options: {
     if (!rotationReason) return { rotated: false, identity: current };
     await options.shutdown();
     if (state && current?.deviceId === state.candidate.deviceId) {
-      if (state.backup) await options.committer.finalize(state.backup);
+      try {
+        if (state.backup) await options.committer.finalize(state.backup);
+      } catch (error) {
+        if (state.backup) await rollbackForRetry(state as IdentityRotationState & { backup: IdentityRotationBackup });
+        throw error;
+      }
       await options.storage.remove(stateKey);
       return { rotated: true, reason: state.reason, identity: state.candidate };
     }
@@ -304,18 +320,11 @@ export function createIdentityRotationCoordinator(options: {
         historyDeleted: true,
         pairingRequired: true,
       }, backup);
+      await options.committer.finalize(backup);
     } catch (error) {
-      try {
-        await options.committer.rollback(backup);
-        const prepared: IdentityRotationState = { ...state, phase: "prepared", backup: undefined };
-        await options.storage.set(stateKey, prepared);
-      } catch {
-        // Keep the durable committing marker and backup so the next retry can
-        // finish rollback before attempting cleanup again.
-      }
+      await rollbackForRetry(state as IdentityRotationState & { backup: IdentityRotationBackup });
       throw error;
     }
-    await options.committer.finalize(backup);
     await options.storage.remove(stateKey);
     return { rotated: true, reason: state.reason, identity: state.candidate };
   };

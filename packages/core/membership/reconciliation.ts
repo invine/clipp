@@ -24,6 +24,43 @@ export type MembershipReconciliationIdentity = {
   onMembershipChanged?(listener: () => void): () => void;
 };
 
+function createKeyedRetryScheduler<Key>(options: {
+  baseMs: number;
+  maxMs: number;
+  canSchedule(key: Key): boolean;
+  run(key: Key): Promise<void>;
+}) {
+  const timers = new Map<Key, ReturnType<typeof setTimeout>>();
+  const attempts = new Map<Key, number>();
+
+  const cancel = (key: Key): void => {
+    const timer = timers.get(key);
+    if (timer) clearTimeout(timer);
+    timers.delete(key);
+    attempts.delete(key);
+  };
+
+  return {
+    schedule(key: Key): void {
+      if (!options.canSchedule(key) || timers.has(key)) return;
+      const attempt = attempts.get(key) ?? 0;
+      attempts.set(key, attempt + 1);
+      const delay = Math.min(options.baseMs * 2 ** attempt, options.maxMs);
+      timers.set(key, setTimeout(() => {
+        timers.delete(key);
+        void options.run(key).catch(() => undefined);
+      }, delay));
+    },
+    reset(key: Key): void {
+      attempts.delete(key);
+    },
+    cancel,
+    stop(): void {
+      [...timers.keys()].forEach(cancel);
+    },
+  };
+}
+
 /** Adapt the transport's local signed record APIs without making reachability authoritative. */
 export function createMembershipPeerRecordBridge(options: {
   transport: Pick<MessagingTransport, "getSignedPeerRecord" | "getSignedPeerRecordFor" | "importSignedPeerRecord">;
@@ -74,23 +111,20 @@ export function createMembershipReconciler(options: {
   let localRevocationHandled = false;
   const retryBaseMs = options.retryBaseMs ?? 1_000;
   const retryMaxMs = options.retryMaxMs ?? 60_000;
-  const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const retryAttempts = new Map<string, number>();
-  const cleanupRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const cleanupRetryAttempts = new Map<string, number>();
 
   const isConnected = (peerId: string): boolean => options.transport.getConnectedPeers().includes(peerId);
-
-  const scheduleRetry = (peerId: string): void => {
-    if (stopped || !isConnected(peerId) || retryTimers.has(peerId)) return;
-    const attempt = retryAttempts.get(peerId) ?? 0;
-    retryAttempts.set(peerId, attempt + 1);
-    const delay = Math.min(retryBaseMs * 2 ** attempt, retryMaxMs);
-    retryTimers.set(peerId, setTimeout(() => {
-      retryTimers.delete(peerId);
-      void attemptPush(peerId).catch(() => undefined);
-    }, delay));
-  };
+  const pushRetries = createKeyedRetryScheduler({
+    baseMs: retryBaseMs,
+    maxMs: retryMaxMs,
+    canSchedule: (peerId: string) => !stopped && isConnected(peerId),
+    run: (peerId: string) => attemptPush(peerId),
+  });
+  const cleanupRetries = createKeyedRetryScheduler({
+    baseMs: retryBaseMs,
+    maxMs: retryMaxMs,
+    canSchedule: () => !stopped,
+    run: (peerId: string) => attemptRevokedPeerCleanup(peerId),
+  });
 
   const push = async (targetPeerId: string): Promise<void> => {
     const local = await options.identity.get();
@@ -114,9 +148,9 @@ export function createMembershipReconciler(options: {
         },
         signedPeerRecords: records,
       }));
-      retryAttempts.delete(targetPeerId);
+      pushRetries.reset(targetPeerId);
     } catch (error) {
-      scheduleRetry(targetPeerId);
+      pushRetries.schedule(targetPeerId);
       throw error;
     }
   };
@@ -129,10 +163,7 @@ export function createMembershipReconciler(options: {
       sendFailure = error;
     }
     if (await options.identity.membershipStatus(peerId) === "revoked") {
-      const retryTimer = retryTimers.get(peerId);
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimers.delete(peerId);
-      retryAttempts.delete(peerId);
+      pushRetries.cancel(peerId);
       await attemptRevokedPeerCleanup(peerId);
     }
     if (sendFailure) throw sendFailure;
@@ -150,23 +181,12 @@ export function createMembershipReconciler(options: {
     if (failure) throw failure.reason;
   };
 
-  const scheduleCleanupRetry = (peerId: string): void => {
-    if (stopped || cleanupRetryTimers.has(peerId)) return;
-    const attempt = cleanupRetryAttempts.get(peerId) ?? 0;
-    cleanupRetryAttempts.set(peerId, attempt + 1);
-    const delay = Math.min(retryBaseMs * 2 ** attempt, retryMaxMs);
-    cleanupRetryTimers.set(peerId, setTimeout(() => {
-      cleanupRetryTimers.delete(peerId);
-      void attemptRevokedPeerCleanup(peerId).catch(() => undefined);
-    }, delay));
-  };
-
   const attemptRevokedPeerCleanup = async (peerId: string): Promise<void> => {
     try {
       await cleanupRevokedPeer(peerId);
-      cleanupRetryAttempts.delete(peerId);
+      cleanupRetries.reset(peerId);
     } catch (error) {
-      scheduleCleanupRetry(peerId);
+      cleanupRetries.schedule(peerId);
       throw error;
     }
   };
@@ -286,10 +306,8 @@ export function createMembershipReconciler(options: {
     stop(): void {
       stopped = true;
       unsubscribeMembership?.();
-      retryTimers.forEach((timer) => clearTimeout(timer));
-      retryTimers.clear();
-      cleanupRetryTimers.forEach((timer) => clearTimeout(timer));
-      cleanupRetryTimers.clear();
+      pushRetries.stop();
+      cleanupRetries.stop();
     },
   };
 }

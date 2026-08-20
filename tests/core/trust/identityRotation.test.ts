@@ -237,6 +237,60 @@ describe("Identity Rotation", () => {
     expect(await storage.get("identity-rotation")).toBeUndefined();
   });
 
+  it("restores the old identity and history when final cleanup fails, then reuses the candidate", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    await history.set(historyItem.clip.id, historyItem);
+    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const generateKeyMaterial = jest.fn(async () => ({
+      peerId: replacementPeerId,
+      privateKey: "replacement-private",
+      publicKey: "replacement-public",
+    }));
+    let failFinalCleanup = true;
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: {
+        ...baseCommitter,
+        async finalize(backup) {
+          if (failFinalCleanup) {
+            failFinalCleanup = false;
+            throw new Error("history_finalize_failed");
+          }
+          await baseCommitter.finalize(backup);
+        },
+      },
+      stateKey: "identity-rotation",
+      initialDeviceName: "Desktop",
+      now: () => 42,
+      generateKeyMaterial,
+      shutdown: async () => undefined,
+      retry: false,
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      identity: revokedIdentity(),
+      recovery: { code: "identity_rotation_recovery", reason: "revoked" },
+    });
+    expect(await repository.get()).toEqual(revokedIdentity());
+    expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
+    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+      phase: "prepared",
+      candidate: { deviceId: replacementPeerId },
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(generateKeyMaterial).toHaveBeenCalledTimes(1);
+    expect(await history.getAll()).toEqual([]);
+  });
+
   it("keeps Chrome and Android history backups in IndexedDB instead of the bounded KV marker", async () => {
     (globalThis as { indexedDB?: IDBFactory }).indexedDB = indexedDB;
     const storage = new MemoryStorage();
@@ -279,6 +333,41 @@ describe("Identity Rotation", () => {
     await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({ rotated: true });
     expect(markerBytes).toBeLessThan(10_000);
     expect(await history.getAll()).toEqual([]);
+  });
+
+  it("restores the active IndexedDB generation when final cleanup fails", async () => {
+    (globalThis as { indexedDB?: IDBFactory }).indexedDB = indexedDB;
+    const storage = new MemoryStorage();
+    const history = new IndexedDBHistoryBackend();
+    await history.clearAll();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    await history.set(historyItem.clip.id, historyItem);
+    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: {
+        ...baseCommitter,
+        finalize: async () => { throw new Error("indexeddb_generation_cleanup_failed"); },
+      },
+      initialDeviceName: "Desktop",
+      generateKeyMaterial: async () => ({
+        peerId: "indexeddb-replacement-peer",
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+      shutdown: async () => undefined,
+      retry: false,
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      identity: { deviceId: oldPeerId },
+      recovery: { code: "identity_rotation_recovery" },
+    });
+    expect(await repository.get()).toEqual(revokedIdentity());
+    expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
   });
 
   it("retains the durable backup marker until a failed rollback can be retried", async () => {
