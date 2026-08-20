@@ -22,11 +22,16 @@ export type PairedPeerConnectionManagerOptions = {
   intervalMs?: number;
 };
 
-/** Adapts the membership-owned Active Device list to reconnect targets. */
+/** Adapts the membership-owned Active Member set to reconnect targets. */
 export function activeMemberReconnectPeers(
-  membership: Pick<import("../trust/identity.js").IdentityManager, "activeDevices">
+  membership: Pick<import("../trust/identity.js").IdentityManager, "activePeerIds" | "get">
 ): () => Promise<PairedPeer[]> {
-  return async () => (await membership.activeDevices()).map(({ deviceId }) => ({ deviceId }));
+  return async () => {
+    const [self, activePeerIds] = await Promise.all([membership.get(), membership.activePeerIds()]);
+    return activePeerIds
+      .filter((peerId) => peerId !== self.deviceId)
+      .map((deviceId) => ({ deviceId }));
+  };
 }
 
 export function createPairedPeerConnectionManager(

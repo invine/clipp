@@ -1,4 +1,3 @@
-import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import QRCode from "qrcode";
 import {
@@ -22,7 +21,6 @@ import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "@
 import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
-import { getPeerIdFromMultiaddr } from "@core/network/multiaddrCompat";
 import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
@@ -77,35 +75,6 @@ export type AndroidAppState = {
 };
 
 type PairingFailureCode = "invalid" | "no_target" | "dial_failed";
-type PairingAddressSource = "payload" | "derived";
-type PairingConnectionPath = "direct" | "relay" | "unknown";
-
-export type PairingCandidateDiagnostics = {
-  source: PairingAddressSource;
-  addr: string;
-  valid: boolean;
-  path: PairingConnectionPath;
-  peerId: string | null;
-  peerIdMatchesTarget: boolean;
-  error?: string;
-};
-
-export type PairingTransportSnapshot = {
-  connectedPeers: string[];
-  peerConnections: PeerConnectionInfo[];
-  selfMultiaddrs: string[];
-};
-
-export type PairingTargetAttemptDiagnostics = {
-  target: string;
-  startedAt: number;
-  finishedAt: number | null;
-  durationMs: number | null;
-  ok: boolean;
-  error: string | null;
-  before: PairingTransportSnapshot;
-  after: PairingTransportSnapshot | null;
-};
 
 export type PairingAttemptDiagnostics = {
   attemptId: string;
@@ -115,22 +84,6 @@ export type PairingAttemptDiagnostics = {
   finishedAt: number | null;
   durationMs: number | null;
   inputLength: number;
-  localDeviceId: string | null;
-  targetDeviceId: string | null;
-  targetPeerId: string | null;
-  relayAddresses: string[];
-  providedAddrs: string[];
-  derivedAddrs: string[];
-  candidates: PairingCandidateDiagnostics[];
-  transportStart: {
-    attempted: boolean;
-    ok: boolean;
-    startedAt: number | null;
-    finishedAt: number | null;
-    durationMs: number | null;
-    error: string | null;
-  };
-  targetAttempts: PairingTargetAttemptDiagnostics[];
 };
 
 export type PairingResult =
@@ -196,40 +149,6 @@ function nativeNotificationId(id: string): number {
     hash = (Math.imul(hash, 31) + id.charCodeAt(index)) | 0;
   }
   return Math.abs(hash || 1);
-}
-
-function connectionPathForAddr(addr: unknown): PairingConnectionPath {
-  const value = typeof (addr as any)?.toString === "function" ? (addr as any).toString() : String(addr || "");
-  if (!value) return "unknown";
-  if (value.includes("/webrtc")) return "direct";
-  if (value.includes("/p2p-circuit")) return "relay";
-  if (value.startsWith("/")) return "direct";
-  return "unknown";
-}
-
-function isLoopbackMultiaddr(addr: string): boolean {
-  return addr.includes("/ip4/127.") || addr.includes("/ip6/::1") || addr.includes("/dns4/localhost") || addr.includes("/dns6/localhost");
-}
-
-function pairingTargetPriority(addr: string): number {
-  if (addr.includes("/webrtc")) return 0;
-  if (addr.includes("/webrtc-direct")) return 0;
-  if (addr.includes("/p2p-circuit")) return 1;
-  if (addr.includes("/wss")) return 2;
-  if (isLoopbackMultiaddr(addr)) return 4;
-  return 3;
-}
-
-function canDerivePairingAddress(addr: string): boolean {
-  return false;
-}
-
-function orderPairingTargets(addrs: Multiaddr[]): Multiaddr[] {
-  return [...addrs].sort((a, b) => {
-    const aText = a.toString();
-    const bText = b.toString();
-    return pairingTargetPriority(aText) - pairingTargetPriority(bText);
-  });
 }
 
 function logPairing(level: "debug" | "info" | "warn", message: string, data: unknown): void {
@@ -585,43 +504,6 @@ export class AndroidClient {
 
   }
 
-  private inspectMultiaddrs(
-    addrs: string[],
-    targetPeerId: string,
-    source: PairingAddressSource
-  ): { valid: Multiaddr[]; diagnostics: PairingCandidateDiagnostics[] } {
-    const valid: Multiaddr[] = [];
-    const diagnostics: PairingCandidateDiagnostics[] = [];
-    for (const a of addrs) {
-      try {
-        const ma = multiaddr(a);
-        const addrPeerId = getPeerIdFromMultiaddr(ma) ?? null;
-        const validCandidate = Boolean(addrPeerId);
-        diagnostics.push({
-          source,
-          addr: ma.toString(),
-          valid: validCandidate,
-          path: connectionPathForAddr(ma),
-          peerId: addrPeerId,
-          peerIdMatchesTarget: addrPeerId === targetPeerId,
-          ...(validCandidate ? {} : { error: "missing_peer_id" }),
-        });
-        if (validCandidate) valid.push(ma);
-      } catch (err) {
-        diagnostics.push({
-          source,
-          addr: String(a),
-          valid: false,
-          path: connectionPathForAddr(a),
-          peerId: null,
-          peerIdMatchesTarget: false,
-          error: errorMessage(err),
-        });
-      }
-    }
-    return { valid, diagnostics };
-  }
-
   private createPairingDiagnostics(inputLength: number): PairingAttemptDiagnostics {
     this.pairingAttemptSeq += 1;
     return {
@@ -632,22 +514,6 @@ export class AndroidClient {
       finishedAt: null,
       durationMs: null,
       inputLength,
-      localDeviceId: null,
-      targetDeviceId: null,
-      targetPeerId: null,
-      relayAddresses: [],
-      providedAddrs: [],
-      derivedAddrs: [],
-      candidates: [],
-      transportStart: {
-        attempted: false,
-        ok: false,
-        startedAt: null,
-        finishedAt: null,
-        durationMs: null,
-        error: null,
-      },
-      targetAttempts: [],
     };
   }
 
@@ -662,14 +528,6 @@ export class AndroidClient {
     diagnostics.durationMs = diagnostics.finishedAt - diagnostics.startedAt;
     this.lastPairingAttempt = diagnostics;
     return diagnostics;
-  }
-
-  private transportSnapshot(): PairingTransportSnapshot {
-    return {
-      connectedPeers: this.transport?.getConnectedPeers?.() ?? [],
-      peerConnections: this.transport?.getPeerConnectionInfo?.() ?? [],
-      selfMultiaddrs: this.transport?.getSelfMultiaddrs?.() ?? [],
-    };
   }
 
   private async emitState() {
@@ -782,7 +640,7 @@ export class AndroidClient {
 
   async getState(): Promise<AndroidAppState> {
     const clips = await this.history.exportAll();
-    const devices = await this.identitySvc.activeDevices();
+    const devices = await this.identitySvc.trustedDevices();
     const identity = this.identityRotationRecovery
       ? null
       : toPublicDeviceIdentity(await this.ensureIdentityAddrs(await this.identitySvc.get()));
@@ -839,8 +697,7 @@ export class AndroidClient {
   }
 
   async renameDevice(id: string, name: string): Promise<Device | null> {
-    await this.identitySvc.setLocalDeviceAlias(id, name);
-    const device = (await this.identitySvc.activeDevices()).find((candidate) => candidate.deviceId === id) ?? null;
+    const device = await this.identitySvc.setLocalDeviceAlias(id, name);
     await this.emitState();
     return device;
   }
@@ -936,12 +793,6 @@ export class AndroidClient {
         attemptId: finished.attemptId,
         error,
         durationMs: finished.durationMs,
-        targetDeviceId: finished.targetDeviceId,
-        targetPeerId: finished.targetPeerId,
-        providedAddrs: finished.providedAddrs,
-        derivedAddrs: finished.derivedAddrs,
-        candidates: finished.candidates,
-        targetAttempts: finished.targetAttempts,
       });
       await this.emitState();
       return { ok: false, error, diagnostics: finished };

@@ -1,13 +1,5 @@
 import React, { useEffect, useState } from "react";
-
-export type Clip = {
-  id: string;
-  type: "text" | "url";
-  content: string;
-  originPeerId: string;
-  capturedAt: number;
-  shareExpiresAt: number;
-};
+import type { Clip } from "@clipp/ui";
 
 export const ClipHistoryList = () => {
   const [history, setHistory] = useState([] as Clip[]);

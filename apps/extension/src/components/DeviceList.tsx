@@ -12,7 +12,7 @@ export const DeviceList = () => {
 
   useEffect(() => {
     // @ts-ignore
-    chrome.runtime.sendMessage({ type: "getActiveDevices" }, (resp) => {
+    chrome.runtime.sendMessage({ type: "getTrustedDevices" }, (resp) => {
       setDevices(resp?.devices || []);
     });
   }, []);

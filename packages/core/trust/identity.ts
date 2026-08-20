@@ -4,8 +4,8 @@ import { normalizeDeviceName, shortenPeerId } from "../pairing/presentation";
 
 export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
 export type RemoteDeviceName = { deviceName: string; nameRevision: string };
-/** Presentation data derived from an Active Member, never a mutable trust record. */
-export type ActiveDevice = {
+/** User-facing presentation data derived from a remote Active Member. */
+export type TrustedDevicePresentation = {
   deviceId: string;
   deviceName: string;
   displayName: string;
@@ -52,13 +52,13 @@ export interface IdentityManager {
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   activePeerIds(): Promise<string[]>;
-  activeDevices(): Promise<ActiveDevice[]>;
+  trustedDevices(): Promise<TrustedDevicePresentation[]>;
   admit(peerId: string): Promise<AdmissionResult>;
   revoke(peerId: string): Promise<RevocationResult>;
   membershipView(): Promise<MembershipView>;
   mergeMembershipView(view: MembershipView): Promise<boolean>;
   recordRemoteDeviceName(peerId: string, name: string, revision: bigint): Promise<void>;
-  setLocalDeviceAlias(peerId: string, alias?: string): Promise<void>;
+  setLocalDeviceAlias(peerId: string, alias?: string): Promise<TrustedDevicePresentation | null>;
   displayDeviceLabel(peerId: string): Promise<string>;
   onMembershipChanged(listener: () => void): () => void;
   getInitializationError(): Promise<IdentityInitializationError | undefined>;
@@ -201,18 +201,12 @@ export function createIdentityManager(options: {
       const revoked = new Set(view.revokedPeerIds);
       return view.admittedPeerIds.filter((peerId) => !revoked.has(peerId));
     },
-    activeDevices: async () => {
+    trustedDevices: async () => {
       const current = await loadIdentity();
       const view = completeMembershipView(current.deviceId, current.membershipView);
-      const revoked = new Set(view.revokedPeerIds);
       return view.admittedPeerIds
-        .filter((peerId) => peerId !== current.deviceId && !revoked.has(peerId))
-        .map((peerId) => {
-          const localAlias = current.localDeviceAliases?.[peerId];
-          const deviceName = normalizeDeviceName(current.remoteDeviceNames?.[peerId]?.deviceName ?? "")
-            ?? shortenPeerId(peerId);
-          return { deviceId: peerId, deviceName, displayName: localAlias ?? deviceName, localAlias };
-        });
+        .map((peerId) => trustedDevicePresentation(current, peerId))
+        .filter((device): device is TrustedDevicePresentation => device !== null);
     },
     admit: (peerId) => serializeMutation(async () => {
       const current = await loadIdentity();
@@ -276,7 +270,7 @@ export function createIdentityManager(options: {
     }),
     setLocalDeviceAlias: (peerId, alias) => serializeMutation(async () => {
       const current = await loadIdentity();
-      if (peerId === current.deviceId) return;
+      if (!trustedDevicePresentation(current, peerId)) return null;
       const aliases = { ...(current.localDeviceAliases ?? {}) };
       if (alias === undefined || alias === "") delete aliases[peerId];
       else {
@@ -284,7 +278,8 @@ export function createIdentityManager(options: {
         if (!normalized) throw new Error("invalid_device_alias");
         aliases[peerId] = normalized;
       }
-      await persistMutation({ ...current, localDeviceAliases: aliases });
+      const persisted = await persistMutation({ ...current, localDeviceAliases: aliases });
+      return trustedDevicePresentation(persisted, peerId);
     }),
     displayDeviceLabel: async (peerId) => {
       const current = await loadIdentity();
@@ -298,6 +293,22 @@ export function createIdentityManager(options: {
     },
     getInitializationError: async () => options.repo.loadInitializationError?.(),
   };
+}
+
+function trustedDevicePresentation(
+  identity: DeviceIdentity,
+  peerId: string,
+): TrustedDevicePresentation | null {
+  const view = completeMembershipView(identity.deviceId, identity.membershipView);
+  if (
+    peerId === identity.deviceId ||
+    !view.admittedPeerIds.includes(peerId) ||
+    view.revokedPeerIds.includes(peerId)
+  ) return null;
+  const localAlias = identity.localDeviceAliases?.[peerId];
+  const deviceName = normalizeDeviceName(identity.remoteDeviceNames?.[peerId]?.deviceName ?? "")
+    ?? shortenPeerId(peerId);
+  return { deviceId: peerId, deviceName, displayName: localAlias ?? deviceName, localAlias };
 }
 
 function completeMembershipView(peerId: string, membershipView?: MembershipView): MembershipView {

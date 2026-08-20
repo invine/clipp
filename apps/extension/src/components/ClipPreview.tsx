@@ -1,18 +1,12 @@
 /* global chrome */
 import React, { useEffect, useState } from "react";
+import type { Clip } from "@clipp/ui";
 
 // Add TypeScript declaration for chrome
 declare const chrome: typeof globalThis.chrome;
 
 export type ClipPreviewProps = {
-  clip: {
-    type: "text" | "url";
-    content: string;
-    id: string;
-    originPeerId: string;
-    capturedAt: number;
-    shareExpiresAt: number;
-  } | null;
+  clip: Clip | null;
 };
 
 export const ClipPreview = ({ clip }: ClipPreviewProps) => {

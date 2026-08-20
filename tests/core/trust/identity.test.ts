@@ -184,7 +184,7 @@ describe("Device Identity initialization", () => {
     });
   });
 
-  it("derives the visible Trusted Device list exclusively from Active Membership", async () => {
+  it("renames and derives visible Trusted Devices exclusively from Active Membership", async () => {
     let stored: DeviceIdentity | undefined;
     const manager = createManager({
       get: async () => stored,
@@ -194,15 +194,23 @@ describe("Device Identity initialization", () => {
     await manager.admit(remotePeerId);
     await manager.recordRemoteDeviceName(remotePeerId, "Phone", 1n);
 
-    await expect(manager.activeDevices()).resolves.toEqual([{
+    await expect(manager.trustedDevices()).resolves.toEqual([{
       deviceId: remotePeerId,
       deviceName: "Phone",
       displayName: "Phone",
       localAlias: undefined,
     }]);
 
+    await expect(manager.setLocalDeviceAlias(remotePeerId, "My phone")).resolves.toEqual({
+      deviceId: remotePeerId,
+      deviceName: "Phone",
+      displayName: "My phone",
+      localAlias: "My phone",
+    });
+
     await manager.revoke(remotePeerId);
-    await expect(manager.activeDevices()).resolves.toEqual([]);
+    await expect(manager.trustedDevices()).resolves.toEqual([]);
+    await expect(manager.setLocalDeviceAlias(remotePeerId, "Former phone")).resolves.toBeNull();
   });
 
   it.each([

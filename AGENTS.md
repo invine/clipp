@@ -105,7 +105,6 @@ Electron dev uses two processes. Start the renderer first on `http://localhost:4
 - [`docs/agent-guide.md`](docs/agent-guide.md)
 - [`docs/diagrams/electron-architecture.puml`](docs/diagrams/electron-architecture.puml)
 - [`packages/core/clipboard/README.md`](packages/core/clipboard/README.md)
-- [`packages/core/trust/README.md`](packages/core/trust/README.md)
 
 ## Agent skills
 

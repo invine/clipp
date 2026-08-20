@@ -223,4 +223,3 @@ Good "anchor" files by task:
 - `AGENTS.md`
 - `docs/diagrams/electron-architecture.puml`
 - `packages/core/clipboard/README.md`
-- `packages/core/trust/README.md`

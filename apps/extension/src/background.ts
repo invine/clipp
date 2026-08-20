@@ -455,7 +455,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
       const [clips, pinnedIds, devices, identity, peerState, rotationNotice] = await Promise.all([
         historyPolicyReady.then(() => history.exportAll()),
         historyPolicyReady.then(() => history.pinnedIds()),
-        identitySvc.activeDevices(),
+        identitySvc.trustedDevices(),
         identityRotationRecovery ? Promise.resolve(null) : identitySvc.get(),
         (identityRotationRecovery ? Promise.resolve({ peers: [], peerConnections: [] }) : offscreenReady
           .then(() => sendOffscreen<{ peers?: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
@@ -748,8 +748,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch(() => sendResponse({ peers: [], peerConnections: [] }));
     return true;
   }
-  if (msg.type === "getActiveDevices") {
-    identitySvc.activeDevices().then((devices) => {
+  if (msg.type === "getTrustedDevices") {
+    identitySvc.trustedDevices().then((devices) => {
       sendResponse({ devices });
     });
     return true;
@@ -798,8 +798,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
-    identitySvc.setLocalDeviceAlias(msg.id, msg.name).then(async () => {
-      const device = (await identitySvc.activeDevices()).find((candidate) => candidate.deviceId === msg.id) ?? null;
+    identitySvc.setLocalDeviceAlias(msg.id, msg.name).then((device) => {
       sendResponse({ ok: true, device });
     });
     return true;

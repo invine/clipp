@@ -1,14 +1,8 @@
 import React from "react";
+import type { Clip } from "@clipp/ui";
 
 export type ShareButtonProps = {
-  clip: {
-    type: "text" | "url";
-    content: string;
-    id: string;
-    originPeerId: string;
-    capturedAt: number;
-    shareExpiresAt: number;
-  } | null;
+  clip: Clip | null;
   onShare: () => void;
   disabled?: boolean;
 };

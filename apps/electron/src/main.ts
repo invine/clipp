@@ -426,7 +426,7 @@ async function bootstrap() {
 
   async function getState() {
     const clips = await history.exportAll();
-    const devices = await identitySvc.activeDevices();
+    const devices = await identitySvc.trustedDevices();
     const peers = transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
@@ -1095,8 +1095,7 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:rename-device", async (_evt, payload: { id: string; name: string }) => {
-    await identitySvc.setLocalDeviceAlias(payload.id, payload.name);
-    const device = (await identitySvc.activeDevices()).find((candidate) => candidate.deviceId === payload.id) ?? null;
+    const device = await identitySvc.setLocalDeviceAlias(payload.id, payload.name);
     await emitState();
     return device;
   });
