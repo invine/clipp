@@ -1,4 +1,5 @@
 import {
+  deriveIdentityKeyMaterial,
   createIdentityManager,
   createIdentityRotationCoordinator,
   type IdentityManager,
@@ -37,6 +38,7 @@ export function createRuntimeIdentityRotationCoordinator(
   const { capabilities, ...rotationOptions } = options;
   return createIdentityRotationCoordinator({
     ...rotationOptions,
+    deriveKeyMaterial: rotationOptions.deriveKeyMaterial ?? deriveIdentityKeyMaterial,
     initialDeviceName: initialDeviceNameForPlatform(capabilities.platform),
   });
 }
@@ -51,11 +53,12 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   rotation: RuntimeIdentityRotationPort;
   loadIdentity(): Promise<unknown>;
   restart(): void;
-  startLocalRecovery(): void;
+  startLocalRecovery(reason: IdentityRotationReason): void;
   publishState(): void | Promise<void>;
   onRecoveryChanged?(recovering: boolean): void;
 }) {
   let recovering = false;
+  let recoveryReason: IdentityRotationReason | undefined;
   let restartRequested = false;
 
   const setRecovering = (next: boolean): void => {
@@ -72,9 +75,10 @@ export function createRuntimeIdentityRotationLifecycle(options: {
       requestRestart();
       return;
     }
+    recoveryReason = status.kind === "recovering" ? status.reason : undefined;
     setRecovering(status.kind === "recovering");
-    if (recovering) options.startLocalRecovery();
-    void Promise.resolve(options.publishState());
+    if (recovering && recoveryReason) options.startLocalRecovery(recoveryReason);
+    void Promise.resolve(options.publishState()).catch(() => undefined);
   });
 
   return {
@@ -85,6 +89,8 @@ export function createRuntimeIdentityRotationLifecycle(options: {
         throw new Error("identity_rotated_restart_required");
       }
       setRecovering(Boolean(result.recovery));
+      recoveryReason = result.recovery?.reason;
+      if (recovering) return { networkingEnabled: false };
       await options.loadIdentity();
       return { networkingEnabled: !recovering };
     },
@@ -95,7 +101,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     isRecovering: (): boolean => recovering,
     startLocalOnlyIfRecovering(): boolean {
       if (!recovering) return false;
-      options.startLocalRecovery();
+      if (recoveryReason) options.startLocalRecovery(recoveryReason);
       return true;
     },
     dispose(): void {

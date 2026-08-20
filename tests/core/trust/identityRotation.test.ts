@@ -84,6 +84,178 @@ function replacementIdentity(): DeviceIdentity {
 }
 
 describe("Identity Rotation", () => {
+  it("keeps a completely empty installation on the ordinary first-launch path", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    const shutdown = jest.fn(async () => undefined);
+    const generateKeyMaterial = jest.fn();
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      shutdown,
+      generateKeyMaterial,
+      retry: false,
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toEqual({
+      rotated: false,
+      identity: undefined,
+    });
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(generateKeyMaterial).not.toHaveBeenCalled();
+  });
+
+  it("treats a persisted identity without private-key material as Identity Loss", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    const lostIdentity = { ...revokedIdentity(), privateKey: undefined };
+    await repository.upsert(lostIdentity);
+    await storage.set("trustedDevices", [{ deviceId: "remote-peer" }]);
+    await storage.set("relayAddresses", ["/dns4/relay.example/tcp/443/wss"]);
+    await history.set(historyItem.clip.id, historyItem);
+    const shutdown = jest.fn(async () => undefined);
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      now: () => 42,
+      shutdown,
+      retry: false,
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      reason: "identity-loss",
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(await repository.get()).toEqual(replacementIdentity());
+    expect(await history.getAll()).toEqual([]);
+    expect(await storage.get("trustedDevices")).toBeUndefined();
+    expect(await storage.get("relayAddresses")).toEqual(["/dns4/relay.example/tcp/443/wss"]);
+    expect(await coordinator.notice()).toEqual({
+      reason: "identity-loss",
+      historyDeleted: true,
+      pairingRequired: true,
+    });
+  });
+
+  it("keeps Identity Loss offline and reuses its candidate when the first marker write fails", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert({ ...revokedIdentity(), privateKey: undefined });
+    const generateKeyMaterial = jest.fn(async () => ({
+      peerId: replacementPeerId,
+      privateKey: "replacement-private",
+      publicKey: "replacement-public",
+    }));
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      stateKey: "identity-rotation",
+      initialDeviceName: "Desktop",
+      shutdown: async () => undefined,
+      retry: false,
+      generateKeyMaterial,
+    });
+    storage.failNextSetFor = "identity-rotation";
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      recovery: { code: "identity_rotation_recovery", reason: "identity-loss" },
+    });
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      reason: "identity-loss",
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(generateKeyMaterial).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs redundant metadata from a valid private key without rotating", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert({
+      ...revokedIdentity(),
+      deviceId: "wrong-peer-id",
+      publicKey: "wrong-public-key",
+      privateKey: "valid-private-key",
+      membershipView: { admittedPeerIds: ["wrong-peer-id", "remote-peer"], revokedPeerIds: [] },
+    });
+    await storage.set("trustedDevices", [{ deviceId: "remote-peer" }]);
+    await history.set(historyItem.clip.id, historyItem);
+    const shutdown = jest.fn(async () => undefined);
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      shutdown,
+      retry: false,
+      deriveKeyMaterial: async () => ({
+        peerId: oldPeerId,
+        privateKey: "valid-private-key",
+        publicKey: "derived-public-key",
+      }),
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      identity: { deviceId: oldPeerId, publicKey: "derived-public-key" },
+    });
+    expect(await repository.get()).toMatchObject({
+      deviceId: oldPeerId,
+      publicKey: "derived-public-key",
+      privateKey: "valid-private-key",
+    });
+    expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
+    expect(await storage.get("trustedDevices")).toEqual([{ deviceId: "remote-peer" }]);
+    expect(shutdown).not.toHaveBeenCalled();
+  });
+
+  it("treats unreadable private-key material as Identity Loss", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert({
+      ...revokedIdentity(),
+      membershipView: { admittedPeerIds: [oldPeerId, "remote-peer"], revokedPeerIds: [] },
+    });
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      shutdown: async () => undefined,
+      retry: false,
+      deriveKeyMaterial: async () => { throw new Error("private_key_unreadable"); },
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      reason: "identity-loss",
+      identity: { deviceId: replacementPeerId },
+    });
+  });
+
   it("does not enter the shutdown barrier for a healthy identity", async () => {
     const storage = new MemoryStorage();
     const history = new InMemoryHistoryBackend();

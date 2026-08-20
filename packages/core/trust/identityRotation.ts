@@ -210,12 +210,14 @@ export function createIdentityRotationCoordinator(options: {
   initialDeviceName: string;
   now?: () => number;
   generateKeyMaterial?: () => Promise<IdentityKeyMaterial>;
+  deriveKeyMaterial?: (privateKey: string) => Promise<IdentityKeyMaterial>;
   shutdown: () => void | Promise<void>;
   retry?: false | { baseMs?: number; maxMs?: number };
 }) {
   const stateKey = options.stateKey ?? "identityRotation";
   const now = options.now ?? Date.now;
   const generateKeyMaterial = options.generateKeyMaterial ?? generateIdentityKeyMaterial;
+  const deriveKeyMaterial = options.deriveKeyMaterial;
   let operation: Promise<IdentityRotationResult> | undefined;
   // A failed first marker write has no durable state to resume from, but the
   // current process must still retry the same candidate rather than churn Peer
@@ -224,6 +226,19 @@ export function createIdentityRotationCoordinator(options: {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryAttempt = 0;
   const statusListeners = new Set<(status: IdentityRotationStatus) => void>();
+
+  const inspectStoredPrivateKey = async (identity: DeviceIdentity | undefined): Promise<
+    { kind: "absent" } | { kind: "lost" } | { kind: "valid"; key?: IdentityKeyMaterial }
+  > => {
+    if (!identity) return { kind: "absent" };
+    if (typeof identity.privateKey !== "string" || identity.privateKey.length === 0) return { kind: "lost" };
+    if (!deriveKeyMaterial) return { kind: "valid" };
+    try {
+      return { kind: "valid", key: await deriveKeyMaterial(identity.privateKey) };
+    } catch {
+      return { kind: "lost" };
+    }
+  };
 
   const publishStatus = (status: IdentityRotationStatus): void => {
     statusListeners.forEach((listener) => listener(status));
@@ -279,11 +294,29 @@ export function createIdentityRotationCoordinator(options: {
     let state = storedState ?? unstoredState;
     if (storedState) unstoredState = undefined;
     let current = await options.repository.get();
+    const keyInspection = await inspectStoredPrivateKey(current);
+    const identityKeyLost = keyInspection.kind === "lost";
+    if (current && keyInspection.kind === "valid" && keyInspection.key) {
+      const repaired = {
+        ...current,
+        deviceId: keyInspection.key.peerId,
+        publicKey: keyInspection.key.publicKey,
+        privateKey: keyInspection.key.privateKey,
+      };
+      if (
+        current.deviceId !== repaired.deviceId ||
+        current.publicKey !== repaired.publicKey ||
+        current.privateKey !== repaired.privateKey
+      ) {
+        await options.repository.upsert(repaired);
+      }
+      current = repaired;
+    }
     const selfRevoked = Boolean(current?.membershipView?.revokedPeerIds?.includes(current.deviceId));
-    const rotationReason = state?.reason ?? reason ?? (selfRevoked ? "revoked" : undefined);
+    const rotationReason = state?.reason ?? reason ?? (identityKeyLost ? "identity-loss" : selfRevoked ? "revoked" : undefined);
     if (!rotationReason) return { rotated: false, identity: current };
     await options.shutdown();
-    if (state && current?.deviceId === state.candidate.deviceId) {
+    if (state && !identityKeyLost && current?.deviceId === state.candidate.deviceId) {
       try {
         if (state.backup) await options.committer.finalize(state.backup);
       } catch (error) {
@@ -356,8 +389,10 @@ export function createIdentityRotationCoordinator(options: {
       const state = await options.storage.get<IdentityRotationState>(stateKey).catch(() => undefined);
       if (state !== undefined && !validState(state)) throw error;
       const identity = await options.repository.get().catch(() => undefined);
+      const identityKeyLost = (await inspectStoredPrivateKey(identity)).kind === "lost";
       const recoveryReason = state?.reason
         ?? reason
+        ?? (identityKeyLost ? "identity-loss" : undefined)
         ?? (identity?.membershipView?.revokedPeerIds?.includes(identity.deviceId) ? "revoked" : undefined);
       if (!recoveryReason) throw error;
       publishStatus({ kind: "recovering", reason: recoveryReason });

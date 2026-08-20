@@ -69,7 +69,7 @@ export function createIdentityManager(options: {
   const clock = options.now ?? Date.now;
   const initialDeviceName = options.initialDeviceName;
   const generateKeyMaterial = options.generateKeyMaterial ?? generateIdentityKeyMaterial;
-  const deriveKeyMaterial = options.deriveKeyMaterial ?? deriveFromPrivateKey;
+  const deriveKeyMaterial = options.deriveKeyMaterial ?? deriveIdentityKeyMaterial;
   let identity: DeviceIdentity | undefined;
   let initialization: Promise<DeviceIdentity> | undefined;
   let mutation = Promise.resolve();
@@ -137,7 +137,10 @@ export function createIdentityManager(options: {
   async function loadIdentityOrThrow(): Promise<DeviceIdentity> {
     if (identity) return identity;
     const stored = await options.repo.get();
-    if (!stored?.privateKey) return createNewIdentity();
+    if (!stored) return createNewIdentity();
+    if (typeof stored.privateKey !== "string" || stored.privateKey.length === 0) {
+      throw new Error("identity_private_key_unavailable");
+    }
 
     const key = await deriveKeyMaterial(stored.privateKey);
     const membershipView = completeMembershipView(key.peerId, stored.membershipView);
@@ -299,7 +302,7 @@ export async function generateIdentityKeyMaterial(): Promise<IdentityKeyMaterial
   return keyMaterialFromPrivateKey(key, privateKey);
 }
 
-async function deriveFromPrivateKey(privateKey: string): Promise<IdentityKeyMaterial> {
+export async function deriveIdentityKeyMaterial(privateKey: string): Promise<IdentityKeyMaterial> {
   const { privateKeyFromProtobuf } = await import("@libp2p/crypto/keys");
   const key = privateKeyFromProtobuf(Uint8Array.from(Buffer.from(privateKey, "base64")));
   return keyMaterialFromPrivateKey(key, privateKey);

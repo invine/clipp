@@ -282,8 +282,8 @@ export class AndroidClient {
     rotation: this.identityRotation,
     loadIdentity: () => this.identitySvc.get(),
     restart: () => window.location.reload(),
-    startLocalRecovery: () => {
-      this.clipboardSync.startLocalOnly();
+    startLocalRecovery: (reason) => {
+      if (reason !== "identity-loss") this.clipboardSync.startLocalOnly();
       this.started = true;
     },
     publishState: () => this.emitState(),
@@ -801,7 +801,9 @@ export class AndroidClient {
   async getState(): Promise<AndroidAppState> {
     const clips = await this.history.exportAll();
     const devices = await this.trust.list();
-    const identity = toPublicDeviceIdentity(await this.ensureIdentityAddrs(await this.identitySvc.get()));
+    const identity = this.identityRotationRecovery
+      ? null
+      : toPublicDeviceIdentity(await this.ensureIdentityAddrs(await this.identitySvc.get()));
     const peers = this.transport?.getConnectedPeers?.() ?? [];
     const peerConnections = this.transport?.getPeerConnectionInfo?.() ?? [];
     const relayConnections = this.transport?.getRelayConnectionInfo?.() ?? [];

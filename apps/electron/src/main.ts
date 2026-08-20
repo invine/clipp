@@ -125,12 +125,27 @@ async function bootstrap() {
   try {
     localIdentity = await identitySvc.get();
   } catch (error) {
+    const rotation = await identityRotation.recoverOrRotate().catch(() => undefined);
+    if (rotation?.rotated) {
+      app.relaunch();
+      app.exit(0);
+      return;
+    }
+    if (rotation?.recovery) {
+      const unsubscribe = identityRotation.onStatusChanged((status) => {
+        if (status.kind !== "rotated") return;
+        unsubscribe();
+        app.relaunch();
+        app.exit(0);
+      });
+    }
     (log as any).error?.("Device identity initialization failed", { error: (error as Error).message });
     await app.whenReady();
     ipcMain.handle("clipp:get-state", async () => { throw error; });
     ipcMain.handle("clipp:get-initialization-error", async () => ({ code: "identity_initialization_failed" }));
     ipcMain.handle("clipp:retry-identity-initialization", async () => {
-      await identitySvc.retryInitialization();
+      if (rotation?.recovery) await identityRotation.recoverOrRotate();
+      else await identitySvc.retryInitialization();
       app.relaunch();
       app.exit(0);
     });
@@ -461,7 +476,7 @@ async function bootstrap() {
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
     // const identity = await ensureIdentityAddrs(await identitySvc.get());
-    const identity = toPublicDeviceIdentity(await identitySvc.get());
+    const identity = identityRotationRecovery ? null : toPublicDeviceIdentity(await identitySvc.get());
     return {
       clips,
       devices,
@@ -954,7 +969,9 @@ async function bootstrap() {
       app.relaunch();
       app.exit(0);
     },
-    startLocalRecovery: () => clipboardSync.startLocalOnly(),
+    startLocalRecovery: (reason) => {
+      if (reason !== "identity-loss") clipboardSync.startLocalOnly();
+    },
     publishState: emitState,
     onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
   });

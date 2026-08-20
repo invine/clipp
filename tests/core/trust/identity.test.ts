@@ -264,6 +264,30 @@ describe("Device Identity initialization", () => {
     });
   });
 
+  it("does not treat a persisted identity without its private key as first launch", async () => {
+    const generated = jest.fn(async () => generatedIdentity);
+    const initializationErrors: unknown[] = [];
+    const manager = createIdentityManager({
+      repo: {
+        get: async () => ({
+          deviceId: generatedIdentity.peerId,
+          deviceName: "Desktop",
+          publicKey: generatedIdentity.publicKey,
+          multiaddrs: [],
+          createdAt: 1,
+        }),
+        upsert: async () => undefined,
+        saveInitializationError: async (error) => { initializationErrors.push(error); },
+      },
+      initialDeviceName: "Desktop",
+      generateKeyMaterial: generated,
+    });
+
+    await expect(manager.get()).rejects.toThrow("identity_private_key_unavailable");
+    expect(generated).not.toHaveBeenCalled();
+    expect(initializationErrors).toEqual([{ code: "identity_initialization_failed" }]);
+  });
+
   it("does not persist a placeholder when key generation fails", async () => {
     const saved: unknown[] = [];
     const initializationErrors: unknown[] = [];

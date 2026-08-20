@@ -473,7 +473,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         historyPolicyReady.then(() => history.exportAll()),
         historyPolicyReady.then(() => history.pinnedIds()),
         trust.list(),
-        identitySvc.get(),
+        identityRotationRecovery ? Promise.resolve(null) : identitySvc.get(),
         (identityRotationRecovery ? Promise.resolve({ peers: [], peerConnections: [] }) : offscreenReady
           .then(() => sendOffscreen<{ peers?: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
           .catch(() => ({ peers: [], peerConnections: [] }))),
@@ -487,7 +487,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         pairingErrors: pairingSessions.errors(),
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
-        identity: toPublicDeviceIdentity(identity),
+        identity: identity ? toPublicDeviceIdentity(identity) : null,
         pinnedIds,
         clipboardHistoryError,
         historyPolicyError,
@@ -532,7 +532,9 @@ identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
   rotation: identityRotation,
   loadIdentity: () => identitySvc.get(),
   restart: () => chrome.runtime.reload(),
-  startLocalRecovery: () => clipboardSync.startLocalOnly(),
+  startLocalRecovery: (reason) => {
+    if (reason !== "identity-loss") clipboardSync.startLocalOnly();
+  },
   publishState: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
   onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
 });
