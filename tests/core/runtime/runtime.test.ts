@@ -161,6 +161,7 @@ describe("shared runtime seam", () => {
         historyErrors.push(error);
       },
     });
+    clipboard.start();
 
     await clipboard.processLocalText?.("queued");
     clipboard.dismissHistoryError?.();
@@ -169,6 +170,7 @@ describe("shared runtime seam", () => {
     await clipboard.processLocalText?.("stored");
 
     expect(historyErrors).toEqual(["pending_capture_failed", null]);
+    await clipboard.stop();
   });
 
   it("publishes a content-free error when a Clip exceeds local capacity", async () => {
@@ -186,6 +188,7 @@ describe("shared runtime seam", () => {
         historyErrors.push(error);
       },
     });
+    clipboard.start();
 
     await clipboard.processLocalText?.("secret clipboard content");
 
@@ -193,6 +196,7 @@ describe("shared runtime seam", () => {
     expect(JSON.stringify(historyErrors)).not.toContain("secret clipboard content");
     clipboard.dismissHistoryError?.();
     expect(historyErrors).toEqual(["clip_too_large", null]);
+    await clipboard.stop();
   });
 
   it("keeps a pending-storage error visible when a later oversized candidate is dropped", async () => {
@@ -206,6 +210,7 @@ describe("shared runtime seam", () => {
       history: { accept: async () => { throw new Error("storage unavailable"); } },
       onHistoryErrorChanged: (error) => { historyErrors.push(error); },
     });
+    clipboard.start();
 
     await clipboard.processLocalText("queued");
     await clipboard.processLocalText("x".repeat(1_000));
@@ -215,6 +220,7 @@ describe("shared runtime seam", () => {
       "pending_capture_failed",
       "pending_capture_failed",
     ]);
+    await clipboard.stop();
   });
 
   it("keeps a pending-storage error visible when a later Clip exceeds history capacity", async () => {
@@ -234,6 +240,7 @@ describe("shared runtime seam", () => {
       },
       onHistoryErrorChanged: (error) => { historyErrors.push(error); },
     });
+    clipboard.start();
 
     await clipboard.processLocalText("queued");
     await clipboard.processLocalText("too large for history");
@@ -243,6 +250,7 @@ describe("shared runtime seam", () => {
       "pending_capture_failed",
       "pending_capture_failed",
     ]);
+    await clipboard.stop();
   });
 
   it("distinguishes an oversized pending candidate when no older capture is queued", async () => {
@@ -255,10 +263,12 @@ describe("shared runtime seam", () => {
       history: { accept: async () => { throw new Error("storage unavailable"); } },
       onHistoryErrorChanged: (error) => { historyErrors.push(error); },
     });
+    clipboard.start();
 
     await clipboard.processLocalText("too large for pending storage");
 
     expect(historyErrors).toEqual(["pending_capture_too_large"]);
+    await clipboard.stop();
   });
 
   it("assembles orchestration with observable runtime adapters", async () => {

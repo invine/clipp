@@ -119,6 +119,10 @@ describe("ClipboardService", () => {
       makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
     });
     const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
+    await expect(service.processLocalText("captured before startup")).resolves.toBeNull();
+    await expect(service.reuseLocalClip({ type: "text", content: "reused before startup" } as Clip))
+      .resolves.toBeNull();
+    service.start();
 
     await service.processLocalText("same clipboard", { shareNow: true });
     await service.processLocalText("same clipboard", { shareNow: true });
@@ -140,6 +144,7 @@ describe("ClipboardService", () => {
         makeId: () => "00000000-0000-4000-8000-000000000450",
       }),
     });
+    service.start();
 
     await expect(service.processLocalText("cannot be retained", { shareNow: true }))
       .rejects.toThrow("clip_capture_failed");
@@ -157,6 +162,7 @@ describe("ClipboardService", () => {
         makeId: () => "00000000-0000-4000-8000-000000000451",
       }),
     });
+    service.start();
 
     await expect(service.reuseLocalClip({ type: "text", content: "cannot be retained" } as Clip))
       .rejects.toThrow("clip_capture_failed");
@@ -181,6 +187,7 @@ describe("ClipboardService", () => {
       readText: async () => "platform-transformed value",
       captureCoordinator: coordinator,
     });
+    service.start();
 
     await service.reuseLocalClip({ type: "text", content: "retained value" } as Clip);
     await service.processLocalText("platform-transformed value");
@@ -260,6 +267,7 @@ describe("ClipboardService", () => {
       makeId: () => "00000000-0000-4000-8000-000000000700",
     });
     const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
+    service.start();
     const capture = service.processLocalText("captured before shutdown");
     await captureStarted;
 
@@ -272,5 +280,7 @@ describe("ClipboardService", () => {
     await expect(capture).resolves.toMatchObject({ content: "captured before shutdown" });
     await stopping;
     await expect(service.processLocalText("captured after shutdown")).resolves.toBeNull();
+    await expect(service.reuseLocalClip({ type: "text", content: "reused after shutdown" } as Clip))
+      .resolves.toBeNull();
   });
 });

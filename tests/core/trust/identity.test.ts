@@ -455,7 +455,7 @@ describe("Device Identity initialization", () => {
     const runtime = createRuntimeOrchestrator({
       adapter,
       start: () => startIdentityBoundRuntimeServices({
-        initializeIdentity: () => identity.get(),
+        initializeIdentity: async () => { await identity.get(); },
         startLocalServices: startCapture,
         startNetworkServices: startNetworking,
       }),

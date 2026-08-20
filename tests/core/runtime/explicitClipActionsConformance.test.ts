@@ -34,6 +34,10 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
         },
       },
     });
+    await expect(clipboard.reuseLocalClip(retainedClip())).resolves.toBeNull();
+    await expect(clipboard.processLocalText("before identity startup", { shareNow: true })).resolves.toBeNull();
+    expect(stored).toEqual([]);
+    clipboard.start();
 
     await clipboard.reuseLocalClip(retainedClip());
     await clipboard.processLocalText("retained", { shareNow: true });
@@ -45,6 +49,9 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
       "00000000-0000-4000-8000-000000000711",
       "00000000-0000-4000-8000-000000000712",
     ]);
+    await clipboard.stop();
+    await expect(clipboard.reuseLocalClip(retainedClip())).resolves.toBeNull();
+    await expect(clipboard.processLocalText("after identity shutdown", { shareNow: true })).resolves.toBeNull();
   });
 
   it("creates no event when a retained-Clip write fails", async () => {
@@ -56,8 +63,10 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
       writeText: async () => { throw new Error("clipboard unavailable"); },
       history: { accept },
     });
+    clipboard.start();
 
     await expect(clipboard.reuseLocalClip(retainedClip())).rejects.toThrow("clipboard unavailable");
     expect(accept).not.toHaveBeenCalled();
+    await clipboard.stop();
   });
 });

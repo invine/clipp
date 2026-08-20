@@ -22,6 +22,10 @@ export function createRuntimeIdentityManager(
 
 type IdentityRotationOptions = Parameters<typeof createIdentityRotationCoordinator>[0];
 
+export type IdentityBoundRuntimeInitialization = {
+  networkingEnabled: boolean;
+};
+
 export function createRuntimeIdentityRotationCoordinator(
   options: Omit<IdentityRotationOptions, "initialDeviceName"> & {
     capabilities: Pick<RuntimeCapabilities, "platform">;
@@ -35,7 +39,7 @@ export function createRuntimeIdentityRotationCoordinator(
 }
 
 export async function startIdentityBoundRuntimeServices(options: {
-  initializeIdentity(): unknown | Promise<unknown>;
+  initializeIdentity(): void | IdentityBoundRuntimeInitialization | Promise<void | IdentityBoundRuntimeInitialization>;
   startLocalServices(): void | Promise<void>;
   startNetworkServices(): void | Promise<void>;
   // eslint-disable-next-line no-unused-vars
@@ -43,12 +47,7 @@ export async function startIdentityBoundRuntimeServices(options: {
 }): Promise<void> {
   const initialization = await options.initializeIdentity();
   await options.startLocalServices();
-  if (
-    typeof initialization === "object"
-    && initialization !== null
-    && "networkingEnabled" in initialization
-    && initialization.networkingEnabled === false
-  ) return;
+  if (initialization?.networkingEnabled === false) return;
   try {
     await options.startNetworkServices();
   } catch (error) {

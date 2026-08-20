@@ -109,7 +109,7 @@ function createClipboardService(
   let lastLocal: Clip | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let baseline: string | undefined;
-  let acceptingCaptures = true;
+  let acceptingCaptures = false;
   const serialize = createSerializedExecutor();
 
   options.captureCoordinator?.onRecovered((clip, captureOptions) => {
@@ -214,6 +214,7 @@ function createClipboardService(
       throw new Error("clip_capture_failed");
     }
     return serialize(async () => {
+      if (!acceptingCaptures) return null;
       if (options.captureCoordinator) {
         const reused = await captureExplicitly(
           () => options.captureCoordinator!.reuse(

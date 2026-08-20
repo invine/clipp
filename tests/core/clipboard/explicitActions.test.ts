@@ -31,6 +31,7 @@ describe("explicit Clip actions", () => {
         makeId: () => "00000000-0000-4000-8000-000000000701",
       }),
     });
+    clipboard.start();
 
     const reused = await reuseRetainedClip("00000000-0000-4000-8000-000000000700", {
       history,
@@ -43,5 +44,6 @@ describe("explicit Clip actions", () => {
       originPeerId: localPeerId,
       capturedAt: 5_000,
     }));
+    await clipboard.stop();
   });
 });
