@@ -202,10 +202,11 @@ export function createIdentityManager(options: {
       return view.admittedPeerIds.filter((peerId) => !revoked.has(peerId));
     },
     trustedDevices: async () => {
-      const current = await loadIdentity();
+      await mutation;
+      const current = await options.repo.get() ?? await loadIdentity();
       const view = completeMembershipView(current.deviceId, current.membershipView);
       return view.admittedPeerIds
-        .map((peerId) => trustedDevicePresentation(current, peerId))
+        .map((peerId) => trustedDevicePresentation(current, peerId, view))
         .filter((device): device is TrustedDevicePresentation => device !== null);
     },
     admit: (peerId) => serializeMutation(async () => {
@@ -298,8 +299,8 @@ export function createIdentityManager(options: {
 function trustedDevicePresentation(
   identity: DeviceIdentity,
   peerId: string,
+  view = completeMembershipView(identity.deviceId, identity.membershipView),
 ): TrustedDevicePresentation | null {
-  const view = completeMembershipView(identity.deviceId, identity.membershipView);
   if (
     peerId === identity.deviceId ||
     !view.admittedPeerIds.includes(peerId) ||

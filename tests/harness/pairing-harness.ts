@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { generateKeyPair } from "@libp2p/crypto/keys";
+import type { PrivateKey } from "@libp2p/interface";
 import { peerIdFromPrivateKey } from "@libp2p/peer-id";
 import { createLibp2pMessagingTransport } from "../../packages/core/network/engine.ts";
 import { createPairedPeerConnectionManager } from "../../packages/core/network/pairedConnections.ts";
@@ -111,7 +112,7 @@ function createHarnessRuntimeAdapter(options: {
 async function bootPeer(options: {
   label: string;
   platform: RuntimePlatform;
-  privateKey: any;
+  privateKey: PrivateKey;
   relayAddress: string;
   signedPeerRecordPersistence: SignedPeerRecordPersistence;
   identity?: IdentityManager;
@@ -312,6 +313,182 @@ async function assertLiveClipGossip(
   return clip;
 }
 
+type RuntimePeers = {
+  desktop: HarnessPeer;
+  mobile: HarnessPeer;
+  extension: HarnessPeer;
+};
+
+type OfflineMobileState = {
+  identity: IdentityManager;
+  history: MemoryHistoryStore;
+  clipboardWrites: string[];
+  missedClip: Clip;
+};
+
+type HarnessRelay = Awaited<ReturnType<typeof startWebsocketRelay>>;
+
+async function assertThreeRuntimePairing(peers: RuntimePeers): Promise<void> {
+  const { desktop, mobile, extension } = peers;
+  assert.deepEqual(
+    [
+      desktop.runtimeAdapter.capabilities.platform,
+      mobile.runtimeAdapter.capabilities.platform,
+      extension.runtimeAdapter.capabilities.platform,
+    ],
+    ["electron", "android", "chrome-extension"],
+    "the harness must exercise all three runtime adapters",
+  );
+  await pairOverRelay(desktop, mobile);
+  await pairOverRelay(mobile, extension);
+  await waitUntil("three-runtime Membership convergence", async () => {
+    const runtimes = [desktop, mobile, extension];
+    return (await Promise.all(runtimes.flatMap((local) =>
+      runtimes.map((remote) => local.identity.membershipStatus(remote.peerId))
+    ))).every((status) => status === "active");
+  });
+  assert(
+    hasConnectionPath(desktop, mobile.peerId, "relay"),
+    "Pairing must begin over a Relayed Connection",
+  );
+  assert(
+    await desktop.transport.getSignedPeerRecordFor?.(mobile.peerId),
+    "Desktop must retain Mobile's verified record after Pairing",
+  );
+  await assertLiveClipGossip(desktop, [mobile, extension], "relay-first live Clip");
+}
+
+async function takeMobileOffline(
+  desktop: HarnessPeer,
+  mobile: HarnessPeer,
+  relay: HarnessRelay,
+): Promise<OfflineMobileState> {
+  const recordBeforeReservationLoss = await mobile.transport.getSignedPeerRecord?.();
+  assert(recordBeforeReservationLoss, "Mobile must publish a record before reservation loss");
+  await mobile.transport.disconnect?.(relay.node.peerId.toString());
+  await waitUntil(
+    "live relay reservation loss",
+    () => !mobile.transport.getSelfMultiaddrs?.().some((address) => address.includes("/p2p-circuit")),
+  );
+  await waitUntil(
+    "offline member disconnect",
+    () => !desktop.transport.getConnectedPeers().includes(mobile.peerId),
+  );
+  const missedClip = await desktop.clipboard.processLocalText("history-only repair after Mobile was offline");
+  assert(missedClip, "offline capture must remain in Desktop history");
+  await waitUntil("offline Clip persistence", async () => Boolean(await desktop.history.getById(missedClip.id)));
+  await waitUntil("new record after reservation loss", async () => {
+    const recordAfterReservationLoss = await mobile.transport.getSignedPeerRecord?.();
+    return Boolean(
+      recordAfterReservationLoss &&
+      !sameBytes(recordBeforeReservationLoss, recordAfterReservationLoss)
+    );
+  });
+  await delay(RENDEZVOUS_LEASE_MS + 250);
+  await desktop.transport.refreshPeerRecord?.(mobile.peerId);
+  assert(
+    !desktop.transport.getConnectedPeers().includes(mobile.peerId),
+    "expired reachability must not create a connection",
+  );
+
+  const state = {
+    identity: mobile.identity,
+    history: mobile.history,
+    clipboardWrites: mobile.clipboardWrites,
+    missedClip,
+  };
+  await stopPeer(mobile);
+  const mobilePeerId = peerIdFromPrivateKey(mobile.privateKey);
+  (relay.node.services.circuitRelay as any).reservations.delete(mobilePeerId);
+  assert(
+    !(relay.node.services.circuitRelay as any).reservations.has(mobilePeerId),
+    "the harness must clear Mobile's old same-identity relay reservation before restart",
+  );
+  return state;
+}
+
+async function restartMobile(options: {
+  privateKey: PrivateKey;
+  relay: HarnessRelay;
+  relayAddress: string;
+  signedPeerRecordPersistence: SignedPeerRecordPersistence;
+  prior: OfflineMobileState;
+  desktop: HarnessPeer;
+}): Promise<HarnessPeer> {
+  const mobile = await bootPeer({
+    label: "Mobile",
+    platform: "android",
+    privateKey: options.privateKey,
+    relayAddress: options.relayAddress,
+    signedPeerRecordPersistence: options.signedPeerRecordPersistence,
+    identity: options.prior.identity,
+    history: options.prior.history,
+    clipboardWrites: options.prior.clipboardWrites,
+  });
+  const mobilePeerId = peerIdFromPrivateKey(options.privateKey);
+  await waitUntil(
+    "restarted relay reservation",
+    () => (options.relay.node.services.circuitRelay as any).reservations.has(mobilePeerId),
+  );
+  const restartedRecord = await mobile.transport.getSignedPeerRecord?.();
+  assert(restartedRecord, "restarted Mobile must publish its current relay reservation");
+  await waitUntil("refreshed Signed Peer Record", async () => {
+    await options.desktop.transport.refreshPeerRecord?.(mobile.peerId);
+    const refreshed = await options.desktop.transport.getSignedPeerRecordFor?.(mobile.peerId);
+    return Boolean(refreshed && sameBytes(refreshed, restartedRecord));
+  });
+  return mobile;
+}
+
+async function assertReconnectAndHistoryRepair(
+  peers: RuntimePeers,
+  missedClip: Clip,
+): Promise<void> {
+  const { desktop, mobile, extension } = peers;
+  desktop.directUpgradeAttempts.length = 0;
+  const reconnect = createPairedPeerConnectionManager({
+    transport: desktop.transport,
+    getPairedPeers: async () => [{ deviceId: mobile.peerId }],
+    intervalMs: 60_000,
+  });
+  try {
+    await reconnect.reconnectNow();
+    await waitUntil(
+      "offline Active Member relay reconnect",
+      () => hasConnectionPath(desktop, mobile.peerId, "relay"),
+    );
+    await waitUntil(
+      "DCUtR upgrade attempt",
+      () =>
+        desktop.directUpgradeAttempts.includes(mobile.peerId) ||
+        mobile.directUpgradeAttempts.includes(desktop.peerId),
+    );
+    assert(
+      !desktop.transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === mobile.peerId)?.hasDirect,
+      "unavailable direct transports must leave application traffic on the relay fallback",
+    );
+    await waitUntil("missed history repair", async () => Boolean(await mobile.history.getById(missedClip.id)));
+    assert(
+      !mobile.clipboardWrites.includes(missedClip.content),
+      "history reconciliation must not apply an imported Clip to the runtime clipboard",
+    );
+    await assertLiveClipGossip(desktop, [mobile, extension], "live Clip after failed DCUtR");
+  } finally {
+    await reconnect.stop();
+  }
+}
+
+async function assertRevocationConvergence(peers: RuntimePeers): Promise<void> {
+  const { desktop, mobile, extension } = peers;
+  assert.equal(await desktop.identity.revoke(extension.peerId), "revoked");
+  await desktop.membershipReconciler.pushConnected();
+  await waitUntil("Device Revocation convergence", async () =>
+    await mobile.identity.membershipStatus(extension.peerId) === "revoked" &&
+    await extension.identity.membershipStatus(extension.peerId) === "revoked" &&
+    extension.localRevoked
+  );
+}
+
 async function main() {
   const previousLease = process.env.RENDEZVOUS_RECORD_TTL_MS;
   process.env.RENDEZVOUS_RECORD_TTL_MS = String(RENDEZVOUS_LEASE_MS);
@@ -325,126 +502,53 @@ async function main() {
   const relayAddress = relay.node.getMultiaddrs().find((address) => String(address).includes("/ws"))?.toString();
   assert(relayAddress, "relay WebSocket address must be available");
 
-  const aKey = await generateKeyPair("Ed25519");
-  const bKey = await generateKeyPair("Ed25519");
-  const cKey = await generateKeyPair("Ed25519");
-  const bPeerIdObject = peerIdFromPrivateKey(bKey);
-  const aRecords = new MemorySignedPeerRecordPersistence();
-  const bRecords = new MemorySignedPeerRecordPersistence();
-  const cRecords = new MemorySignedPeerRecordPersistence();
-  let a: HarnessPeer | undefined;
-  let b: HarnessPeer | undefined;
-  let c: HarnessPeer | undefined;
+  const desktopKey = await generateKeyPair("Ed25519");
+  const mobileKey = await generateKeyPair("Ed25519");
+  const extensionKey = await generateKeyPair("Ed25519");
+  const desktopRecords = new MemorySignedPeerRecordPersistence();
+  const mobileRecords = new MemorySignedPeerRecordPersistence();
+  const extensionRecords = new MemorySignedPeerRecordPersistence();
+  let desktop: HarnessPeer | undefined;
+  let mobile: HarnessPeer | undefined;
+  let extension: HarnessPeer | undefined;
 
   try {
-    a = await bootPeer({ label: "Desktop", platform: "electron", privateKey: aKey, relayAddress, signedPeerRecordPersistence: aRecords });
-    b = await bootPeer({ label: "Mobile", platform: "android", privateKey: bKey, relayAddress, signedPeerRecordPersistence: bRecords });
-    c = await bootPeer({ label: "Extension", platform: "chrome-extension", privateKey: cKey, relayAddress, signedPeerRecordPersistence: cRecords });
-    assert.deepEqual(
-      [a.runtimeAdapter.capabilities.platform, b.runtimeAdapter.capabilities.platform, c.runtimeAdapter.capabilities.platform],
-      ["electron", "android", "chrome-extension"],
-      "the harness must exercise all three runtime adapters",
-    );
-    await pairOverRelay(a, b);
-    await pairOverRelay(b, c);
-    await waitUntil("three-runtime Membership convergence", async () => {
-      const peers = [a!, b!, c!];
-      return (await Promise.all(peers.flatMap((local) =>
-        peers.map((remote) => local.identity.membershipStatus(remote.peerId))
-      ))).every((status) => status === "active");
+    desktop = await bootPeer({
+      label: "Desktop",
+      platform: "electron",
+      privateKey: desktopKey,
+      relayAddress,
+      signedPeerRecordPersistence: desktopRecords,
     });
-    assert(hasConnectionPath(a, b.peerId, "relay"), "Pairing must begin over a Relayed Connection");
-
-    const originalRecord = await a.transport.getSignedPeerRecordFor?.(b.peerId);
-    assert(originalRecord, "A must retain B's verified record after Pairing");
-    await assertLiveClipGossip(a, [b, c], "relay-first live Clip");
-
-    const recordBeforeReservationLoss = await b.transport.getSignedPeerRecord?.();
-    assert(recordBeforeReservationLoss, "B must publish a record before reservation loss");
-    await b.transport.disconnect?.(relay.node.peerId.toString());
-    await waitUntil(
-      "live relay reservation loss",
-      () => !b!.transport.getSelfMultiaddrs?.().some((address) => address.includes("/p2p-circuit"))
-    );
-    await waitUntil("offline member disconnect", () => !a!.transport.getConnectedPeers().includes(b!.peerId));
-    const missedClip = await a.clipboard.processLocalText("history-only repair after Mobile was offline");
-    assert(missedClip, "offline capture must remain in Desktop history");
-    await waitUntil("offline Clip persistence", async () => Boolean(await a!.history.getById(missedClip.id)));
-    await waitUntil("new record after reservation loss", async () => {
-      const recordAfterReservationLoss = await b!.transport.getSignedPeerRecord?.();
-      return Boolean(
-        recordAfterReservationLoss &&
-        !sameBytes(recordBeforeReservationLoss, recordAfterReservationLoss)
-      );
-    });
-    await delay(RENDEZVOUS_LEASE_MS + 250);
-    await a.transport.refreshPeerRecord?.(b.peerId);
-    assert(!a.transport.getConnectedPeers().includes(b.peerId), "expired reachability must not create a connection");
-    const bIdentity = b.identity;
-    const bHistory = b.history;
-    const bClipboardWrites = b.clipboardWrites;
-    await stopPeer(b);
-    (relay.node.services.circuitRelay as any).reservations.delete(bPeerIdObject);
-    assert(
-      !(relay.node.services.circuitRelay as any).reservations.has(bPeerIdObject),
-      "the harness must clear B's old same-identity relay reservation before restart"
-    );
-
-    b = await bootPeer({
+    mobile = await bootPeer({
       label: "Mobile",
       platform: "android",
-      privateKey: bKey,
+      privateKey: mobileKey,
       relayAddress,
-      signedPeerRecordPersistence: bRecords,
-      identity: bIdentity,
-      history: bHistory,
-      clipboardWrites: bClipboardWrites,
+      signedPeerRecordPersistence: mobileRecords,
     });
-    await waitUntil(
-      "restarted relay reservation",
-      () => (relay.node.services.circuitRelay as any).reservations.has(bPeerIdObject)
-    );
-    const restartedRecord = await b.transport.getSignedPeerRecord?.();
-    assert(restartedRecord, "restarted B must publish its current relay reservation");
-    await waitUntil("refreshed Signed Peer Record", async () => {
-      await a!.transport.refreshPeerRecord?.(b!.peerId);
-      const refreshed = await a!.transport.getSignedPeerRecordFor?.(b!.peerId);
-      return Boolean(refreshed && sameBytes(refreshed, restartedRecord));
+    extension = await bootPeer({
+      label: "Extension",
+      platform: "chrome-extension",
+      privateKey: extensionKey,
+      relayAddress,
+      signedPeerRecordPersistence: extensionRecords,
     });
+    await assertThreeRuntimePairing({ desktop, mobile, extension });
 
-    a.directUpgradeAttempts.length = 0;
-    const reconnect = createPairedPeerConnectionManager({
-      transport: a.transport,
-      getPairedPeers: async () => [{ deviceId: b!.peerId }],
-      intervalMs: 60_000,
+    const offlineMobile = await takeMobileOffline(desktop, mobile, relay);
+    mobile = undefined;
+    mobile = await restartMobile({
+      privateKey: mobileKey,
+      relay,
+      relayAddress,
+      signedPeerRecordPersistence: mobileRecords,
+      prior: offlineMobile,
+      desktop,
     });
-    await reconnect.reconnectNow();
-    await waitUntil("offline Active Member relay reconnect", () => hasConnectionPath(a!, b!.peerId, "relay"));
-    await waitUntil(
-      "DCUtR upgrade attempt",
-      () =>
-        a!.directUpgradeAttempts.includes(b!.peerId) ||
-        b!.directUpgradeAttempts.includes(a!.peerId)
-    );
-    assert(
-      !a.transport.getPeerConnectionInfo?.().find((entry) => entry.peerId === b!.peerId)?.hasDirect,
-      "unavailable direct transports must leave application traffic on the relay fallback"
-    );
-    await waitUntil("missed history repair", async () => Boolean(await b!.history.getById(missedClip.id)));
-    assert(
-      !b.clipboardWrites.includes(missedClip.content),
-      "history reconciliation must not apply an imported Clip to the runtime clipboard",
-    );
-    await assertLiveClipGossip(a, [b, c], "live Clip after failed DCUtR");
-    await reconnect.stop();
-
-    assert.equal(await a.identity.revoke(c.peerId), "revoked");
-    await a.membershipReconciler.pushConnected();
-    await waitUntil("Device Revocation convergence", async () =>
-      await b!.identity.membershipStatus(c!.peerId) === "revoked" &&
-      await c!.identity.membershipStatus(c!.peerId) === "revoked" &&
-      c!.localRevoked
-    );
+    const peers = { desktop, mobile, extension };
+    await assertReconnectAndHistoryRepair(peers, offlineMobile.missedClip);
+    await assertRevocationConvergence(peers);
 
     console.log("✓ Electron, Android, and Chrome runtime adapters Pair over Circuit Relay v2");
     console.log("✓ live Clips gossip through v1 framing across all three runtimes");
@@ -454,9 +558,9 @@ async function main() {
     console.log("✓ Signed Peer Record refresh and offline Active Member reconnect");
     console.log("✓ DCUtR attempt preserves relayed application traffic when no direct path is available");
   } finally {
-    if (a) await stopPeer(a).catch(() => undefined);
-    if (b) await stopPeer(b).catch(() => undefined);
-    if (c) await stopPeer(c).catch(() => undefined);
+    if (desktop) await stopPeer(desktop).catch(() => undefined);
+    if (mobile) await stopPeer(mobile).catch(() => undefined);
+    if (extension) await stopPeer(extension).catch(() => undefined);
     await relay.stop();
     if (previousLease === undefined) delete process.env.RENDEZVOUS_RECORD_TTL_MS;
     else process.env.RENDEZVOUS_RECORD_TTL_MS = previousLease;

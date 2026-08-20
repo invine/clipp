@@ -20,7 +20,6 @@ import { createLibp2pMessagingTransport } from "@core/network/engine";
 import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "@core/network/pairedConnections";
 import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
-import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
 import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";

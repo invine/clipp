@@ -1,5 +1,5 @@
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import { multiaddr, type Multiaddr } from "@multiformats/multiaddr";
+import { multiaddr } from "@multiformats/multiaddr";
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Notification, Tray } from "electron";
 import path from "node:path";
 import QRCode from "qrcode";
@@ -264,22 +264,6 @@ async function bootstrap() {
     return dedupeMultiaddrs([...directWebRTC, ...relayLike, ...secureWebSocket, ...rest]);
   }
 
-  function pairingDialPriority(addr: string): number {
-    if (isWebRTCDirectMultiaddr(addr)) return 0;
-    if (isRelayLikeMultiaddr(addr)) return 1;
-    if (isSecureWebSocketMultiaddr(addr)) return 2;
-    if (isLoopbackMultiaddr(addr)) return 4;
-    return 3;
-  }
-
-  function orderPairingTargets(addrs: Multiaddr[]): Multiaddr[] {
-    return [...addrs].sort((a, b) => {
-      const aText = a.toString();
-      const bText = b.toString();
-      return pairingDialPriority(aText) - pairingDialPriority(bText);
-    });
-  }
-
   function normalizeRelayAddrs(values: string[]) {
     const cleaned = values
       .map((v) => (typeof v === "string" ? v.trim() : ""))
@@ -323,29 +307,6 @@ async function bootstrap() {
     }
     return trimmed;
   }
-
-  function validMultiaddrs(
-    addrs: string[],
-    errors?: Array<{ addr: string; error: string }>
-  ): Multiaddr[] {
-    const out: Multiaddr[] = [];
-    for (const a of addrs) {
-      try {
-        const ma = multiaddr(a);
-        // accept any parseable addr; some peer ids are UUIDs, not CIDv1
-        out.push(ma);
-      } catch (err) {
-        const msg = (err as any)?.message || "parse_error";
-        (log as any).debug?.("Invalid multiaddr parse error", {
-          addr: a,
-          error: msg,
-        });
-        errors?.push({ addr: a, error: msg });
-      }
-    }
-    return out;
-  }
-  // TODO: till here
 
   function createElectronClipboardService() {
     return createRuntimeClipboardService({

@@ -213,6 +213,39 @@ describe("Device Identity initialization", () => {
     await expect(manager.setLocalDeviceAlias(remotePeerId, "Former phone")).resolves.toBeNull();
   });
 
+  it("waits for an in-flight presentation mutation before listing Trusted Devices", async () => {
+    let stored: DeviceIdentity | undefined;
+    let releaseAliasWrite!: () => void;
+    let markAliasWriteStarted!: () => void;
+    const aliasWriteBlocked = new Promise<void>((resolve) => { releaseAliasWrite = resolve; });
+    const aliasWriteStarted = new Promise<void>((resolve) => { markAliasWriteStarted = resolve; });
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => {
+        if (identity.localDeviceAliases?.[remotePeerId] === "My phone") {
+          markAliasWriteStarted();
+          await aliasWriteBlocked;
+        }
+        stored = structuredClone(identity);
+      },
+    }, "Desktop");
+    await manager.get();
+    await manager.admit(remotePeerId);
+    await manager.recordRemoteDeviceName(remotePeerId, "Phone", 1n);
+
+    const rename = manager.setLocalDeviceAlias(remotePeerId, "My phone");
+    await aliasWriteStarted;
+    const listing = manager.trustedDevices();
+    let listingSettled = false;
+    void listing.then(() => { listingSettled = true; });
+    await Promise.resolve();
+    expect(listingSettled).toBe(false);
+
+    releaseAliasWrite();
+    await rename;
+    await expect(listing).resolves.toEqual([expect.objectContaining({ displayName: "My phone" })]);
+  });
+
   it.each([
     ["Electron", createElectronRuntimeAdapter, "Desktop"],
     ["Android", createAndroidRuntimeAdapter, "Mobile"],
