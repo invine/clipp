@@ -1061,6 +1061,20 @@ async function bootstrap() {
     return { autoSync };
   });
 
+  ipcMain.handle("clipp:reuse-clip", async (_evt, id: string) => {
+    const item = await history.getById(id);
+    if (!item) throw new Error("clip_not_found");
+    await clipboardSvc.reuseLocalClip(item.clip);
+    await emitState();
+    return { ok: true };
+  });
+
+  ipcMain.handle("clipp:share-now", async () => {
+    await clipboardSvc.processLocalText(clipboard.readText() ?? "", { shareNow: true });
+    await emitState();
+    return { ok: true };
+  });
+
   ipcMain.handle("clipp:delete-clip", async (_evt, id: string) => {
     await history.remove(id);
     await emitState();

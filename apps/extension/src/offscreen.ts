@@ -22,6 +22,10 @@ import {
   isExtensionReachabilityRequest,
 } from "./networkBridge";
 import { relayExtensionStream, type ExtensionStreamResponse } from "./streamBridge";
+import {
+  handleExtensionClipboardRequest,
+  isExtensionClipboardRequest,
+} from "./clipboardBridge";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
@@ -130,6 +134,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.action === "ping") {
       sendResponse({ ok: true });
+      return;
+    }
+    if (isExtensionClipboardRequest(msg)) {
+      sendResponse(await handleExtensionClipboardRequest(msg, navigator.clipboard));
       return;
     }
     if (!transport) {

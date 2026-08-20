@@ -42,6 +42,8 @@ const api = {
   getInitializationError: () => ipcRenderer.invoke("clipp:get-initialization-error") as Promise<{ code: string } | null>,
   retryIdentityInitialization: () => ipcRenderer.invoke("clipp:retry-identity-initialization") as Promise<void>,
   deleteClip: (id: string) => ipcRenderer.invoke("clipp:delete-clip", id),
+  reuseClip: (id: string) => ipcRenderer.invoke("clipp:reuse-clip", id),
+  shareNow: () => ipcRenderer.invoke("clipp:share-now"),
   clearHistory: () => ipcRenderer.invoke("clipp:clear-history"),
   unpairDevice: (id: string) => ipcRenderer.invoke("clipp:unpair-device", id),
   renameDevice: (id: string, name: string) => ipcRenderer.invoke("clipp:rename-device", { id, name }),
@@ -50,8 +52,6 @@ const api = {
   rejectRequest: (device: PendingRequest) =>
     ipcRenderer.invoke("clipp:respond-trust", { accept: false, device }),
   pairFromText: (txt: string) => ipcRenderer.invoke("clipp:pair-text", txt),
-  // TODO: confirm that it's not used anywhere
-  // shareNow: () => ipcRenderer.invoke("clipp:share-now"),
   openQrWindow: () => ipcRenderer.invoke("clipp:open-qr-window") as Promise<PairingCode>,
   setPinned: (id: string, pinned: boolean) => ipcRenderer.invoke("clipp:set-pin", { id, pinned }),
   dismissClipboardHistoryError: () => ipcRenderer.invoke("clipp:dismiss-clipboard-history-error"),

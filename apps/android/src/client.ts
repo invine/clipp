@@ -153,11 +153,7 @@ async function readClipboardText(): Promise<string> {
   } catch (err) {
     log.warn("Capacitor clipboard read failed, falling back", err);
   }
-  try {
-    return (await navigator.clipboard.readText()) ?? "";
-  } catch {
-    return "";
-  }
+  return (await navigator.clipboard.readText()) ?? "";
 }
 
 async function writeClipboardText(text: string): Promise<void> {
@@ -167,11 +163,7 @@ async function writeClipboardText(text: string): Promise<void> {
   } catch (err) {
     log.warn("Capacitor clipboard write failed, falling back", err);
   }
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // ignore write failure
-  }
+  await navigator.clipboard.writeText(text);
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -804,6 +796,13 @@ export class AndroidClient {
     await this.emitState();
   }
 
+  async reuseClip(id: string) {
+    const item = await this.history.getById(id);
+    if (!item) throw new Error("clip_not_found");
+    await this.clipboard.reuseLocalClip(item.clip);
+    await this.emitState();
+  }
+
   async clearHistory() {
     await this.clipboard.clearHistory(() => this.history.clearAll());
     await this.emitState();
@@ -942,15 +941,9 @@ export class AndroidClient {
   }
 
   async shareCurrentClipboard() {
-    try {
-      const text = await readClipboardText();
-      await this.clipboard.processLocalText(text, { shareNow: true });
-      await this.emitState();
-      return { ok: text.length > 0 };
-    } catch (err) {
-      log.warn("Share clipboard failed", err);
-    }
-    return { ok: false };
+    const text = await readClipboardText();
+    await this.clipboard.processLocalText(text, { shareNow: true });
+    await this.emitState();
   }
 }
 

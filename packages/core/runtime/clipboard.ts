@@ -33,6 +33,7 @@ export function createRuntimeClipboardService(options: {
   };
   const common = {
     getSenderId: options.getSenderId,
+    readText: options.readText,
     writeText: options.writeText,
     now: options.now,
     makeId: options.makeId,

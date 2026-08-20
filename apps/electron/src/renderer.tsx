@@ -111,6 +111,8 @@ const App = () => {
         onReject={(dev) => window.clipp.rejectRequest(dev)}
         onPairText={handlePairText}
         onRequestPairingCode={() => window.clipp.openQrWindow()}
+        onReuseClip={(id) => window.clipp.reuseClip(id)}
+        onShareNow={() => window.clipp.shareNow()}
         onSetPinned={(id, pinned) => window.clipp.setPinned(id, pinned)}
         onClearAll={() => window.clipp.clearHistory()}
         onDismissClipboardHistoryError={() => window.clipp.dismissClipboardHistoryError()}

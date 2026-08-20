@@ -85,6 +85,56 @@ describe("Clip capture coordinator", () => {
     });
   });
 
+  it("writes a retained Clip before creating a new Local Clip with current immutable fields", async () => {
+    const order: string[] = [];
+    const history = acceptingHistory();
+    const coordinator = createClipCaptureCoordinator({
+      history: {
+        accept: async (clip, options) => {
+          order.push("persist");
+          return history.accept(clip, options);
+        },
+      },
+      originPeerId: async () => originPeerId,
+      now: () => 4_000,
+      makeId: () => validUuid(21),
+      sharingLifetimeMs: () => 5_000,
+      onStored: () => { order.push("publish"); },
+    });
+
+    const reused = await coordinator.reuse(
+      "exact retained content\n",
+      async () => { order.push("write"); },
+      async () => "platform read-back",
+    );
+
+    expect(order).toEqual(["write", "persist", "publish"]);
+    expect(reused).toMatchObject({
+      id: validUuid(21),
+      originPeerId,
+      capturedAt: 4_000,
+      shareExpiresAt: 9_000,
+      content: "exact retained content\n",
+    });
+    expect(coordinator.baselineValue()).toBe("platform read-back");
+  });
+
+  it("does not create a Clip when an explicit retained-Clip write fails", async () => {
+    const history = acceptingHistory();
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => validUuid(22),
+    });
+
+    await expect(coordinator.reuse("retained", async () => {
+      throw new Error("clipboard unavailable");
+    })).rejects.toThrow("clipboard unavailable");
+
+    expect(history.clips).toEqual([]);
+  });
+
   it("classifies only an untrimmed HTTP(S) URL and preserves its original text", async () => {
     const history = acceptingHistory();
     const ids = [validUuid(6), validUuid(7)];
@@ -127,6 +177,27 @@ describe("Clip capture coordinator", () => {
     expect(calls[1]).toMatchObject({ originPeerId, capturedAt: 1_000, shareExpiresAt: 86_401_000, type: "text", content: "value" });
   });
 
+  it("retries an exact UUID collision so every explicit capture remains a distinct event", async () => {
+    const history: ClipHistoryWriter = {
+      accept: jest
+        .fn<Promise<ClipHistoryAcceptance>, [Clip]>()
+        .mockImplementationOnce(async (clip) => ({ kind: "exact-duplicate", clip, liveHandled: true }))
+        .mockImplementationOnce(async (clip) => ({ kind: "newly-stored", clip, liveHandled: true })),
+    };
+    const ids = [validUuid(23), validUuid(24)];
+    const coordinator = createClipCaptureCoordinator({
+      history,
+      originPeerId: async () => originPeerId,
+      now: () => 1_000,
+      makeId: () => ids.shift()!,
+    });
+
+    const clip = await coordinator.capture("same clipboard", { shareNow: true });
+
+    expect(clip?.id).toBe(validUuid(24));
+    expect((history.accept as jest.Mock).mock.calls).toHaveLength(2);
+  });
+
   it("keeps the same immutable Clip pending after storage failure and retries it later", async () => {
     const stored: Clip[] = [];
     const history: ClipHistoryWriter = {
@@ -150,6 +221,51 @@ describe("Clip capture coordinator", () => {
     await coordinator.retryPending();
 
     expect(stored).toEqual([expect.objectContaining({ id: validUuid(8), content: "queued" })]);
+    expect(coordinator.pending()).toEqual([]);
+  });
+
+  it("retries UUID collisions with pending Clips so explicit events remain distinct", async () => {
+    const ids = [validUuid(25), validUuid(25), validUuid(26)];
+    const coordinator = createClipCaptureCoordinator({
+      history: { accept: async () => { throw new Error("storage unavailable"); } },
+      originPeerId: async () => originPeerId,
+      makeId: () => ids.shift()!,
+    });
+
+    await coordinator.capture("first pending", { shareNow: true });
+    await coordinator.capture("second pending", { shareNow: true });
+
+    expect(coordinator.pending().map((clip) => clip.id)).toEqual([
+      validUuid(25),
+      validUuid(26),
+    ]);
+  });
+
+  it("does not recover an older Share Now event when the newest recovered Clip is no longer current", async () => {
+    let storageAvailable = false;
+    let nextId = 500;
+    const recovered: Array<{ clip: Clip; shareNow?: boolean }> = [];
+    const coordinator = createClipCaptureCoordinator({
+      history: {
+        accept: async (clip) => {
+          if (!storageAvailable) throw new Error("storage unavailable");
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+      originPeerId: async () => originPeerId,
+      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+    });
+    coordinator.onRecovered((clip, options) => {
+      recovered.push({ clip, shareNow: options?.shareNow });
+    });
+
+    await coordinator.capture("older current value", { shareNow: true });
+    await coordinator.capture("newest pending value");
+    await coordinator.baseline("older current value");
+    storageAvailable = true;
+    await coordinator.retryPending();
+
+    expect(recovered).toEqual([]);
     expect(coordinator.pending()).toEqual([]);
   });
 

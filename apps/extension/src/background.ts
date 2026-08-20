@@ -38,6 +38,7 @@ import {
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
+import { createExtensionClipboardBridge } from "./clipboardBridge";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
@@ -126,8 +127,8 @@ async function ensureOffscreenDocument(): Promise<void> {
     try {
       await chrome.offscreen.createDocument({
         url: OFFSCREEN_URL,
-        reasons: ["DOM_PARSER" as any],
-        justification: "Run libp2p WebRTC networking off the service worker",
+        reasons: ["WEB_RTC", "CLIPBOARD"],
+        justification: "Run libp2p WebRTC networking and access the clipboard",
       });
     } catch (err) {
       log.error("Failed to create offscreen document", err);
@@ -156,6 +157,8 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
     });
   });
 }
+
+const extensionClipboard = createExtensionClipboardBridge((request) => sendOffscreen(request));
 
 const offscreenInitializationGate = createOffscreenStartupGate();
 const offscreenReady = (async () => {
@@ -186,8 +189,9 @@ function createExtensionClipboardService() {
       const id = await identitySvc.get();
       return id.deviceId;
     },
+    readText: extensionClipboard.readText,
     writeText: async (text: string) => {
-      await navigator.clipboard.writeText(text);
+      await extensionClipboard.writeText(text);
     },
     onHistoryErrorChanged: (error) => {
       clipboardHistoryError = error;
@@ -383,8 +387,8 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   applicationStateKey: "runtimeApplicationState",
   initialApplicationState: () => ({} as Record<string, unknown>),
   clipboard: {
-    readText: async () => navigator.clipboard.readText(),
-    writeText: async (text) => navigator.clipboard.writeText(text),
+    readText: extensionClipboard.readText,
+    writeText: extensionClipboard.writeText,
   },
   notifications: {
     async show(message) {
@@ -627,10 +631,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "shareNow") {
-    historyPolicyReady.then(() => navigator.clipboard.readText()).then(async (text) => {
-      await clipboard.processLocalText(text, { shareNow: true });
-      sendResponse({ ok: true });
-    });
+    historyPolicyReady
+      .then(() => extensionClipboard.readText())
+      .then((text) => clipboard.processLocalText(text, { shareNow: true }))
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+    return true;
+  }
+  if (msg.type === "reuseClip" && msg.id) {
+    historyPolicyReady
+      .then(() => history.getById(msg.id))
+      .then(async (item) => {
+        if (!item) throw new Error("clip_not_found");
+        await clipboard.reuseLocalClip(item.clip);
+        sendResponse({ ok: true });
+      })
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }
   if (msg.type === "getLocalIdentity") {

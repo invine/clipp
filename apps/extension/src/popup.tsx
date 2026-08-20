@@ -246,6 +246,12 @@ const Popup = () => {
         }
         onPairText={handlePairingText}
         onRequestPairingCode={handleRequestPairingCode}
+        onReuseClip={async (id) => {
+          await runHistoryOperation({ type: "reuseClip", id });
+        }}
+        onShareNow={async () => {
+          await runHistoryOperation({ type: "shareNow" });
+        }}
         onSetPinned={async (id, pinned) => {
           const response = await runHistoryOperation<{ ok: true; pinnedIds: string[] }>({
             type: "setPin",

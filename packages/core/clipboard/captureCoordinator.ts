@@ -31,6 +31,11 @@ export type ClipCaptureCoordinator = {
   baseline(value: string): Promise<void>;
   observe(value: string): Promise<Clip | null>;
   capture(value: string, options?: ClipCaptureOptions): Promise<Clip | null>;
+  reuse(
+    value: string,
+    write: (value: string) => Promise<void>,
+    readBack?: () => Promise<string>,
+  ): Promise<Clip | null>;
   writeRemote(clip: Clip, write: (value: string) => Promise<void>, readBack?: () => Promise<string>): Promise<void>;
   baselineValue(): string | undefined;
   pending(): readonly Clip[];
@@ -95,7 +100,7 @@ export function createClipCaptureCoordinator(options: {
   };
   const retryPendingUnserialized = async (): Promise<void> => {
     const hadPendingCaptures = pending.length > 0;
-    let newestCurrentRecovered: { clip: Clip; options?: ClipCaptureOptions } | undefined;
+    let newestRecovered: { clip: Clip; options?: ClipCaptureOptions } | undefined;
     const capacityRejected: ClipCaptureDiagnosticDetails[] = [];
     for (let index = 0; index < pending.length;) {
       const capture = pending[index];
@@ -103,11 +108,8 @@ export function createClipCaptureCoordinator(options: {
         const accepted = await options.history.accept(capture.clip, { liveHandled: true });
         pending.splice(index, 1);
         pendingBytes -= capture.bytes;
-        if (
-          (accepted.kind === "newly-stored" || accepted.kind === "exact-duplicate") &&
-          capture.clip.content === baseline
-        ) {
-          newestCurrentRecovered = { clip: capture.clip, options: capture.options };
+        if (accepted.kind === "newly-stored" || accepted.kind === "exact-duplicate") {
+          newestRecovered = { clip: capture.clip, options: capture.options };
         }
       } catch (error) {
         if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
@@ -125,10 +127,10 @@ export function createClipCaptureCoordinator(options: {
         index += 1;
       }
     }
-    if (newestCurrentRecovered) {
+    if (newestRecovered && newestRecovered.clip.content === baseline) {
       for (const listener of recoveredListeners) {
         try {
-          await listener(newestCurrentRecovered.clip, newestCurrentRecovered.options);
+          await listener(newestRecovered.clip, newestRecovered.options);
         } catch {
           options.onDiagnostic?.("live_delivery_failed");
         }
@@ -173,6 +175,7 @@ export function createClipCaptureCoordinator(options: {
         options.onDiagnostic?.("invalid_capture");
         return null;
       }
+      if (pending.some((capture) => capture.clip.id === clip.id)) continue;
       const accepted = await store(clip, captureOptions);
       if (!accepted) return null;
       if (accepted.kind === "newly-stored") {
@@ -183,7 +186,6 @@ export function createClipCaptureCoordinator(options: {
         }
         return clip;
       }
-      if (accepted.kind === "exact-duplicate") return accepted.clip;
     }
     options.onDiagnostic?.("clip_id_collision_exhausted");
     return null;
@@ -195,6 +197,18 @@ export function createClipCaptureCoordinator(options: {
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = undefined;
     if (hadPendingCaptures) options.onDiagnostic?.("pending_capture_storage_recovered");
+  };
+  const writeAndRebaselineUnserialized = async (
+    value: string,
+    write: (value: string) => Promise<void>,
+    readBack?: () => Promise<string>,
+  ): Promise<void> => {
+    await write(value);
+    if (!readBack) {
+      baseline = value;
+      return;
+    }
+    try { baseline = await readBack(); } catch { baseline = undefined; }
   };
 
   return {
@@ -211,13 +225,13 @@ export function createClipCaptureCoordinator(options: {
       const result = await captureUnserialized(value, captureOptions);
       return result;
     }),
+    reuse: async (value, write, readBack) => serialize(async () => {
+      await writeAndRebaselineUnserialized(value, write, readBack);
+      await retryPendingUnserialized();
+      return captureUnserialized(value);
+    }),
     writeRemote: async (clip, write, readBack) => serialize(async () => {
-      await write(clip.content);
-      if (!readBack) {
-        baseline = clip.content;
-        return;
-      }
-      try { baseline = await readBack(); } catch { baseline = undefined; }
+      await writeAndRebaselineUnserialized(clip.content, write, readBack);
     }),
     baselineValue: () => baseline,
     pending: () => pending.map((capture) => capture.clip),

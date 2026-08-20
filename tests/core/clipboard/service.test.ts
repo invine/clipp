@@ -1,5 +1,6 @@
 import { createManualClipboardService, createPollingClipboardService } from "../../../packages/core/clipboard/service";
 import { createClipCaptureCoordinator, type ClipHistoryWriter } from "../../../packages/core/clipboard/captureCoordinator";
+import { HistoryPolicyError } from "../../../packages/core/history/types";
 import { Clip } from "../../../packages/core/models/Clip";
 
 let readValue = "";
@@ -60,6 +61,114 @@ describe("ClipboardService", () => {
     };
     await service.writeRemoteClip(clip);
     expect(writeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits one new Local Clip when reusing history and absorbs the polling echo", async () => {
+    jest.useFakeTimers();
+    const clips: Clip[] = [];
+    let nextId = 300;
+    const coordinator = createClipCaptureCoordinator({
+      history: {
+        accept: async (clip) => {
+          clips.push(clip);
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+      originPeerId: () => peerId,
+      now: () => 5_000,
+      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+    });
+    const service = createPollingClipboardService({
+      pollIntervalMs: 50,
+      getSenderId: () => peerId,
+      readText: readMock,
+      writeText: async (text) => {
+        writeMock(text);
+        readValue = text;
+      },
+      captureCoordinator: coordinator,
+    });
+    const events: Clip[] = [];
+    service.onLocalClip((clip) => events.push(clip));
+    readValue = "initial baseline";
+    service.start();
+    await jest.runOnlyPendingTimersAsync();
+
+    await service.reuseLocalClip({ type: "text", content: "retained value" } as Clip);
+    jest.advanceTimersByTime(60);
+    await jest.runOnlyPendingTimersAsync();
+
+    expect(writeMock).toHaveBeenCalledWith("retained value");
+    expect(clips).toHaveLength(1);
+    expect(events).toEqual([expect.objectContaining({ content: "retained value" })]);
+    service.stop();
+    jest.useRealTimers();
+  });
+
+  it("creates a distinct Clip for every Share Now capture at the current baseline", async () => {
+    const clips: Clip[] = [];
+    let nextId = 400;
+    const coordinator = createClipCaptureCoordinator({
+      history: {
+        accept: async (clip) => {
+          clips.push(clip);
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+      originPeerId: () => peerId,
+      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+    });
+    const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
+
+    await service.processLocalText("same clipboard", { shareNow: true });
+    await service.processLocalText("same clipboard", { shareNow: true });
+
+    expect(clips.map((clip) => clip.id)).toEqual([
+      "00000000-0000-4000-8000-000000000400",
+      "00000000-0000-4000-8000-000000000401",
+    ]);
+  });
+
+  it("exposes a Share Now failure when no Clip can be created", async () => {
+    const service = createManualClipboardService({
+      getSenderId: () => peerId,
+      captureCoordinator: createClipCaptureCoordinator({
+        history: {
+          accept: async () => { throw new HistoryPolicyError("clip_capacity"); },
+        },
+        originPeerId: () => peerId,
+        makeId: () => "00000000-0000-4000-8000-000000000450",
+      }),
+    });
+
+    await expect(service.processLocalText("cannot be retained", { shareNow: true }))
+      .rejects.toThrow("clip_capture_failed");
+  });
+
+  it("suppresses transformed manual read-back observations after explicit history reuse", async () => {
+    const clips: Clip[] = [];
+    let nextId = 600;
+    const coordinator = createClipCaptureCoordinator({
+      history: {
+        accept: async (clip) => {
+          clips.push(clip);
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+      originPeerId: () => peerId,
+      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+    });
+    const service = createManualClipboardService({
+      getSenderId: () => peerId,
+      writeText: async () => {},
+      readText: async () => "platform-transformed value",
+      captureCoordinator: coordinator,
+    });
+
+    await service.reuseLocalClip({ type: "text", content: "retained value" } as Clip);
+    await service.processLocalText("platform-transformed value");
+
+    expect(clips).toHaveLength(1);
   });
 
   it("sends a recovered pending capture through local handlers", async () => {

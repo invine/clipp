@@ -247,6 +247,8 @@ export type ClipboardAppProps = {
   onPairText(txt: string): void | Promise<void>;
   onScanPairingCode?(): Promise<string | null> | string | null;
   onRequestPairingCode(): Promise<PairingCode | null>;
+  onReuseClip(id: string): void | Promise<void>;
+  onShareNow(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
   onDismissClipboardHistoryError?(): void | Promise<void>;
@@ -283,6 +285,8 @@ export function ClipboardApp({
   onPairText,
   onScanPairingCode,
   onRequestPairingCode,
+  onReuseClip,
+  onShareNow,
   onSetPinned,
   onClearAll,
   onDismissClipboardHistoryError,
@@ -555,8 +559,30 @@ export function ClipboardApp({
       });
   }
 
-  function copyClip(text: string) {
-    navigator.clipboard.writeText(text).catch(() => {});
+  function reuseClip(id: string) {
+    void Promise.resolve()
+      .then(() => onReuseClip(id))
+      .then(() => {
+        setHistoryError(null);
+        setRetryHistoryOperation(null);
+      })
+      .catch(() => {
+        setHistoryError("Could not copy this Clip. Your clipboard and history were not changed.");
+        setRetryHistoryOperation(() => () => reuseClip(id));
+      });
+  }
+
+  function shareNow() {
+    void Promise.resolve()
+      .then(() => onShareNow())
+      .then(() => {
+        setHistoryError(null);
+        setRetryHistoryOperation(null);
+      })
+      .catch(() => {
+        setHistoryError("Could not share the current clipboard.");
+        setRetryHistoryOperation(() => shareNow);
+      });
   }
 
   function beginAddRelay() {
@@ -1304,6 +1330,10 @@ export function ClipboardApp({
             </div>
 
             <div className="content-header-actions">
+              <button className="text-button" onClick={shareNow}>
+                <span className="icon">send</span>
+                Share Now
+              </button>
               <div className="segmented">
                 <button
                   className={filterMode === "all" ? "active" : ""}
@@ -1478,7 +1508,7 @@ export function ClipboardApp({
                       <div className="meta-bottom-line">Text</div>
                     </div>
                     <div className="meta-actions">
-                      <button className="mini-button" onClick={() => copyClip(clip.content)}>
+                      <button className="mini-button" onClick={() => reuseClip(clip.id)}>
                         <span className="icon" style={{ fontSize: 14 }}>
                           content_copy
                         </span>
