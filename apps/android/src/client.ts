@@ -18,7 +18,7 @@ import {
   type RuntimeClipboardHistoryError,
 } from "@core/runtime";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
-import { createPairedPeerConnectionManager } from "@core/network/pairedConnections";
+import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "@core/network/pairedConnections";
 import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
 import { deriveRelayPeerMultiaddrs } from "@core/network/relayAddresses";
@@ -38,13 +38,9 @@ import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
   createKVIdentityRepository,
-  createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
-  createTrustManager,
   createIdentityRotationCommitter,
   IDENTITY_KEY,
-  TRUST_KEY,
-  type TrustedDevice,
 } from "@core/trust";
 import type { Clip } from "@core/models/Clip";
 import type { Device, HistoryPolicyError, Identity, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
@@ -205,7 +201,7 @@ function nativeNotificationId(id: string): number {
 function connectionPathForAddr(addr: unknown): PairingConnectionPath {
   const value = typeof (addr as any)?.toString === "function" ? (addr as any).toString() : String(addr || "");
   if (!value) return "unknown";
-  if (value.includes("/webrtc") && !value.includes("/p2p-webrtc-star")) return "direct";
+  if (value.includes("/webrtc")) return "direct";
   if (value.includes("/p2p-circuit")) return "relay";
   if (value.startsWith("/")) return "direct";
   return "unknown";
@@ -216,16 +212,16 @@ function isLoopbackMultiaddr(addr: string): boolean {
 }
 
 function pairingTargetPriority(addr: string): number {
-  if (addr.includes("/webrtc") && !addr.includes("/p2p-webrtc-star")) return 0;
+  if (addr.includes("/webrtc")) return 0;
   if (addr.includes("/webrtc-direct")) return 0;
-  if (addr.includes("/p2p-circuit") || addr.includes("/p2p-webrtc-star")) return 1;
+  if (addr.includes("/p2p-circuit")) return 1;
   if (addr.includes("/wss")) return 2;
   if (isLoopbackMultiaddr(addr)) return 4;
   return 3;
 }
 
 function canDerivePairingAddress(addr: string): boolean {
-  return addr.includes("/p2p-webrtc-star");
+  return false;
 }
 
 function orderPairingTargets(addrs: Multiaddr[]): Multiaddr[] {
@@ -293,8 +289,6 @@ export class AndroidClient {
     repo: this.identityRepo,
     capabilities: RUNTIME_CAPABILITIES.android,
   });
-  private readonly trustRepo = createKVTrustedDeviceRepository({ storage: this.storage, key: TRUST_KEY });
-  private readonly trust = createTrustManager({ trustRepo: this.trustRepo, identitySvc: this.identitySvc });
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
   private pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
   private liveClipGossip: ReturnType<typeof createLiveClipGossip> | null = null;
@@ -316,7 +310,7 @@ export class AndroidClient {
       if (!this.pairedConnections) {
         this.pairedConnections = createPairedPeerConnectionManager({
           transport: this.transport,
-          getPairedPeers: () => this.trust.list(),
+          getPairedPeers: activeMemberReconnectPeers(this.identitySvc),
         });
       }
       return;
@@ -335,7 +329,7 @@ export class AndroidClient {
     log.info("[clipp:android:network] Creating messaging transport", {
       peerId: peerId?.toString?.() ?? String(peerId),
       relayAddresses,
-      circuitRelays: relayAddresses.filter((addr) => !addr.includes("/p2p-webrtc-star")),
+      circuitRelays: relayAddresses,
     });
     this.transport = createLibp2pMessagingTransport({
       peerId,
@@ -346,12 +340,12 @@ export class AndroidClient {
       enableRelayReservations: true,
       allowInsecureBrowserDials: true,
       signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage: this.storage }),
-      isPeerKnown: (remotePeerId) => this.trust.isTrusted(remotePeerId),
+      isPeerKnown: async (remotePeerId) => await this.identitySvc.membershipStatus(remotePeerId) === "active",
       isPeerRevoked: async (remotePeerId) => await this.identitySvc.membershipStatus(remotePeerId) === "revoked",
     });
     this.pairedConnections = createPairedPeerConnectionManager({
       transport: this.transport,
-      getPairedPeers: () => this.trust.list(),
+      getPairedPeers: activeMemberReconnectPeers(this.identitySvc),
     });
     this.liveClipGossip = createLiveClipGossip({
       transport: this.transport,
@@ -426,7 +420,7 @@ export class AndroidClient {
     onAutoSyncChanged: (enabled) => this.historyReconciliation?.setAutoSync(enabled),
   });
 
-  private pendingRequests: TrustedDevice[] = [];
+  private pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
   private localRetentionMs = RETENTION_MS;
   private autoSync = true;
   private clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
@@ -513,7 +507,7 @@ export class AndroidClient {
     lifecycle: this.runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
-    membership: this.trust,
+    membership: this.identitySvc,
     sendResponse: async (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await this.identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     connectionPath: (remotePeerId) => {
@@ -522,10 +516,10 @@ export class AndroidClient {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void this.trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId) void this.identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
     onChanged: async (requests) => {
-      this.pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
+      this.pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName }));
       await this.emitState();
     },
   });
@@ -539,7 +533,7 @@ export class AndroidClient {
       return privateKeyFromProtobuf(Uint8Array.from(Buffer.from(identity.privateKey, "base64"))).sign(bytes);
     },
     verify: verifyPairingTrustRequestSignature,
-    membership: this.trust,
+    membership: this.identitySvc,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
       const path = this.transport?.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -547,7 +541,7 @@ export class AndroidClient {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void this.trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId) void this.identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
     onChanged: () => this.emitState(),
   });
@@ -589,18 +583,6 @@ export class AndroidClient {
       await this.emitState();
     });
 
-    this.trust.on("approved", async (d) => {
-      this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-      await this.emitState();
-      void this.pairedConnections?.reconnectNow();
-      log.info("Device approved", d.deviceId);
-    });
-    this.trust.on("rejected", async (d) => {
-      this.pendingRequests = this.pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-      await this.emitState();
-      log.info("Device rejected", d.deviceId);
-    });
-    this.trust.on("removed", () => this.emitState());
   }
 
   private inspectMultiaddrs(
@@ -800,7 +782,7 @@ export class AndroidClient {
 
   async getState(): Promise<AndroidAppState> {
     const clips = await this.history.exportAll();
-    const devices = await this.trust.list();
+    const devices = await this.identitySvc.activeDevices();
     const identity = this.identityRotationRecovery
       ? null
       : toPublicDeviceIdentity(await this.ensureIdentityAddrs(await this.identitySvc.get()));
@@ -852,12 +834,13 @@ export class AndroidClient {
   }
 
   async unpairDevice(id: string) {
-    await this.trust.remove(id);
+    await this.identitySvc.revoke(id);
     await this.emitState();
   }
 
   async renameDevice(id: string, name: string): Promise<Device | null> {
-    const device = await this.trust.rename(id, name);
+    await this.identitySvc.setLocalDeviceAlias(id, name);
+    const device = (await this.identitySvc.activeDevices()).find((candidate) => candidate.deviceId === id) ?? null;
     await this.emitState();
     return device;
   }

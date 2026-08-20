@@ -184,6 +184,27 @@ describe("Device Identity initialization", () => {
     });
   });
 
+  it("derives the visible Trusted Device list exclusively from Active Membership", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    await manager.get();
+    await manager.admit(remotePeerId);
+    await manager.recordRemoteDeviceName(remotePeerId, "Phone", 1n);
+
+    await expect(manager.activeDevices()).resolves.toEqual([{
+      deviceId: remotePeerId,
+      deviceName: "Phone",
+      displayName: "Phone",
+      localAlias: undefined,
+    }]);
+
+    await manager.revoke(remotePeerId);
+    await expect(manager.activeDevices()).resolves.toEqual([]);
+  });
+
   it.each([
     ["Electron", createElectronRuntimeAdapter, "Desktop"],
     ["Android", createAndroidRuntimeAdapter, "Mobile"],

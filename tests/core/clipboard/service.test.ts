@@ -56,8 +56,6 @@ describe("ClipboardService", () => {
       originPeerId: "remote",
       capturedAt: 1,
       shareExpiresAt: 86_400_001,
-      timestamp: Date.now(),
-      senderId: "remote",
     };
     await service.writeRemoteClip(clip);
     expect(writeMock).toHaveBeenCalledTimes(1);

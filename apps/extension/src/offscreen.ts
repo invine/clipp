@@ -1,12 +1,9 @@
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
-import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
+import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords";
 import {
   createKVIdentityRepository,
-  createKVTrustedDeviceRepository,
-  createTrustManager,
   IDENTITY_KEY,
-  TRUST_KEY,
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
@@ -37,8 +34,6 @@ const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
 });
-const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
-let trust = createTrustManager({ trustRepo, identitySvc });
 let started = false;
 const runtimeOutboundStreamControllers = new Map<string, AbortController>();
 
@@ -87,12 +82,12 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     relayAddresses: relays,
     enableDCUtR: true,
     signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage }),
-    isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
+    isPeerKnown: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "active",
     isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
   });
   pairedConnections = createPairedPeerConnectionManager({
     transport,
-    getPairedPeers: () => trust.list(),
+    getPairedPeers: activeMemberReconnectPeers(identitySvc),
   });
 
   transport.onSelfPeerUpdate((multiaddrs: string[]) => {

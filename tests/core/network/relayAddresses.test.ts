@@ -40,14 +40,12 @@ describe("relay address helpers", () => {
     ]);
   });
 
-  it("does not retain WebRTC-star as a special production relay format", () => {
+  it("rejects obsolete WebRTC-star signalling relays", () => {
     expect(
       deriveRelayPeerMultiaddrs(
         ["/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star"],
         targetPeerId
       )
-    ).toEqual([
-      `/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star/p2p-circuit/p2p/${targetPeerId}`,
-    ]);
+    ).toEqual([]);
   });
 });

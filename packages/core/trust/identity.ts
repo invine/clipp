@@ -4,6 +4,13 @@ import { normalizeDeviceName, shortenPeerId } from "../pairing/presentation";
 
 export type MembershipView = { admittedPeerIds: string[]; revokedPeerIds: string[] };
 export type RemoteDeviceName = { deviceName: string; nameRevision: string };
+/** Presentation data derived from an Active Member, never a mutable trust record. */
+export type ActiveDevice = {
+  deviceId: string;
+  deviceName: string;
+  displayName: string;
+  localAlias?: string;
+};
 export type RevocationResult = "revoked" | "already-revoked" | "not-active";
 const MAX_UINT64 = (1n << 64n) - 1n;
 
@@ -45,6 +52,7 @@ export interface IdentityManager {
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   activePeerIds(): Promise<string[]>;
+  activeDevices(): Promise<ActiveDevice[]>;
   admit(peerId: string): Promise<AdmissionResult>;
   revoke(peerId: string): Promise<RevocationResult>;
   membershipView(): Promise<MembershipView>;
@@ -192,6 +200,19 @@ export function createIdentityManager(options: {
       const view = completeMembershipView(current.deviceId, current.membershipView);
       const revoked = new Set(view.revokedPeerIds);
       return view.admittedPeerIds.filter((peerId) => !revoked.has(peerId));
+    },
+    activeDevices: async () => {
+      const current = await loadIdentity();
+      const view = completeMembershipView(current.deviceId, current.membershipView);
+      const revoked = new Set(view.revokedPeerIds);
+      return view.admittedPeerIds
+        .filter((peerId) => peerId !== current.deviceId && !revoked.has(peerId))
+        .map((peerId) => {
+          const localAlias = current.localDeviceAliases?.[peerId];
+          const deviceName = normalizeDeviceName(current.remoteDeviceNames?.[peerId]?.deviceName ?? "")
+            ?? shortenPeerId(peerId);
+          return { deviceId: peerId, deviceName, displayName: localAlias ?? deviceName, localAlias };
+        });
     },
     admit: (peerId) => serializeMutation(async () => {
       const current = await loadIdentity();

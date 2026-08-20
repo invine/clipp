@@ -1,5 +1,4 @@
 import { DeviceIdentity, IdentityInitializationError, IdentityRepository } from "./identity"
-import { TrustedDevice, TrustedDeviceRepository } from "./trustManager"
 
 export interface KVStorageBackend {
   get<T = any>(key: string): Promise<T | undefined>
@@ -8,7 +7,6 @@ export interface KVStorageBackend {
 }
 
 export const IDENTITY_KEY = "localDeviceIdentity";
-export const TRUST_KEY = 'trustedDevices'
 
 
 export function createKVIdentityRepository(options: { storage: KVStorageBackend, key: string }): IdentityRepository {
@@ -24,52 +22,5 @@ export function createKVIdentityRepository(options: { storage: KVStorageBackend,
     loadInitializationError: () => storage.get<IdentityInitializationError>(initializationErrorKey),
     saveInitializationError: (error) => storage.set(initializationErrorKey, error),
     clearInitializationError: () => storage.remove(initializationErrorKey),
-  }
-}
-
-export function createKVTrustedDeviceRepository(options: { storage: KVStorageBackend, key: string }): TrustedDeviceRepository {
-  const { storage, key } = options
-
-  const getDeviceList = async (): Promise<TrustedDevice[]> => {
-    const list = await storage.get<TrustedDevice[]>(key);
-    if (!list) {
-      return [];
-    }
-
-    return Array.isArray(list) ? list : [];
-  };
-
-  const setDeviceList = (list: TrustedDevice[]): Promise<void> => {
-    return storage.set(key, list);
-  };
-
-  return {
-    list: async (): Promise<TrustedDevice[]> => {
-      return getDeviceList();
-    },
-    get: async (deviceId: string): Promise<TrustedDevice | undefined> => {
-      const list = await getDeviceList();
-      const device: TrustedDevice | undefined = list.find(
-        (device) => device.deviceId === deviceId
-      );
-      return device;
-    },
-    upsert: async (device: TrustedDevice): Promise<void> => {
-      const list = await getDeviceList();
-      const index = list.findIndex((d) => d.deviceId === device.deviceId);
-      if (index !== -1) {
-        list[index] = device;
-      } else {
-        list.push(device);
-      }
-      await setDeviceList(list);
-    },
-    remove: async (deviceId: string): Promise<void> => {
-      const list = await getDeviceList();
-      const newList = list.filter((device) => device.deviceId !== deviceId);
-      if (newList.length < list.length) {
-        await setDeviceList(newList);
-      }
-    },
   }
 }

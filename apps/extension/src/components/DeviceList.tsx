@@ -4,8 +4,6 @@ export type Device = {
   deviceId: string;
   deviceName: string;
   displayName?: string;
-  publicKey: string;
-  createdAt: number;
 };
 
 export const DeviceList = () => {
@@ -14,7 +12,7 @@ export const DeviceList = () => {
 
   useEffect(() => {
     // @ts-ignore
-    chrome.runtime.sendMessage({ type: "getTrustedDevices" }, (resp) => {
+    chrome.runtime.sendMessage({ type: "getActiveDevices" }, (resp) => {
       setDevices(resp?.devices || []);
     });
   }, []);

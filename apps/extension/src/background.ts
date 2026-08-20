@@ -16,13 +16,9 @@ import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexedd
 import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
   createKVIdentityRepository,
-  createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
-  createTrustManager,
   createIdentityRotationCommitter,
   IDENTITY_KEY,
-  TRUST_KEY,
-  TrustedDevice,
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
 import {
@@ -101,8 +97,6 @@ const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
 });
-const trustRepo = createKVTrustedDeviceRepository({ storage, key: TRUST_KEY });
-const trust = createTrustManager({ trustRepo, identitySvc });
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 
@@ -276,7 +270,7 @@ history.onNew((item) => {
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
-let pendingRequests: TrustedDevice[] = [];
+let pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
 const pairingSessions = createPairingRuntimeSessions({
   identity: async () => { const current = await identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
   send: (targetPeerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
@@ -286,7 +280,7 @@ const pairingSessions = createPairingRuntimeSessions({
     return privateKeyFromProtobuf(base64ToBytes(identity.privateKey)).sign(bytes);
   },
   verify: verifyPairingTrustRequestSignature,
-  membership: trust,
+  membership: identitySvc,
   clock: systemRuntimeClock,
   connectionPath: (remotePeerId) => {
     const path = extensionNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -294,20 +288,9 @@ const pairingSessions = createPairingRuntimeSessions({
   },
   onRejected: (diagnostic) => {
     log.warn(diagnostic.event, diagnostic);
-    if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+    if (diagnostic.authenticatedPeerId) void identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
   },
   onChanged: () => runtimeAdapter.publicState.read().then((current) => runtimeAdapter.publicState.publish(current)),
-});
-trust.on("rejected", async (d) => {
-  pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-  log.info("Trust request rejected", d.deviceId);
-});
-trust.on("approved", async (d) => {
-  pendingRequests = pendingRequests.filter((p) => p.deviceId !== d.deviceId);
-  void offscreenReady
-    .then(() => sendOffscreen({ action: "connectPairedPeers" }))
-    .catch(() => {});
-  log.info("Device approved", d.deviceId);
 });
 
 const runtimeProtocolHandlers = new Map<string, Array<(from: string, data: Uint8Array) => void>>();
@@ -472,7 +455,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
       const [clips, pinnedIds, devices, identity, peerState, rotationNotice] = await Promise.all([
         historyPolicyReady.then(() => history.exportAll()),
         historyPolicyReady.then(() => history.pinnedIds()),
-        trust.list(),
+        identitySvc.activeDevices(),
         identityRotationRecovery ? Promise.resolve(null) : identitySvc.get(),
         (identityRotationRecovery ? Promise.resolve({ peers: [], peerConnections: [] }) : offscreenReady
           .then(() => sendOffscreen<{ peers?: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
@@ -512,7 +495,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
   lifecycle: runtimeAdapter.lifecycle,
   clock: systemRuntimeClock,
   verify: verifyPairingTrustRequestSignature,
-  membership: trust,
+  membership: identitySvc,
   sendResponse: (peerId, frame) => extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),
   responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
   connectionPath: (remotePeerId) => {
@@ -521,10 +504,10 @@ const pairingPending = createPendingTrustRequestCoordinator({
   },
   onRejected: (diagnostic) => {
     log.warn(diagnostic.event, diagnostic);
-    if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+    if (diagnostic.authenticatedPeerId) void identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return extensionNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
   },
   onChanged: async (requests) => {
-    pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
+    pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName }));
     await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
   },
 });
@@ -765,9 +748,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch(() => sendResponse({ peers: [], peerConnections: [] }));
     return true;
   }
-  // Handle trusted device list for options page
-  if (msg.type === "getTrustedDevices") {
-    trust.list().then((devices) => {
+  if (msg.type === "getActiveDevices") {
+    identitySvc.activeDevices().then((devices) => {
       sendResponse({ devices });
     });
     return true;
@@ -810,13 +792,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "revokeDevice" && msg.id) {
-    trust.remove(msg.id)
+    identitySvc.revoke(msg.id)
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }
   if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
-    trust.rename(msg.id, msg.name).then((device) => sendResponse({ ok: true, device }));
+    identitySvc.setLocalDeviceAlias(msg.id, msg.name).then(async () => {
+      const device = (await identitySvc.activeDevices()).find((candidate) => candidate.deviceId === msg.id) ?? null;
+      sendResponse({ ok: true, device });
+    });
     return true;
   }
   // Settings: auto-sync, expiry, type filters

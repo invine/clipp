@@ -6,11 +6,12 @@ declare const chrome: typeof globalThis.chrome;
 
 export type ClipPreviewProps = {
   clip: {
-    type: string;
+    type: "text" | "url";
     content: string;
     id: string;
-    timestamp: number;
-    senderId: string;
+    originPeerId: string;
+    capturedAt: number;
+    shareExpiresAt: number;
   } | null;
 };
 
@@ -22,26 +23,11 @@ export const ClipPreview = ({ clip }: ClipPreviewProps) => {
       </div>
     );
   }
-  if (clip.type === "image") {
-    return (
-      <div className="flex items-center justify-center">
-        <img src={`data:image/png;base64,${clip.content}`} alt="Clipboard" className="max-h-24 max-w-full rounded" />
-      </div>
-    );
-  }
   if (clip.type === "url") {
     return (
       <a href={clip.content} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline break-all">
         {clip.content}
       </a>
-    );
-  }
-  if (clip.type === "file") {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="inline-block w-4 h-4 bg-gray-400 rounded" />
-        <span className="truncate">File: {clip.id}</span>
-      </div>
     );
   }
   // Default: text

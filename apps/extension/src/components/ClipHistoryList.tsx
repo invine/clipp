@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 
 export type Clip = {
   id: string;
-  type: string;
+  type: "text" | "url";
   content: string;
-  timestamp: number;
-  senderId: string;
+  originPeerId: string;
+  capturedAt: number;
+  shareExpiresAt: number;
 };
 
 export const ClipHistoryList = () => {
@@ -57,11 +58,9 @@ export const ClipHistoryList = () => {
             <div className="truncate mb-1">
               {clip.type === "text"
                 ? <span title={clip.content}>{clip.content.length > 200 ? clip.content.slice(0, 200) + '…' : clip.content}</span>
-                : clip.type === "image"
-                ? <img src={`data:image/png;base64,${clip.content}`} alt="Clipboard" className="max-h-12 inline-block" />
-                : `[${clip.type}]`}
+                : <a href={clip.content} target="_blank" rel="noopener noreferrer">{clip.content}</a>}
             </div>
-            <div className="text-gray-400">{new Date(clip.timestamp).toLocaleString()}</div>
+            <div className="text-gray-400">{new Date(clip.capturedAt).toLocaleString()}</div>
           </div>
         ))}
       </div>

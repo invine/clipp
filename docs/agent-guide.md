@@ -17,7 +17,7 @@ The core design is:
 1. Capture or receive clipboard content.
 2. Normalize it into a `Clip`.
 3. Store it in history.
-4. Broadcast it to trusted peers over libp2p when auto-sync is enabled.
+4. Gossip it to connected Active Members over libp2p when Auto Sync is enabled.
 5. Apply remote clips back to the local clipboard.
 
 The clean-architecture diagram in `docs/diagrams/electron-architecture.puml` matches the Electron runtime best, but the same domain pieces are reused across the other runtimes.
@@ -38,14 +38,13 @@ The clean-architecture diagram in `docs/diagrams/electron-architecture.puml` mat
 | --- | --- |
 | `packages/core/clipboard` | Clipboard polling/manual services plus normalization helpers |
 | `packages/core/history` | History storage abstractions, IndexedDB backend, prune/sync helpers |
-| `packages/core/messaging` | Protocol-specific channels and trust binder |
+| `packages/core/messaging` | Shared authenticated transport interfaces |
 | `packages/core/models` | Shared models such as `Clip` and `HistoryItem` |
 | `packages/core/network` | Libp2p node setup, transport, peer ID helpers, relay constants |
-| `packages/core/pairing` | Encode/decode pairing payloads shared across runtimes |
-| `packages/core/protocols` | Wire formats for clip, trust, and history messages |
-| `packages/core/qr` | QR encode/decode utilities |
+| `packages/core/pairing` | Pairing Target v2, Trust Request/Response framing, and pending approvals |
+| `packages/core/protocols` | Protobuf wire formats for live Clips and history |
 | `packages/core/sync` | Clipboard sync coordinator |
-| `packages/core/trust` | Identity management, trusted-device storage, evented trust manager |
+| `packages/core/trust` | Device identity, Membership View persistence, presentation metadata, and rotation |
 | `packages/ui` | Shared React UI and shared frontend types |
 
 ### Tests and tooling
@@ -54,7 +53,7 @@ The clean-architecture diagram in `docs/diagrams/electron-architecture.puml` mat
 | --- | --- |
 | `tests/core` | Jest coverage for shared core modules |
 | `tests/harness` | Manual pairing/network harness |
-| `scripts` | Relay probes, WebRTC helpers, CLI-based pairing tools |
+| `scripts` | Relay service and manual network tooling |
 
 ## 3. Runtime Matrix
 
@@ -71,7 +70,7 @@ When an agent needs to understand behavior quickly, these files are the highest-
 - `apps/electron/src/main.ts`: most complete end-to-end runtime wiring
 - `packages/core/sync/clipboardSync.ts`: central local/remote clip flow
 - `packages/core/network/engine.ts`: transport abstraction over libp2p
-- `packages/core/trust/trustManager.ts`: trust lifecycle and trust events
+- `packages/core/trust/identity.ts`: identity, Active Membership, and local presentation state
 - `packages/core/trust/identity.ts`: local identity creation and lookup
 - `packages/ui/src/ClipboardApp.tsx`: shared feature surface across runtimes
 
@@ -81,8 +80,8 @@ When an agent needs to understand behavior quickly, these files are the highest-
 
 1. A runtime-specific clipboard service emits a local clip.
 2. `createClipboardSyncManager()` in `packages/core/sync/clipboardSync.ts` stores the clip in history.
-3. If auto-sync is enabled, it broadcasts a `clip` message.
-4. Trusted messaging transports send that message to connected trusted peers.
+3. If Auto Sync is enabled, it sends a bounded v1 live-Clip frame.
+4. Connected Active Members receive authenticated live delivery.
 5. Receiving peers validate and de-duplicate the clip, store it, then write it to the local clipboard.
 
 The clipboard service differs by runtime:
@@ -92,14 +91,13 @@ The clipboard service differs by runtime:
 
 ### Pairing and trust
 
-1. A runtime exposes local identity details, including multiaddrs.
-2. Pairing payloads are encoded by `packages/core/pairing/encode.ts`.
-3. UI surfaces usually convert that payload into a QR code with `packages/core/qr`.
-4. The receiving runtime decodes the payload and sends a signed trust request.
-5. `createTrustProtocolBinder()` attaches trust request handling to the trust messaging channel.
-6. Approval adds the remote device to trusted storage.
+1. A runtime exports a protobuf Pairing Target v2 containing its Peer ID and Signed Peer Record.
+2. The receiving runtime validates it and sends a signed Trust Request over the v1 pairing protocol.
+3. The target durably holds a pending approval and surfaces a native notification.
+4. Approval directly admits both authenticated participants into their Membership Views.
+5. Membership Reconciliation converges the remaining Active Member sets independently.
 
-Shared trust logic lives in `packages/core/trust`, but each runtime decides how identities and trusted devices are persisted.
+Identity and Membership state live in `packages/core/trust`; runtime adapters only supply storage and platform integration.
 
 ### Protocol envelopes
 
@@ -107,11 +105,9 @@ Live Clip delivery uses the settled v1 protobuf boundary; do not reintroduce the
 
 - Live Clip sync uses `/clipp/clip/1.0.0`, with one bounded length-prefixed protobuf `LiveClip` frame per stream. `LiveClip` contains one nested `Clip`; immediate-sender authority comes only from the authenticated libp2p connection.
 - Clipboard History Reconciliation uses `/clipp/history/1.0.0`, with one one-way stream of bounded, non-empty length-prefixed protobuf `HistoryFrame` envelopes containing `HistoryBatch` bodies, followed by EOF. Each batch contains nested `Clip` records; sender authority comes only from the authenticated libp2p connection.
-- Trust uses `/clipboard/trust/1.0.0`.
-- Trust request shape: `{ type: "trust-request", from, to, sentAt, payload: { device, sig } }`.
-- Trust ack shape: `{ type: "trust-ack", from, to, sentAt, payload: { accepted, request, responder? } }`.
+- Pairing uses `/clipp/pairing/1.0.0` and Membership Reconciliation uses `/clipp/membership/1.0.0`; each carries bounded protobuf frames and relies on the authenticated immediate sender.
 
-If you are touching protocol code, do not reintroduce the older JSON History Sync envelope, top-level `clip`, array `payload` for history sync, or top-level `sig` on trust requests.
+Do not reintroduce JSON protocol envelopes or payload-supplied sender authority.
 
 ### Transport startup
 
@@ -132,18 +128,17 @@ Peer reporting intentionally filters out relay-only connections. If a peer seems
 - Storage implementation: `apps/electron/src/storage.ts`
 - Database file: `app.getPath("userData")/clipp.sqlite`
 - Tables:
-  - `kv` for identity, trust, relay addresses, and other key/value state
+- `kv` for identity, Membership View, relay addresses, and other key/value state
   - `history` for serialized clip history items, including pin state
 
 Notable persisted keys used by Electron:
 
 - `IDENTITY_KEY`
-- `TRUST_KEY`
 - `relayAddresses`
 
 ### Extension
 
-- Trust and preferences: `chrome.storage.local` via `ChromeStorageBackend`
+- Identity, Membership, and preferences: `chrome.storage.local` via `ChromeStorageBackend`
 - History: IndexedDB when available, otherwise in-memory fallback
 - Clipboard pin state: shared history-policy state for the active service-worker session; it is not persisted
 
@@ -168,7 +163,7 @@ If you add or change a user action in `ClipboardApp`, verify which runtimes need
 
 - add a new button: update shared UI, then wire the runtime handler
 - change state shape: update the runtime state getter and any type aliases
-- change pairing UX: update shared UI plus the runtime-specific QR or decode path
+- change pairing UX: update shared UI plus the runtime-specific Pairing Target v2 bridge
 
 ## 8. Build And Test Workflow
 
@@ -194,9 +189,6 @@ Use npm workspace commands from the repo root.
 ### Manual tools
 
 - `npm run relay:websocket`
-- `npm run relay:probe`
-- `npm run probe:direct`
-- `npx tsx scripts/clipp-cli.ts --help`
 - `node --loader ts-node/esm tests/harness/pairing-harness.ts`
 
 ## 9. Important Codebase Quirks
@@ -205,7 +197,6 @@ Use npm workspace commands from the repo root.
 - The Vite apps use `@core` and `@ui` aliases. Electron main/preload do not.
 - `apps/extension/offscreen.html` loads `src/offscreen.ts`, so treat `apps/extension/src/offscreen.ts` as the source of truth.
 - `apps/electron/src/main.ts` is large and owns bootstrap, tray setup, transport lifecycle, persistence, and IPC. Expect many cross-cutting changes there.
-- Relay code still contains legacy comments about WebRTC-star removal. Read the current call sites before simplifying anything.
 - History sync protocol support exists in `packages/core/history` and extension offscreen messaging, but clip sync plus trust flows are the more widely integrated paths.
 - The Live Clip codec uses the fixed nested protobuf schema. If you change protocol fields, update codec tests and every runtime transport bridge together.
 
@@ -223,7 +214,7 @@ Good "anchor" files by task:
 
 - Clipboard bugs: `packages/core/clipboard/service.ts`, `packages/core/clipboard/normalize.ts`
 - Missing or duplicate clip sync: `packages/core/sync/clipboardSync.ts`
-- Trust or pairing regressions: `packages/core/trust/`, `packages/core/protocols/clipTrust.ts`, `packages/core/pairing/`
+- Pairing or Membership regressions: `packages/core/trust/`, `packages/core/membership/`, `packages/core/pairing/`
 - Peer connectivity issues: `packages/core/network/node.ts`, `packages/core/network/engine.ts`
 - Renderer action wiring: `apps/electron/src/preload.ts`, `apps/android/src/client.ts`, `apps/extension/src/background.ts`
 
@@ -233,4 +224,3 @@ Good "anchor" files by task:
 - `docs/diagrams/electron-architecture.puml`
 - `packages/core/clipboard/README.md`
 - `packages/core/trust/README.md`
-- `packages/core/qr/README.md`

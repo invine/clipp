@@ -47,7 +47,6 @@ export type Libp2pMessagingOptions = {
   privateKey?: any;
   bootstrapList?: string[];
   relayAddresses?: string[];
-  enableWebRTCStar?: boolean;
   enableWebRTCDirect?: boolean;
   enableDCUtR?: boolean;
   onDCUtRAttempt?: (peerId: string) => void;
@@ -146,7 +145,6 @@ class Libp2pMessagingTransport implements MessagingTransport {
       privateKey: this.opts.privateKey,
       bootstrapList: this.opts.bootstrapList,
       relayAddresses: this.opts.relayAddresses,
-      enableWebRTCStar: this.opts.enableWebRTCStar,
       enableWebRTCDirect: this.opts.enableWebRTCDirect,
       enableDCUtR: this.opts.enableDCUtR,
       onDCUtRAttempt: this.opts.onDCUtRAttempt,
@@ -1339,9 +1337,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       return;
     }
 
-    const circuitAddrs = missingRelays
-      .filter((relay) => !relay.includes("/p2p-webrtc-star"))
-      .map((relay) => `${relay.replace(/\/+$/, "")}/p2p-circuit`);
+    const circuitAddrs = missingRelays.map((relay) => `${relay.replace(/\/+$/, "")}/p2p-circuit`);
     if (circuitAddrs.length === 0) return;
 
     this.relayReservationRunning = true;
@@ -1392,7 +1388,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   private relayDialAddresses(relays: string[]): string[] {
-    return relays.filter((addr) => !String(addr).includes("/p2p-webrtc-star"));
+    return relays;
   }
 
   private handleSelfReachabilityChanged(): void {
@@ -1582,7 +1578,7 @@ function isDirectConnectionTarget(target: string): boolean {
 }
 
 function isWebRTCConnectionAddress(addr: string): boolean {
-  return addr.includes("/webrtc") && !addr.includes("/p2p-webrtc-star");
+  return addr.includes("/webrtc");
 }
 
 function dedupeStrings(values: string[]): string[] {

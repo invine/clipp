@@ -12,12 +12,6 @@ export interface Clip {
   capturedAt: number;
   /** Immutable UTC sharing deadline in Unix milliseconds. */
   shareExpiresAt: number;
-  /** @deprecated Legacy transition fields; v1 capture never writes them. */
-  timestamp?: number;
-  /** @deprecated Legacy transition fields; v1 capture never writes them. */
-  senderId?: string;
-  /** @deprecated Legacy transition fields; v1 capture never writes them. */
-  expiresAt?: number;
 }
 
 export const DEFAULT_CLIP_SHARING_LIFETIME_MS = 24 * 60 * 60 * 1_000;

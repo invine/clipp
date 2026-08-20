@@ -12,12 +12,6 @@ export interface HistoryItem {
   liveHandled: boolean;
   /** Local-only retention exemption; never exchanged with a Clip. */
   pinned?: boolean;
-  /** @deprecated Legacy transition metadata; v1 storage never writes it. */
-  receivedFrom?: string;
-  /** @deprecated Legacy transition metadata; v1 storage never writes it. */
-  syncedAt?: number;
-  /** @deprecated Local/Remote is derived from originPeerId in v1. */
-  isLocal?: boolean;
 }
 
 /**
@@ -25,7 +19,7 @@ export interface HistoryItem {
  */
 export function validateHistoryItem(item: HistoryItem): boolean {
   return (
-    (typeof item.firstStoredAt === "number" || typeof item.syncedAt === "number") &&
-    (typeof item.liveHandled === "boolean" || typeof item.isLocal === "boolean")
+    typeof item.firstStoredAt === "number" &&
+    typeof item.liveHandled === "boolean"
   );
 }

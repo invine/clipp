@@ -37,28 +37,18 @@ import {
 import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
-import { createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
+import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation.js";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions.js";
-// TODO: remove webrtc-star
-// import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
 import * as log from "../../../packages/core/logger.js";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip.js";
-import {
-  deviceIdToPeerId,
-  deviceIdToPeerIdObject,
-  peerIdFromPrivateKeyBase64,
-} from "../../../packages/core/network/peerId.js";
+import { deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "../../../packages/core/network/peerId.js";
 import {
   createKVIdentityRepository,
-  createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
-  createTrustManager,
   IDENTITY_KEY,
-  TRUST_KEY,
-  type TrustedDevice
 } from "../../../packages/core/trust/index.js";
 
 const __dirnameFallback =
@@ -109,8 +99,6 @@ async function bootstrap() {
     repo: identityRepo,
     capabilities: RUNTIME_CAPABILITIES.electron,
   })
-  const trustRepo = createKVTrustedDeviceRepository({ storage: kvStore, key: TRUST_KEY })
-  const trust = createTrustManager({ trustRepo: trustRepo, identitySvc: identitySvc });
   // TODO: remove relayAddrEnv
   // const relayAddrEnv =
   //   process.env.CLIPP_RELAY_ADDR ||
@@ -157,7 +145,6 @@ async function bootstrap() {
     await window.loadFile(path.join(__dirnameFallback, "renderer", "index.html"));
     return;
   }
-  // const localIdentity = await ensureIdentityAddrs(await trust.getLocalIdentity());
   (log as any).info?.("Loaded identity", {
     deviceId: localIdentity.deviceId,
     hasPrivateKey: !!localIdentity.privateKey && localIdentity.privateKey.length > 20,
@@ -184,12 +171,12 @@ async function bootstrap() {
     enableDCUtR: true,
     enableTcp: true,
     signedPeerRecordPersistence,
-    isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
+    isPeerKnown: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "active",
     isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
   });
   let pairedConnections = createPairedPeerConnectionManager({
     transport,
-    getPairedPeers: () => trust.list(),
+    getPairedPeers: activeMemberReconnectPeers(identitySvc),
   });
   let liveClipGossip = createLiveClipGossip({
     transport,
@@ -234,37 +221,6 @@ async function bootstrap() {
     "clipp-purple-256.png",
   ].map((f) => path.join(iconBase, f));
 
-  // TODO: remove webrtc star
-  // async function ensureIdentityAddrs(id: any) {
-  //   // const peerId = await deviceIdToPeerId(id.deviceId);
-  //   const peerId = id.deviceId;
-  //
-  //   // Start from existing multiaddrs (if any) and ensure relay + webrtc addrs are present.
-  //   // TODO: remove webrtc star. Not read from here
-  //   const existing = Array.isArray(id?.multiaddrs) ? [...id.multiaddrs] : [];
-  //   const derived: string[] = [];
-  //   const relaySet = normalizeRelayAddrs(relayAddresses || []);
-  //   if (relaySet.length) {
-  //     relaySet.forEach((addr) => derived.push(`${addr}/p2p-circuit/p2p/${peerId}`));
-  //     // } else if (relayAddrEnv) {
-  //     // derived.push(`${relayAddrEnv}/p2p-circuit/p2p/${peerId}`);
-  //   }
-  //   // derived.push(...DEFAULT_WEBRTC_STAR_RELAYS.map((addr: string) => `${addr}/p2p/${peerId}`));
-  //
-  //   const merged = dedupeMultiaddrs([...derived, ...existing]);
-  //   const changed =
-  //     merged.length !== existing.length || merged.some((v, idx) => v !== existing[idx]) || !id.multiaddr;
-  //   id.multiaddrs = merged;
-  //   if (!id.multiaddr && merged[0]) {
-  //     id.multiaddr = merged[0];
-  //   }
-  //   if (changed) {
-  //     // Persist updated identity so QR pairing uses latest addresses.
-  //     await kvStore.set("localDeviceIdentity", id);
-  //   }
-  //   return id;
-  // }
-
   function dedupeMultiaddrs(values: string[]) {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -281,11 +237,11 @@ async function bootstrap() {
   }
 
   function isWebRTCDirectMultiaddr(addr: string): boolean {
-    return addr.includes("/webrtc") && !addr.includes("/p2p-webrtc-star");
+    return addr.includes("/webrtc");
   }
 
   function isRelayLikeMultiaddr(addr: string): boolean {
-    return addr.includes("/p2p-circuit") || addr.includes("/p2p-webrtc-star");
+    return addr.includes("/p2p-circuit");
   }
 
   function isSecureWebSocketMultiaddr(addr: string): boolean {
@@ -437,8 +393,7 @@ async function bootstrap() {
     onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
 
-  // TODO: why pendingRequests is part of the application and not part of trust manager?
-  let pendingRequests: TrustedDevice[] = [];
+  let pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const pairingSessions = createPairingRuntimeSessions({
     identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
@@ -448,7 +403,7 @@ async function bootstrap() {
       return privateKey.sign(bytes);
     },
     verify: verifyPairingTrustRequestSignature,
-    membership: trust,
+    membership: identitySvc,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
       const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
@@ -456,7 +411,7 @@ async function bootstrap() {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId) void identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
     onChanged: () => emitState(),
   });
@@ -471,7 +426,7 @@ async function bootstrap() {
 
   async function getState() {
     const clips = await history.exportAll();
-    const devices = await trust.list();
+    const devices = await identitySvc.activeDevices();
     const peers = transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
@@ -480,7 +435,6 @@ async function bootstrap() {
     return {
       clips,
       devices,
-      // TODO: why pendingRequests is part of the application and not part of trust manager?
       pending: pendingRequests,
       waiting: pairingSessions.waiting(),
       pairingErrors: pairingSessions.errors(),
@@ -600,26 +554,6 @@ async function bootstrap() {
     bindTransportHandlers(transport);
     await pairingPending?.start();
 
-    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
-    trust.on("approved", async (d: any) => {
-      pendingRequests = pendingRequests.filter(
-        (p) => p.deviceId !== d.deviceId
-      );
-      emitState();
-      void pairedConnections.reconnectNow();
-      (log as any).info("Device approved", d.deviceId);
-    });
-    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
-    trust.on("rejected", async (d: any) => {
-      pendingRequests = pendingRequests.filter(
-        (p) => p.deviceId !== d.deviceId
-      );
-      emitState();
-      (log as any).info("Device rejected", d.deviceId);
-    });
-    // TODO: Need to think how to move reusable part of this logic to core package instead of repeating it for different types of UI
-    trust.on("removed", () => emitState());
-
     clipboardSync.start();
   }
 
@@ -648,12 +582,12 @@ async function bootstrap() {
       enableDCUtR: true,
       enableTcp: true,
       signedPeerRecordPersistence,
-      isPeerKnown: (remotePeerId) => trust.isTrusted(remotePeerId),
+      isPeerKnown: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "active",
       isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
     });
     pairedConnections = createPairedPeerConnectionManager({
       transport,
-      getPairedPeers: () => trust.list(),
+      getPairedPeers: activeMemberReconnectPeers(identitySvc),
     });
     liveClipGossip = createLiveClipGossip({
       transport,
@@ -679,7 +613,6 @@ async function bootstrap() {
   async function updateRelayAddresses(addrs: string[]) {
     relayAddresses = normalizeRelayAddrs(addrs.filter(Boolean));
     await kvStore.set("relayAddresses", relayAddresses);
-    // await ensureIdentityAddrs(await trust.getLocalIdentity());
     await restartMessaging();
   }
 
@@ -1017,7 +950,7 @@ async function bootstrap() {
     lifecycle: runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
-    membership: trust,
+    membership: identitySvc,
     sendResponse: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
     responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
     connectionPath: (remotePeerId) => {
@@ -1026,10 +959,10 @@ async function bootstrap() {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void trust.isTrusted(diagnostic.authenticatedPeerId).then((trusted) => { if (!trusted) return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId) void identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
     },
     onChanged: async (requests) => {
-      pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName, publicKey: "", multiaddrs: [], createdAt: Number(request.expiresAtUnixMs) }));
+      pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName }));
       await emitState();
     },
   });
@@ -1090,7 +1023,6 @@ async function bootstrap() {
 
   ipcMain.handle("clipp:get-identity", async () => {
     const id = await identitySvc.get();
-    // const id = await ensureIdentityAddrs(await trust.getLocalIdentity());
     return toPublicDeviceIdentity(id);
   });
 
@@ -1158,12 +1090,13 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:unpair-device", async (_evt, id: string) => {
-    await trust.remove(id);
+    await identitySvc.revoke(id);
     await emitState();
   });
 
   ipcMain.handle("clipp:rename-device", async (_evt, payload: { id: string; name: string }) => {
-    const device = await trust.rename(payload.id, payload.name);
+    await identitySvc.setLocalDeviceAlias(payload.id, payload.name);
+    const device = (await identitySvc.activeDevices()).find((candidate) => candidate.deviceId === payload.id) ?? null;
     await emitState();
     return device;
   });
@@ -1187,11 +1120,6 @@ async function bootstrap() {
     async (_evt, payload: { accept: boolean; device: any }) => {
       const { accept, device } = payload;
       await pairingPending?.decide(device.deviceId, accept ? "accepted" : "rejected");
-      // if (accept) {
-      //   await trust.add(device);
-      // } else {
-      //   await trust.reject(device.deviceId);
-      // }
       await emitState();
     }
   );
@@ -1208,27 +1136,6 @@ async function bootstrap() {
       return { ok: false, error: "dial_failed" as const };
     }
   });
-
-  // TODO: confirm that share-now is not used
-  // ipcMain.handle("clipp:share-now", async () => {
-  //   await ensureMessagingStarted();
-  //   const text = clipboard.readText();
-  //   const id = await trust.getLocalIdentity();
-  //   const clip = normalizeClipboardContent(text, id.deviceId);
-  //   if (clip) {
-  //     await history.add(clip, id.deviceId, true);
-  //     const message = {
-  //       type: "CLIP" as const,
-  //       from: id.deviceId,
-  //       clip,
-  //       sentAt: Date.now(),
-  //     };
-  //     await clipMessaging.broadcast(message as any);
-  //     await emitState();
-  //     return { ok: true };
-  //   }
-  //   return { ok: false };
-  // });
 
   ipcMain.handle("clipp:open-qr-window", async () => {
     await ensureMessagingStarted();

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import type { TrustedDevice } from '../../../../packages/core/trust'
+type PendingRequest = { deviceId: string; deviceName: string }
 
 export const TrustPrompt = () => {
-  const [requests, setRequests] = useState<TrustedDevice[]>([])
+  const [requests, setRequests] = useState<PendingRequest[]>([])
 
   useEffect(() => {
     // @ts-ignore
@@ -11,7 +11,7 @@ export const TrustPrompt = () => {
     })
   }, [])
 
-  function respond(dev: TrustedDevice, accept: boolean) {
+  function respond(dev: PendingRequest, accept: boolean) {
     // @ts-ignore
     chrome.runtime.sendMessage({ type: 'respondTrust', id: dev.deviceId, accept, device: dev }, () => {
       setRequests((r) => r.filter((p) => p.deviceId !== dev.deviceId))

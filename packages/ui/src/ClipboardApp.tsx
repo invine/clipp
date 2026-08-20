@@ -406,7 +406,7 @@ export function ClipboardApp({
 
   const sources = useMemo(() => {
     const set = new Set<string>();
-    clips.forEach((c) => set.add(c.senderId));
+    clips.forEach((c) => set.add(c.originPeerId));
     if (identity) set.add(identity.deviceId);
     devices.forEach((d) => set.add(d.deviceId));
     return ["all", ...Array.from(set)];
@@ -417,25 +417,25 @@ export function ClipboardApp({
     const rangeMs = timeOptions.find((t) => t.value === timeFilter)?.ms;
     let list = clips
       .filter((c) => {
-        if (rangeMs) return c.timestamp >= now - rangeMs;
+        if (rangeMs) return c.capturedAt >= now - rangeMs;
         return true;
       })
       .filter((c) => {
         if (sourceFilter === "all") return true;
-        if (sourceFilter === "local" && identity) return c.senderId === identity.deviceId;
-        if (sourceFilter === "remote" && identity) return c.senderId !== identity.deviceId;
-        return c.senderId === sourceFilter;
+        if (sourceFilter === "local" && identity) return c.originPeerId === identity.deviceId;
+        if (sourceFilter === "remote" && identity) return c.originPeerId !== identity.deviceId;
+        return c.originPeerId === sourceFilter;
       })
       .filter((c) => {
         if (!search.trim()) return true;
-        const label = deviceNameMap.get(c.senderId) || c.senderId;
+        const label = deviceNameMap.get(c.originPeerId) || c.originPeerId;
         return (
           fuzzyMatch(c.content, search.trim()) ||
           fuzzyMatch(label, search.trim()) ||
-          fuzzyMatch(c.senderId, search.trim())
+          fuzzyMatch(c.originPeerId, search.trim())
         );
       })
-      .sort((a, b) => b.timestamp - a.timestamp);
+      .sort((a, b) => b.capturedAt - a.capturedAt);
 
     if (filterMode === "pinned") {
       list = list.filter((c) => pinnedSet.has(c.id));
@@ -1476,9 +1476,9 @@ export function ClipboardApp({
               </article>
             )}
             {filteredClips.map((clip) => {
-              const label = deviceNameMap.get(clip.senderId) || clip.senderId;
-              const timeLabel = formatTime(clip.timestamp);
-              const isLocal = clip.senderId === identity?.deviceId;
+              const label = deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
+              const timeLabel = formatTime(clip.capturedAt);
+              const isLocal = clip.originPeerId === identity?.deviceId;
               const pinned = pinnedSet.has(clip.id);
               const pinIconName = pinned ? "keep" : "push_pin";
               return (
@@ -1549,7 +1549,7 @@ export function ClipboardApp({
                         </span>
                         <span className="meta-time">{timeLabel}</span>
                       </div>
-                      <div className="meta-bottom-line">Text</div>
+                      <div className="meta-bottom-line">{clip.type === "url" ? "URL" : "Text"}</div>
                     </div>
                     <div className="meta-actions">
                       <button className="mini-button" onClick={() => reuseClip(clip.id)}>

@@ -2,11 +2,12 @@ import React from "react";
 
 export type ShareButtonProps = {
   clip: {
-    type: string;
+    type: "text" | "url";
     content: string;
     id: string;
-    timestamp: number;
-    senderId: string;
+    originPeerId: string;
+    capturedAt: number;
+    shareExpiresAt: number;
   } | null;
   onShare: () => void;
   disabled?: boolean;

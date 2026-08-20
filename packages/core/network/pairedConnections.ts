@@ -22,6 +22,13 @@ export type PairedPeerConnectionManagerOptions = {
   intervalMs?: number;
 };
 
+/** Adapts the membership-owned Active Device list to reconnect targets. */
+export function activeMemberReconnectPeers(
+  membership: Pick<import("../trust/identity.js").IdentityManager, "activeDevices">
+): () => Promise<PairedPeer[]> {
+  return async () => (await membership.activeDevices()).map(({ deviceId }) => ({ deviceId }));
+}
+
 export function createPairedPeerConnectionManager(
   options: PairedPeerConnectionManagerOptions
 ): PairedPeerConnectionManager {
@@ -166,8 +173,8 @@ function targetDialPriority(target: string): number {
 
 function targetPath(target: string): "direct" | "relay" | "unknown" {
   if (!target) return "unknown";
-  if (target.includes("/webrtc") && !target.includes("/p2p-webrtc-star")) return "direct";
-  if (target.includes("/p2p-circuit") || target.includes("/p2p-webrtc-star")) return "relay";
+  if (target.includes("/webrtc")) return "direct";
+  if (target.includes("/p2p-circuit")) return "relay";
   if (target.startsWith("/")) return "direct";
   return "unknown";
 }

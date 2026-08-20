@@ -64,8 +64,6 @@ Electron is the most complete runtime and is usually the best reference implemen
 - `npm --workspace apps/android run build`
 - `npm --workspace apps/extension run build`
 - `npm run relay:websocket`
-- `npm run relay:probe`
-- `npm run probe:direct`
 
 Electron dev uses two processes. Start the renderer first on `http://localhost:4173`, then launch `dev:electron`.
 
@@ -79,8 +77,8 @@ Electron dev uses two processes. Start the renderer first on `http://localhost:4
 
 - Clipboard normalization or watcher behavior: `packages/core/clipboard/`
 - Sync flow for local vs remote clips: `packages/core/sync/clipboardSync.ts`
-- Trust requests, identity, or trusted-device persistence: `packages/core/trust/`
-- Pairing payloads and QR encoding: `packages/core/pairing/` and `packages/core/qr/`
+- Device identity, Membership Views, and local presentation metadata: `packages/core/trust/`
+- Pairing protobufs and Pairing Target v2 encoding: `packages/core/pairing/`
 - Libp2p transport or relay behavior: `packages/core/network/`
 - Shared app UI: `packages/ui/src/ClipboardApp.tsx`
 - Electron IPC surface: `apps/electron/src/preload.ts` and `apps/electron/src/main.ts`
@@ -108,7 +106,6 @@ Electron dev uses two processes. Start the renderer first on `http://localhost:4
 - [`docs/diagrams/electron-architecture.puml`](docs/diagrams/electron-architecture.puml)
 - [`packages/core/clipboard/README.md`](packages/core/clipboard/README.md)
 - [`packages/core/trust/README.md`](packages/core/trust/README.md)
-- [`packages/core/qr/README.md`](packages/core/qr/README.md)
 
 ## Agent skills
 

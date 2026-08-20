@@ -72,8 +72,6 @@ describe("Echo prevention", () => {
       originPeerId: "android",
       capturedAt: 1,
       shareExpiresAt: 86_400_001,
-      timestamp: 1,
-      senderId: "android",
     });
 
     jest.advanceTimersByTime(1000);

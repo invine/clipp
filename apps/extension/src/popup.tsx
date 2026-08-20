@@ -123,7 +123,7 @@ const Popup = () => {
   }
 
   function refreshDevices() {
-    chrome.runtime.sendMessage({ type: "getTrustedDevices" }, (resp) => {
+    chrome.runtime.sendMessage({ type: "getActiveDevices" }, (resp) => {
       setDevices(resp?.devices || []);
     });
   }

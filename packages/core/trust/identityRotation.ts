@@ -4,7 +4,7 @@ import {
   isHistoryItem,
   type HistoryStorageBackend,
 } from "../history/types";
-import { TRUST_KEY, type KVStorageBackend } from "./storage";
+import { type KVStorageBackend } from "./storage";
 import {
   generateIdentityKeyMaterial,
   type DeviceIdentity,
@@ -57,7 +57,8 @@ export type IdentityRotationCommitter = {
 };
 
 export const IDENTITY_ROTATION_SCOPED_STORAGE_KEYS = [
-  TRUST_KEY,
+  // Legacy data is intentionally discarded on rotation; v1 has no migration.
+  "trustedDevices",
   "signedPeerRecords",
   "pairingPendingRequests",
   "runtimeApplicationState",

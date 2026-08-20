@@ -1,9 +1,10 @@
 export type Clip = {
   id: string;
-  type: string;
+  type: "text" | "url";
   content: string;
-  timestamp: number;
-  senderId: string;
+  originPeerId: string;
+  capturedAt: number;
+  shareExpiresAt: number;
 };
 
 export type Device = {
@@ -11,19 +12,11 @@ export type Device = {
   deviceName: string;
   displayName?: string;
   localAlias?: string;
-  publicKey: string;
-  createdAt: number;
-  multiaddr?: string;
-  multiaddrs?: string[];
 };
 
 export type Identity = {
   deviceId: string;
   deviceName: string;
-  publicKey: string;
-  createdAt: number;
-  multiaddr?: string;
-  multiaddrs?: string[];
 };
 
 export type PendingRequest = Device;

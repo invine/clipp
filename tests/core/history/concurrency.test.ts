@@ -3,14 +3,14 @@ import { Clip } from "../../../packages/core/models/Clip";
 
 
 describe("History concurrency", () => {
-  it("handles concurrent adds", async () => {
+  it("handles concurrent atomic acceptance", async () => {
     const store = new MemoryHistoryStore();
     jest.useFakeTimers();
-    const adds: Promise<void>[] = [];
+    const adds: Promise<unknown>[] = [];
     const now = Date.now();
     for (let i = 0; i < 100; i++) {
-      const clip: Clip = { id: `c${i}`, type: "text", content: "x", originPeerId: "me", capturedAt: now + i, shareExpiresAt: now + 86_400_000, timestamp: now + i, senderId: "me" };
-      adds.push(store.add(clip, "me", true));
+      const clip: Clip = { id: `c${i}`, type: "text", content: "x", originPeerId: "me", capturedAt: now + i, shareExpiresAt: now + 86_400_000 };
+      adds.push(store.accept(clip, { liveHandled: true, admissionPriority: true }));
     }
     jest.runAllTimers();
     await Promise.all(adds);

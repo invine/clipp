@@ -19,7 +19,6 @@ export const DEFAULT_CLOCK_SKEW_ALLOWANCE_MS = 2 * 60 * 1000;
 
 export interface ClipHistoryStore {
   accept(clip: Clip, options?: HistoryAcceptanceOptions): Promise<HistoryAcceptance>;
-  add(clip: Clip, source: string, isLocal: boolean): Promise<void>;
   getById(id: string): Promise<HistoryItem | null>;
   query(opts?: { type?: Clip["type"]; search?: string; since?: number; limit?: number }): Promise<HistoryItem[]>;
   exportAll(): Promise<Clip[]>;
@@ -113,11 +112,6 @@ export class MemoryHistoryStore implements ClipHistoryStore {
     const next = this.queue.then(operation, operation);
     this.queue = next.then(() => undefined, () => undefined);
     return next;
-  }
-
-  async add(clip: Clip, source: string, isLocal: boolean): Promise<void> {
-    void source;
-    await this.accept(clip, { liveHandled: isLocal, admissionPriority: isLocal });
   }
 
   async accept(clip: Clip, options: HistoryAcceptanceOptions = {}): Promise<HistoryAcceptance> {

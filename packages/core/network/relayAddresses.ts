@@ -31,7 +31,7 @@ export function repairRelayAddress(value: string): string | null {
 export function normalizeRelayAddresses(values: unknown[]): string[] {
   const cleaned = values
     .map((value) => (typeof value === "string" ? value.trim() : ""))
-    .filter(Boolean);
+    .filter((value) => value && !value.includes("/p2p-webrtc-star"));
   const unique = dedupeMultiaddrs(cleaned);
   const valid: string[] = [];
 
