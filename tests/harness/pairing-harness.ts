@@ -8,7 +8,10 @@ import type { PrivateKey } from "@libp2p/interface";
 import { peerIdFromPrivateKey } from "@libp2p/peer-id";
 import { createLibp2pMessagingTransport } from "../../packages/core/network/engine.ts";
 import { createPairedPeerConnectionManager } from "../../packages/core/network/pairedConnections.ts";
-import type { SignedPeerRecordPersistence } from "../../packages/core/network/peerRecords.ts";
+import {
+  verifiedSignedPeerRecordMultiaddrs,
+  type SignedPeerRecordPersistence,
+} from "../../packages/core/network/peerRecords.ts";
 import { createLiveClipGossip } from "../../packages/core/sync/liveClipGossip.ts";
 import { createHistoryReconciliation } from "../../packages/core/sync/historyReconciliation.ts";
 import { createClipboardSyncManager } from "../../packages/core/sync/clipboardSync.ts";
@@ -324,6 +327,7 @@ type OfflineMobileState = {
   history: MemoryHistoryStore;
   clipboardWrites: string[];
   missedClip: Clip;
+  staleDesktopRecord: Uint8Array;
 };
 
 type HarnessRelay = Awaited<ReturnType<typeof startWebsocketRelay>>;
@@ -390,12 +394,15 @@ async function takeMobileOffline(
     !desktop.transport.getConnectedPeers().includes(mobile.peerId),
     "expired reachability must not create a connection",
   );
+  const staleDesktopRecord = await desktop.transport.getSignedPeerRecordFor?.(mobile.peerId);
+  assert(staleDesktopRecord, "Desktop must retain the prior Mobile record until exact refresh succeeds");
 
   const state = {
     identity: mobile.identity,
     history: mobile.history,
     clipboardWrites: mobile.clipboardWrites,
     missedClip,
+    staleDesktopRecord,
   };
   await stopPeer(mobile);
   const mobilePeerId = peerIdFromPrivateKey(mobile.privateKey);
@@ -435,7 +442,12 @@ async function restartMobile(options: {
   await waitUntil("refreshed Signed Peer Record", async () => {
     await options.desktop.transport.refreshPeerRecord?.(mobile.peerId);
     const refreshed = await options.desktop.transport.getSignedPeerRecordFor?.(mobile.peerId);
-    return Boolean(refreshed && sameBytes(refreshed, restartedRecord));
+    if (!refreshed || sameBytes(refreshed, options.prior.staleDesktopRecord)) return false;
+    const refreshedAddrs = await verifiedSignedPeerRecordMultiaddrs(refreshed, mobile.peerId);
+    return refreshedAddrs.some((address) =>
+      address.startsWith(`${options.relayAddress}/p2p-circuit`) &&
+      address.endsWith(`/p2p/${mobile.peerId}`)
+    );
   });
   return mobile;
 }
