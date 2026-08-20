@@ -4,8 +4,13 @@ import {
   HistoryMutationResult,
   HistoryStorageBackend,
 } from "../../../packages/core/history/types";
-// import type { StorageBackend } from "../../../packages/core/trust";
-import type { KVStorageBackend } from "../../../packages/core/trust"
+import {
+  IDENTITY_ROTATION_NOTICE_KEY,
+  IDENTITY_ROTATION_SCOPED_STORAGE_KEYS,
+  type IdentityRepository,
+  type IdentityRotationCommitter,
+  type KVStorageBackend,
+} from "../../../packages/core/trust"
 import Database from "better-sqlite3";
 
 type DB = any;
@@ -118,4 +123,39 @@ export class SQLiteHistoryBackend implements HistoryStorageBackend {
       return plan.result;
     })(input);
   }
+}
+
+export function createSQLiteIdentityRotationCommitter(options: {
+  db: DB;
+  repository: IdentityRepository;
+  identityKey: string;
+}): IdentityRotationCommitter {
+  return {
+    async prepare(id) {
+      return { id, identity: await options.repository.get(), storageEntries: [] };
+    },
+    async commit(candidate, notice) {
+      const candidatePayload = JSON.stringify(candidate);
+      const noticePayload = JSON.stringify(notice);
+      options.db.transaction(() => {
+        options.db.prepare("DELETE FROM history").run();
+        for (const key of IDENTITY_ROTATION_SCOPED_STORAGE_KEYS) {
+          options.db.prepare("DELETE FROM kv WHERE key = ?").run(key);
+        }
+        options.db.prepare("DELETE FROM kv WHERE key = ?").run(`${options.identityKey}:initializationError`);
+        options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
+          .run(IDENTITY_ROTATION_NOTICE_KEY, noticePayload);
+        // The new identity is activated in the same SQLite transaction after
+        // every identity-scoped record has been removed.
+        options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
+          .run(options.identityKey, candidatePayload);
+      })();
+    },
+    async rollback() {
+      // SQLite rolls a failed or interrupted transaction back atomically.
+    },
+    async finalize() {
+      // No staged history records exist outside the SQLite transaction.
+    },
+  };
 }

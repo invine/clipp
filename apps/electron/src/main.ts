@@ -12,6 +12,7 @@ import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator 
 import "./libp2pGlobals.js";
 import {
   openDatabase,
+  createSQLiteIdentityRotationCommitter,
   SQLiteHistoryBackend,
   SQLiteKVStore,
 } from "./storage.js";
@@ -53,7 +54,6 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
-  createIdentityRotationCommitter,
   IDENTITY_KEY,
   TRUST_KEY,
   type TrustedDevice
@@ -95,10 +95,10 @@ async function bootstrap() {
     storage: kvStore,
     capabilities: RUNTIME_CAPABILITIES.electron,
     shutdown: () => stopIdentityBoundServicesForRotation(),
-    committer: createIdentityRotationCommitter({
+    committer: createSQLiteIdentityRotationCommitter({
+      db,
       repository: identityRepo,
-      storage: kvStore,
-      history: historyBackend,
+      identityKey: IDENTITY_KEY,
     }),
   });
   let identityRotationRecovery = false;
@@ -944,8 +944,8 @@ async function bootstrap() {
     membershipReconciler.stop();
     await pairingSessions.stop();
     await pairingPending?.stop();
-    clipboardSync.stop();
-    historyReconciliation.stop();
+    await clipboardSync.stop();
+    await historyReconciliation.stop();
     const reconnectsStopped = pairedConnections.stop();
     await runtimeNetwork.stop();
     await reconnectsStopped;
