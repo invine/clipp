@@ -27,6 +27,7 @@ const mockTransportManagerGetListeners = jest.fn<any[], any[]>(() => []);
 const mockRegisterOnRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
 const mockLookupRendezvousPeer = jest.fn<Promise<any[]>, any[]>(async () => []);
 const mockUnregisterFromRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
+const mockConsumePeerRecord = jest.fn<Promise<boolean>, any[]>(async () => true);
 
 jest.mock("../../../packages/core/network/node", () => ({
   createClipboardNode: jest.fn(async () => ({
@@ -50,7 +51,11 @@ jest.mock("../../../packages/core/network/node", () => ({
       [Symbol.asyncIterator]: async function* () {},
     })),
     peerId: { toString: () => "mock-peer" },
-    peerStore: { get: jest.fn(async () => ({ peerRecordEnvelope: Uint8Array.of(1, 2, 3) })) },
+    peerStore: {
+      get: jest.fn(async () => ({ peerRecordEnvelope: Uint8Array.of(1, 2, 3) })),
+      consumePeerRecord: mockConsumePeerRecord,
+      delete: jest.fn(async () => undefined),
+    },
     components: {
       transportManager: {
         listen: mockTransportManagerListen,
@@ -84,6 +89,7 @@ describe("Libp2pMessagingTransport", () => {
     mockSelfMultiaddrs = ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"];
     mockTransportManagerListen.mockResolvedValue(undefined);
     mockTransportManagerGetListeners.mockReturnValue([]);
+    mockConsumePeerRecord.mockResolvedValue(true);
     jest.clearAllMocks();
   });
 
@@ -93,11 +99,68 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("refuses to restore reachability for a revoked Peer ID", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerRevoked: async () => true });
+    const signedPeerRecordPersistence = {
+      load: jest.fn(async () => ({ "revoked-peer": Uint8Array.of(1) })),
+      save: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const transport = createLibp2pMessagingTransport({
+      isPeerRevoked: async () => true,
+      signedPeerRecordPersistence,
+    });
     await transport.start();
 
+    expect(mockConsumePeerRecord).not.toHaveBeenCalled();
+    expect(signedPeerRecordPersistence.remove).toHaveBeenCalledWith("revoked-peer");
+    const node = await createClipboardNode.mock.results[0].value;
+    expect(node.peerStore.delete).toHaveBeenCalledWith(expect.objectContaining({
+      toString: expect.any(Function),
+    }));
     await expect(transport.importSignedPeerRecord?.("revoked-peer", Uint8Array.of(1))).rejects.toThrow("revoked_peer");
     await expect(transport.refreshPeerRecord?.("revoked-peer")).rejects.toThrow("revoked_peer");
+  });
+
+  it("reports reachability cleanup failure so revocation enforcement can retry", async () => {
+    const signedPeerRecordPersistence = {
+      load: jest.fn(async () => ({})),
+      save: jest.fn(async () => undefined),
+      remove: jest.fn()
+        .mockRejectedValueOnce(new Error("storage_failed"))
+        .mockResolvedValueOnce(undefined),
+    };
+    const transport = createLibp2pMessagingTransport({ signedPeerRecordPersistence });
+
+    await expect(transport.forgetPeer?.("revoked-peer")).rejects.toThrow("storage_failed");
+    await expect(transport.forgetPeer?.("revoked-peer")).resolves.toBeUndefined();
+
+    expect(signedPeerRecordPersistence.remove).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not persist a Signed Peer Record that becomes revoked during verification", async () => {
+    let revoked = false;
+    let finishVerification: ((accepted: boolean) => void) | undefined;
+    mockConsumePeerRecord.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      finishVerification = resolve;
+    }));
+    const signedPeerRecordPersistence = {
+      load: jest.fn(async () => ({})),
+      save: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const transport = createLibp2pMessagingTransport({
+      isPeerRevoked: async () => revoked,
+      signedPeerRecordPersistence,
+    });
+    await transport.start();
+
+    const importing = transport.importSignedPeerRecord?.("revoked-peer", Uint8Array.of(9));
+    await Promise.resolve();
+    revoked = true;
+    await transport.forgetPeer?.("revoked-peer");
+    finishVerification?.(true);
+
+    await expect(importing).rejects.toThrow("revoked_peer");
+    expect(signedPeerRecordPersistence.save).not.toHaveBeenCalled();
   });
 
   it("start and stop are idempotent", async () => {

@@ -68,7 +68,7 @@ export function createIdentityManager(options: {
 }): IdentityManager {
   const clock = options.now ?? Date.now;
   const initialDeviceName = options.initialDeviceName;
-  const generateKeyMaterial = options.generateKeyMaterial ?? createLibp2pIdentity;
+  const generateKeyMaterial = options.generateKeyMaterial ?? generateIdentityKeyMaterial;
   const deriveKeyMaterial = options.deriveKeyMaterial ?? deriveFromPrivateKey;
   let identity: DeviceIdentity | undefined;
   let initialization: Promise<DeviceIdentity> | undefined;
@@ -292,7 +292,7 @@ function sameMembershipView(left: MembershipView | undefined, right: MembershipV
   );
 }
 
-async function createLibp2pIdentity(): Promise<IdentityKeyMaterial> {
+export async function generateIdentityKeyMaterial(): Promise<IdentityKeyMaterial> {
   const { generateKeyPair, privateKeyToProtobuf } = await import("@libp2p/crypto/keys");
   const key = await generateKeyPair("Ed25519");
   const privateKey = Buffer.from(privateKeyToProtobuf(key)).toString("base64");

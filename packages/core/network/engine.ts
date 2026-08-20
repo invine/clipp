@@ -91,6 +91,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private cachedSignedPeerRecordMultiaddrsKey: string | null = null;
   private selfPeerRecordDirty = false;
   private readonly persistedPeerRecords = new Map<string, Uint8Array>();
+  private readonly forgottenPeerIds = new Set<string>();
   private peerRecordWrite: Promise<void> = Promise.resolve();
 
   private readonly handlersByProtocol = new Map<string, MessageHandler[]>();
@@ -636,23 +637,41 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async importSignedPeerRecord(expectedPeerId: string, record: Uint8Array): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
-    if (await this.opts.isPeerRevoked?.(expectedPeerId)) throw new Error("revoked_peer");
+    if (this.forgottenPeerIds.has(expectedPeerId) || await this.opts.isPeerRevoked?.(expectedPeerId)) {
+      throw new Error("revoked_peer");
+    }
     const peerId = await peerIdObjectForTarget(expectedPeerId);
     const imported = await consumeOrMatchSignedPeerRecord(this.node.peerStore, peerId, record);
     if (imported !== true) throw new Error("invalid_signed_peer_record");
+    if (this.forgottenPeerIds.has(expectedPeerId) || await this.opts.isPeerRevoked?.(expectedPeerId)) {
+      await this.forgetPeer(expectedPeerId).catch(() => undefined);
+      throw new Error("revoked_peer");
+    }
     await this.persistPeerRecord(expectedPeerId, record);
   }
 
   async forgetPeer(peerId: string): Promise<void> {
+    this.forgottenPeerIds.add(peerId);
     this.persistedPeerRecords.delete(peerId);
     const write = async () => {
-      await this.opts.signedPeerRecordPersistence?.remove(peerId).catch(() => undefined);
+      await this.opts.signedPeerRecordPersistence?.remove(peerId);
     };
     this.peerRecordWrite = this.peerRecordWrite.then(write, write);
-    await this.peerRecordWrite;
-    if (!this.node || !this.started) return;
-    const peerIdObject = await peerIdObjectForTarget(peerId);
-    await this.node.peerStore?.delete?.(peerIdObject).catch(() => undefined);
+    const persistenceResult = await this.peerRecordWrite.then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    let peerStoreResult: { ok: true } | { ok: false; error: unknown } = { ok: true };
+    if (this.node && this.started) {
+      try {
+        const peerIdObject = await peerIdObjectForTarget(peerId);
+        await this.node.peerStore?.delete?.(peerIdObject);
+      } catch (error) {
+        peerStoreResult = { ok: false, error };
+      }
+    }
+    if (!persistenceResult.ok) throw persistenceResult.error;
+    if (!peerStoreResult.ok) throw peerStoreResult.error;
   }
 
   private async restorePeerRecords(): Promise<void> {
@@ -664,6 +683,17 @@ class Libp2pMessagingTransport implements MessagingTransport {
       // Self records describe runtime reachability and must be regenerated from
       // the current listeners instead of restoring addresses from a prior run.
       if (peerId === selfPeerId) continue;
+      if (await this.opts.isPeerRevoked?.(peerId)) {
+        this.forgottenPeerIds.add(peerId);
+        const peerIdObject = await peerIdObjectForTarget(peerId).catch(() => undefined);
+        await Promise.allSettled([
+          this.opts.signedPeerRecordPersistence?.remove(peerId) ?? Promise.resolve(),
+          peerIdObject
+            ? this.node?.peerStore?.delete?.(peerIdObject) ?? Promise.resolve()
+            : Promise.resolve(),
+        ]);
+        continue;
+      }
       if (!(storedRecord instanceof Uint8Array) || storedRecord.length === 0) continue;
       const record = Uint8Array.from(storedRecord);
       try {

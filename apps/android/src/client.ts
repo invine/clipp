@@ -5,6 +5,7 @@ import {
   createAndroidRuntimeAdapter,
   createAutoSyncPreference,
   createRuntimeIdentityManager,
+  createRuntimeIdentityRotationCoordinator,
   createRuntimeClipboardService,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
@@ -38,6 +39,7 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
+  createIdentityScopedStateCleanup,
   IDENTITY_KEY,
   TRUST_KEY,
   type TrustedDevice,
@@ -258,8 +260,19 @@ function serializeLogPayload(data: unknown): string {
 export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
   private readonly autoSyncPreference = createAutoSyncPreference({ storage: this.storage });
-  private readonly history = new MemoryHistoryStore(createHistoryBackend());
+  private readonly historyBackend = createHistoryBackend();
+  private readonly history = new MemoryHistoryStore(this.historyBackend);
   private readonly identityRepo = createKVIdentityRepository({ storage: this.storage, key: IDENTITY_KEY });
+  private readonly identityRotation = createRuntimeIdentityRotationCoordinator({
+    repository: this.identityRepo,
+    storage: this.storage,
+    capabilities: RUNTIME_CAPABILITIES.android,
+    shutdown: () => this.stopServices(),
+    clearIdentityScopedState: createIdentityScopedStateCleanup({
+      storage: this.storage,
+      history: this.historyBackend,
+    }),
+  });
   private readonly identitySvc = createRuntimeIdentityManager({
     repo: this.identityRepo,
     capabilities: RUNTIME_CAPABILITIES.android,
@@ -341,16 +354,9 @@ export class AndroidClient {
       transport: this.transport,
       identity: this.identitySvc,
       ...createMembershipPeerRecordBridge({ transport: this.transport, identity: this.identitySvc }),
-      onPeerRevoked: async (peerId) => {
-        await Promise.allSettled([
-          this.transport?.forgetPeer?.(peerId),
-          this.transport?.disconnect?.(peerId),
-        ]);
-      },
       onLocalRevoked: async () => {
-        this.pairedConnections?.stop();
-        this.historyReconciliation?.stop();
-        await this.transport?.stop();
+        await this.identityRotation.rotate("revoked");
+        window.location.reload();
       },
       onChanged: () => this.emitState(),
     });
@@ -679,6 +685,11 @@ export class AndroidClient {
     if (this.started) return;
     await startIdentityBoundRuntimeServices({
       initializeIdentity: async () => {
+        const rotation = await this.identityRotation.recoverOrRotate();
+        if (rotation.rotated) {
+          window.location.reload();
+          throw new Error("identity_rotated_restart_required");
+        }
         await this.identitySvc.get();
       },
       startLocalServices: async () => {
@@ -742,6 +753,7 @@ export class AndroidClient {
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
     await this.pairingSessions.stop();
+    await this.pairingPending.stop();
     this.clipboardSync.stop();
     this.historyReconciliation?.stop();
     this.historyReconciliation = null;

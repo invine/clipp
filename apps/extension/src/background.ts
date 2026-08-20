@@ -19,6 +19,7 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
+  createIdentityScopedStateCleanup,
   IDENTITY_KEY,
   TRUST_KEY,
   TrustedDevice,
@@ -28,6 +29,7 @@ import {
   createChromeExtensionRuntimeAdapter,
   createAutoSyncPreference,
   createRuntimeIdentityManager,
+  createRuntimeIdentityRotationCoordinator,
   createRuntimeClipboardService,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
@@ -136,6 +138,20 @@ async function ensureOffscreenDocument(): Promise<void> {
       throw err;
     }
   }
+}
+
+async function stopOffscreenDocument(): Promise<void> {
+  const offscreen = chrome.offscreen as typeof chrome.offscreen & {
+    hasDocument?(): Promise<boolean>;
+    closeDocument?(): Promise<void>;
+  };
+  if (!offscreen) return;
+  const hasDocument = offscreen.hasDocument ? await offscreen.hasDocument() : true;
+  if (!hasDocument) return;
+  await new Promise<void>((resolve) => {
+    chrome.runtime.sendMessage({ target: "offscreen", action: "shutdown" }, () => resolve());
+  });
+  await offscreen.closeDocument?.();
 }
 
 async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
@@ -306,7 +322,7 @@ const extensionNetwork: StreamingMessagingTransport = {
     await offscreenReady;
   },
   async stop() {
-    // The offscreen document remains available across service-worker suspension.
+    await stopOffscreenDocument();
   },
   async send(protocol, target, data) {
     await offscreenReady;
@@ -375,19 +391,34 @@ const historyReconciliation = createHistoryReconciliation({
   autoSync,
 });
 const notificationSelection = createRuntimeNotificationSelection();
-const membershipReconciler = createMembershipReconciler({
+let membershipReconciler: ReturnType<typeof createMembershipReconciler>;
+const identityRotation = createRuntimeIdentityRotationCoordinator({
+  repository: identityRepo,
+  storage,
+  capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  shutdown: async () => {
+    historyRetentionCleanup?.stop();
+    historyRetentionCleanup = undefined;
+    await historyPolicyReady;
+    membershipReconciler?.stop();
+    await pairingSessions.stop();
+    await pairingPending.stop();
+    clipboardSync.stop();
+    historyReconciliation.stop();
+    await extensionNetwork.stop();
+  },
+  clearIdentityScopedState: createIdentityScopedStateCleanup({
+    storage,
+    history: historyBackend,
+  }),
+});
+membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,
   identity: identitySvc,
   ...createMembershipPeerRecordBridge({ transport: extensionNetwork, identity: identitySvc }),
-  onPeerRevoked: async (peerId) => {
-    await Promise.allSettled([
-      extensionNetwork.forgetPeer?.(peerId),
-      extensionNetwork.disconnect?.(peerId),
-    ]);
-  },
   onLocalRevoked: async () => {
-    historyReconciliation.stop();
-    await Promise.allSettled(extensionNetwork.getConnectedPeers().map((peerId) => extensionNetwork.disconnect?.(peerId)));
+    await identityRotation.rotate("revoked");
+    chrome.runtime.reload();
   },
   onChanged: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
 });
@@ -502,6 +533,11 @@ const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
   start: () => startIdentityBoundRuntimeServices({
     initializeIdentity: async () => {
+      const rotation = await identityRotation.recoverOrRotate();
+      if (rotation.rotated) {
+        chrome.runtime.reload();
+        throw new Error("identity_rotated_restart_required");
+      }
       await identitySvc.get();
     },
     startLocalServices: async () => {

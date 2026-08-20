@@ -46,7 +46,7 @@ function membershipFrame(fields: Uint8Array[]): Uint8Array {
 }
 
 async function settleAsyncWork(): Promise<void> {
-  for (let index = 0; index < 10; index += 1) await Promise.resolve();
+  for (let index = 0; index < 25; index += 1) await Promise.resolve();
 }
 
 function identity(peerId: string, admitted = [peerId]): MembershipReconciliationIdentity {
@@ -79,7 +79,10 @@ function identity(peerId: string, admitted = [peerId]): MembershipReconciliation
 function network() {
   const handlers = new Map<string, (from: string, frame: Uint8Array) => void>();
   const sent: Array<{ from: string; to: string; protocol: string; frame: Uint8Array }> = [];
+  const forgotten: Array<{ from: string; peerId: string }> = [];
+  const disconnected: Array<{ from: string; peerId: string }> = [];
   let pendingSendFailures = 0;
+  let pendingForgetFailures = 0;
   const connected = new Map<string, Set<string>>();
   const connectedHandlers = new Map<string, Set<(peerId: string) => void>>();
   function endpoint(peerId: string): MessagingTransport {
@@ -87,6 +90,16 @@ function network() {
       start: async () => undefined,
       stop: async () => undefined,
       connect: async () => undefined,
+      disconnect: async (targetPeerId) => {
+        disconnected.push({ from: peerId, peerId: targetPeerId });
+      },
+      forgetPeer: async (targetPeerId) => {
+        if (pendingForgetFailures > 0) {
+          pendingForgetFailures -= 1;
+          throw new Error("forget_failed");
+        }
+        forgotten.push({ from: peerId, peerId: targetPeerId });
+      },
       send: async (protocol: string, target: string, frame: Uint8Array) => {
         if (pendingSendFailures > 0) {
           pendingSendFailures -= 1;
@@ -124,9 +137,12 @@ function network() {
   return {
     endpoint,
     sent,
+    forgotten,
+    disconnected,
     setConnected,
     connect,
     failNextSend: () => { pendingSendFailures += 1; },
+    failNextForget: () => { pendingForgetFailures += 1; },
   };
 }
 
@@ -351,6 +367,121 @@ describe("Membership Reconciliation", () => {
     await expect(reconcileInOrder([revocation, admission])).resolves.toEqual(expected);
   });
 
+  it("keeps both concurrent revocations when each authorized sender is revoked in flight", async () => {
+    const wired = network();
+    const persistedIdentity = identity(alice, [alice, bob, charlie]);
+    let mergeArrivals = 0;
+    let releaseMerges: (() => void) | undefined;
+    const bothMergesArrived = new Promise<void>((resolve) => { releaseMerges = resolve; });
+    const concurrentIdentity: MembershipReconciliationIdentity = {
+      ...persistedIdentity,
+      mergeMembershipView: async (view) => {
+        mergeArrivals += 1;
+        if (mergeArrivals === 2) releaseMerges?.();
+        await bothMergesArrived;
+        return persistedIdentity.mergeMembershipView(view);
+      },
+    };
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: concurrentIdentity,
+    });
+
+    await Promise.all([
+      reconciler.receive(bob, encodeMembershipFrame({
+        admittedPeerIds: [alice, bob, charlie],
+        revokedPeerIds: [charlie],
+      })),
+      reconciler.receive(charlie, encodeMembershipFrame({
+        admittedPeerIds: [alice, bob, charlie],
+        revokedPeerIds: [bob],
+      })),
+    ]);
+
+    await expect(persistedIdentity.membershipView()).resolves.toEqual({
+      admittedPeerIds: [bob, alice, charlie],
+      revokedPeerIds: [bob, charlie],
+    });
+  });
+
+  it("does not accept reconciliation from mutually revoked peers", async () => {
+    const wired = network();
+    const aliceIdentity = identity(alice, [alice, bob]);
+    const bobIdentity = identity(bob, [alice, bob]);
+    await aliceIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [bob] });
+    await bobIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [alice] });
+    const aliceReconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+    });
+    const bobReconciler = createMembershipReconciler({
+      transport: wired.endpoint(bob),
+      identity: bobIdentity,
+    });
+    aliceReconciler.start();
+    bobReconciler.start();
+    await settleAsyncWork();
+
+    wired.connect(alice, bob);
+    await settleAsyncWork();
+
+    await expect(aliceIdentity.membershipView()).resolves.toEqual({
+      admittedPeerIds: [bob, alice],
+      revokedPeerIds: [bob],
+    });
+    await expect(bobIdentity.membershipView()).resolves.toEqual({
+      admittedPeerIds: [bob, alice],
+      revokedPeerIds: [alice],
+    });
+    expect(wired.disconnected).toEqual(expect.arrayContaining([
+      { from: alice, peerId: bob },
+      { from: bob, peerId: alice },
+    ]));
+  });
+
+  it("repairs an offline recipient with the full revocation view on reconnection", async () => {
+    const wired = network();
+    const aliceIdentity = identity(alice, [alice, bob, charlie]);
+    const bobIdentity = identity(bob, [alice, bob, charlie]);
+    await aliceIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [charlie] });
+    const aliceReconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+    });
+    const bobReconciler = createMembershipReconciler({
+      transport: wired.endpoint(bob),
+      identity: bobIdentity,
+    });
+    aliceReconciler.start();
+    bobReconciler.start();
+    await settleAsyncWork();
+
+    wired.connect(alice, bob);
+    await settleAsyncWork();
+
+    await expect(bobIdentity.membershipView()).resolves.toEqual({
+      admittedPeerIds: [bob, alice, charlie],
+      revokedPeerIds: [charlie],
+    });
+  });
+
+  it("does not resurrect a revoked Peer ID from a stale complete view", async () => {
+    const wired = network();
+    const aliceIdentity = identity(alice, [alice, bob, charlie]);
+    await aliceIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [charlie] });
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+    });
+
+    await reconciler.receive(bob, encodeMembershipFrame({
+      admittedPeerIds: [alice, bob, charlie],
+      revokedPeerIds: [],
+    }));
+
+    await expect(aliceIdentity.membershipStatus(charlie)).resolves.toBe("revoked");
+  });
+
   it("performs no message-derived side effects when membership persistence fails", async () => {
     const wired = network();
     wired.setConnected(alice, [bob]);
@@ -455,6 +586,71 @@ describe("Membership Reconciliation", () => {
     expect(events).toEqual([`cleanup:${bob}`]);
   });
 
+  it("forgets revoked peer reachability even while the peer is offline", async () => {
+    const wired = network();
+    const aliceIdentity = identity(alice, [alice, bob]);
+    await aliceIdentity.mergeMembershipView({
+      admittedPeerIds: [alice, bob],
+      revokedPeerIds: [bob],
+    });
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+    });
+
+    reconciler.start();
+    await settleAsyncWork();
+
+    expect(wired.forgotten).toEqual([{ from: alice, peerId: bob }]);
+    expect(wired.disconnected).toEqual([]);
+    expect(wired.sent).toEqual([]);
+  });
+
+  it("retries failed revoked-peer cleanup while the peer remains offline", async () => {
+    jest.useFakeTimers();
+    try {
+      const wired = network();
+      wired.failNextForget();
+      const aliceIdentity = identity(alice, [alice, bob]);
+      await aliceIdentity.mergeMembershipView({
+        admittedPeerIds: [alice, bob],
+        revokedPeerIds: [bob],
+      });
+      const reconciler = createMembershipReconciler({
+        transport: wired.endpoint(alice),
+        identity: aliceIdentity,
+        retryBaseMs: 10,
+      });
+
+      reconciler.start();
+      await settleAsyncWork();
+      expect(wired.forgotten).toEqual([]);
+
+      await jest.advanceTimersByTimeAsync(10);
+      await settleAsyncWork();
+      expect(wired.forgotten).toEqual([{ from: alice, peerId: bob }]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("closes a revoked connection even when reachability cleanup fails", async () => {
+    const wired = network();
+    wired.setConnected(alice, [bob]);
+    wired.failNextForget();
+    const aliceIdentity = identity(alice, [alice, bob]);
+    await aliceIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [bob] });
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+    });
+
+    reconciler.start();
+    await settleAsyncWork();
+
+    expect(wired.disconnected).toEqual([{ from: alice, peerId: bob }]);
+  });
+
   it("finishes the triggering merge before stopping a locally revoked identity", async () => {
     const wired = network();
     wired.setConnected(alice, [bob]);
@@ -475,6 +671,29 @@ describe("Membership Reconciliation", () => {
 
     await expect(aliceIdentity.membershipStatus(alice)).resolves.toBe("revoked");
     expect(localRevocations).toEqual(["stopped"]);
+  });
+
+  it("enforces a persisted local revocation before sending on startup", async () => {
+    const wired = network();
+    wired.setConnected(alice, [bob]);
+    const aliceIdentity = identity(alice, [alice, bob]);
+    await aliceIdentity.mergeMembershipView({
+      admittedPeerIds: [alice, bob],
+      revokedPeerIds: [alice],
+    });
+    const localRevocations: string[] = [];
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+      onLocalRevoked: async () => { localRevocations.push("stopped"); },
+    });
+
+    reconciler.start();
+    await settleAsyncWork();
+    await reconciler.push(bob);
+
+    expect(localRevocations).toEqual(["stopped"]);
+    expect(wired.sent).toEqual([]);
   });
 
   it("rejects a Membership View from a sender that is not Active before persistence", async () => {

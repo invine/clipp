@@ -99,6 +99,7 @@ export function createPendingTrustRequestCoordinator(options: {
   const expiryTimers = new Map<string, unknown>();
   const pendingMutations = new Map<string, Promise<void>>();
   let startPromise: Promise<void> | undefined;
+  let stopped = false;
   const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
   const reject = (reason: PairingRejectionReason, authenticatedPeerId: string, frame: Uint8Array, messageType: "request" | "response" | "unknown" = "request") => {
     reportRejected({ reason, authenticatedPeerId, frameSize: frame.byteLength, messageType, connectionPath: options.connectionPath?.(authenticatedPeerId) ?? "unknown" });
@@ -178,6 +179,7 @@ export function createPendingTrustRequestCoordinator(options: {
     });
   };
   const deliverResponse = async (request: PendingTrustRequest, decision: "accepted" | "rejected") => {
+    if (stopped) return;
     try {
       const frame = await responseFrame(request, decision);
       if (!frame || !options.sendResponse) return;
@@ -191,6 +193,7 @@ export function createPendingTrustRequestCoordinator(options: {
   return {
     list: () => options.store.list(),
     start(): Promise<void> {
+      if (stopped) return Promise.reject(new Error("pairing_pending_stopped"));
       if (!startPromise) {
         startPromise = (async () => {
           options.notifications.onSelect((id) => {
@@ -212,6 +215,7 @@ export function createPendingTrustRequestCoordinator(options: {
       return startPromise;
     },
     receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
+      if (stopped) return Promise.resolve(false);
       const receive = () => serializeMutation(authenticatedPeerId, async () => {
         const parsed = decodePairingFrame(frame);
         if (!parsed || parsed.kind !== "request") return reject("protobuf_decoding_failed", authenticatedPeerId, frame, parsed?.kind ?? "unknown");
@@ -261,6 +265,7 @@ export function createPendingTrustRequestCoordinator(options: {
       return startPromise ? startPromise.then(receive) : receive();
     },
     decide(initiatorPeerId: string, decision: "accepted" | "rejected"): Promise<boolean> {
+      if (stopped) return Promise.resolve(false);
       return serializeMutation(initiatorPeerId, async () => {
         if (!options.sendResponse || !options.responseIdentity) return false;
         const storedRequest = (await options.store.list()).find((entry) => entry.initiatorPeerId === initiatorPeerId);
@@ -290,5 +295,13 @@ export function createPendingTrustRequestCoordinator(options: {
       });
     },
     expire: (initiatorPeerId: string) => serializeMutation(initiatorPeerId, () => expirePending(initiatorPeerId)),
+    async stop(): Promise<void> {
+      stopped = true;
+      await startPromise?.catch(() => undefined);
+      expiryTimers.forEach((_timer, peerId) => clearTimer(peerId));
+      await Promise.allSettled([...pendingMutations.values()]);
+      const requests = await options.store.list();
+      await Promise.allSettled(requests.map((request) => options.notifications.dismiss(notificationId(request.initiatorPeerId))));
+    },
   };
 }

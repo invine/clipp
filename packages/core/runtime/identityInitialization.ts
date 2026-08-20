@@ -1,5 +1,6 @@
 import {
   createIdentityManager,
+  createIdentityRotationCoordinator,
   type IdentityManager,
 } from "../trust";
 import { initialDeviceNameForPlatform } from "./capabilities";
@@ -15,6 +16,20 @@ export function createRuntimeIdentityManager(
   const { capabilities, ...identityOptions } = options;
   return createIdentityManager({
     ...identityOptions,
+    initialDeviceName: initialDeviceNameForPlatform(capabilities.platform),
+  });
+}
+
+type IdentityRotationOptions = Parameters<typeof createIdentityRotationCoordinator>[0];
+
+export function createRuntimeIdentityRotationCoordinator(
+  options: Omit<IdentityRotationOptions, "initialDeviceName"> & {
+    capabilities: Pick<RuntimeCapabilities, "platform">;
+  }
+) {
+  const { capabilities, ...rotationOptions } = options;
+  return createIdentityRotationCoordinator({
+    ...rotationOptions,
     initialDeviceName: initialDeviceNameForPlatform(capabilities.platform),
   });
 }

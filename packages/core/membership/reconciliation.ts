@@ -69,12 +69,14 @@ export function createMembershipReconciler(options: {
   let stopped = false;
   let observesMembershipChanges = false;
   let unsubscribeMembership: (() => void) | undefined;
-  let membershipChange = Promise.resolve();
+  let revocationEnforcementQueue = Promise.resolve();
   let localRevocationHandled = false;
   const retryBaseMs = options.retryBaseMs ?? 1_000;
   const retryMaxMs = options.retryMaxMs ?? 60_000;
   const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const retryAttempts = new Map<string, number>();
+  const cleanupRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const cleanupRetryAttempts = new Map<string, number>();
 
   const isConnected = (peerId: string): boolean => options.transport.getConnectedPeers().includes(peerId);
 
@@ -90,12 +92,15 @@ export function createMembershipReconciler(options: {
   };
 
   const push = async (targetPeerId: string): Promise<void> => {
-    const status = await options.identity.membershipStatus(targetPeerId);
+    const local = await options.identity.get();
+    const [localStatus, targetStatus] = await Promise.all([
+      options.identity.membershipStatus(local.deviceId),
+      options.identity.membershipStatus(targetPeerId),
+    ]);
     // A revoked remote may receive the complete view that proves its status,
     // but it never gains authority to contribute one.
-    if (stopped || (status !== "active" && status !== "revoked")) return;
-    const [local, view, records] = await Promise.all([
-      options.identity.get(),
+    if (stopped || localStatus !== "active" || (targetStatus !== "active" && targetStatus !== "revoked")) return;
+    const [view, records] = await Promise.all([
       options.identity.membershipView(),
       options.signedPeerRecords?.() ?? Promise.resolve([]),
     ]);
@@ -118,7 +123,40 @@ export function createMembershipReconciler(options: {
   const attemptPush = async (peerId: string): Promise<void> => {
     await push(peerId);
     if (await options.identity.membershipStatus(peerId) === "revoked") {
-      await options.onPeerRevoked?.(peerId);
+      await attemptRevokedPeerCleanup(peerId);
+    }
+  };
+
+  const cleanupRevokedPeer = async (peerId: string): Promise<void> => {
+    const cleanup = await Promise.allSettled([
+      options.transport.forgetPeer?.(peerId) ?? Promise.resolve(),
+      isConnected(peerId)
+        ? options.transport.disconnect?.(peerId) ?? Promise.resolve()
+        : Promise.resolve(),
+      options.onPeerRevoked?.(peerId) ?? Promise.resolve(),
+    ]);
+    const failure = cleanup.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failure) throw failure.reason;
+  };
+
+  const scheduleCleanupRetry = (peerId: string): void => {
+    if (stopped || cleanupRetryTimers.has(peerId)) return;
+    const attempt = cleanupRetryAttempts.get(peerId) ?? 0;
+    cleanupRetryAttempts.set(peerId, attempt + 1);
+    const delay = Math.min(retryBaseMs * 2 ** attempt, retryMaxMs);
+    cleanupRetryTimers.set(peerId, setTimeout(() => {
+      cleanupRetryTimers.delete(peerId);
+      void attemptRevokedPeerCleanup(peerId).catch(() => undefined);
+    }, delay));
+  };
+
+  const attemptRevokedPeerCleanup = async (peerId: string): Promise<void> => {
+    try {
+      await cleanupRevokedPeer(peerId);
+      cleanupRetryAttempts.delete(peerId);
+    } catch (error) {
+      scheduleCleanupRetry(peerId);
+      throw error;
     }
   };
 
@@ -138,18 +176,23 @@ export function createMembershipReconciler(options: {
       }
       return;
     }
-    const revokedConnectedPeers = (await Promise.all(options.transport.getConnectedPeers().map(async (peerId) =>
-      (await options.identity.membershipStatus(peerId)) === "revoked" ? peerId : undefined
-    ))).filter((peerId): peerId is string => Boolean(peerId));
+    const view = await options.identity.membershipView();
+    const revokedPeerIds = view.revokedPeerIds.filter((peerId) => peerId !== local.deviceId);
+    const revokedConnectedPeers = revokedPeerIds.filter(isConnected);
+    const revokedOfflinePeers = revokedPeerIds.filter((peerId) => !isConnected(peerId));
 
     // A revoked identity gets one authenticated complete view showing the
     // tombstone before its reachability and connection are discarded.
     await Promise.allSettled(revokedConnectedPeers.map(attemptPush));
+    await Promise.allSettled(revokedOfflinePeers.map(attemptRevokedPeerCleanup));
     await pushConnected();
   };
 
   const scheduleCommittedRevocationEnforcement = (): void => {
-    membershipChange = membershipChange.then(enforceCommittedRevocations, enforceCommittedRevocations);
+    revocationEnforcementQueue = revocationEnforcementQueue.then(
+      enforceCommittedRevocations,
+      enforceCommittedRevocations,
+    );
   };
 
   const receive = async (authenticatedPeerId: string, frame: Uint8Array): Promise<void> => {
@@ -168,7 +211,7 @@ export function createMembershipReconciler(options: {
     });
     if (changed && await options.identity.membershipStatus(local.deviceId) === "revoked") {
       await options.onChanged?.();
-      if (observesMembershipChanges) await membershipChange;
+      if (observesMembershipChanges) await revocationEnforcementQueue;
       else await enforceCommittedRevocations();
       return;
     }
@@ -196,7 +239,7 @@ export function createMembershipReconciler(options: {
     });
     if (!changed) return;
     await options.onChanged?.();
-    if (observesMembershipChanges) await membershipChange;
+    if (observesMembershipChanges) await revocationEnforcementQueue;
     else await enforceCommittedRevocations();
   };
 
@@ -210,7 +253,7 @@ export function createMembershipReconciler(options: {
         observesMembershipChanges = true;
         unsubscribeMembership = options.identity.onMembershipChanged(scheduleCommittedRevocationEnforcement);
       }
-      void pushConnected();
+      scheduleCommittedRevocationEnforcement();
     },
     push,
     pushConnected,
@@ -220,6 +263,8 @@ export function createMembershipReconciler(options: {
       unsubscribeMembership?.();
       retryTimers.forEach((timer) => clearTimeout(timer));
       retryTimers.clear();
+      cleanupRetryTimers.forEach((timer) => clearTimeout(timer));
+      cleanupRetryTimers.clear();
     },
   };
 }

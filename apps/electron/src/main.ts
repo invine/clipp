@@ -22,6 +22,7 @@ import {
   createAutoSyncPreference,
   createClosableRuntimeNotifications,
   createRuntimeIdentityManager,
+  createRuntimeIdentityRotationCoordinator,
   createRuntimeNetworkProxy,
   createRuntimeClipboardService,
   createRuntimeOrchestrator,
@@ -52,6 +53,7 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
+  createIdentityScopedStateCleanup,
   IDENTITY_KEY,
   TRUST_KEY,
   type TrustedDevice
@@ -75,7 +77,8 @@ async function bootstrap() {
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({ storage: kvStore });
   let localRetentionMs = (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
   let autoSync = await autoSyncPreference.load();
-  const history = new MemoryHistoryStore(new SQLiteHistoryBackend(db), { retentionMs: localRetentionMs });
+  const historyBackend = new SQLiteHistoryBackend(db);
+  const history = new MemoryHistoryStore(historyBackend, { retentionMs: localRetentionMs });
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
   let historyRetentionCleanup: HistoryRetentionCleanup | null = null;
@@ -86,6 +89,17 @@ async function bootstrap() {
     (log as any).warn?.("Initial local history cleanup failed; runtime will retry", error);
   }
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
+  let stopIdentityBoundServicesForRotation: () => Promise<void> = async () => undefined;
+  const identityRotation = createRuntimeIdentityRotationCoordinator({
+    repository: identityRepo,
+    storage: kvStore,
+    capabilities: RUNTIME_CAPABILITIES.electron,
+    shutdown: () => stopIdentityBoundServicesForRotation(),
+    clearIdentityScopedState: createIdentityScopedStateCleanup({
+      storage: kvStore,
+      history: historyBackend,
+    }),
+  });
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
     capabilities: RUNTIME_CAPABILITIES.electron,
@@ -104,6 +118,12 @@ async function bootstrap() {
   );
   let localIdentity;
   try {
+    const rotation = await identityRotation.recoverOrRotate();
+    if (rotation.rotated) {
+      app.relaunch();
+      app.exit(0);
+      return;
+    }
     localIdentity = await identitySvc.get();
   } catch (error) {
     (log as any).error?.("Device identity initialization failed", { error: (error as Error).message });
@@ -902,19 +922,27 @@ async function bootstrap() {
     transport: runtimeNetwork,
     identity: identitySvc,
     ...createMembershipPeerRecordBridge({ transport: runtimeNetwork, identity: identitySvc }),
-    onPeerRevoked: async (peerId) => {
-      await Promise.allSettled([
-        runtimeNetwork.forgetPeer?.(peerId),
-        runtimeNetwork.disconnect?.(peerId),
-      ]);
-    },
     onLocalRevoked: async () => {
-      pairedConnections.stop();
-      historyReconciliation.stop();
-      await runtimeNetwork.stop();
+      await identityRotation.rotate("revoked");
+      app.relaunch();
+      app.exit(0);
     },
     onChanged: emitState,
   });
+  stopIdentityBoundServicesForRotation = async () => {
+    historyRetentionCleanup?.stop();
+    historyRetentionCleanup = null;
+    membershipReconciler.stop();
+    await pairingSessions.stop();
+    await pairingPending?.stop();
+    clipboardSync.stop();
+    historyReconciliation.stop();
+    pairedConnections.stop();
+    await runtimeNetwork.stop();
+    if (pendingSelfPeerUpdates.size > 0) {
+      await Promise.allSettled(Array.from(pendingSelfPeerUpdates));
+    }
+  };
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,

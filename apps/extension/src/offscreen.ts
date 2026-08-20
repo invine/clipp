@@ -125,6 +125,18 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
   }
 }
 
+async function shutdownMessaging(): Promise<void> {
+  runtimeOutboundStreamControllers.forEach((controller) => controller.abort());
+  runtimeOutboundStreamControllers.clear();
+  pairedConnections?.stop();
+  await transport?.stop();
+  transport = null;
+  pairedConnections = null;
+  started = false;
+  runtimeRegisteredProtocols.clear();
+  runtimeRegisteredStreamProtocols.clear();
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== "offscreen") return;
   (async () => {
@@ -134,6 +146,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return;
     }
     if (msg.action === "ping") {
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "shutdown") {
+      await shutdownMessaging();
       sendResponse({ ok: true });
       return;
     }
