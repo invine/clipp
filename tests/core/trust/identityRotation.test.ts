@@ -252,7 +252,7 @@ describe("Identity Rotation", () => {
     });
     expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
       phase: "committing",
-      backup: { id: replacementPeerId, identity: { deviceId: oldPeerId } },
+      backup: { backupId: replacementPeerId, identity: { deviceId: oldPeerId } },
     });
 
     await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({

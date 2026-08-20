@@ -41,6 +41,7 @@ export function createClipboardSyncManager(
 
   let currentLiveGossip: LiveClipGossip | null = null;
   const boundLiveGossip = new WeakSet<object>();
+  let localCaptureQueue = Promise.resolve();
   let liveReceiveQueue = Promise.resolve();
 
   // TODO: why not set localIdPromise right away?
@@ -151,8 +152,16 @@ export function createClipboardSyncManager(
     liveReceiveQueue = next.then(() => undefined, () => undefined);
   }
 
+  function enqueueLocalClip(clip: Clip, captureOptions?: LocalClipOptions): void {
+    const next = localCaptureQueue.then(
+      () => handleLocalClip(clip, captureOptions),
+      () => handleLocalClip(clip, captureOptions),
+    );
+    localCaptureQueue = next.then(() => undefined, () => undefined);
+  }
+
   options.clipboard.onLocalClip((clip, captureOptions) => {
-    void handleLocalClip(clip, captureOptions);
+    enqueueLocalClip(clip, captureOptions);
   });
 
   function bindLiveGossip(liveGossip: LiveClipGossip): void {
@@ -186,7 +195,7 @@ export function createClipboardSyncManager(
       networkingEnabled = false;
       currentLiveGossip?.stop();
       options.clipboard.stop();
-      await liveReceiveQueue;
+      await Promise.all([localCaptureQueue, liveReceiveQueue]);
       inFlightRemote.clear();
     },
     bindLiveGossip,

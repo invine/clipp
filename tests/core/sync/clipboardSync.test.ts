@@ -241,6 +241,40 @@ describe("ClipboardSyncManager", () => {
     expect(await history.getById(clip.id)).toBeNull();
   });
 
+  test("shutdown waits for an in-flight local capture before rotation can snapshot history", async () => {
+    const history = createHistory();
+    const originalAccept = history.accept.bind(history);
+    let releaseAccept!: () => void;
+    let markAcceptStarted!: () => void;
+    const acceptStarted = new Promise<void>((resolve) => { markAcceptStarted = resolve; });
+    const acceptGate = new Promise<void>((resolve) => { releaseAccept = resolve; });
+    history.accept = async (...args) => {
+      markAcceptStarted();
+      await acceptGate;
+      return originalAccept(...args);
+    };
+    const { clipboard, localHandlers } = createClipboardHarness();
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    sync.startLocalOnly();
+    const clip = makeClip("00000000-0000-4000-8000-000000000022", "drain local capture");
+    localHandlers[0](clip);
+    await acceptStarted;
+
+    let stopped = false;
+    const stopping = sync.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    releaseAccept();
+    await stopping;
+
+    expect((await history.getById(clip.id))?.clip).toEqual(clip);
+  });
+
   test("cancels a queued clipboard write after local removal", async () => {
     const history = createHistory();
     const clip = makeClip("00000000-0000-4000-8000-000000000015", "removed");

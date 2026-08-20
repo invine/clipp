@@ -131,8 +131,8 @@ export function createSQLiteIdentityRotationCommitter(options: {
   identityKey: string;
 }): IdentityRotationCommitter {
   return {
-    async prepare(id) {
-      return { id, identity: await options.repository.get(), storageEntries: [] };
+    async prepare(backupId) {
+      return { backupId, identity: await options.repository.get(), storageEntries: [] };
     },
     async commit(candidate, notice) {
       const candidatePayload = JSON.stringify(candidate);

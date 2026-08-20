@@ -272,6 +272,10 @@ export interface HistoryStorageBackend {
   remove(key: string): Promise<void>;
   clearAll(): Promise<void>;
   applyHistoryMutation(input: HistoryMutation): Promise<HistoryMutationResult>;
+  prepareIdentityRotation?(backupId: string): Promise<unknown>;
+  commitIdentityRotation?(checkpoint: unknown): Promise<void>;
+  rollbackIdentityRotation?(checkpoint: unknown): Promise<void>;
+  finalizeIdentityRotation?(checkpoint: unknown): Promise<void>;
 }
 
 export class InMemoryHistoryBackend implements HistoryStorageBackend {
