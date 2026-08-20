@@ -12,6 +12,7 @@ import type {
   ClipboardHistoryError,
   HistoryPolicyError,
 } from "../../../packages/ui/src/types.js";
+import type { IdentityRotationNoticeReason } from "../../../packages/ui/src/identityRotationNotice.js";
 
 type AppState = {
   clips: Clip[];
@@ -34,6 +35,8 @@ type AppState = {
   autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
+  identityRotationRecovery?: boolean;
+  identityRotationNotice?: IdentityRotationNoticeReason | null;
 };
 
 const api = {
@@ -56,6 +59,7 @@ const api = {
   setPinned: (id: string, pinned: boolean) => ipcRenderer.invoke("clipp:set-pin", { id, pinned }),
   dismissClipboardHistoryError: () => ipcRenderer.invoke("clipp:dismiss-clipboard-history-error"),
   retryHistoryCleanup: () => ipcRenderer.invoke("clipp:retry-history-cleanup"),
+  acknowledgeIdentityRotationNotice: () => ipcRenderer.invoke("clipp:acknowledge-identity-rotation-notice"),
   renameIdentity: (name: string) => ipcRenderer.invoke("clipp:rename-identity", name),
   setRelayAddresses: (addrs: string[]) => ipcRenderer.invoke("clipp:set-relay-addresses", addrs),
   setLocalRetention: (retentionMs: number) => ipcRenderer.invoke("clipp:set-local-retention", retentionMs),

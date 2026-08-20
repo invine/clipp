@@ -1,3 +1,4 @@
+import type { IdentityRotationCaptureCleanup } from "../clipboard/captureCoordinator";
 import type { ClipboardService, LocalClipOptions } from "../clipboard/service";
 import type { ClipHistoryStore } from "../history/store";
 import { clipsHaveEqualImmutableFields, isClipAcceptable, validateClip, type Clip } from "../models/Clip";
@@ -22,6 +23,7 @@ export interface ClipboardSyncManager {
   start(): void;
   startLocalOnly(): void;
   stop(): Promise<void>;
+  prepareIdentityRotationCleanup(): Promise<IdentityRotationCaptureCleanup>;
   bindLiveGossip(liveGossip: LiveClipGossip): void;
   setAutoSync(enabled: boolean): void;
   isAutoSync(): boolean;
@@ -177,6 +179,15 @@ export function createClipboardSyncManager(
 
   if (options.liveGossip) bindLiveGossip(options.liveGossip);
 
+  async function stop(): Promise<void> {
+    running = false;
+    networkingEnabled = false;
+    currentLiveGossip?.stop();
+    await options.clipboard.stop();
+    await Promise.all([localCaptureQueue, liveReceiveQueue]);
+    inFlightRemote.clear();
+  }
+
   return {
     start() {
       running = true;
@@ -190,13 +201,11 @@ export function createClipboardSyncManager(
       currentLiveGossip?.stop();
       options.clipboard.start();
     },
-    async stop() {
-      running = false;
-      networkingEnabled = false;
-      currentLiveGossip?.stop();
-      await options.clipboard.stop();
-      await Promise.all([localCaptureQueue, liveReceiveQueue]);
-      inFlightRemote.clear();
+    stop,
+    async prepareIdentityRotationCleanup() {
+      await stop();
+      return await options.clipboard.prepareIdentityRotationCleanup?.()
+        ?? { rollback: async () => undefined };
     },
     bindLiveGossip,
     setAutoSync(enabled: boolean) {

@@ -27,6 +27,12 @@ export type ClipCaptureDiagnosticDetails = {
   pendingCount?: number;
 };
 
+export type IdentityRotationCaptureCleanup = {
+  rollback(): Promise<void>;
+};
+
+type PendingCapture = { clip: Clip; bytes: number; options?: ClipCaptureOptions };
+
 export type ClipCaptureCoordinator = {
   baseline(value: string): Promise<void>;
   observe(value: string): Promise<Clip | null>;
@@ -42,6 +48,7 @@ export type ClipCaptureCoordinator = {
   discardPending(): Promise<void>;
   clearHistory(clearDurable: () => Promise<void>): Promise<void>;
   retryPending(): Promise<void>;
+  prepareIdentityRotationCleanup(): Promise<IdentityRotationCaptureCleanup>;
   start(): void;
   stop(): Promise<void>;
   onRecovered(cb: (clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>): void;
@@ -59,7 +66,7 @@ export function createClipCaptureCoordinator(options: {
   onDiagnostic?: (diagnostic: ClipCaptureDiagnostic, details?: ClipCaptureDiagnosticDetails) => void;
 }): ClipCaptureCoordinator {
   let baseline: string | undefined;
-  const pending: Array<{ clip: Clip; bytes: number; options?: ClipCaptureOptions }> = [];
+  const pending: PendingCapture[] = [];
   let pendingBytes = 0;
   const pendingMaxClips = options.pendingMaxClips ?? 100;
   const pendingMaxBytes = options.pendingMaxBytes ?? 10 * 1024 * 1024;
@@ -241,6 +248,22 @@ export function createClipCaptureCoordinator(options: {
       discardPendingUnserialized();
     }),
     retryPending: async () => serialize(retryPendingUnserialized),
+    prepareIdentityRotationCleanup: () => serialize(async () => {
+      const checkpoint = pending.splice(0, pending.length);
+      pendingBytes = 0;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = undefined;
+      let restored = false;
+      return {
+        rollback: () => serialize(async () => {
+          if (restored) return;
+          restored = true;
+          pending.unshift(...checkpoint);
+          pendingBytes += checkpoint.reduce((total, capture) => total + capture.bytes, 0);
+          schedulePendingRetry();
+        }),
+      };
+    }),
     start: () => {
       running = true;
       schedulePendingRetry();

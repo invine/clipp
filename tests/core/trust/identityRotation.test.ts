@@ -1,4 +1,7 @@
-import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
+import {
+  historySuppressionKey,
+  InMemoryHistoryBackend,
+} from "../../../packages/core/history/types";
 import { IndexedDBHistoryBackend } from "../../../packages/core/history/indexeddb";
 import { indexedDB } from "fake-indexeddb";
 import {
@@ -15,6 +18,7 @@ import type { DeviceIdentity } from "../../../packages/core/trust/identity";
 class MemoryStorage implements KVStorageBackend {
   readonly values = new Map<string, unknown>();
   failNextSetFor: string | undefined;
+  failRemoveFor: string | undefined;
 
   async get<T>(key: string): Promise<T | undefined> {
     return this.values.get(key) as T | undefined;
@@ -29,6 +33,7 @@ class MemoryStorage implements KVStorageBackend {
   }
 
   async remove(key: string): Promise<void> {
+    if (this.failRemoveFor === key) throw new Error("storage_remove_failed");
     this.values.delete(key);
   }
 }
@@ -321,6 +326,78 @@ describe("Identity Rotation", () => {
     expect(generateKeyMaterial).toHaveBeenCalledTimes(1);
   });
 
+  it("deletes every identity-scoped record while preserving installation preferences", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    const remoteHistoryItem = {
+      ...historyItem,
+      clip: {
+        ...historyItem.clip,
+        id: "00000000-0000-4000-8000-000000000002",
+        originPeerId: "remote-peer",
+        content: "remote history",
+      },
+      pinned: true,
+    };
+    const suppressedClipId = "00000000-0000-4000-8000-000000000003";
+    await history.set(historyItem.clip.id, historyItem);
+    await history.set(remoteHistoryItem.clip.id, remoteHistoryItem);
+    await history.set(historySuppressionKey(suppressedClipId), {
+      clipId: suppressedClipId,
+      suppressedUntil: 10_000,
+    });
+    const identityScopedState = {
+      trustedDevices: [{ deviceId: "remote-peer" }],
+      signedPeerRecords: [{ peerId: "remote-peer", envelope: [1, 2, 3] }],
+      pairingPendingRequests: [{ initiatorPeerId: "remote-peer" }],
+      runtimeApplicationState: {
+        formerNetworkMetadata: { "remote-peer": "Remote" },
+      },
+    };
+    for (const [key, value] of Object.entries(identityScopedState)) await storage.set(key, value);
+    const installationPreferences = {
+      theme: "dark",
+      relayAddresses: ["/dns4/relay.example/tcp/443/wss"],
+      pollingIntervalMs: 1_500,
+      autoSync: false,
+      clipSharingLifetimeMs: 60_000,
+      localRetentionMs: 86_400_000,
+      maxUnpinnedClips: 250,
+      maxUnpinnedBytes: 1_000_000,
+      maximumFrameBytes: 262_144,
+    };
+    for (const [key, value] of Object.entries(installationPreferences)) await storage.set(key, value);
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      now: () => 42,
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+      shutdown: async () => undefined,
+      retry: false,
+    });
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      reason: "revoked",
+      identity: replacementIdentity(),
+    });
+
+    expect(await history.getAll()).toEqual([]);
+    for (const key of Object.keys(identityScopedState)) expect(await storage.get(key)).toBeUndefined();
+    for (const [key, value] of Object.entries(installationPreferences)) {
+      expect(await storage.get(key)).toEqual(value);
+    }
+    expect(await repository.get()).toEqual(replacementIdentity());
+  });
+
   it("activates the replacement identity when persisting the rotation notice fails", async () => {
     const storage = new MemoryStorage();
     const history = new InMemoryHistoryBackend();
@@ -352,6 +429,75 @@ describe("Identity Rotation", () => {
     expect(await coordinator.notice()).toBeUndefined();
   });
 
+  it("treats failed transition-marker removal as committed and restart-required", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      stateKey: "identity-rotation",
+      initialDeviceName: "Desktop",
+      now: () => 42,
+      shutdown: async () => undefined,
+      retry: false,
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+    });
+    storage.failRemoveFor = "identity-rotation";
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      reason: "revoked",
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(await repository.get()).toEqual(replacementIdentity());
+    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+      phase: "committed",
+      candidateDeviceId: replacementPeerId,
+    });
+    expect(JSON.stringify(await storage.get("identity-rotation"))).not.toContain("old-private");
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+      phase: "committed",
+      candidateDeviceId: replacementPeerId,
+    });
+  });
+
+  it("retains a reason-specific rotation notice until acknowledgement", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      shutdown: async () => undefined,
+      retry: false,
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+    });
+
+    await coordinator.recoverOrRotate();
+    await expect(coordinator.notice()).resolves.toMatchObject({ reason: "revoked" });
+    await coordinator.acknowledgeNotice();
+    await expect(coordinator.notice()).resolves.toBeUndefined();
+  });
+
   it("restores history and the old identity when candidate activation fails, then reuses the candidate", async () => {
     const storage = new MemoryStorage();
     const history = new InMemoryHistoryBackend();
@@ -364,6 +510,7 @@ describe("Identity Rotation", () => {
       privateKey: "replacement-private",
       publicKey: "replacement-public",
     }));
+    let pendingCaptures = ["captured during recovery"];
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
@@ -373,6 +520,13 @@ describe("Identity Rotation", () => {
       now: () => 42,
       generateKeyMaterial,
       shutdown: async () => undefined,
+      runtimeCleanup: {
+        prepare: async () => {
+          const checkpoint = [...pendingCaptures];
+          pendingCaptures = [];
+          return { rollback: async () => { pendingCaptures = checkpoint; } };
+        },
+      },
       retry: false,
     });
     storage.failNextSetFor = "identity";
@@ -385,6 +539,7 @@ describe("Identity Rotation", () => {
     expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
     expect(await storage.get("trustedDevices")).toEqual([{ deviceId: "remote-peer" }]);
     expect(await storage.get("identityRotationNotice")).toBeUndefined();
+    expect(pendingCaptures).toEqual(["captured during recovery"]);
     expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
       reason: "revoked",
       phase: "prepared",
@@ -407,6 +562,7 @@ describe("Identity Rotation", () => {
       pairingRequired: true,
     });
     expect(await storage.get("identity-rotation")).toBeUndefined();
+    expect(pendingCaptures).toEqual([]);
   });
 
   it("restores the old identity and history when final cleanup fails, then reuses the candidate", async () => {
@@ -634,8 +790,9 @@ describe("Identity Rotation", () => {
     });
     const marker = await storage.get<IdentityRotationState>("identity-rotation");
     expect(marker).toMatchObject({ phase: "committing" });
+    if (marker?.phase !== "committing") throw new Error("missing_committing_marker");
 
-    await baseCommitter.rollback(marker!.backup!);
+    await baseCommitter.rollback(marker.backup!);
     expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
   });
 

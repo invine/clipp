@@ -10,6 +10,7 @@ import {
   Device,
   HistoryPolicyError,
   Identity,
+  IdentityRotationNoticeReason,
   PairingCode,
   PairingError,
   PairingWaiting,
@@ -17,6 +18,10 @@ import {
   PendingRequest,
 } from "../../../packages/ui";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
+
+function identityRotationNoticeReason(value: unknown): IdentityRotationNoticeReason | null {
+  return value === "revoked" || value === "identity-loss" ? value : null;
+}
 
 const Popup = () => {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -34,7 +39,7 @@ const Popup = () => {
   const [historyPolicyError, setHistoryPolicyError] = useState<HistoryPolicyError | null>(null);
   const [initializationError, setInitializationError] = useState(false);
   const [identityRotationRecovery, setIdentityRotationRecovery] = useState(false);
-  const [identityRotationNotice, setIdentityRotationNotice] = useState(false);
+  const [identityRotationNotice, setIdentityRotationNotice] = useState<IdentityRotationNoticeReason | null>(null);
   const lastClipboardRef = useRef("");
 
   useEffect(() => {
@@ -50,7 +55,7 @@ const Popup = () => {
       setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
       setHistoryPolicyError(res?.state?.historyPolicyError || null);
       setIdentityRotationRecovery(res?.state?.identityRotationRecovery === true);
-      setIdentityRotationNotice(res?.state?.identityRotationNotice === true);
+      setIdentityRotationNotice(identityRotationNoticeReason(res?.state?.identityRotationNotice));
     });
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
       if (res?.identity) setIdentity(res.identity);
@@ -85,7 +90,7 @@ const Popup = () => {
         setClipboardHistoryError(msg.state.clipboardHistoryError || null);
         setHistoryPolicyError(msg.state.historyPolicyError || null);
         setIdentityRotationRecovery(msg.state.identityRotationRecovery === true);
-        setIdentityRotationNotice(msg.state.identityRotationNotice === true);
+        setIdentityRotationNotice(identityRotationNoticeReason(msg.state.identityRotationNotice));
       }
     };
     chrome.runtime.onMessage.addListener(handler);
@@ -305,6 +310,10 @@ const Popup = () => {
         }}
         onRetryHistoryCleanup={async () => {
           await runHistoryOperation({ type: "retryHistoryCleanup" });
+        }}
+        onAcknowledgeIdentityRotationNotice={async () => {
+          await runHistoryOperation({ type: "acknowledgeIdentityRotationNotice" });
+          setIdentityRotationNotice(null);
         }}
         onRenameIdentity={handleRenameIdentity}
         onRetryInitialization={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}

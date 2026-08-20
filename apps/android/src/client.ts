@@ -40,7 +40,7 @@ import {
   IDENTITY_KEY,
 } from "@core/trust";
 import type { Clip } from "@core/models/Clip";
-import type { Device, HistoryPolicyError, Identity, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type { Device, HistoryPolicyError, Identity, IdentityRotationNoticeReason, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 import * as log from "@core/logger";
 import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
@@ -63,7 +63,7 @@ export type AndroidAppState = {
   clipboardHistoryError?: RuntimeClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
-  identityRotationNotice?: boolean;
+  identityRotationNotice?: IdentityRotationNoticeReason | null;
   relayAddresses: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
@@ -186,6 +186,7 @@ export class AndroidClient {
     storage: this.storage,
     capabilities: RUNTIME_CAPABILITIES.android,
     shutdown: () => this.stopIdentityBoundServices(),
+    runtimeCleanup: { prepare: () => this.clipboardSync.prepareIdentityRotationCleanup() },
     committer: createIdentityRotationCommitter({
       repository: this.identityRepo,
       storage: this.storage,
@@ -664,7 +665,7 @@ export class AndroidClient {
       clipboardHistoryError: this.clipboardHistoryError,
       historyPolicyError: this.historyPolicyError,
       identityRotationRecovery: this.identityRotationRecovery,
-      identityRotationNotice: Boolean(await this.identityRotation.notice()),
+      identityRotationNotice: (await this.identityRotation.notice())?.reason ?? null,
       relayAddresses,
       diagnostics: {
         lastClipboardCheck: this.lastClipboardCheck,
@@ -733,6 +734,11 @@ export class AndroidClient {
 
   async retryHistoryCleanup() {
     await this.historyRetentionCleanup?.retry();
+  }
+
+  async acknowledgeIdentityRotationNotice() {
+    await this.identityRotation.acknowledgeNotice();
+    await this.emitState();
   }
 
   async setLocalRetention(retentionMs: number) {

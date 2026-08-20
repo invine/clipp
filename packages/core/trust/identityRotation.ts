@@ -27,13 +27,22 @@ export type IdentityRotationBackup = {
   historyCheckpoint?: unknown;
 };
 
-export type IdentityRotationState = {
+type IdentityRotationPendingState = {
   version: 1;
   reason: IdentityRotationReason;
   candidate: DeviceIdentity;
   phase: "prepared" | "committing";
   backup?: IdentityRotationBackup;
 };
+
+type IdentityRotationCommittedState = {
+  version: 1;
+  reason: IdentityRotationReason;
+  phase: "committed";
+  candidateDeviceId: string;
+};
+
+export type IdentityRotationState = IdentityRotationPendingState | IdentityRotationCommittedState;
 
 export type IdentityRotationResult =
   | { rotated: false; identity: DeviceIdentity | undefined; recovery?: undefined }
@@ -54,6 +63,10 @@ export type IdentityRotationCommitter = {
   commit(candidate: DeviceIdentity, notice: IdentityRotationNotice, backup: IdentityRotationBackup): Promise<void>;
   rollback(backup: IdentityRotationBackup): Promise<void>;
   finalize(backup: IdentityRotationBackup): Promise<void>;
+};
+
+export type IdentityRotationRuntimeCleanup = {
+  prepare(): Promise<{ rollback(): Promise<void> }>;
 };
 
 export const IDENTITY_ROTATION_SCOPED_STORAGE_KEYS = [
@@ -213,6 +226,7 @@ export function createIdentityRotationCoordinator(options: {
   generateKeyMaterial?: () => Promise<IdentityKeyMaterial>;
   deriveKeyMaterial?: (privateKey: string) => Promise<IdentityKeyMaterial>;
   shutdown: () => void | Promise<void>;
+  runtimeCleanup?: IdentityRotationRuntimeCleanup;
   retry?: false | { baseMs?: number; maxMs?: number };
 }) {
   const stateKey = options.stateKey ?? "identityRotation";
@@ -247,11 +261,20 @@ export function createIdentityRotationCoordinator(options: {
 
   const validState = (value: unknown): value is IdentityRotationState => {
     if (!value || typeof value !== "object") return false;
-    const state = value as Partial<IdentityRotationState>;
+    const state = value as {
+      version?: unknown;
+      reason?: unknown;
+      phase?: unknown;
+      candidate?: Partial<DeviceIdentity>;
+      backup?: unknown;
+      candidateDeviceId?: unknown;
+    };
     const candidate = state.candidate;
-    return state.version === 1
-      && (state.reason === "revoked" || state.reason === "identity-loss")
-      && (state.phase === "prepared" || state.phase === "committing")
+    if (state.version !== 1 || (state.reason !== "revoked" && state.reason !== "identity-loss")) return false;
+    if (state.phase === "committed") {
+      return typeof state.candidateDeviceId === "string";
+    }
+    return (state.phase === "prepared" || state.phase === "committing")
       && (state.phase !== "committing" || Boolean(state.backup))
       && Boolean(candidate)
       && typeof candidate?.deviceId === "string"
@@ -276,7 +299,7 @@ export function createIdentityRotationCoordinator(options: {
     };
   };
 
-  const rollbackForRetry = async (state: IdentityRotationState & { backup: IdentityRotationBackup }): Promise<void> => {
+  const rollbackForRetry = async (state: IdentityRotationPendingState & { backup: IdentityRotationBackup }): Promise<void> => {
     try {
       await options.committer.rollback(state.backup);
       const prepared: IdentityRotationState = { ...state, phase: "prepared", backup: undefined };
@@ -285,6 +308,26 @@ export function createIdentityRotationCoordinator(options: {
       // Keep the durable committing marker and backup so the next retry can
       // finish rollback before attempting cleanup again.
     }
+  };
+
+  const completeCommittedMarker = async (reason: IdentityRotationReason, candidateDeviceId: string): Promise<void> => {
+    const committed: IdentityRotationCommittedState = {
+      version: 1,
+      reason,
+      phase: "committed",
+      candidateDeviceId,
+    };
+    try {
+      await options.storage.set(stateKey, committed);
+    } catch (setError) {
+      try {
+        await options.storage.remove(stateKey);
+        return;
+      } catch {
+        throw setError;
+      }
+    }
+    await options.storage.remove(stateKey).catch(() => undefined);
   };
 
   const execute = async (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
@@ -313,6 +356,13 @@ export function createIdentityRotationCoordinator(options: {
       }
       current = repaired;
     }
+    if (state?.phase === "committed") {
+      if (!current || identityKeyLost || current.deviceId !== state.candidateDeviceId) {
+        throw new Error("invalid_committed_identity_rotation_state");
+      }
+      await options.storage.remove(stateKey).catch(() => undefined);
+      return { rotated: false, identity: current };
+    }
     const selfRevoked = Boolean(current?.membershipView?.revokedPeerIds?.includes(current.deviceId));
     const rotationReason = state?.reason ?? reason ?? (identityKeyLost ? "identity-loss" : selfRevoked ? "revoked" : undefined);
     if (!rotationReason) return { rotated: false, identity: current };
@@ -321,10 +371,10 @@ export function createIdentityRotationCoordinator(options: {
       try {
         if (state.backup) await options.committer.finalize(state.backup);
       } catch (error) {
-        if (state.backup) await rollbackForRetry(state as IdentityRotationState & { backup: IdentityRotationBackup });
+        if (state.backup) await rollbackForRetry(state as IdentityRotationPendingState & { backup: IdentityRotationBackup });
         throw error;
       }
-      await options.storage.remove(stateKey);
+      await completeCommittedMarker(state.reason, state.candidate.deviceId);
       return { rotated: true, reason: state.reason, identity: state.candidate };
     }
     if (state?.phase === "committing") {
@@ -348,7 +398,9 @@ export function createIdentityRotationCoordinator(options: {
     const backup = await options.committer.prepare(state.candidate.deviceId);
     state = { ...state, phase: "committing", backup };
     await options.storage.set(stateKey, state);
+    let runtimeCleanup: { rollback(): Promise<void> } | undefined;
     try {
+      runtimeCleanup = await options.runtimeCleanup?.prepare();
       await options.committer.commit(state.candidate, {
         reason: state.reason,
         historyDeleted: true,
@@ -356,10 +408,14 @@ export function createIdentityRotationCoordinator(options: {
       }, backup);
       await options.committer.finalize(backup);
     } catch (error) {
-      await rollbackForRetry(state as IdentityRotationState & { backup: IdentityRotationBackup });
+      await rollbackForRetry(state as IdentityRotationPendingState & { backup: IdentityRotationBackup });
+      await runtimeCleanup?.rollback();
       throw error;
     }
-    await options.storage.remove(stateKey);
+    // Candidate activation and cleanup are already committed at this point.
+    // Replace the rollback marker (which contains the former identity) before
+    // treating marker deletion as best effort.
+    await completeCommittedMarker(state.reason, state.candidate.deviceId);
     return { rotated: true, reason: state.reason, identity: state.candidate };
   };
 
@@ -425,6 +481,7 @@ export function createIdentityRotationCoordinator(options: {
         : undefined;
     },
     notice: () => options.storage.get<IdentityRotationNotice>(IDENTITY_ROTATION_NOTICE_KEY),
+    acknowledgeNotice: () => options.storage.remove(IDENTITY_ROTATION_NOTICE_KEY),
     stop(): void {
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = undefined;

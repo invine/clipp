@@ -156,6 +156,7 @@ function App() {
         onClearAll={() => client.clearHistory()}
         onDismissClipboardHistoryError={() => client.dismissClipboardHistoryError()}
         onRetryHistoryCleanup={() => client.retryHistoryCleanup()}
+        onAcknowledgeIdentityRotationNotice={() => client.acknowledgeIdentityRotationNotice()}
         onSetLocalRetention={(retentionMs) => client.setLocalRetention(retentionMs)}
         onSetAutoSync={(enabled) => client.setAutoSync(enabled)}
         onRetryInitialization={async () => {

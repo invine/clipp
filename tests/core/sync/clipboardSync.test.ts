@@ -1,4 +1,6 @@
 import { MemoryHistoryStore } from "../../../packages/core/history/store";
+import { createClipCaptureCoordinator } from "../../../packages/core/clipboard/captureCoordinator";
+import { createManualClipboardService } from "../../../packages/core/clipboard/service";
 import type { Clip } from "../../../packages/core/models/Clip";
 import {
   decodeLiveClipFrame,
@@ -273,6 +275,43 @@ describe("ClipboardSyncManager", () => {
     await stopping;
 
     expect((await history.getById(clip.id))?.clip).toEqual(clip);
+  });
+
+  test("rotation cleanup stages pending captures and restores them when activation fails", async () => {
+    const history = createHistory();
+    const captureCoordinator = createClipCaptureCoordinator({
+      history: { accept: async () => { throw new Error("storage unavailable"); } },
+      originPeerId: () => originPeerId,
+      makeId: () => "00000000-0000-4000-8000-000000000023",
+    });
+    const clipboard = createManualClipboardService({
+      getSenderId: () => originPeerId,
+      captureCoordinator,
+    });
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    sync.startLocalOnly();
+
+    await clipboard.processLocalText("pending recovery capture");
+    expect(captureCoordinator.pending()).toEqual([
+      expect.objectContaining({ originPeerId, content: "pending recovery capture" }),
+    ]);
+
+    const failedCleanup = await sync.prepareIdentityRotationCleanup();
+
+    expect(captureCoordinator.pending()).toEqual([]);
+    await failedCleanup.rollback();
+    expect(captureCoordinator.pending()).toEqual([
+      expect.objectContaining({ originPeerId, content: "pending recovery capture" }),
+    ]);
+
+    await sync.prepareIdentityRotationCleanup();
+    expect(captureCoordinator.pending()).toEqual([]);
+    expect(await history.exportAll()).toEqual([]);
   });
 
   test("cancels a queued clipboard write after local removal", async () => {

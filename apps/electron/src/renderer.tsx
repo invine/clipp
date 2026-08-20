@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import type { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, IdentityRotationNoticeReason, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
 
 type AppState = {
   clips: Clip[];
@@ -20,7 +20,7 @@ type AppState = {
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
-  identityRotationNotice?: boolean;
+  identityRotationNotice?: IdentityRotationNoticeReason | null;
   diagnostics?: {
     lastClipboardCheck: number | null;
     lastClipboardPreview: string | null;
@@ -121,6 +121,7 @@ const App = () => {
         onClearAll={() => window.clipp.clearHistory()}
         onDismissClipboardHistoryError={() => window.clipp.dismissClipboardHistoryError()}
         onRetryHistoryCleanup={() => window.clipp.retryHistoryCleanup()}
+        onAcknowledgeIdentityRotationNotice={() => window.clipp.acknowledgeIdentityRotationNotice()}
         onSetLocalRetention={(retentionMs) => window.clipp.setLocalRetention(retentionMs)}
         onSetAutoSync={(enabled) => window.clipp.setAutoSync(enabled)}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}

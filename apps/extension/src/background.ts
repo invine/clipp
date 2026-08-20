@@ -383,6 +383,7 @@ const identityRotation = createRuntimeIdentityRotationCoordinator({
   repository: identityRepo,
   storage,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  runtimeCleanup: { prepare: () => clipboardSync.prepareIdentityRotationCleanup() },
   shutdown: async () => {
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = undefined;
@@ -475,7 +476,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         clipboardHistoryError,
         historyPolicyError,
         identityRotationRecovery,
-        identityRotationNotice: Boolean(rotationNotice),
+        identityRotationNotice: rotationNotice?.reason ?? null,
         autoSync: clipboardSync.isAutoSync(),
         relayAddresses: DEFAULT_CIRCUIT_RELAY_ADDRESSES,
       };
@@ -771,6 +772,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "dismissClipboardHistoryError") {
     clipboard.dismissHistoryError?.();
     sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.type === "acknowledgeIdentityRotationNotice") {
+    identityRotation.acknowledgeNotice()
+      .then(async () => {
+        await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
+        sendResponse({ ok: true });
+      })
+      .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }
   if (msg.type === "retryHistoryCleanup") {

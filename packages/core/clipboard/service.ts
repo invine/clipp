@@ -1,7 +1,11 @@
 import { normalizeClipboardContent } from "./normalize";
 import { Clip } from "../models/Clip";
 import { ClipType } from "../models/enums";
-import type { ClipCaptureCoordinator, ClipCaptureOptions } from "./captureCoordinator";
+import type {
+  ClipCaptureCoordinator,
+  ClipCaptureOptions,
+  IdentityRotationCaptureCleanup,
+} from "./captureCoordinator";
 import { createSerializedExecutor } from "./serial";
 import * as log from "../logger";
 
@@ -14,6 +18,7 @@ export interface ClipboardService {
   writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void>;
   /** Drops captures that never reached durable history, after a successful Clear History. */
   discardPending?(): Promise<void>;
+  prepareIdentityRotationCleanup?(): Promise<IdentityRotationCaptureCleanup>;
   /** Serializes durable Clear History with pending capture retries. */
   clearHistory(clearDurable: () => Promise<void>): Promise<void>;
   dismissHistoryError?(): void;
@@ -272,6 +277,9 @@ function createClipboardService(
       : (clearDurable) => clearDurable(),
     discardPending: options.captureCoordinator
       ? () => options.captureCoordinator!.discardPending()
+      : undefined,
+    prepareIdentityRotationCleanup: options.captureCoordinator
+      ? () => options.captureCoordinator!.prepareIdentityRotationCleanup()
       : undefined,
   };
 }

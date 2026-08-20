@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
+import { identityRotationNoticeMessage, type IdentityRotationNoticeReason } from "./identityRotationNotice";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
@@ -241,7 +242,7 @@ export type ClipboardAppProps = {
   relayAddresses?: string[];
   initializationError?: boolean;
   identityRotationRecovery?: boolean;
-  identityRotationNotice?: boolean;
+  identityRotationNotice?: IdentityRotationNoticeReason | null;
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): void | Promise<void>;
@@ -261,6 +262,7 @@ export type ClipboardAppProps = {
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
   onRetryInitialization?(): void | Promise<void>;
+  onAcknowledgeIdentityRotationNotice?(): void | Promise<void>;
 };
 
 export function ClipboardApp({
@@ -281,7 +283,7 @@ export function ClipboardApp({
   relayAddresses = [],
   initializationError = false,
   identityRotationRecovery = false,
-  identityRotationNotice = false,
+  identityRotationNotice = null,
   onDeleteClip,
   onUnpair,
   onAccept,
@@ -301,6 +303,7 @@ export function ClipboardApp({
   onRenameDevice,
   onSetRelayAddresses,
   onRetryInitialization,
+  onAcknowledgeIdentityRotationNotice,
 }: ClipboardAppProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
@@ -1320,7 +1323,12 @@ export function ClipboardApp({
 
       {identityRotationNotice && !identityRotationRecovery && (
         <div className="initialization-error" role="status">
-          <span>This installation&apos;s former identity was revoked or reset. Previous Clipboard History was deleted and devices must be paired again.</span>
+          <span>{identityRotationNoticeMessage(identityRotationNotice)}</span>
+          {onAcknowledgeIdentityRotationNotice && (
+            <button type="button" onClick={() => void onAcknowledgeIdentityRotationNotice()}>
+              Dismiss
+            </button>
+          )}
         </div>
       )}
 

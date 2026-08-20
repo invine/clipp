@@ -82,11 +82,14 @@ async function bootstrap() {
   }
   const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
   let stopIdentityBoundServicesForRotation: () => Promise<void> = async () => undefined;
+  let prepareIdentityRotationCleanup: () => Promise<{ rollback(): Promise<void> }> =
+    async () => ({ rollback: async () => undefined });
   const identityRotation = createRuntimeIdentityRotationCoordinator({
     repository: identityRepo,
     storage: kvStore,
     capabilities: RUNTIME_CAPABILITIES.electron,
     shutdown: () => stopIdentityBoundServicesForRotation(),
+    runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },
     committer: createSQLiteIdentityRotationCommitter({
       db,
       repository: identityRepo,
@@ -353,6 +356,7 @@ async function bootstrap() {
     autoSync,
     onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
+  prepareIdentityRotationCleanup = () => clipboardSync.prepareIdentityRotationCleanup();
 
   let pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
   let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
@@ -409,7 +413,7 @@ async function bootstrap() {
       clipboardHistoryError,
       historyPolicyError,
       identityRotationRecovery,
-      identityRotationNotice: Boolean(await identityRotation.notice()),
+      identityRotationNotice: (await identityRotation.notice())?.reason ?? null,
       relayAddresses,
       // TODO: remove diagnostics
       // diagnostics: {
@@ -1073,6 +1077,11 @@ async function bootstrap() {
 
   ipcMain.handle("clipp:retry-history-cleanup", async () => {
     await historyRetentionCleanup?.retry();
+  });
+
+  ipcMain.handle("clipp:acknowledge-identity-rotation-notice", async () => {
+    await identityRotation.acknowledgeNotice();
+    await emitState();
   });
 
   ipcMain.handle(
