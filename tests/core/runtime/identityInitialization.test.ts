@@ -2,6 +2,7 @@ import {
   createAndroidRuntimeAdapter,
   createChromeExtensionRuntimeAdapter,
   createElectronRuntimeAdapter,
+  createRuntimeIdentityManager,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeIdentityRotationCoordinator,
   startIdentityBoundRuntimeServices,
@@ -52,6 +53,17 @@ function revokedIdentity(): DeviceIdentity {
     membershipView: {
       admittedPeerIds: [revokedPeerId, "remote-peer"],
       revokedPeerIds: [revokedPeerId],
+    },
+  };
+}
+
+function lostIdentity(): DeviceIdentity {
+  return {
+    ...revokedIdentity(),
+    privateKey: undefined,
+    membershipView: {
+      admittedPeerIds: [revokedPeerId, "remote-peer"],
+      revokedPeerIds: [],
     },
   };
 }
@@ -190,8 +202,9 @@ describe("runtime identity initialization", () => {
 
     await expect(lifecycle.initialize()).resolves.toEqual({ networkingEnabled: false });
     expect(lifecycle.isRecovering()).toBe(true);
+    expect(lifecycle.startLocalOnlyIfRecovering()).toBe(true);
     expect(loadIdentity).not.toHaveBeenCalled();
-    expect(startLocalRecovery).toHaveBeenCalledWith("identity-loss");
+    expect(startLocalRecovery).not.toHaveBeenCalled();
     expect(await repository.get()).toMatchObject({ deviceId: revokedPeerId, privateKey: undefined });
   });
 
@@ -232,6 +245,70 @@ describe("runtime identity initialization", () => {
       publicKey: "derived-public-key",
     });
     expect(shutdown).not.toHaveBeenCalled();
+  });
+
+  it.each(rotationAdapterCases)("starts the %s adapter as an ordinary first launch when no identity is stored", async (platform, factory) => {
+    const storage = new RotationStorage();
+    const adapter = createRotationAdapter(factory, storage);
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    const firstLaunchPeerId = `${platform}-first-launch-peer`;
+    const generateRotationCandidate = jest.fn(async () => ({
+      peerId: `${platform}-unexpected-rotation-peer`,
+      privateKey: "unexpected-rotation-private",
+      publicKey: "unexpected-rotation-public",
+    }));
+    const identity = createRuntimeIdentityManager({
+      repo: repository,
+      capabilities: adapter.capabilities,
+      generateKeyMaterial: async () => ({
+        peerId: firstLaunchPeerId,
+        privateKey: "first-launch-private",
+        publicKey: "first-launch-public",
+      }),
+      deriveKeyMaterial: async (privateKey) => ({
+        peerId: firstLaunchPeerId,
+        privateKey,
+        publicKey: "first-launch-public",
+      }),
+    });
+    const rotation = createRuntimeIdentityRotationCoordinator({
+      repository,
+      storage,
+      capabilities: adapter.capabilities,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      shutdown: async () => undefined,
+      retry: false,
+      generateKeyMaterial: generateRotationCandidate,
+    });
+    const localStarted = jest.fn();
+    const networkStarted = jest.fn();
+    const restart = jest.fn();
+    const lifecycle = createRuntimeIdentityRotationLifecycle({
+      rotation,
+      loadIdentity: () => identity.get(),
+      restart,
+      startLocalRecovery: jest.fn(),
+      publishState: async () => undefined,
+    });
+
+    await startIdentityBoundRuntimeServices({
+      initializeIdentity: () => lifecycle.initialize(),
+      startLocalServices: localStarted,
+      startNetworkServices: networkStarted,
+    });
+
+    expect(await adapter.identity.load()).toMatchObject({
+      deviceId: firstLaunchPeerId,
+      membershipView: {
+        admittedPeerIds: [firstLaunchPeerId],
+        revokedPeerIds: [],
+      },
+    });
+    expect(generateRotationCandidate).not.toHaveBeenCalled();
+    expect(localStarted).toHaveBeenCalledTimes(1);
+    expect(networkStarted).toHaveBeenCalledTimes(1);
+    expect(restart).not.toHaveBeenCalled();
   });
 
   it("starts neither local nor network services when Device Identity initialization fails", async () => {
@@ -301,16 +378,16 @@ describe("runtime identity initialization", () => {
   });
 
   it.each(rotationAdapterCases.flatMap(([platform, factory]) => [
-    { platform, factory, failedKey: "identity" },
-    { platform, factory, failedKey: "identityRotation" },
-  ]))("keeps $platform networking down through $failedKey rotation recovery and enables it after restart", async ({ platform, factory, failedKey }) => {
+    { platform, factory, failure: "candidate persistence", failedKey: "identity" },
+    { platform, factory, failure: "rotation marker persistence", failedKey: "identityRotation" },
+  ]))("keeps $platform networking down through interrupted Identity Loss $failure and enables it after restart", async ({ platform, factory, failedKey }) => {
     const storage = new RotationStorage();
     const adapter = createRotationAdapter(factory, storage);
     if (platform !== "electron") (globalThis as { indexedDB?: IDBFactory }).indexedDB = indexedDB;
     const history = platform === "electron" ? new InMemoryHistoryBackend() : new IndexedDBHistoryBackend();
     await history.clearAll();
     const repository = createKVIdentityRepository({ storage, key: "identity" });
-    await repository.upsert(revokedIdentity());
+    await repository.upsert(lostIdentity());
     await history.set("old-clip", {
       clip: {
         id: "old-clip",
@@ -340,9 +417,11 @@ describe("runtime identity initialization", () => {
       retry: false,
       now: () => 10,
       generateKeyMaterial,
-      deriveKeyMaterial: async (privateKey) => privateKey === "old-private"
-        ? { peerId: revokedPeerId, privateKey, publicKey: "old-public" }
-        : { peerId: candidatePeerId, privateKey, publicKey: "replacement-public" },
+      deriveKeyMaterial: async (privateKey) => ({
+        peerId: candidatePeerId,
+        privateKey,
+        publicKey: "replacement-public",
+      }),
     });
     const localStarted = jest.fn();
     const localRecoveryStarted = jest.fn();
@@ -371,9 +450,9 @@ describe("runtime identity initialization", () => {
     expect(shutdown).toHaveBeenCalledTimes(1);
     expect(localStarted).toHaveBeenCalledTimes(1);
     expect(networkStarted).not.toHaveBeenCalled();
-    expect(await adapter.identity.load()).toEqual(revokedIdentity());
+    expect(await adapter.identity.load()).toEqual(lostIdentity());
     expect(await history.get("old-clip")).not.toBeNull();
-    expect(localRecoveryStarted).toHaveBeenCalled();
+    expect(localRecoveryStarted).not.toHaveBeenCalled();
 
     if (failedKey === "identity") {
       lifecycle.dispose();
@@ -389,6 +468,7 @@ describe("runtime identity initialization", () => {
     expect(localStarted).toHaveBeenCalledTimes(1);
     expect(networkStarted).not.toHaveBeenCalled();
     expect(await history.getAll()).toEqual([]);
+    expect(await storage.get("identityRotationNotice")).toMatchObject({ reason: "identity-loss" });
     expect(generateKeyMaterial).toHaveBeenCalledTimes(1);
     expect(restart).toHaveBeenCalledTimes(1);
 

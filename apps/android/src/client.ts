@@ -282,8 +282,8 @@ export class AndroidClient {
     rotation: this.identityRotation,
     loadIdentity: () => this.identitySvc.get(),
     restart: () => window.location.reload(),
-    startLocalRecovery: (reason) => {
-      if (reason !== "identity-loss") this.clipboardSync.startLocalOnly();
+    startLocalRecovery: () => {
+      this.clipboardSync.startLocalOnly();
       this.started = true;
     },
     publishState: () => this.emitState(),

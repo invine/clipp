@@ -53,7 +53,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   rotation: RuntimeIdentityRotationPort;
   loadIdentity(): Promise<unknown>;
   restart(): void;
-  startLocalRecovery(reason: IdentityRotationReason): void;
+  startLocalRecovery(): void;
   publishState(): void | Promise<void>;
   onRecoveryChanged?(recovering: boolean): void;
 }) {
@@ -70,6 +70,9 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     restartRequested = true;
     options.restart();
   };
+  const startLocalRecovery = (): void => {
+    if (recoveryReason === "revoked") options.startLocalRecovery();
+  };
   const unsubscribe = options.rotation.onStatusChanged((status) => {
     if (status.kind === "rotated") {
       requestRestart();
@@ -77,7 +80,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     }
     recoveryReason = status.kind === "recovering" ? status.reason : undefined;
     setRecovering(status.kind === "recovering");
-    if (recovering && recoveryReason) options.startLocalRecovery(recoveryReason);
+    if (recovering) startLocalRecovery();
     void Promise.resolve(options.publishState()).catch(() => undefined);
   });
 
@@ -101,7 +104,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     isRecovering: (): boolean => recovering,
     startLocalOnlyIfRecovering(): boolean {
       if (!recovering) return false;
-      if (recoveryReason) options.startLocalRecovery(recoveryReason);
+      startLocalRecovery();
       return true;
     },
     dispose(): void {

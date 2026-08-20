@@ -969,9 +969,7 @@ async function bootstrap() {
       app.relaunch();
       app.exit(0);
     },
-    startLocalRecovery: (reason) => {
-      if (reason !== "identity-loss") clipboardSync.startLocalOnly();
-    },
+    startLocalRecovery: () => clipboardSync.startLocalOnly(),
     publishState: emitState,
     onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
   });

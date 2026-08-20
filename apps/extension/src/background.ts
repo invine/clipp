@@ -532,9 +532,7 @@ identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
   rotation: identityRotation,
   loadIdentity: () => identitySvc.get(),
   restart: () => chrome.runtime.reload(),
-  startLocalRecovery: (reason) => {
-    if (reason !== "identity-loss") clipboardSync.startLocalOnly();
-  },
+  startLocalRecovery: () => clipboardSync.startLocalOnly(),
   publishState: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
   onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
 });
