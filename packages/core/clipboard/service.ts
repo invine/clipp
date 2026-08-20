@@ -120,22 +120,23 @@ function createClipboardService(
     localHandlers.forEach((handler) => handler(clip, captureOptions));
   }
 
+  async function captureExplicitly(capture: () => Promise<Clip | null>): Promise<Clip | null> {
+    const coordinator = options.captureCoordinator!;
+    const pendingBefore = new Set(coordinator.pending().map((clip) => clip.id));
+    const clip = await capture();
+    if (!clip && !coordinator.pending().some((pendingClip) => !pendingBefore.has(pendingClip.id))) {
+      throw new Error("clip_capture_failed");
+    }
+    return clip;
+  }
+
   async function processLocalText(text: string, captureOptions?: LocalClipOptions): Promise<Clip | null> {
     log.debug("Processing local clipboard text");
     if (options.captureCoordinator) {
-      const pendingBefore = captureOptions?.shareNow
-        ? new Set(options.captureCoordinator.pending().map((clip) => clip.id))
-        : undefined;
-      const clip = captureMode === "manual" && !captureOptions?.shareNow
-        ? await options.captureCoordinator.observe(text)
-        : await options.captureCoordinator.capture(text, captureOptions);
-      if (
-        captureOptions?.shareNow
-        && !clip
-        && !options.captureCoordinator.pending().some((pendingClip) => !pendingBefore?.has(pendingClip.id))
-      ) {
-        throw new Error("clip_capture_failed");
-      }
+      const capture = () => captureMode === "manual" && !captureOptions?.shareNow
+        ? options.captureCoordinator!.observe(text)
+        : options.captureCoordinator!.capture(text, captureOptions);
+      const clip = captureOptions?.shareNow ? await captureExplicitly(capture) : await capture();
       if (clip) publishLocalClip(clip, captureOptions);
       return clip;
     }
@@ -205,13 +206,17 @@ function createClipboardService(
   }
 
   async function reuseLocalClip(clip: Clip): Promise<Clip | null> {
-    if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return null;
+    if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) {
+      throw new Error("clip_capture_failed");
+    }
     return serialize(async () => {
       if (options.captureCoordinator) {
-        const reused = await options.captureCoordinator.reuse(
-          clip.content,
-          write,
-          readBackAvailable ? read : undefined,
+        const reused = await captureExplicitly(
+          () => options.captureCoordinator!.reuse(
+            clip.content,
+            write,
+            readBackAvailable ? read : undefined,
+          ),
         );
         baseline = options.captureCoordinator.baselineValue();
         if (reused) publishLocalClip(reused);
@@ -219,7 +224,9 @@ function createClipboardService(
       }
       await write(clip.content);
       try { baseline = await read(); } catch { baseline = undefined; }
-      return processLocalText(clip.content);
+      const reused = await processLocalText(clip.content);
+      if (!reused) throw new Error("clip_capture_failed");
+      return reused;
     });
   }
 

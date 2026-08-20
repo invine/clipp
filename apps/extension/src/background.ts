@@ -38,6 +38,7 @@ import {
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
+import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions";
 import { createExtensionClipboardBridge } from "./clipboardBridge";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
@@ -640,12 +641,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "reuseClip" && msg.id) {
     historyPolicyReady
-      .then(() => history.getById(msg.id))
-      .then(async (item) => {
-        if (!item) throw new Error("clip_not_found");
-        await clipboard.reuseLocalClip(item.clip);
-        sendResponse({ ok: true });
-      })
+      .then(() => reuseRetainedClip(msg.id, { history, clipboard }))
+      .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }

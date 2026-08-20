@@ -26,6 +26,7 @@ import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
 import { createHistoryReconciliation } from "@core/sync/historyReconciliation";
 import { createLiveClipGossip } from "@core/sync/liveClipGossip";
+import { reuseRetainedClip } from "@core/clipboard/explicitActions";
 import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
 import { createMembershipPeerRecordBridge, createMembershipReconciler } from "@core/membership/reconciliation";
 import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
@@ -797,9 +798,7 @@ export class AndroidClient {
   }
 
   async reuseClip(id: string) {
-    const item = await this.history.getById(id);
-    if (!item) throw new Error("clip_not_found");
-    await this.clipboard.reuseLocalClip(item.clip);
+    await reuseRetainedClip(id, { history: this.history, clipboard: this.clipboard });
     await this.emitState();
   }
 

@@ -145,6 +145,23 @@ describe("ClipboardService", () => {
       .rejects.toThrow("clip_capture_failed");
   });
 
+  it("exposes a reuse failure when the clipboard write succeeds but no Clip can be created", async () => {
+    const service = createManualClipboardService({
+      getSenderId: () => peerId,
+      writeText: async () => {},
+      captureCoordinator: createClipCaptureCoordinator({
+        history: {
+          accept: async () => { throw new HistoryPolicyError("clip_capacity"); },
+        },
+        originPeerId: () => peerId,
+        makeId: () => "00000000-0000-4000-8000-000000000451",
+      }),
+    });
+
+    await expect(service.reuseLocalClip({ type: "text", content: "cannot be retained" } as Clip))
+      .rejects.toThrow("clip_capture_failed");
+  });
+
   it("suppresses transformed manual read-back observations after explicit history reuse", async () => {
     const clips: Clip[] = [];
     let nextId = 600;

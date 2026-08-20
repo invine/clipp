@@ -37,6 +37,7 @@ import { createPairedPeerConnectionManager } from "../../../packages/core/networ
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation.js";
+import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions.js";
 // TODO: remove webrtc-star
 // import { DEFAULT_WEBRTC_STAR_RELAYS } from "../../../packages/core/network/constants.js";
 import * as log from "../../../packages/core/logger.js";
@@ -1062,9 +1063,7 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:reuse-clip", async (_evt, id: string) => {
-    const item = await history.getById(id);
-    if (!item) throw new Error("clip_not_found");
-    await clipboardSvc.reuseLocalClip(item.clip);
+    await reuseRetainedClip(id, { history, clipboard: clipboardSvc });
     await emitState();
     return { ok: true };
   });
