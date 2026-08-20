@@ -21,11 +21,6 @@ type AppState = {
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
-  diagnostics?: {
-    lastClipboardCheck: number | null;
-    lastClipboardPreview: string | null;
-    lastClipboardError: string | null;
-  };
 };
 
 const initialState: AppState = {

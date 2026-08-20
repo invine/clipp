@@ -25,11 +25,6 @@ type AppState = {
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   relayAddresses: string[];
-  diagnostics?: {
-    lastClipboardCheck: number | null;
-    lastClipboardPreview: string | null;
-    lastClipboardError: string | null;
-  };
   pinnedIds?: string[];
   localRetentionMs?: number;
   autoSync?: boolean;

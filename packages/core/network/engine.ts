@@ -1106,7 +1106,6 @@ class Libp2pMessagingTransport implements MessagingTransport {
       const from = safePeerId(
         (conn as any)?.remotePeer ?? (stream as any)?.remotePeer ?? (conn as any)?.remotePeerId
       );
-      let derivedFrom: string | null = null;
       if (!from) {
         log.warn("Incoming stream missing peer id", {
           protocol,
@@ -1254,17 +1253,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
             });
             continue;
           }
-          let msgFrom = from ?? derivedFrom;
-          if (!msgFrom) {
-            derivedFrom = deriveFromPayload(buf);
-            msgFrom = derivedFrom;
-            if (!msgFrom) {
-              log.warn("Incoming message missing peer id and payload from", { protocol });
-              continue;
-            }
-            log.debug("Derived peer id from payload", { protocol, from: msgFrom });
-          }
-          for (const h of handlers) h(msgFrom, buf);
+          if (!from) continue;
+          for (const h of handlers) h(from, buf);
         }
       } catch (err: any) {
         if (protocol === PAIRING_PROTOCOL) {
@@ -1801,14 +1791,4 @@ function describeStream(stream: any) {
         }
       : undefined,
   };
-}
-
-function deriveFromPayload(buf: Uint8Array): string | null {
-  try {
-    const raw = new TextDecoder().decode(buf);
-    const parsed = JSON.parse(raw);
-    return typeof parsed?.from === "string" && parsed.from.length > 0 ? parsed.from : null;
-  } catch {
-    return null;
-  }
 }

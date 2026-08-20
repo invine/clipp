@@ -7,21 +7,6 @@ import {
   validateClip,
 } from "../models/Clip.js";
 
-/** v1 has no text sanitization: clipboard content is an event payload. */
-export function sanitizeText(input: string): string {
-  return input;
-}
-
-/** @deprecated v1 never classifies image or file clips. */
-export function guessMimeType(): string {
-  return "application/octet-stream";
-}
-
-/** Retained only as a compatibility helper; v1 accepts text and HTTP(S) URLs. */
-export function detectClipType(content: unknown): Clip["type"] {
-  return clipContentType(typeof content === "string" ? content : String(content));
-}
-
 export function normalizeClipboardContent(
   input: unknown,
   originPeerId: string,

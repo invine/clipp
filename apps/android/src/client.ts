@@ -66,9 +66,6 @@ export type AndroidAppState = {
   identityRotationNotice?: IdentityRotationNoticeReason | null;
   relayAddresses: string[];
   diagnostics?: {
-    lastClipboardCheck: number | null;
-    lastClipboardPreview: string | null;
-    lastClipboardError: string | null;
     lastPairingAttempt: PairingAttemptDiagnostics | null;
   };
 };
@@ -306,14 +303,8 @@ export class AndroidClient {
       },
       readText: async () => {
         try {
-          const txt = (await readClipboardText()) ?? "";
-          this.lastClipboardCheck = Date.now();
-          this.lastClipboardPreview = txt ? txt.slice(0, 140) : "";
-          this.lastClipboardError = null;
-          return txt;
-        } catch (err: any) {
-          this.lastClipboardCheck = Date.now();
-          this.lastClipboardError = err?.message || "Clipboard unavailable";
+          return (await readClipboardText()) ?? "";
+        } catch {
           return "";
         }
       },
@@ -348,9 +339,6 @@ export class AndroidClient {
   private listeners: Array<(state: AndroidAppState) => void> = [];
   private started = false;
   private eventsBound = false;
-  private lastClipboardCheck: number | null = null;
-  private lastClipboardPreview: string | null = null;
-  private lastClipboardError: string | null = null;
   private lastPairingAttempt: PairingAttemptDiagnostics | null = null;
   private pairingAttemptSeq = 0;
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
@@ -472,26 +460,6 @@ export class AndroidClient {
 
   private async getRelayAddresses(): Promise<string[]> {
     return [...DEFAULT_CIRCUIT_RELAY_ADDRESSES];
-  }
-
-  private async ensureIdentityAddrs(id: any): Promise<any> {
-    if (!id) return id;
-    const peerId = await deviceIdToPeerId(id.deviceId);
-    const current = this.transport?.getSelfMultiaddrs?.() ?? [];
-    const existing: string[] = Array.isArray(id.multiaddrs)
-      ? id.multiaddrs
-      : id.multiaddr
-      ? [id.multiaddr]
-      : [];
-    const fallback = existing.filter((addr) => !addr.includes("/p2p-circuit"));
-    const addrs = current.length ? current : fallback;
-    id.multiaddrs = addrs;
-    id.multiaddr =
-      addrs[0] ||
-      (typeof id.multiaddr === "string" && !id.multiaddr.includes("/p2p-circuit")
-        ? id.multiaddr
-        : `/p2p/${peerId}`);
-    return id;
   }
 
   private bindEvents() {
@@ -643,7 +611,7 @@ export class AndroidClient {
     const devices = await this.identitySvc.trustedDevices();
     const identity = this.identityRotationRecovery
       ? null
-      : toPublicDeviceIdentity(await this.ensureIdentityAddrs(await this.identitySvc.get()));
+      : toPublicDeviceIdentity(await this.identitySvc.get());
     const peers = this.transport?.getConnectedPeers?.() ?? [];
     const peerConnections = this.transport?.getPeerConnectionInfo?.() ?? [];
     const relayConnections = this.transport?.getRelayConnectionInfo?.() ?? [];
@@ -668,9 +636,6 @@ export class AndroidClient {
       identityRotationNotice: (await this.identityRotation.notice())?.reason ?? null,
       relayAddresses,
       diagnostics: {
-        lastClipboardCheck: this.lastClipboardCheck,
-        lastClipboardPreview: this.lastClipboardPreview,
-        lastClipboardError: this.lastClipboardError,
         lastPairingAttempt: this.lastPairingAttempt,
       },
     };
@@ -758,7 +723,7 @@ export class AndroidClient {
 
   async getIdentity(): Promise<Identity | null> {
     const id = await this.identitySvc.get();
-    return toPublicDeviceIdentity(await this.ensureIdentityAddrs(id));
+    return toPublicDeviceIdentity(id);
   }
 
   async getInitializationError() {
@@ -772,7 +737,7 @@ export class AndroidClient {
   }
 
   async getPairingCode(): Promise<PairingCode | null> {
-    const id = await this.ensureIdentityAddrs(await this.identitySvc.get());
+    const id = await this.identitySvc.get();
     await this.ensureMessaging();
     await this.transport!.start();
     if (!this.transport!.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");

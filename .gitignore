@@ -1,2 +1,7 @@
 node_modules
 dist
+
+# Local runtime state and diagnostic output
+.clipp-cli-store.json
+rv.json
+package-lock-old.json

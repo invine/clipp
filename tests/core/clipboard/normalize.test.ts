@@ -1,7 +1,5 @@
 import {
-  detectClipType,
   normalizeClipboardContent,
-  sanitizeText,
 } from "../../../packages/core/clipboard/normalize";
 import { validateClip } from "../../../packages/core/models/Clip";
 
@@ -9,10 +7,10 @@ const originPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
 describe("v1 Clipboard Normalizer", () => {
   it("classifies only complete untrimmed HTTP(S) URLs", () => {
-    expect(detectClipType("hello")).toBe("text");
-    expect(detectClipType("https://example.com")).toBe("url");
-    expect(detectClipType(" https://example.com ")).toBe("text");
-    expect(detectClipType("ftp://example.com")).toBe("text");
+    expect(normalizeClipboardContent("hello", originPeerId)?.type).toBe("text");
+    expect(normalizeClipboardContent("https://example.com", originPeerId)?.type).toBe("url");
+    expect(normalizeClipboardContent(" https://example.com ", originPeerId)?.type).toBe("text");
+    expect(normalizeClipboardContent("ftp://example.com", originPeerId)?.type).toBe("text");
   });
 
   it("preserves exact non-empty clipboard text", () => {
@@ -22,7 +20,6 @@ describe("v1 Clipboard Normalizer", () => {
     });
     expect(clip).toMatchObject({ type: "text", content: "  hello\n", capturedAt: 1_000, shareExpiresAt: 86_401_000 });
     expect(validateClip(clip)).toBe(true);
-    expect(sanitizeText("  hello\n")).toBe("  hello\n");
   });
 
   it("rejects empty input and unsupported sharing lifetimes", () => {

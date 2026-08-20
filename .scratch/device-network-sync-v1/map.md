@@ -10,6 +10,7 @@
 - [13 — Reuse and explicitly share Clips](issues/13-reuse-and-share-clips.md): Retained-Clip reuse writes the platform clipboard before creating a new serialized Local Clip; Share Now creates one distinct Local Clip whose in-memory override can attempt initial live delivery without changing Auto Sync.
 - [14 — Revoke Device Membership network-wide](issues/14-revoke-device-membership.md): Persist a remove-wins tombstone before publication or enforcement, propagate the complete durable Membership View, and give a connected revoked identity one final view before closing and forgetting it.
 - [15 — Rotate revoked Device Identities safely](issues/15-rotate-revoked-identities.md): Keep revocation recovery local-only and offline, reuse one staged replacement identity across retries, and activate its clean singleton state only after identity-scoped cleanup succeeds.
+- [17 — Remove legacy paths and verify v1 conformance](issues/17-remove-legacy-and-verify-v1.md): Ship only bounded protobuf Device Network Sync v1 paths, derive protocol authority from authenticated Active membership, generate Pairing Targets from Signed Peer Records, and keep content and secrets out of diagnostics.
 
 ## Fog
 

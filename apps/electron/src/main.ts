@@ -205,10 +205,6 @@ async function bootstrap() {
       throw err;
     }
   }
-  // TODO: why this is here and not in clipboard service?
-  // let lastClipboardCheck: number | null = null;
-  // let lastClipboardPreview: string | null = null;
-  // let lastClipboardError: string | null = null;
   // TODO: improve icon import
   const iconRoot = app.isPackaged
     ? path.dirname(app.getPath("exe"))
@@ -233,38 +229,6 @@ async function bootstrap() {
       out.push(v);
     }
     return out;
-  }
-
-  function isLoopbackMultiaddr(addr: string): boolean {
-    return addr.includes("/ip4/127.") || addr.includes("/ip6/::1") || addr.includes("/dns4/localhost") || addr.includes("/dns6/localhost");
-  }
-
-  function isWebRTCDirectMultiaddr(addr: string): boolean {
-    return addr.includes("/webrtc");
-  }
-
-  function isRelayLikeMultiaddr(addr: string): boolean {
-    return addr.includes("/p2p-circuit");
-  }
-
-  function isSecureWebSocketMultiaddr(addr: string): boolean {
-    return addr.includes("/wss");
-  }
-
-  function pairingAdvertiseAddrs(addrs: string[]): string[] {
-    const unique = dedupeMultiaddrs(addrs);
-    const nonLoopback = unique.filter((addr) => !isLoopbackMultiaddr(addr));
-    const source = nonLoopback.length ? nonLoopback : unique;
-    const directWebRTC = source.filter(isWebRTCDirectMultiaddr);
-    const relayLike = source.filter((addr) => !isWebRTCDirectMultiaddr(addr) && isRelayLikeMultiaddr(addr));
-    const secureWebSocket = source.filter((addr) => !isWebRTCDirectMultiaddr(addr) && isSecureWebSocketMultiaddr(addr));
-    const rest = source.filter(
-      (addr) =>
-        !isWebRTCDirectMultiaddr(addr) &&
-        !isRelayLikeMultiaddr(addr) &&
-        !isSecureWebSocketMultiaddr(addr)
-    );
-    return dedupeMultiaddrs([...directWebRTC, ...relayLike, ...secureWebSocket, ...rest]);
   }
 
   function normalizeRelayAddrs(values: string[]) {
@@ -322,14 +286,8 @@ async function bootstrap() {
       },
       readText: async () => {
         try {
-          const txt = clipboard.readText() ?? "";
-          // lastClipboardCheck = Date.now();
-          // lastClipboardPreview = txt ? txt.slice(0, 140) : "";
-          // lastClipboardError = null;
-          return txt;
-        } catch (err: any) {
-          // lastClipboardError = err?.message || "Failed to read clipboard";
-          // lastClipboardCheck = Date.now();
+          return clipboard.readText() ?? "";
+        } catch {
           return "";
         }
       },
@@ -395,7 +353,6 @@ async function bootstrap() {
     const peers = transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
-    // const identity = await ensureIdentityAddrs(await identitySvc.get());
     const identity = identityRotationRecovery ? null : toPublicDeviceIdentity(await identitySvc.get());
     return {
       clips,
@@ -415,32 +372,12 @@ async function bootstrap() {
       identityRotationRecovery,
       identityRotationNotice: (await identityRotation.notice())?.reason ?? null,
       relayAddresses,
-      // TODO: remove diagnostics
-      // diagnostics: {
-      //   lastClipboardCheck,
-      //   lastClipboardPreview,
-      //   lastClipboardError,
-      // },
     };
   }
 
   async function emitState() {
     const state = await getState();
     await runtimeAdapter.publicState.publish(state);
-  }
-
-  // TODO: streamline logging
-  type LogPayload = {
-    level: "info" | "warn" | "error" | "debug";
-    message: string;
-    data?: any;
-  };
-  function broadcastLog({ level, message, data }: LogPayload) {
-    const logger = (log as any)[level] || console.log;
-    logger(message, data || "");
-    BrowserWindow.getAllWindows().forEach((win) =>
-      win.webContents.send("clipp:log", { level, message, data })
-    );
   }
 
   function scheduleSelfPeerUpdate(multiaddrs: string[]) {
@@ -466,24 +403,6 @@ async function bootstrap() {
 
     pendingSelfPeerUpdates.add(task);
     task.finally(() => pendingSelfPeerUpdates.delete(task));
-  }
-
-  function currentTransportMultiaddrs() {
-    try {
-      return transport.getSelfMultiaddrs?.() ?? [];
-    } catch {
-      return [];
-    }
-  }
-
-  async function waitForCurrentTransportMultiaddrs(timeoutMs = 1500) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() <= deadline) {
-      const addrs = currentTransportMultiaddrs();
-      if (addrs.length > 0) return addrs;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return currentTransportMultiaddrs();
   }
 
   function bindTransportHandlers(target: any) {
@@ -1004,7 +923,6 @@ async function bootstrap() {
   ipcMain.handle("clipp:rename-identity", async (_evt, name: string) => {
     await identitySvc.rename(name);
     await emitState();
-    // return await ensureIdentityAddrs(id);
     return toPublicDeviceIdentity(await identitySvc.get());
   });
 
@@ -1109,18 +1027,6 @@ async function bootstrap() {
   ipcMain.handle("clipp:open-qr-window", async () => {
     await ensureMessagingStarted();
     const id = await identitySvc.get();
-    const currentAddrs = dedupeMultiaddrs(await waitForCurrentTransportMultiaddrs());
-    const persistedAddrs = id.multiaddrs && id.multiaddrs.length ? id.multiaddrs : [];
-    const persistedFallback = relayAddresses.length
-      ? persistedAddrs
-      : persistedAddrs.filter((addr) => !addr.includes("/p2p-circuit"));
-    const addrs = pairingAdvertiseAddrs(currentAddrs.length ? currentAddrs : persistedFallback);
-    if (!addrs.length) {
-      throw new Error("No multiaddrs available");
-    }
-    if (currentAddrs.length) {
-      scheduleSelfPeerUpdate(currentAddrs);
-    }
     if (!transport.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
     const signedPeerRecord = await transport.getSignedPeerRecord();
     const txt = encodePairingTarget({ targetPeerId: peerId.toString(), signedPeerRecord, deviceNameHint: id.deviceName });

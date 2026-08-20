@@ -18,9 +18,6 @@ const initialState: AndroidAppState = {
   pinnedIds: [],
   relayAddresses: [],
   diagnostics: {
-    lastClipboardCheck: null,
-    lastClipboardPreview: null,
-    lastClipboardError: null,
     lastPairingAttempt: null,
   },
 };

@@ -4,6 +4,4 @@
 export enum ClipType {
   Text = "text",
   Url = "url",
-  Image = "image",
-  File = "file",
 }

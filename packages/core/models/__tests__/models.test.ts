@@ -8,6 +8,10 @@ import {
 } from "../index";
 
 describe("Data-model sanity", () => {
+  it("exposes only the v1 text and URL content alternatives", () => {
+    expect(Object.values(ClipType)).toEqual(["text", "url"]);
+  });
+
   it("creates a valid text clip", () => {
     const clip: Clip = {
       id: "00000000-0000-4000-8000-000000000001",
