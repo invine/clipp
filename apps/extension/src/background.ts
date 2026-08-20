@@ -19,7 +19,7 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
-  createIdentityScopedStateCleanup,
+  createIdentityRotationCommitter,
   IDENTITY_KEY,
   TRUST_KEY,
   TrustedDevice,
@@ -392,6 +392,7 @@ const historyReconciliation = createHistoryReconciliation({
 });
 const notificationSelection = createRuntimeNotificationSelection();
 let membershipReconciler: ReturnType<typeof createMembershipReconciler>;
+let identityRotationRecovery = false;
 const identityRotation = createRuntimeIdentityRotationCoordinator({
   repository: identityRepo,
   storage,
@@ -403,11 +404,12 @@ const identityRotation = createRuntimeIdentityRotationCoordinator({
     membershipReconciler?.stop();
     await pairingSessions.stop();
     await pairingPending.stop();
-    clipboardSync.stop();
-    historyReconciliation.stop();
+    await clipboardSync.stop();
+    await historyReconciliation.stop();
     await extensionNetwork.stop();
   },
-  clearIdentityScopedState: createIdentityScopedStateCleanup({
+  committer: createIdentityRotationCommitter({
+    repository: identityRepo,
     storage,
     history: historyBackend,
   }),
@@ -417,8 +419,8 @@ membershipReconciler = createMembershipReconciler({
   identity: identitySvc,
   ...createMembershipPeerRecordBridge({ transport: extensionNetwork, identity: identitySvc }),
   onLocalRevoked: async () => {
-    await identityRotation.rotate("revoked");
-    chrome.runtime.reload();
+    const rotation = await identityRotation.rotate("revoked");
+    if (rotation.rotated) chrome.runtime.reload();
   },
   onChanged: () => runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state)),
 });
@@ -465,14 +467,15 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   clock: systemRuntimeClock,
   publicState: {
     async read() {
-      const [clips, pinnedIds, devices, identity, peerState] = await Promise.all([
+      const [clips, pinnedIds, devices, identity, peerState, rotationNotice] = await Promise.all([
         historyPolicyReady.then(() => history.exportAll()),
         historyPolicyReady.then(() => history.pinnedIds()),
         trust.list(),
         identitySvc.get(),
-        offscreenReady
+        (identityRotationRecovery ? Promise.resolve({ peers: [], peerConnections: [] }) : offscreenReady
           .then(() => sendOffscreen<{ peers?: string[]; peerConnections?: PeerConnectionInfo[] }>({ action: "getPeers" }))
-          .catch(() => ({ peers: [], peerConnections: [] })),
+          .catch(() => ({ peers: [], peerConnections: [] }))),
+        identityRotation.notice(),
       ]);
       return {
         clips,
@@ -486,6 +489,8 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         pinnedIds,
         clipboardHistoryError,
         historyPolicyError,
+        identityRotationRecovery,
+        identityRotationNotice: Boolean(rotationNotice),
         autoSync: clipboardSync.isAutoSync(),
         relayAddresses: DEFAULT_CIRCUIT_RELAY_ADDRESSES,
       };
@@ -521,6 +526,15 @@ const pairingPending = createPendingTrustRequestCoordinator({
     await runtimeAdapter.publicState.publish(await runtimeAdapter.publicState.read());
   },
 });
+identityRotation.onStatusChanged((status) => {
+  if (status.kind === "rotated") {
+    chrome.runtime.reload();
+    return;
+  }
+  identityRotationRecovery = status.kind === "recovering";
+  if (identityRotationRecovery) clipboardSync.startLocalOnly();
+  void runtimeAdapter.publicState.read().then((state) => runtimeAdapter.publicState.publish(state));
+});
 extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
   void pairingPending.start()
     .then(() => pairingSessions.receive(from, frame, (peerId, requestFrame) => pairingPending.receive(peerId, requestFrame)))
@@ -538,6 +552,7 @@ const sharedRuntime = createRuntimeOrchestrator({
         chrome.runtime.reload();
         throw new Error("identity_rotated_restart_required");
       }
+      identityRotationRecovery = Boolean(rotation.recovery);
       await identitySvc.get();
     },
     startLocalServices: async () => {
@@ -564,10 +579,15 @@ const sharedRuntime = createRuntimeOrchestrator({
             .then((state) => runtimeAdapter.publicState.publish(state));
         },
       );
+      if (identityRotationRecovery) {
+        clipboardSync.startLocalOnly();
+        return;
+      }
       pairingSessions.start();
       clipboardSync.start();
     },
     startNetworkServices: async () => {
+      if (identityRotationRecovery) return;
       offscreenInitializationGate.open();
       await offscreenReady;
       await extensionNetwork.start();
@@ -583,8 +603,8 @@ const sharedRuntime = createRuntimeOrchestrator({
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = undefined;
     await pairingSessions.stop();
-    clipboardSync.stop();
-    historyReconciliation.stop();
+    await clipboardSync.stop();
+    await historyReconciliation.stop();
   },
 });
 

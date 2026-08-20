@@ -109,6 +109,25 @@ describe("ClipboardSyncManager", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  test("keeps local capture available without network side effects during identity recovery", async () => {
+    const history = createHistory();
+    const { clipboard, localHandlers } = createClipboardHarness();
+    const { gossip, send } = createGossipHarness();
+    const sync = createClipboardSyncManager({
+      clipboard, history, liveGossip: gossip,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    sync.startLocalOnly();
+    const clip = makeClip("00000000-0000-4000-8000-000000000021", "recovery capture");
+
+    localHandlers[0](clip);
+    await flush();
+
+    expect((await history.getById(clip.id))?.clip).toEqual(clip);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   test("sends a Share Now Clip when Auto Sync is disabled", async () => {
     const history = createHistory();
     const { clipboard, localHandlers } = createClipboardHarness();
@@ -187,6 +206,39 @@ describe("ClipboardSyncManager", () => {
 
     expect(await history.exportAll()).toEqual([clip]);
     expect(applied).toEqual([clip]);
+  });
+
+  test("shutdown waits for and cancels an authorized queued live receive", async () => {
+    const history = createHistory();
+    const { clipboard } = createClipboardHarness();
+    const { gossip, deliver } = createGossipHarness([]);
+    let releaseMembership!: () => void;
+    let markMembershipCheckStarted!: () => void;
+    const membershipCheckStarted = new Promise<void>((resolve) => { markMembershipCheckStarted = resolve; });
+    const membershipGate = new Promise<void>((resolve) => { releaseMembership = resolve; });
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      liveGossip: gossip,
+      isActiveMember: async () => {
+        markMembershipCheckStarted();
+        await membershipGate;
+        return true;
+      },
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    sync.start();
+    const clip = makeClip("00000000-0000-4000-8000-000000000020", "cancel at shutdown");
+
+    deliver("sender", clip);
+    await membershipCheckStarted;
+    const stopped = Promise.resolve(sync.stop());
+    releaseMembership();
+    await stopped;
+    await flush();
+
+    expect(await history.getById(clip.id)).toBeNull();
   });
 
   test("cancels a queued clipboard write after local removal", async () => {

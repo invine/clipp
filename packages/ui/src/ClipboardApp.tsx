@@ -240,6 +240,8 @@ export type ClipboardAppProps = {
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
   initializationError?: boolean;
+  identityRotationRecovery?: boolean;
+  identityRotationNotice?: boolean;
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): void | Promise<void>;
@@ -278,6 +280,8 @@ export function ClipboardApp({
   historyPolicyError = null,
   relayAddresses = [],
   initializationError = false,
+  identityRotationRecovery = false,
+  identityRotationNotice = false,
   onDeleteClip,
   onUnpair,
   onAccept,
@@ -1305,6 +1309,18 @@ export function ClipboardApp({
               Retry
             </button>
           )}
+        </div>
+      )}
+
+      {identityRotationRecovery && (
+        <div className="initialization-error" role="alert">
+          <span>Identity rotation is recovering. Clipboard History and local capture remain available; networking will stay disabled and retry automatically.</span>
+        </div>
+      )}
+
+      {identityRotationNotice && !identityRotationRecovery && (
+        <div className="initialization-error" role="status">
+          <span>This installation now has a new identity. Previous Clipboard History was deleted and devices must be paired again.</span>
         </div>
       )}
 

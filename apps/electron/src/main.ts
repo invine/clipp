@@ -53,7 +53,7 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
-  createIdentityScopedStateCleanup,
+  createIdentityRotationCommitter,
   IDENTITY_KEY,
   TRUST_KEY,
   type TrustedDevice
@@ -95,11 +95,13 @@ async function bootstrap() {
     storage: kvStore,
     capabilities: RUNTIME_CAPABILITIES.electron,
     shutdown: () => stopIdentityBoundServicesForRotation(),
-    clearIdentityScopedState: createIdentityScopedStateCleanup({
+    committer: createIdentityRotationCommitter({
+      repository: identityRepo,
       storage: kvStore,
       history: historyBackend,
     }),
   });
+  let identityRotationRecovery = false;
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
     capabilities: RUNTIME_CAPABILITIES.electron,
@@ -118,12 +120,6 @@ async function bootstrap() {
   );
   let localIdentity;
   try {
-    const rotation = await identityRotation.recoverOrRotate();
-    if (rotation.rotated) {
-      app.relaunch();
-      app.exit(0);
-      return;
-    }
     localIdentity = await identitySvc.get();
   } catch (error) {
     (log as any).error?.("Device identity initialization failed", { error: (error as Error).message });
@@ -479,6 +475,8 @@ async function bootstrap() {
       autoSync: clipboardSync.isAutoSync(),
       clipboardHistoryError,
       historyPolicyError,
+      identityRotationRecovery,
+      identityRotationNotice: Boolean(await identityRotation.notice()),
       relayAddresses,
       // TODO: remove diagnostics
       // diagnostics: {
@@ -573,10 +571,16 @@ async function bootstrap() {
         void emitState();
       },
     );
-    pairingSessions.start();
     history.onNew(async () => {
       await emitState();
     });
+
+    if (identityRotationRecovery) {
+      clipboardSync.startLocalOnly();
+      return;
+    }
+
+    pairingSessions.start();
 
     bindTransportHandlers(transport);
     await pairingPending?.start();
@@ -605,16 +609,19 @@ async function bootstrap() {
   }
 
   async function startNetworkServices() {
+    if (identityRotationRecovery) return;
     await ensureMessagingStarted();
+    membershipReconciler.start();
     pairedConnections.start();
     historyReconciliation.start();
   }
 
   async function restartMessaging() {
     try {
-      historyReconciliation.stop();
-      pairedConnections.stop();
+      const historyStopped = historyReconciliation.stop();
+      const reconnectsStopped = pairedConnections.stop();
       await transport.stop();
+      await Promise.allSettled([historyStopped, reconnectsStopped]);
     } catch {
       // ignore stop failures
     }
@@ -885,8 +892,8 @@ async function bootstrap() {
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     await pairingSessions.stop();
-    clipboardSync.stop();
-    historyReconciliation.stop();
+    await clipboardSync.stop();
+    await historyReconciliation.stop();
     pairedConnections.stop();
     try {
       await transport.stop();
@@ -923,9 +930,11 @@ async function bootstrap() {
     identity: identitySvc,
     ...createMembershipPeerRecordBridge({ transport: runtimeNetwork, identity: identitySvc }),
     onLocalRevoked: async () => {
-      await identityRotation.rotate("revoked");
-      app.relaunch();
-      app.exit(0);
+      const rotation = await identityRotation.rotate("revoked");
+      if (rotation.rotated) {
+        app.relaunch();
+        app.exit(0);
+      }
     },
     onChanged: emitState,
   });
@@ -937,12 +946,23 @@ async function bootstrap() {
     await pairingPending?.stop();
     clipboardSync.stop();
     historyReconciliation.stop();
-    pairedConnections.stop();
+    const reconnectsStopped = pairedConnections.stop();
     await runtimeNetwork.stop();
+    await reconnectsStopped;
     if (pendingSelfPeerUpdates.size > 0) {
       await Promise.allSettled(Array.from(pendingSelfPeerUpdates));
     }
   };
+  identityRotation.onStatusChanged((status) => {
+    if (status.kind === "rotated") {
+      app.relaunch();
+      app.exit(0);
+      return;
+    }
+    identityRotationRecovery = status.kind === "recovering";
+    if (identityRotationRecovery) clipboardSync.startLocalOnly();
+    void emitState();
+  });
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,
@@ -1013,11 +1033,17 @@ async function bootstrap() {
     });
   }
   bindPairingHandler(runtimeNetwork);
-  membershipReconciler.start();
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
     start: () => startIdentityBoundRuntimeServices({
       initializeIdentity: async () => {
+        const rotation = await identityRotation.recoverOrRotate();
+        if (rotation.rotated) {
+          app.relaunch();
+          app.exit(0);
+          throw new Error("identity_rotated_restart_required");
+        }
+        identityRotationRecovery = Boolean(rotation.recovery);
         await identitySvc.get();
       },
       startLocalServices,

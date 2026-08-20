@@ -33,6 +33,8 @@ const Popup = () => {
   const [clipboardHistoryError, setClipboardHistoryError] = useState<ClipboardHistoryError | null>(null);
   const [historyPolicyError, setHistoryPolicyError] = useState<HistoryPolicyError | null>(null);
   const [initializationError, setInitializationError] = useState(false);
+  const [identityRotationRecovery, setIdentityRotationRecovery] = useState(false);
+  const [identityRotationNotice, setIdentityRotationNotice] = useState(false);
   const lastClipboardRef = useRef("");
 
   useEffect(() => {
@@ -47,6 +49,8 @@ const Popup = () => {
       if (typeof res?.state?.autoSync === "boolean") setAutoSync(res.state.autoSync);
       setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
       setHistoryPolicyError(res?.state?.historyPolicyError || null);
+      setIdentityRotationRecovery(res?.state?.identityRotationRecovery === true);
+      setIdentityRotationNotice(res?.state?.identityRotationNotice === true);
     });
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
       if (res?.identity) setIdentity(res.identity);
@@ -80,6 +84,8 @@ const Popup = () => {
         if (typeof msg.state.autoSync === "boolean") setAutoSync(msg.state.autoSync);
         setClipboardHistoryError(msg.state.clipboardHistoryError || null);
         setHistoryPolicyError(msg.state.historyPolicyError || null);
+        setIdentityRotationRecovery(msg.state.identityRotationRecovery === true);
+        setIdentityRotationNotice(msg.state.identityRotationNotice === true);
       }
     };
     chrome.runtime.onMessage.addListener(handler);
@@ -229,6 +235,8 @@ const Popup = () => {
         clipboardHistoryError={clipboardHistoryError}
         historyPolicyError={historyPolicyError}
         initializationError={initializationError}
+        identityRotationRecovery={identityRotationRecovery}
+        identityRotationNotice={identityRotationNotice}
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
         onRenameDevice={handleRenameDevice}

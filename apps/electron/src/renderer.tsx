@@ -19,6 +19,8 @@ type AppState = {
   autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
+  identityRotationRecovery?: boolean;
+  identityRotationNotice?: boolean;
   diagnostics?: {
     lastClipboardCheck: number | null;
     lastClipboardPreview: string | null;
@@ -104,6 +106,8 @@ const App = () => {
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
         initializationError={initializationError}
+        identityRotationRecovery={state.identityRotationRecovery}
+        identityRotationNotice={state.identityRotationNotice}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
         onUnpair={(id) => window.clipp.unpairDevice(id)}
         onRenameDevice={(id, name) => window.clipp.renameDevice(id, name)}

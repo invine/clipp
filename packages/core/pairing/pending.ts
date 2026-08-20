@@ -99,6 +99,7 @@ export function createPendingTrustRequestCoordinator(options: {
   const expiryTimers = new Map<string, unknown>();
   const pendingMutations = new Map<string, Promise<void>>();
   let startPromise: Promise<void> | undefined;
+  let unsubscribeNotificationSelection: (() => void) | undefined;
   let stopped = false;
   const reportRejected = createPairingRejectionReporter({ now: () => options.clock.now(), emit: options.onRejected });
   const reject = (reason: PairingRejectionReason, authenticatedPeerId: string, frame: Uint8Array, messageType: "request" | "response" | "unknown" = "request") => {
@@ -196,7 +197,7 @@ export function createPendingTrustRequestCoordinator(options: {
       if (stopped) return Promise.reject(new Error("pairing_pending_stopped"));
       if (!startPromise) {
         startPromise = (async () => {
-          options.notifications.onSelect((id) => {
+          unsubscribeNotificationSelection = options.notifications.onSelect((id) => {
             if (id.startsWith("pairing-request-")) return options.lifecycle.openApprovalView();
           });
           for (const storedRequest of await options.store.list()) {
@@ -298,6 +299,8 @@ export function createPendingTrustRequestCoordinator(options: {
     async stop(): Promise<void> {
       stopped = true;
       await startPromise?.catch(() => undefined);
+      unsubscribeNotificationSelection?.();
+      unsubscribeNotificationSelection = undefined;
       expiryTimers.forEach((_timer, peerId) => clearTimer(peerId));
       await Promise.allSettled([...pendingMutations.values()]);
       const requests = await options.store.list();

@@ -494,6 +494,52 @@ describe("History reconciliation", () => {
     expect(await history.exportAll()).toEqual([]);
   });
 
+  it("shutdown waits for an authorized inbound snapshot to cancel", async () => {
+    let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
+    let membershipChecks = 0;
+    let authorizationStarted!: () => void;
+    const started = new Promise<void>((resolve) => { authorizationStarted = resolve; });
+    let finishAuthorization!: () => void;
+    const authorization = new Promise<void>((resolve) => { finishAuthorization = resolve; });
+    const history = new MemoryHistoryStore(undefined, { now: () => 2_000 });
+    const reconciliation = createHistoryReconciliation({
+      transport: {
+        getConnectedPeers: () => [],
+        onStream: (protocol, handler) => {
+          if (protocol === HISTORY_PROTOCOL) incoming = handler;
+        },
+        onPeerConnected: () => {},
+        sendStream: async () => {},
+      },
+      history,
+      getLocalDeviceId: async () => peerIds.android,
+      membershipStatus: async () => {
+        membershipChecks += 1;
+        if (membershipChecks === 3) {
+          authorizationStarted();
+          await authorization;
+        }
+        return "active";
+      },
+      now: () => 2_000,
+    });
+    reconciliation.start();
+
+    const receiving = incoming!(peerIds.extension, (async function *() {
+      yield encodeHistoryBatchFrame({ clips: [clip] });
+    })());
+    await started;
+    let stopResolved = false;
+    const stopping = Promise.resolve(reconciliation.stop()).then(() => { stopResolved = true; });
+    await Promise.resolve();
+    expect(stopResolved).toBe(false);
+
+    finishAuthorization();
+    await expect(receiving).rejects.toThrow("history_sender_inactive");
+    await stopping;
+    expect(await history.exportAll()).toEqual([]);
+  });
+
   it("rechecks membership for a batch containing only malformed Clips", async () => {
     let incoming: ((from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>) | undefined;
     let membershipChecks = 0;

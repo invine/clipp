@@ -20,7 +20,8 @@ export type ClipboardSyncManagerOptions = {
 
 export interface ClipboardSyncManager {
   start(): void;
-  stop(): void;
+  startLocalOnly(): void;
+  stop(): Promise<void>;
   bindLiveGossip(liveGossip: LiveClipGossip): void;
   setAutoSync(enabled: boolean): void;
   isAutoSync(): boolean;
@@ -31,6 +32,7 @@ export function createClipboardSyncManager(
 ): ClipboardSyncManager {
   const now = options.now ?? Date.now;
   let running = false;
+  let networkingEnabled = false;
   let autoSync = options.autoSync ?? true;
   let autoSyncGeneration = 0;
 
@@ -59,7 +61,7 @@ export function createClipboardSyncManager(
       log.warn("Failed to store local clip", err);
       return;
     }
-    if (!autoSync && !captureOptions?.shareNow) return;
+    if (!networkingEnabled || (!autoSync && !captureOptions?.shareNow)) return;
     if (!isClipAcceptable(clip, now())) return;
     const liveGossip = currentLiveGossip;
     if (liveGossip) {
@@ -76,7 +78,7 @@ export function createClipboardSyncManager(
   ): Promise<boolean> {
     const generationChanged = (): boolean =>
       expectedAutoSyncGeneration !== undefined && expectedAutoSyncGeneration !== autoSyncGeneration;
-    if (generationChanged() || !running || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return false;
+    if (generationChanged() || !running || !networkingEnabled || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return false;
     if (from && options.isActiveMember && !(await options.isActiveMember(from))) return false;
     if (generationChanged() || (!autoSync && !allowAutoSyncOverride)) return false;
     try {
@@ -107,7 +109,7 @@ export function createClipboardSyncManager(
   }
 
   async function handleIncomingLiveClip(from: string, clip: Clip): Promise<void> {
-    if (!running || !autoSync || !validateClip(clip) || !isClipAcceptable(clip, now())) return;
+    if (!running || !networkingEnabled || !autoSync || !validateClip(clip) || !isClipAcceptable(clip, now())) return;
     const generation = autoSyncGeneration;
     const localId = await getLocalId();
     if (from === localId || inFlightRemote.has(clip.id)) return;
@@ -117,7 +119,7 @@ export function createClipboardSyncManager(
       // second check immediately before atomic persistence, covering revocation
       // that races with stream receipt.
       if (options.isActiveMember && !(await options.isActiveMember(from))) return;
-      if (!autoSync || generation !== autoSyncGeneration || !isClipAcceptable(clip, now())) return;
+      if (!running || !autoSync || generation !== autoSyncGeneration || !isClipAcceptable(clip, now())) return;
       let accepted;
       try {
         accepted = await options.history.accept(clip, { liveHandled: true, admissionPriority: true });
@@ -161,7 +163,7 @@ export function createClipboardSyncManager(
       boundLiveGossip.add(object);
       liveGossip.onClip(({ from, clip }) => enqueueIncomingLiveClip(from, clip));
     }
-    if (running) liveGossip.start();
+    if (running && networkingEnabled) liveGossip.start();
   }
 
   if (options.liveGossip) bindLiveGossip(options.liveGossip);
@@ -169,14 +171,23 @@ export function createClipboardSyncManager(
   return {
     start() {
       running = true;
+      networkingEnabled = true;
       currentLiveGossip?.start();
       options.clipboard.start();
     },
-    stop() {
+    startLocalOnly() {
+      running = true;
+      networkingEnabled = false;
+      currentLiveGossip?.stop();
+      options.clipboard.start();
+    },
+    async stop() {
       running = false;
-      inFlightRemote.clear();
+      networkingEnabled = false;
       currentLiveGossip?.stop();
       options.clipboard.stop();
+      await liveReceiveQueue;
+      inFlightRemote.clear();
     },
     bindLiveGossip,
     setAutoSync(enabled: boolean) {

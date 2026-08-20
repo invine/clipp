@@ -12,7 +12,7 @@ export type PairedPeer = {
 
 export type PairedPeerConnectionManager = {
   start(): void;
-  stop(): void;
+  stop(): Promise<void>;
   reconnectNow(): Promise<void>;
 };
 
@@ -27,24 +27,25 @@ export function createPairedPeerConnectionManager(
 ): PairedPeerConnectionManager {
   const intervalMs = options.intervalMs ?? DEFAULT_PAIRED_PEER_RECONNECT_INTERVAL_MS;
   let timer: ReturnType<typeof setInterval> | null = null;
-  let connecting = false;
+  let stopped = false;
+  let reconnectOperation: Promise<void> | undefined;
 
-  async function reconnectNow(): Promise<void> {
-    if (connecting) return;
-    connecting = true;
-    try {
+  function reconnectNow(): Promise<void> {
+    if (stopped) return Promise.resolve();
+    if (reconnectOperation) return reconnectOperation;
+    reconnectOperation = (async () => {
       const peers = await options.getPairedPeers();
+      if (stopped) return;
       const connected = new Set(options.transport.getConnectedPeers());
       await Promise.all(peers.map((peer) => connectPeer(peer, connected)));
-    } catch (err) {
+    })().catch((err) => {
       log.debug("Paired peer reconnect pass failed", err);
-    } finally {
-      connecting = false;
-    }
+    }).finally(() => { reconnectOperation = undefined; });
+    return reconnectOperation;
   }
 
   async function connectPeer(peer: PairedPeer, connected: Set<string>): Promise<void> {
-    if (!peer?.deviceId) return;
+    if (stopped || !peer?.deviceId) return;
     const connectionInfo = options.transport
       .getPeerConnectionInfo?.()
       ?.find((info) => info.peerId === peer.deviceId);
@@ -62,6 +63,7 @@ export function createPairedPeerConnectionManager(
           error: errorMessage(error),
         });
       });
+      if (stopped) return;
       const refreshedRecord = await options.transport
         .getSignedPeerRecordFor?.(peer.deviceId)
         .catch(() => undefined);
@@ -72,6 +74,7 @@ export function createPairedPeerConnectionManager(
         ).catch(() => []);
       }
     }
+    if (stopped) return;
 
     const allTargets = peerConnectionTargets({
       ...peer,
@@ -89,6 +92,7 @@ export function createPairedPeerConnectionManager(
 
     let lastError: unknown;
     for (const target of targets) {
+      if (stopped) return;
       try {
         await options.transport.connect(target);
         log.debug("Paired peer reconnect succeeded", {
@@ -111,15 +115,17 @@ export function createPairedPeerConnectionManager(
   return {
     start() {
       if (timer) return;
+      stopped = false;
       void reconnectNow();
       timer = setInterval(() => {
         void reconnectNow();
       }, intervalMs);
     },
-    stop() {
-      if (!timer) return;
-      clearInterval(timer);
+    async stop() {
+      stopped = true;
+      if (timer) clearInterval(timer);
       timer = null;
+      await reconnectOperation;
     },
     reconnectNow,
   };

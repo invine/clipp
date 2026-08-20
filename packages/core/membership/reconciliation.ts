@@ -70,6 +70,7 @@ export function createMembershipReconciler(options: {
   let observesMembershipChanges = false;
   let unsubscribeMembership: (() => void) | undefined;
   let revocationEnforcementQueue = Promise.resolve();
+  let authorizedMergeQueue = Promise.resolve();
   let localRevocationHandled = false;
   const retryBaseMs = options.retryBaseMs ?? 1_000;
   const retryMaxMs = options.retryMaxMs ?? 60_000;
@@ -121,10 +122,20 @@ export function createMembershipReconciler(options: {
   };
 
   const attemptPush = async (peerId: string): Promise<void> => {
-    await push(peerId);
+    let sendFailure: unknown;
+    try {
+      await push(peerId);
+    } catch (error) {
+      sendFailure = error;
+    }
     if (await options.identity.membershipStatus(peerId) === "revoked") {
+      const retryTimer = retryTimers.get(peerId);
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimers.delete(peerId);
+      retryAttempts.delete(peerId);
       await attemptRevokedPeerCleanup(peerId);
     }
+    if (sendFailure) throw sendFailure;
   };
 
   const cleanupRevokedPeer = async (peerId: string): Promise<void> => {
@@ -168,6 +179,7 @@ export function createMembershipReconciler(options: {
   };
 
   const enforceCommittedRevocations = async (): Promise<void> => {
+    if (stopped) return;
     const local = await options.identity.get();
     if (await options.identity.membershipStatus(local.deviceId) === "revoked") {
       if (!localRevocationHandled) {
@@ -195,16 +207,12 @@ export function createMembershipReconciler(options: {
     );
   };
 
-  const receive = async (authenticatedPeerId: string, frame: Uint8Array): Promise<void> => {
-    const message = decodeMembershipFrame(frame);
-    if (!message || stopped) return;
-    // Check immediately before persistence, against the receiver's pre-merge
-    // view.  In particular, a peer self-asserted by this message has no power.
-    const local = await options.identity.get();
-    if (
-      await options.identity.membershipStatus(authenticatedPeerId) !== "active" ||
-      await options.identity.membershipStatus(local.deviceId) !== "active"
-    ) return;
+  const applyAuthorizedView = async (
+    authenticatedPeerId: string,
+    local: { deviceId: string },
+    message: MembershipMessage,
+  ): Promise<void> => {
+    if (stopped) return;
     const changed = await options.identity.mergeMembershipView({
       admittedPeerIds: message.admittedPeerIds,
       revokedPeerIds: message.revokedPeerIds,
@@ -241,6 +249,23 @@ export function createMembershipReconciler(options: {
     await options.onChanged?.();
     if (observesMembershipChanges) await revocationEnforcementQueue;
     else await enforceCommittedRevocations();
+  };
+
+  const receive = async (authenticatedPeerId: string, frame: Uint8Array): Promise<void> => {
+    const message = decodeMembershipFrame(frame);
+    if (!message || stopped) return;
+    // Authorize against the pre-merge view. Authorized merges retain that
+    // authority if their sender is concurrently revoked, but serial commit
+    // lets a local-revocation barrier cancel every merge still waiting.
+    const local = await options.identity.get();
+    if (
+      await options.identity.membershipStatus(authenticatedPeerId) !== "active" ||
+      await options.identity.membershipStatus(local.deviceId) !== "active"
+    ) return;
+    const apply = () => applyAuthorizedView(authenticatedPeerId, local, message);
+    const result = authorizedMergeQueue.then(apply, apply);
+    authorizedMergeQueue = result.then(() => undefined, () => undefined);
+    await result;
   };
 
   return {

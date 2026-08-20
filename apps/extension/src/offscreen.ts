@@ -128,8 +128,9 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
 async function shutdownMessaging(): Promise<void> {
   runtimeOutboundStreamControllers.forEach((controller) => controller.abort());
   runtimeOutboundStreamControllers.clear();
-  pairedConnections?.stop();
+  const reconnectsStopped = pairedConnections?.stop();
   await transport?.stop();
+  await reconnectsStopped;
   transport = null;
   pairedConnections = null;
   started = false;

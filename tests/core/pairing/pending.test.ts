@@ -21,6 +21,34 @@ function createPendingTrustRequestCoordinator(
 }
 
 describe("pending Trust Requests", () => {
+  it("unsubscribes notification selection when stopped", async () => {
+    let selectionHandler: ((id: string) => void | Promise<void>) | undefined;
+    let approvalViewsOpened = 0;
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: { list: async () => [], save: async () => undefined, remove: async () => undefined },
+      notifications: {
+        show: async () => undefined,
+        dismiss: async () => undefined,
+        onSelect: (handler) => {
+          selectionHandler = handler;
+          return () => { selectionHandler = undefined; };
+        },
+      },
+      lifecycle: { openApprovalView: () => { approvalViewsOpened += 1; } },
+      clock: { now: () => 1_000, setTimeout: () => 1, clearTimeout: () => undefined },
+      verify: async () => true,
+    });
+
+    await coordinator.start();
+    await selectionHandler?.(`pairing-request-${initiatorPeerId}`);
+    expect(approvalViewsOpened).toBe(1);
+
+    await coordinator.stop();
+    await selectionHandler?.(`pairing-request-${initiatorPeerId}`);
+    expect(approvalViewsOpened).toBe(1);
+  });
+
   it("serializes pending records without losing byte or bigint fields", async () => {
     let value: unknown;
     const store = createKVPendingTrustRequestStore({

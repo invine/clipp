@@ -370,16 +370,19 @@ describe("Membership Reconciliation", () => {
   it("keeps both concurrent revocations when each authorized sender is revoked in flight", async () => {
     const wired = network();
     const persistedIdentity = identity(alice, [alice, bob, charlie]);
-    let mergeArrivals = 0;
-    let releaseMerges: (() => void) | undefined;
-    const bothMergesArrived = new Promise<void>((resolve) => { releaseMerges = resolve; });
+    let senderAuthorizationChecks = 0;
+    let releaseAuthorizations: (() => void) | undefined;
+    const bothSendersAuthorized = new Promise<void>((resolve) => { releaseAuthorizations = resolve; });
     const concurrentIdentity: MembershipReconciliationIdentity = {
       ...persistedIdentity,
-      mergeMembershipView: async (view) => {
-        mergeArrivals += 1;
-        if (mergeArrivals === 2) releaseMerges?.();
-        await bothMergesArrived;
-        return persistedIdentity.mergeMembershipView(view);
+      membershipStatus: async (peerId) => {
+        const status = await persistedIdentity.membershipStatus(peerId);
+        if ((peerId === bob || peerId === charlie) && status === "active") {
+          senderAuthorizationChecks += 1;
+          if (senderAuthorizationChecks === 2) releaseAuthorizations?.();
+          await bothSendersAuthorized;
+        }
+        return status;
       },
     };
     const reconciler = createMembershipReconciler({
@@ -651,6 +654,25 @@ describe("Membership Reconciliation", () => {
     expect(wired.disconnected).toEqual([{ from: alice, peerId: bob }]);
   });
 
+  it("closes and forgets a revoked peer when its final Membership View send fails", async () => {
+    const wired = network();
+    wired.setConnected(alice, [bob]);
+    wired.failNextSend();
+    const aliceIdentity = identity(alice, [alice, bob]);
+    await aliceIdentity.mergeMembershipView({ admittedPeerIds: [], revokedPeerIds: [bob] });
+    const reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: aliceIdentity,
+    });
+
+    reconciler.start();
+    await settleAsyncWork();
+
+    expect(wired.sent).toEqual([]);
+    expect(wired.forgotten).toEqual([{ from: alice, peerId: bob }]);
+    expect(wired.disconnected).toEqual([{ from: alice, peerId: bob }]);
+  });
+
   it("finishes the triggering merge before stopping a locally revoked identity", async () => {
     const wired = network();
     wired.setConnected(alice, [bob]);
@@ -671,6 +693,46 @@ describe("Membership Reconciliation", () => {
 
     await expect(aliceIdentity.membershipStatus(alice)).resolves.toBe("revoked");
     expect(localRevocations).toEqual(["stopped"]);
+  });
+
+  it("cancels another authorized merge when the triggering merge revokes the local identity", async () => {
+    const wired = network();
+    const persistedIdentity = identity(alice, [alice, bob, charlie]);
+    let localStatusChecks = 0;
+    let releaseAuthorization: (() => void) | undefined;
+    const bothAuthorized = new Promise<void>((resolve) => { releaseAuthorization = resolve; });
+    const gatedIdentity: MembershipReconciliationIdentity = {
+      ...persistedIdentity,
+      membershipStatus: async (peerId) => {
+        const status = await persistedIdentity.membershipStatus(peerId);
+        if (peerId === alice && status === "active") {
+          localStatusChecks += 1;
+          if (localStatusChecks === 2) releaseAuthorization?.();
+          await bothAuthorized;
+        }
+        return status;
+      },
+    };
+    let reconciler: ReturnType<typeof createMembershipReconciler>;
+    reconciler = createMembershipReconciler({
+      transport: wired.endpoint(alice),
+      identity: gatedIdentity,
+      onLocalRevoked: () => reconciler.stop(),
+    });
+
+    await Promise.all([
+      reconciler.receive(bob, encodeMembershipFrame({
+        admittedPeerIds: [alice, bob, charlie],
+        revokedPeerIds: [alice],
+      })),
+      reconciler.receive(charlie, encodeMembershipFrame({
+        admittedPeerIds: [alice, bob, charlie],
+        revokedPeerIds: [bob],
+      })),
+    ]);
+
+    await expect(persistedIdentity.membershipStatus(alice)).resolves.toBe("revoked");
+    await expect(persistedIdentity.membershipStatus(bob)).resolves.toBe("active");
   });
 
   it("enforces a persisted local revocation before sending on startup", async () => {

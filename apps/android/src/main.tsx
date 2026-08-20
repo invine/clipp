@@ -137,6 +137,8 @@ function App() {
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
         initializationError={initializationError}
+        identityRotationRecovery={state.identityRotationRecovery}
+        identityRotationNotice={state.identityRotationNotice}
         onDeleteClip={(id) => client.deleteClip(id)}
         onUnpair={(id) => client.unpairDevice(id)}
         onRenameDevice={(id, name) => client.renameDevice(id, name)}

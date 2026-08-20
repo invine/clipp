@@ -117,4 +117,34 @@ describe("paired peer connections", () => {
     await jest.advanceTimersByTimeAsync(1000);
     expect(transport.connect).toHaveBeenCalledTimes(2);
   });
+
+  it("shutdown waits for an active reconnect pass and cancels alternate dials", async () => {
+    const transport = createTransport();
+    let releaseDial!: () => void;
+    let markDialStarted!: () => void;
+    const dialStarted = new Promise<void>((resolve) => { markDialStarted = resolve; });
+    const dialGate = new Promise<void>((resolve) => { releaseDial = resolve; });
+    transport.connect.mockImplementationOnce(async () => {
+      markDialStarted();
+      await dialGate;
+      throw new Error("transport_stopped");
+    });
+    const manager = createPairedPeerConnectionManager({
+      transport,
+      getPairedPeers: async () => [{
+        deviceId: "peer-1",
+        multiaddrs: ["/ip4/127.0.0.1/tcp/1/p2p/peer-1", "/ip4/127.0.0.1/tcp/2/p2p/peer-1"],
+      }],
+    });
+    manager.start();
+    await dialStarted;
+    let stopped = false;
+    const stopping = Promise.resolve(manager.stop()).then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    releaseDial();
+    await stopping;
+    expect(transport.connect).toHaveBeenCalledTimes(1);
+  });
 });

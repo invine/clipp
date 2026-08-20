@@ -16,7 +16,7 @@ import * as log from "../logger.js";
 
 export type HistoryReconciliation = {
   start(): void;
-  stop(): void;
+  stop(): Promise<void>;
   snapshotTo(peerId: string): Promise<void>;
   setAutoSync(enabled: boolean): void;
 };
@@ -45,6 +45,7 @@ export function createHistoryReconciliation(options: {
   const outbound = new Map<string, OutboundSnapshotState>();
   const outboundRequests = new Set<AbortController>();
   const inbound = new Set<string>();
+  const inboundOperations = new Set<Promise<void>>();
   let started = false;
   let stopped = false;
   let autoSync = options.autoSync ?? true;
@@ -217,6 +218,14 @@ export function createHistoryReconciliation(options: {
     if (failure) throw failure;
   }
 
+  function trackInbound(from: string, chunks: AsyncIterable<Uint8Array>): Promise<void> {
+    const operation = receive(from, chunks).finally(() => {
+      inboundOperations.delete(operation);
+    });
+    inboundOperations.add(operation);
+    return operation;
+  }
+
   function snapshotConnected(): void {
     if (!canExchange()) return;
     for (const peerId of options.transport.getConnectedPeers()) void snapshotTo(peerId);
@@ -239,15 +248,16 @@ export function createHistoryReconciliation(options: {
       if (started) return;
       started = true;
       options.transport.onStream(HISTORY_REQUEST_PROTOCOL, receiveRequest);
-      options.transport.onStream(HISTORY_PROTOCOL, receive);
+      options.transport.onStream(HISTORY_PROTOCOL, trackInbound);
       options.transport.onPeerConnected((peerId) => { void snapshotTo(peerId); });
       stopMembershipListener = options.onMembershipChanged?.(snapshotConnected);
       snapshotConnected();
     },
-    stop(): void {
+    async stop(): Promise<void> {
       stopped = true;
       for (const state of outbound.values()) state.controller.abort();
       for (const controller of outboundRequests) controller.abort();
+      await Promise.allSettled([...inboundOperations]);
       inbound.clear();
       outbound.clear();
       outboundRequests.clear();

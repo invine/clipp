@@ -39,7 +39,7 @@ import {
   createKVTrustedDeviceRepository,
   toPublicDeviceIdentity,
   createTrustManager,
-  createIdentityScopedStateCleanup,
+  createIdentityRotationCommitter,
   IDENTITY_KEY,
   TRUST_KEY,
   type TrustedDevice,
@@ -67,6 +67,8 @@ export type AndroidAppState = {
   autoSync?: boolean;
   clipboardHistoryError?: RuntimeClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
+  identityRotationRecovery?: boolean;
+  identityRotationNotice?: boolean;
   relayAddresses: string[];
   diagnostics?: {
     lastClipboardCheck: number | null;
@@ -268,7 +270,8 @@ export class AndroidClient {
     storage: this.storage,
     capabilities: RUNTIME_CAPABILITIES.android,
     shutdown: () => this.stopServices(),
-    clearIdentityScopedState: createIdentityScopedStateCleanup({
+    committer: createIdentityRotationCommitter({
+      repository: this.identityRepo,
       storage: this.storage,
       history: this.historyBackend,
     }),
@@ -286,6 +289,18 @@ export class AndroidClient {
   private membershipReconciler: ReturnType<typeof createMembershipReconciler> | null = null;
 
   constructor() {
+    this.identityRotation.onStatusChanged((status) => {
+      if (status.kind === "rotated") {
+        window.location.reload();
+        return;
+      }
+      this.identityRotationRecovery = status.kind === "recovering";
+      if (this.identityRotationRecovery) {
+        this.clipboardSync.startLocalOnly();
+        this.started = true;
+      }
+      void this.emitState();
+    });
     // messaging is initialised lazily in `start()`
     void LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
       const id = event.notification.extra?.runtimeNotificationId;
@@ -355,8 +370,8 @@ export class AndroidClient {
       identity: this.identitySvc,
       ...createMembershipPeerRecordBridge({ transport: this.transport, identity: this.identitySvc }),
       onLocalRevoked: async () => {
-        await this.identityRotation.rotate("revoked");
-        window.location.reload();
+        const rotation = await this.identityRotation.rotate("revoked");
+        if (rotation.rotated) window.location.reload();
       },
       onChanged: () => this.emitState(),
     });
@@ -418,6 +433,7 @@ export class AndroidClient {
   private autoSync = true;
   private clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   private historyPolicyError: HistoryPolicyError | null = null;
+  private identityRotationRecovery = false;
   private listeners: Array<(state: AndroidAppState) => void> = [];
   private started = false;
   private eventsBound = false;
@@ -690,10 +706,10 @@ export class AndroidClient {
           window.location.reload();
           throw new Error("identity_rotated_restart_required");
         }
+        this.identityRotationRecovery = Boolean(rotation.recovery);
         await this.identitySvc.get();
       },
       startLocalServices: async () => {
-        this.pairingSessions.start();
         this.bindEvents();
         this.autoSync = await this.autoSyncPreference.load();
         this.clipboardSync.setAutoSync(this.autoSync);
@@ -725,11 +741,17 @@ export class AndroidClient {
             void this.emitState();
           },
         );
-        await this.pairingPending.start();
         this.started = true;
+        if (this.identityRotationRecovery) {
+          this.clipboardSync.startLocalOnly();
+          return;
+        }
+        this.pairingSessions.start();
+        await this.pairingPending.start();
         this.clipboardSync.start();
       },
       startNetworkServices: async () => {
+        if (this.identityRotationRecovery) return;
         await this.ensureMessaging();
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
@@ -754,15 +776,15 @@ export class AndroidClient {
     this.historyRetentionCleanup = null;
     await this.pairingSessions.stop();
     await this.pairingPending.stop();
-    this.clipboardSync.stop();
-    this.historyReconciliation?.stop();
+    await this.clipboardSync.stop();
+    await this.historyReconciliation?.stop();
     this.historyReconciliation = null;
-    this.pairedConnections?.stop();
+    const reconnectsStopped = this.pairedConnections?.stop();
     await this.transport?.stop();
+    await reconnectsStopped;
     this.membershipReconciler?.stop();
     this.membershipReconciler = null;
     this.started = false;
-    this.listeners = [];
   }
 
   start() {
@@ -806,6 +828,8 @@ export class AndroidClient {
       autoSync: this.clipboardSync.isAutoSync(),
       clipboardHistoryError: this.clipboardHistoryError,
       historyPolicyError: this.historyPolicyError,
+      identityRotationRecovery: this.identityRotationRecovery,
+      identityRotationNotice: Boolean(await this.identityRotation.notice()),
       relayAddresses,
       diagnostics: {
         lastClipboardCheck: this.lastClipboardCheck,

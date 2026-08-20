@@ -1,3 +1,9 @@
+import {
+  historySuppressionKey,
+  isClipSuppression,
+  isHistoryItem,
+  type HistoryStorageBackend,
+} from "../history/types";
 import { TRUST_KEY, type KVStorageBackend } from "./storage";
 import {
   generateIdentityKeyMaterial,
@@ -8,15 +14,45 @@ import {
 
 export type IdentityRotationReason = "revoked" | "identity-loss";
 
+export type IdentityRotationNotice = {
+  reason: IdentityRotationReason;
+  historyDeleted: true;
+  pairingRequired: true;
+};
+
+export type IdentityRotationBackup = {
+  identity: DeviceIdentity | undefined;
+  storageEntries: Array<{ key: string; value: unknown }>;
+  historyEntries: Array<{ key: string; value: unknown }>;
+};
+
 export type IdentityRotationState = {
   version: 1;
   reason: IdentityRotationReason;
   candidate: DeviceIdentity;
+  phase: "prepared" | "committing";
+  backup?: IdentityRotationBackup;
 };
 
 export type IdentityRotationResult =
-  | { rotated: false; identity: DeviceIdentity | undefined }
+  | { rotated: false; identity: DeviceIdentity | undefined; recovery?: undefined }
+  | {
+      rotated: false;
+      identity: DeviceIdentity | undefined;
+      recovery: { code: "identity_rotation_recovery"; reason: IdentityRotationReason };
+    }
   | { rotated: true; reason: IdentityRotationReason; identity: DeviceIdentity };
+
+export type IdentityRotationStatus =
+  | { kind: "idle" }
+  | { kind: "recovering"; reason: IdentityRotationReason }
+  | { kind: "rotated"; reason: IdentityRotationReason };
+
+export type IdentityRotationCommitter = {
+  prepare(): Promise<IdentityRotationBackup>;
+  commit(candidate: DeviceIdentity, notice: IdentityRotationNotice, backup: IdentityRotationBackup): Promise<void>;
+  rollback(backup: IdentityRotationBackup): Promise<void>;
+};
 
 export const IDENTITY_ROTATION_SCOPED_STORAGE_KEYS = [
   TRUST_KEY,
@@ -25,34 +61,92 @@ export const IDENTITY_ROTATION_SCOPED_STORAGE_KEYS = [
   "runtimeApplicationState",
 ] as const;
 
-export function createIdentityScopedStateCleanup(options: {
+function historyEntryKey(value: unknown): string {
+  if (isHistoryItem(value)) return value.clip.id;
+  if (isClipSuppression(value)) return historySuppressionKey(value.clipId);
+  throw new Error("invalid_identity_rotation_history_entry");
+}
+
+/**
+ * Composes stores that do not share a native transaction into a recoverable
+ * transaction. The durable coordinator marker owns the backup until candidate
+ * activation, which is deliberately the final externally visible commit step.
+ */
+export function createIdentityRotationCommitter(options: {
+  repository: IdentityRepository;
   storage: KVStorageBackend;
-  history: { clearAll(): Promise<void> };
+  history: Pick<HistoryStorageBackend, "getAll" | "set" | "clearAll">;
+  noticeKey?: string;
   storageKeys?: readonly string[];
-}): () => Promise<void> {
+}): IdentityRotationCommitter {
+  const noticeKey = options.noticeKey ?? "identityRotationNotice";
   const storageKeys = options.storageKeys ?? IDENTITY_ROTATION_SCOPED_STORAGE_KEYS;
-  return async () => {
+  const backupKeys = [...new Set([...storageKeys, noticeKey])];
+
+  const restoreValue = async (key: string, value: unknown): Promise<void> => {
+    if (value === undefined) await options.storage.remove(key);
+    else await options.storage.set(key, value);
+  };
+
+  const rollback = async (backup: IdentityRotationBackup): Promise<void> => {
     await options.history.clearAll();
-    await Promise.all(storageKeys.map((key) => options.storage.remove(key)));
+    for (const entry of backup.historyEntries) await options.history.set(entry.key, entry.value);
+    for (const entry of backup.storageEntries) await restoreValue(entry.key, entry.value);
+    if (backup.identity) await options.repository.upsert(backup.identity);
+  };
+
+  return {
+    async prepare(): Promise<IdentityRotationBackup> {
+      const [identity, historyValues, ...storageValues] = await Promise.all([
+        options.repository.get(),
+        options.history.getAll(),
+        ...backupKeys.map((key) => options.storage.get(key)),
+      ]);
+      return {
+        identity,
+        historyEntries: historyValues.map((value) => ({ key: historyEntryKey(value), value })),
+        storageEntries: backupKeys.map((key, index) => ({ key, value: storageValues[index] })),
+      };
+    },
+    async commit(candidate, notice, backup): Promise<void> {
+      try {
+        await options.history.clearAll();
+        await Promise.all(storageKeys.map((key) => options.storage.remove(key)));
+        await options.storage.set(noticeKey, notice);
+        await options.repository.clearInitializationError?.();
+        // Candidate activation is last: observing it proves cleanup completed.
+        await options.repository.upsert(candidate);
+      } catch (error) {
+        await rollback(backup);
+        throw error;
+      }
+    },
+    rollback,
   };
 }
 
 export function createIdentityRotationCoordinator(options: {
   repository: IdentityRepository;
   storage: KVStorageBackend;
+  committer: IdentityRotationCommitter;
   stateKey?: string;
-  noticeKey?: string;
   initialDeviceName: string;
   now?: () => number;
   generateKeyMaterial?: () => Promise<IdentityKeyMaterial>;
   shutdown: () => void | Promise<void>;
-  clearIdentityScopedState: () => Promise<void>;
+  retry?: false | { baseMs?: number; maxMs?: number };
 }) {
   const stateKey = options.stateKey ?? "identityRotation";
-  const noticeKey = options.noticeKey ?? "identityRotationNotice";
   const now = options.now ?? Date.now;
   const generateKeyMaterial = options.generateKeyMaterial ?? generateIdentityKeyMaterial;
   let operation: Promise<IdentityRotationResult> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryAttempt = 0;
+  const statusListeners = new Set<(status: IdentityRotationStatus) => void>();
+
+  const publishStatus = (status: IdentityRotationStatus): void => {
+    statusListeners.forEach((listener) => listener(status));
+  };
 
   const validState = (value: unknown): value is IdentityRotationState => {
     if (!value || typeof value !== "object") return false;
@@ -60,6 +154,8 @@ export function createIdentityRotationCoordinator(options: {
     const candidate = state.candidate;
     return state.version === 1
       && (state.reason === "revoked" || state.reason === "identity-loss")
+      && (state.phase === "prepared" || state.phase === "committing")
+      && (state.phase !== "committing" || Boolean(state.backup))
       && Boolean(candidate)
       && typeof candidate?.deviceId === "string"
       && typeof candidate?.privateKey === "string"
@@ -89,43 +185,108 @@ export function createIdentityRotationCoordinator(options: {
       throw new Error("invalid_identity_rotation_state");
     }
     let state = storedState;
-    const current = await options.repository.get();
+    let current = await options.repository.get();
+    const selfRevoked = Boolean(current?.membershipView?.revokedPeerIds?.includes(current.deviceId));
+    const rotationReason = state?.reason ?? reason ?? (selfRevoked ? "revoked" : undefined);
+    if (!rotationReason) return { rotated: false, identity: current };
+    await options.shutdown();
+    if (state && current?.deviceId === state.candidate.deviceId) {
+      await options.storage.remove(stateKey);
+      return { rotated: true, reason: state.reason, identity: state.candidate };
+    }
+    if (state?.phase === "committing") {
+      await options.committer.rollback(state.backup!);
+      state = { ...state, phase: "prepared", backup: undefined };
+      await options.storage.set(stateKey, state);
+      current = await options.repository.get();
+    }
     if (!state) {
-      const selfRevoked = Boolean(
-        current?.membershipView?.revokedPeerIds?.includes(current.deviceId),
-      );
-      const rotationReason = reason ?? (selfRevoked ? "revoked" : undefined);
-      if (!rotationReason) return { rotated: false, identity: current };
-      await options.shutdown();
       state = {
         version: 1,
         reason: rotationReason,
+        phase: "prepared",
         candidate: await createCandidate(),
       };
       await options.storage.set(stateKey, state);
-    } else {
-      await options.shutdown();
     }
 
-    await options.clearIdentityScopedState();
-    await options.repository.upsert(state.candidate);
-    await options.repository.clearInitializationError?.();
+    const backup = await options.committer.prepare();
+    state = { ...state, phase: "committing", backup };
+    await options.storage.set(stateKey, state);
+    try {
+      await options.committer.commit(state.candidate, {
+        reason: state.reason,
+        historyDeleted: true,
+        pairingRequired: true,
+      }, backup);
+    } catch (error) {
+      const prepared: IdentityRotationState = { ...state, phase: "prepared", backup: undefined };
+      await options.storage.set(stateKey, prepared).catch(() => undefined);
+      throw error;
+    }
     await options.storage.remove(stateKey);
-    await options.storage.set(noticeKey, {
-      reason: state.reason,
-      historyDeleted: true,
-      pairingRequired: true,
-    }).catch(() => undefined);
     return { rotated: true, reason: state.reason, identity: state.candidate };
   };
 
+  const scheduleRetry = (reason: IdentityRotationReason): void => {
+    if (options.retry === false || retryTimer) return;
+    const baseMs = options.retry?.baseMs ?? 1_000;
+    const maxMs = options.retry?.maxMs ?? 60_000;
+    const delay = Math.min(baseMs * 2 ** retryAttempt, maxMs);
+    retryAttempt += 1;
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      void serialize(reason);
+    }, delay);
+    (retryTimer as ReturnType<typeof setTimeout> & { unref?(): void }).unref?.();
+  };
+
+  const attempt = async (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
+    try {
+      const result = await execute(reason);
+      if (result.rotated) {
+        retryAttempt = 0;
+        publishStatus({ kind: "rotated", reason: result.reason });
+      } else {
+        publishStatus({ kind: "idle" });
+      }
+      return result;
+    } catch (error) {
+      const state = await options.storage.get<IdentityRotationState>(stateKey).catch(() => undefined);
+      if (!state || !validState(state)) throw error;
+      publishStatus({ kind: "recovering", reason: state.reason });
+      scheduleRetry(state.reason);
+      return {
+        rotated: false,
+        identity: await options.repository.get().catch(() => undefined),
+        recovery: { code: "identity_rotation_recovery", reason: state.reason },
+      };
+    }
+  };
+
   const serialize = (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
-    if (!operation) operation = execute(reason).finally(() => { operation = undefined; });
+    if (!operation) operation = attempt(reason).finally(() => { operation = undefined; });
     return operation;
   };
 
   return {
     recoverOrRotate: () => serialize(),
     rotate: (reason: IdentityRotationReason) => serialize(reason),
+    onStatusChanged(listener: (status: IdentityRotationStatus) => void): () => void {
+      statusListeners.add(listener);
+      return () => statusListeners.delete(listener);
+    },
+    recoveryState: async () => {
+      const state = await options.storage.get<IdentityRotationState>(stateKey);
+      return state && validState(state)
+        ? { code: "identity_rotation_recovery" as const, reason: state.reason }
+        : undefined;
+    },
+    notice: () => options.storage.get<IdentityRotationNotice>("identityRotationNotice"),
+    stop(): void {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = undefined;
+      statusListeners.clear();
+    },
   };
 }
