@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Define one shared runtime contract for identity storage, transactional application state, clipboard access, native notifications, lifecycle control, networking, clocks, and user-visible state updates.
-- [ ] Preserve the platform distinctions that the target design requires: polling capture on Electron and Android, explicit popup input in Chrome, editable relays only in Electron, and platform-specific persistence and notification APIs.
-- [ ] Add a shared conformance harness that can assemble the runtime orchestration with fake adapters and observe durable state, protocol traffic, clipboard calls, notifications, and public state.
-- [ ] Adapt all three runtimes to the new seam without changing their current user-visible behavior or wire protocols.
-- [ ] Keep shared orchestration free of Electron, Capacitor, and Chrome API dependencies.
-- [ ] Keep all existing tests and all three runtime builds green after the prefactor.
+- [x] Define one shared runtime contract for identity storage, transactional application state, clipboard access, native notifications, lifecycle control, networking, clocks, and user-visible state updates.
+- [x] Preserve the platform distinctions that the target design requires: polling capture on Electron and Android, explicit popup input in Chrome, editable relays only in Electron, and platform-specific persistence and notification APIs.
+- [x] Add a shared conformance harness that can assemble the runtime orchestration with fake adapters and observe durable state, protocol traffic, clipboard calls, notifications, and public state.
+- [x] Adapt all three runtimes to the new seam without changing their current user-visible behavior or wire protocols.
+- [x] Keep shared orchestration free of Electron, Capacitor, and Chrome API dependencies.
+- [x] Keep all existing tests and all three runtime builds green after the prefactor.
