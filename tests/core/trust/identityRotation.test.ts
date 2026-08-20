@@ -110,6 +110,76 @@ describe("Identity Rotation", () => {
     expect(shutdown).not.toHaveBeenCalled();
   });
 
+  it("enters recovery and preserves local state when the initial rotation marker cannot persist", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    await history.set(historyItem.clip.id, historyItem);
+    const generateKeyMaterial = jest.fn(async () => ({
+      peerId: replacementPeerId,
+      privateKey: "replacement-private",
+      publicKey: "replacement-public",
+    }));
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      stateKey: "identity-rotation",
+      initialDeviceName: "Desktop",
+      generateKeyMaterial,
+      shutdown: async () => undefined,
+      retry: false,
+    });
+    storage.failNextSetFor = "identity-rotation";
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: false,
+      identity: revokedIdentity(),
+      recovery: { code: "identity_rotation_recovery", reason: "revoked" },
+    });
+    expect(await storage.get("identity-rotation")).toBeUndefined();
+    expect(await repository.get()).toEqual(revokedIdentity());
+    expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(generateKeyMaterial).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates the replacement identity when persisting the rotation notice fails", async () => {
+    const storage = new MemoryStorage();
+    const history = new InMemoryHistoryBackend();
+    const repository = createKVIdentityRepository({ storage, key: "identity" });
+    await repository.upsert(revokedIdentity());
+    await history.set(historyItem.clip.id, historyItem);
+    const coordinator = createIdentityRotationCoordinator({
+      repository,
+      storage,
+      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      initialDeviceName: "Desktop",
+      now: () => 42,
+      generateKeyMaterial: async () => ({
+        peerId: replacementPeerId,
+        privateKey: "replacement-private",
+        publicKey: "replacement-public",
+      }),
+      shutdown: async () => undefined,
+      retry: false,
+    });
+    storage.failNextSetFor = "identityRotationNotice";
+
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+      identity: { deviceId: replacementPeerId },
+    });
+    expect(await repository.get()).toEqual(replacementIdentity());
+    expect(await history.getAll()).toEqual([]);
+    expect(await coordinator.notice()).toBeUndefined();
+  });
+
   it("restores history and the old identity when candidate activation fails, then reuses the candidate", async () => {
     const storage = new MemoryStorage();
     const history = new InMemoryHistoryBackend();

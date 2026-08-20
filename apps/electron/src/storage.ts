@@ -143,13 +143,19 @@ export function createSQLiteIdentityRotationCommitter(options: {
           options.db.prepare("DELETE FROM kv WHERE key = ?").run(key);
         }
         options.db.prepare("DELETE FROM kv WHERE key = ?").run(`${options.identityKey}:initializationError`);
-        options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
-          .run(IDENTITY_ROTATION_NOTICE_KEY, noticePayload);
         // The new identity is activated in the same SQLite transaction after
         // every identity-scoped record has been removed.
         options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
           .run(options.identityKey, candidatePayload);
       })();
+      // The notice is non-blocking: cleanup and identity activation are already
+      // durable even when this optional presentation write fails.
+      try {
+        options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
+          .run(IDENTITY_ROTATION_NOTICE_KEY, noticePayload);
+      } catch {
+        // Best effort only.
+      }
     },
     async rollback() {
       // SQLite rolls a failed or interrupted transaction back atomically.

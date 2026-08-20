@@ -10,15 +10,15 @@ import type { DeviceIdentity } from "../../../packages/core/trust/identity";
 
 class RotationStorage implements KVStorageBackend {
   readonly values = new Map<string, unknown>();
-  failIdentityWrite = false;
+  failNextSetFor: string | undefined;
 
   async get<T>(key: string): Promise<T | undefined> {
     return this.values.get(key) as T | undefined;
   }
 
   async set<T>(key: string, value: T): Promise<void> {
-    if (key === "identity" && this.failIdentityWrite) {
-      this.failIdentityWrite = false;
+    if (key === this.failNextSetFor) {
+      this.failNextSetFor = undefined;
       throw new Error("identity_write_failed");
     }
     this.values.set(key, structuredClone(value));
@@ -86,10 +86,13 @@ describe("runtime identity initialization", () => {
   });
 
   it.each([
-    RUNTIME_CAPABILITIES.electron,
-    RUNTIME_CAPABILITIES.android,
-    RUNTIME_CAPABILITIES.chromeExtension,
-  ])("keeps $platform networking down through rotation recovery and enables it after restart", async (capabilities) => {
+    { capabilities: RUNTIME_CAPABILITIES.electron, failedKey: "identity" },
+    { capabilities: RUNTIME_CAPABILITIES.android, failedKey: "identity" },
+    { capabilities: RUNTIME_CAPABILITIES.chromeExtension, failedKey: "identity" },
+    { capabilities: RUNTIME_CAPABILITIES.electron, failedKey: "identityRotation" },
+    { capabilities: RUNTIME_CAPABILITIES.android, failedKey: "identityRotation" },
+    { capabilities: RUNTIME_CAPABILITIES.chromeExtension, failedKey: "identityRotation" },
+  ])("keeps $capabilities.platform networking down through $failedKey rotation recovery and enables it after restart", async ({ capabilities, failedKey }) => {
     const storage = new RotationStorage();
     const history = new InMemoryHistoryBackend();
     const repository = createKVIdentityRepository({ storage, key: "identity" });
@@ -124,7 +127,7 @@ describe("runtime identity initialization", () => {
     });
     const localStarted = jest.fn();
     const networkStarted = jest.fn();
-    storage.failIdentityWrite = true;
+    storage.failNextSetFor = failedKey;
     let rotation = createRotation();
 
     await startIdentityBoundRuntimeServices({

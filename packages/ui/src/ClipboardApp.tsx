@@ -1320,7 +1320,7 @@ export function ClipboardApp({
 
       {identityRotationNotice && !identityRotationRecovery && (
         <div className="initialization-error" role="status">
-          <span>This installation now has a new identity. Previous Clipboard History was deleted and devices must be paired again.</span>
+          <span>This installation&apos;s former identity was revoked or reset. Previous Clipboard History was deleted and devices must be paired again.</span>
         </div>
       )}
 

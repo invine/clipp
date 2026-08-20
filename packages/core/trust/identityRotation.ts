@@ -185,10 +185,11 @@ export function createIdentityRotationCommitter(options: {
         await Promise.all(historyEntries.map((entry) => options.history.remove(entry.originalKey)));
       }
       await Promise.all(storageKeys.map((key) => options.storage.remove(key)));
-      await options.storage.set(noticeKey, notice);
       await options.repository.clearInitializationError?.();
       // Candidate activation is last: observing it proves cleanup completed.
       await options.repository.upsert(candidate);
+      // The rotation notice is informational and must never block recovery.
+      await options.storage.set(noticeKey, notice).catch(() => undefined);
     },
     rollback,
     finalize: async (backup) => {
@@ -216,6 +217,10 @@ export function createIdentityRotationCoordinator(options: {
   const now = options.now ?? Date.now;
   const generateKeyMaterial = options.generateKeyMaterial ?? generateIdentityKeyMaterial;
   let operation: Promise<IdentityRotationResult> | undefined;
+  // A failed first marker write has no durable state to resume from, but the
+  // current process must still retry the same candidate rather than churn Peer
+  // IDs while storage recovers.
+  let unstoredState: IdentityRotationState | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryAttempt = 0;
   const statusListeners = new Set<(status: IdentityRotationStatus) => void>();
@@ -260,7 +265,8 @@ export function createIdentityRotationCoordinator(options: {
     if (storedState !== undefined && !validState(storedState)) {
       throw new Error("invalid_identity_rotation_state");
     }
-    let state = storedState;
+    let state = storedState ?? unstoredState;
+    if (storedState) unstoredState = undefined;
     let current = await options.repository.get();
     const selfRevoked = Boolean(current?.membershipView?.revokedPeerIds?.includes(current.deviceId));
     const rotationReason = state?.reason ?? reason ?? (selfRevoked ? "revoked" : undefined);
@@ -284,7 +290,9 @@ export function createIdentityRotationCoordinator(options: {
         phase: "prepared",
         candidate: await createCandidate(),
       };
+      unstoredState = state;
       await options.storage.set(stateKey, state);
+      unstoredState = undefined;
     }
 
     const backup = await options.committer.prepare(state.candidate.deviceId);
@@ -337,13 +345,18 @@ export function createIdentityRotationCoordinator(options: {
       return result;
     } catch (error) {
       const state = await options.storage.get<IdentityRotationState>(stateKey).catch(() => undefined);
-      if (!state || !validState(state)) throw error;
-      publishStatus({ kind: "recovering", reason: state.reason });
-      scheduleRetry(state.reason);
+      if (state !== undefined && !validState(state)) throw error;
+      const identity = await options.repository.get().catch(() => undefined);
+      const recoveryReason = state?.reason
+        ?? reason
+        ?? (identity?.membershipView?.revokedPeerIds?.includes(identity.deviceId) ? "revoked" : undefined);
+      if (!recoveryReason) throw error;
+      publishStatus({ kind: "recovering", reason: recoveryReason });
+      scheduleRetry(recoveryReason);
       return {
         rotated: false,
-        identity: await options.repository.get().catch(() => undefined),
-        recovery: { code: "identity_rotation_recovery", reason: state.reason },
+        identity,
+        recovery: { code: "identity_rotation_recovery", reason: recoveryReason },
       };
     }
   };
