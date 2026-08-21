@@ -21,6 +21,7 @@ import {
   IDENTITY_KEY,
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
+import { handleOffscreenStorageRequest } from "./runtimeMessageStorage";
 import {
   createChromeExtensionRuntimeAdapter,
   createAutoSyncPreference,
@@ -100,6 +101,16 @@ const identitySvc = createRuntimeIdentityManager({
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.target !== "background" || message?.action !== "offscreenStorage") return;
+  void handleOffscreenStorageRequest(message, sender, {
+    storage,
+    extensionId: chrome.runtime.id,
+    offscreenUrl: OFFSCREEN_URL,
+  }).then(sendResponse);
+  return true;
+});
+
 function createOffscreenStartupGate(): {
   ready: Promise<void>;
   open(): void;
@@ -164,6 +175,10 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
           return;
         }
         reject(new Error(err.message || "offscreen_unavailable"));
+        return;
+      }
+      if (resp?.ok === false) {
+        reject(new Error(resp.error || "offscreen_error"));
         return;
       }
       resolve(resp as T);

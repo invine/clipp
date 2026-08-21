@@ -5,7 +5,7 @@ import {
   createKVIdentityRepository,
   IDENTITY_KEY,
 } from "../../../packages/core/trust";
-import { ChromeStorageBackend } from "./chromeStorage";
+import { RuntimeMessageStorageBackend } from "./runtimeMessageStorage";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
 import * as log from "../../../packages/core/logger";
@@ -28,7 +28,7 @@ let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
 const runtimeRegisteredProtocols = new Set<string>();
 const runtimeRegisteredStreamProtocols = new Set<string>();
-const storage = new ChromeStorageBackend();
+const storage = new RuntimeMessageStorageBackend();
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,

@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "test:offscreen-storage": "npm run build && node ./scripts/verify-offscreen-storage.mjs"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.2",
