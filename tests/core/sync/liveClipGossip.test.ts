@@ -7,12 +7,13 @@ import {
 } from "../../../packages/core/history/types";
 import type { MessagingTransport } from "../../../packages/core/messaging/transport";
 import type { Clip } from "../../../packages/core/models/Clip";
-import { LIVE_CLIP_PROTOCOL } from "../../../packages/core/protocols/liveClip";
+import { encodeLiveClipFrame, LIVE_CLIP_PROTOCOL } from "../../../packages/core/protocols/liveClip";
 import {
   createAndroidRuntimeAdapter,
   createChromeExtensionRuntimeAdapter,
   createElectronRuntimeAdapter,
   createRuntimeClipboardService,
+  RUNTIME_CAPABILITIES,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
@@ -90,6 +91,58 @@ describe("LiveClipGossip", () => {
     await forwarding;
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each(["electron", "android"] as const)("%s does not forward a delayed polling echo as a new Local Clip", async (platform) => {
+    jest.useFakeTimers();
+    let clipboardText = "initial clipboard";
+    const handlers: Array<(from: string, frame: Uint8Array) => void> = [];
+    const send = jest.fn(async () => {});
+    const history = new MemoryHistoryStore(undefined, { now: () => 1_000 });
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES[platform],
+      history,
+      getSenderId: () => "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy",
+      readText: async () => clipboardText,
+      writeText: async () => {},
+      pollIntervalMs: 1_000,
+      now: () => 1_000,
+      makeId: () => "00000000-0000-4000-8000-000000000099",
+    });
+    const gossip = createLiveClipGossip({
+      transport: {
+        send,
+        onMessage: (_protocol, handler) => handlers.push(handler),
+        getConnectedPeers: () => ["source"],
+      },
+      membershipStatus: async () => "active",
+      now: () => 1_000,
+    });
+    const manager = createClipboardSyncManager({
+      clipboard,
+      history,
+      liveGossip: gossip,
+      isActiveMember: async () => true,
+      getLocalDeviceId: async () => "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy",
+      now: () => 1_000,
+    });
+
+    try {
+      manager.start();
+      await jest.runOnlyPendingTimersAsync();
+      handlers[0]("source", encodeLiveClipFrame({ clip }));
+      for (let index = 0; index < 20; index += 1) await Promise.resolve();
+
+      clipboardText = clip.content;
+      await jest.advanceTimersByTimeAsync(1_000);
+      for (let index = 0; index < 20; index += 1) await Promise.resolve();
+
+      expect(await history.exportAll()).toEqual([clip]);
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      await manager.stop();
+      jest.useRealTimers();
+    }
   });
 
   it("gossips across all runtime adapters and remains idempotent after durable restart", async () => {

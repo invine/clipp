@@ -54,6 +54,13 @@ export type ManualClipboardOptions = ClipboardServiceBaseOptions & {
   readText?: ClipboardReadFn;
 };
 
+type ExpectedRemoteEcho = {
+  text: string;
+  expiresAt: number;
+};
+
+const REMOTE_ECHO_SUPPRESSION_MS = 10_000;
+
 /**
  * Polling clipboard service: reads from the system clipboard on an interval.
  * Callers must provide `readText` (and optionally `writeText`).
@@ -114,6 +121,7 @@ function createClipboardService(
   let lastLocal: Clip | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let baseline: string | undefined;
+  let expectedRemoteEcho: ExpectedRemoteEcho | undefined;
   let acceptingCaptures = false;
   const serialize = createSerializedExecutor();
 
@@ -124,6 +132,34 @@ function createClipboardService(
   function publishLocalClip(clip: Clip, captureOptions?: LocalClipOptions): void {
     lastLocal = clip;
     localHandlers.forEach((handler) => handler(clip, captureOptions));
+  }
+
+  function suppressExpectedRemoteEcho(text: string): boolean {
+    if (!expectedRemoteEcho) return false;
+    if ((now ?? Date.now)() >= expectedRemoteEcho.expiresAt) {
+      expectedRemoteEcho = undefined;
+      return false;
+    }
+    if (text === expectedRemoteEcho.text) {
+      expectedRemoteEcho = undefined;
+      return true;
+    }
+    expectedRemoteEcho = undefined;
+    return false;
+  }
+
+  function expectRemoteEcho(text: string): void {
+    if (captureMode !== "polling") return;
+    expectedRemoteEcho = {
+      text,
+      expiresAt: (now ?? Date.now)() + REMOTE_ECHO_SUPPRESSION_MS,
+    };
+  }
+
+  function recordRemoteWrite(text: string, readBack: string | undefined): void {
+    baseline = readBack;
+    expectRemoteEcho(text);
+    if (baseline === text) expectedRemoteEcho = undefined;
   }
 
   async function captureExplicitly(capture: () => Promise<Clip | null>): Promise<Clip | null> {
@@ -165,10 +201,18 @@ function createClipboardService(
       await serialize(async () => {
         const text = await read();
         if (options.captureCoordinator) {
-          const clip = baseline === undefined
-            ? (await options.captureCoordinator.baseline(text), null)
-            : await options.captureCoordinator.observe(text);
+          if (baseline === undefined) {
+            baseline = text;
+            await options.captureCoordinator.baseline(text);
+            return;
+          }
+          if (text === baseline) return;
           baseline = text;
+          if (suppressExpectedRemoteEcho(text)) {
+            await options.captureCoordinator.baseline(text);
+            return;
+          }
+          const clip = await options.captureCoordinator.observe(text);
           if (clip) publishLocalClip(clip);
           return;
         }
@@ -178,6 +222,7 @@ function createClipboardService(
         }
         if (text === baseline) return;
         baseline = text;
+        if (suppressExpectedRemoteEcho(text)) return;
         if (!text) return;
         log.debug("Clipboard changed");
         await processLocalTextUnserialized(text);
@@ -200,6 +245,7 @@ function createClipboardService(
           write,
           readBackAvailable ? read : undefined,
         );
+        recordRemoteWrite(clip.content, options.captureCoordinator.baselineValue());
         remoteHandlers.forEach((handler) => handler(clip));
         return;
       }
@@ -210,6 +256,7 @@ function createClipboardService(
         // The next successful observation establishes a safe baseline without capture.
         baseline = undefined;
       }
+      recordRemoteWrite(clip.content, baseline);
       remoteHandlers.forEach((h) => h(clip));
     });
   }
