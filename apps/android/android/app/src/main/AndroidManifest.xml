@@ -28,8 +28,7 @@
         <service
             android:name=".BackgroundContinuityService"
             android:exported="false"
-            android:foregroundServiceType="remoteMessaging"
-            android:stopWithTask="true" />
+            android:foregroundServiceType="remoteMessaging" />
 
         <receiver
             android:name=".BackgroundContinuityBootReceiver"

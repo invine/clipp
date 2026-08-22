@@ -72,6 +72,7 @@ export function createAndroidBackgroundContinuityCoordinator(
   let notificationPermission: BackgroundNotificationPermission = "unknown";
   let cancelHeartbeatSchedule: (() => void) | null = null;
   let heartbeatScheduleGeneration = 0;
+  let activityStateGeneration = 0;
 
   const available = (): boolean => (platform.androidApiLevel() ?? 0) >= ANDROID_16_API_LEVEL;
   const captureEligible = (): boolean => resumed && windowFocused;
@@ -148,22 +149,32 @@ export function createAndroidBackgroundContinuityCoordinator(
         return snapshot();
       }
 
+      const started = await platform.startService().then(
+        () => true,
+        () => false,
+      );
+      if (!started) {
+        service = "stopped";
+        return snapshot();
+      }
+
       runtimeHealthy = true;
       lastHeartbeatAt = now();
       connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
       service = "running";
-      await platform.startService();
       await publishServiceState();
       return snapshot();
     },
 
     async setActivityState(next: { resumed: boolean; windowFocused: boolean }): Promise<AndroidBackgroundContinuitySnapshot> {
+      const generation = ++activityStateGeneration;
       const wasEligible = captureEligible();
       resumed = next.resumed;
       windowFocused = next.windowFocused;
       const eligible = captureEligible();
       if (eligible !== wasEligible) {
         if (eligible) await platform.resetClipboardBaseline();
+        if (generation !== activityStateGeneration) return snapshot();
         await platform.setClipboardCaptureEligible(eligible);
       }
       return snapshot();

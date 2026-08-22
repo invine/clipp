@@ -72,7 +72,10 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
       return (await info())?.notificationPermission ?? "denied";
     },
     setEnabled: async (enabled) => await invoke(() => NativeBackgroundContinuity.setEnabled({ enabled })),
-    start: async () => await invoke(() => NativeBackgroundContinuity.start()),
+    async start() {
+      if (!isNativeAndroid()) throw new Error("background_continuity_unavailable");
+      await NativeBackgroundContinuity.start();
+    },
     stop: async () => await invoke(() => NativeBackgroundContinuity.stop()),
     heartbeat: async () => await invoke(() => NativeBackgroundContinuity.heartbeat()),
     update: async (state, connectedTrustedDeviceCount) => await invoke(() => NativeBackgroundContinuity.update({ state, connectedTrustedDeviceCount })),

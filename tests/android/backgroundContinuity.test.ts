@@ -66,6 +66,18 @@ test("starts the companion service only after supported explicit opt-in", async 
   });
 });
 
+test("keeps service state stopped when native startup fails", async () => {
+  const fake = createPlatform();
+  fake.platform.startService = async () => {
+    throw new Error("service_start_failed");
+  };
+  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+
+  await expect(coordinator.setEnabledFromUser(true)).resolves.toEqual(
+    expect.objectContaining({ backgroundEnabled: true, service: "stopped" }),
+  );
+});
+
 test("allows clipboard observation only while resumed and focused, with a fresh baseline", async () => {
   const fake = createPlatform();
   const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
@@ -77,6 +89,26 @@ test("allows clipboard observation only while resumed and focused, with a fresh 
   expect({ captureEligibility: fake.captureEligibility, baselines: fake.baselines() }).toEqual({
     captureEligibility: [true, false],
     baselines: 1,
+  });
+});
+
+test("does not let a stale focus transition re-enable clipboard polling", async () => {
+  const fake = createPlatform();
+  let finishBaselineReset!: () => void;
+  fake.platform.resetClipboardBaseline = () => new Promise<void>((resolve) => {
+    finishBaselineReset = resolve;
+  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+
+  const focusGained = coordinator.setActivityState({ resumed: true, windowFocused: true });
+  const focusLost = coordinator.setActivityState({ resumed: true, windowFocused: false });
+  await focusLost;
+  finishBaselineReset();
+  await focusGained;
+
+  expect({ captureEligibility: fake.captureEligibility, state: coordinator.snapshot() }).toEqual({
+    captureEligibility: [false],
+    state: expect.objectContaining({ captureEligible: false }),
   });
 });
 

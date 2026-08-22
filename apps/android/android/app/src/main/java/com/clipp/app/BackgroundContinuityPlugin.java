@@ -88,12 +88,20 @@ public final class BackgroundContinuityPlugin extends Plugin {
     @PluginMethod
     public void start(PluginCall call) {
         if (Build.VERSION.SDK_INT < 36) {
-            call.resolve();
+            call.reject("background_continuity_unavailable");
             return;
         }
-        Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
-        ContextCompat.startForegroundService(getContext(), intent);
-        call.resolve();
+        if (!BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.ENABLED, false)) {
+            call.reject("background_continuity_not_enabled");
+            return;
+        }
+        try {
+            Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
+            ContextCompat.startForegroundService(getContext(), intent);
+            call.resolve();
+        } catch (RuntimeException error) {
+            call.reject("background_continuity_start_failed", error);
+        }
     }
 
     @PluginMethod

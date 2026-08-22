@@ -25,6 +25,43 @@ import androidx.core.content.ContextCompat;
  * no Clipp identity, network node, history, or clipboard access.
  */
 public final class BackgroundContinuityService extends Service {
+    private enum ConnectionState {
+        CONNECTED("connected"),
+        WAITING("waiting"),
+        RECONNECTING("reconnecting"),
+        PAUSED("paused"),
+        DISCONNECTED("disconnected");
+
+        private final String wireValue;
+
+        ConnectionState(String wireValue) {
+            this.wireValue = wireValue;
+        }
+
+        static ConnectionState fromWire(String wireValue) {
+            for (ConnectionState state : values()) {
+                if (state.wireValue.equals(wireValue)) return state;
+            }
+            return WAITING;
+        }
+
+        String notificationText(int connectedCount) {
+            switch (this) {
+                case CONNECTED:
+                    return "Connected to " + connectedCount + " trusted device" + (connectedCount == 1 ? "" : "s");
+                case RECONNECTING:
+                    return "Reconnecting to trusted devices";
+                case PAUSED:
+                    return "Auto Sync is paused";
+                case DISCONNECTED:
+                    return "Disconnected";
+                case WAITING:
+                default:
+                    return "Waiting for trusted devices";
+            }
+        }
+    }
+
     public static final String ACTION_START = "com.clipp.app.background.START";
     public static final String ACTION_STOP = "com.clipp.app.background.STOP";
     public static final String ACTION_HEARTBEAT = "com.clipp.app.background.HEARTBEAT";
@@ -50,14 +87,14 @@ public final class BackgroundContinuityService extends Service {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastHeartbeatElapsedMs;
-    private String connectionState = "waiting";
+    private ConnectionState connectionState = ConnectionState.WAITING;
     private int connectedTrustedDeviceCount = 0;
 
     private final Runnable heartbeatWatchdog = new Runnable() {
         @Override
         public void run() {
             if (SystemClock.elapsedRealtime() - lastHeartbeatElapsedMs >= HEARTBEAT_TIMEOUT_MS) {
-                connectionState = "disconnected";
+                connectionState = ConnectionState.DISCONNECTED;
                 preferences(BackgroundContinuityService.this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
                 notifyRuntimeLost();
                 postReconnectNotification(BackgroundContinuityService.this);
@@ -96,12 +133,11 @@ public final class BackgroundContinuityService extends Service {
             preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
         }
         if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
-            connectionState = ACTION_PAUSE.equals(action) ? "paused" : "waiting";
+            connectionState = ACTION_PAUSE.equals(action) ? ConnectionState.PAUSED : ConnectionState.WAITING;
             notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
         }
         if (ACTION_UPDATE.equals(action)) {
-            connectionState = intent.getStringExtra(EXTRA_CONNECTION_STATE);
-            if (connectionState == null) connectionState = "waiting";
+            connectionState = ConnectionState.fromWire(intent.getStringExtra(EXTRA_CONNECTION_STATE));
             connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
         }
         lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
@@ -158,23 +194,11 @@ public final class BackgroundContinuityService extends Service {
         ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
     }
 
-    static Notification buildOngoingNotification(Context context, String state, int connectedCount) {
-        String text;
-        if ("connected".equals(state)) {
-            text = "Connected to " + connectedCount + " trusted device" + (connectedCount == 1 ? "" : "s");
-        } else if ("reconnecting".equals(state)) {
-            text = "Reconnecting to trusted devices";
-        } else if ("paused".equals(state)) {
-            text = "Auto Sync is paused";
-        } else if ("disconnected".equals(state)) {
-            text = "Disconnected";
-        } else {
-            text = "Waiting for trusted devices";
-        }
+    private static Notification buildOngoingNotification(Context context, ConnectionState state, int connectedCount) {
         return new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Clipp background continuity")
-            .setContentText(text)
+            .setContentText(state.notificationText(connectedCount))
             .setContentIntent(openAppIntent(context))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
