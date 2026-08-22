@@ -218,7 +218,7 @@ describe("Membership Reconciliation", () => {
       }))).resolves.toBeUndefined();
       expect(warn).toHaveBeenCalledWith(
         "Membership Signed Peer Record ignored",
-        { reason: "verification_failed", peerId: charlie },
+        { reason: "verification_failed", peerId: "[REDACTED]" },
       );
       expect(JSON.stringify(warn.mock.calls)).not.toContain("sensitive verification detail");
     } finally {

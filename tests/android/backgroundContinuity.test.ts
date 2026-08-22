@@ -14,6 +14,11 @@ function createPlatform(
   const states: Array<{ state: string; count: number }> = [];
   let reconnectAlerts = 0;
   let enabled = false;
+  let diagnosticStatus = {
+    observedBackgroundFailureCount: 0,
+    supportState: "unqualified" as const,
+    batteryOptimizationGuidance: false,
+  };
   const platform: AndroidBackgroundContinuityPlatform = {
     androidApiLevel: () => androidApiLevel,
     notificationPermission: async () => notificationPermission,
@@ -27,6 +32,7 @@ function createPlatform(
     sendHeartbeat: async () => { commands.push("heartbeat"); },
     updateService: async (state, count) => { states.push({ state, count }); },
     showReconnectNotification: async () => { reconnectAlerts += 1; },
+    readDiagnosticStatus: async () => diagnosticStatus,
     listExplicitTextActions: async () => [],
     prepareExplicitTextAction: async () => undefined,
     completeExplicitTextAction: async () => undefined,
@@ -50,8 +56,31 @@ function createPlatform(
     autoSync,
     states,
     reconnectAlerts: () => reconnectAlerts,
+    setDiagnosticStatus(next: {
+      observedBackgroundFailureCount: number;
+      supportState: "unqualified" | "limited";
+      batteryOptimizationGuidance: boolean;
+    }) { diagnosticStatus = next as typeof diagnosticStatus; },
   };
 }
+
+test("qualifies repeatedly failing background configurations as limited before offering battery guidance", async () => {
+  const fake = createPlatform();
+  fake.setDiagnosticStatus({
+    observedBackgroundFailureCount: 3,
+    supportState: "limited",
+    batteryOptimizationGuidance: true,
+  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+
+  await coordinator.initialize();
+
+  expect(coordinator.snapshot()).toEqual(expect.objectContaining({
+    observedBackgroundFailureCount: 3,
+    supportState: "limited",
+    batteryOptimizationGuidance: true,
+  }));
+});
 
 test("only lets Android 16-or-later users opt into background continuity", async () => {
   const unsupported = createPlatform(35);

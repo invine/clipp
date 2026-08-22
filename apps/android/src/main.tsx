@@ -158,6 +158,7 @@ function App() {
         onSetLocalRetention={async (retentionMs) => { await client.setLocalRetention(retentionMs); }}
         onSetAutoSync={async (enabled) => { await client.setAutoSync(enabled); }}
         onSetBackgroundContinuity={async (enabled) => { await client.setBackgroundContinuity(enabled); }}
+        onExportBackgroundContinuityDiagnostics={() => client.exportBackgroundContinuityDiagnostics()}
         onRetryInitialization={async () => {
           try {
             setState(await client.retryIdentityInitialization());

@@ -24,17 +24,26 @@ final class ExplicitTextIngressStore {
     }
 
     private final DurableStringStore persistence;
+    private final BackgroundContinuityDiagnostics diagnostics;
 
     ExplicitTextIngressStore(Context context) {
-        this(ClipContinuityPreferences.open(context));
+        this(ClipContinuityPreferences.open(context), new BackgroundContinuityDiagnostics(context));
     }
 
     ExplicitTextIngressStore(SharedPreferences preferences) {
-        this(new SharedPreferencesDurableStringStore(preferences));
+        this(new SharedPreferencesDurableStringStore(preferences), null);
     }
 
     ExplicitTextIngressStore(DurableStringStore persistence) {
+        this(persistence, null);
+    }
+
+    private ExplicitTextIngressStore(
+        DurableStringStore persistence,
+        BackgroundContinuityDiagnostics diagnostics
+    ) {
         this.persistence = persistence;
+        this.diagnostics = diagnostics;
     }
 
     EnqueueResult enqueue(Intent intent) {
@@ -65,9 +74,11 @@ final class ExplicitTextIngressStore {
                 action.put("text", text);
                 action.put("source", source);
                 actions.put(action);
-                return persistence.putString(ACTIONS, actions.toString())
-                    ? EnqueueResult.QUEUED
-                    : EnqueueResult.PERSISTENCE_FAILED;
+                if (!persistence.putString(ACTIONS, actions.toString())) {
+                    return EnqueueResult.PERSISTENCE_FAILED;
+                }
+                if (diagnostics != null) diagnostics.recordPendingActionCount(actions.length());
+                return EnqueueResult.QUEUED;
             } catch (JSONException error) {
                 return EnqueueResult.PERSISTENCE_FAILED;
             }
@@ -114,7 +125,9 @@ final class ExplicitTextIngressStore {
                     remaining.put(action);
                 }
             }
-            return found && persistence.putString(ACTIONS, remaining.toString());
+            boolean completed = found && persistence.putString(ACTIONS, remaining.toString());
+            if (completed && diagnostics != null) diagnostics.recordPendingActionCount(remaining.length());
+            return completed;
         }
     }
 

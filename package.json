@@ -65,7 +65,8 @@
     "test": "jest",
     "lint": "eslint --ext .ts,.tsx packages apps tests",
     "lint:fix": "eslint --ext .ts,.tsx packages apps tests --fix",
-    "relay:websocket": "tsx scripts/websocket-relay.ts"
+    "relay:websocket": "tsx scripts/websocket-relay.ts",
+    "release:android": "npm test -- --runInBand && npm run lint && npm --workspace apps/android run build && npm --workspace apps/android run cap:copy && npm --workspace apps/android run test:native:unit && npm --workspace apps/android run test:native:instrumentation && npm --workspace apps/android run build:native:release"
   },
   "workspaces": [
     "apps/*",

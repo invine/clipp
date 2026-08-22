@@ -4,18 +4,26 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
 
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name = "BackgroundContinuity")
 public final class BackgroundContinuityPlugin extends Plugin {
@@ -89,13 +97,20 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void getPlatformInfo(PluginCall call) {
+        BackgroundContinuityDiagnostics diagnostics = new BackgroundContinuityDiagnostics(getContext());
+        boolean notificationsGranted = BackgroundContinuityService.notificationsGranted(getContext());
+        diagnostics.recordNotificationPermission(notificationsGranted);
         JSObject result = new JSObject();
         result.put("apiLevel", Build.VERSION.SDK_INT);
         result.put("userStopped", BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.USER_STOPPED, false));
         result.put(
             "notificationPermission",
-            BackgroundContinuityService.notificationsGranted(getContext()) ? "granted" : "denied"
+            notificationsGranted ? "granted" : "denied"
         );
+        JSONObject diagnosticStatus = diagnostics.statusJson();
+        result.put("observedBackgroundFailureCount", diagnosticStatus.optInt("observedBackgroundFailureCount"));
+        result.put("supportState", diagnosticStatus.optString("supportState"));
+        result.put("batteryOptimizationGuidance", diagnosticStatus.optBoolean("batteryOptimizationGuidance"));
         call.resolve(result);
     }
 
@@ -124,6 +139,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
             return;
         }
         pendingStartCall = call;
+        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition("start_requested");
         handler.postDelayed(serviceStartTimeout, SERVICE_START_TIMEOUT_MS);
         try {
             Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
@@ -136,6 +152,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void stop(PluginCall call) {
+        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition("stop_requested");
         getContext().stopService(new Intent(getContext(), BackgroundContinuityService.class));
         call.resolve();
     }
@@ -159,6 +176,35 @@ public final class BackgroundContinuityPlugin extends Plugin {
     public void showReconnectNotification(PluginCall call) {
         BackgroundContinuityService.postReconnectNotification(getContext());
         call.resolve();
+    }
+
+    @PluginMethod
+    public void exportDiagnostics(PluginCall call) {
+        if (getActivity() == null) {
+            call.reject("diagnostic_export_activity_unavailable");
+            return;
+        }
+        try {
+            BackgroundContinuityDiagnostics diagnostics = new BackgroundContinuityDiagnostics(getContext());
+            diagnostics.recordEnvironmentSnapshot();
+            File directory = new File(getContext().getCacheDir(), "diagnostics");
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw new IllegalStateException("diagnostic_export_directory_unavailable");
+            }
+            File export = new File(directory, "clipp-background-continuity-" + System.currentTimeMillis() + ".json");
+            try (FileOutputStream output = new FileOutputStream(export)) {
+                output.write(diagnostics.exportJson().getBytes(StandardCharsets.UTF_8));
+            }
+            Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", export);
+            Intent share = new Intent(Intent.ACTION_SEND)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            getActivity().startActivity(Intent.createChooser(share, "Export Clipp diagnostics"));
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("diagnostic_export_failed", error);
+        }
     }
 
     @PluginMethod
@@ -231,9 +277,11 @@ public final class BackgroundContinuityPlugin extends Plugin {
     }
 
     private void notifyActivityState(boolean resumed) {
+        boolean captureEligible = resumed && getActivity() != null && getActivity().getWindow().getDecorView().hasWindowFocus();
+        new BackgroundContinuityDiagnostics(getContext()).recordCaptureEligibility(captureEligible);
         JSObject event = new JSObject();
         event.put("resumed", resumed);
-        event.put("windowFocused", resumed && getActivity() != null && getActivity().getWindow().getDecorView().hasWindowFocus());
+        event.put("windowFocused", captureEligible);
         notifyListeners("activityState", event, true);
     }
 

@@ -142,10 +142,6 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err ?? "unknown_error");
-}
-
 function nativeNotificationId(id: string): number {
   let hash = 0;
   for (let index = 0; index < id.length; index += 1) {
@@ -156,27 +152,9 @@ function nativeNotificationId(id: string): number {
 
 function logPairing(level: "debug" | "info" | "warn", message: string, data: unknown): void {
   const prefixed = `[clipp:android:pairing] ${message}`;
-  const payload = serializeLogPayload(data);
-  if (level === "warn") log.warn(prefixed, payload);
-  else if (level === "info") log.info(prefixed, payload);
-  else log.debug(prefixed, payload);
-}
-
-function serializeLogPayload(data: unknown): string {
-  try {
-    return JSON.stringify(data, (_key, value) => {
-      if (value instanceof Error) {
-        return {
-          name: value.name,
-          message: value.message,
-          stack: value.stack,
-        };
-      }
-      return value;
-    });
-  } catch {
-    return String(data);
-  }
+  if (level === "warn") log.warn(prefixed, data);
+  else if (level === "info") log.info(prefixed, data);
+  else log.debug(prefixed, data);
 }
 
 export class AndroidClient {
@@ -397,6 +375,7 @@ export class AndroidClient {
     updateService: (state, connectedTrustedDeviceCount) =>
       this.backgroundNative.update(state, connectedTrustedDeviceCount),
     showReconnectNotification: () => this.backgroundNative.showReconnectNotification(),
+    readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
     listExplicitTextActions: () => this.backgroundNative.explicitTextActions(),
     prepareExplicitTextAction: (actionId, event) =>
       this.backgroundNative.prepareExplicitTextAction(actionId, event),
@@ -875,6 +854,10 @@ export class AndroidClient {
     return state;
   }
 
+  async exportBackgroundContinuityDiagnostics(): Promise<void> {
+    await this.backgroundNative.exportDiagnostics();
+  }
+
   async getIdentity(): Promise<Identity | null> {
     const id = await this.identitySvc.get();
     return toPublicDeviceIdentity(id);
@@ -932,10 +915,10 @@ export class AndroidClient {
       await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: this.pairingSessions.request });
       return { ok: true, diagnostics: this.finishPairingDiagnostics(diagnostics, "succeeded", null) };
 
-    } catch (err) {
+    } catch {
       logPairing("warn", "Pairing attempt failed unexpectedly", {
         attemptId: diagnostics.attemptId,
-        error: errorMessage(err),
+        error: "unexpected",
       });
       return fail(diagnostics.error ?? "dial_failed");
     }

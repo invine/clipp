@@ -16,21 +16,25 @@ describe("privacy-safe logging", () => {
       clip: { content: "CLIP_CONTENT_SECRET", type: "text" },
       requestEnvelope: new TextEncoder().encode("RAW_PAIRING_ENVELOPE_SECRET"),
       signature: new TextEncoder().encode("SIGNATURE_SECRET"),
+      binary: new Uint8Array(4),
       deviceName,
     });
 
     expect(warn).toHaveBeenCalledWith("rejected message", {
-      peerId: "peer-1",
+      peerId: "[REDACTED]",
       privateKey: "[REDACTED]",
       clip: { content: "[REDACTED]", type: "text" },
-      requestEnvelope: "[binary 27 bytes]",
-      signature: "[binary 16 bytes]",
-      deviceName: `${deviceName.slice(0, 256)}…[truncated]`,
+      requestEnvelope: "[REDACTED]",
+      signature: "[REDACTED]",
+      binary: "[binary 4 bytes]",
+      deviceName: "[REDACTED]",
     });
     const output = JSON.stringify(warn.mock.calls);
     expect(output).not.toContain("PRIVATE_KEY_SECRET");
     expect(output).not.toContain("CLIP_CONTENT_SECRET");
     expect(output).not.toContain("RAW_PAIRING_ENVELOPE_SECRET");
     expect(output).not.toContain("SIGNATURE_SECRET");
+    expect(output).not.toContain("peer-1");
+    expect(output).not.toContain(deviceName);
   });
 });

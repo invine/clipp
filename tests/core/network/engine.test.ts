@@ -565,8 +565,8 @@ describe("Libp2pMessagingTransport", () => {
     expect(infoSpy).toHaveBeenCalledWith(
       "Peer connection upgraded from relay to direct",
       expect.objectContaining({
-        peerId: "peer-1",
-        directAddr: "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1",
+        peerId: "[REDACTED]",
+        directAddr: "[REDACTED]",
       })
     );
     expect(transport.getPeerConnectionInfo?.()).toEqual([

@@ -5,11 +5,44 @@ const MAX_LOG_STRING_LENGTH = 256;
 const MAX_LOG_ARRAY_LENGTH = 50;
 const REDACTED_LOG_KEYS = new Set([
   "content",
+  "devicename",
+  "deviceid",
+  "localdevicealias",
+  "localdevicealiases",
+  "peerid",
+  "peerids",
+  "authenticatedpeerid",
+  "targetpeerid",
+  "remotepeerid",
+  "initiatorpeerid",
+  "senderpeerid",
+  "from",
+  "to",
+  "target",
+  "targets",
+  "storedtargets",
+  "addr",
+  "addrs",
+  "directaddr",
+  "multiaddr",
+  "multiaddrs",
+  "selfaddrs",
+  "relay",
+  "relays",
+  "configuredrelays",
+  "circuitrelays",
+  "activeconnections",
   "privatekey",
+  "rawshareintent",
+  "rawprotocolframe",
+  "protocolframe",
+  "frame",
+  "frames",
   "requestenvelope",
   "rawpairingenvelope",
   "signature",
   "signedpayload",
+  "signedpeerrecord",
 ]);
 
 const order: Record<LogLevel, number> = {
@@ -42,9 +75,9 @@ function sanitizeLogArg(
   key?: string,
   seen = new WeakSet<object>(),
 ): unknown {
+  const normalizedKey = key?.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (normalizedKey && REDACTED_LOG_KEYS.has(normalizedKey)) return "[REDACTED]";
   if (typeof arg === "string") {
-    const normalizedKey = key?.replace(/[^a-z0-9]/gi, "").toLowerCase();
-    if (normalizedKey && REDACTED_LOG_KEYS.has(normalizedKey)) return "[REDACTED]";
     return boundLogString(arg);
   }
   if (typeof arg === "undefined" || typeof arg === "number" || typeof arg === "boolean" || arg === null) {

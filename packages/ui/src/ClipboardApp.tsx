@@ -250,6 +250,9 @@ export type ClipboardAppProps = {
     connection: "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
     connectedTrustedDeviceCount: number;
     notificationPermission: "granted" | "denied" | "unknown";
+    observedBackgroundFailureCount: number;
+    supportState: "unqualified" | "limited";
+    batteryOptimizationGuidance: boolean;
   };
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
@@ -267,6 +270,7 @@ export type ClipboardAppProps = {
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
   onSetAutoSync?(enabled: boolean): void | Promise<void>;
   onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
+  onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
@@ -310,6 +314,7 @@ export function ClipboardApp({
   onSetLocalRetention,
   onSetAutoSync,
   onSetBackgroundContinuity,
+  onExportBackgroundContinuityDiagnostics,
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
@@ -1277,6 +1282,9 @@ export function ClipboardApp({
             <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
               Best effort on Android 16+. It keeps a visible notification while Clipp tries to retain the current app runtime. It does not read your clipboard without an active, focused Clipp window.
             </p>
+            <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
+              Android may interrupt the Activity-owned WebView and network during Doze, OEM process management, process pressure, task removal, Task Manager stop, force-stop, or reboot. Reopen Clipp after an explicit stop or reconnect alert.
+            </p>
             <select
               id="background-continuity"
               disabled={!backgroundContinuity.available}
@@ -1290,7 +1298,7 @@ export function ClipboardApp({
               }}
             >
               <option value="disabled">Disabled</option>
-              <option value="enabled">Keep Clipp connected in the background</option>
+              <option value="enabled">Experimental best-effort background continuity</option>
             </select>
             {!backgroundContinuity.available && (
               <p className="peer-sub" style={{ margin: "6px 0 0" }}>
@@ -1314,6 +1322,29 @@ export function ClipboardApp({
             {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && backgroundContinuity.service === "stopped" && (
               <button className="icon-button" type="button" onClick={() => void onSetBackgroundContinuity(true)}>
                 Start background mode
+              </button>
+            )}
+            {backgroundContinuity.available && backgroundContinuity.supportState === "limited" && (
+              <p className="peer-sub" role="status" style={{ margin: "6px 0 0" }}>
+                This configuration is limited: Clipp observed {backgroundContinuity.observedBackgroundFailureCount} background runtime interruptions. Background connectivity is not reliable on this configuration.
+              </p>
+            )}
+            {backgroundContinuity.available && backgroundContinuity.batteryOptimizationGuidance && (
+              <p className="peer-sub" style={{ margin: "6px 0 0" }}>
+                Troubleshooting: check Android Settings → Apps → Clipp → Battery and allow background use, then collect another diagnostic run. Clipp does not request a battery exemption during onboarding.
+              </p>
+            )}
+            {backgroundContinuity.available && onExportBackgroundContinuityDiagnostics && (
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => {
+                  void Promise.resolve(onExportBackgroundContinuityDiagnostics()).catch(() => {
+                    window.alert("Clipp could not export background diagnostics.");
+                  });
+                }}
+              >
+                Export privacy-safe diagnostics
               </button>
             )}
           </div>

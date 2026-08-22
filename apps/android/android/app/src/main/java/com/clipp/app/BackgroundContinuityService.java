@@ -75,27 +75,37 @@ public final class BackgroundContinuityService extends Service {
     public static final String EXTRA_CONNECTION_STATE = "connectionState";
     public static final String EXTRA_CONNECTED_DEVICE_COUNT = "connectedTrustedDeviceCount";
     public static final String EXTRA_ACTION = "action";
+    static final String EXTRA_HEARTBEAT_TIMEOUT_MS = "heartbeatTimeoutMs";
+    static final String EXTRA_HEARTBEAT_CHECK_MS = "heartbeatCheckMs";
 
     static final String PREFERENCES = "clipp_background_continuity";
     static final String ENABLED = "enabled";
     static final String USER_STOPPED = "userStopped";
     static final String SERVICE_ACTIVE = "serviceActive";
     private static final String CHANNEL_ID = "clipp_background_continuity";
-    private static final int ONGOING_NOTIFICATION_ID = 4101;
-    private static final int RECONNECT_NOTIFICATION_ID = 4102;
-    private static final long HEARTBEAT_TIMEOUT_MS = 60_000L;
-    private static final long HEARTBEAT_CHECK_MS = 5_000L;
+    static final int ONGOING_NOTIFICATION_ID = 4101;
+    static final int RECONNECT_NOTIFICATION_ID = 4102;
+    private static final long DEFAULT_HEARTBEAT_TIMEOUT_MS = 60_000L;
+    private static final long DEFAULT_HEARTBEAT_CHECK_MS = 5_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastHeartbeatElapsedMs;
+    private long heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS;
+    private long heartbeatCheckMs = DEFAULT_HEARTBEAT_CHECK_MS;
+    private boolean heartbeatHealthy;
     private ConnectionState connectionState = ConnectionState.WAITING;
     private int connectedTrustedDeviceCount = 0;
+    private BackgroundContinuityDiagnostics diagnostics;
 
     private final Runnable heartbeatWatchdog = new Runnable() {
         @Override
         public void run() {
-            if (SystemClock.elapsedRealtime() - lastHeartbeatElapsedMs >= HEARTBEAT_TIMEOUT_MS) {
+            if (SystemClock.elapsedRealtime() - lastHeartbeatElapsedMs >= heartbeatTimeoutMs) {
                 connectionState = ConnectionState.DISCONNECTED;
+                diagnostics.recordHeartbeatTransition("expired");
+                diagnostics.recordConnectionTransition("disconnected", 0);
+                diagnostics.recordObservedFailure("heartbeat_expired");
+                diagnostics.recordServiceTransition("stopped_runtime_lost");
                 preferences(BackgroundContinuityService.this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
                 notifyRuntimeLost();
                 postReconnectNotification(BackgroundContinuityService.this);
@@ -103,14 +113,22 @@ public final class BackgroundContinuityService extends Service {
                 stopSelf();
                 return;
             }
-            handler.postDelayed(this, HEARTBEAT_CHECK_MS);
+            handler.postDelayed(this, heartbeatCheckMs);
         }
     };
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        diagnostics = new BackgroundContinuityDiagnostics(this);
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            diagnostics.recordLifecycleTransition("notification_stop");
+            diagnostics.recordServiceTransition("stopped_by_user");
             preferences(this).edit()
                 .putBoolean(ENABLED, false)
                 .putBoolean(USER_STOPPED, true)
@@ -131,27 +149,45 @@ public final class BackgroundContinuityService extends Service {
             return START_NOT_STICKY;
         }
         if (starting) {
+            if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                heartbeatTimeoutMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS));
+                heartbeatCheckMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_CHECK_MS, DEFAULT_HEARTBEAT_CHECK_MS));
+            }
             preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
+            diagnostics.recordServiceTransition("running");
+            diagnostics.recordHeartbeatTransition("awaiting");
+            diagnostics.recordEnvironmentSnapshot();
+            heartbeatHealthy = false;
         }
         if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
             connectionState = ACTION_PAUSE.equals(action) ? ConnectionState.PAUSED : ConnectionState.WAITING;
+            diagnostics.recordLifecycleTransition(ACTION_PAUSE.equals(action) ? "notification_pause" : "notification_resume");
             notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
         }
         if (ACTION_UPDATE.equals(action)) {
             connectionState = ConnectionState.fromWire(intent.getStringExtra(EXTRA_CONNECTION_STATE));
             connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
         }
-        lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
+        if (starting || ACTION_HEARTBEAT.equals(action)) {
+            lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
+            if (ACTION_HEARTBEAT.equals(action) && !heartbeatHealthy) {
+                heartbeatHealthy = true;
+                diagnostics.recordHeartbeatTransition("healthy");
+            }
+        }
+        diagnostics.recordConnectionTransition(connectionState.wireValue, connectedTrustedDeviceCount);
         createNotificationChannel(this);
         startForegroundSafely();
         if (starting) notifyServiceStarted();
         handler.removeCallbacks(heartbeatWatchdog);
-        handler.postDelayed(heartbeatWatchdog, HEARTBEAT_CHECK_MS);
+        handler.postDelayed(heartbeatWatchdog, heartbeatCheckMs);
         return START_NOT_STICKY;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        diagnostics.recordLifecycleTransition("task_removed");
+        diagnostics.recordServiceTransition("stopped_task_removed");
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
         sendBroadcast(new Intent(ACTION_TASK_REMOVED).setPackage(getPackageName()));
@@ -164,6 +200,7 @@ public final class BackgroundContinuityService extends Service {
     public void onDestroy() {
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
+        if (diagnostics != null) diagnostics.recordServiceTransition("destroyed");
         super.onDestroy();
     }
 
@@ -212,7 +249,9 @@ public final class BackgroundContinuityService extends Service {
     }
 
     static void postReconnectNotification(Context context) {
-        if (!notificationsGranted(context)) return;
+        boolean granted = notificationsGranted(context);
+        new BackgroundContinuityDiagnostics(context).recordNotificationPermission(granted);
+        if (!granted) return;
         createNotificationChannel(context);
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)

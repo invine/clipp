@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "cap:copy": "cap copy",
     "cap:sync": "cap sync",
-    "cap:open:android": "cap open android"
+    "cap:open:android": "cap open android",
+    "test:native:unit": "cd android && ./gradlew :app:testDebugUnitTest",
+    "test:native:instrumentation": "cd android && ./gradlew :app:connectedDebugAndroidTest",
+    "build:native:release": "cd android && ./gradlew :app:assembleRelease"
   },
   "dependencies": {
     "@capacitor/clipboard": "^7.0.2",

@@ -17,6 +17,13 @@ export type BackgroundConnectionState =
 
 export type BackgroundServiceState = "running" | "stopped";
 export type BackgroundNotificationPermission = "granted" | "denied" | "unknown";
+export type AndroidBackgroundSupportState = "unqualified" | "limited";
+
+export type AndroidBackgroundDiagnosticStatus = {
+  observedBackgroundFailureCount: number;
+  supportState: AndroidBackgroundSupportState;
+  batteryOptimizationGuidance: boolean;
+};
 
 export type AndroidExplicitTextAction = {
   id: string;
@@ -44,6 +51,9 @@ export type AndroidBackgroundContinuitySnapshot = {
   connectedTrustedDeviceCount: number;
   runtimeHealthy: boolean;
   notificationPermission: BackgroundNotificationPermission;
+  observedBackgroundFailureCount: number;
+  supportState: AndroidBackgroundSupportState;
+  batteryOptimizationGuidance: boolean;
 };
 
 export type AndroidBackgroundContinuityPlatform = {
@@ -59,6 +69,7 @@ export type AndroidBackgroundContinuityPlatform = {
   sendHeartbeat(): Promise<void>;
   updateService(state: BackgroundConnectionState, connectedTrustedDeviceCount: number): Promise<void>;
   showReconnectNotification(): Promise<void>;
+  readDiagnosticStatus?(): Promise<AndroidBackgroundDiagnosticStatus>;
   listExplicitTextActions(): Promise<AndroidExplicitTextAction[]>;
   prepareExplicitTextAction(
     actionId: string,
@@ -118,6 +129,11 @@ export function createAndroidBackgroundContinuityCoordinator(
   let wasConnected = false;
   let lastHeartbeatAt: number | null = null;
   let notificationPermission: BackgroundNotificationPermission = "unknown";
+  let diagnosticStatus: AndroidBackgroundDiagnosticStatus = {
+    observedBackgroundFailureCount: 0,
+    supportState: "unqualified",
+    batteryOptimizationGuidance: false,
+  };
   let cancelHeartbeatSchedule: (() => void) | null = null;
   let heartbeatScheduleGeneration = 0;
   let activityStateGeneration = 0;
@@ -135,10 +151,16 @@ export function createAndroidBackgroundContinuityCoordinator(
     connectedTrustedDeviceCount,
     runtimeHealthy,
     notificationPermission,
+    ...diagnosticStatus,
   });
 
   async function refreshNotificationPermission(): Promise<void> {
     notificationPermission = await platform.notificationPermission();
+  }
+
+  async function refreshDiagnosticStatus(): Promise<void> {
+    if (!platform.readDiagnosticStatus) return;
+    diagnosticStatus = await platform.readDiagnosticStatus();
   }
 
   async function publishServiceState(): Promise<void> {
@@ -283,7 +305,12 @@ export function createAndroidBackgroundContinuityCoordinator(
 
     async initialize(): Promise<AndroidBackgroundContinuitySnapshot> {
       backgroundEnabled = available() && await platform.readEnabled();
-      if (available()) await refreshNotificationPermission();
+      if (available()) {
+        await Promise.all([
+          refreshNotificationPermission(),
+          refreshDiagnosticStatus(),
+        ]);
+      }
       return snapshot();
     },
 
@@ -382,6 +409,7 @@ export function createAndroidBackgroundContinuityCoordinator(
       if (notificationPermission === "granted") {
         await platform.showReconnectNotification();
       }
+      await refreshDiagnosticStatus();
       return snapshot();
     },
 

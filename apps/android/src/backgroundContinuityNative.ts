@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 import type {
   BackgroundConnectionState,
   BackgroundNotificationPermission,
+  AndroidBackgroundDiagnosticStatus,
   AndroidExplicitTextAction,
 } from "./backgroundContinuity";
 
@@ -9,6 +10,9 @@ type NativePlatformInfo = {
   apiLevel: number;
   userStopped: boolean;
   notificationPermission: Exclude<BackgroundNotificationPermission, "unknown">;
+  observedBackgroundFailureCount: number;
+  supportState: "unqualified" | "limited";
+  batteryOptimizationGuidance: boolean;
 };
 
 type NativeBackgroundContinuityPlugin = {
@@ -19,6 +23,7 @@ type NativeBackgroundContinuityPlugin = {
   heartbeat(): Promise<void>;
   update(options: { state: BackgroundConnectionState; connectedTrustedDeviceCount: number }): Promise<void>;
   showReconnectNotification(): Promise<void>;
+  exportDiagnostics(): Promise<void>;
   getExplicitTextActions(): Promise<{ actions: string }>;
   prepareExplicitTextAction(options: { actionId: string; clipId: string; capturedAt: number }): Promise<void>;
   completeExplicitTextAction(options: { actionId: string }): Promise<void>;
@@ -44,6 +49,8 @@ export type AndroidBackgroundNative = {
   heartbeat(): Promise<void>;
   update(state: BackgroundConnectionState, connectedTrustedDeviceCount: number): Promise<void>;
   showReconnectNotification(): Promise<void>;
+  diagnosticStatus(): Promise<AndroidBackgroundDiagnosticStatus>;
+  exportDiagnostics(): Promise<void>;
   explicitTextActions(): Promise<AndroidExplicitTextAction[]>;
   prepareExplicitTextAction(actionId: string, event: { clipId: string; capturedAt: number }): Promise<void>;
   completeExplicitTextAction(actionId: string): Promise<void>;
@@ -107,6 +114,14 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     async notificationPermission() {
       return (await info())?.notificationPermission ?? "denied";
     },
+    async diagnosticStatus() {
+      const platform = await info();
+      return {
+        observedBackgroundFailureCount: Math.max(0, Math.floor(platform?.observedBackgroundFailureCount ?? 0)),
+        supportState: platform?.supportState === "limited" ? "limited" : "unqualified",
+        batteryOptimizationGuidance: platform?.batteryOptimizationGuidance === true,
+      };
+    },
     setEnabled: async (enabled) => await invoke(() => NativeBackgroundContinuity.setEnabled({ enabled })),
     async start() {
       if (!isNativeAndroid()) throw new Error("background_continuity_unavailable");
@@ -116,6 +131,10 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     heartbeat: async () => await invoke(() => NativeBackgroundContinuity.heartbeat()),
     update: async (state, connectedTrustedDeviceCount) => await invoke(() => NativeBackgroundContinuity.update({ state, connectedTrustedDeviceCount })),
     showReconnectNotification: async () => await invoke(() => NativeBackgroundContinuity.showReconnectNotification()),
+    async exportDiagnostics() {
+      if (!isNativeAndroid()) throw new Error("diagnostic_export_unavailable");
+      await NativeBackgroundContinuity.exportDiagnostics();
+    },
     async explicitTextActions() {
       if (!isNativeAndroid()) return [];
       const result = await NativeBackgroundContinuity.getExplicitTextActions();
