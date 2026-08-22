@@ -389,7 +389,7 @@ export class AndroidClient {
       await this.clipboard.resetObservationBaseline?.();
     },
     setAutoSync: async (enabled) => {
-      await this.setAutoSyncPreference(enabled, true);
+      await this.setAutoSyncPreference(enabled);
     },
     startService: () => this.backgroundNative.start(),
     stopService: () => this.backgroundNative.stop(),
@@ -865,10 +865,9 @@ export class AndroidClient {
   }
 
   async setAutoSync(enabled: boolean) {
-    const persisted = await this.setAutoSyncPreference(enabled);
-    await this.backgroundContinuity.reflectAutoSync(persisted);
+    await this.backgroundContinuity.setAutoSync(enabled);
     await this.emitState();
-    return persisted;
+    return this.autoSync;
   }
 
   async setBackgroundContinuity(enabled: boolean) {
