@@ -243,6 +243,13 @@ export type ClipboardAppProps = {
   initializationError?: boolean;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
+  backgroundContinuity?: {
+    available: boolean;
+    backgroundEnabled: boolean;
+    service: "running" | "stopped";
+    connection: "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
+    connectedTrustedDeviceCount: number;
+  };
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): void | Promise<void>;
@@ -258,6 +265,7 @@ export type ClipboardAppProps = {
   onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
   onSetAutoSync?(enabled: boolean): void | Promise<void>;
+  onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
@@ -284,6 +292,7 @@ export function ClipboardApp({
   initializationError = false,
   identityRotationRecovery = false,
   identityRotationNotice = null,
+  backgroundContinuity,
   onDeleteClip,
   onUnpair,
   onAccept,
@@ -299,6 +308,7 @@ export function ClipboardApp({
   onRetryHistoryCleanup,
   onSetLocalRetention,
   onSetAutoSync,
+  onSetBackgroundContinuity,
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
@@ -1255,6 +1265,51 @@ export function ClipboardApp({
               <option value="enabled">Enabled</option>
               <option value="disabled">Disabled — keep Clips local</option>
             </select>
+          </div>
+        )}
+
+        {backgroundContinuity && onSetBackgroundContinuity && (
+          <div className="relay-settings">
+            <label className="peer-sub" htmlFor="background-continuity">
+              Experimental background continuity
+            </label>
+            <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
+              Best effort on Android 16+. It keeps a visible notification while Clipp tries to retain the current app runtime. It does not read your clipboard without an active, focused Clipp window. If notification permission is denied, reconnect alerts may not appear.
+            </p>
+            <select
+              id="background-continuity"
+              disabled={!backgroundContinuity.available}
+              value={backgroundContinuity.backgroundEnabled ? "enabled" : "disabled"}
+              onChange={(event) => {
+                const enabled = event.target.value === "enabled";
+                if (enabled && !window.confirm(
+                  "Keep Clipp connected in the background? This experimental mode shows an ongoing notification, may use battery and network resources, and works only while Android keeps Clipp's current app runtime alive. Clipboard capture still requires a focused Clipp window.",
+                )) return;
+                void onSetBackgroundContinuity(enabled);
+              }}
+            >
+              <option value="disabled">Disabled</option>
+              <option value="enabled">Keep Clipp connected in the background</option>
+            </select>
+            {!backgroundContinuity.available && (
+              <p className="peer-sub" style={{ margin: "6px 0 0" }}>
+                Available experimentally on Android 16 and later.
+              </p>
+            )}
+            {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && (
+              <p className="peer-sub" style={{ margin: "6px 0 0" }}>
+                {backgroundContinuity.service === "running"
+                  ? backgroundContinuity.connection === "connected"
+                    ? `Connected to ${backgroundContinuity.connectedTrustedDeviceCount} Trusted Device${backgroundContinuity.connectedTrustedDeviceCount === 1 ? "" : "s"}.`
+                    : `Background mode is ${backgroundContinuity.connection}.`
+                  : "Background mode is stopped. Start it from this visible control when you are ready."}
+              </p>
+            )}
+            {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && backgroundContinuity.service === "stopped" && (
+              <button className="icon-button" type="button" onClick={() => void onSetBackgroundContinuity(true)}>
+                Start background mode
+              </button>
+            )}
           </div>
         )}
       </>

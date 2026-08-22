@@ -15,6 +15,7 @@ export function createRuntimeClipboardService(options: {
   readText?: () => Promise<string>;
   writeText?: (text: string) => Promise<void>;
   pollIntervalMs?: number;
+  initiallyPollingEnabled?: boolean;
   now?: () => number;
   makeId?: () => string;
   history?: ClipHistoryWriter;
@@ -72,6 +73,7 @@ export function createRuntimeClipboardService(options: {
           ...common,
           readText: options.readText,
           pollIntervalMs: options.pollIntervalMs,
+          initiallyPollingEnabled: options.initiallyPollingEnabled,
         });
       })();
   clipboard.dismissHistoryError = () => {

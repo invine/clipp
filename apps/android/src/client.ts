@@ -46,6 +46,12 @@ import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } 
 import { LocalStorageBackend } from "./storage";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
+import {
+  createAndroidBackgroundContinuityCoordinator,
+  type AndroidBackgroundContinuitySnapshot,
+  type AndroidBackgroundNotificationAction,
+} from "./backgroundContinuity";
+import { createAndroidBackgroundNative } from "./backgroundContinuityNative";
 
 export type AndroidAppState = {
   clips: Clip[];
@@ -68,6 +74,7 @@ export type AndroidAppState = {
   diagnostics?: {
     lastPairingAttempt: PairingAttemptDiagnostics | null;
   };
+  backgroundContinuity?: AndroidBackgroundContinuitySnapshot;
 };
 
 type PairingFailureCode = "invalid" | "no_target" | "dial_failed";
@@ -297,6 +304,7 @@ export class AndroidClient {
       capabilities: RUNTIME_CAPABILITIES.android,
       history: this.history,
       pollIntervalMs: 1500,
+      initiallyPollingEnabled: false,
       getSenderId: async () => {
         const id = await this.identitySvc.get();
         return id.deviceId;
@@ -345,6 +353,33 @@ export class AndroidClient {
   private historyRetentionCleanup: HistoryRetentionCleanup | null = null;
   private pendingRetentionMs: number | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
+  private readonly backgroundNative = createAndroidBackgroundNative();
+  private androidApiLevel: number | undefined;
+  private backgroundHeartbeat: ReturnType<typeof setInterval> | null = null;
+  private backgroundEventsBound = false;
+  private readonly backgroundContinuity = createAndroidBackgroundContinuityCoordinator({
+    androidApiLevel: () => this.androidApiLevel,
+    readEnabled: async () => (await this.storage.get<boolean>("backgroundContinuityEnabled")) === true,
+    writeEnabled: async (enabled) => {
+      await this.storage.set("backgroundContinuityEnabled", enabled);
+      await this.backgroundNative.setEnabled(enabled);
+    },
+    setClipboardCaptureEligible: async (eligible) => {
+      this.clipboard.setPollingEnabled?.(eligible);
+    },
+    resetClipboardBaseline: async () => {
+      await this.clipboard.resetObservationBaseline?.();
+    },
+    setAutoSync: async (enabled) => {
+      await this.setAutoSyncPreference(enabled, true);
+    },
+    startService: () => this.backgroundNative.start(),
+    stopService: () => this.backgroundNative.stop(),
+    sendHeartbeat: () => this.backgroundNative.heartbeat(),
+    updateService: (state, connectedTrustedDeviceCount) =>
+      this.backgroundNative.update(state, connectedTrustedDeviceCount),
+    showReconnectNotification: () => this.backgroundNative.showReconnectNotification(),
+  });
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
     identityKey: IDENTITY_KEY,
@@ -472,6 +507,52 @@ export class AndroidClient {
 
   }
 
+  private async setBackgroundActivityState(): Promise<void> {
+    await this.backgroundContinuity.setActivityState({
+      resumed: document.visibilityState === "visible",
+      windowFocused: document.hasFocus(),
+    });
+  }
+
+  private bindBackgroundContinuityEvents(): void {
+    if (this.backgroundEventsBound) return;
+    this.backgroundEventsBound = true;
+
+    const updateActivity = () => void this.setBackgroundActivityState().then(() => this.emitState());
+    window.addEventListener("focus", updateActivity);
+    window.addEventListener("blur", updateActivity);
+    document.addEventListener("visibilitychange", updateActivity);
+
+    void this.backgroundNative.on("activityState", (event) => {
+      const resumed = event.resumed === true;
+      const windowFocused = event.windowFocused === true;
+      void this.backgroundContinuity.setActivityState({ resumed, windowFocused }).then(() => this.emitState());
+    });
+    void this.backgroundNative.on("runtimeLost", () => {
+      void this.backgroundContinuity.reportRuntimeLost().then(() => this.emitState());
+    });
+    void this.backgroundNative.on("action", (event) => {
+      const action = event.action;
+      if (action !== "pause" && action !== "resume" && action !== "stop") return;
+      void this.backgroundContinuity
+        .handleNotificationAction(action as AndroidBackgroundNotificationAction)
+        .then(() => this.emitState());
+    });
+  }
+
+  private startBackgroundHeartbeat(): void {
+    if (this.backgroundHeartbeat) return;
+    this.backgroundHeartbeat = setInterval(() => {
+      void this.backgroundContinuity.heartbeat();
+    }, 20_000);
+  }
+
+  private stopBackgroundHeartbeat(): void {
+    if (!this.backgroundHeartbeat) return;
+    clearInterval(this.backgroundHeartbeat);
+    this.backgroundHeartbeat = null;
+  }
+
   private createPairingDiagnostics(inputLength: number): PairingAttemptDiagnostics {
     this.pairingAttemptSeq += 1;
     return {
@@ -509,8 +590,15 @@ export class AndroidClient {
       initializeIdentity: () => this.identityRotationLifecycle.initialize(),
       startLocalServices: async () => {
         this.bindEvents();
+        this.bindBackgroundContinuityEvents();
+        this.androidApiLevel = await this.backgroundNative.apiLevel();
+        await this.backgroundContinuity.initialize();
+        if (await this.backgroundNative.userStopped()) {
+          await this.backgroundContinuity.setEnabledFromUser(false);
+        }
         this.autoSync = await this.autoSyncPreference.load();
         this.clipboardSync.setAutoSync(this.autoSync);
+        await this.backgroundContinuity.reflectAutoSync(this.autoSync);
         const storedRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
         const applyStoredRetention = async (): Promise<void> => {
           this.localRetentionMs = await this.history.setRetention(storedRetentionMs);
@@ -544,6 +632,8 @@ export class AndroidClient {
         this.pairingSessions.start();
         await this.pairingPending.start();
         this.clipboardSync.start();
+        await this.setBackgroundActivityState();
+        this.startBackgroundHeartbeat();
       },
       startNetworkServices: async () => {
         await this.ensureMessaging();
@@ -570,6 +660,7 @@ export class AndroidClient {
   }
 
   private async stopIdentityBoundServices() {
+    this.stopBackgroundHeartbeat();
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
     this.membershipReconciler?.stop();
@@ -593,10 +684,11 @@ export class AndroidClient {
     return this.runtime.start();
   }
 
-  stop() {
-    return this.runtimeShutdownHandler
+  async stop() {
+    await (this.runtimeShutdownHandler
       ? Promise.resolve(this.runtimeShutdownHandler())
-      : this.runtime.stop();
+      : this.runtime.stop());
+    await this.backgroundContinuity.handleTaskRemoved();
   }
 
   onUpdate(cb: (state: AndroidAppState) => void) {
@@ -613,6 +705,10 @@ export class AndroidClient {
       ? null
       : toPublicDeviceIdentity(await this.identitySvc.get());
     const peers = this.transport?.getConnectedPeers?.() ?? [];
+    const connectedTrustedDeviceCount = (
+      await Promise.all(peers.map(async (peerId) => (await this.identitySvc.membershipStatus(peerId)) === "active"))
+    ).filter(Boolean).length;
+    await this.backgroundContinuity.setConnection(connectedTrustedDeviceCount);
     const peerConnections = this.transport?.getPeerConnectionInfo?.() ?? [];
     const relayConnections = this.transport?.getRelayConnectionInfo?.() ?? [];
     const relayAddresses = await this.getRelayAddresses();
@@ -638,6 +734,7 @@ export class AndroidClient {
       diagnostics: {
         lastPairingAttempt: this.lastPairingAttempt,
       },
+      backgroundContinuity: this.backgroundContinuity.snapshot(),
     };
   }
 
@@ -714,11 +811,24 @@ export class AndroidClient {
     return this.localRetentionMs;
   }
 
-  async setAutoSync(enabled: boolean) {
+  private async setAutoSyncPreference(enabled: boolean, emit = false): Promise<boolean> {
     this.autoSync = await this.autoSyncPreference.set(enabled);
     this.clipboardSync.setAutoSync(this.autoSync);
-    await this.emitState();
+    if (emit) await this.emitState();
     return this.autoSync;
+  }
+
+  async setAutoSync(enabled: boolean) {
+    const persisted = await this.setAutoSyncPreference(enabled);
+    await this.backgroundContinuity.reflectAutoSync(persisted);
+    await this.emitState();
+    return persisted;
+  }
+
+  async setBackgroundContinuity(enabled: boolean) {
+    const state = await this.backgroundContinuity.setEnabledFromUser(enabled);
+    await this.emitState();
+    return state;
   }
 
   async getIdentity(): Promise<Identity | null> {

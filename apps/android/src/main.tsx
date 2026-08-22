@@ -130,6 +130,7 @@ function App() {
         pinnedIds={state.pinnedIds || []}
         localRetentionMs={state.localRetentionMs}
         autoSync={state.autoSync}
+        backgroundContinuity={state.backgroundContinuity}
         clipboardHistoryError={state.clipboardHistoryError}
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
@@ -154,8 +155,9 @@ function App() {
         onDismissClipboardHistoryError={() => client.dismissClipboardHistoryError()}
         onRetryHistoryCleanup={() => client.retryHistoryCleanup()}
         onAcknowledgeIdentityRotationNotice={() => client.acknowledgeIdentityRotationNotice()}
-        onSetLocalRetention={(retentionMs) => client.setLocalRetention(retentionMs)}
-        onSetAutoSync={(enabled) => client.setAutoSync(enabled)}
+        onSetLocalRetention={async (retentionMs) => { await client.setLocalRetention(retentionMs); }}
+        onSetAutoSync={async (enabled) => { await client.setAutoSync(enabled); }}
+        onSetBackgroundContinuity={async (enabled) => { await client.setBackgroundContinuity(enabled); }}
         onRetryInitialization={async () => {
           try {
             setState(await client.retryIdentityInitialization());

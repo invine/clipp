@@ -12,6 +12,10 @@ import * as log from "../logger";
 export interface ClipboardService {
   start(): void;
   stop(): Promise<void>;
+  /** Enables or suspends only automatic polling; explicit captures remain available. */
+  setPollingEnabled?(enabled: boolean): void;
+  /** Makes the next successful observation a baseline rather than a Local Clip. */
+  resetObservationBaseline?(): Promise<void>;
   onLocalClip(cb: (clip: Clip, options?: LocalClipOptions) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
   reuseLocalClip(clip: Clip): Promise<Clip | null>;
@@ -48,6 +52,7 @@ export type ClipboardServiceBaseOptions = {
 export type PollingClipboardOptions = ClipboardServiceBaseOptions & {
   readText: ClipboardReadFn;
   pollIntervalMs?: number;
+  initiallyPollingEnabled?: boolean;
 };
 
 export type ManualClipboardOptions = ClipboardServiceBaseOptions & {
@@ -73,6 +78,7 @@ export function createPollingClipboardService(
     captureMode: "polling",
     readBackAvailable: true,
     pollIntervalMs: options.pollIntervalMs ?? 2000,
+    initiallyPollingEnabled: options.initiallyPollingEnabled,
   });
 }
 
@@ -90,6 +96,7 @@ export function createManualClipboardService(
     readBackAvailable: options.readText !== undefined,
     readText: options.readText ?? (async () => ""),
     pollIntervalMs: 0,
+    initiallyPollingEnabled: false,
   });
   return {
     ...svc,
@@ -105,6 +112,7 @@ function createClipboardService(
     readBackAvailable: boolean;
     readText: ClipboardReadFn;
     pollIntervalMs: number;
+    initiallyPollingEnabled?: boolean;
   }
 ): ClipboardService {
   const read: ClipboardReadFn = options.readText;
@@ -123,6 +131,7 @@ function createClipboardService(
   let baseline: string | undefined;
   let expectedRemoteEcho: ExpectedRemoteEcho | undefined;
   let acceptingCaptures = false;
+  let pollingEnabled = options.initiallyPollingEnabled !== false;
   const serialize = createSerializedExecutor();
 
   options.captureCoordinator?.onRecovered((clip, captureOptions) => {
@@ -197,8 +206,10 @@ function createClipboardService(
   }
 
   async function checkOnce(): Promise<void> {
+    if (!acceptingCaptures || !pollingEnabled) return;
     try {
       await serialize(async () => {
+        if (!acceptingCaptures || !pollingEnabled) return;
         const text = await read();
         if (options.captureCoordinator) {
           if (baseline === undefined) {
@@ -230,6 +241,17 @@ function createClipboardService(
     } catch {
       // ignore read errors
     }
+  }
+
+  function startPolling(): void {
+    if (timer || !acceptingCaptures || !pollingEnabled || pollIntervalMs <= 0) return;
+    void (async () => {
+      await checkOnce();
+      if (!acceptingCaptures || !pollingEnabled) return;
+      timer = setInterval(() => {
+        void checkOnce();
+      }, pollIntervalMs);
+    })();
   }
 
   async function writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void> {
@@ -292,15 +314,7 @@ function createClipboardService(
       log.info("Clipboard service started");
       acceptingCaptures = true;
       options.captureCoordinator?.start();
-      if (timer) return;
-      if (pollIntervalMs <= 0) return;
-      void (async () => {
-        await checkOnce();
-        if (!acceptingCaptures) return;
-        timer = setInterval(() => {
-          void checkOnce();
-        }, pollIntervalMs);
-      })();
+      startPolling();
     },
     stop: async () => {
       log.info("Clipboard service stopped");
@@ -312,6 +326,18 @@ function createClipboardService(
       await serialize.drain();
       await options.captureCoordinator?.stop();
     },
+    setPollingEnabled: (enabled) => {
+      pollingEnabled = enabled;
+      if (!enabled && timer) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+      if (enabled) startPolling();
+    },
+    resetObservationBaseline: () => serialize(async () => {
+      baseline = undefined;
+      expectedRemoteEcho = undefined;
+    }),
     onLocalClip: (cb) => localHandlers.push(cb),
     onRemoteClipWritten: (cb) => remoteHandlers.push(cb),
     processLocalText: (text, captureOptions) => serialize(() => acceptingCaptures

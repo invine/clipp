@@ -72,4 +72,27 @@ describe("ClipboardService watcher", () => {
     await jest.runOnlyPendingTimersAsync();
     expect(readMock).not.toHaveBeenCalled();
   });
+
+  test("does not read while polling is suspended and restores a baseline before resuming", async () => {
+    const service = createPollingClipboardService({
+      pollIntervalMs: 1000,
+      getSenderId: () => peerId,
+      readText: readMock,
+      initiallyPollingEnabled: false,
+    });
+    const events: Clip[] = [];
+    service.onLocalClip((clip) => events.push(clip));
+    service.start();
+
+    jest.advanceTimersByTime(5000);
+    await jest.runOnlyPendingTimersAsync();
+    expect(readMock).not.toHaveBeenCalled();
+
+    clipboard = "already-present";
+    await service.resetObservationBaseline?.();
+    service.setPollingEnabled?.(true);
+    await jest.runOnlyPendingTimersAsync();
+
+    expect(events).toEqual([]);
+  });
 });
