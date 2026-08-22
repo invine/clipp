@@ -31,6 +31,8 @@ export type AtomicHistoryAcceptance = {
 
 export type HistoryAcceptanceOptions = {
   liveHandled?: boolean;
+  /** Retain until live gossip can offer this explicit action to an Active Member. */
+  shareNowPending?: boolean;
   /** Local captures and live delivery displace older unpinned records. */
   admissionPriority?: boolean;
 };
@@ -41,6 +43,7 @@ export type HistoryMutation =
       clip: Clip;
       firstStoredAt: number;
       liveHandled: boolean;
+      shareNowPending: boolean;
       admissionPriority: boolean;
       now: number;
       policy: HistoryPolicy;
@@ -48,6 +51,7 @@ export type HistoryMutation =
   | { kind: "remove"; clipId: string; now: number; policy: HistoryPolicy }
   | { kind: "clear"; now: number; policy: HistoryPolicy }
   | { kind: "set-pin"; clipId: string; pinned: boolean; now: number; policy: HistoryPolicy }
+  | { kind: "complete-share-now"; clipId: string; now: number; policy: HistoryPolicy }
   | { kind: "cleanup"; now: number; policy: HistoryPolicy }
   | { kind: "suppress"; clipId: string; suppressedUntil: number; now: number; policy: HistoryPolicy };
 
@@ -202,7 +206,14 @@ export function decideAtomicHistoryMutation(
         return { writes, deletes, result: { acceptance: { kind: "immutable-conflict", clip: existing.clip, liveHandled: false } } };
       }
       const needsLiveHandled = input.liveHandled && !existing.liveHandled;
-      if (needsLiveHandled) set(input.clip.id, { ...existing, liveHandled: true });
+      const needsShareNowPending = input.shareNowPending && existing.shareNowPending !== true;
+      if (needsLiveHandled || needsShareNowPending) {
+        set(input.clip.id, {
+          ...existing,
+          liveHandled: existing.liveHandled || needsLiveHandled,
+          shareNowPending: existing.shareNowPending === true || needsShareNowPending,
+        });
+      }
       return {
         writes,
         deletes,
@@ -213,6 +224,7 @@ export function decideAtomicHistoryMutation(
       clip: input.clip,
       firstStoredAt: input.firstStoredAt,
       liveHandled: input.liveHandled,
+      shareNowPending: input.shareNowPending,
       pinned: false,
     };
     set(input.clip.id, item);
@@ -259,6 +271,14 @@ export function decideAtomicHistoryMutation(
       .filter(([id, item]) => isPinned(id, item))
       .map(([, item]) => item.clip.id);
     return { writes, deletes, result: { pinnedIds } };
+  }
+
+  if (input.kind === "complete-share-now") {
+    const existing = next.get(input.clipId);
+    if (isHistoryItem(existing) && existing.shareNowPending === true) {
+      set(input.clipId, { ...existing, shareNowPending: false });
+    }
+    return { writes, deletes, result: {} };
   }
 
   cleanup();

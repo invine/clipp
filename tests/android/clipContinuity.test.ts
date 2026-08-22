@@ -31,6 +31,7 @@ function createPlatform() {
   let nextCapture: ((action: AndroidExplicitTextAction) => Promise<Clip | null>) | undefined;
   let completeFailureCount = 0;
   let writeFailureCount = 0;
+  let beforeRetryEligibility: (() => void | Promise<void>) | undefined;
   const platform: AndroidBackgroundContinuityPlatform = {
     androidApiLevel: () => 36,
     notificationPermission: async () => "granted",
@@ -77,13 +78,18 @@ function createPlatform() {
     readPendingClipboardApplication: async () => pendingApplicationClipId,
     writePendingClipboardApplication: async (clipId) => { pendingApplicationClipId = clipId; },
     clearPendingClipboardApplication: async () => { pendingApplicationClipId = null; },
+    removeClip: async (clipId) => { retained.delete(clipId); },
+    clearHistory: async () => { retained.clear(); },
     readRetainedLiveClip: async (clipId) => retained.get(clipId) ?? null,
-    retryRemoteClipboardApplication: async (value) => {
+    retryRemoteClipboardApplication: async (value, isEligible) => {
+      await beforeRetryEligibility?.();
+      if (!(await isEligible())) return false;
       writes.push(value.id);
       if (writeFailureCount > 0) {
         writeFailureCount -= 1;
         throw new Error("clipboard unavailable");
       }
+      return true;
     },
   };
   return {
@@ -101,6 +107,7 @@ function createPlatform() {
     remove(clipId: string) { retained.delete(clipId); },
     writes,
     failWrite(times = 1) { writeFailureCount = times; },
+    beforeRetryCheck(operation: () => void | Promise<void>) { beforeRetryEligibility = operation; },
     autoSync: () => autoSync,
   };
 }
@@ -219,6 +226,20 @@ test("clears one failed resume retry instead of recreating pending application w
   expect(fake.pendingApplication()).toBeNull();
 });
 
+test("rechecks pending application eligibility immediately before the resume write", async () => {
+  const fake = createPlatform();
+  const remote = clip("00000000-0000-4000-8000-000000000841", "removed during resume");
+  fake.retain(remote);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  await coordinator.recordLiveClipboardApplication(remote, "failed");
+  fake.beforeRetryCheck(() => fake.remove(remote.id));
+
+  await coordinator.setActivityState({ resumed: true, windowFocused: false });
+
+  expect(fake.writes).toEqual([]);
+  expect(fake.pendingApplication()).toBeNull();
+});
+
 test("cancels pending application for Auto Sync, local removal, history clearing, rotation, and historical-only Clips", async () => {
   const fake = createPlatform();
   const live = clip("00000000-0000-4000-8000-000000000850", "live");
@@ -233,12 +254,12 @@ test("cancels pending application for Auto Sync, local removal, history clearing
 
   await coordinator.reflectAutoSync(true);
   await coordinator.recordLiveClipboardApplication(live, "failed");
-  fake.remove(live.id);
-  await coordinator.clearPendingClipboardApplication(live.id);
+  await coordinator.removeClip(live.id);
   expect(fake.pendingApplication()).toBeNull();
 
+  fake.retain(live);
   await coordinator.recordLiveClipboardApplication(live, "failed");
-  await coordinator.clearPendingClipboardApplication();
+  await coordinator.clearHistory();
   expect(fake.pendingApplication()).toBeNull();
 
   await coordinator.recordLiveClipboardApplication(live, "failed");

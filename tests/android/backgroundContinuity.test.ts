@@ -36,8 +36,10 @@ function createPlatform(
     readPendingClipboardApplication: async () => null,
     writePendingClipboardApplication: async () => undefined,
     clearPendingClipboardApplication: async () => undefined,
+    removeClip: async () => undefined,
+    clearHistory: async () => undefined,
     readRetainedLiveClip: async () => null,
-    retryRemoteClipboardApplication: async () => undefined,
+    retryRemoteClipboardApplication: async () => false,
   };
   return {
     platform,

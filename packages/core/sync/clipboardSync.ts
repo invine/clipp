@@ -47,6 +47,7 @@ export function createClipboardSyncManager(
   const boundLiveGossip = new WeakSet<object>();
   let localCaptureQueue = Promise.resolve();
   let liveReceiveQueue = Promise.resolve();
+  let shareNowQueue = Promise.resolve();
 
   // TODO: why not set localIdPromise right away?
   async function getLocalId(): Promise<string> {
@@ -60,18 +61,25 @@ export function createClipboardSyncManager(
     if (!running) return;
     const generation = autoSyncGeneration;
     try {
-      const accepted = await options.history.accept(clip, { liveHandled: true });
+      const accepted = await options.history.accept(clip, {
+        liveHandled: true,
+        shareNowPending: captureOptions?.shareNow === true,
+      });
       if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
     } catch (err) {
       log.warn("Failed to store local clip", err);
       return;
     }
     if (!networkingEnabled || (!autoSync && !captureOptions?.shareNow)) return;
-    if (!isClipAcceptable(clip, now())) return;
+    if (!isClipAcceptable(clip, now())) {
+      if (captureOptions?.shareNow) await options.history.completeShareNow(clip.id);
+      return;
+    }
     const liveGossip = currentLiveGossip;
     if (liveGossip) {
       const shareNow = captureOptions?.shareNow === true;
-      void forwardLiveClip(clip, undefined, shareNow, shareNow ? undefined : generation);
+      if (shareNow) await offerShareNow(clip);
+      else void forwardLiveClip(clip, undefined, false, generation);
     }
   }
 
@@ -102,15 +110,40 @@ export function createClipboardSyncManager(
     immediateSender?: string,
     allowAutoSyncOverride = false,
     expectedAutoSyncGeneration?: number,
-  ): Promise<void> {
+  ): Promise<number> {
     const liveGossip = currentLiveGossip;
     if (!liveGossip || !(await isLiveSideEffectEligible(
       clip,
       undefined,
       allowAutoSyncOverride,
       expectedAutoSyncGeneration,
-    ))) return;
-    await liveGossip.forward(clip, immediateSender, allowAutoSyncOverride);
+    ))) return 0;
+    return await liveGossip.forward(clip, immediateSender, allowAutoSyncOverride);
+  }
+
+  async function offerShareNow(clip: Clip): Promise<void> {
+    const offered = await forwardLiveClip(clip, undefined, true);
+    if (offered > 0) await options.history.completeShareNow(clip.id);
+  }
+
+  async function drainPendingShareNow(): Promise<void> {
+    if (!running || !networkingEnabled) return;
+    const pending = (await options.history.query())
+      .filter((item) => item.shareNowPending === true)
+      .sort((left, right) => left.clip.capturedAt - right.clip.capturedAt);
+    for (const item of pending) {
+      if (!running || !networkingEnabled) return;
+      if (!isClipAcceptable(item.clip, now())) {
+        await options.history.completeShareNow(item.clip.id);
+        continue;
+      }
+      await offerShareNow(item.clip);
+    }
+  }
+
+  function enqueuePendingShareNow(): void {
+    const next = shareNowQueue.then(drainPendingShareNow, drainPendingShareNow);
+    shareNowQueue = next.then(() => undefined, () => undefined);
   }
 
   async function handleIncomingLiveClip(from: string, clip: Clip): Promise<void> {
@@ -187,8 +220,12 @@ export function createClipboardSyncManager(
     if (!boundLiveGossip.has(object)) {
       boundLiveGossip.add(object);
       liveGossip.onClip(({ from, clip }) => enqueueIncomingLiveClip(from, clip));
+      liveGossip.onPeerConnected(() => enqueuePendingShareNow());
     }
-    if (running && networkingEnabled) liveGossip.start();
+    if (running && networkingEnabled) {
+      liveGossip.start();
+      enqueuePendingShareNow();
+    }
   }
 
   if (options.liveGossip) bindLiveGossip(options.liveGossip);
@@ -198,7 +235,7 @@ export function createClipboardSyncManager(
     networkingEnabled = false;
     currentLiveGossip?.stop();
     await options.clipboard.stop();
-    await Promise.all([localCaptureQueue, liveReceiveQueue]);
+    await Promise.all([localCaptureQueue, liveReceiveQueue, shareNowQueue]);
     inFlightRemote.clear();
   }
 
@@ -208,6 +245,7 @@ export function createClipboardSyncManager(
       networkingEnabled = true;
       currentLiveGossip?.start();
       options.clipboard.start();
+      enqueuePendingShareNow();
     },
     startLocalOnly() {
       running = true;

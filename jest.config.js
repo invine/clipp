@@ -16,6 +16,7 @@ export default {
     "^.+\\.tsx?$": ["ts-jest", { useESM: true }],
   },
   moduleNameMapper: {
+    "^@core/(.*)$": "<rootDir>/packages/core/$1",
     "^\.\./models/enums$": "<rootDir>/packages/core/models/enums.ts",
     "^\.\./models/enums\\.js$": "<rootDir>/packages/core/models/enums.ts",
     "^\.\.\/\.\.\/models/enums$": "<rootDir>/packages/core/models/enums.ts",

@@ -7,6 +7,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
+    "paths": {
+      "@core/*": ["./packages/core/*"]
+    },
     "types": ["jest", "node"]
   },
   "include": ["packages/**/*", "tests/**/*", "global.d.ts"]

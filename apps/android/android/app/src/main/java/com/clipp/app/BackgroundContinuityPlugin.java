@@ -207,14 +207,14 @@ public final class BackgroundContinuityPlugin extends Plugin {
     @PluginMethod
     public void getPendingClipboardApplication(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("clipId", new ExplicitTextIngressStore(getContext()).pendingClipboardApplication());
+        result.put("clipId", new PendingClipboardApplicationStore(getContext()).read());
         call.resolve(result);
     }
 
     @PluginMethod
     public void setPendingClipboardApplication(PluginCall call) {
         String clipId = call.getString("clipId");
-        if (clipId == null || !new ExplicitTextIngressStore(getContext()).writePendingClipboardApplication(clipId)) {
+        if (clipId == null || !new PendingClipboardApplicationStore(getContext()).write(clipId)) {
             call.reject("pending_clipboard_application_persistence_failed");
             return;
         }
@@ -223,7 +223,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void clearPendingClipboardApplication(PluginCall call) {
-        if (!new ExplicitTextIngressStore(getContext()).clearPendingClipboardApplication()) {
+        if (!new PendingClipboardApplicationStore(getContext()).clear()) {
             call.reject("pending_clipboard_application_clear_failed");
             return;
         }

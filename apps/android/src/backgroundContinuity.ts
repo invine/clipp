@@ -1,4 +1,7 @@
-import type { Clip } from "../../../packages/core/models/Clip";
+import {
+  clipsHaveEqualImmutableFields,
+  type Clip,
+} from "@core/models/Clip";
 
 /**
  * The public orchestration seam for the optional Android foreground-service
@@ -73,8 +76,13 @@ export type AndroidBackgroundContinuityPlatform = {
   readPendingClipboardApplication(): Promise<string | null>;
   writePendingClipboardApplication(clipId: string): Promise<void>;
   clearPendingClipboardApplication(): Promise<void>;
+  removeClip(clipId: string): Promise<void>;
+  clearHistory(): Promise<void>;
   readRetainedLiveClip(clipId: string): Promise<AndroidRetainedLiveClip | null>;
-  retryRemoteClipboardApplication(clip: Clip): Promise<void>;
+  retryRemoteClipboardApplication(
+    clip: Clip,
+    isEligible: () => Promise<boolean>,
+  ): Promise<boolean>;
 };
 
 export type AndroidBackgroundNotificationAction = "pause" | "resume" | "stop";
@@ -228,7 +236,14 @@ export function createAndroidBackgroundContinuityCoordinator(
     // Clearing first is the durable at-most-once boundary for the resume side effect.
     await platform.clearPendingClipboardApplication();
     try {
-      await platform.retryRemoteClipboardApplication(retained.clip);
+      await platform.retryRemoteClipboardApplication(retained.clip, async () => {
+        if (!autoSync) return false;
+        const current = await platform.readRetainedLiveClip(pendingClipId);
+        return Boolean(
+          current?.liveHandled
+          && clipsHaveEqualImmutableFields(current.clip, retained.clip)
+        );
+      });
     } catch {
       // One failed resume retry is terminal and deliberately never re-queued.
     }
@@ -241,7 +256,7 @@ export function createAndroidBackgroundContinuityCoordinator(
 
   async function reflectAutoSyncState(enabled: boolean): Promise<void> {
     autoSync = enabled;
-    if (!enabled) await serializeClipContinuity(() => clearPendingClipboardApplication());
+    if (!enabled) await clearPendingClipboardApplication();
     if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
     await publishServiceState();
   }
@@ -329,13 +344,15 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async setAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
-      await platform.setAutoSync(enabled);
-      await reflectAutoSyncState(enabled);
+      await serializeClipContinuity(async () => {
+        await platform.setAutoSync(enabled);
+        await reflectAutoSyncState(enabled);
+      });
       return snapshot();
     },
 
     async reflectAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
-      await reflectAutoSyncState(enabled);
+      await serializeClipContinuity(() => reflectAutoSyncState(enabled));
       return snapshot();
     },
 
@@ -408,6 +425,20 @@ export function createAndroidBackgroundContinuityCoordinator(
 
     async clearPendingClipboardApplication(expectedClipId?: string): Promise<void> {
       await serializeClipContinuity(() => clearPendingClipboardApplication(expectedClipId));
+    },
+
+    async removeClip(clipId: string): Promise<void> {
+      await serializeClipContinuity(async () => {
+        await platform.removeClip(clipId);
+        await clearPendingClipboardApplication(clipId);
+      });
+    },
+
+    async clearHistory(): Promise<void> {
+      await serializeClipContinuity(async () => {
+        await platform.clearHistory();
+        await clearPendingClipboardApplication();
+      });
     },
 
     async prepareIdentityRotationCleanup(): Promise<{ rollback(): Promise<void> }> {

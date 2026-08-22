@@ -8,8 +8,10 @@ export type LiveClipGossip = {
   start(): void;
   stop(): void;
   setAutoSync(enabled: boolean): void;
-  forward(clip: Clip, immediateSender?: string, allowAutoSyncOverride?: boolean): Promise<void>;
+  /** Returns the number of eligible connected peers to which delivery was attempted. */
+  forward(clip: Clip, immediateSender?: string, allowAutoSyncOverride?: boolean): Promise<number>;
   onClip(listener: (incoming: { from: string; clip: Clip }) => void): void;
+  onPeerConnected(listener: (peerId: string) => void): void;
 };
 
 /**
@@ -17,12 +19,14 @@ export type LiveClipGossip = {
  * authenticated connection identity and never from the frame payload.
  */
 export function createLiveClipGossip(options: {
-  transport: Pick<MessagingTransport, "send" | "onMessage" | "getConnectedPeers">;
+  transport: Pick<MessagingTransport, "send" | "onMessage" | "getConnectedPeers">
+    & Partial<Pick<MessagingTransport, "onPeerConnected">>;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   now?: () => number;
 }): LiveClipGossip {
   const now = options.now ?? Date.now;
   const listeners: Array<(incoming: { from: string; clip: Clip }) => void> = [];
+  const peerConnectedListeners: Array<(peerId: string) => void> = [];
   let started = false;
   let stopped = false;
   let autoSync = true;
@@ -47,17 +51,18 @@ export function createLiveClipGossip(options: {
     clip: Clip,
     allowAutoSyncOverride = false,
     expectedAutoSyncGeneration?: number,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const generationChanged = (): boolean =>
       expectedAutoSyncGeneration !== undefined && expectedAutoSyncGeneration !== autoSyncGeneration;
-    if (generationChanged() || stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return;
-    if (!(await isActive(peerId)) || generationChanged() || stopped || (!autoSync && !allowAutoSyncOverride)) return;
+    if (generationChanged() || stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return false;
+    if (!(await isActive(peerId)) || generationChanged() || stopped || (!autoSync && !allowAutoSyncOverride)) return false;
     try {
       await options.transport.send(LIVE_CLIP_PROTOCOL, peerId, encodeLiveClipFrame({ clip }));
     } catch (error) {
       // A peer's failure is isolated from the other connected Active Members.
       log.warn("Live Clip delivery failed", { peerId, error: error instanceof Error ? error.message : String(error) });
     }
+    return true;
   };
 
   return {
@@ -65,6 +70,9 @@ export function createLiveClipGossip(options: {
       if (started) return;
       started = true;
       options.transport.onMessage(LIVE_CLIP_PROTOCOL, (from, frame) => { void receive(from, frame); });
+      options.transport.onPeerConnected?.((peerId) => {
+        for (const listener of peerConnectedListeners) listener(peerId);
+      });
     },
     stop(): void { stopped = true; },
     setAutoSync(enabled): void {
@@ -72,8 +80,8 @@ export function createLiveClipGossip(options: {
       autoSync = enabled;
       autoSyncGeneration += 1;
     },
-    async forward(clip, immediateSender, allowAutoSyncOverride = false): Promise<void> {
-      if (stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return;
+    async forward(clip, immediateSender, allowAutoSyncOverride = false): Promise<number> {
+      if (stopped || (!autoSync && !allowAutoSyncOverride) || !isClipAcceptable(clip, now())) return 0;
       const generation = allowAutoSyncOverride ? undefined : autoSyncGeneration;
       // Reject an oversized frame before creating any recipient side effect.
       try {
@@ -82,13 +90,15 @@ export function createLiveClipGossip(options: {
         log.warn("Live Clip not eligible for delivery", {
           reason: error instanceof Error ? error.message : "encoding_failed",
         });
-        return;
+        return 0;
       }
       const peers = options.transport.getConnectedPeers().filter((peerId) => peerId !== immediateSender);
-      await Promise.all(peers.map((peerId) =>
+      const offered = await Promise.all(peers.map((peerId) =>
         sendTo(peerId, clip, allowAutoSyncOverride, generation)
       ));
+      return offered.filter(Boolean).length;
     },
     onClip(listener): void { listeners.push(listener); },
+    onPeerConnected(listener): void { peerConnectedListeners.push(listener); },
   };
 }

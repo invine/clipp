@@ -10,6 +10,8 @@ export interface HistoryItem {
   firstStoredAt: number;
   /** Local-only first-live-delivery marker. */
   liveHandled: boolean;
+  /** Local-only durable outbox marker for an explicit Share Now action. */
+  shareNowPending?: boolean;
   /** Local-only retention exemption; never exchanged with a Clip. */
   pinned?: boolean;
 }
@@ -20,6 +22,7 @@ export interface HistoryItem {
 export function validateHistoryItem(item: HistoryItem): boolean {
   return (
     typeof item.firstStoredAt === "number" &&
-    typeof item.liveHandled === "boolean"
+    typeof item.liveHandled === "boolean" &&
+    (item.shareNowPending === undefined || typeof item.shareNowPending === "boolean")
   );
 }

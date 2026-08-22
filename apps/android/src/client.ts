@@ -424,13 +424,14 @@ export class AndroidClient {
     writePendingClipboardApplication: (clipId) =>
       this.backgroundNative.setPendingClipboardApplication(clipId),
     clearPendingClipboardApplication: () => this.backgroundNative.clearPendingClipboardApplication(),
+    removeClip: (clipId) => this.history.remove(clipId),
+    clearHistory: () => this.clipboard.clearHistory(() => this.history.clearAll()),
     readRetainedLiveClip: async (clipId) => {
       const item = await this.history.getById(clipId);
       return item ? { clip: item.clip, liveHandled: item.liveHandled } : null;
     },
-    retryRemoteClipboardApplication: async (clip) => {
-      await this.clipboard.writeRemoteClip(clip);
-    },
+    retryRemoteClipboardApplication: async (clip, isEligible) =>
+      await this.clipboard.writeRemoteClip(clip, isEligible),
   });
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
@@ -784,8 +785,7 @@ export class AndroidClient {
   }
 
   async deleteClip(id: string) {
-    await this.history.remove(id);
-    await this.backgroundContinuity.clearPendingClipboardApplication(id);
+    await this.backgroundContinuity.removeClip(id);
     await this.emitState();
   }
 
@@ -795,8 +795,7 @@ export class AndroidClient {
   }
 
   async clearHistory() {
-    await this.clipboard.clearHistory(() => this.history.clearAll());
-    await this.backgroundContinuity.clearPendingClipboardApplication();
+    await this.backgroundContinuity.clearHistory();
     await this.emitState();
   }
 

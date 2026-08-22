@@ -28,6 +28,7 @@ export interface ClipHistoryStore {
   setPinned(id: string, pinned: boolean): Promise<string[]>;
   pinnedIds(): Promise<string[]>;
   onNew(cb: (item: HistoryItem) => void): void;
+  completeShareNow(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   suppress(id: string, suppressedUntil: number): Promise<void>;
   clearAll(): Promise<void>;
@@ -122,6 +123,7 @@ export class MemoryHistoryStore implements ClipHistoryStore {
         clip,
         firstStoredAt,
         liveHandled: options.liveHandled === true,
+        shareNowPending: options.shareNowPending === true,
         admissionPriority: options.admissionPriority ?? true,
         now: this.now(),
         policy: this.mutationPolicy(),
@@ -225,6 +227,17 @@ export class MemoryHistoryStore implements ClipHistoryStore {
     await this.serialized(async () => {
       await this.backend.applyHistoryMutation({ kind: "remove", clipId: id, now: this.now(), policy: this.mutationPolicy() });
       this.sessionPinnedIds.delete(id);
+    });
+  }
+
+  async completeShareNow(id: string): Promise<void> {
+    await this.serialized(async () => {
+      await this.backend.applyHistoryMutation({
+        kind: "complete-share-now",
+        clipId: id,
+        now: this.now(),
+        policy: this.mutationPolicy(),
+      });
     });
   }
 

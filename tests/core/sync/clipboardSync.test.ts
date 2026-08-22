@@ -40,14 +40,17 @@ function createClipboardHarness(beforeWrite?: (clip: Clip) => Promise<void>) {
   };
 }
 
-function createGossipHarness(peers: string[] = ["recipient"]) {
+function createGossipHarness(initialPeers: string[] = ["recipient"]) {
+  const peers = [...initialPeers];
   const handlers: Array<(from: string, frame: Uint8Array) => void> = [];
+  const connectedHandlers: Array<(peerId: string) => void> = [];
   const send = jest.fn(async (_protocol: string, _target: string, _frame: Uint8Array) => {});
   const gossip = createLiveClipGossip({
     transport: {
       send,
       onMessage: (_protocol, handler) => handlers.push(handler),
       getConnectedPeers: () => peers,
+      onPeerConnected: (handler) => connectedHandlers.push(handler),
     },
     membershipStatus: async () => "active",
     now: () => 1_000,
@@ -55,6 +58,10 @@ function createGossipHarness(peers: string[] = ["recipient"]) {
   return {
     gossip,
     send,
+    connect(peerId: string) {
+      peers.push(peerId);
+      connectedHandlers.forEach((handler) => handler(peerId));
+    },
     deliver(from: string, clip: Clip) {
       const frame = encodeLiveClipFrame({ clip });
       handlers.forEach((handler) => handler(from, frame));
@@ -112,6 +119,7 @@ describe("ClipboardSyncManager", () => {
     await flush();
 
     expect((await history.getById(clip.id))?.clip).toEqual(clip);
+    expect(await history.getById(clip.id)).toEqual(expect.objectContaining({ shareNowPending: false }));
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -131,6 +139,7 @@ describe("ClipboardSyncManager", () => {
     await flush();
 
     expect((await history.getById(clip.id))?.clip).toEqual(clip);
+    expect(await history.getById(clip.id)).toEqual(expect.objectContaining({ shareNowPending: false }));
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -154,6 +163,48 @@ describe("ClipboardSyncManager", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  test("offers a retained Share Now Clip after restart and reconnect while Auto Sync remains disabled", async () => {
+    const history = createHistory();
+    const firstClipboard = createClipboardHarness();
+    const firstGossip = createGossipHarness([]);
+    const firstSync = createClipboardSyncManager({
+      clipboard: firstClipboard.clipboard,
+      history,
+      liveGossip: firstGossip.gossip,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    firstSync.setAutoSync(false);
+    firstSync.start();
+    const clip = makeClip("00000000-0000-4000-8000-000000000024", "share after reconnect");
+
+    firstClipboard.localHandlers[0](clip, { shareNow: true });
+    await flush();
+
+    expect(firstGossip.send).not.toHaveBeenCalled();
+    expect(await history.getById(clip.id)).toEqual(expect.objectContaining({ shareNowPending: true }));
+    await firstSync.stop();
+
+    const restartedClipboard = createClipboardHarness();
+    const restartedGossip = createGossipHarness([]);
+    const restartedSync = createClipboardSyncManager({
+      clipboard: restartedClipboard.clipboard,
+      history,
+      liveGossip: restartedGossip.gossip,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+    });
+    restartedSync.setAutoSync(false);
+    restartedSync.start();
+
+    restartedGossip.connect("recipient");
+    await flush();
+
+    expect(restartedGossip.send).toHaveBeenCalledTimes(1);
+    expect(decodeLiveClipFrame(restartedGossip.send.mock.calls[0][2])).toEqual({ clip });
+    expect(await history.getById(clip.id)).toEqual(expect.objectContaining({ shareNowPending: false }));
+  });
+
   test("keeps an expired recovered Share Now Clip local", async () => {
     const history = createHistory();
     const { clipboard, localHandlers } = createClipboardHarness();
@@ -171,6 +222,7 @@ describe("ClipboardSyncManager", () => {
     await flush();
 
     expect((await history.getById(clip.id))?.clip).toEqual(clip);
+    expect(await history.getById(clip.id)).toEqual(expect.objectContaining({ shareNowPending: false }));
     expect(send).not.toHaveBeenCalled();
   });
 

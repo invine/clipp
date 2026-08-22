@@ -13,7 +13,7 @@ public final class ExplicitTextIngressActivity extends Activity {
         if (result == ExplicitTextIngressStore.EnqueueResult.QUEUED) {
             Toast.makeText(this, R.string.explicit_text_queued, Toast.LENGTH_SHORT).show();
             sendBroadcast(new Intent(ExplicitTextIngressStore.ACTION_EXPLICIT_TEXT_QUEUED).setPackage(getPackageName()));
-            if (shouldLaunchRuntime(MainActivity.hasActivityOwnedRuntime())) {
+            if (!MainActivity.hasActivityOwnedRuntime()) {
                 Intent launch = new Intent(this, MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 startActivity(launch);
@@ -22,9 +22,5 @@ public final class ExplicitTextIngressActivity extends Activity {
             Toast.makeText(this, R.string.explicit_text_failed, Toast.LENGTH_SHORT).show();
         }
         finish();
-    }
-
-    static boolean shouldLaunchRuntime(boolean activityOwnedRuntimeAvailable) {
-        return !activityOwnedRuntimeAvailable;
     }
 }

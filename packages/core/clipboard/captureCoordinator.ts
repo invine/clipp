@@ -83,7 +83,10 @@ export function createClipCaptureCoordinator(options: {
   let schedulePendingRetry = (): void => {};
   const store = async (clip: Clip, captureOptions?: ClipCaptureOptions): Promise<HistoryAcceptance | null> => {
     try {
-      return await options.history.accept(clip, { liveHandled: true });
+      return await options.history.accept(clip, {
+        liveHandled: true,
+        shareNowPending: captureOptions?.shareNow === true,
+      });
     } catch (error) {
       if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
         options.onDiagnostic?.("clip_too_large", { pendingCount: pending.length });
@@ -117,7 +120,10 @@ export function createClipCaptureCoordinator(options: {
     for (let index = 0; index < pending.length;) {
       const capture = pending[index];
       try {
-        const accepted = await options.history.accept(capture.clip, { liveHandled: true });
+        const accepted = await options.history.accept(capture.clip, {
+          liveHandled: true,
+          shareNowPending: capture.options?.shareNow === true,
+        });
         pending.splice(index, 1);
         pendingBytes -= capture.bytes;
         if (accepted.kind === "newly-stored" || accepted.kind === "exact-duplicate") {
