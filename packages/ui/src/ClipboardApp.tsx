@@ -249,6 +249,7 @@ export type ClipboardAppProps = {
     service: "running" | "stopped";
     connection: "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
     connectedTrustedDeviceCount: number;
+    notificationPermission: "granted" | "denied" | "unknown";
   };
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
@@ -1274,7 +1275,7 @@ export function ClipboardApp({
               Experimental background continuity
             </label>
             <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-              Best effort on Android 16+. It keeps a visible notification while Clipp tries to retain the current app runtime. It does not read your clipboard without an active, focused Clipp window. If notification permission is denied, reconnect alerts may not appear.
+              Best effort on Android 16+. It keeps a visible notification while Clipp tries to retain the current app runtime. It does not read your clipboard without an active, focused Clipp window.
             </p>
             <select
               id="background-continuity"
@@ -1294,6 +1295,11 @@ export function ClipboardApp({
             {!backgroundContinuity.available && (
               <p className="peer-sub" style={{ margin: "6px 0 0" }}>
                 Available experimentally on Android 16 and later.
+              </p>
+            )}
+            {backgroundContinuity.available && backgroundContinuity.notificationPermission === "denied" && (
+              <p className="peer-sub" role="status" style={{ margin: "6px 0 0" }}>
+                Notification permission is denied. Background mode remains available, but ordinary reconnect alerts may not appear.
               </p>
             )}
             {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && (

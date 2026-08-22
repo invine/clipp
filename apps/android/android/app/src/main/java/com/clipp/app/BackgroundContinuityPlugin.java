@@ -23,6 +23,10 @@ public final class BackgroundContinuityPlugin extends Plugin {
                 notifyListeners("runtimeLost", new JSObject());
                 return;
             }
+            if (BackgroundContinuityService.ACTION_TASK_REMOVED.equals(intent.getAction())) {
+                notifyListeners("taskRemoved", new JSObject());
+                return;
+            }
             if (BackgroundContinuityService.ACTION_NOTIFICATION_ACTION.equals(intent.getAction())) {
                 JSObject event = new JSObject();
                 event.put("action", intent.getStringExtra(BackgroundContinuityService.EXTRA_ACTION));
@@ -35,6 +39,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
     public void load() {
         IntentFilter filter = new IntentFilter();
         filter.addAction(BackgroundContinuityService.ACTION_RUNTIME_LOST);
+        filter.addAction(BackgroundContinuityService.ACTION_TASK_REMOVED);
         filter.addAction(BackgroundContinuityService.ACTION_NOTIFICATION_ACTION);
         ContextCompat.registerReceiver(getContext(), eventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
@@ -63,6 +68,10 @@ public final class BackgroundContinuityPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("apiLevel", Build.VERSION.SDK_INT);
         result.put("userStopped", BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.USER_STOPPED, false));
+        result.put(
+            "notificationPermission",
+            BackgroundContinuityService.notificationsGranted(getContext()) ? "granted" : "denied"
+        );
         call.resolve(result);
     }
 

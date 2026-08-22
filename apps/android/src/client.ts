@@ -355,10 +355,10 @@ export class AndroidClient {
   private readonly notificationSelection = createRuntimeNotificationSelection();
   private readonly backgroundNative = createAndroidBackgroundNative();
   private androidApiLevel: number | undefined;
-  private backgroundHeartbeat: ReturnType<typeof setInterval> | null = null;
   private backgroundEventsBound = false;
   private readonly backgroundContinuity = createAndroidBackgroundContinuityCoordinator({
     androidApiLevel: () => this.androidApiLevel,
+    notificationPermission: () => this.backgroundNative.notificationPermission(),
     readEnabled: async () => (await this.storage.get<boolean>("backgroundContinuityEnabled")) === true,
     writeEnabled: async (enabled) => {
       await this.storage.set("backgroundContinuityEnabled", enabled);
@@ -531,6 +531,9 @@ export class AndroidClient {
     void this.backgroundNative.on("runtimeLost", () => {
       void this.backgroundContinuity.reportRuntimeLost().then(() => this.emitState());
     });
+    void this.backgroundNative.on("taskRemoved", () => {
+      void this.backgroundContinuity.handleTaskRemoved().then(() => this.emitState());
+    });
     void this.backgroundNative.on("action", (event) => {
       const action = event.action;
       if (action !== "pause" && action !== "resume" && action !== "stop") return;
@@ -538,19 +541,6 @@ export class AndroidClient {
         .handleNotificationAction(action as AndroidBackgroundNotificationAction)
         .then(() => this.emitState());
     });
-  }
-
-  private startBackgroundHeartbeat(): void {
-    if (this.backgroundHeartbeat) return;
-    this.backgroundHeartbeat = setInterval(() => {
-      void this.backgroundContinuity.heartbeat();
-    }, 20_000);
-  }
-
-  private stopBackgroundHeartbeat(): void {
-    if (!this.backgroundHeartbeat) return;
-    clearInterval(this.backgroundHeartbeat);
-    this.backgroundHeartbeat = null;
   }
 
   private createPairingDiagnostics(inputLength: number): PairingAttemptDiagnostics {
@@ -633,7 +623,7 @@ export class AndroidClient {
         await this.pairingPending.start();
         this.clipboardSync.start();
         await this.setBackgroundActivityState();
-        this.startBackgroundHeartbeat();
+        this.backgroundContinuity.startRuntimeHeartbeat();
       },
       startNetworkServices: async () => {
         await this.ensureMessaging();
@@ -660,7 +650,7 @@ export class AndroidClient {
   }
 
   private async stopIdentityBoundServices() {
-    this.stopBackgroundHeartbeat();
+    this.backgroundContinuity.stopRuntimeHeartbeat();
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
     this.membershipReconciler?.stop();

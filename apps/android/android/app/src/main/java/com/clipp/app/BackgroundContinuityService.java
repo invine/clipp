@@ -15,6 +15,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
@@ -31,6 +32,7 @@ public final class BackgroundContinuityService extends Service {
     public static final String ACTION_PAUSE = "com.clipp.app.background.PAUSE";
     public static final String ACTION_RESUME = "com.clipp.app.background.RESUME";
     public static final String ACTION_RUNTIME_LOST = "com.clipp.app.background.RUNTIME_LOST";
+    public static final String ACTION_TASK_REMOVED = "com.clipp.app.background.TASK_REMOVED";
     public static final String ACTION_NOTIFICATION_ACTION = "com.clipp.app.background.NOTIFICATION_ACTION";
     public static final String EXTRA_CONNECTION_STATE = "connectionState";
     public static final String EXTRA_CONNECTED_DEVICE_COUNT = "connectedTrustedDeviceCount";
@@ -39,6 +41,7 @@ public final class BackgroundContinuityService extends Service {
     static final String PREFERENCES = "clipp_background_continuity";
     static final String ENABLED = "enabled";
     static final String USER_STOPPED = "userStopped";
+    static final String SERVICE_ACTIVE = "serviceActive";
     private static final String CHANNEL_ID = "clipp_background_continuity";
     private static final int ONGOING_NOTIFICATION_ID = 4101;
     private static final int RECONNECT_NOTIFICATION_ID = 4102;
@@ -53,8 +56,9 @@ public final class BackgroundContinuityService extends Service {
     private final Runnable heartbeatWatchdog = new Runnable() {
         @Override
         public void run() {
-            if (System.currentTimeMillis() - lastHeartbeatElapsedMs >= HEARTBEAT_TIMEOUT_MS) {
+            if (SystemClock.elapsedRealtime() - lastHeartbeatElapsedMs >= HEARTBEAT_TIMEOUT_MS) {
                 connectionState = "disconnected";
+                preferences(BackgroundContinuityService.this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
                 notifyRuntimeLost();
                 postReconnectNotification(BackgroundContinuityService.this);
                 stopForeground(STOP_FOREGROUND_REMOVE);
@@ -69,11 +73,27 @@ public final class BackgroundContinuityService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
         if (ACTION_STOP.equals(action)) {
-            preferences(this).edit().putBoolean(ENABLED, false).putBoolean(USER_STOPPED, true).apply();
+            preferences(this).edit()
+                .putBoolean(ENABLED, false)
+                .putBoolean(USER_STOPPED, true)
+                .putBoolean(SERVICE_ACTIVE, false)
+                .apply();
             notifyAction("stop");
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
+        }
+        boolean starting = ACTION_START.equals(action);
+        if (starting && !preferences(this).getBoolean(ENABLED, false)) {
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        if (!starting && !preferences(this).getBoolean(SERVICE_ACTIVE, false)) {
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        if (starting) {
+            preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
         }
         if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
             connectionState = ACTION_PAUSE.equals(action) ? "paused" : "waiting";
@@ -84,7 +104,7 @@ public final class BackgroundContinuityService extends Service {
             if (connectionState == null) connectionState = "waiting";
             connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
         }
-        lastHeartbeatElapsedMs = System.currentTimeMillis();
+        lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
         createNotificationChannel(this);
         startForegroundSafely();
         handler.removeCallbacks(heartbeatWatchdog);
@@ -94,7 +114,9 @@ public final class BackgroundContinuityService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
+        sendBroadcast(new Intent(ACTION_TASK_REMOVED).setPackage(getPackageName()));
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
         super.onTaskRemoved(rootIntent);
@@ -102,6 +124,7 @@ public final class BackgroundContinuityService extends Service {
 
     @Override
     public void onDestroy() {
+        preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
         super.onDestroy();
     }
@@ -163,9 +186,7 @@ public final class BackgroundContinuityService extends Service {
     }
 
     static void postReconnectNotification(Context context) {
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
+        if (!notificationsGranted(context)) return;
         createNotificationChannel(context);
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -176,6 +197,11 @@ public final class BackgroundContinuityService extends Service {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .build();
         ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE)).notify(RECONNECT_NOTIFICATION_ID, notification);
+    }
+
+    static boolean notificationsGranted(Context context) {
+        return Build.VERSION.SDK_INT < 33
+            || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     private static PendingIntent openAppIntent(Context context) {

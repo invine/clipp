@@ -1,8 +1,17 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
-import type { BackgroundConnectionState } from "./backgroundContinuity";
+import type {
+  BackgroundConnectionState,
+  BackgroundNotificationPermission,
+} from "./backgroundContinuity";
+
+type NativePlatformInfo = {
+  apiLevel: number;
+  userStopped: boolean;
+  notificationPermission: Exclude<BackgroundNotificationPermission, "unknown">;
+};
 
 type NativeBackgroundContinuityPlugin = {
-  getPlatformInfo(): Promise<{ apiLevel: number; userStopped: boolean }>;
+  getPlatformInfo(): Promise<NativePlatformInfo>;
   setEnabled(options: { enabled: boolean }): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -10,7 +19,7 @@ type NativeBackgroundContinuityPlugin = {
   update(options: { state: BackgroundConnectionState; connectedTrustedDeviceCount: number }): Promise<void>;
   showReconnectNotification(): Promise<void>;
   addListener(
-    eventName: "action" | "runtimeLost" | "activityState",
+    eventName: "action" | "runtimeLost" | "taskRemoved" | "activityState",
     listenerFunc: (event: Record<string, unknown>) => void,
   ): Promise<PluginListenerHandle>;
 };
@@ -20,13 +29,14 @@ const NativeBackgroundContinuity = registerPlugin<NativeBackgroundContinuityPlug
 export type AndroidBackgroundNative = {
   apiLevel(): Promise<number | undefined>;
   userStopped(): Promise<boolean>;
+  notificationPermission(): Promise<Exclude<BackgroundNotificationPermission, "unknown">>;
   setEnabled(enabled: boolean): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
   heartbeat(): Promise<void>;
   update(state: BackgroundConnectionState, connectedTrustedDeviceCount: number): Promise<void>;
   showReconnectNotification(): Promise<void>;
-  on(event: "action" | "runtimeLost" | "activityState", handler: (event: Record<string, unknown>) => void): Promise<() => void>;
+  on(event: "action" | "runtimeLost" | "taskRemoved" | "activityState", handler: (event: Record<string, unknown>) => void): Promise<() => void>;
 };
 
 function isNativeAndroid(): boolean {
@@ -34,12 +44,10 @@ function isNativeAndroid(): boolean {
 }
 
 export function createAndroidBackgroundNative(): AndroidBackgroundNative {
-  let platformInfo: { apiLevel: number; userStopped: boolean } | null = null;
-  const info = async (): Promise<{ apiLevel: number; userStopped: boolean } | null> => {
+  const info = async (): Promise<NativePlatformInfo | null> => {
     if (!isNativeAndroid()) return null;
     try {
-      platformInfo = await NativeBackgroundContinuity.getPlatformInfo();
-      return platformInfo;
+      return await NativeBackgroundContinuity.getPlatformInfo();
     } catch {
       return null;
     }
@@ -59,6 +67,9 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     },
     async userStopped() {
       return (await info())?.userStopped ?? false;
+    },
+    async notificationPermission() {
+      return (await info())?.notificationPermission ?? "denied";
     },
     setEnabled: async (enabled) => await invoke(() => NativeBackgroundContinuity.setEnabled({ enabled })),
     start: async () => await invoke(() => NativeBackgroundContinuity.start()),

@@ -11,6 +11,7 @@ export type BackgroundConnectionState =
   | "disconnected";
 
 export type BackgroundServiceState = "running" | "stopped";
+export type BackgroundNotificationPermission = "granted" | "denied" | "unknown";
 
 export type AndroidBackgroundContinuitySnapshot = {
   available: boolean;
@@ -20,10 +21,12 @@ export type AndroidBackgroundContinuitySnapshot = {
   connection: BackgroundConnectionState;
   connectedTrustedDeviceCount: number;
   runtimeHealthy: boolean;
+  notificationPermission: BackgroundNotificationPermission;
 };
 
 export type AndroidBackgroundContinuityPlatform = {
   androidApiLevel(): number | undefined;
+  notificationPermission(): Promise<Exclude<BackgroundNotificationPermission, "unknown">>;
   readEnabled(): Promise<boolean>;
   writeEnabled(enabled: boolean): Promise<void>;
   setClipboardCaptureEligible(eligible: boolean): Promise<void>;
@@ -45,10 +48,17 @@ export function createAndroidBackgroundContinuityCoordinator(
   options: {
     now?: () => number;
     heartbeatTimeoutMs?: number;
+    heartbeatIntervalMs?: number;
+    schedulePeriodicHeartbeat?: (tick: () => Promise<void>, everyMs: number) => () => void;
   } = {},
 ) {
   const now = options.now ?? Date.now;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 60_000;
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 20_000;
+  const schedulePeriodicHeartbeat = options.schedulePeriodicHeartbeat ?? ((tick, everyMs) => {
+    const interval = setInterval(() => void tick(), everyMs);
+    return () => clearInterval(interval);
+  });
   let backgroundEnabled = false;
   let resumed = false;
   let windowFocused = false;
@@ -59,6 +69,9 @@ export function createAndroidBackgroundContinuityCoordinator(
   let autoSync = true;
   let wasConnected = false;
   let lastHeartbeatAt: number | null = null;
+  let notificationPermission: BackgroundNotificationPermission = "unknown";
+  let cancelHeartbeatSchedule: (() => void) | null = null;
+  let heartbeatScheduleGeneration = 0;
 
   const available = (): boolean => (platform.androidApiLevel() ?? 0) >= ANDROID_16_API_LEVEL;
   const captureEligible = (): boolean => resumed && windowFocused;
@@ -71,7 +84,12 @@ export function createAndroidBackgroundContinuityCoordinator(
     connection,
     connectedTrustedDeviceCount,
     runtimeHealthy,
+    notificationPermission,
   });
+
+  async function refreshNotificationPermission(): Promise<void> {
+    notificationPermission = await platform.notificationPermission();
+  }
 
   async function publishServiceState(): Promise<void> {
     if (service !== "running") return;
@@ -84,21 +102,49 @@ export function createAndroidBackgroundContinuityCoordinator(
     return wasConnected ? "reconnecting" : "waiting";
   }
 
+  async function heartbeat(): Promise<AndroidBackgroundContinuitySnapshot> {
+    if (!runtimeHealthy) return snapshot();
+    lastHeartbeatAt = now();
+    if (service === "running") await platform.sendHeartbeat();
+    return snapshot();
+  }
+
   return {
     snapshot,
 
+    startRuntimeHeartbeat(): void {
+      if (cancelHeartbeatSchedule) return;
+      const generation = ++heartbeatScheduleGeneration;
+      cancelHeartbeatSchedule = schedulePeriodicHeartbeat(async () => {
+        if (!cancelHeartbeatSchedule || generation !== heartbeatScheduleGeneration) return;
+        await heartbeat();
+      }, heartbeatIntervalMs);
+    },
+
+    stopRuntimeHeartbeat(): void {
+      if (!cancelHeartbeatSchedule) return;
+      heartbeatScheduleGeneration += 1;
+      const cancel = cancelHeartbeatSchedule;
+      cancelHeartbeatSchedule = null;
+      cancel();
+    },
+
     async initialize(): Promise<AndroidBackgroundContinuitySnapshot> {
       backgroundEnabled = available() && await platform.readEnabled();
+      if (available()) await refreshNotificationPermission();
       return snapshot();
     },
 
     async setEnabledFromUser(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
       if (enabled && !available()) return snapshot();
+      if (!enabled && !backgroundEnabled && service === "stopped") return snapshot();
+      if (enabled) await refreshNotificationPermission();
+      const serviceWasRunning = service === "running";
       backgroundEnabled = enabled;
       await platform.writeEnabled(enabled);
       if (!enabled) {
         service = "stopped";
-        await platform.stopService();
+        if (serviceWasRunning) await platform.stopService();
         return snapshot();
       }
 
@@ -147,10 +193,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async heartbeat(): Promise<AndroidBackgroundContinuitySnapshot> {
-      if (!runtimeHealthy) return snapshot();
-      lastHeartbeatAt = now();
-      if (service === "running") await platform.sendHeartbeat();
-      return snapshot();
+      return await heartbeat();
     },
 
     async checkHeartbeatExpiry(): Promise<AndroidBackgroundContinuitySnapshot> {
@@ -165,19 +208,22 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async reportRuntimeLost(): Promise<AndroidBackgroundContinuitySnapshot> {
-      if (!runtimeHealthy && service === "stopped") return snapshot();
+      if (service !== "running") return snapshot();
       runtimeHealthy = false;
       connection = "disconnected";
       connectedTrustedDeviceCount = 0;
       await publishServiceState();
       service = "stopped";
       await platform.stopService();
-      await platform.showReconnectNotification();
+      if (notificationPermission === "granted") {
+        await platform.showReconnectNotification();
+      }
       return snapshot();
     },
 
     async handleNotificationAction(action: AndroidBackgroundNotificationAction): Promise<AndroidBackgroundContinuitySnapshot> {
       if (action === "stop") return await this.setEnabledFromUser(false);
+      if (!backgroundEnabled || service !== "running") return snapshot();
       return await this.setAutoSync(action === "resume");
     },
 
@@ -190,7 +236,12 @@ export function createAndroidBackgroundContinuityCoordinator(
 
     async handleBoot(): Promise<AndroidBackgroundContinuitySnapshot> {
       backgroundEnabled = available() && await platform.readEnabled();
-      if (backgroundEnabled) await platform.showReconnectNotification();
+      if (backgroundEnabled) {
+        await refreshNotificationPermission();
+        if (notificationPermission === "granted") {
+          await platform.showReconnectNotification();
+        }
+      }
       return snapshot();
     },
   };
