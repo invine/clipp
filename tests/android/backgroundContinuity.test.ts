@@ -27,6 +27,16 @@ function createPlatform(
     sendHeartbeat: async () => { commands.push("heartbeat"); },
     updateService: async (state, count) => { states.push({ state, count }); },
     showReconnectNotification: async () => { reconnectAlerts += 1; },
+    listExplicitTextActions: async () => [],
+    prepareExplicitTextAction: async () => undefined,
+    completeExplicitTextAction: async () => undefined,
+    captureExplicitText: async () => null,
+    showExplicitTextFeedback: async () => undefined,
+    readPendingClipboardApplication: async () => null,
+    writePendingClipboardApplication: async () => undefined,
+    clearPendingClipboardApplication: async () => undefined,
+    readRetainedLiveClip: async () => null,
+    retryRemoteClipboardApplication: async () => undefined,
   };
   return {
     platform,

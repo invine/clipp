@@ -7,6 +7,7 @@ import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.widget.Toast;
 
 import androidx.core.content.ContextCompat;
 
@@ -46,6 +47,10 @@ public final class BackgroundContinuityPlugin extends Plugin {
                 JSObject event = new JSObject();
                 event.put("action", intent.getStringExtra(BackgroundContinuityService.EXTRA_ACTION));
                 notifyListeners("action", event, true);
+                return;
+            }
+            if (ExplicitTextIngressStore.ACTION_EXPLICIT_TEXT_QUEUED.equals(intent.getAction())) {
+                notifyListeners("explicitText", new JSObject(), true);
             }
         }
     };
@@ -57,6 +62,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
         filter.addAction(BackgroundContinuityService.ACTION_TASK_REMOVED);
         filter.addAction(BackgroundContinuityService.ACTION_NOTIFICATION_ACTION);
         filter.addAction(BackgroundContinuityService.ACTION_SERVICE_STARTED);
+        filter.addAction(ExplicitTextIngressStore.ACTION_EXPLICIT_TEXT_QUEUED);
         ContextCompat.registerReceiver(getContext(), eventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
@@ -152,6 +158,75 @@ public final class BackgroundContinuityPlugin extends Plugin {
     @PluginMethod
     public void showReconnectNotification(PluginCall call) {
         BackgroundContinuityService.postReconnectNotification(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getExplicitTextActions(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("actions", new ExplicitTextIngressStore(getContext()).actionsJson());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void prepareExplicitTextAction(PluginCall call) {
+        String actionId = call.getString("actionId");
+        String clipId = call.getString("clipId");
+        Long capturedAt = call.getLong("capturedAt");
+        if (actionId == null || clipId == null || capturedAt == null) {
+            call.reject("invalid_explicit_text_action");
+            return;
+        }
+        if (!new ExplicitTextIngressStore(getContext()).prepare(actionId, clipId, capturedAt)) {
+            call.reject("explicit_text_action_persistence_failed");
+            return;
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void completeExplicitTextAction(PluginCall call) {
+        String actionId = call.getString("actionId");
+        if (actionId == null || !new ExplicitTextIngressStore(getContext()).complete(actionId)) {
+            call.reject("explicit_text_action_completion_failed");
+            return;
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void showExplicitTextFeedback(PluginCall call) {
+        String state = call.getString("state", "failed");
+        int message = "accepted".equals(state)
+            ? R.string.explicit_text_accepted
+            : ("queued".equals(state) ? R.string.explicit_text_queued : R.string.explicit_text_failed);
+        getActivity().runOnUiThread(() -> Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getPendingClipboardApplication(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("clipId", new ExplicitTextIngressStore(getContext()).pendingClipboardApplication());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setPendingClipboardApplication(PluginCall call) {
+        String clipId = call.getString("clipId");
+        if (clipId == null || !new ExplicitTextIngressStore(getContext()).writePendingClipboardApplication(clipId)) {
+            call.reject("pending_clipboard_application_persistence_failed");
+            return;
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearPendingClipboardApplication(PluginCall call) {
+        if (!new ExplicitTextIngressStore(getContext()).clearPendingClipboardApplication()) {
+            call.reject("pending_clipboard_application_clear_failed");
+            return;
+        }
         call.resolve();
     }
 

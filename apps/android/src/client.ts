@@ -190,7 +190,23 @@ export class AndroidClient {
     storage: this.storage,
     capabilities: RUNTIME_CAPABILITIES.android,
     shutdown: () => this.stopIdentityBoundServices(),
-    runtimeCleanup: { prepare: () => this.clipboardSync.prepareIdentityRotationCleanup() },
+    runtimeCleanup: {
+      prepare: async () => {
+        const applicationCleanup = await this.backgroundContinuity.prepareIdentityRotationCleanup();
+        try {
+          const captureCleanup = await this.clipboardSync.prepareIdentityRotationCleanup();
+          return {
+            rollback: async () => {
+              await captureCleanup.rollback();
+              await applicationCleanup.rollback();
+            },
+          };
+        } catch (error) {
+          await applicationCleanup.rollback();
+          throw error;
+        }
+      },
+    },
     committer: createIdentityRotationCommitter({
       repository: this.identityRepo,
       storage: this.storage,
@@ -336,6 +352,8 @@ export class AndroidClient {
       return id.deviceId;
     },
     onAutoSyncChanged: (enabled) => this.historyReconciliation?.setAutoSync(enabled),
+    onLiveClipboardApplication: (clip, result) =>
+      this.backgroundContinuity.recordLiveClipboardApplication(clip, result),
   });
 
   private pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
@@ -379,6 +397,27 @@ export class AndroidClient {
     updateService: (state, connectedTrustedDeviceCount) =>
       this.backgroundNative.update(state, connectedTrustedDeviceCount),
     showReconnectNotification: () => this.backgroundNative.showReconnectNotification(),
+    listExplicitTextActions: () => this.backgroundNative.explicitTextActions(),
+    prepareExplicitTextAction: (actionId, event) =>
+      this.backgroundNative.prepareExplicitTextAction(actionId, event),
+    completeExplicitTextAction: (actionId) =>
+      this.backgroundNative.completeExplicitTextAction(actionId),
+    captureExplicitText: (action) => this.clipboard.processLocalText(action.text, {
+      shareNow: true,
+      event: action.event,
+    }),
+    showExplicitTextFeedback: (state) => this.backgroundNative.showExplicitTextFeedback(state),
+    readPendingClipboardApplication: () => this.backgroundNative.pendingClipboardApplication(),
+    writePendingClipboardApplication: (clipId) =>
+      this.backgroundNative.setPendingClipboardApplication(clipId),
+    clearPendingClipboardApplication: () => this.backgroundNative.clearPendingClipboardApplication(),
+    readRetainedLiveClip: async (clipId) => {
+      const item = await this.history.getById(clipId);
+      return item ? { clip: item.clip, liveHandled: item.liveHandled } : null;
+    },
+    retryRemoteClipboardApplication: async (clip) => {
+      await this.clipboard.writeRemoteClip(clip);
+    },
   });
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
@@ -540,6 +579,9 @@ export class AndroidClient {
       void this.backgroundContinuity
         .handleNotificationAction(action as AndroidBackgroundNotificationAction)
         .then(() => this.emitState());
+    });
+    void this.backgroundNative.on("explicitText", () => {
+      void this.backgroundContinuity.handleExplicitTextActionsAvailable();
     });
   }
 
@@ -730,6 +772,7 @@ export class AndroidClient {
 
   async deleteClip(id: string) {
     await this.history.remove(id);
+    await this.backgroundContinuity.clearPendingClipboardApplication(id);
     await this.emitState();
   }
 
@@ -740,6 +783,7 @@ export class AndroidClient {
 
   async clearHistory() {
     await this.clipboard.clearHistory(() => this.history.clearAll());
+    await this.backgroundContinuity.clearPendingClipboardApplication();
     await this.emitState();
   }
 

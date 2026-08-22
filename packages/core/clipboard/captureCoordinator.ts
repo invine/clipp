@@ -9,6 +9,11 @@ export type ClipHistoryAcceptance = HistoryAcceptance;
 export type ClipHistoryWriter = Pick<ClipHistoryStore, "accept">;
 export type ClipCaptureOptions = {
   shareNow?: boolean;
+  /** Origin-prepared event identity used to make an explicit action crash-idempotent. */
+  event?: {
+    clipId: string;
+    capturedAt: number;
+  };
 };
 
 export type ClipCaptureDiagnostic =
@@ -165,17 +170,18 @@ export function createClipCaptureCoordinator(options: {
     if (value.length === 0) return null;
     const immutable = {
       originPeerId: await options.originPeerId(),
-      capturedAt: (options.now ?? Date.now)(),
+      capturedAt: captureOptions?.event?.capturedAt ?? (options.now ?? Date.now)(),
       sharingLifetimeMs: options.sharingLifetimeMs?.() ?? DEFAULT_CLIP_SHARING_LIFETIME_MS,
     };
     if (!isCanonicalPeerId(immutable.originPeerId)) {
       options.onDiagnostic?.("invalid_capture");
       return null;
     }
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    const maximumAttempts = captureOptions?.event ? 1 : 3;
+    for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
       const clip = normalizeClipboardContent(value, immutable.originPeerId, {
         now: () => immutable.capturedAt,
-        makeId: options.makeId,
+        makeId: captureOptions?.event ? () => captureOptions.event!.clipId : options.makeId,
         sharingLifetimeMs: immutable.sharingLifetimeMs,
       });
       if (!clip) {
@@ -193,6 +199,7 @@ export function createClipCaptureCoordinator(options: {
         }
         return clip;
       }
+      if (captureOptions?.event && accepted.kind === "exact-duplicate") return clip;
     }
     options.onDiagnostic?.("clip_id_collision_exhausted");
     return null;

@@ -18,6 +18,7 @@ export const RUNTIME_CAPABILITIES = {
     pinPersistence: "durable",
     notificationApi: "electron",
     postRotationClipboardCapture: "baseline-current",
+    liveClipboardApplicationRecovery: "none",
   },
   android: {
     platform: "android",
@@ -26,6 +27,7 @@ export const RUNTIME_CAPABILITIES = {
     pinPersistence: "durable",
     notificationApi: "capacitor",
     postRotationClipboardCapture: "baseline-current",
+    liveClipboardApplicationRecovery: "one-resume-retry",
   },
   chromeExtension: {
     platform: "chrome-extension",
@@ -34,5 +36,6 @@ export const RUNTIME_CAPABILITIES = {
     pinPersistence: "session",
     notificationApi: "chrome",
     postRotationClipboardCapture: "deferred",
+    liveClipboardApplicationRecovery: "none",
   },
 } as const satisfies Record<string, RuntimeCapabilities>;

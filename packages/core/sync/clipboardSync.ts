@@ -17,6 +17,8 @@ export type ClipboardSyncManagerOptions = {
   liveGossip?: LiveClipGossip;
   /** Rechecked immediately before a received live Clip is durably accepted. */
   isActiveMember?: (peerId: string) => Promise<boolean>;
+  /** Android uses this durable post-acceptance result to bound clipboard recovery. */
+  onLiveClipboardApplication?: (clip: Clip, result: "applied" | "failed") => void | Promise<void>;
 };
 
 export interface ClipboardSyncManager {
@@ -133,13 +135,25 @@ export function createClipboardSyncManager(
       if (accepted.kind === "immutable-conflict" || accepted.kind === "locally-suppressed") return;
       if (accepted.kind === "newly-stored") void forwardLiveClip(clip, from, false, generation);
       if (!accepted.liveHandled) return;
+      let applied = false;
       try {
-        await options.clipboard.writeRemoteClip(clip, async () =>
+        applied = await options.clipboard.writeRemoteClip(clip, async () =>
           await isLiveSideEffectEligible(clip, from, false, generation)
         );
       } catch (error) {
-        // The durable record remains and there is deliberately no automatic retry.
+        try {
+          await options.onLiveClipboardApplication?.(clip, "failed");
+        } catch (markerError) {
+          log.warn("Failed to persist live Clip application recovery", markerError);
+        }
         log.warn("Failed to apply live Clip to clipboard", error);
+      }
+      if (applied) {
+        try {
+          await options.onLiveClipboardApplication?.(clip, "applied");
+        } catch (error) {
+          log.warn("Failed to clear live Clip application recovery", error);
+        }
       }
     } finally {
       inFlightRemote.delete(clip.id);

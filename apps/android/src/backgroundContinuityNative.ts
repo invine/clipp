@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 import type {
   BackgroundConnectionState,
   BackgroundNotificationPermission,
+  AndroidExplicitTextAction,
 } from "./backgroundContinuity";
 
 type NativePlatformInfo = {
@@ -18,8 +19,15 @@ type NativeBackgroundContinuityPlugin = {
   heartbeat(): Promise<void>;
   update(options: { state: BackgroundConnectionState; connectedTrustedDeviceCount: number }): Promise<void>;
   showReconnectNotification(): Promise<void>;
+  getExplicitTextActions(): Promise<{ actions: string }>;
+  prepareExplicitTextAction(options: { actionId: string; clipId: string; capturedAt: number }): Promise<void>;
+  completeExplicitTextAction(options: { actionId: string }): Promise<void>;
+  showExplicitTextFeedback(options: { state: "accepted" | "queued" | "failed" }): Promise<void>;
+  getPendingClipboardApplication(): Promise<{ clipId?: string | null }>;
+  setPendingClipboardApplication(options: { clipId: string }): Promise<void>;
+  clearPendingClipboardApplication(): Promise<void>;
   addListener(
-    eventName: "action" | "runtimeLost" | "taskRemoved" | "activityState",
+    eventName: "action" | "runtimeLost" | "taskRemoved" | "activityState" | "explicitText",
     listenerFunc: (event: Record<string, unknown>) => void,
   ): Promise<PluginListenerHandle>;
 };
@@ -36,11 +44,39 @@ export type AndroidBackgroundNative = {
   heartbeat(): Promise<void>;
   update(state: BackgroundConnectionState, connectedTrustedDeviceCount: number): Promise<void>;
   showReconnectNotification(): Promise<void>;
-  on(event: "action" | "runtimeLost" | "taskRemoved" | "activityState", handler: (event: Record<string, unknown>) => void): Promise<() => void>;
+  explicitTextActions(): Promise<AndroidExplicitTextAction[]>;
+  prepareExplicitTextAction(actionId: string, event: { clipId: string; capturedAt: number }): Promise<void>;
+  completeExplicitTextAction(actionId: string): Promise<void>;
+  showExplicitTextFeedback(state: "accepted" | "queued" | "failed"): Promise<void>;
+  pendingClipboardApplication(): Promise<string | null>;
+  setPendingClipboardApplication(clipId: string): Promise<void>;
+  clearPendingClipboardApplication(): Promise<void>;
+  on(event: "action" | "runtimeLost" | "taskRemoved" | "activityState" | "explicitText", handler: (event: Record<string, unknown>) => void): Promise<() => void>;
 };
 
 function isNativeAndroid(): boolean {
   return Capacitor.getPlatform() === "android";
+}
+
+function parseExplicitTextActions(raw: string): AndroidExplicitTextAction[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is AndroidExplicitTextAction => {
+      if (typeof value !== "object" || value === null) return false;
+      const candidate = value as Partial<AndroidExplicitTextAction>;
+      const event = candidate.event;
+      return typeof candidate.id === "string"
+        && typeof candidate.text === "string"
+        && (candidate.source === "process-text" || candidate.source === "send")
+        && (event === undefined || (
+          typeof event.clipId === "string"
+          && Number.isSafeInteger(event.capturedAt)
+        ));
+    });
+  } catch {
+    return [];
+  }
 }
 
 export function createAndroidBackgroundNative(): AndroidBackgroundNative {
@@ -80,6 +116,33 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     heartbeat: async () => await invoke(() => NativeBackgroundContinuity.heartbeat()),
     update: async (state, connectedTrustedDeviceCount) => await invoke(() => NativeBackgroundContinuity.update({ state, connectedTrustedDeviceCount })),
     showReconnectNotification: async () => await invoke(() => NativeBackgroundContinuity.showReconnectNotification()),
+    async explicitTextActions() {
+      if (!isNativeAndroid()) return [];
+      const result = await NativeBackgroundContinuity.getExplicitTextActions();
+      return parseExplicitTextActions(result.actions);
+    },
+    async prepareExplicitTextAction(actionId, event) {
+      if (!isNativeAndroid()) throw new Error("explicit_text_action_unavailable");
+      await NativeBackgroundContinuity.prepareExplicitTextAction({ actionId, ...event });
+    },
+    async completeExplicitTextAction(actionId) {
+      if (!isNativeAndroid()) throw new Error("explicit_text_action_unavailable");
+      await NativeBackgroundContinuity.completeExplicitTextAction({ actionId });
+    },
+    showExplicitTextFeedback: async (state) => await invoke(() => NativeBackgroundContinuity.showExplicitTextFeedback({ state })),
+    async pendingClipboardApplication() {
+      if (!isNativeAndroid()) return null;
+      const result = await NativeBackgroundContinuity.getPendingClipboardApplication();
+      return typeof result.clipId === "string" ? result.clipId : null;
+    },
+    async setPendingClipboardApplication(clipId) {
+      if (!isNativeAndroid()) throw new Error("pending_clipboard_application_unavailable");
+      await NativeBackgroundContinuity.setPendingClipboardApplication({ clipId });
+    },
+    async clearPendingClipboardApplication() {
+      if (!isNativeAndroid()) return;
+      await NativeBackgroundContinuity.clearPendingClipboardApplication();
+    },
     async on(event, handler) {
       if (!isNativeAndroid()) return () => undefined;
       try {

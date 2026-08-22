@@ -25,6 +25,25 @@
 
         </activity>
 
+        <activity
+            android:name=".ExplicitTextIngressActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/send_with_clipp"
+            android:noHistory="true"
+            android:theme="@style/AppTheme.NoActionBarLaunch">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".BackgroundContinuityService"
             android:exported="false"

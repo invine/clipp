@@ -54,6 +54,44 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
     await expect(clipboard.processLocalText("after identity shutdown", { shareNow: true })).resolves.toBeNull();
   });
 
+  it("reuses a prepared event identity when action completion recovers after durable acceptance", async () => {
+    const stored = new Map<string, Clip>();
+    const published: Clip[] = [];
+    let storageAvailable = false;
+    const clipboard = createRuntimeClipboardService({
+      capabilities: runtimeCapabilities,
+      getSenderId: () => originPeerId,
+      readText: async () => "",
+      history: {
+        accept: async (clip) => {
+          if (!storageAvailable) throw new Error("storage unavailable");
+          const existing = stored.get(clip.id);
+          if (existing) return { kind: "exact-duplicate", clip: existing, liveHandled: true };
+          stored.set(clip.id, clip);
+          return { kind: "newly-stored", clip, liveHandled: true };
+        },
+      },
+    });
+    clipboard.onLocalClip((clip) => published.push(clip));
+    clipboard.start();
+    const event = {
+      clipId: "00000000-0000-4000-8000-000000000799",
+      capturedAt: 123,
+    };
+
+    await expect(clipboard.processLocalText("persisted action", { shareNow: true, event })).resolves.toBeNull();
+    storageAvailable = true;
+    await clipboard.processLocalText("persisted action", { shareNow: true, event });
+
+    expect([...stored.values()]).toEqual([expect.objectContaining({
+      id: event.clipId,
+      capturedAt: event.capturedAt,
+      content: "persisted action",
+    })]);
+    expect(published.map((clip) => clip.id)).toEqual([event.clipId]);
+    await clipboard.stop();
+  });
+
   it("creates no event when a retained-Clip write fails", async () => {
     const accept = jest.fn();
     const clipboard = createRuntimeClipboardService({

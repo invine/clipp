@@ -19,7 +19,8 @@ export interface ClipboardService {
   onLocalClip(cb: (clip: Clip, options?: LocalClipOptions) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
   reuseLocalClip(clip: Clip): Promise<Clip | null>;
-  writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void>;
+  /** Returns true only when the clipboard side effect was actually applied. */
+  writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<boolean>;
   /** Drops captures that never reached durable history, after a successful Clear History. */
   discardPending?(): Promise<void>;
   prepareIdentityRotationCleanup?(): Promise<IdentityRotationCaptureCleanup>;
@@ -191,7 +192,7 @@ function createClipboardService(
         ? options.captureCoordinator!.observe(text)
         : options.captureCoordinator!.capture(text, captureOptions);
       const clip = captureOptions?.shareNow ? await captureExplicitly(capture) : await capture();
-      if (clip) publishLocalClip(clip, captureOptions);
+      if (clip && clip.id !== lastLocal?.id) publishLocalClip(clip, captureOptions);
       return clip;
     }
     const senderId = await Promise.resolve(getSenderId());
@@ -254,13 +255,13 @@ function createClipboardService(
     })();
   }
 
-  async function writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<void> {
+  async function writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<boolean> {
     log.debug("Writing remote clip", clip.id);
-    if (clip.id === lastLocal?.id) return;
-    if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return;
+    if (clip.id === lastLocal?.id) return false;
+    if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) return false;
     log.debug("Writing clip to clipboard");
-    await serialize(async () => {
-      if (beforeWrite && !(await beforeWrite())) return;
+    return await serialize(async () => {
+      if (beforeWrite && !(await beforeWrite())) return false;
       if (options.captureCoordinator) {
         await options.captureCoordinator.writeRemote(
           clip,
@@ -269,7 +270,7 @@ function createClipboardService(
         );
         recordRemoteWrite(clip.content, options.captureCoordinator.baselineValue());
         remoteHandlers.forEach((handler) => handler(clip));
-        return;
+        return true;
       }
       await write(clip.content);
       try {
@@ -280,6 +281,7 @@ function createClipboardService(
       }
       recordRemoteWrite(clip.content, baseline);
       remoteHandlers.forEach((h) => h(clip));
+      return true;
     });
   }
 

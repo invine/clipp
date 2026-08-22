@@ -9,6 +9,7 @@ export type RuntimeCapabilities = {
   pinPersistence: "durable" | "session";
   notificationApi: "electron" | "capacitor" | "chrome";
   postRotationClipboardCapture: "baseline-current" | "deferred";
+  liveClipboardApplicationRecovery: "none" | "one-resume-retry";
 };
 
 export interface RuntimeIdentityStorage<Identity> {

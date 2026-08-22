@@ -30,7 +30,11 @@ function createClipboardHarness(beforeWrite?: (clip: Clip) => Promise<void>) {
       processLocalText: jest.fn(),
       writeRemoteClip: jest.fn(async (clip: Clip, eligible?: () => Promise<boolean>) => {
         await beforeWrite?.(clip);
-        if (!eligible || await eligible()) applied.push(clip);
+        if (!eligible || await eligible()) {
+          applied.push(clip);
+          return true;
+        }
+        return false;
       }),
     } as any,
   };
@@ -208,6 +212,43 @@ describe("ClipboardSyncManager", () => {
 
     expect(await history.exportAll()).toEqual([clip]);
     expect(applied).toEqual([clip]);
+  });
+
+  test("reports successful and failed live clipboard application only after durable acceptance", async () => {
+    const history = createHistory();
+    const failedId = "00000000-0000-4000-8000-000000000015";
+    const { clipboard } = createClipboardHarness(async (clip) => {
+      if (clip.id === failedId) throw new Error("clipboard unavailable");
+    });
+    const { gossip, deliver } = createGossipHarness([]);
+    const applications: Array<{ id: string; result: string; retained: boolean }> = [];
+    const sync = createClipboardSyncManager({
+      clipboard,
+      history,
+      liveGossip: gossip,
+      isActiveMember: async () => true,
+      getLocalDeviceId: async () => originPeerId,
+      now: () => 1_000,
+      onLiveClipboardApplication: async (clip, result) => {
+        applications.push({
+          id: clip.id,
+          result,
+          retained: (await history.getById(clip.id)) !== null,
+        });
+      },
+    });
+    sync.start();
+    const applied = makeClip("00000000-0000-4000-8000-000000000014", "applied");
+    const failed = makeClip(failedId, "failed");
+
+    deliver("sender", applied);
+    deliver("sender", failed);
+    await flush();
+
+    expect(applications).toEqual([
+      { id: applied.id, result: "applied", retained: true },
+      { id: failed.id, result: "failed", retained: true },
+    ]);
   });
 
   test("shutdown waits for and cancels an authorized queued live receive", async () => {

@@ -1,5 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="send_with_clipp">Send with Clipp</string>
+    <string name="explicit_text_queued">Text queued</string>
+    <string name="explicit_text_accepted">Text accepted</string>
+    <string name="explicit_text_failed">Sharing failed</string>
     <string name="app_name">Clipp</string>
     <string name="title_activity_main">Clipp</string>
     <string name="package_name">com.clipp.app</string>

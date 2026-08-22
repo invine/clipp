@@ -345,6 +345,7 @@ describe("shared runtime seam", () => {
       pinPersistence: "durable",
       notificationApi: "electron",
       postRotationClipboardCapture: "baseline-current",
+      liveClipboardApplicationRecovery: "none",
     }],
     ["android", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android, {
       platform: "android",
@@ -353,6 +354,7 @@ describe("shared runtime seam", () => {
       pinPersistence: "durable",
       notificationApi: "capacitor",
       postRotationClipboardCapture: "baseline-current",
+      liveClipboardApplicationRecovery: "one-resume-retry",
     }],
     ["chrome-extension", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension, {
       platform: "chrome-extension",
@@ -361,6 +363,7 @@ describe("shared runtime seam", () => {
       pinPersistence: "session",
       notificationApi: "chrome",
       postRotationClipboardCapture: "deferred",
+      liveClipboardApplicationRecovery: "none",
     }],
   ] as const)("conforms the %s runtime adapter", async (_platform, factory, capabilities, expected) => {
     await expectAdapterConformance(factory as AdapterFactory, capabilities, expected);

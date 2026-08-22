@@ -1,3 +1,5 @@
+import type { Clip } from "../../../packages/core/models/Clip";
+
 /**
  * The public orchestration seam for the optional Android foreground-service
  * companion. It deliberately knows nothing about Capacitor, libp2p, timers, or
@@ -12,6 +14,23 @@ export type BackgroundConnectionState =
 
 export type BackgroundServiceState = "running" | "stopped";
 export type BackgroundNotificationPermission = "granted" | "denied" | "unknown";
+
+export type AndroidExplicitTextAction = {
+  id: string;
+  text: string;
+  source: "process-text" | "send";
+  event?: {
+    clipId: string;
+    capturedAt: number;
+  };
+  /** Assigned by the coordinator, never trusted from an Android intent. */
+  shareNow?: true;
+};
+
+export type AndroidRetainedLiveClip = {
+  clip: Clip;
+  liveHandled: boolean;
+};
 
 export type AndroidBackgroundContinuitySnapshot = {
   available: boolean;
@@ -37,6 +56,22 @@ export type AndroidBackgroundContinuityPlatform = {
   sendHeartbeat(): Promise<void>;
   updateService(state: BackgroundConnectionState, connectedTrustedDeviceCount: number): Promise<void>;
   showReconnectNotification(): Promise<void>;
+  listExplicitTextActions(): Promise<AndroidExplicitTextAction[]>;
+  prepareExplicitTextAction(
+    actionId: string,
+    event: { clipId: string; capturedAt: number },
+  ): Promise<void>;
+  completeExplicitTextAction(actionId: string): Promise<void>;
+  captureExplicitText(action: AndroidExplicitTextAction & {
+    event: NonNullable<AndroidExplicitTextAction["event"]>;
+    shareNow: true;
+  }): Promise<Clip | null>;
+  showExplicitTextFeedback(state: "accepted" | "queued" | "failed"): Promise<void>;
+  readPendingClipboardApplication(): Promise<string | null>;
+  writePendingClipboardApplication(clipId: string): Promise<void>;
+  clearPendingClipboardApplication(): Promise<void>;
+  readRetainedLiveClip(clipId: string): Promise<AndroidRetainedLiveClip | null>;
+  retryRemoteClipboardApplication(clip: Clip): Promise<void>;
 };
 
 export type AndroidBackgroundNotificationAction = "pause" | "resume" | "stop";
@@ -49,12 +84,14 @@ export function createAndroidBackgroundContinuityCoordinator(
     now?: () => number;
     heartbeatTimeoutMs?: number;
     heartbeatIntervalMs?: number;
+    makeClipId?: () => string;
     schedulePeriodicHeartbeat?: (tick: () => Promise<void>, everyMs: number) => () => void;
   } = {},
 ) {
   const now = options.now ?? Date.now;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 60_000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 20_000;
+  const makeClipId = options.makeClipId ?? (() => globalThis.crypto.randomUUID());
   const schedulePeriodicHeartbeat = options.schedulePeriodicHeartbeat ?? ((tick, everyMs) => {
     const interval = setInterval(() => void tick(), everyMs);
     return () => clearInterval(interval);
@@ -73,6 +110,7 @@ export function createAndroidBackgroundContinuityCoordinator(
   let cancelHeartbeatSchedule: (() => void) | null = null;
   let heartbeatScheduleGeneration = 0;
   let activityStateGeneration = 0;
+  let clipContinuityQueue = Promise.resolve();
 
   const available = (): boolean => (platform.androidApiLevel() ?? 0) >= ANDROID_16_API_LEVEL;
   const captureEligible = (): boolean => resumed && windowFocused;
@@ -108,6 +146,88 @@ export function createAndroidBackgroundContinuityCoordinator(
     lastHeartbeatAt = now();
     if (service === "running") await platform.sendHeartbeat();
     return snapshot();
+  }
+
+  function serializeClipContinuity<T>(operation: () => Promise<T>): Promise<T> {
+    const next = clipContinuityQueue.then(operation, operation);
+    clipContinuityQueue = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
+  async function clearPendingClipboardApplication(expectedClipId?: string): Promise<void> {
+    if (expectedClipId !== undefined) {
+      const pendingClipId = await platform.readPendingClipboardApplication();
+      if (pendingClipId !== expectedClipId) return;
+    }
+    await platform.clearPendingClipboardApplication();
+  }
+
+  async function drainExplicitTextActions(): Promise<void> {
+    let actions: AndroidExplicitTextAction[];
+    try {
+      actions = await platform.listExplicitTextActions();
+    } catch {
+      await platform.showExplicitTextFeedback("failed");
+      return;
+    }
+
+    for (const queued of actions) {
+      if (!queued.id || !queued.text || (queued.source !== "process-text" && queued.source !== "send")) {
+        await platform.showExplicitTextFeedback("failed");
+        continue;
+      }
+      let event = queued.event;
+      if (!event) {
+        event = { clipId: makeClipId(), capturedAt: now() };
+        try {
+          await platform.prepareExplicitTextAction(queued.id, event);
+        } catch {
+          await platform.showExplicitTextFeedback("queued");
+          continue;
+        }
+      }
+
+      let accepted: Clip | null;
+      try {
+        accepted = await platform.captureExplicitText({ ...queued, event, shareNow: true });
+      } catch {
+        await platform.showExplicitTextFeedback("failed");
+        continue;
+      }
+      if (!accepted) {
+        await platform.showExplicitTextFeedback("queued");
+        continue;
+      }
+      try {
+        await platform.completeExplicitTextAction(queued.id);
+        await platform.showExplicitTextFeedback("accepted");
+      } catch {
+        await platform.showExplicitTextFeedback("queued");
+      }
+    }
+  }
+
+  async function retryPendingClipboardApplication(): Promise<void> {
+    const pendingClipId = await platform.readPendingClipboardApplication();
+    if (!pendingClipId) return;
+    const retained = await platform.readRetainedLiveClip(pendingClipId);
+    if (!autoSync || !retained?.liveHandled) {
+      await platform.clearPendingClipboardApplication();
+      return;
+    }
+
+    // Clearing first is the durable at-most-once boundary for the resume side effect.
+    await platform.clearPendingClipboardApplication();
+    try {
+      await platform.retryRemoteClipboardApplication(retained.clip);
+    } catch {
+      // One failed resume retry is terminal and deliberately never re-queued.
+    }
+  }
+
+  async function handleActivityResumed(): Promise<void> {
+    await drainExplicitTextActions();
+    await retryPendingClipboardApplication();
   }
 
   return {
@@ -169,6 +289,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     async setActivityState(next: { resumed: boolean; windowFocused: boolean }): Promise<AndroidBackgroundContinuitySnapshot> {
       const generation = ++activityStateGeneration;
       const wasEligible = captureEligible();
+      const wasResumed = resumed;
       resumed = next.resumed;
       windowFocused = next.windowFocused;
       const eligible = captureEligible();
@@ -176,6 +297,9 @@ export function createAndroidBackgroundContinuityCoordinator(
         if (eligible) await platform.resetClipboardBaseline();
         if (generation !== activityStateGeneration) return snapshot();
         await platform.setClipboardCaptureEligible(eligible);
+      }
+      if (!wasResumed && resumed && generation === activityStateGeneration) {
+        await serializeClipContinuity(handleActivityResumed);
       }
       return snapshot();
     },
@@ -191,6 +315,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     async setAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
       autoSync = enabled;
       await platform.setAutoSync(enabled);
+      if (!enabled) await serializeClipContinuity(() => clearPendingClipboardApplication());
       if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
       await publishServiceState();
       return snapshot();
@@ -198,6 +323,7 @@ export function createAndroidBackgroundContinuityCoordinator(
 
     async reflectAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
       autoSync = enabled;
+      if (!enabled) await serializeClipContinuity(() => clearPendingClipboardApplication());
       if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
       await publishServiceState();
       return snapshot();
@@ -254,6 +380,39 @@ export function createAndroidBackgroundContinuityCoordinator(
         }
       }
       return snapshot();
+    },
+
+    async handleExplicitTextActionsAvailable(): Promise<void> {
+      await serializeClipContinuity(drainExplicitTextActions);
+    },
+
+    async recordLiveClipboardApplication(clip: Clip, result: "applied" | "failed"): Promise<void> {
+      await serializeClipContinuity(async () => {
+        if (result === "failed") {
+          if (autoSync) await platform.writePendingClipboardApplication(clip.id);
+          return;
+        }
+        await clearPendingClipboardApplication();
+      });
+    },
+
+    async clearPendingClipboardApplication(expectedClipId?: string): Promise<void> {
+      await serializeClipContinuity(() => clearPendingClipboardApplication(expectedClipId));
+    },
+
+    async prepareIdentityRotationCleanup(): Promise<{ rollback(): Promise<void> }> {
+      return await serializeClipContinuity(async () => {
+        const checkpoint = await platform.readPendingClipboardApplication();
+        if (checkpoint) await platform.clearPendingClipboardApplication();
+        let restored = false;
+        return {
+          rollback: async () => {
+            if (restored || !checkpoint) return;
+            restored = true;
+            await serializeClipContinuity(() => platform.writePendingClipboardApplication(checkpoint));
+          },
+        };
+      });
     },
   };
 }

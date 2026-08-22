@@ -259,6 +259,7 @@ describe("Device Identity initialization", () => {
         pinPersistence: "durable" as const,
         notificationApi: "electron" as const,
         postRotationClipboardCapture: "baseline-current" as const,
+        liveClipboardApplicationRecovery: "none" as const,
       },
       initialApplicationState: {},
       getPublicState: async () => ({}),
