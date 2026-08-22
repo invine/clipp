@@ -4,6 +4,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static com.clipp.app.BackgroundContinuityConnectionState.CONNECTED;
+import static com.clipp.app.BackgroundContinuityConnectionState.RECONNECTING;
+import static com.clipp.app.BackgroundContinuityDiagnostics.FailureReason.HEARTBEAT_EXPIRED;
+import static com.clipp.app.BackgroundContinuityDiagnostics.HeartbeatTransition.EXPIRED;
+import static com.clipp.app.BackgroundContinuityDiagnostics.ServiceTransition.DESTROYED;
+import static com.clipp.app.BackgroundContinuityDiagnostics.ServiceTransition.RUNNING;
+import static com.clipp.app.BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_TASK_REMOVED;
 
 import android.content.Context;
 
@@ -41,20 +48,16 @@ public final class BackgroundContinuityDiagnosticsTest {
     @Test
     public void exportIsBoundedAndUsesOnlyThePrivacyReviewedSchema() throws Exception {
         for (int index = 0; index < 600; index += 1) {
-            diagnostics.recordServiceTransition(index % 2 == 0 ? "running" : "stopped");
+            diagnostics.recordServiceTransition(index % 2 == 0 ? RUNNING : DESTROYED);
         }
-        diagnostics.recordHeartbeatTransition("expired");
-        diagnostics.recordConnectionTransition("reconnecting", 0);
-        diagnostics.recordConnectionTransition("connected", 2);
+        diagnostics.recordHeartbeatTransition(EXPIRED);
+        diagnostics.recordConnectionTransition(RECONNECTING, 0);
+        diagnostics.recordConnectionTransition(CONNECTED, 2);
         diagnostics.recordPendingActionCount(3);
         diagnostics.recordPendingApplication(true);
         diagnostics.recordCaptureEligibility(false);
         diagnostics.recordNotificationPermission(false);
         diagnostics.recordEnvironmentSnapshot();
-        diagnostics.recordServiceTransition("diagnostic-secret-payload");
-        diagnostics.recordHeartbeatTransition("diagnostic-secret-payload");
-        diagnostics.recordLifecycleTransition("diagnostic-secret-payload");
-        diagnostics.recordConnectionTransition("diagnostic-secret-payload", 0);
 
         JSONObject exported = new JSONObject(diagnostics.exportJson());
         JSONArray events = exported.getJSONArray("events");
@@ -114,20 +117,19 @@ public final class BackgroundContinuityDiagnosticsTest {
         assertFalse(raw.contains("deviceName"));
         assertFalse(raw.contains("localDeviceAlias"));
         assertFalse(raw.contains("protocolFrame"));
-        assertFalse(raw.contains("diagnostic-secret-payload"));
     }
 
     @Test
     public void repeatedObservedFailuresMarkTheConfigurationLimitedAndEnableGuidance() throws Exception {
-        diagnostics.recordObservedFailure("heartbeat_expired");
-        diagnostics.recordObservedFailure("heartbeat_expired");
+        diagnostics.recordObservedFailure(HEARTBEAT_EXPIRED);
+        diagnostics.recordObservedFailure(HEARTBEAT_EXPIRED);
 
         JSONObject beforeThreshold = diagnostics.statusJson();
         assertEquals(2, beforeThreshold.getInt("observedBackgroundFailureCount"));
         assertEquals("unqualified", beforeThreshold.getString("supportState"));
         assertFalse(beforeThreshold.getBoolean("batteryOptimizationGuidance"));
 
-        diagnostics.recordObservedFailure("heartbeat_expired");
+        diagnostics.recordObservedFailure(HEARTBEAT_EXPIRED);
 
         JSONObject limited = diagnostics.statusJson();
         assertEquals(3, limited.getInt("observedBackgroundFailureCount"));
@@ -151,9 +153,9 @@ public final class BackgroundContinuityDiagnosticsTest {
 
     @Test
     public void reconnectDurationDoesNotSpanStoppedSessions() throws Exception {
-        diagnostics.recordConnectionTransition("reconnecting", 0);
-        diagnostics.recordServiceTransition("stopped_task_removed");
-        diagnostics.recordConnectionTransition("connected", 1);
+        diagnostics.recordConnectionTransition(RECONNECTING, 0);
+        diagnostics.recordServiceTransition(STOPPED_TASK_REMOVED);
+        diagnostics.recordConnectionTransition(CONNECTED, 1);
 
         JSONArray events = new JSONObject(diagnostics.exportJson()).getJSONArray("events");
         JSONObject connected = events.getJSONObject(events.length() - 1);

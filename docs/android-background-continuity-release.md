@@ -20,7 +20,7 @@ The export must not contain Clip content, raw share intents, private keys, signa
 
 ## Automated release checks
 
-Use JDK 21 and attach an Android 16-or-later emulator before running the complete gate:
+Use JDK 21 and attach an Android 16-or-later emulator before running the complete gate. The instrumentation stage fails before Gradle starts unless ADB reports at least one API 36-or-later emulator target:
 
 ```sh
 export JAVA_HOME=/path/to/jdk-21
@@ -43,7 +43,7 @@ Coverage is deliberately split at the settled seams:
 | durable selected-text/Sharesheet actions, distinct event identity, newest-only pending live application, at-most-once resume retry, Auto Sync/history/rotation cancellation | `tests/android/clipContinuity.test.ts` |
 | historical reconciliation never writes the system clipboard | `tests/core/sync/historyReconciliation.test.ts` and runtime conformance tests |
 | Android discovery and cold/warm ingress | `BackgroundContinuityManifestTest` on API 36+ |
-| native foreground notification/actions, heartbeat expiry, reboot notification, notification degradation, payload-free diagnostics | `BackgroundContinuityLifecycleTest` on API 36+ |
+| native foreground notification/actions, heartbeat expiry, task removal, reboot notification, notification degradation, payload-free diagnostics | `BackgroundContinuityLifecycleTest` on API 36+ |
 | 512-event bound, schema allowlist, repeated-failure qualification | `BackgroundContinuityDiagnosticsTest` on API 36+ |
 
 Do not substitute instrumentation compilation for an API 36 connected test run. Record the emulator image/build and command result in the ticket.

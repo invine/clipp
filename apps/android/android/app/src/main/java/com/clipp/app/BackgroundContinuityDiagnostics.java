@@ -26,6 +26,59 @@ final class BackgroundContinuityDiagnostics {
     private static final String LAST_CONNECTED_COUNT = "lastConnectedCount";
     private static final Object LOCK = new Object();
 
+    enum ServiceTransition {
+        START_REQUESTED("start_requested"),
+        STOP_REQUESTED("stop_requested"),
+        RUNNING("running"),
+        STOPPED_BY_USER("stopped_by_user"),
+        STOPPED_RUNTIME_LOST("stopped_runtime_lost"),
+        STOPPED_TASK_REMOVED("stopped_task_removed"),
+        DESTROYED("destroyed");
+
+        private final String wireValue;
+
+        ServiceTransition(String wireValue) {
+            this.wireValue = wireValue;
+        }
+    }
+
+    enum HeartbeatTransition {
+        AWAITING("awaiting"),
+        HEALTHY("healthy"),
+        EXPIRED("expired");
+
+        private final String wireValue;
+
+        HeartbeatTransition(String wireValue) {
+            this.wireValue = wireValue;
+        }
+    }
+
+    enum LifecycleTransition {
+        NOTIFICATION_STOP("notification_stop"),
+        NOTIFICATION_PAUSE("notification_pause"),
+        NOTIFICATION_RESUME("notification_resume"),
+        TASK_REMOVED("task_removed"),
+        BOOT_COMPLETED("boot_completed"),
+        BOOT_RECONNECT_OFFERED("boot_reconnect_offered");
+
+        private final String wireValue;
+
+        LifecycleTransition(String wireValue) {
+            this.wireValue = wireValue;
+        }
+    }
+
+    enum FailureReason {
+        HEARTBEAT_EXPIRED("heartbeat_expired");
+
+        private final String wireValue;
+
+        FailureReason(String wireValue) {
+            this.wireValue = wireValue;
+        }
+    }
+
     private final Context context;
     private final SharedPreferences preferences;
 
@@ -34,72 +87,54 @@ final class BackgroundContinuityDiagnostics {
         this.preferences = this.context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
     }
 
-    void recordServiceTransition(String state) {
-        String safeState = allowedValue(
-            state,
-            "start_requested",
-            "stop_requested",
-            "running",
-            "stopped_by_user",
-            "stopped_runtime_lost",
-            "stopped_task_removed",
-            "destroyed"
-        );
+    void recordServiceTransition(ServiceTransition state) {
         synchronized (LOCK) {
             if (
-                "start_requested".equals(safeState)
-                    || "stopped_by_user".equals(safeState)
-                    || "stopped_runtime_lost".equals(safeState)
-                    || "stopped_task_removed".equals(safeState)
-                    || "destroyed".equals(safeState)
+                state == ServiceTransition.START_REQUESTED
+                    || state == ServiceTransition.STOPPED_BY_USER
+                    || state == ServiceTransition.STOPPED_RUNTIME_LOST
+                    || state == ServiceTransition.STOPPED_TASK_REMOVED
+                    || state == ServiceTransition.DESTROYED
             ) {
                 preferences.edit().remove(RECONNECT_STARTED_AT).commit();
             }
-            appendLocked(valueEvent("service_transition", safeState));
+            appendLocked(valueEvent("service_transition", state.wireValue));
         }
     }
 
-    void recordHeartbeatTransition(String state) {
-        append(valueEvent("heartbeat_transition", allowedValue(state, "awaiting", "healthy", "expired")));
+    void recordHeartbeatTransition(HeartbeatTransition state) {
+        append(valueEvent("heartbeat_transition", state.wireValue));
     }
 
-    void recordLifecycleTransition(String state) {
-        append(valueEvent("lifecycle_transition", allowedValue(
-            state,
-            "notification_stop",
-            "notification_pause",
-            "notification_resume",
-            "task_removed",
-            "boot_completed",
-            "boot_reconnect_offered"
-        )));
+    void recordLifecycleTransition(LifecycleTransition state) {
+        append(valueEvent("lifecycle_transition", state.wireValue));
     }
 
-    void recordConnectionTransition(String state, int connectedCount) {
+    void recordConnectionTransition(BackgroundContinuityConnectionState state, int connectedCount) {
         synchronized (LOCK) {
-            state = allowedValue(state, "connected", "waiting", "reconnecting", "paused", "disconnected");
+            String wireState = state.wireValue;
             int safeCount = Math.max(0, connectedCount);
             String previousState = preferences.getString(LAST_CONNECTION_STATE, null);
             int previousCount = preferences.getInt(LAST_CONNECTED_COUNT, -1);
-            if (state.equals(previousState) && safeCount == previousCount) return;
+            if (wireState.equals(previousState) && safeCount == previousCount) return;
 
             long now = System.currentTimeMillis();
             Long reconnectDurationMs = null;
             SharedPreferences.Editor editor = preferences.edit()
-                .putString(LAST_CONNECTION_STATE, state)
+                .putString(LAST_CONNECTION_STATE, wireState)
                 .putInt(LAST_CONNECTED_COUNT, safeCount);
-            if ("reconnecting".equals(state) && !preferences.contains(RECONNECT_STARTED_AT)) {
+            if (state == BackgroundContinuityConnectionState.RECONNECTING && !preferences.contains(RECONNECT_STARTED_AT)) {
                 editor.putLong(RECONNECT_STARTED_AT, now);
-            } else if ("connected".equals(state) && preferences.contains(RECONNECT_STARTED_AT)) {
+            } else if (state == BackgroundContinuityConnectionState.CONNECTED && preferences.contains(RECONNECT_STARTED_AT)) {
                 reconnectDurationMs = Math.max(0L, now - preferences.getLong(RECONNECT_STARTED_AT, now));
                 editor.remove(RECONNECT_STARTED_AT);
-            } else if (!"reconnecting".equals(state)) {
+            } else if (state != BackgroundContinuityConnectionState.RECONNECTING) {
                 editor.remove(RECONNECT_STARTED_AT);
             }
             editor.commit();
 
             JSONObject event = event("connection_transition");
-            put(event, "value", state);
+            put(event, "value", wireState);
             put(event, "count", safeCount);
             if (reconnectDurationMs != null) put(event, "durationMs", reconnectDurationMs);
             appendLocked(event);
@@ -136,11 +171,11 @@ final class BackgroundContinuityDiagnostics {
         append(event);
     }
 
-    void recordObservedFailure(String reason) {
+    void recordObservedFailure(FailureReason reason) {
         synchronized (LOCK) {
             int failures = preferences.getInt(FAILURE_COUNT, 0) + 1;
             preferences.edit().putInt(FAILURE_COUNT, failures).commit();
-            appendLocked(valueEvent("observed_background_failure", allowedValue(reason, "heartbeat_expired")));
+            appendLocked(valueEvent("observed_background_failure", reason.wireValue));
         }
     }
 
@@ -209,13 +244,6 @@ final class BackgroundContinuityDiagnostics {
         JSONObject event = event(name);
         put(event, "value", value);
         return event;
-    }
-
-    private static String allowedValue(String candidate, String... allowed) {
-        for (String value : allowed) {
-            if (value.equals(candidate)) return value;
-        }
-        return "unknown";
     }
 
     private static JSONObject event(String name) {

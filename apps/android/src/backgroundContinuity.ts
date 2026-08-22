@@ -2,6 +2,7 @@ import {
   clipsHaveEqualImmutableFields,
   type Clip,
 } from "@core/models/Clip";
+import type { BackgroundContinuityDiagnosticStatus } from "@clipp/ui";
 
 /**
  * The public orchestration seam for the optional Android foreground-service
@@ -17,13 +18,7 @@ export type BackgroundConnectionState =
 
 export type BackgroundServiceState = "running" | "stopped";
 export type BackgroundNotificationPermission = "granted" | "denied" | "unknown";
-export type AndroidBackgroundSupportState = "unqualified" | "limited";
-
-export type AndroidBackgroundDiagnosticStatus = {
-  observedBackgroundFailureCount: number;
-  supportState: AndroidBackgroundSupportState;
-  batteryOptimizationGuidance: boolean;
-};
+export type AndroidBackgroundDiagnosticStatus = BackgroundContinuityDiagnosticStatus;
 
 export type AndroidExplicitTextAction = {
   id: string;
@@ -42,7 +37,7 @@ export type AndroidRetainedLiveClip = {
   liveHandled: boolean;
 };
 
-export type AndroidBackgroundContinuitySnapshot = {
+export type AndroidBackgroundContinuitySnapshot = AndroidBackgroundDiagnosticStatus & {
   available: boolean;
   backgroundEnabled: boolean;
   captureEligible: boolean;
@@ -51,9 +46,6 @@ export type AndroidBackgroundContinuitySnapshot = {
   connectedTrustedDeviceCount: number;
   runtimeHealthy: boolean;
   notificationPermission: BackgroundNotificationPermission;
-  observedBackgroundFailureCount: number;
-  supportState: AndroidBackgroundSupportState;
-  batteryOptimizationGuidance: boolean;
 };
 
 export type AndroidBackgroundContinuityPlatform = {

@@ -25,43 +25,6 @@ import androidx.core.content.ContextCompat;
  * no Clipp identity, network node, history, or clipboard access.
  */
 public final class BackgroundContinuityService extends Service {
-    private enum ConnectionState {
-        CONNECTED("connected"),
-        WAITING("waiting"),
-        RECONNECTING("reconnecting"),
-        PAUSED("paused"),
-        DISCONNECTED("disconnected");
-
-        private final String wireValue;
-
-        ConnectionState(String wireValue) {
-            this.wireValue = wireValue;
-        }
-
-        static ConnectionState fromWire(String wireValue) {
-            for (ConnectionState state : values()) {
-                if (state.wireValue.equals(wireValue)) return state;
-            }
-            return WAITING;
-        }
-
-        String notificationText(int connectedCount) {
-            switch (this) {
-                case CONNECTED:
-                    return "Connected to " + connectedCount + " trusted device" + (connectedCount == 1 ? "" : "s");
-                case RECONNECTING:
-                    return "Reconnecting to trusted devices";
-                case PAUSED:
-                    return "Auto Sync is paused";
-                case DISCONNECTED:
-                    return "Disconnected";
-                case WAITING:
-                default:
-                    return "Waiting for trusted devices";
-            }
-        }
-    }
-
     public static final String ACTION_START = "com.clipp.app.background.START";
     public static final String ACTION_STOP = "com.clipp.app.background.STOP";
     public static final String ACTION_HEARTBEAT = "com.clipp.app.background.HEARTBEAT";
@@ -93,7 +56,7 @@ public final class BackgroundContinuityService extends Service {
     private long heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS;
     private long heartbeatCheckMs = DEFAULT_HEARTBEAT_CHECK_MS;
     private boolean heartbeatHealthy;
-    private ConnectionState connectionState = ConnectionState.WAITING;
+    private BackgroundContinuityConnectionState connectionState = BackgroundContinuityConnectionState.WAITING;
     private int connectedTrustedDeviceCount = 0;
     private BackgroundContinuityDiagnostics diagnostics;
 
@@ -101,11 +64,11 @@ public final class BackgroundContinuityService extends Service {
         @Override
         public void run() {
             if (SystemClock.elapsedRealtime() - lastHeartbeatElapsedMs >= heartbeatTimeoutMs) {
-                connectionState = ConnectionState.DISCONNECTED;
-                diagnostics.recordHeartbeatTransition("expired");
-                diagnostics.recordConnectionTransition("disconnected", 0);
-                diagnostics.recordObservedFailure("heartbeat_expired");
-                diagnostics.recordServiceTransition("stopped_runtime_lost");
+                connectionState = BackgroundContinuityConnectionState.DISCONNECTED;
+                diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.EXPIRED);
+                diagnostics.recordConnectionTransition(BackgroundContinuityConnectionState.DISCONNECTED, 0);
+                diagnostics.recordObservedFailure(BackgroundContinuityDiagnostics.FailureReason.HEARTBEAT_EXPIRED);
+                diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_RUNTIME_LOST);
                 preferences(BackgroundContinuityService.this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
                 notifyRuntimeLost();
                 postReconnectNotification(BackgroundContinuityService.this);
@@ -127,8 +90,8 @@ public final class BackgroundContinuityService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
         if (ACTION_STOP.equals(action)) {
-            diagnostics.recordLifecycleTransition("notification_stop");
-            diagnostics.recordServiceTransition("stopped_by_user");
+            diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_STOP);
+            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_BY_USER);
             preferences(this).edit()
                 .putBoolean(ENABLED, false)
                 .putBoolean(USER_STOPPED, true)
@@ -154,28 +117,36 @@ public final class BackgroundContinuityService extends Service {
                 heartbeatCheckMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_CHECK_MS, DEFAULT_HEARTBEAT_CHECK_MS));
             }
             preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
-            diagnostics.recordServiceTransition("running");
-            diagnostics.recordHeartbeatTransition("awaiting");
+            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.RUNNING);
+            diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.AWAITING);
             diagnostics.recordEnvironmentSnapshot();
             heartbeatHealthy = false;
         }
         if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
-            connectionState = ACTION_PAUSE.equals(action) ? ConnectionState.PAUSED : ConnectionState.WAITING;
-            diagnostics.recordLifecycleTransition(ACTION_PAUSE.equals(action) ? "notification_pause" : "notification_resume");
+            connectionState = ACTION_PAUSE.equals(action)
+                ? BackgroundContinuityConnectionState.PAUSED
+                : BackgroundContinuityConnectionState.WAITING;
+            diagnostics.recordLifecycleTransition(
+                ACTION_PAUSE.equals(action)
+                    ? BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_PAUSE
+                    : BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_RESUME
+            );
             notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
         }
         if (ACTION_UPDATE.equals(action)) {
-            connectionState = ConnectionState.fromWire(intent.getStringExtra(EXTRA_CONNECTION_STATE));
+            connectionState = BackgroundContinuityConnectionState.fromWire(
+                intent.getStringExtra(EXTRA_CONNECTION_STATE)
+            );
             connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
         }
         if (starting || ACTION_HEARTBEAT.equals(action)) {
             lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
             if (ACTION_HEARTBEAT.equals(action) && !heartbeatHealthy) {
                 heartbeatHealthy = true;
-                diagnostics.recordHeartbeatTransition("healthy");
+                diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.HEALTHY);
             }
         }
-        diagnostics.recordConnectionTransition(connectionState.wireValue, connectedTrustedDeviceCount);
+        diagnostics.recordConnectionTransition(connectionState, connectedTrustedDeviceCount);
         createNotificationChannel(this);
         startForegroundSafely();
         if (starting) notifyServiceStarted();
@@ -186,8 +157,8 @@ public final class BackgroundContinuityService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        diagnostics.recordLifecycleTransition("task_removed");
-        diagnostics.recordServiceTransition("stopped_task_removed");
+        diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.TASK_REMOVED);
+        diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_TASK_REMOVED);
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
         sendBroadcast(new Intent(ACTION_TASK_REMOVED).setPackage(getPackageName()));
@@ -200,7 +171,9 @@ public final class BackgroundContinuityService extends Service {
     public void onDestroy() {
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
-        if (diagnostics != null) diagnostics.recordServiceTransition("destroyed");
+        if (diagnostics != null) {
+            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.DESTROYED);
+        }
         super.onDestroy();
     }
 
@@ -233,11 +206,15 @@ public final class BackgroundContinuityService extends Service {
         ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
     }
 
-    private static Notification buildOngoingNotification(Context context, ConnectionState state, int connectedCount) {
+    private static Notification buildOngoingNotification(
+        Context context,
+        BackgroundContinuityConnectionState state,
+        int connectedCount
+    ) {
         return new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Clipp background continuity")
-            .setContentText(state.notificationText(connectedCount))
+            .setContentText(notificationText(state, connectedCount))
             .setContentIntent(openAppIntent(context))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -246,6 +223,22 @@ public final class BackgroundContinuityService extends Service {
             .addAction(0, "Resume", serviceIntent(context, ACTION_RESUME, 12))
             .addAction(0, "Stop", serviceIntent(context, ACTION_STOP, 13))
             .build();
+    }
+
+    private static String notificationText(BackgroundContinuityConnectionState state, int connectedCount) {
+        switch (state) {
+            case CONNECTED:
+                return "Connected to " + connectedCount + " trusted device" + (connectedCount == 1 ? "" : "s");
+            case RECONNECTING:
+                return "Reconnecting to trusted devices";
+            case PAUSED:
+                return "Auto Sync is paused";
+            case DISCONNECTED:
+                return "Disconnected";
+            case WAITING:
+            default:
+                return "Waiting for trusted devices";
+        }
     }
 
     static void postReconnectNotification(Context context) {

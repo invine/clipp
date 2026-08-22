@@ -62,3 +62,9 @@ export type ClipboardHistoryError =
   | "pending_capture_dropped";
 
 export type HistoryPolicyError = "history_cleanup_failed";
+
+export type BackgroundContinuityDiagnosticStatus = {
+  observedBackgroundFailureCount: number;
+  supportState: "unqualified" | "limited";
+  batteryOptimizationGuidance: boolean;
+};

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "./types";
+import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo, type BackgroundContinuityDiagnosticStatus } from "./types";
 import { identityRotationNoticeMessage, type IdentityRotationNoticeReason } from "./identityRotationNotice";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
 
@@ -243,16 +243,13 @@ export type ClipboardAppProps = {
   initializationError?: boolean;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
-  backgroundContinuity?: {
+  backgroundContinuity?: BackgroundContinuityDiagnosticStatus & {
     available: boolean;
     backgroundEnabled: boolean;
     service: "running" | "stopped";
     connection: "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
     connectedTrustedDeviceCount: number;
     notificationPermission: "granted" | "denied" | "unknown";
-    observedBackgroundFailureCount: number;
-    supportState: "unqualified" | "limited";
-    batteryOptimizationGuidance: boolean;
   };
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;

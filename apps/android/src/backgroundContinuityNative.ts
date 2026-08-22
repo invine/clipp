@@ -6,13 +6,10 @@ import type {
   AndroidExplicitTextAction,
 } from "./backgroundContinuity";
 
-type NativePlatformInfo = {
+type NativePlatformInfo = AndroidBackgroundDiagnosticStatus & {
   apiLevel: number;
   userStopped: boolean;
   notificationPermission: Exclude<BackgroundNotificationPermission, "unknown">;
-  observedBackgroundFailureCount: number;
-  supportState: "unqualified" | "limited";
-  batteryOptimizationGuidance: boolean;
 };
 
 type NativeBackgroundContinuityPlugin = {

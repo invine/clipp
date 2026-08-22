@@ -139,7 +139,9 @@ public final class BackgroundContinuityPlugin extends Plugin {
             return;
         }
         pendingStartCall = call;
-        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition("start_requested");
+        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition(
+            BackgroundContinuityDiagnostics.ServiceTransition.START_REQUESTED
+        );
         handler.postDelayed(serviceStartTimeout, SERVICE_START_TIMEOUT_MS);
         try {
             Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
@@ -152,7 +154,9 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void stop(PluginCall call) {
-        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition("stop_requested");
+        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition(
+            BackgroundContinuityDiagnostics.ServiceTransition.STOP_REQUESTED
+        );
         getContext().stopService(new Intent(getContext(), BackgroundContinuityService.class));
         call.resolve();
     }

@@ -11,7 +11,7 @@
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
     "test:native:unit": "cd android && ./gradlew :app:testDebugUnitTest",
-    "test:native:instrumentation": "cd android && ./gradlew :app:connectedDebugAndroidTest",
+    "test:native:instrumentation": "node scripts/verify-api-36-emulator.mjs && cd android && ./gradlew :app:connectedDebugAndroidTest",
     "build:native:release": "cd android && ./gradlew :app:assembleRelease"
   },
   "dependencies": {

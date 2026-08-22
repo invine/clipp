@@ -1,5 +1,6 @@
 import {
   createAndroidBackgroundContinuityCoordinator,
+  type AndroidBackgroundDiagnosticStatus,
   type AndroidBackgroundContinuityPlatform,
 } from "../../apps/android/src/backgroundContinuity";
 
@@ -56,11 +57,9 @@ function createPlatform(
     autoSync,
     states,
     reconnectAlerts: () => reconnectAlerts,
-    setDiagnosticStatus(next: {
-      observedBackgroundFailureCount: number;
-      supportState: "unqualified" | "limited";
-      batteryOptimizationGuidance: boolean;
-    }) { diagnosticStatus = next as typeof diagnosticStatus; },
+    setDiagnosticStatus(next: AndroidBackgroundDiagnosticStatus) {
+      diagnosticStatus = next as typeof diagnosticStatus;
+    },
   };
 }
 

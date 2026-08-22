@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
@@ -17,6 +18,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.service.notification.StatusBarNotification;
 
+import androidx.test.core.app.ActivityScenario;
 import androidx.core.content.ContextCompat;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SdkSuppress;
@@ -130,6 +132,32 @@ public final class BackgroundContinuityLifecycleTest {
     }
 
     @Test
+    public void removingTheApplicationTaskStopsBackgroundContinuity() throws Exception {
+        ActivityScenario<MainActivity> activity = ActivityScenario.launch(MainActivity.class);
+        try {
+            CountDownLatch started = registerOneShot(BackgroundContinuityService.ACTION_SERVICE_STARTED);
+            CountDownLatch taskRemoved = registerOneShot(BackgroundContinuityService.ACTION_TASK_REMOVED);
+            servicePreferences.edit().putBoolean(BackgroundContinuityService.ENABLED, true).commit();
+            ContextCompat.startForegroundService(
+                context,
+                new Intent(context, BackgroundContinuityService.class)
+                    .setAction(BackgroundContinuityService.ACTION_START)
+            );
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            assertNotNull(notification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID));
+
+            activity.onActivity(Activity::finishAndRemoveTask);
+
+            assertTrue(taskRemoved.await(5, TimeUnit.SECONDS));
+            assertFalse(servicePreferences.getBoolean(BackgroundContinuityService.SERVICE_ACTIVE, true));
+            assertTrue(waitForNotificationRemoval(BackgroundContinuityService.ONGOING_NOTIFICATION_ID));
+            assertTrue(diagnosticValuePresent("task_removed"));
+        } finally {
+            activity.close();
+        }
+    }
+
+    @Test
     public void rebootOffersReconnectWithoutStartingTheService() {
         servicePreferences.edit()
             .putBoolean(BackgroundContinuityService.ENABLED, true)
@@ -220,6 +248,22 @@ public final class BackgroundContinuityLifecycleTest {
             .filter(candidate -> candidate.getId() == id)
             .findFirst()
             .orElse(null);
+    }
+
+    private boolean waitForNotificationRemoval(int id) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 2_000L;
+        while (notification(id) != null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(25L);
+        }
+        return notification(id) == null;
+    }
+
+    private boolean diagnosticValuePresent(String expected) throws Exception {
+        org.json.JSONArray events = new org.json.JSONObject(diagnostics.exportJson()).getJSONArray("events");
+        for (int index = 0; index < events.length(); index += 1) {
+            if (expected.equals(events.getJSONObject(index).optString("value"))) return true;
+        }
+        return false;
     }
 
     private void grantNotifications() {
