@@ -2,6 +2,7 @@ package com.clipp.app;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -16,6 +17,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.io.File;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -131,6 +133,32 @@ public final class BackgroundContinuityDiagnosticsTest {
         assertEquals(3, limited.getInt("observedBackgroundFailureCount"));
         assertEquals("limited", limited.getString("supportState"));
         assertTrue(limited.getBoolean("batteryOptimizationGuidance"));
+    }
+
+    @Test
+    public void diagnosticExportReusesOneBoundedCacheFile() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File first = BackgroundContinuityPlugin.writeDiagnosticsExport(context);
+        File second = BackgroundContinuityPlugin.writeDiagnosticsExport(context);
+
+        assertEquals(first.getCanonicalPath(), second.getCanonicalPath());
+        File[] exports = first.getParentFile().listFiles((directory, name) ->
+            name.startsWith("clipp-background-continuity") && name.endsWith(".json")
+        );
+        assertNotNull(exports);
+        assertEquals(1, exports.length);
+    }
+
+    @Test
+    public void reconnectDurationDoesNotSpanStoppedSessions() throws Exception {
+        diagnostics.recordConnectionTransition("reconnecting", 0);
+        diagnostics.recordServiceTransition("stopped_task_removed");
+        diagnostics.recordConnectionTransition("connected", 1);
+
+        JSONArray events = new JSONObject(diagnostics.exportJson()).getJSONArray("events");
+        JSONObject connected = events.getJSONObject(events.length() - 1);
+        assertEquals("connected", connected.getString("value"));
+        assertFalse(connected.has("durationMs"));
     }
 
     private static Set<String> keys(JSONObject object) {

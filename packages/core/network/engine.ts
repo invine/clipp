@@ -723,7 +723,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const rendezvousOptions = {
       timeoutMs: this.opts.rendezvousTimeoutMs ?? this.opts.dialTimeoutMs ?? 12_000,
       dialOptions: this.dialOptions(),
-      log: (...args: any[]) => log.debug(...args),
+      log: () => log.debug("Rendezvous client diagnostic"),
     };
     for (const relay of this.relayDialAddresses(this.opts.relayAddresses || [])) {
       let records: Awaited<ReturnType<typeof lookupRendezvousPeer>> = [];
@@ -888,7 +888,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       const rendezvousOptions = {
         timeoutMs: this.opts.rendezvousTimeoutMs ?? this.opts.dialTimeoutMs ?? 12_000,
         dialOptions: this.dialOptions(),
-        log: (...args: any[]) => log.debug(...args),
+        log: () => log.debug("Rendezvous client diagnostic"),
       };
 
       for (const relay of relays) {

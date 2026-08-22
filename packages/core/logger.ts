@@ -43,6 +43,9 @@ const REDACTED_LOG_KEYS = new Set([
   "signature",
   "signedpayload",
   "signedpeerrecord",
+  "error",
+  "message",
+  "stack",
 ]);
 
 const order: Record<LogLevel, number> = {
@@ -91,7 +94,7 @@ function sanitizeLogArg(
   if (arg instanceof Error) {
     return {
       name: boundLogString(arg.name),
-      message: boundLogString(arg.message),
+      message: "[REDACTED]",
     };
   }
   if (typeof arg !== "object") return boundLogString(String(arg));
@@ -132,24 +135,26 @@ function serializeLogArg(arg: unknown): string {
   }
 }
 
-function consoleArgs(args: unknown[]): unknown[] {
-  const sanitized = args.map((arg) => sanitizeLogArg(arg));
+function consoleArgs(message: string, details: unknown[]): unknown[] {
+  const sanitized = [boundLogString(message), ...details.map((detail) => (
+    typeof detail === "string" ? "[REDACTED]" : sanitizeLogArg(detail)
+  ))];
   if (!isBrowserDocumentRuntime()) return sanitized;
   return [sanitized.map(serializeLogArg).join(" ")];
 }
 
-export function debug(...args: unknown[]) {
-  if (shouldLog("debug")) console.debug(...consoleArgs(args));
+export function debug(message: string, ...details: unknown[]) {
+  if (shouldLog("debug")) console.debug(...consoleArgs(message, details));
 }
 
-export function info(...args: unknown[]) {
-  if (shouldLog("info")) console.info(...consoleArgs(args));
+export function info(message: string, ...details: unknown[]) {
+  if (shouldLog("info")) console.info(...consoleArgs(message, details));
 }
 
-export function warn(...args: unknown[]) {
-  if (shouldLog("warn")) console.warn(...consoleArgs(args));
+export function warn(message: string, ...details: unknown[]) {
+  if (shouldLog("warn")) console.warn(...consoleArgs(message, details));
 }
 
-export function error(...args: unknown[]) {
-  if (shouldLog("error")) console.error(...consoleArgs(args));
+export function error(message: string, ...details: unknown[]) {
+  if (shouldLog("error")) console.error(...consoleArgs(message, details));
 }

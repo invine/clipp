@@ -37,4 +37,27 @@ describe("privacy-safe logging", () => {
     expect(output).not.toContain("peer-1");
     expect(output).not.toContain(deviceName);
   });
+
+  it("never emits free-form detail strings or error messages", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const secret = "peer-12D3KooW-on-/ip4/192.0.2.1/tcp/4001";
+
+    log.warn("Network operation failed", secret, new Error(secret), {
+      error: secret,
+      message: secret,
+      nested: { stack: secret },
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      "Network operation failed",
+      "[REDACTED]",
+      { name: "Error", message: "[REDACTED]" },
+      {
+        error: "[REDACTED]",
+        message: "[REDACTED]",
+        nested: { stack: "[REDACTED]" },
+      },
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
+  });
 });

@@ -35,7 +35,7 @@ final class BackgroundContinuityDiagnostics {
     }
 
     void recordServiceTransition(String state) {
-        append(valueEvent("service_transition", allowedValue(
+        String safeState = allowedValue(
             state,
             "start_requested",
             "stop_requested",
@@ -44,7 +44,19 @@ final class BackgroundContinuityDiagnostics {
             "stopped_runtime_lost",
             "stopped_task_removed",
             "destroyed"
-        )));
+        );
+        synchronized (LOCK) {
+            if (
+                "start_requested".equals(safeState)
+                    || "stopped_by_user".equals(safeState)
+                    || "stopped_runtime_lost".equals(safeState)
+                    || "stopped_task_removed".equals(safeState)
+                    || "destroyed".equals(safeState)
+            ) {
+                preferences.edit().remove(RECONNECT_STARTED_AT).commit();
+            }
+            appendLocked(valueEvent("service_transition", safeState));
+        }
     }
 
     void recordHeartbeatTransition(String state) {
@@ -80,6 +92,8 @@ final class BackgroundContinuityDiagnostics {
                 editor.putLong(RECONNECT_STARTED_AT, now);
             } else if ("connected".equals(state) && preferences.contains(RECONNECT_STARTED_AT)) {
                 reconnectDurationMs = Math.max(0L, now - preferences.getLong(RECONNECT_STARTED_AT, now));
+                editor.remove(RECONNECT_STARTED_AT);
+            } else if (!"reconnecting".equals(state)) {
                 editor.remove(RECONNECT_STARTED_AT);
             }
             editor.commit();

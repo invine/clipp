@@ -185,16 +185,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
             return;
         }
         try {
-            BackgroundContinuityDiagnostics diagnostics = new BackgroundContinuityDiagnostics(getContext());
-            diagnostics.recordEnvironmentSnapshot();
-            File directory = new File(getContext().getCacheDir(), "diagnostics");
-            if (!directory.exists() && !directory.mkdirs()) {
-                throw new IllegalStateException("diagnostic_export_directory_unavailable");
-            }
-            File export = new File(directory, "clipp-background-continuity-" + System.currentTimeMillis() + ".json");
-            try (FileOutputStream output = new FileOutputStream(export)) {
-                output.write(diagnostics.exportJson().getBytes(StandardCharsets.UTF_8));
-            }
+            File export = writeDiagnosticsExport(getContext());
             Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", export);
             Intent share = new Intent(Intent.ACTION_SEND)
                 .setType("application/json")
@@ -205,6 +196,30 @@ public final class BackgroundContinuityPlugin extends Plugin {
         } catch (Exception error) {
             call.reject("diagnostic_export_failed", error);
         }
+    }
+
+    static File writeDiagnosticsExport(Context context) throws Exception {
+        BackgroundContinuityDiagnostics diagnostics = new BackgroundContinuityDiagnostics(context);
+        diagnostics.recordEnvironmentSnapshot();
+        File directory = new File(context.getCacheDir(), "diagnostics");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IllegalStateException("diagnostic_export_directory_unavailable");
+        }
+        File export = new File(directory, "clipp-background-continuity.json");
+        File[] priorExports = directory.listFiles((parent, name) ->
+            name.startsWith("clipp-background-continuity") && name.endsWith(".json")
+        );
+        if (priorExports != null) {
+            for (File prior : priorExports) {
+                if (!prior.equals(export) && !prior.delete()) {
+                    throw new IllegalStateException("diagnostic_export_retention_failed");
+                }
+            }
+        }
+        try (FileOutputStream output = new FileOutputStream(export, false)) {
+            output.write(diagnostics.exportJson().getBytes(StandardCharsets.UTF_8));
+        }
+        return export;
     }
 
     @PluginMethod
