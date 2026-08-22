@@ -19,8 +19,7 @@ export type LiveClipGossip = {
  * authenticated connection identity and never from the frame payload.
  */
 export function createLiveClipGossip(options: {
-  transport: Pick<MessagingTransport, "send" | "onMessage" | "getConnectedPeers">
-    & Partial<Pick<MessagingTransport, "onPeerConnected">>;
+  transport: Pick<MessagingTransport, "send" | "onMessage" | "getConnectedPeers" | "onPeerConnected">;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   now?: () => number;
 }): LiveClipGossip {
@@ -70,7 +69,7 @@ export function createLiveClipGossip(options: {
       if (started) return;
       started = true;
       options.transport.onMessage(LIVE_CLIP_PROTOCOL, (from, frame) => { void receive(from, frame); });
-      options.transport.onPeerConnected?.((peerId) => {
+      options.transport.onPeerConnected((peerId) => {
         for (const listener of peerConnectedListeners) listener(peerId);
       });
     },

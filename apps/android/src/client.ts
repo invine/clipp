@@ -857,10 +857,9 @@ export class AndroidClient {
     return this.localRetentionMs;
   }
 
-  private async setAutoSyncPreference(enabled: boolean, emit = false): Promise<boolean> {
+  private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
     this.autoSync = await this.autoSyncPreference.set(enabled);
     this.clipboardSync.setAutoSync(this.autoSync);
-    if (emit) await this.emitState();
     return this.autoSync;
   }
 

@@ -114,6 +114,7 @@ describe("LiveClipGossip", () => {
         send,
         onMessage: (_protocol, handler) => handlers.push(handler),
         getConnectedPeers: () => ["source"],
+        onPeerConnected: () => {},
       },
       membershipStatus: async () => "active",
       now: () => 1_000,
