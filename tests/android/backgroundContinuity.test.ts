@@ -66,6 +66,31 @@ test("starts the companion service only after supported explicit opt-in", async 
   });
 });
 
+test("does not report the service as running before native startup is acknowledged", async () => {
+  const fake = createPlatform();
+  let acknowledgeStart!: () => void;
+  let observeStartRequest!: () => void;
+  const startRequested = new Promise<void>((resolve) => {
+    observeStartRequest = resolve;
+  });
+  fake.platform.startService = () => new Promise<void>((resolve) => {
+    acknowledgeStart = resolve;
+    observeStartRequest();
+  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+
+  const enabling = coordinator.setEnabledFromUser(true);
+  await startRequested;
+  expect(coordinator.snapshot()).toEqual(
+    expect.objectContaining({ backgroundEnabled: true, service: "stopped" }),
+  );
+
+  acknowledgeStart();
+  await expect(enabling).resolves.toEqual(
+    expect.objectContaining({ backgroundEnabled: true, service: "running" }),
+  );
+});
+
 test("keeps service state stopped when native startup fails", async () => {
   const fake = createPlatform();
   fake.platform.startService = async () => {

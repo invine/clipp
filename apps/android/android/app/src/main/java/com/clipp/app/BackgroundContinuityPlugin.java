@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 
 import androidx.core.content.ContextCompat;
 
@@ -16,9 +18,22 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "BackgroundContinuity")
 public final class BackgroundContinuityPlugin extends Plugin {
+    private static final long SERVICE_START_TIMEOUT_MS = 10_000L;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private PluginCall pendingStartCall;
+    private final Runnable serviceStartTimeout = () -> {
+        PluginCall call = takePendingStartCall();
+        if (call != null) call.reject("background_continuity_start_timeout");
+    };
+
     private final BroadcastReceiver eventReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (BackgroundContinuityService.ACTION_SERVICE_STARTED.equals(intent.getAction())) {
+                PluginCall call = takePendingStartCall();
+                if (call != null) call.resolve();
+                return;
+            }
             if (BackgroundContinuityService.ACTION_RUNTIME_LOST.equals(intent.getAction())) {
                 notifyListeners("runtimeLost", new JSObject());
                 return;
@@ -41,6 +56,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
         filter.addAction(BackgroundContinuityService.ACTION_RUNTIME_LOST);
         filter.addAction(BackgroundContinuityService.ACTION_TASK_REMOVED);
         filter.addAction(BackgroundContinuityService.ACTION_NOTIFICATION_ACTION);
+        filter.addAction(BackgroundContinuityService.ACTION_SERVICE_STARTED);
         ContextCompat.registerReceiver(getContext(), eventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
@@ -56,6 +72,8 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        PluginCall startCall = takePendingStartCall();
+        if (startCall != null) startCall.reject("background_continuity_plugin_destroyed");
         try {
             getContext().unregisterReceiver(eventReceiver);
         } catch (IllegalArgumentException ignored) {
@@ -95,12 +113,18 @@ public final class BackgroundContinuityPlugin extends Plugin {
             call.reject("background_continuity_not_enabled");
             return;
         }
+        if (pendingStartCall != null) {
+            call.reject("background_continuity_start_in_progress");
+            return;
+        }
+        pendingStartCall = call;
+        handler.postDelayed(serviceStartTimeout, SERVICE_START_TIMEOUT_MS);
         try {
             Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
             ContextCompat.startForegroundService(getContext(), intent);
-            call.resolve();
         } catch (RuntimeException error) {
-            call.reject("background_continuity_start_failed", error);
+            PluginCall startCall = takePendingStartCall();
+            if (startCall != null) startCall.reject("background_continuity_start_failed", error);
         }
     }
 
@@ -136,5 +160,12 @@ public final class BackgroundContinuityPlugin extends Plugin {
         event.put("resumed", resumed);
         event.put("windowFocused", resumed && getActivity() != null && getActivity().getWindow().getDecorView().hasWindowFocus());
         notifyListeners("activityState", event, true);
+    }
+
+    private PluginCall takePendingStartCall() {
+        handler.removeCallbacks(serviceStartTimeout);
+        PluginCall call = pendingStartCall;
+        pendingStartCall = null;
+        return call;
     }
 }

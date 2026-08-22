@@ -71,6 +71,7 @@ public final class BackgroundContinuityService extends Service {
     public static final String ACTION_RUNTIME_LOST = "com.clipp.app.background.RUNTIME_LOST";
     public static final String ACTION_TASK_REMOVED = "com.clipp.app.background.TASK_REMOVED";
     public static final String ACTION_NOTIFICATION_ACTION = "com.clipp.app.background.NOTIFICATION_ACTION";
+    public static final String ACTION_SERVICE_STARTED = "com.clipp.app.background.SERVICE_STARTED";
     public static final String EXTRA_CONNECTION_STATE = "connectionState";
     public static final String EXTRA_CONNECTED_DEVICE_COUNT = "connectedTrustedDeviceCount";
     public static final String EXTRA_ACTION = "action";
@@ -143,6 +144,7 @@ public final class BackgroundContinuityService extends Service {
         lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
         createNotificationChannel(this);
         startForegroundSafely();
+        if (starting) notifyServiceStarted();
         handler.removeCallbacks(heartbeatWatchdog);
         handler.postDelayed(heartbeatWatchdog, HEARTBEAT_CHECK_MS);
         return START_NOT_STICKY;
@@ -244,6 +246,10 @@ public final class BackgroundContinuityService extends Service {
     private void notifyRuntimeLost() {
         Intent event = new Intent(ACTION_RUNTIME_LOST).setPackage(getPackageName());
         sendBroadcast(event);
+    }
+
+    private void notifyServiceStarted() {
+        sendBroadcast(new Intent(ACTION_SERVICE_STARTED).setPackage(getPackageName()));
     }
 
     private void notifyAction(String action) {
