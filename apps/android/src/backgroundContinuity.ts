@@ -62,6 +62,9 @@ export type AndroidBackgroundContinuityPlatform = {
     event: { clipId: string; capturedAt: number },
   ): Promise<void>;
   completeExplicitTextAction(actionId: string): Promise<void>;
+  readAcceptedExplicitTextAction(action: AndroidExplicitTextAction & {
+    event: NonNullable<AndroidExplicitTextAction["event"]>;
+  }): Promise<Clip | null>;
   captureExplicitText(action: AndroidExplicitTextAction & {
     event: NonNullable<AndroidExplicitTextAction["event"]>;
     shareNow: true;
@@ -187,12 +190,18 @@ export function createAndroidBackgroundContinuityCoordinator(
         }
       }
 
-      let accepted: Clip | null;
-      try {
-        accepted = await platform.captureExplicitText({ ...queued, event, shareNow: true });
-      } catch {
-        await platform.showExplicitTextFeedback("failed");
-        continue;
+      const prepared = { ...queued, event };
+      let accepted = await platform.readAcceptedExplicitTextAction(prepared);
+      if (!accepted) {
+        try {
+          accepted = await platform.captureExplicitText({ ...prepared, shareNow: true });
+        } catch {
+          await platform.showExplicitTextFeedback("failed");
+          continue;
+        }
+        // Pending capture recovery can durably accept the prepared event while
+        // the capture call itself returns no newly stored Clip.
+        accepted ??= await platform.readAcceptedExplicitTextAction(prepared);
       }
       if (!accepted) {
         await platform.showExplicitTextFeedback("queued");
@@ -228,6 +237,13 @@ export function createAndroidBackgroundContinuityCoordinator(
   async function handleActivityResumed(): Promise<void> {
     await drainExplicitTextActions();
     await retryPendingClipboardApplication();
+  }
+
+  async function reflectAutoSyncState(enabled: boolean): Promise<void> {
+    autoSync = enabled;
+    if (!enabled) await serializeClipContinuity(() => clearPendingClipboardApplication());
+    if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
+    await publishServiceState();
   }
 
   return {
@@ -313,19 +329,13 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async setAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
-      autoSync = enabled;
       await platform.setAutoSync(enabled);
-      if (!enabled) await serializeClipContinuity(() => clearPendingClipboardApplication());
-      if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
-      await publishServiceState();
+      await reflectAutoSyncState(enabled);
       return snapshot();
     },
 
     async reflectAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
-      autoSync = enabled;
-      if (!enabled) await serializeClipContinuity(() => clearPendingClipboardApplication());
-      if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
-      await publishServiceState();
+      await reflectAutoSyncState(enabled);
       return snapshot();
     },
 

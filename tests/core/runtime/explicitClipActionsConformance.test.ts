@@ -81,7 +81,7 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
 
     await expect(clipboard.processLocalText("persisted action", { shareNow: true, event })).resolves.toBeNull();
     storageAvailable = true;
-    await clipboard.processLocalText("persisted action", { shareNow: true, event });
+    await expect(clipboard.processLocalText("persisted action", { shareNow: true, event })).resolves.toBeNull();
 
     expect([...stored.values()]).toEqual([expect.objectContaining({
       id: event.clipId,

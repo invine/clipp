@@ -199,7 +199,10 @@ export function createClipCaptureCoordinator(options: {
         }
         return clip;
       }
-      if (captureOptions?.event && accepted.kind === "exact-duplicate") return clip;
+      // A prepared explicit event already in durable history is recovery, not
+      // a newly captured event. Its owner completes the queued action without
+      // publishing it through the local Clip path again.
+      if (captureOptions?.event && accepted.kind === "exact-duplicate") return null;
     }
     options.onDiagnostic?.("clip_id_collision_exhausted");
     return null;

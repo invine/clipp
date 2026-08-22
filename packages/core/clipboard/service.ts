@@ -172,11 +172,18 @@ function createClipboardService(
     if (baseline === text) expectedRemoteEcho = undefined;
   }
 
-  async function captureExplicitly(capture: () => Promise<Clip | null>): Promise<Clip | null> {
+  async function captureExplicitly(
+    capture: () => Promise<Clip | null>,
+    allowPreviouslyAcceptedEvent = false,
+  ): Promise<Clip | null> {
     const coordinator = options.captureCoordinator!;
     const pendingBefore = new Set(coordinator.pending().map((clip) => clip.id));
     const clip = await capture();
-    if (!clip && !coordinator.pending().some((pendingClip) => !pendingBefore.has(pendingClip.id))) {
+    if (
+      !clip
+      && !allowPreviouslyAcceptedEvent
+      && !coordinator.pending().some((pendingClip) => !pendingBefore.has(pendingClip.id))
+    ) {
       throw new Error("clip_capture_failed");
     }
     return clip;
@@ -191,7 +198,9 @@ function createClipboardService(
       const capture = () => captureMode === "manual" && !captureOptions?.shareNow
         ? options.captureCoordinator!.observe(text)
         : options.captureCoordinator!.capture(text, captureOptions);
-      const clip = captureOptions?.shareNow ? await captureExplicitly(capture) : await capture();
+      const clip = captureOptions?.shareNow
+        ? await captureExplicitly(capture, captureOptions.event !== undefined)
+        : await capture();
       if (clip && clip.id !== lastLocal?.id) publishLocalClip(clip, captureOptions);
       return clip;
     }

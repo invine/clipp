@@ -24,14 +24,39 @@ final class ExplicitTextIngressStore {
         PERSISTENCE_FAILED
     }
 
-    private final SharedPreferences preferences;
+    interface Persistence {
+        String getString(String key, String fallback);
+        boolean putString(String key, String value);
+        boolean remove(String key);
+    }
+
+    private final Persistence persistence;
 
     ExplicitTextIngressStore(Context context) {
         this(context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE));
     }
 
     ExplicitTextIngressStore(SharedPreferences preferences) {
-        this.preferences = preferences;
+        this(new Persistence() {
+            @Override
+            public String getString(String key, String fallback) {
+                return preferences.getString(key, fallback);
+            }
+
+            @Override
+            public boolean putString(String key, String value) {
+                return preferences.edit().putString(key, value).commit();
+            }
+
+            @Override
+            public boolean remove(String key) {
+                return preferences.edit().remove(key).commit();
+            }
+        });
+    }
+
+    ExplicitTextIngressStore(Persistence persistence) {
+        this.persistence = persistence;
     }
 
     synchronized EnqueueResult enqueue(Intent intent) {
@@ -61,7 +86,7 @@ final class ExplicitTextIngressStore {
             action.put("text", text);
             action.put("source", source);
             actions.put(action);
-            return preferences.edit().putString(ACTIONS, actions.toString()).commit()
+            return persistence.putString(ACTIONS, actions.toString())
                 ? EnqueueResult.QUEUED
                 : EnqueueResult.PERSISTENCE_FAILED;
         } catch (JSONException error) {
@@ -83,7 +108,7 @@ final class ExplicitTextIngressStore {
                 event.put("clipId", clipId);
                 event.put("capturedAt", capturedAt);
                 action.put("event", event);
-                return preferences.edit().putString(ACTIONS, actions.toString()).commit();
+                return persistence.putString(ACTIONS, actions.toString());
             }
         } catch (JSONException ignored) {
             return false;
@@ -104,23 +129,23 @@ final class ExplicitTextIngressStore {
                 remaining.put(action);
             }
         }
-        return found && preferences.edit().putString(ACTIONS, remaining.toString()).commit();
+        return found && persistence.putString(ACTIONS, remaining.toString());
     }
 
     synchronized String pendingClipboardApplication() {
-        return preferences.getString(PENDING_CLIPBOARD_APPLICATION, null);
+        return persistence.getString(PENDING_CLIPBOARD_APPLICATION, null);
     }
 
     synchronized boolean writePendingClipboardApplication(String clipId) {
-        return preferences.edit().putString(PENDING_CLIPBOARD_APPLICATION, clipId).commit();
+        return persistence.putString(PENDING_CLIPBOARD_APPLICATION, clipId);
     }
 
     synchronized boolean clearPendingClipboardApplication() {
-        return preferences.edit().remove(PENDING_CLIPBOARD_APPLICATION).commit();
+        return persistence.remove(PENDING_CLIPBOARD_APPLICATION);
     }
 
     private JSONArray readActions() {
-        String raw = preferences.getString(ACTIONS, "[]");
+        String raw = persistence.getString(ACTIONS, "[]");
         try {
             return new JSONArray(raw == null ? "[]" : raw);
         } catch (JSONException ignored) {

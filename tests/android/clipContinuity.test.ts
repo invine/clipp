@@ -7,14 +7,14 @@ import {
 
 const originPeerId = "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy";
 
-function clip(id: string, content: string): Clip {
+function clip(id: string, content: string, capturedAt = 1): Clip {
   return {
     id,
     type: "text",
     content,
     originPeerId,
-    capturedAt: 1,
-    shareExpiresAt: 86_400_001,
+    capturedAt,
+    shareExpiresAt: capturedAt + 86_400_000,
   };
 }
 
@@ -57,9 +57,21 @@ function createPlatform() {
       completed.push(actionId);
       actions = actions.filter((action) => action.id !== actionId);
     },
+    readAcceptedExplicitTextAction: async (action) => {
+      const existing = retained.get(action.event!.clipId)?.clip;
+      return existing
+        && existing.content === action.text
+        && existing.capturedAt === action.event!.capturedAt
+        ? existing
+        : null;
+    },
     captureExplicitText: async (action) => {
       captures.push(structuredClone(action));
-      return nextCapture ? await nextCapture(action) : clip(action.event!.clipId, action.text);
+      const accepted = nextCapture
+        ? await nextCapture(action)
+        : clip(action.event!.clipId, action.text, action.event!.capturedAt);
+      if (accepted) retained.set(accepted.id, { clip: accepted, liveHandled: true });
+      return accepted;
     },
     showExplicitTextFeedback: async (state) => { feedback.push(state); },
     readPendingClipboardApplication: async () => pendingApplicationClipId,
@@ -146,7 +158,6 @@ test("preserves one prepared Clip identity across restart and completion-persist
     capturedAt: 10,
   }]);
   expect(fake.captures.map((action) => action.event)).toEqual([
-    { clipId: "00000000-0000-4000-8000-000000000810", capturedAt: 10 },
     { clipId: "00000000-0000-4000-8000-000000000810", capturedAt: 10 },
   ]);
   expect(fake.completed).toEqual(["persisted-action"]);

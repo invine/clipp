@@ -60,7 +60,9 @@ public final class BackgroundContinuityManifestTest {
                 .putExtra(Intent.EXTRA_TEXT, "same raw text");
 
             assertEquals(ExplicitTextIngressStore.EnqueueResult.QUEUED, first.enqueue(selected));
-            assertEquals(ExplicitTextIngressStore.EnqueueResult.QUEUED, first.enqueue(shared));
+            ExplicitTextIngressStore restartedStore = new ExplicitTextIngressStore(preferences);
+            assertEquals(1, new JSONArray(restartedStore.actionsJson()).length());
+            assertEquals(ExplicitTextIngressStore.EnqueueResult.QUEUED, restartedStore.enqueue(shared));
             assertEquals(
                 ExplicitTextIngressStore.EnqueueResult.INVALID,
                 first.enqueue(new Intent(Intent.ACTION_SEND).setType("text/plain"))
@@ -84,6 +86,40 @@ public final class BackgroundContinuityManifestTest {
         } finally {
             preferences.edit().clear().commit();
         }
+    }
+
+    @Test
+    public void persistenceFailureNeverReportsAnActionAsQueued() {
+        ExplicitTextIngressStore.Persistence failing = new ExplicitTextIngressStore.Persistence() {
+            @Override
+            public String getString(String key, String fallback) {
+                return fallback;
+            }
+
+            @Override
+            public boolean putString(String key, String value) {
+                return false;
+            }
+
+            @Override
+            public boolean remove(String key) {
+                return false;
+            }
+        };
+        Intent shared = new Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, "raw text");
+
+        assertEquals(
+            ExplicitTextIngressStore.EnqueueResult.PERSISTENCE_FAILED,
+            new ExplicitTextIngressStore(failing).enqueue(shared)
+        );
+    }
+
+    @Test
+    public void onlyColdIngressLaunchesTheActivityOwnedRuntime() {
+        assertTrue(ExplicitTextIngressActivity.shouldLaunchRuntime(false));
+        assertTrue(!ExplicitTextIngressActivity.shouldLaunchRuntime(true));
     }
 
     private static void assertIngressActivity(PackageManager packages, Intent intent) {

@@ -402,6 +402,19 @@ export class AndroidClient {
       this.backgroundNative.prepareExplicitTextAction(actionId, event),
     completeExplicitTextAction: (actionId) =>
       this.backgroundNative.completeExplicitTextAction(actionId),
+    readAcceptedExplicitTextAction: async (action) => {
+      const [item, identity] = await Promise.all([
+        this.history.getById(action.event.clipId),
+        this.identitySvc.get(),
+      ]);
+      const clip = item?.clip;
+      return clip
+        && clip.originPeerId === identity.deviceId
+        && clip.content === action.text
+        && clip.capturedAt === action.event.capturedAt
+        ? clip
+        : null;
+    },
     captureExplicitText: (action) => this.clipboard.processLocalText(action.text, {
       shareNow: true,
       event: action.event,

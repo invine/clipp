@@ -30,6 +30,7 @@ function createPlatform(
     listExplicitTextActions: async () => [],
     prepareExplicitTextAction: async () => undefined,
     completeExplicitTextAction: async () => undefined,
+    readAcceptedExplicitTextAction: async () => null,
     captureExplicitText: async () => null,
     showExplicitTextFeedback: async () => undefined,
     readPendingClipboardApplication: async () => null,
