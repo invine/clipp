@@ -38,12 +38,15 @@ describe("explicit Clip actions", () => {
       clipboard,
     });
 
-    expect(reused).toEqual(expect.objectContaining({
-      id: "00000000-0000-4000-8000-000000000701",
-      content: "retained value",
-      originPeerId: localPeerId,
-      capturedAt: 5_000,
-    }));
+    expect(reused).toEqual({
+      status: "complete",
+      clip: expect.objectContaining({
+        id: "00000000-0000-4000-8000-000000000701",
+        content: "retained value",
+        originPeerId: localPeerId,
+        capturedAt: 5_000,
+      }),
+    });
     await clipboard.stop();
   });
 });

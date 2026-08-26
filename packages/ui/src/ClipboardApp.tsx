@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo, type BackgroundContinuityDiagnosticStatus } from "./types";
 import { identityRotationNoticeMessage, type IdentityRotationNoticeReason } from "./identityRotationNotice";
+import {
+  reuseClipFeedback,
+  shareNowFailureFeedback,
+  type ClipboardActionFeedback,
+  type ReuseClipOutcome,
+} from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
@@ -258,7 +264,7 @@ export type ClipboardAppProps = {
   onPairText(txt: string): void | Promise<void>;
   onScanPairingCode?(): Promise<string | null> | string | null;
   onRequestPairingCode(): Promise<PairingCode | null>;
-  onReuseClip(id: string): void | Promise<void>;
+  onReuseClip(id: string): ReuseClipOutcome | Promise<ReuseClipOutcome>;
   onShareNow(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
@@ -596,13 +602,11 @@ export function ClipboardApp({
   function reuseClip(id: string) {
     void Promise.resolve()
       .then(() => onReuseClip(id))
-      .then(() => {
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
+      .then((outcome) => {
+        applyHistoryFeedback(reuseClipFeedback(outcome));
       })
       .catch(() => {
-        setHistoryError("Could not copy this Clip. Your clipboard and history were not changed.");
-        setRetryHistoryOperation(() => () => reuseClip(id));
+        applyHistoryFeedback(reuseClipFeedback("write-failed"), () => reuseClip(id));
       });
   }
 
@@ -613,10 +617,15 @@ export function ClipboardApp({
         setHistoryError(null);
         setRetryHistoryOperation(null);
       })
-      .catch(() => {
-        setHistoryError("Could not share the current clipboard.");
-        setRetryHistoryOperation(() => shareNow);
+      .catch((error) => {
+        const errorCode = error instanceof Error ? error.message : "share_now_failed";
+        applyHistoryFeedback(shareNowFailureFeedback(errorCode), shareNow);
       });
+  }
+
+  function applyHistoryFeedback(feedback: ClipboardActionFeedback | null, retry?: () => void) {
+    setHistoryError(feedback?.message ?? null);
+    setRetryHistoryOperation(feedback?.action === "retry" && retry ? () => retry : null);
   }
 
   function beginAddRelay() {
@@ -1432,6 +1441,11 @@ export function ClipboardApp({
               retry();
             }}>
               Retry
+            </button>
+          )}
+          {!retryHistoryOperation && (
+            <button type="button" onClick={() => setHistoryError(null)}>
+              Dismiss
             </button>
           )}
         </div>

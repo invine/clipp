@@ -23,6 +23,7 @@ import {
   handleExtensionClipboardRequest,
   isExtensionClipboardRequest,
 } from "./clipboardBridge";
+import { createOffscreenClipboardWriter } from "./offscreenClipboard";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
@@ -35,6 +36,7 @@ const identitySvc = createRuntimeIdentityManager({
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
 });
 let started = false;
+const writeClipboardText = createOffscreenClipboardWriter();
 const runtimeOutboundStreamControllers = new Map<string, AbortController>();
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -151,7 +153,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return;
     }
     if (isExtensionClipboardRequest(msg)) {
-      sendResponse(await handleExtensionClipboardRequest(msg, navigator.clipboard));
+      sendResponse(await handleExtensionClipboardRequest(msg, writeClipboardText));
       return;
     }
     if (!transport) {

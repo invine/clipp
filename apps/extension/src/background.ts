@@ -41,6 +41,7 @@ import { createClipboardSyncManager } from "../../../packages/core/sync/clipboar
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions";
 import { createExtensionClipboardBridge } from "./clipboardBridge";
+import { isAuthorizedPopupShareNowSender } from "./popupClipboardActions";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
@@ -100,6 +101,7 @@ const identitySvc = createRuntimeIdentityManager({
 });
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
+const POPUP_URL = chrome.runtime.getURL("src/popup.html");
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target !== "background" || message?.action !== "offscreenStorage") return;
@@ -217,7 +219,6 @@ function createExtensionClipboardService() {
       const id = await identitySvc.get();
       return id.deviceId;
     },
-    readText: extensionClipboard.readText,
     writeText: async (text: string) => {
       await extensionClipboard.writeText(text);
     },
@@ -432,7 +433,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   applicationStateKey: "runtimeApplicationState",
   initialApplicationState: () => ({} as Record<string, unknown>),
   clipboard: {
-    readText: extensionClipboard.readText,
+    readText: async () => { throw new Error("clipboard_read_unsupported"); },
     writeText: extensionClipboard.writeText,
   },
   notifications: {
@@ -686,9 +687,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "shareNow") {
+    if (typeof msg.text !== "string" || !isAuthorizedPopupShareNowSender(sender.url, POPUP_URL)) {
+      sendResponse({ ok: false, error: "share_now_unauthorized" });
+      return false;
+    }
     historyPolicyReady
-      .then(() => extensionClipboard.readText())
-      .then((text) => clipboard.processLocalText(text, { shareNow: true }))
+      .then(() => clipboard.processLocalText(msg.text, { shareNow: true }))
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
@@ -696,7 +700,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "reuseClip" && msg.id) {
     historyPolicyReady
       .then(() => reuseRetainedClip(msg.id, { history, clipboard }))
-      .then(() => sendResponse({ ok: true }))
+      .then((outcome) => sendResponse({ ok: true, outcome: outcome.status }))
       .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
     return true;
   }

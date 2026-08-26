@@ -92,7 +92,11 @@ describe("ClipboardService", () => {
     service.start();
     await jest.runOnlyPendingTimersAsync();
 
-    await service.reuseLocalClip({ type: "text", content: "retained value" } as Clip);
+    await expect(service.reuseLocalClip({ type: "text", content: "retained value" } as Clip))
+      .resolves.toEqual(expect.objectContaining({
+        status: "complete",
+        clip: expect.objectContaining({ content: "retained value" }),
+      }));
     jest.advanceTimersByTime(60);
     await jest.runOnlyPendingTimersAsync();
 
@@ -119,7 +123,7 @@ describe("ClipboardService", () => {
     const service = createManualClipboardService({ getSenderId: () => peerId, captureCoordinator: coordinator });
     await expect(service.processLocalText("captured before startup")).resolves.toBeNull();
     await expect(service.reuseLocalClip({ type: "text", content: "reused before startup" } as Clip))
-      .resolves.toBeNull();
+      .rejects.toThrow("clipboard_service_inactive");
     service.start();
 
     await service.processLocalText("same clipboard", { shareNow: true });
@@ -148,7 +152,7 @@ describe("ClipboardService", () => {
       .rejects.toThrow("clip_capture_failed");
   });
 
-  it("exposes a reuse failure when the clipboard write succeeds but no Clip can be created", async () => {
+  it("reports partial success when the clipboard write succeeds but no Clip can be created", async () => {
     const service = createManualClipboardService({
       getSenderId: () => peerId,
       writeText: async () => {},
@@ -163,7 +167,7 @@ describe("ClipboardService", () => {
     service.start();
 
     await expect(service.reuseLocalClip({ type: "text", content: "cannot be retained" } as Clip))
-      .rejects.toThrow("clip_capture_failed");
+      .resolves.toEqual({ status: "copied-without-clip" });
   });
 
   it("suppresses transformed manual read-back observations after explicit history reuse", async () => {
@@ -279,6 +283,6 @@ describe("ClipboardService", () => {
     await stopping;
     await expect(service.processLocalText("captured after shutdown")).resolves.toBeNull();
     await expect(service.reuseLocalClip({ type: "text", content: "reused after shutdown" } as Clip))
-      .resolves.toBeNull();
+      .rejects.toThrow("clipboard_service_inactive");
   });
 });

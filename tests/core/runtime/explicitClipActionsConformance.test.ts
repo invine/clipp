@@ -34,12 +34,14 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
         },
       },
     });
-    await expect(clipboard.reuseLocalClip(retainedClip())).resolves.toBeNull();
+    await expect(clipboard.reuseLocalClip(retainedClip())).rejects.toThrow("clipboard_service_inactive");
     await expect(clipboard.processLocalText("before identity startup", { shareNow: true })).resolves.toBeNull();
     expect(stored).toEqual([]);
     clipboard.start();
 
-    await clipboard.reuseLocalClip(retainedClip());
+    await expect(clipboard.reuseLocalClip(retainedClip())).resolves.toEqual(
+      expect.objectContaining({ status: "complete" }),
+    );
     await clipboard.processLocalText("retained", { shareNow: true });
     await clipboard.processLocalText("retained", { shareNow: true });
 
@@ -50,7 +52,7 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
       "00000000-0000-4000-8000-000000000712",
     ]);
     await clipboard.stop();
-    await expect(clipboard.reuseLocalClip(retainedClip())).resolves.toBeNull();
+    await expect(clipboard.reuseLocalClip(retainedClip())).rejects.toThrow("clipboard_service_inactive");
     await expect(clipboard.processLocalText("after identity shutdown", { shareNow: true })).resolves.toBeNull();
   });
 

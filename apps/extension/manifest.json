@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Clipboard Share",
   "version": "0.1.0",
+  "minimum_chrome_version": "109",
   "description": "Decentralized clipboard sharing across devices using libp2p.",
   "permissions": [
     "storage",

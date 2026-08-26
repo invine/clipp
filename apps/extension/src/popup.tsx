@@ -16,8 +16,10 @@ import {
   PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
+  ReuseClipOutcome,
 } from "../../../packages/ui";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
+import { shareCurrentPopupClipboard } from "./popupClipboardActions";
 
 function identityRotationNoticeReason(value: unknown): IdentityRotationNoticeReason | null {
   return value === "revoked" || value === "identity-loss" ? value : null;
@@ -267,10 +269,17 @@ const Popup = () => {
         onPairText={handlePairingText}
         onRequestPairingCode={handleRequestPairingCode}
         onReuseClip={async (id) => {
-          await runHistoryOperation({ type: "reuseClip", id });
+          const response = await runHistoryOperation<{ ok: true; outcome: ReuseClipOutcome }>({
+            type: "reuseClip",
+            id,
+          });
+          return response.outcome;
         }}
         onShareNow={async () => {
-          await runHistoryOperation({ type: "shareNow" });
+          await shareCurrentPopupClipboard(
+            () => navigator.clipboard.readText(),
+            async (text) => { await runHistoryOperation({ type: "shareNow", text }); },
+          );
         }}
         onSetPinned={async (id, pinned) => {
           const response = await runHistoryOperation<{ ok: true; pinnedIds: string[] }>({

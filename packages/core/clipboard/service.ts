@@ -18,7 +18,7 @@ export interface ClipboardService {
   resetObservationBaseline?(): Promise<void>;
   onLocalClip(cb: (clip: Clip, options?: LocalClipOptions) => void): void;
   onRemoteClipWritten(cb: (clip: Clip) => void): void;
-  reuseLocalClip(clip: Clip): Promise<Clip | null>;
+  reuseLocalClip(clip: Clip): Promise<ReuseLocalClipOutcome>;
   /** Returns true only when the clipboard side effect was actually applied. */
   writeRemoteClip(clip: Clip, beforeWrite?: () => Promise<boolean>): Promise<boolean>;
   /** Drops captures that never reached durable history, after a successful Clear History. */
@@ -37,6 +37,10 @@ export interface ClipboardService {
 
 /** Delivery intent for an explicitly initiated local capture. */
 export type LocalClipOptions = ClipCaptureOptions;
+
+export type ReuseLocalClipOutcome =
+  | { status: "complete"; clip: Clip | null }
+  | { status: "copied-without-clip" };
 
 export type ClipboardReadFn = () => Promise<string>;
 export type ClipboardWriteFn = (text: string) => Promise<void>;
@@ -66,6 +70,13 @@ type ExpectedRemoteEcho = {
 };
 
 const REMOTE_ECHO_SUPPRESSION_MS = 10_000;
+
+class ClipCaptureRejectedError extends Error {
+  constructor() {
+    super("clip_capture_failed");
+    this.name = "ClipCaptureRejectedError";
+  }
+}
 
 /**
  * Polling clipboard service: reads from the system clipboard on an interval.
@@ -184,7 +195,7 @@ function createClipboardService(
       && !allowPreviouslyAcceptedEvent
       && !coordinator.pending().some((pendingClip) => !pendingBefore.has(pendingClip.id))
     ) {
-      throw new Error("clip_capture_failed");
+      throw new ClipCaptureRejectedError();
     }
     return clip;
   }
@@ -294,29 +305,36 @@ function createClipboardService(
     });
   }
 
-  async function reuseLocalClip(clip: Clip): Promise<Clip | null> {
+  async function reuseLocalClip(clip: Clip): Promise<ReuseLocalClipOutcome> {
     if (clip.type !== ClipType.Text && clip.type !== ClipType.Url) {
       throw new Error("clip_capture_failed");
     }
     return serialize(async () => {
-      if (!acceptingCaptures) return null;
-      if (options.captureCoordinator) {
-        const reused = await captureExplicitly(
-          () => options.captureCoordinator!.reuse(
-            clip.content,
-            write,
-            readBackAvailable ? read : undefined,
-          ),
-        );
-        baseline = options.captureCoordinator.baselineValue();
-        if (reused) publishLocalClip(reused);
-        return reused;
+      if (!acceptingCaptures) throw new Error("clipboard_service_inactive");
+      try {
+        if (options.captureCoordinator) {
+          const reused = await captureExplicitly(
+            () => options.captureCoordinator!.reuse(
+              clip.content,
+              write,
+              readBackAvailable ? read : undefined,
+            ),
+          );
+          baseline = options.captureCoordinator.baselineValue();
+          if (reused) publishLocalClip(reused);
+          return { status: "complete", clip: reused };
+        }
+        await write(clip.content);
+        try { baseline = await read(); } catch { baseline = undefined; }
+        const reused = await processLocalTextUnserialized(clip.content);
+        if (!reused) throw new ClipCaptureRejectedError();
+        return { status: "complete", clip: reused };
+      } catch (error) {
+        if (error instanceof ClipCaptureRejectedError) {
+          return { status: "copied-without-clip" };
+        }
+        throw error;
       }
-      await write(clip.content);
-      try { baseline = await read(); } catch { baseline = undefined; }
-      const reused = await processLocalTextUnserialized(clip.content);
-      if (!reused) throw new Error("clip_capture_failed");
-      return reused;
     });
   }
 

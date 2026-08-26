@@ -946,9 +946,9 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:reuse-clip", async (_evt, id: string) => {
-    await reuseRetainedClip(id, { history, clipboard: clipboardSvc });
+    const outcome = await reuseRetainedClip(id, { history, clipboard: clipboardSvc });
     await emitState();
-    return { ok: true };
+    return { ok: true, outcome: outcome.status };
   });
 
   ipcMain.handle("clipp:share-now", async () => {

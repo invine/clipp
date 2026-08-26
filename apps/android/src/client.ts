@@ -769,8 +769,9 @@ export class AndroidClient {
   }
 
   async reuseClip(id: string) {
-    await reuseRetainedClip(id, { history: this.history, clipboard: this.clipboard });
+    const outcome = await reuseRetainedClip(id, { history: this.history, clipboard: this.clipboard });
     await this.emitState();
+    return outcome.status;
   }
 
   async clearHistory() {
