@@ -1,4 +1,5 @@
 import {
+  normalizeShareNowFailureCode,
   reuseClipFeedback,
   shareNowFailureFeedback,
 } from "../../packages/ui/src/clipboardActionFeedback";
@@ -21,9 +22,23 @@ describe("clipboard action feedback", () => {
       message: "Could not read the current clipboard. Keep Clipp open and try again.",
       action: "retry",
     });
-    expect(shareNowFailureFeedback("clip_capture_failed")).toEqual({
+    expect(shareNowFailureFeedback("share_now_failed")).toEqual({
       message: "Could not save or share the current clipboard.",
       action: "retry",
     });
+  });
+
+  it("normalizes runtime failures to closed Share Now failure codes", () => {
+    expect(normalizeShareNowFailureCode(Object.assign(
+      new Error("clipboard_read_failed"),
+      { code: "clipboard_read_failed" },
+    )))
+      .toBe("clipboard_read_failed");
+    expect(normalizeShareNowFailureCode(new Error("clipboard_read_failed")))
+      .toBe("share_now_failed");
+    expect(normalizeShareNowFailureCode(new Error("clip_capture_failed")))
+      .toBe("share_now_failed");
+    expect(normalizeShareNowFailureCode("clipboard_read_failed"))
+      .toBe("share_now_failed");
   });
 });

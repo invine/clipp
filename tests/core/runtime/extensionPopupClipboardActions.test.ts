@@ -22,7 +22,10 @@ describe("Chrome popup clipboard actions", () => {
     await expect(shareCurrentPopupClipboard(
       async () => { throw new Error("permission denied"); },
       shareNow,
-    )).rejects.toThrow("clipboard_read_failed");
+    )).rejects.toMatchObject({
+      code: "clipboard_read_failed",
+      message: "clipboard_read_failed",
+    });
 
     expect(shareNow).not.toHaveBeenCalled();
   });

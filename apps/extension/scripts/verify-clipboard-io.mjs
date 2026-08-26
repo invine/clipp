@@ -115,6 +115,16 @@ async function close(server) {
   });
 }
 
+async function pollUntil(timeoutMs, probe) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await probe();
+    if (result !== undefined) return result;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  return undefined;
+}
+
 async function readClipboard(page) {
   await page.bringToFront();
   return await page.evaluate(async () => await navigator.clipboard.readText());
@@ -126,11 +136,9 @@ async function writeClipboard(page, text) {
 }
 
 async function waitForClipboard(page, expected) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    if (await readClipboard(page) === expected) return;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
+  const matched = await pollUntil(10_000, async () =>
+    await readClipboard(page) === expected ? true : undefined);
+  if (matched) return;
   assert.equal(await readClipboard(page), expected);
 }
 
@@ -139,9 +147,8 @@ async function extensionMessage(page, message) {
 }
 
 async function sendToOffscreen(serviceWorker, message) {
-  const deadline = Date.now() + 15_000;
   let latest;
-  while (Date.now() < deadline) {
+  const successful = await pollUntil(15_000, async () => {
     try {
       latest = await serviceWorker.evaluate(
         async (payload) => await chrome.runtime.sendMessage({ target: "offscreen", ...payload }),
@@ -151,31 +158,28 @@ async function sendToOffscreen(serviceWorker, message) {
     } catch {
       // The background may still be creating the offscreen document.
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  return latest;
+    return undefined;
+  });
+  return successful ?? latest;
 }
 
 async function captureFixture(popup, text) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
+  const captured = await pollUntil(15_000, async () => {
     await extensionMessage(popup, { type: "clipboardUpdate", text });
     const history = await extensionMessage(popup, { type: "getClipHistory" });
-    const clip = history?.clips?.find((candidate) => candidate.content === text);
-    if (clip) return clip;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
+    return history?.clips?.find((candidate) => candidate.content === text);
+  });
+  if (captured) return captured;
   throw new Error("clipboard_fixture_capture_timeout");
 }
 
 async function waitForHistory(popup, predicate) {
-  const deadline = Date.now() + 10_000;
   let clips = [];
-  while (Date.now() < deadline) {
+  const matched = await pollUntil(10_000, async () => {
     const response = await extensionMessage(popup, { type: "getClipHistory" });
     clips = response?.clips ?? [];
-    if (predicate(clips)) return clips;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
+    return predicate(clips) ? clips : undefined;
+  });
+  if (matched) return matched;
   throw new Error("clipboard_history_condition_timeout");
 }

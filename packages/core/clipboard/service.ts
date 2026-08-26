@@ -311,12 +311,17 @@ function createClipboardService(
     }
     return serialize(async () => {
       if (!acceptingCaptures) throw new Error("clipboard_service_inactive");
+      let writeCompleted = false;
+      const trackedWrite: ClipboardWriteFn = async (text) => {
+        await write(text);
+        writeCompleted = true;
+      };
       try {
         if (options.captureCoordinator) {
           const reused = await captureExplicitly(
             () => options.captureCoordinator!.reuse(
               clip.content,
-              write,
+              trackedWrite,
               readBackAvailable ? read : undefined,
             ),
           );
@@ -324,13 +329,13 @@ function createClipboardService(
           if (reused) publishLocalClip(reused);
           return { status: "complete", clip: reused };
         }
-        await write(clip.content);
+        await trackedWrite(clip.content);
         try { baseline = await read(); } catch { baseline = undefined; }
         const reused = await processLocalTextUnserialized(clip.content);
         if (!reused) throw new ClipCaptureRejectedError();
         return { status: "complete", clip: reused };
       } catch (error) {
-        if (error instanceof ClipCaptureRejectedError) {
+        if (writeCompleted) {
           return { status: "copied-without-clip" };
         }
         throw error;

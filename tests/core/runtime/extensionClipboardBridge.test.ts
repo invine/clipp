@@ -8,6 +8,9 @@ import {
   createOffscreenClipboardWriter,
   type OffscreenClipboardDocument,
 } from "../../../apps/extension/src/offscreenClipboard";
+import { createRuntimeClipboardService } from "../../../packages/core/runtime/clipboard";
+import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
+import type { Clip } from "../../../packages/core/models/Clip";
 
 describe("Chrome offscreen clipboard bridge", () => {
   it("routes clipboard writes through the offscreen handler", async () => {
@@ -22,6 +25,37 @@ describe("Chrome offscreen clipboard bridge", () => {
 
     expect(requests).toEqual([{ action: "clipboardWrite", text: "reused" }]);
     expect(writeText).toHaveBeenCalledWith("reused");
+  });
+
+  it("applies a live Remote Clip through the extension bridge and offscreen writer", async () => {
+    const fixture = offscreenDocumentFixture(true);
+    const writeText = createOffscreenClipboardWriter(fixture.document);
+    const bridge = createExtensionClipboardBridge(async (request) =>
+      handleExtensionClipboardRequest(request, writeText));
+    const accept = jest.fn();
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+      writeText: bridge.writeText,
+      history: { accept },
+    });
+    const remoteClip: Clip = {
+      id: "00000000-0000-4000-8000-000000000801",
+      type: "text",
+      content: "live Remote Clip",
+      originPeerId: "12D3KooWQ7qJ9e5jDkvX4u1z7xG2FSuEw1gsvxTdrmQaN6wKpL9Z",
+      capturedAt: 1,
+      shareExpiresAt: 86_400_001,
+    };
+    clipboard.start();
+
+    await expect(clipboard.writeRemoteClip(remoteClip)).resolves.toBe(true);
+
+    expect(fixture.execCommand).toHaveBeenCalledWith("copy");
+    expect(fixture.valueAtCopy()).toBe(remoteClip.content);
+    await expect(clipboard.processLocalText(remoteClip.content)).resolves.toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+    await clipboard.stop();
   });
 
   it("rejects failed offscreen writes and invalid requests", async () => {

@@ -110,3 +110,24 @@ describe.each(capabilities)("$platform explicit Clip actions", (runtimeCapabilit
     await clipboard.stop();
   });
 });
+
+describe("Chrome extension retained Clip outcomes", () => {
+  it("reports partial success when capture setup fails after the clipboard write", async () => {
+    let clipboardText = "current";
+    const accept = jest.fn();
+    const clipboard = createRuntimeClipboardService({
+      capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+      getSenderId: async () => { throw new Error("identity unavailable"); },
+      writeText: async (text) => { clipboardText = text; },
+      history: { accept },
+    });
+    clipboard.start();
+
+    await expect(clipboard.reuseLocalClip(retainedClip())).resolves.toEqual({
+      status: "copied-without-clip",
+    });
+    expect(clipboardText).toBe("retained");
+    expect(accept).not.toHaveBeenCalled();
+    await clipboard.stop();
+  });
+});

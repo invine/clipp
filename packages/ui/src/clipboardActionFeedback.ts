@@ -1,4 +1,5 @@
 export type ReuseClipOutcome = "complete" | "copied-without-clip";
+export type ShareNowFailureCode = "clipboard_read_failed" | "share_now_failed";
 
 export type ClipboardActionFeedback = {
   message: string;
@@ -21,7 +22,17 @@ export function reuseClipFeedback(
   };
 }
 
-export function shareNowFailureFeedback(errorCode: string): ClipboardActionFeedback {
+export function normalizeShareNowFailureCode(error: unknown): ShareNowFailureCode {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = error.code;
+    if (code === "clipboard_read_failed" || code === "share_now_failed") return code;
+  }
+  return "share_now_failed";
+}
+
+export function shareNowFailureFeedback(
+  errorCode: ShareNowFailureCode,
+): ClipboardActionFeedback {
   return errorCode === "clipboard_read_failed"
     ? {
       message: "Could not read the current clipboard. Keep Clipp open and try again.",

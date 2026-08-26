@@ -1,3 +1,12 @@
+class PopupClipboardReadError extends Error {
+  readonly code = "clipboard_read_failed";
+
+  constructor() {
+    super("clipboard_read_failed");
+    this.name = "PopupClipboardReadError";
+  }
+}
+
 export async function shareCurrentPopupClipboard(
   readText: () => Promise<string>,
   shareNow: (text: string) => Promise<void>,
@@ -6,7 +15,7 @@ export async function shareCurrentPopupClipboard(
   try {
     text = await readText();
   } catch {
-    throw new Error("clipboard_read_failed");
+    throw new PopupClipboardReadError();
   }
   await shareNow(text);
 }

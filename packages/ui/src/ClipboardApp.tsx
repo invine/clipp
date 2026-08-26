@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo, type BackgroundContinuityDiagnosticStatus } from "./types";
 import { identityRotationNoticeMessage, type IdentityRotationNoticeReason } from "./identityRotationNotice";
 import {
+  normalizeShareNowFailureCode,
   reuseClipFeedback,
   shareNowFailureFeedback,
   type ClipboardActionFeedback,
@@ -618,8 +619,10 @@ export function ClipboardApp({
         setRetryHistoryOperation(null);
       })
       .catch((error) => {
-        const errorCode = error instanceof Error ? error.message : "share_now_failed";
-        applyHistoryFeedback(shareNowFailureFeedback(errorCode), shareNow);
+        applyHistoryFeedback(
+          shareNowFailureFeedback(normalizeShareNowFailureCode(error)),
+          shareNow,
+        );
       });
   }
 
