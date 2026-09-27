@@ -9,10 +9,13 @@ existing import and revocation checks. A generation fence prevents a pass from
 an earlier start from scheduling work in a later start.
 
 `reconfigure` changes only added and removed relay entries: unchanged
-connections, listeners and registrations remain live. Reservation listen
-attempts are serialized so a late completion cannot clean up a newer attempt.
-Cleanup identifies relay connections by configured remote address, preserving
-a direct connection that happens to have the relay's Peer ID.
+connections and listeners remain live, and their registrations are refreshed
+with the current Signed Peer Record when self addresses change. Configuration
+mutations and reservation listen attempts are serialized so a late completion
+cannot clean up a newer attempt. Cleanup tracks connections returned by relay
+dials, including DNS addresses resolved to IPs; an exact configured-address
+match also covers relay connections established by startup listeners. A
+pre-existing direct connection with the relay's Peer ID remains open.
 
 `Libp2pMessagingTransport` currently calls only `start` and `stop`, retaining
 the existing `relayAddresses` option for all runtimes. `createClipboardNode`
@@ -30,9 +33,9 @@ the existing local `node_modules` dependency tree; no external relay was used.
 | Command / scope                                                                                                                                      | Starting commit `44ddde1`                  | Ticket branch after review fixes                                                                                                                                                                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `npm test -- --runInBand tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent`                                           | 38/38 passed                               | 44/44 passed                                                                                                                                                                                           |
-| `npm test -- --runInBand tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent` | New controller test file did not exist     | 49/49 passed                                                                                                                                                                                           |
+| `npm test -- --runInBand tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent` | New controller test file did not exist     | 55/55 passed                                                                                                                                                                                           |
 | `npm run lint -- --quiet`                                                                                                                            | Not run                                    | Passed                                                                                                                                                                                                 |
-| `npm test -- --runInBand --silent`                                                                                                                   | Not run                                    | 441 tests passed; 55 suites passed, one suite failed to compile (`tests/core/network/nodeAddressConfig.test.ts`) because `packages/core/network/node.ts` imports missing `@libp2p/interface-transport` |
+| `npm test -- --runInBand --silent`                                                                                                                   | Not run                                    | 447 tests passed; 55 suites passed, one suite failed to compile (`tests/core/network/nodeAddressConfig.test.ts`) because `packages/core/network/node.ts` imports missing `@libp2p/interface-transport` |
 | `npm run check`                                                                                                                                      | No `check` script in pinned `package.json` | Missing script                                                                                                                                                                                         |
 
 The local real-network acceptance harness is
@@ -52,3 +55,8 @@ other existing errors outside the changed files; none reference
 `relayLifecycle.ts`, `engine.ts`, or their tests. The focused Jest suites use
 the shared controller and transport seams with libp2p boundary doubles; they
 do not substitute for the blocked real-network harness or native runtime runs.
+
+The controller regressions were observed red before the fixes for concurrent
+reconfiguration, stale reservation completion, DNS-to-IP connection cleanup,
+and retained-relay Signed Peer Record refresh. A shutdown-during-removal test
+also went red before pending relay resources were included in stop cleanup.

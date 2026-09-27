@@ -29,7 +29,11 @@ export class RelayLifecycle {
   private rendezvousPending = false;
   private reservationRunning = false;
   private reservationWork: Promise<void> = Promise.resolve();
+  private configurationWork: Promise<void> = Promise.resolve();
+  private stopEpoch = 0;
   private readonly registered = new Set<string>();
+  private readonly ownedConnections = new Map<string, Set<any>>();
+  private readonly pendingRemovalRelays = new Set<string>();
 
   constructor(
     private readonly options: RelayLifecycleOptions,
@@ -63,8 +67,10 @@ export class RelayLifecycle {
   }
 
   async stop(): Promise<void> {
+    ++this.stopEpoch;
     const node = this.node;
-    const relays = this.relays;
+    const relays = [...new Set([...this.relays, ...this.pendingRemovalRelays])];
+    this.pendingRemovalRelays.clear();
     ++this.generation;
     this.node = null;
     this.relays = [];
@@ -90,13 +96,28 @@ export class RelayLifecycle {
   }
 
   /** Replaces only relay-owned work; direct connections and the host remain live. */
-  async reconfigure(node: any, relays: string[]): Promise<void> {
+  reconfigure(node: any, relays: string[]): Promise<void> {
+    const stopEpoch = this.stopEpoch;
+    const nextRelays = [...relays];
+    const work = this.configurationWork.then(() => {
+      if (stopEpoch !== this.stopEpoch) return;
+      return this.applyReconfiguration(node, nextRelays);
+    });
+    this.configurationWork = work.catch(() => undefined);
+    return work;
+  }
+
+  private async applyReconfiguration(
+    node: any,
+    relays: string[],
+  ): Promise<void> {
     if (!this.node) return this.start(node, relays);
     if (this.node !== node) throw new Error("relay_host_changed");
     const previous = this.relays;
     const removed = previous.filter((relay) => !relays.includes(relay));
     const added = relays.filter((relay) => !previous.includes(relay));
     if (removed.length === 0 && added.length === 0) return;
+    for (const relay of removed) this.pendingRemovalRelays.add(relay);
     const generation = ++this.generation;
     this.relays = [...relays];
     this.ready = false;
@@ -120,8 +141,11 @@ export class RelayLifecycle {
         ),
       ),
     );
+    if (!this.isCurrent(generation)) return;
     await this.closeRelayListeners(node, removed);
+    if (!this.isCurrent(generation)) return;
     await this.closeRelayConnections(node, removed);
+    for (const relay of removed) this.pendingRemovalRelays.delete(relay);
     if (!this.isCurrent(generation)) return;
     await this.connectRelays(node, added, generation);
     if (!this.isCurrent(generation)) return;
@@ -133,7 +157,7 @@ export class RelayLifecycle {
       }, this.options.relayReservationRetryMs ?? 15_000);
     }
     this.ready = true;
-    this.triggerRendezvous(generation, added);
+    this.triggerRendezvous(generation);
   }
 
   reachabilityUpdated(): void {
@@ -216,17 +240,28 @@ export class RelayLifecycle {
     for (const addr of relays) {
       if (!this.isCurrent(generation)) return;
       try {
+        const existingConnections = new Set(node.getConnections?.() ?? []);
+        const existingConnectionIds = new Set(
+          [...existingConnections]
+            .map((connection: any) => connection?.id)
+            .filter(Boolean),
+        );
         const connection = await node.dial(
           ensureLegacyMultiaddrApi(multiaddr(addr)),
           this.dialOptions(),
         );
+        const owned =
+          connection &&
+          !existingConnections.has(connection) &&
+          (connection.id == null || !existingConnectionIds.has(connection.id));
         if (!this.isCurrent(generation)) {
-          try {
-            await connection?.close?.();
-          } catch {
-            /* best effort */
-          }
+          if (owned) await this.closeConnection(connection);
           return;
+        }
+        if (owned) {
+          const connections = this.ownedConnections.get(addr) ?? new Set<any>();
+          connections.add(connection);
+          this.ownedConnections.set(addr, connections);
         }
       } catch (err: any) {
         log.warn("Relay dial failed", { addr, error: err?.message || err });
@@ -292,7 +327,10 @@ export class RelayLifecycle {
         circuitAddrs.map((addr) => ensureLegacyMultiaddrApi(multiaddr(addr))),
       );
       if (!this.isCurrent(generation)) {
-        await this.closeRelayListeners(node, relays);
+        const obsolete = relays.filter(
+          (relay) => this.node !== node || !this.relays.includes(relay),
+        );
+        await this.closeRelayListeners(node, obsolete);
         return;
       }
       const stillMissing = relays.filter(
@@ -380,23 +418,31 @@ export class RelayLifecycle {
       relays.map((relay) => relay.replace(/\/+$/, "")),
     );
     const connections = node.getConnections?.() ?? [];
+    const toClose = new Set<any>();
+    for (const relay of relays) {
+      for (const connection of this.ownedConnections.get(relay) ?? [])
+        toClose.add(connection);
+      this.ownedConnections.delete(relay);
+    }
+    for (const connection of connections) {
+      const address = connection?.remoteAddr?.toString?.();
+      if (
+        typeof address === "string" &&
+        relayAddresses.has(address.replace(/\/+$/, ""))
+      )
+        toClose.add(connection);
+    }
     await Promise.all(
-      connections
-        .filter((connection: any) => {
-          const address = connection?.remoteAddr?.toString?.();
-          return (
-            typeof address === "string" &&
-            relayAddresses.has(address.replace(/\/+$/, ""))
-          );
-        })
-        .map(async (connection: any) => {
-          try {
-            await connection.close?.();
-          } catch {
-            /* best effort */
-          }
-        }),
+      [...toClose].map((connection) => this.closeConnection(connection)),
     );
+  }
+
+  private async closeConnection(connection: any): Promise<void> {
+    try {
+      await connection.close?.();
+    } catch {
+      /* best effort */
+    }
   }
 
   private triggerRendezvous(generation: number, targets = this.relays): void {
