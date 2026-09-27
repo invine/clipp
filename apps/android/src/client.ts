@@ -345,6 +345,11 @@ export class AndroidClient {
       isPeerRevoked: async (remotePeerId) =>
         (await this.identitySvc.membershipStatus(remotePeerId)) === "revoked",
     });
+    this.transport.setEligibleDialAddresses((addresses) =>
+      this.managedRelays
+        ? this.managedRelays.eligibleDialAddresses(addresses)
+        : addresses.filter((address) => !address.includes("/p2p-circuit"))
+    );
     this.pairedConnections = createPairedPeerConnectionManager({
       transport: this.transport,
       getPairedPeers: activeMemberReconnectPeers(this.identitySvc),

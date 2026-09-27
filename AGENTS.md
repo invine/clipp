@@ -47,8 +47,9 @@ Electron is the most complete runtime and is usually the best reference implemen
 
 ## Runtime Differences That Matter
 
-- Electron uses `createPollingClipboardService`, stores state in SQLite, and wires relay-address changes into persisted runtime state.
-- Android uses `createPollingClipboardService`, stores preferences in Capacitor Preferences or local storage fallback, and currently relies on the default relay list.
+- Electron uses `createPollingClipboardService`, stores managed-relay settings in SQLite, and keeps renewable relay credentials in main-process OS-protected storage when available.
+- Android uses `createPollingClipboardService`, stores managed-relay settings in Capacitor Preferences or local storage fallback, and keeps renewable relay credentials in native Keystore-protected storage.
+- Electron, Android, and the extension start the managed-relay model with an empty relay list; they do not import the legacy default relay list.
 - Extension uses `createManualClipboardService` because the MV3 service worker cannot poll the clipboard directly; the popup feeds local text into that service.
 - Electron and Android persist pin state in history storage. Extension pins live in shared history policy for the active service-worker session and are not persisted.
 - Extension is the only runtime currently wiring the history messenger in the offscreen document. Clip sync and trust flows are shared more broadly.

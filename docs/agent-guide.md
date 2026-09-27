@@ -59,9 +59,9 @@ The clean-architecture diagram in `docs/diagrams/electron-architecture.puml` mat
 
 | Runtime | Boot path | Clipboard strategy | Persistence | UI bridge | Transport notes |
 | --- | --- | --- | --- | --- | --- |
-| Electron | `apps/electron/src/main.ts` | `createPollingClipboardService` | SQLite via `SQLiteKVStore` and `SQLiteHistoryBackend` | `window.clipp` exposed by `src/preload.ts` | Relay addresses are persisted and can be edited at runtime |
-| Extension | `apps/extension/src/background.ts` plus `src/offscreen.ts` | `createManualClipboardService`; popup pushes clipboard text to background | `chrome.storage.local` plus IndexedDB history fallback | `chrome.runtime.sendMessage` between popup/options/background/offscreen | Offscreen document hosts libp2p because MV3 service worker is too constrained |
-| Android | `apps/android/src/client.ts` | `createPollingClipboardService` using Capacitor Clipboard with browser fallback | Capacitor Preferences, then localStorage, then memory | `AndroidClient` methods consumed by `src/main.tsx` | Uses default relay list from `packages/core/network/constants.ts` |
+| Electron | `apps/electron/src/main.ts` | `createPollingClipboardService` | SQLite settings/history; main-process protected relay credentials when available | `window.clipp` exposed by `src/preload.ts` | Managed relay settings start empty and can change without recreating the host |
+| Extension | `apps/extension/src/background.ts` plus `src/offscreen.ts` | `createManualClipboardService`; popup pushes clipboard text to background | `chrome.storage.local` settings/credentials plus IndexedDB history fallback | `chrome.runtime.sendMessage` between popup/options/background/offscreen | Background owns credentials; offscreen owns libp2p and receives short access tokens |
+| Android | `apps/android/src/client.ts` | `createPollingClipboardService` using Capacitor Clipboard with browser fallback | Capacitor Preferences settings and native Keystore-protected relay credentials | `AndroidClient` methods consumed by `src/main.tsx` | Managed relay settings start empty; the Activity/WebView hosts networking |
 
 ## 4. Source Of Truth Files
 
@@ -119,6 +119,8 @@ Do not reintroduce JSON protocol envelopes or payload-supplied sender authority.
 - self multiaddr updates
 - best-effort relay dialing
 
+Managed runtime adapters filter signed peer-record routes to configured relays; a signed record alone does not add a relay.
+
 Peer reporting intentionally filters out relay-only connections. If a peer seems "missing," check whether the connection is only to a configured relay.
 
 ## 6. Persistence Map
@@ -128,13 +130,13 @@ Peer reporting intentionally filters out relay-only connections. If a peer seems
 - Storage implementation: `apps/electron/src/storage.ts`
 - Database file: `app.getPath("userData")/clipp.sqlite`
 - Tables:
-- `kv` for identity, Membership View, relay addresses, and other key/value state
+- `kv` for identity, Membership View, managed-relay settings, and other key/value state
   - `history` for serialized clip history items, including pin state
 
 Notable persisted keys used by Electron:
 
 - `IDENTITY_KEY`
-- `relayAddresses`
+- `managedRelayConfigurations` (new-model settings; the legacy `relayAddresses` key is not imported)
 
 ### Extension
 
