@@ -1,0 +1,999 @@
+import { multiaddr } from "@multiformats/multiaddr";
+
+export type RelayConfiguration =
+  | { key: string; name: string; kind: "managed"; discoveryUrl: string }
+  | {
+      key: string;
+      name: string;
+      kind: "explicit";
+      peerId: string;
+      addresses: string[];
+    };
+
+export function canonicalDiscoveryUrl(value: string): string {
+  if (typeof value !== "string" || !value)
+    throw new Error("Invalid discovery URL");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Invalid discovery URL");
+  }
+  if (
+    url.protocol !== "https:" ||
+    !url.hostname ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname === "/"
+  ) {
+    throw new Error(
+      "Discovery URL must be an HTTPS endpoint without credentials, query or fragment"
+    );
+  }
+  return url.href;
+}
+
+export function normalizeRelayConfigurations(
+  values: unknown
+): RelayConfiguration[] {
+  if (!Array.isArray(values))
+    throw new Error("Relay configurations must be a list");
+  const keys = new Set<string>();
+  const urls = new Set<string>();
+  const peers = new Set<string>();
+  return values.map((value): RelayConfiguration => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("Invalid relay configuration");
+    const raw = value as Record<string, unknown>;
+    if (
+      typeof raw.key !== "string" ||
+      !raw.key.trim() ||
+      typeof raw.name !== "string"
+    )
+      throw new Error("Invalid relay key or name");
+    if (keys.has(raw.key)) throw new Error("Duplicate relay key");
+    keys.add(raw.key);
+    if (raw.kind === "managed") {
+      if (
+        Object.keys(raw).some(
+          (key) => !["key", "name", "kind", "discoveryUrl"].includes(key)
+        )
+      )
+        throw new Error("Mixed or unknown managed relay fields");
+      const discoveryUrl = canonicalDiscoveryUrl(raw.discoveryUrl as string);
+      if (urls.has(discoveryUrl)) throw new Error("Duplicate discovery URL");
+      urls.add(discoveryUrl);
+      return { key: raw.key, name: raw.name, kind: "managed", discoveryUrl };
+    }
+    if (raw.kind === "explicit") {
+      if (
+        Object.keys(raw).some(
+          (key) => !["key", "name", "kind", "peerId", "addresses"].includes(key)
+        )
+      )
+        throw new Error("Mixed or unknown explicit relay fields");
+      if (
+        typeof raw.peerId !== "string" ||
+        !raw.peerId ||
+        !Array.isArray(raw.addresses) ||
+        raw.addresses.length === 0
+      )
+        throw new Error("Invalid explicit relay");
+      const addresses = raw.addresses.map((address) => {
+        if (
+          typeof address !== "string" ||
+          !address.endsWith(`/p2p/${raw.peerId}`)
+        )
+          throw new Error("Explicit address must name its Peer ID");
+        try {
+          return multiaddr(address).toString();
+        } catch {
+          throw new Error("Invalid explicit multiaddr");
+        }
+      });
+      if (peers.has(raw.peerId)) throw new Error("Duplicate explicit Peer ID");
+      peers.add(raw.peerId);
+      return {
+        key: raw.key,
+        name: raw.name,
+        kind: "explicit",
+        peerId: raw.peerId,
+        addresses: [...new Set(addresses)],
+      };
+    }
+    throw new Error("Unknown relay kind");
+  });
+}
+
+export type RelayStatus =
+  | "connecting"
+  | "login_needed"
+  | "ready"
+  | "degraded"
+  | "refused"
+  | "retrying"
+  | "conflict";
+export type RelayState = {
+  key: string;
+  name: string;
+  kind: RelayConfiguration["kind"];
+  status: RelayStatus;
+  peerId?: string;
+  reason?: string;
+  retryAt?: number;
+  warning?: string;
+};
+export type DiscoveryDocument = {
+  version: 1;
+  relay: { peerId: string; addresses: string[] };
+  validUntil: number;
+};
+export type ManagedRelayConnection = {
+  verifiedPeerId: string;
+  initialAuthDeadlineMs?: number;
+  close(): Promise<void>;
+};
+export type ManagedRelayReservation = {
+  /** Removes this relay listener and its keep-alive/redial ownership before connection closure. */ release(): Promise<void>;
+};
+export type RelayAuthResult = {
+  sessionExpiresAt: number;
+  renewAfterMillis: number;
+};
+export type RelayErrorCode =
+  | "invalid_credentials"
+  | "quota_exhausted"
+  | "session_limit_exceeded"
+  | "unsupported_protocol"
+  | "temporarily_unavailable"
+  | "rate_limited"
+  | "authentication_failed";
+export class RelayOperationError extends Error {
+  constructor(
+    public readonly code: RelayErrorCode,
+    public readonly retryAfterMillis?: number
+  ) {
+    super(code);
+  }
+}
+export type ManagedRelayAdapter = {
+  accessToken(
+    discoveryUrl: string,
+    signal: AbortSignal
+  ): Promise<string | null>;
+  discover(
+    discoveryUrl: string,
+    accessToken: string,
+    signal: AbortSignal
+  ): Promise<DiscoveryDocument>;
+  supportsAddress(address: string): boolean;
+  dial(address: string, signal: AbortSignal): Promise<ManagedRelayConnection>;
+  authenticate(
+    connection: ManagedRelayConnection,
+    accessToken: string,
+    signal: AbortSignal
+  ): Promise<RelayAuthResult>;
+  reserve(
+    connection: ManagedRelayConnection,
+    signal: AbortSignal
+  ): Promise<ManagedRelayReservation>;
+  register(
+    connection: ManagedRelayConnection,
+    signedPeerRecord: Uint8Array,
+    version: 2 | 1,
+    signal: AbortSignal
+  ): Promise<void>;
+  signedPeerRecord(): Promise<Uint8Array>;
+  eraseCredentials(discoveryUrl: string): Promise<void>;
+  interactiveLogin(discoveryUrl: string): Promise<void>;
+  openAccount(discoveryUrl: string): Promise<void>;
+  unregister?(
+    connection: ManagedRelayConnection,
+    signal: AbortSignal
+  ): Promise<void>;
+  onStateChange?(states: RelayState[]): void;
+};
+
+type Entry = {
+  config: RelayConfiguration;
+  state: RelayState;
+  generation: number;
+  controller: AbortController;
+  connection?: ManagedRelayConnection;
+  reservation?: ManagedRelayReservation;
+  retryTimer?: ReturnType<typeof setTimeout>;
+  renewTimer?: ReturnType<typeof setTimeout>;
+  authExpiryTimer?: ReturnType<typeof setTimeout>;
+  discoveryTimer?: ReturnType<typeof setTimeout>;
+  setupFlight?: Promise<void>;
+  attempt: number;
+  retryAt: number;
+  document?: DiscoveryDocument;
+  renewFlight?: Promise<void>;
+};
+const DEADLINES = {
+  discovery: 10_000,
+  dial: 20_000,
+  auth: 10_000,
+  reserve: 15_000,
+  rendezvous: 12_000,
+} as const;
+const RETRY = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
+
+/** Shared managed-relay orchestration. The adapter owns the one existing host and all platform storage. */
+export class ManagedRelayController {
+  private readonly entries = new Map<string, Entry>();
+  private readonly tokenFlights = new Map<string, Promise<string | null>>();
+  private readonly peerClaims = new Map<string, Entry>();
+  private setupActive = 0;
+  private readonly setupQueue: Array<() => void> = [];
+  private stopped = false;
+  constructor(
+    private readonly adapter: ManagedRelayAdapter,
+    private readonly random: () => number = Math.random,
+    private readonly now: () => number = Date.now
+  ) {}
+
+  states(): RelayState[] {
+    return [...this.entries.values()].map(({ state }) => ({ ...state }));
+  }
+  configurations(): RelayConfiguration[] {
+    return [...this.entries.values()].map(({ config }) =>
+      structuredClone(config)
+    );
+  }
+  /** Filters dial candidates without changing the signed reachability record. Direct routes remain eligible. */
+  eligibleDialAddresses(addresses: string[]): string[] {
+    const eligible = new Set(
+      [...this.entries.values()]
+        .filter(
+          (entry) =>
+            entry.connection &&
+            (entry.state.status === "ready" ||
+              entry.state.status === "degraded")
+        )
+        .map((entry) => entry.connection!.verifiedPeerId)
+    );
+    return addresses.filter((address) => {
+      const match = address.match(/\/p2p\/([^/]+)\/p2p-circuit(?:\/|$)/);
+      return !match || eligible.has(match[1]);
+    });
+  }
+  private retryConflicts(): void {
+    for (const entry of this.entries.values())
+      if (entry.state.status === "conflict") void this.retry(entry.config.key);
+  }
+  private emit(entry: Entry, patch: Partial<RelayState>): void {
+    entry.state = { ...entry.state, ...patch };
+    this.adapter.onStateChange?.(this.states());
+  }
+  private current(entry: Entry, generation: number): boolean {
+    return (
+      !this.stopped &&
+      this.entries.get(entry.config.key) === entry &&
+      entry.generation === generation
+    );
+  }
+  private async deadline<T>(
+    ms: number,
+    parent: AbortSignal,
+    operation: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    parent.addEventListener("abort", abort, { once: true });
+    if (parent.aborted) controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation(controller.signal),
+        new Promise<T>((_resolve, reject) => {
+          timer = setTimeout(
+            () => {
+              controller.abort();
+              reject(new Error("deadline_exceeded"));
+            },
+            Math.max(0, ms)
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      parent.removeEventListener("abort", abort);
+    }
+  }
+  private async token(entry: Entry): Promise<string | null> {
+    const url = (
+      entry.config as Extract<RelayConfiguration, { kind: "managed" }>
+    ).discoveryUrl;
+    const existing = this.tokenFlights.get(url);
+    if (existing) return existing;
+    const flight = this.deadline(
+      DEADLINES.auth,
+      entry.controller.signal,
+      (signal) => this.adapter.accessToken(url, signal)
+    );
+    this.tokenFlights.set(url, flight);
+    try {
+      return await flight;
+    } finally {
+      if (this.tokenFlights.get(url) === flight) this.tokenFlights.delete(url);
+    }
+  }
+  private setup(entry: Entry): Promise<void> {
+    if (entry.setupFlight) return entry.setupFlight;
+    const flight = this.setupSlot(() => this.attempt(entry));
+    entry.setupFlight = flight;
+    void flight.finally(() => {
+      if (entry.setupFlight === flight) entry.setupFlight = undefined;
+    });
+    return flight;
+  }
+  private clearTimers(entry: Entry): void {
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    if (entry.renewTimer) clearTimeout(entry.renewTimer);
+    if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
+    if (entry.discoveryTimer) clearTimeout(entry.discoveryTimer);
+    entry.retryTimer =
+      entry.renewTimer =
+      entry.authExpiryTimer =
+      entry.discoveryTimer =
+        undefined;
+  }
+  private async setupSlot<T>(work: () => Promise<T>): Promise<T> {
+    if (this.setupActive >= 4)
+      await new Promise<void>((resolve) => this.setupQueue.push(resolve));
+    this.setupActive++;
+    try {
+      return await work();
+    } finally {
+      this.setupActive--;
+      this.setupQueue.shift()?.();
+    }
+  }
+  async setConfigurations(values: unknown): Promise<void> {
+    const configs = normalizeRelayConfigurations(values);
+    this.stopped = false;
+    const nextKeys = new Set(configs.map((config) => config.key));
+    for (const key of [...this.entries.keys()])
+      if (!nextKeys.has(key)) await this.remove(key);
+    const attempts: Promise<void>[] = [];
+    for (const config of configs) {
+      const old = this.entries.get(config.key);
+      if (old) {
+        const sameIdentity =
+          old.config.kind === config.kind &&
+          (config.kind === "managed"
+            ? old.config.kind === "managed" &&
+              old.config.discoveryUrl === config.discoveryUrl
+            : old.config.kind === "explicit" &&
+              old.config.peerId === config.peerId);
+        if (sameIdentity) {
+          old.config = config;
+          this.emit(old, { name: config.name });
+          continue;
+        }
+        await this.remove(config.key);
+      }
+      const entry: Entry = {
+        config,
+        state: {
+          key: config.key,
+          name: config.name,
+          kind: config.kind,
+          status: "connecting",
+        },
+        generation: 0,
+        controller: new AbortController(),
+        attempt: 0,
+        retryAt: 0,
+      };
+      this.entries.set(config.key, entry);
+      this.adapter.onStateChange?.(this.states());
+      attempts.push(this.setup(entry));
+    }
+    await Promise.all(attempts);
+  }
+  async remove(key: string): Promise<void> {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.entries.delete(key);
+    entry.generation++;
+    entry.controller.abort();
+    this.clearTimers(entry);
+    const connection = entry.connection;
+    entry.connection = undefined;
+    if (connection) {
+      try {
+        await this.deadline(
+          DEADLINES.rendezvous,
+          new AbortController().signal,
+          (signal) =>
+            this.adapter.unregister?.(connection, signal) ?? Promise.resolve()
+        );
+      } catch {
+        /* cleanup best effort */
+      }
+      await entry.reservation?.release().catch(() => undefined);
+      await connection.close().catch(() => undefined);
+    }
+    if (entry.state.peerId && this.peerClaims.get(entry.state.peerId) === entry)
+      this.peerClaims.delete(entry.state.peerId);
+    this.retryConflicts();
+    if (entry.config.kind === "managed")
+      await this.adapter.eraseCredentials(entry.config.discoveryUrl);
+    this.adapter.onStateChange?.(this.states());
+  }
+  async stop(): Promise<void> {
+    this.stopped = true;
+    const entries = [...this.entries.values()];
+    this.entries.clear();
+    this.peerClaims.clear();
+    await Promise.all(
+      entries.map(async (entry) => {
+        entry.generation++;
+        entry.controller.abort();
+        this.clearTimers(entry);
+        await entry.reservation?.release().catch(() => undefined);
+        await entry.connection?.close().catch(() => undefined);
+      })
+    );
+    this.adapter.onStateChange?.([]);
+  }
+  async connectionLost(
+    key: string,
+    connection?: ManagedRelayConnection
+  ): Promise<void> {
+    const entry = this.entries.get(key);
+    if (
+      !entry ||
+      !entry.connection ||
+      (connection && entry.connection !== connection)
+    )
+      return;
+    entry.generation++;
+    entry.controller.abort();
+    this.clearTimers(entry);
+    const owned = entry.connection;
+    entry.connection = undefined;
+    await entry.reservation?.release().catch(() => undefined);
+    entry.reservation = undefined;
+    await owned.close().catch(() => undefined);
+    if (entry.state.peerId && this.peerClaims.get(entry.state.peerId) === entry)
+      this.peerClaims.delete(entry.state.peerId);
+    this.retryConflicts();
+    if (entry.state.status === "login_needed") {
+      this.emit(entry, { status: "login_needed" });
+      return;
+    }
+    this.failure(entry, new Error("connection_lost"));
+  }
+  async refreshSession(key: string): Promise<void> {
+    const entry = this.entries.get(key);
+    if (entry && this.now() >= entry.retryAt) await this.renew(entry);
+  }
+  async requestLogin(key: string): Promise<void> {
+    const entry = this.entries.get(key);
+    if (!entry || entry.config.kind !== "managed") return;
+    await this.adapter.interactiveLogin(entry.config.discoveryUrl);
+    if (entry.connection) {
+      entry.retryAt = 0;
+      await this.renew(entry);
+    } else await this.retry(key);
+  }
+  async manageAccount(key: string): Promise<void> {
+    const entry = this.entries.get(key);
+    if (entry?.config.kind === "managed")
+      await this.adapter.openAccount(entry.config.discoveryUrl);
+  }
+  async retry(key: string): Promise<void> {
+    const entry = this.entries.get(key);
+    if (!entry || entry.state.status === "ready" || this.now() < entry.retryAt)
+      return;
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryTimer = undefined;
+    if (entry.state.status === "degraded" && entry.connection) {
+      await this.repairRendezvous(entry);
+      return;
+    }
+    if (entry.connection && entry.config.kind === "managed") {
+      await this.renew(entry);
+      return;
+    }
+    await this.setup(entry);
+  }
+  private async attempt(entry: Entry): Promise<void> {
+    if (this.stopped || this.entries.get(entry.config.key) !== entry) return;
+    const generation = ++entry.generation;
+    entry.controller.abort();
+    entry.controller = new AbortController();
+    this.emit(entry, {
+      status: "connecting",
+      reason: undefined,
+      retryAt: undefined,
+    });
+    let connection: ManagedRelayConnection | undefined;
+    let authResult: RelayAuthResult | undefined;
+    try {
+      let peerId: string;
+      let addresses: string[];
+      let accessToken: string | null = null;
+      if (entry.config.kind === "managed") {
+        accessToken = await this.token(entry);
+        if (!this.current(entry, generation)) return;
+        if (!accessToken) {
+          this.emit(entry, { status: "login_needed" });
+          return;
+        }
+        let document = entry.document;
+        if (!document || document.validUntil <= this.now()) {
+          document = await this.deadline(
+            DEADLINES.discovery,
+            entry.controller.signal,
+            (signal) =>
+              this.adapter.discover(
+                (
+                  entry.config as Extract<
+                    RelayConfiguration,
+                    { kind: "managed" }
+                  >
+                ).discoveryUrl,
+                accessToken!,
+                signal
+              )
+          );
+          if (!this.current(entry, generation)) return;
+          this.validateDocument(document);
+          entry.document = document;
+          this.scheduleDiscoveryRefresh(entry, document.validUntil);
+        }
+        peerId = document.relay.peerId;
+        addresses = document.relay.addresses;
+      } else {
+        peerId = entry.config.peerId;
+        addresses = entry.config.addresses;
+      }
+      const owner = this.peerClaims.get(peerId);
+      if (owner && owner !== entry) {
+        this.emit(entry, {
+          status: "conflict",
+          peerId,
+          reason: `Peer ID already used by ${owner.config.key}`,
+        });
+        return;
+      }
+      this.peerClaims.set(peerId, entry);
+      this.emit(entry, { peerId });
+      connection = await this.dialAddresses(
+        entry,
+        addresses.filter((address) => this.adapter.supportsAddress(address)),
+        peerId
+      );
+      if (!this.current(entry, generation)) {
+        await connection.close();
+        return;
+      }
+      if (entry.config.kind === "managed") {
+        const authMs = Math.min(
+          DEADLINES.auth,
+          Math.max(
+            0,
+            (connection.initialAuthDeadlineMs ?? Infinity) - this.now()
+          )
+        );
+        const result = await this.deadline(
+          authMs,
+          entry.controller.signal,
+          (signal) =>
+            this.adapter.authenticate(connection!, accessToken!, signal)
+        );
+        this.validateAuthResult(result);
+        if (!this.current(entry, generation)) {
+          await connection.close().catch(() => undefined);
+          return;
+        }
+        authResult = result;
+      }
+      entry.reservation = await this.deadline(
+        DEADLINES.reserve,
+        entry.controller.signal,
+        (signal) => this.adapter.reserve(connection!, signal)
+      );
+      if (!this.current(entry, generation)) {
+        await entry.reservation.release().catch(() => undefined);
+        await connection.close().catch(() => undefined);
+        return;
+      }
+      entry.connection = connection;
+      await this.register(entry, connection);
+      if (!this.current(entry, generation)) return;
+      entry.attempt = 0;
+      this.emit(entry, {
+        status: "ready",
+        peerId,
+        reason: undefined,
+        warning: undefined,
+      });
+      if (authResult) this.scheduleRenewal(entry, authResult);
+    } catch (error) {
+      if (connection && entry.connection !== connection)
+        await connection.close().catch(() => undefined);
+      if (!this.current(entry, generation)) return;
+      if (
+        entry.connection !== connection &&
+        entry.state.peerId &&
+        this.peerClaims.get(entry.state.peerId) === entry
+      )
+        this.peerClaims.delete(entry.state.peerId);
+      this.retryConflicts();
+      if (
+        error instanceof Error &&
+        (error.message === "all_address_dials_failed" ||
+          error.message === "dial_deadline_exceeded")
+      )
+        entry.document = undefined;
+      this.failure(entry, error, entry.connection === connection);
+    }
+  }
+  private scheduleDiscoveryRefresh(entry: Entry, at: number): void {
+    if (entry.discoveryTimer) clearTimeout(entry.discoveryTimer);
+    entry.discoveryTimer = setTimeout(
+      () => {
+        void this.refreshDiscovery(entry);
+      },
+      Math.max(0, at - this.now())
+    );
+  }
+  private async refreshDiscovery(entry: Entry): Promise<void> {
+    if (
+      entry.config.kind !== "managed" ||
+      this.entries.get(entry.config.key) !== entry ||
+      this.stopped
+    )
+      return;
+    const generation = entry.generation;
+    try {
+      const token = await this.token(entry);
+      if (!this.current(entry, generation)) return;
+      if (!token) {
+        this.emit(entry, {
+          status: "login_needed",
+          reason: "invalid_credentials",
+        });
+        return;
+      }
+      const document = await this.deadline(
+        DEADLINES.discovery,
+        entry.controller.signal,
+        (signal) =>
+          this.adapter.discover(
+            (entry.config as Extract<RelayConfiguration, { kind: "managed" }>)
+              .discoveryUrl,
+            token,
+            signal
+          )
+      );
+      if (!this.current(entry, generation)) return;
+      this.validateDocument(document);
+      entry.document = document;
+      this.scheduleDiscoveryRefresh(entry, document.validUntil);
+      if (
+        entry.connection &&
+        entry.connection.verifiedPeerId !== document.relay.peerId
+      )
+        this.emit(entry, {
+          warning:
+            "Relay identity changed; current session remains active until reconnect",
+        });
+    } catch (error) {
+      if (!this.current(entry, generation)) return;
+      const code = error instanceof Error ? error.message : "discovery_failed";
+      this.emit(entry, { warning: `Discovery refresh failed: ${code}` });
+      this.scheduleDiscoveryRefresh(entry, this.now() + 5_000);
+    }
+  }
+  private validateDocument(document: DiscoveryDocument): void {
+    if (
+      !document ||
+      document.version !== 1 ||
+      !document.relay ||
+      typeof document.relay.peerId !== "string" ||
+      !document.relay.peerId ||
+      !Array.isArray(document.relay.addresses) ||
+      document.relay.addresses.length === 0 ||
+      !Number.isFinite(document.validUntil) ||
+      document.validUntil <= this.now() ||
+      document.validUntil > this.now() + 60_000
+    )
+      throw new Error("invalid_discovery");
+    for (const address of document.relay.addresses) {
+      if (
+        typeof address !== "string" ||
+        !address.endsWith(`/p2p/${document.relay.peerId}`)
+      )
+        throw new Error("invalid_discovery_address");
+      try {
+        multiaddr(address);
+      } catch {
+        throw new Error("invalid_discovery_address");
+      }
+    }
+  }
+  private async dialAddresses(
+    entry: Entry,
+    addresses: string[],
+    expectedPeerId: string
+  ): Promise<ManagedRelayConnection> {
+    if (addresses.length === 0) throw new Error("no_supported_addresses");
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    entry.controller.signal.addEventListener("abort", abort, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let staggerTimer: ReturnType<typeof setTimeout> | undefined;
+    let next = 0;
+    let active = 0;
+    let settled = false;
+    return new Promise<ManagedRelayConnection>((resolve, reject) => {
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        controller.abort();
+        if (staggerTimer) clearTimeout(staggerTimer);
+        reject(error);
+      };
+      timer = setTimeout(
+        () => fail(new Error("dial_deadline_exceeded")),
+        DEADLINES.dial
+      );
+      const launch = (secondReady = false) => {
+        while (!settled && active < 2 && next < addresses.length) {
+          if (active === 1 && !secondReady) {
+            if (!staggerTimer)
+              staggerTimer = setTimeout(() => {
+                staggerTimer = undefined;
+                launch(true);
+              }, 100);
+            return;
+          }
+          secondReady = false;
+          const address = addresses[next++];
+          active++;
+          void this.adapter
+            .dial(address, controller.signal)
+            .then(
+              async (connection) => {
+                active--;
+                if (
+                  settled ||
+                  controller.signal.aborted ||
+                  !this.entries.has(entry.config.key)
+                ) {
+                  await connection.close().catch(() => undefined);
+                  return;
+                }
+                if (connection.verifiedPeerId !== expectedPeerId) {
+                  await connection.close().catch(() => undefined);
+                  launch();
+                  return;
+                }
+                settled = true;
+                if (timer) clearTimeout(timer);
+                if (staggerTimer) clearTimeout(staggerTimer);
+                controller.abort();
+                resolve(connection);
+              },
+              () => {
+                active--;
+                launch();
+              }
+            )
+            .finally(() => {
+              if (!settled && active === 0 && next >= addresses.length)
+                fail(new Error("all_address_dials_failed"));
+            });
+        }
+      };
+      launch();
+    }).finally(() => {
+      if (timer) clearTimeout(timer);
+      if (staggerTimer) clearTimeout(staggerTimer);
+      entry.controller.signal.removeEventListener("abort", abort);
+    });
+  }
+  private async register(
+    entry: Entry,
+    connection: ManagedRelayConnection
+  ): Promise<void> {
+    await this.deadline(
+      DEADLINES.rendezvous,
+      entry.controller.signal,
+      async (signal) => {
+        const record = await this.adapter.signedPeerRecord();
+        try {
+          await this.adapter.register(connection, record, 2, signal);
+        } catch (error) {
+          if (
+            !(error instanceof RelayOperationError) ||
+            error.code !== "unsupported_protocol"
+          )
+            throw error;
+          await this.adapter.register(connection, record, 1, signal);
+        }
+      }
+    );
+  }
+  private async repairRendezvous(entry: Entry): Promise<void> {
+    const connection = entry.connection;
+    if (!connection) return;
+    try {
+      await this.register(entry, connection);
+      this.emit(entry, { status: "ready", reason: undefined });
+      entry.attempt = 0;
+    } catch (error) {
+      this.failure(entry, error, true);
+    }
+  }
+  private validateAuthResult(result: RelayAuthResult): void {
+    if (
+      !result ||
+      !Number.isFinite(result.sessionExpiresAt) ||
+      result.sessionExpiresAt <= this.now() ||
+      result.sessionExpiresAt > this.now() + 900_000 ||
+      !Number.isFinite(result.renewAfterMillis) ||
+      result.renewAfterMillis <= 0 ||
+      result.renewAfterMillis > 900_000
+    )
+      throw new Error("invalid_auth_result");
+  }
+  private scheduleRenewal(entry: Entry, result: RelayAuthResult): void {
+    if (entry.renewTimer) clearTimeout(entry.renewTimer);
+    if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
+    entry.authExpiryTimer = setTimeout(
+      () => {
+        void this.connectionLost(entry.config.key, entry.connection);
+      },
+      Math.max(0, result.sessionExpiresAt - this.now())
+    );
+    const delay = Math.max(
+      0,
+      Math.min(result.renewAfterMillis, result.sessionExpiresAt - this.now())
+    );
+    entry.renewTimer = setTimeout(() => {
+      void this.renew(entry);
+    }, delay);
+  }
+  private async renew(entry: Entry): Promise<void> {
+    if (entry.renewFlight) return entry.renewFlight;
+    const connection = entry.connection;
+    if (!connection || entry.config.kind !== "managed") return;
+    const flight = (async () => {
+      try {
+        const token = await this.token(entry);
+        if (!token) {
+          this.emit(entry, { status: "login_needed" });
+          return;
+        }
+        const result = await this.deadline(
+          DEADLINES.auth,
+          entry.controller.signal,
+          (signal) => this.adapter.authenticate(connection, token, signal)
+        );
+        this.validateAuthResult(result);
+        this.scheduleRenewal(entry, result);
+        entry.attempt = 0;
+        this.emit(entry, {
+          status: "ready",
+          warning: undefined,
+          reason: undefined,
+          retryAt: undefined,
+        });
+      } catch (error) {
+        this.renewalFailure(entry, error);
+      }
+    })();
+    entry.renewFlight = flight;
+    try {
+      await flight;
+    } finally {
+      entry.renewFlight = undefined;
+    }
+  }
+  private renewalFailure(entry: Entry, error: unknown): void {
+    const code =
+      error instanceof RelayOperationError
+        ? error.code
+        : error instanceof Error
+          ? error.message
+          : "unknown_error";
+    if (code === "invalid_credentials" || code === "authentication_failed") {
+      this.emit(entry, {
+        status: "login_needed",
+        reason: code,
+        warning: "Existing session remains valid until expiry",
+      });
+      return;
+    }
+    const refusal =
+      code === "quota_exhausted" || code === "session_limit_exceeded";
+    const backoff = refusal
+      ? 300_000 * (0.8 + this.random() * 0.4)
+      : RETRY[Math.min(entry.attempt++, RETRY.length - 1)] *
+        (0.5 + this.random() * 0.5);
+    const hint =
+      error instanceof RelayOperationError ? (error.retryAfterMillis ?? 0) : 0;
+    const delay = Math.max(backoff, hint);
+    entry.retryAt = this.now() + delay;
+    this.emit(entry, {
+      status: refusal ? "refused" : "ready",
+      reason: refusal ? code : undefined,
+      warning: refusal
+        ? undefined
+        : "Renewal failed; retrying while the current session remains valid",
+      retryAt: entry.retryAt,
+    });
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryTimer = setTimeout(() => {
+      void this.refreshSession(entry.config.key);
+    }, delay);
+  }
+  private failure(entry: Entry, error: unknown, rendezvousOnly = false): void {
+    const code =
+      error instanceof RelayOperationError
+        ? error.code
+        : error instanceof Error
+          ? error.message
+          : "unknown_error";
+    if (code === "invalid_credentials" || code === "authentication_failed") {
+      this.emit(entry, { status: "login_needed", reason: code });
+      return;
+    }
+    const refusal =
+      code === "quota_exhausted" || code === "session_limit_exceeded";
+    const backoff = refusal
+      ? 300_000 * (0.8 + this.random() * 0.4)
+      : RETRY[Math.min(entry.attempt++, RETRY.length - 1)] *
+        (0.5 + this.random() * 0.5);
+    const hint =
+      error instanceof RelayOperationError ? (error.retryAfterMillis ?? 0) : 0;
+    const delay = Math.max(backoff, hint);
+    entry.retryAt = this.now() + delay;
+    this.emit(entry, {
+      status:
+        rendezvousOnly && entry.connection
+          ? "degraded"
+          : refusal
+            ? "refused"
+            : "retrying",
+      reason: code,
+      retryAt: entry.retryAt,
+    });
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryTimer = setTimeout(() => {
+      void this.retry(entry.config.key);
+    }, delay);
+  }
+}
+
+/** New-model settings only. The adapter never reads legacy relayAddresses here. */
+export type ManagedRelayConfigurationStore = {
+  readNewModel(): Promise<unknown | null>;
+  writeNewModel(configurations: RelayConfiguration[]): Promise<void>;
+};
+
+export async function loadManagedRelayConfigurations(
+  store: ManagedRelayConfigurationStore
+): Promise<RelayConfiguration[]> {
+  const values = await store.readNewModel();
+  return values == null ? [] : normalizeRelayConfigurations(values);
+}
+
+export async function saveManagedRelayConfigurations(
+  store: ManagedRelayConfigurationStore,
+  values: unknown
+): Promise<RelayConfiguration[]> {
+  const normalized = normalizeRelayConfigurations(values);
+  await store.writeNewModel(normalized);
+  return normalized;
+}
