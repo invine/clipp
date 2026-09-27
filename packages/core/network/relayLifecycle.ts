@@ -28,6 +28,7 @@ export class RelayLifecycle {
   private rendezvousRunning = false;
   private rendezvousPending = false;
   private reservationRunning = false;
+  private reservationWork: Promise<void> = Promise.resolve();
   private readonly registered = new Set<string>();
 
   constructor(
@@ -84,14 +85,55 @@ export class RelayLifecycle {
         unregisterFromRendezvous(node, relay, this.topic(), options),
       ),
     );
-    await this.closeRelayListeners(node, relays);
+    await this.closeRelayListeners(node, relays, true);
     await this.closeRelayConnections(node, relays);
   }
 
   /** Replaces only relay-owned work; direct connections and the host remain live. */
   async reconfigure(node: any, relays: string[]): Promise<void> {
-    await this.stop();
-    await this.start(node, relays);
+    if (!this.node) return this.start(node, relays);
+    if (this.node !== node) throw new Error("relay_host_changed");
+    const previous = this.relays;
+    const removed = previous.filter((relay) => !relays.includes(relay));
+    const added = relays.filter((relay) => !previous.includes(relay));
+    if (removed.length === 0 && added.length === 0) return;
+    const generation = ++this.generation;
+    this.relays = [...relays];
+    this.ready = false;
+    this.rendezvousPending = false;
+    this.rendezvousRunning = false;
+    this.reservationRunning = false;
+    if (this.rendezvousTimer) clearTimeout(this.rendezvousTimer);
+    if (this.reservationTimer) clearInterval(this.reservationTimer);
+    this.rendezvousTimer = null;
+    this.reservationTimer = null;
+    const registeredRemoved = removed.filter((relay) =>
+      this.registered.delete(relay),
+    );
+    await Promise.allSettled(
+      registeredRemoved.map((relay) =>
+        unregisterFromRendezvous(
+          node,
+          relay,
+          this.topic(),
+          this.rendezvousOptions(),
+        ),
+      ),
+    );
+    await this.closeRelayListeners(node, removed);
+    await this.closeRelayConnections(node, removed);
+    if (!this.isCurrent(generation)) return;
+    await this.connectRelays(node, added, generation);
+    if (!this.isCurrent(generation)) return;
+    await this.ensureReservations(generation);
+    if (!this.isCurrent(generation)) return;
+    if (this.options.enableRelayReservations !== false && relays.length > 0) {
+      this.reservationTimer = setInterval(() => {
+        void this.ensureReservations(generation);
+      }, this.options.relayReservationRetryMs ?? 15_000);
+    }
+    this.ready = true;
+    this.triggerRendezvous(generation, added);
   }
 
   reachabilityUpdated(): void {
@@ -197,7 +239,16 @@ export class RelayLifecycle {
     return this.selfMultiaddrs().some((addr) => addr.startsWith(prefix));
   }
 
-  private async ensureReservations(generation: number): Promise<void> {
+  private ensureReservations(generation: number): Promise<void> {
+    const work = this.reservationWork.then(() =>
+      this.runEnsureReservations(generation),
+    );
+    this.reservationWork = work.catch(() => undefined);
+    return work;
+  }
+
+  private async runEnsureReservations(generation: number): Promise<void> {
+    if (!this.isCurrent(generation)) return;
     const node = this.node;
     const relays = this.relays;
     const selfAddrs = this.selfMultiaddrs();
@@ -268,62 +319,56 @@ export class RelayLifecycle {
     }
   }
 
-  private async closeEmptyRelayListeners(node: any): Promise<void> {
-    const listeners = node.components?.transportManager?.getListeners?.() ?? [];
+  private relayListeners(node: any): any[] {
+    return (node.components?.transportManager?.getListeners?.() ?? []).filter(
+      (listener: any) =>
+        listener?.constructor?.name === "CircuitRelayTransportListener",
+    );
+  }
+
+  private async closeListeners(listeners: any[]): Promise<void> {
     await Promise.all(
-      listeners
-        .filter(
-          (listener: any) =>
-            listener?.constructor?.name === "CircuitRelayTransportListener",
-        )
-        .filter((listener: any) => {
-          try {
-            return (listener.getAddrs?.() ?? []).length === 0;
-          } catch {
-            return false;
-          }
-        })
-        .map(async (listener: any) => {
-          try {
-            await listener.close?.();
-          } catch {
-            /* best effort */
-          }
-        }),
+      listeners.map(async (listener) => {
+        try {
+          await listener.close?.();
+        } catch {
+          /* best effort */
+        }
+      }),
+    );
+  }
+
+  private async closeEmptyRelayListeners(node: any): Promise<void> {
+    await this.closeListeners(
+      this.relayListeners(node).filter((listener) => {
+        try {
+          return (listener.getAddrs?.() ?? []).length === 0;
+        } catch {
+          return false;
+        }
+      }),
     );
   }
 
   private async closeRelayListeners(
     node: any,
     relays: string[],
+    includeEmpty = false,
   ): Promise<void> {
-    const listeners = node.components?.transportManager?.getListeners?.() ?? [];
-    await Promise.all(
-      listeners
-        .filter(
-          (listener: any) =>
-            listener?.constructor?.name === "CircuitRelayTransportListener",
-        )
-        .filter((listener: any) => {
-          try {
-            const addrs = (listener.getAddrs?.() ?? []).map(String);
-            return (
-              addrs.length === 0 ||
-              addrs.some((addr: string) =>
-                relays.some((relay) => addr.startsWith(`${relay}/p2p-circuit`)),
-              )
-            );
-          } catch {
-            return false;
-          }
-        })
-        .map(async (listener: any) => {
-          try {
-            await listener.close?.();
-          } catch {
-            /* best effort */
-          }
-        }),
+    await this.closeListeners(
+      this.relayListeners(node).filter((listener) => {
+        try {
+          const addrs = (listener.getAddrs?.() ?? []).map(String);
+          return (
+            (includeEmpty && addrs.length === 0) ||
+            addrs.some((addr: string) =>
+              relays.some((relay) => addr.startsWith(`${relay}/p2p-circuit`)),
+            )
+          );
+        } catch {
+          return false;
+        }
+      }),
     );
   }
 
@@ -331,15 +376,19 @@ export class RelayLifecycle {
     node: any,
     relays: string[],
   ): Promise<void> {
-    const peerIds = new Set(
-      relays.map((relay) => relay.split("/p2p/").pop()).filter(Boolean),
+    const relayAddresses = new Set(
+      relays.map((relay) => relay.replace(/\/+$/, "")),
     );
     const connections = node.getConnections?.() ?? [];
     await Promise.all(
       connections
-        .filter((connection: any) =>
-          peerIds.has(connection?.remotePeer?.toString?.()),
-        )
+        .filter((connection: any) => {
+          const address = connection?.remoteAddr?.toString?.();
+          return (
+            typeof address === "string" &&
+            relayAddresses.has(address.replace(/\/+$/, ""))
+          );
+        })
         .map(async (connection: any) => {
           try {
             await connection.close?.();
@@ -350,7 +399,7 @@ export class RelayLifecycle {
     );
   }
 
-  private triggerRendezvous(generation: number): void {
+  private triggerRendezvous(generation: number, targets = this.relays): void {
     if (
       !this.isCurrent(generation) ||
       !this.ready ||
@@ -364,7 +413,7 @@ export class RelayLifecycle {
       return;
     }
     this.rendezvousRunning = true;
-    void this.runRendezvous(generation).finally(() => {
+    void this.runRendezvous(generation, targets).finally(() => {
       if (!this.isCurrent(generation)) return;
       this.rendezvousRunning = false;
       if (this.rendezvousPending) {
@@ -397,12 +446,15 @@ export class RelayLifecycle {
     }, jitteredInterval);
   }
 
-  private async runRendezvous(generation: number): Promise<void> {
+  private async runRendezvous(
+    generation: number,
+    targets: string[],
+  ): Promise<void> {
     const node = this.node;
     if (!node?.peerId?.toString?.()) return;
     const options = this.rendezvousOptions();
     try {
-      for (const relay of this.relays) {
+      for (const relay of targets) {
         if (!this.isCurrent(generation)) return;
         if (this.hasReservation(relay)) {
           const signedRecord = await this.signedPeerRecord();

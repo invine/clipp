@@ -768,6 +768,57 @@ describe("Libp2pMessagingTransport", () => {
     await transport.stop();
   });
 
+  it("imports exact Rendezvous Signed Peer Record bytes without granting membership", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const bytes = Uint8Array.of(9, 8, 7);
+    const signedPeerRecordPersistence = {
+      load: jest.fn(async () => ({})),
+      save: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    mockLookupRendezvousPeer.mockResolvedValueOnce([
+      { peer: "unadmitted", signedPeerRecord: bytes },
+    ]);
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      isPeerKnown: async () => false,
+      signedPeerRecordPersistence,
+    });
+    await transport.start();
+    await transport.refreshPeerRecord?.("unadmitted");
+    const node = await createClipboardNode.mock.results[0].value;
+
+    expect(signedPeerRecordPersistence.save).toHaveBeenCalledWith(
+      "unadmitted",
+      bytes,
+    );
+    node.dial.mockClear();
+    eventHandlers.get("peer:discovery")?.[0]?.({
+      detail: {
+        id: { toString: () => "unadmitted" },
+        multiaddrs: ["/ip4/192.0.2.1/tcp/9000/p2p/unadmitted"],
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(node.dial).not.toHaveBeenCalled();
+    await transport.stop();
+  });
+
+  it("does not query Rendezvous for a revoked Device Identity", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      isPeerRevoked: async () => true,
+    });
+    await transport.start();
+
+    await expect(transport.refreshPeerRecord?.("revoked")).rejects.toThrow(
+      "revoked_peer",
+    );
+    expect(mockLookupRendezvousPeer).not.toHaveBeenCalled();
+    await transport.stop();
+  });
+
   it("explicitly retries relay reservation after dialing configured relays", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
     const transport = createLibp2pMessagingTransport({
@@ -948,8 +999,16 @@ describe("Libp2pMessagingTransport", () => {
     const relayClose = jest.fn(async () => undefined);
     const directClose = jest.fn(async () => undefined);
     node.getConnections.mockReturnValue([
-      { remotePeer: { toString: () => "relay" }, close: relayClose },
-      { remotePeer: { toString: () => "member" }, close: directClose },
+      {
+        remotePeer: { toString: () => "relay" },
+        remoteAddr: { toString: () => relay },
+        close: relayClose,
+      },
+      {
+        remotePeer: { toString: () => "relay" },
+        remoteAddr: { toString: () => "/ip4/192.0.2.1/tcp/9000/p2p/relay" },
+        close: directClose,
+      },
     ]);
 
     await transport.stop();
