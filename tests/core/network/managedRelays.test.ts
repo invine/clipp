@@ -1258,3 +1258,110 @@ describe("bounded independent shutdown", () => {
     }
   });
 });
+
+describe("relay ownership during teardown", () => {
+  const a = {
+    key: "a",
+    name: "A",
+    kind: "managed" as const,
+    discoveryUrl: "https://a.example/v1/relay",
+  };
+  const b = {
+    key: "b",
+    name: "B",
+    kind: "managed" as const,
+    discoveryUrl: "https://b.example/v1/relay",
+  };
+
+  it("keeps a conflicting Peer ID claimed until its prior reservation and connection are released", async () => {
+    const { adapter, calls } = adapterHarness();
+    adapter.dial = jest.fn(async () => ({
+      verifiedPeerId: peer,
+      close: jest.fn(async () => {
+        calls.push("close");
+      }),
+    }));
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([a, b]);
+    expect(controller.states().find((state) => state.key === "b")?.status).toBe(
+      "conflict"
+    );
+    let finishUnregister: (() => void) | undefined;
+    adapter.unregister = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishUnregister = resolve;
+          })
+      )
+      .mockImplementation(async () => undefined);
+    const removing = controller.remove("a");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(finishUnregister).toBeDefined();
+    expect(controller.states().find((state) => state.key === "b")?.status).toBe(
+      "conflict"
+    );
+    expect(adapter.authenticate).toHaveBeenCalledTimes(1);
+    expect(adapter.reserve).toHaveBeenCalledTimes(1);
+    finishUnregister?.();
+    await removing;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(controller.states().find((state) => state.key === "b")?.status).toBe(
+      "ready"
+    );
+    expect(calls.indexOf("release")).toBeLessThan(calls.lastIndexOf("auth"));
+    await controller.stop();
+  });
+
+  it("does not reacquire a managed endpoint whose credential erasure failed", async () => {
+    const { adapter } = adapterHarness();
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([a]);
+    const initialTokenCalls = (adapter.accessToken as jest.Mock).mock.calls
+      .length;
+    adapter.eraseCredentials = jest.fn(async () => {
+      throw new Error("erase_failed");
+    });
+    await expect(controller.remove("a")).rejects.toThrow("erase_failed");
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(controller.setConfigurations([a])).rejects.toThrow(
+      "erase_failed"
+    );
+    expect(adapter.accessToken).toHaveBeenCalledTimes(initialTokenCalls);
+    expect(adapter.authenticate).toHaveBeenCalledTimes(1);
+    expect(controller.states()).toEqual([]);
+    await controller.stop();
+  });
+
+  it("closes a detached relay even when the state observer throws", async () => {
+    const { adapter, connection } = adapterHarness();
+    const controller = new ManagedRelayController(adapter);
+    const explicit = {
+      key: "a",
+      name: "A",
+      kind: "explicit" as const,
+      peerId: peer,
+      addresses: [address],
+    };
+    await controller.setConfigurations([explicit]);
+    adapter.onStateChange = jest.fn(() => {
+      throw new Error("observer_failed");
+    });
+    await controller.remove("a");
+    expect(connection.close).toHaveBeenCalledTimes(1);
+    expect(controller.states()).toEqual([]);
+    await controller.stop();
+  });
+
+  it("sets up a relay when the state observer throws during addition", async () => {
+    const { adapter } = adapterHarness();
+    adapter.onStateChange = jest.fn(() => {
+      throw new Error("observer_failed");
+    });
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([a]);
+    expect(controller.states()[0].status).toBe("ready");
+    await controller.stop();
+  });
+});

@@ -369,9 +369,16 @@ export class ManagedRelayController {
     for (const entry of this.entries.values())
       if (entry.state.status === "conflict") void this.retry(entry.config.key);
   }
+  private notify(states: RelayState[] = this.states()): void {
+    try {
+      this.adapter.onStateChange?.(states);
+    } catch {
+      /* An observer cannot interrupt ownership or resource cleanup. */
+    }
+  }
   private emit(entry: Entry, patch: Partial<RelayState>): void {
     entry.state = { ...entry.state, ...patch };
-    this.adapter.onStateChange?.(this.states());
+    this.notify();
   }
   private current(entry: Entry, generation: number): boolean {
     return (
@@ -481,25 +488,29 @@ export class ManagedRelayController {
     entry.generation++;
     entry.controller.abort();
     this.clearTimers(entry);
-    if (entry.state.peerId && this.peerClaims.get(entry.state.peerId) === entry)
-      this.peerClaims.delete(entry.state.peerId);
-    this.adapter.onStateChange?.(this.states());
-    this.retryConflicts();
+    const peerId = entry.state.peerId;
     const connection = entry.connection;
     entry.connection = undefined;
     const cleanup = (async () => {
-      if (connection) {
-        try {
-          await this.deadline(
-            DEADLINES.rendezvous,
-            new AbortController().signal,
-            (signal) => this.adapter.unregister(connection, signal)
-          );
-        } catch {
-          /* cleanup best effort */
+      try {
+        if (connection) {
+          try {
+            await this.deadline(
+              DEADLINES.rendezvous,
+              new AbortController().signal,
+              (signal) => this.adapter.unregister(connection, signal)
+            );
+          } catch {
+            /* cleanup best effort */
+          }
+          await entry.reservation?.release().catch(() => undefined);
+          await connection.close().catch(() => undefined);
         }
-        await entry.reservation?.release().catch(() => undefined);
-        await connection.close().catch(() => undefined);
+      } finally {
+        if (peerId && this.peerClaims.get(peerId) === entry) {
+          this.peerClaims.delete(peerId);
+          this.retryConflicts();
+        }
       }
       if (eraseCredentials && entry.config.kind === "managed")
         await this.adapter.eraseCredentials(entry.config.discoveryUrl);
@@ -508,10 +519,15 @@ export class ManagedRelayController {
     const endpoint = this.endpointIdentity(entry.config);
     this.cleanupByKey.set(key, cleanup);
     this.cleanupByEndpoint.set(endpoint, cleanup);
+    this.notify();
     void cleanup
       .finally(() => {
         if (this.cleanupByKey.get(key) === cleanup)
           this.cleanupByKey.delete(key);
+      })
+      .catch(() => undefined);
+    void cleanup
+      .then(() => {
         if (this.cleanupByEndpoint.get(endpoint) === cleanup)
           this.cleanupByEndpoint.delete(endpoint);
       })
@@ -546,7 +562,7 @@ export class ManagedRelayController {
       retryAt: 0,
     };
     this.entries.set(key, entry);
-    this.adapter.onStateChange?.(this.states());
+    this.notify();
     await this.setup(entry);
   }
   async setConfigurations(values: unknown): Promise<void> {
@@ -581,8 +597,7 @@ export class ManagedRelayController {
     const cleanups = [...this.entries.values()].map((entry) =>
       this.detachEntry(entry, false)
     );
-    this.peerClaims.clear();
-    this.adapter.onStateChange?.([]);
+    this.notify([]);
     await this.deadline(
       DEADLINES.shutdown,
       new AbortController().signal,
