@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
 import type { Clip, Device, Identity, PendingRequest } from "@clipp/ui";
-import { AndroidClient, createAndroidClient, type AndroidAppState } from "./client";
+import {
+  AndroidClient,
+  createAndroidClient,
+  type AndroidAppState,
+} from "./client";
 import { scanPairingQrWithCamera } from "./qrCameraScanner";
 
 const initialState: AndroidAppState = {
@@ -17,6 +21,8 @@ const initialState: AndroidAppState = {
   identity: null,
   pinnedIds: [],
   relayAddresses: [],
+  managedRelayConfigurations: [],
+  managedRelayStates: [],
   diagnostics: {
     lastPairingAttempt: null,
   },
@@ -51,7 +57,9 @@ function App() {
             setInitializationError(true);
             setError(null);
           } else {
-            setError("Unable to start background services. Check clipboard permissions.");
+            setError(
+              "Unable to start background services. Check clipboard permissions."
+            );
           }
         });
       });
@@ -69,7 +77,10 @@ function App() {
 
   async function handlePairText(txt: string) {
     const res = await client.pairFromText(txt);
-    console.info("[clipp:android:pairing] pairFromText result", JSON.stringify(res));
+    console.info(
+      "[clipp:android:pairing] pairFromText result",
+      JSON.stringify(res)
+    );
     if (res?.ok === false) {
       const suffix = res.diagnostics?.attemptId
         ? `\n\nAttempt: ${res.diagnostics.attemptId}\nDetails are logged under [clipp:android:pairing].`
@@ -78,8 +89,8 @@ function App() {
         res.error === "invalid"
           ? `Invalid pairing payload${suffix}`
           : res.error === "no_target"
-          ? `Could not find a dialable address${suffix}`
-          : `Failed to reach device${suffix}`
+            ? `Could not find a dialable address${suffix}`
+            : `Failed to reach device${suffix}`
       );
     }
   }
@@ -92,8 +103,8 @@ function App() {
         err instanceof Error && err.message === "camera_permission_denied"
           ? "Camera permission is required to scan pairing QR codes."
           : err instanceof Error && err.message === "camera_not_found"
-          ? "No camera was found on this device."
-          : "Unable to open the camera.";
+            ? "No camera was found on this device."
+            : "Unable to open the camera.";
       alert(message);
       return null;
     }
@@ -116,7 +127,9 @@ function App() {
           {error}
         </div>
       )}
-      <PairingDiagnosticsPanel attempt={state.diagnostics?.lastPairingAttempt || null} />
+      <PairingDiagnosticsPanel
+        attempt={state.diagnostics?.lastPairingAttempt || null}
+      />
       <ClipboardApp
         clips={state.clips as Clip[]}
         devices={state.devices as Device[]}
@@ -134,6 +147,14 @@ function App() {
         clipboardHistoryError={state.clipboardHistoryError}
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
+        managedRelayConfigurations={state.managedRelayConfigurations || []}
+        managedRelayStates={state.managedRelayStates || []}
+        onSetManagedRelays={(configurations) =>
+          client.setManagedRelays(configurations)
+        }
+        onManagedRelayLogin={(key) => client.loginManagedRelay(key)}
+        onManagedRelayAccount={(key) => client.openManagedRelayAccount(key)}
+        onManagedRelayRetry={(key) => client.retryManagedRelay(key)}
         initializationError={initializationError}
         identityRotationRecovery={state.identityRotationRecovery}
         identityRotationNotice={state.identityRotationNotice}
@@ -152,13 +173,25 @@ function App() {
           await client.setPinned(id, pinned);
         }}
         onClearAll={() => client.clearHistory()}
-        onDismissClipboardHistoryError={() => client.dismissClipboardHistoryError()}
+        onDismissClipboardHistoryError={() =>
+          client.dismissClipboardHistoryError()
+        }
         onRetryHistoryCleanup={() => client.retryHistoryCleanup()}
-        onAcknowledgeIdentityRotationNotice={() => client.acknowledgeIdentityRotationNotice()}
-        onSetLocalRetention={async (retentionMs) => { await client.setLocalRetention(retentionMs); }}
-        onSetAutoSync={async (enabled) => { await client.setAutoSync(enabled); }}
-        onSetBackgroundContinuity={async (enabled) => { await client.setBackgroundContinuity(enabled); }}
-        onExportBackgroundContinuityDiagnostics={() => client.exportBackgroundContinuityDiagnostics()}
+        onAcknowledgeIdentityRotationNotice={() =>
+          client.acknowledgeIdentityRotationNotice()
+        }
+        onSetLocalRetention={async (retentionMs) => {
+          await client.setLocalRetention(retentionMs);
+        }}
+        onSetAutoSync={async (enabled) => {
+          await client.setAutoSync(enabled);
+        }}
+        onSetBackgroundContinuity={async (enabled) => {
+          await client.setBackgroundContinuity(enabled);
+        }}
+        onExportBackgroundContinuityDiagnostics={() =>
+          client.exportBackgroundContinuityDiagnostics()
+        }
         onRetryInitialization={async () => {
           try {
             setState(await client.retryIdentityInitialization());

@@ -17,19 +17,44 @@ import {
   type RuntimeClipboardHistoryError,
 } from "@core/runtime";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
-import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "@core/network/pairedConnections";
+import {
+  activeMemberReconnectPeers,
+  createPairedPeerConnectionManager,
+} from "@core/network/pairedConnections";
 import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
-import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "@core/network/constants";
-import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "@core/history/store";
+import {
+  ManagedRelayController,
+  loadManagedRelayConfigurations,
+  normalizeRelayConfigurations,
+  saveManagedRelayConfigurations,
+  type RelayConfiguration,
+  type RelayState,
+  type ManagedRelayConnection,
+} from "@core/network/managedRelays";
+import {
+  MemoryHistoryStore,
+  RETENTION_MS,
+  startHistoryRetentionCleanup,
+  type HistoryRetentionCleanup,
+} from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
 import { createHistoryReconciliation } from "@core/sync/historyReconciliation";
 import { createLiveClipGossip } from "@core/sync/liveClipGossip";
 import { reuseRetainedClip } from "@core/clipboard/explicitActions";
-import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "@core/pairing/protocol";
-import { createMembershipPeerRecordBridge, createMembershipReconciler } from "@core/membership/reconciliation";
-import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "@core/pairing/pending";
+import {
+  PAIRING_PROTOCOL,
+  verifyPairingTrustRequestSignature,
+} from "@core/pairing/protocol";
+import {
+  createMembershipPeerRecordBridge,
+  createMembershipReconciler,
+} from "@core/membership/reconciliation";
+import {
+  createKVPendingTrustRequestStore,
+  createPendingTrustRequestCoordinator,
+} from "@core/pairing/pending";
 import { createPairingRuntimeSessions } from "@core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
@@ -40,9 +65,23 @@ import {
   IDENTITY_KEY,
 } from "@core/trust";
 import type { Clip } from "@core/models/Clip";
-import type { Device, HistoryPolicyError, Identity, IdentityRotationNoticeReason, PairingCode, PairingError, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type {
+  Device,
+  HistoryPolicyError,
+  Identity,
+  IdentityRotationNoticeReason,
+  PairingCode,
+  PairingError,
+  PeerConnectionInfo,
+  PendingRequest,
+  RelayConnectionInfo,
+} from "@clipp/ui";
 import * as log from "@core/logger";
-import { deviceIdToPeerId, deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "@core/network/peerId";
+import {
+  deviceIdToPeerId,
+  deviceIdToPeerIdObject,
+  peerIdFromPrivateKeyBase64,
+} from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
@@ -52,6 +91,13 @@ import {
   type AndroidBackgroundNotificationAction,
 } from "./backgroundContinuity";
 import { createAndroidBackgroundNative } from "./backgroundContinuityNative";
+import { AndroidManagedRelayAuth } from "./managedRelayAuth";
+import { createAndroidRelaySecretBridge } from "./managedRelayNative";
+import {
+  androidRelayAddressOrder,
+  createAndroidManagedRelayAdapter,
+  type AndroidManagedRelayHost,
+} from "./managedRelayRuntime";
 
 export type AndroidAppState = {
   clips: Clip[];
@@ -71,6 +117,8 @@ export type AndroidAppState = {
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
   relayAddresses: string[];
+  managedRelayConfigurations?: RelayConfiguration[];
+  managedRelayStates?: RelayState[];
   diagnostics?: {
     lastPairingAttempt: PairingAttemptDiagnostics | null;
   };
@@ -91,7 +139,11 @@ export type PairingAttemptDiagnostics = {
 
 export type PairingResult =
   | { ok: true; diagnostics: PairingAttemptDiagnostics }
-  | { ok: false; error: PairingFailureCode; diagnostics: PairingAttemptDiagnostics };
+  | {
+      ok: false;
+      error: PairingFailureCode;
+      diagnostics: PairingAttemptDiagnostics;
+    };
 
 function createHistoryBackend() {
   try {
@@ -150,7 +202,11 @@ function nativeNotificationId(id: string): number {
   return Math.abs(hash || 1);
 }
 
-function logPairing(level: "debug" | "info" | "warn", message: string, data: unknown): void {
+function logPairing(
+  level: "debug" | "info" | "warn",
+  message: string,
+  data: unknown
+): void {
   const prefixed = `[clipp:android:pairing] ${message}`;
   if (level === "warn") log.warn(prefixed, data);
   else if (level === "info") log.info(prefixed, data);
@@ -159,10 +215,20 @@ function logPairing(level: "debug" | "info" | "warn", message: string, data: unk
 
 export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
-  private readonly autoSyncPreference = createAutoSyncPreference({ storage: this.storage });
+  private readonly relaySecrets = createAndroidRelaySecretBridge();
+  private readonly relayAuth = new AndroidManagedRelayAuth(this.relaySecrets);
+  private managedRelays: ManagedRelayController | null = null;
+  private managedRelayConfigurations: RelayConfiguration[] = [];
+  private removeRelayCallback: (() => void) | null = null;
+  private readonly autoSyncPreference = createAutoSyncPreference({
+    storage: this.storage,
+  });
   private readonly historyBackend = createHistoryBackend();
   private readonly history = new MemoryHistoryStore(this.historyBackend);
-  private readonly identityRepo = createKVIdentityRepository({ storage: this.storage, key: IDENTITY_KEY });
+  private readonly identityRepo = createKVIdentityRepository({
+    storage: this.storage,
+    key: IDENTITY_KEY,
+  });
   private readonly identityRotation = createRuntimeIdentityRotationCoordinator({
     repository: this.identityRepo,
     storage: this.storage,
@@ -170,9 +236,11 @@ export class AndroidClient {
     shutdown: () => this.stopIdentityBoundServices(),
     runtimeCleanup: {
       prepare: async () => {
-        const applicationCleanup = await this.backgroundContinuity.prepareIdentityRotationCleanup();
+        const applicationCleanup =
+          await this.backgroundContinuity.prepareIdentityRotationCleanup();
         try {
-          const captureCleanup = await this.clipboardSync.prepareIdentityRotationCleanup();
+          const captureCleanup =
+            await this.clipboardSync.prepareIdentityRotationCleanup();
           return {
             rollback: async () => {
               await captureCleanup.rollback();
@@ -191,35 +259,48 @@ export class AndroidClient {
       history: this.historyBackend,
     }),
   });
-  private readonly identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
-    rotation: this.identityRotation,
-    loadIdentity: () => this.identitySvc.get(),
-    restart: () => window.location.reload(),
-    startLocalRecovery: () => {
-      this.clipboardSync.startLocalOnly();
-      this.started = true;
-    },
-    publishState: () => this.emitState(),
-    onRecoveryChanged: (recovering) => { this.identityRotationRecovery = recovering; },
-  });
+  private readonly identityRotationLifecycle =
+    createRuntimeIdentityRotationLifecycle({
+      rotation: this.identityRotation,
+      loadIdentity: () => this.identitySvc.get(),
+      restart: () => window.location.reload(),
+      startLocalRecovery: () => {
+        this.clipboardSync.startLocalOnly();
+        this.started = true;
+      },
+      publishState: () => this.emitState(),
+      onRecoveryChanged: (recovering) => {
+        this.identityRotationRecovery = recovering;
+      },
+    });
   private readonly identitySvc = createRuntimeIdentityManager({
     repo: this.identityRepo,
     capabilities: RUNTIME_CAPABILITIES.android,
   });
-  private transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
-  private pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
+  private transport: ReturnType<typeof createLibp2pMessagingTransport> | null =
+    null;
+  private pairedConnections: ReturnType<
+    typeof createPairedPeerConnectionManager
+  > | null = null;
   private liveClipGossip: ReturnType<typeof createLiveClipGossip> | null = null;
-  private historyReconciliation: ReturnType<typeof createHistoryReconciliation> | null = null;
-  private membershipReconciler: ReturnType<typeof createMembershipReconciler> | null = null;
+  private historyReconciliation: ReturnType<
+    typeof createHistoryReconciliation
+  > | null = null;
+  private membershipReconciler: ReturnType<
+    typeof createMembershipReconciler
+  > | null = null;
 
   constructor() {
     // messaging is initialised lazily in `start()`
-    void LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
-      const id = event.notification.extra?.runtimeNotificationId;
-      if (typeof id === "string") {
-        this.notificationSelection.emit(id);
+    void LocalNotifications.addListener(
+      "localNotificationActionPerformed",
+      (event) => {
+        const id = event.notification.extra?.runtimeNotificationId;
+        if (typeof id === "string") {
+          this.notificationSelection.emit(id);
+        }
       }
-    });
+    );
   }
 
   private async ensureMessaging(): Promise<void> {
@@ -242,7 +323,7 @@ export class AndroidClient {
         ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
         : undefined;
 
-    const relayAddresses = await this.getRelayAddresses();
+    const relayAddresses: string[] = [];
     log.info("[clipp:android:network] Creating messaging transport", {
       peerId: peerId?.toString?.() ?? String(peerId),
       relayAddresses,
@@ -254,11 +335,15 @@ export class AndroidClient {
       relayAddresses,
       enableWebRTCDirect: true,
       enableDCUtR: true,
-      enableRelayReservations: true,
+      enableRelayReservations: false,
       allowInsecureBrowserDials: true,
-      signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage: this.storage }),
-      isPeerKnown: async (remotePeerId) => await this.identitySvc.membershipStatus(remotePeerId) === "active",
-      isPeerRevoked: async (remotePeerId) => await this.identitySvc.membershipStatus(remotePeerId) === "revoked",
+      signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({
+        storage: this.storage,
+      }),
+      isPeerKnown: async (remotePeerId) =>
+        (await this.identitySvc.membershipStatus(remotePeerId)) === "active",
+      isPeerRevoked: async (remotePeerId) =>
+        (await this.identitySvc.membershipStatus(remotePeerId)) === "revoked",
     });
     this.pairedConnections = createPairedPeerConnectionManager({
       transport: this.transport,
@@ -273,14 +358,18 @@ export class AndroidClient {
       history: this.history,
       getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
       membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
-      onMembershipChanged: (listener) => this.identitySvc.onMembershipChanged(listener),
+      onMembershipChanged: (listener) =>
+        this.identitySvc.onMembershipChanged(listener),
       autoSync: this.autoSync,
     });
     this.clipboardSync.bindLiveGossip(this.liveClipGossip);
     this.membershipReconciler = createMembershipReconciler({
       transport: this.transport,
       identity: this.identitySvc,
-      ...createMembershipPeerRecordBridge({ transport: this.transport, identity: this.identitySvc }),
+      ...createMembershipPeerRecordBridge({
+        transport: this.transport,
+        identity: this.identitySvc,
+      }),
       onLocalRevoked: () => this.identityRotationLifecycle.rotateRevoked(),
       onChanged: () => this.emitState(),
     });
@@ -290,7 +379,9 @@ export class AndroidClient {
     this.transport.onPeerDisconnected(() => void this.emitState());
     this.transport.onRelayConnectionChanged?.(() => void this.emitState());
     this.transport.onSelfPeerUpdate((multiaddrs) => {
-      void this.identitySvc.updateMultiaddrs(multiaddrs).then(() => this.emitState());
+      void this.identitySvc
+        .updateMultiaddrs(multiaddrs)
+        .then(() => this.emitState());
     });
   }
   private createAndroidClipboardService() {
@@ -324,12 +415,14 @@ export class AndroidClient {
   private readonly clipboardSync = createClipboardSyncManager({
     clipboard: this.clipboard,
     history: this.history,
-    isActiveMember: async (peerId) => await this.identitySvc.membershipStatus(peerId) === "active",
+    isActiveMember: async (peerId) =>
+      (await this.identitySvc.membershipStatus(peerId)) === "active",
     getLocalDeviceId: async () => {
       const id = await this.identitySvc.get();
       return id.deviceId;
     },
-    onAutoSyncChanged: (enabled) => this.historyReconciliation?.setAutoSync(enabled),
+    onAutoSyncChanged: (enabled) =>
+      this.historyReconciliation?.setAutoSync(enabled),
     onLiveClipboardApplication: (clip, result) =>
       this.backgroundContinuity.recordLiveClipboardApplication(clip, result),
   });
@@ -352,71 +445,82 @@ export class AndroidClient {
   private readonly backgroundNative = createAndroidBackgroundNative();
   private androidApiLevel: number | undefined;
   private backgroundEventsBound = false;
-  private readonly backgroundContinuity = createAndroidBackgroundContinuityCoordinator({
-    androidApiLevel: () => this.androidApiLevel,
-    notificationAvailability: () => this.backgroundNative.notificationAvailability(),
-    readEnabled: async () => (await this.storage.get<boolean>("backgroundContinuityEnabled")) === true,
-    writeEnabled: async (enabled) => {
-      await this.storage.set("backgroundContinuityEnabled", enabled);
-      await this.backgroundNative.setEnabled(enabled);
-    },
-    setClipboardCaptureEligible: async (eligible) => {
-      this.clipboard.setPollingEnabled?.(eligible);
-    },
-    resetClipboardBaseline: async () => {
-      await this.clipboard.resetObservationBaseline?.();
-    },
-    setAutoSync: async (enabled) => {
-      await this.setAutoSyncPreference(enabled);
-    },
-    startService: () => this.backgroundNative.start(),
-    stopService: () => this.backgroundNative.stop(),
-    sendHeartbeat: () => this.backgroundNative.heartbeat(),
-    updateService: (state, connectedTrustedDeviceCount) =>
-      this.backgroundNative.update(state, connectedTrustedDeviceCount),
-    showReconnectNotification: () => this.backgroundNative.showReconnectNotification(),
-    readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
-    listExplicitTextActions: () => this.backgroundNative.explicitTextActions(),
-    prepareExplicitTextAction: (actionId, event) =>
-      this.backgroundNative.prepareExplicitTextAction(actionId, event),
-    completeExplicitTextAction: (actionId) =>
-      this.backgroundNative.completeExplicitTextAction(actionId),
-    readAcceptedExplicitTextAction: async (action) => {
-      const [item, identity] = await Promise.all([
-        this.history.getById(action.event.clipId),
-        this.identitySvc.get(),
-      ]);
-      const clip = item?.clip;
-      return clip
-        && clip.originPeerId === identity.deviceId
-        && clip.content === action.text
-        && clip.capturedAt === action.event.capturedAt
-        ? clip
-        : null;
-    },
-    captureExplicitText: (action) => this.clipboard.processLocalText(action.text, {
-      shareNow: true,
-      event: action.event,
-    }),
-    showExplicitTextFeedback: (state) => this.backgroundNative.showExplicitTextFeedback(state),
-    readPendingClipboardApplication: () => this.backgroundNative.pendingClipboardApplication(),
-    writePendingClipboardApplication: (clipId) =>
-      this.backgroundNative.setPendingClipboardApplication(clipId),
-    clearPendingClipboardApplication: () => this.backgroundNative.clearPendingClipboardApplication(),
-    removeClip: (clipId) => this.history.remove(clipId),
-    clearHistory: () => this.clipboard.clearHistory(() => this.history.clearAll()),
-    readRetainedLiveClip: async (clipId) => {
-      const item = await this.history.getById(clipId);
-      return item ? { clip: item.clip, liveHandled: item.liveHandled } : null;
-    },
-    retryRemoteClipboardApplication: async (clip, isEligible) =>
-      await this.clipboard.writeRemoteClip(clip, isEligible),
-  });
+  private readonly backgroundContinuity =
+    createAndroidBackgroundContinuityCoordinator({
+      androidApiLevel: () => this.androidApiLevel,
+      notificationAvailability: () =>
+        this.backgroundNative.notificationAvailability(),
+      readEnabled: async () =>
+        (await this.storage.get<boolean>("backgroundContinuityEnabled")) ===
+        true,
+      writeEnabled: async (enabled) => {
+        await this.storage.set("backgroundContinuityEnabled", enabled);
+        await this.backgroundNative.setEnabled(enabled);
+      },
+      setClipboardCaptureEligible: async (eligible) => {
+        this.clipboard.setPollingEnabled?.(eligible);
+      },
+      resetClipboardBaseline: async () => {
+        await this.clipboard.resetObservationBaseline?.();
+      },
+      setAutoSync: async (enabled) => {
+        await this.setAutoSyncPreference(enabled);
+      },
+      startService: () => this.backgroundNative.start(),
+      stopService: () => this.backgroundNative.stop(),
+      sendHeartbeat: () => this.backgroundNative.heartbeat(),
+      updateService: (state, connectedTrustedDeviceCount) =>
+        this.backgroundNative.update(state, connectedTrustedDeviceCount),
+      showReconnectNotification: () =>
+        this.backgroundNative.showReconnectNotification(),
+      readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
+      listExplicitTextActions: () =>
+        this.backgroundNative.explicitTextActions(),
+      prepareExplicitTextAction: (actionId, event) =>
+        this.backgroundNative.prepareExplicitTextAction(actionId, event),
+      completeExplicitTextAction: (actionId) =>
+        this.backgroundNative.completeExplicitTextAction(actionId),
+      readAcceptedExplicitTextAction: async (action) => {
+        const [item, identity] = await Promise.all([
+          this.history.getById(action.event.clipId),
+          this.identitySvc.get(),
+        ]);
+        const clip = item?.clip;
+        return clip &&
+          clip.originPeerId === identity.deviceId &&
+          clip.content === action.text &&
+          clip.capturedAt === action.event.capturedAt
+          ? clip
+          : null;
+      },
+      captureExplicitText: (action) =>
+        this.clipboard.processLocalText(action.text, {
+          shareNow: true,
+          event: action.event,
+        }),
+      showExplicitTextFeedback: (state) =>
+        this.backgroundNative.showExplicitTextFeedback(state),
+      readPendingClipboardApplication: () =>
+        this.backgroundNative.pendingClipboardApplication(),
+      writePendingClipboardApplication: (clipId) =>
+        this.backgroundNative.setPendingClipboardApplication(clipId),
+      clearPendingClipboardApplication: () =>
+        this.backgroundNative.clearPendingClipboardApplication(),
+      removeClip: (clipId) => this.history.remove(clipId),
+      clearHistory: () =>
+        this.clipboard.clearHistory(() => this.history.clearAll()),
+      readRetainedLiveClip: async (clipId) => {
+        const item = await this.history.getById(clipId);
+        return item ? { clip: item.clip, liveHandled: item.liveHandled } : null;
+      },
+      retryRemoteClipboardApplication: async (clip, isEligible) =>
+        await this.clipboard.writeRemoteClip(clip, isEligible),
+    });
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
     identityKey: IDENTITY_KEY,
     applicationStateKey: "runtimeApplicationState",
-    initialApplicationState: () => ({} as Record<string, unknown>),
+    initialApplicationState: () => ({}) as Record<string, unknown>,
     clipboard: {
       readText: readClipboardText,
       writeText: writeClipboardText,
@@ -425,7 +529,10 @@ export class AndroidClient {
       show: async (message) => {
         try {
           let permission = await LocalNotifications.checkPermissions();
-          if (permission.display === "prompt" || permission.display === "prompt-with-rationale") {
+          if (
+            permission.display === "prompt" ||
+            permission.display === "prompt-with-rationale"
+          ) {
             permission = await LocalNotifications.requestPermissions();
           }
           if (permission.display !== "granted") return;
@@ -444,12 +551,18 @@ export class AndroidClient {
             log.warn("Failed to show pairing request notification", err);
             return;
           }
-          const notification = new Notification(message.title, { body: message.body, tag: message.id });
-          notification.onclick = () => this.notificationSelection.emit(message.id);
+          const notification = new Notification(message.title, {
+            body: message.body,
+            tag: message.id,
+          });
+          notification.onclick = () =>
+            this.notificationSelection.emit(message.id);
         }
       },
       async dismiss(id) {
-        await LocalNotifications.cancel({ notifications: [{ id: nativeNotificationId(id) }] });
+        await LocalNotifications.cancel({
+          notifications: [{ id: nativeNotificationId(id) }],
+        });
       },
       onSelect: this.notificationSelection.onSelect,
     },
@@ -457,7 +570,8 @@ export class AndroidClient {
       onShutdown: (handler) => {
         this.runtimeShutdownHandler = handler;
         return () => {
-          if (this.runtimeShutdownHandler === handler) this.runtimeShutdownHandler = null;
+          if (this.runtimeShutdownHandler === handler)
+            this.runtimeShutdownHandler = null;
         };
       },
       openApprovalView: () => window.focus(),
@@ -475,47 +589,91 @@ export class AndroidClient {
     },
   });
   private readonly pairingPending = createPendingTrustRequestCoordinator({
-    localPeerId: async () => deviceIdToPeerId((await this.identitySvc.get()).deviceId),
-    store: createKVPendingTrustRequestStore({ storage: this.storage, key: "pairingPendingRequests" }),
+    localPeerId: async () =>
+      deviceIdToPeerId((await this.identitySvc.get()).deviceId),
+    store: createKVPendingTrustRequestStore({
+      storage: this.storage,
+      key: "pairingPendingRequests",
+    }),
     notifications: this.runtimeAdapter.notifications,
     lifecycle: this.runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
     membership: this.identitySvc,
-    sendResponse: async (peerId, frame) => this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
-    responseIdentity: async () => { const identity = await this.identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
+    sendResponse: async (peerId, frame) =>
+      this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
+    responseIdentity: async () => {
+      const identity = await this.identitySvc.get();
+      return {
+        deviceName: identity.deviceName,
+        nameRevision: BigInt(identity.nameRevision ?? 0),
+      };
+    },
     connectionPath: (remotePeerId) => {
-      const path = this.transport?.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-      return path === "relay" ? "relayed" : path ?? "unknown";
+      const path = this.transport
+        ?.getPeerConnectionInfo?.()
+        .find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : (path ?? "unknown");
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void this.identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId)
+        void this.identitySvc
+          .membershipStatus(diagnostic.authenticatedPeerId)
+          .then((status) => {
+            if (status !== "active")
+              return this.transport?.disconnect?.(
+                diagnostic.authenticatedPeerId!
+              );
+          });
     },
     onChanged: async (requests) => {
-      this.pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName }));
+      this.pendingRequests = requests.map((request) => ({
+        deviceId: request.initiatorPeerId,
+        deviceName: request.deviceName,
+      }));
       await this.emitState();
     },
   });
   private pairingInboundBound = false;
   private readonly pairingSessions = createPairingRuntimeSessions({
-    identity: async () => { const current = await this.identitySvc.get(); return { peerId: await deviceIdToPeerId(current.deviceId), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-    send: (targetPeerId, frame) => this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame),
+    identity: async () => {
+      const current = await this.identitySvc.get();
+      return {
+        peerId: await deviceIdToPeerId(current.deviceId),
+        deviceName: current.deviceName,
+        nameRevision: current.nameRevision ?? 0,
+      };
+    },
+    send: (targetPeerId, frame) =>
+      this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame),
     sign: async (bytes) => {
       const identity = await this.identitySvc.get();
       if (!identity.privateKey) throw new Error("identity_unavailable");
-      return privateKeyFromProtobuf(Uint8Array.from(Buffer.from(identity.privateKey, "base64"))).sign(bytes);
+      return privateKeyFromProtobuf(
+        Uint8Array.from(Buffer.from(identity.privateKey, "base64"))
+      ).sign(bytes);
     },
     verify: verifyPairingTrustRequestSignature,
     membership: this.identitySvc,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
-      const path = this.transport?.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-      return path === "relay" ? "relayed" : path ?? "unknown";
+      const path = this.transport
+        ?.getPeerConnectionInfo?.()
+        .find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : (path ?? "unknown");
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void this.identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return this.transport?.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId)
+        void this.identitySvc
+          .membershipStatus(diagnostic.authenticatedPeerId)
+          .then((status) => {
+            if (status !== "active")
+              return this.transport?.disconnect?.(
+                diagnostic.authenticatedPeerId!
+              );
+          });
     },
     onChanged: () => this.emitState(),
   });
@@ -526,7 +684,44 @@ export class AndroidClient {
   });
 
   private async getRelayAddresses(): Promise<string[]> {
-    return [...DEFAULT_CIRCUIT_RELAY_ADDRESSES];
+    return [];
+  }
+
+  private relayConfigurationStore() {
+    return {
+      readNewModel: () =>
+        this.storage
+          .get<RelayConfiguration[]>("managedRelayConfigurations")
+          .then((value) => value ?? null),
+      writeNewModel: (values: RelayConfiguration[]) =>
+        this.storage.set("managedRelayConfigurations", values),
+    };
+  }
+
+  private async startManagedRelays(): Promise<void> {
+    const transport = this.transport as typeof this.transport & {
+      managedRelayHost(
+        onClosed?: (connection: ManagedRelayConnection) => void
+      ): AndroidManagedRelayHost;
+    };
+    if (!transport) return;
+    const host = transport.managedRelayHost((connection) => {
+      const controller = this.managedRelays;
+      for (const state of controller?.states() ?? []) {
+        if (state.peerId === connection.verifiedPeerId)
+          void controller?.connectionLost(state.key, connection);
+      }
+    });
+    const controller = new ManagedRelayController(
+      createAndroidManagedRelayAdapter(
+        host,
+        this.relayAuth,
+        this.relaySecrets,
+        () => void this.emitState()
+      )
+    );
+    this.managedRelays = controller;
+    await controller.setConfigurations(this.managedRelayConfigurations);
   }
 
   private bindEvents() {
@@ -536,7 +731,6 @@ export class AndroidClient {
     this.history.onNew(async () => {
       await this.emitState();
     });
-
   }
 
   private async setBackgroundActivityState(): Promise<void> {
@@ -550,7 +744,8 @@ export class AndroidClient {
     if (this.backgroundEventsBound) return;
     this.backgroundEventsBound = true;
 
-    const updateActivity = () => void this.setBackgroundActivityState().then(() => this.emitState());
+    const updateActivity = () =>
+      void this.setBackgroundActivityState().then(() => this.emitState());
     window.addEventListener("focus", updateActivity);
     window.addEventListener("blur", updateActivity);
     document.addEventListener("visibilitychange", updateActivity);
@@ -558,17 +753,24 @@ export class AndroidClient {
     void this.backgroundNative.on("activityState", (event) => {
       const resumed = event.resumed === true;
       const windowFocused = event.windowFocused === true;
-      void this.backgroundContinuity.setActivityState({ resumed, windowFocused }).then(() => this.emitState());
+      void this.backgroundContinuity
+        .setActivityState({ resumed, windowFocused })
+        .then(() => this.emitState());
     });
     void this.backgroundNative.on("runtimeLost", () => {
-      void this.backgroundContinuity.reportRuntimeLost().then(() => this.emitState());
+      void this.backgroundContinuity
+        .reportRuntimeLost()
+        .then(() => this.emitState());
     });
     void this.backgroundNative.on("taskRemoved", () => {
-      void this.backgroundContinuity.handleTaskRemoved().then(() => this.emitState());
+      void this.backgroundContinuity
+        .handleTaskRemoved()
+        .then(() => this.emitState());
     });
     void this.backgroundNative.on("action", (event) => {
       const action = event.action;
-      if (action !== "pause" && action !== "resume" && action !== "stop") return;
+      if (action !== "pause" && action !== "resume" && action !== "stop")
+        return;
       void this.backgroundContinuity
         .handleNotificationAction(action as AndroidBackgroundNotificationAction)
         .then(() => this.emitState());
@@ -578,7 +780,9 @@ export class AndroidClient {
     });
   }
 
-  private createPairingDiagnostics(inputLength: number): PairingAttemptDiagnostics {
+  private createPairingDiagnostics(
+    inputLength: number
+  ): PairingAttemptDiagnostics {
     this.pairingAttemptSeq += 1;
     return {
       attemptId: `${Date.now().toString(36)}-${this.pairingAttemptSeq}`,
@@ -624,11 +828,25 @@ export class AndroidClient {
           await this.backgroundContinuity.setEnabledFromUser(true);
         }
         this.autoSync = await this.autoSyncPreference.load();
+        this.managedRelayConfigurations = await loadManagedRelayConfigurations(
+          this.relayConfigurationStore()
+        );
+        if (!this.removeRelayCallback) {
+          this.removeRelayCallback = await this.relaySecrets.onCallback(
+            (url) => {
+              void this.relayAuth.acceptCallback(url).then((accepted) => {
+                if (accepted) void this.emitState();
+              });
+            }
+          );
+        }
         this.clipboardSync.setAutoSync(this.autoSync);
         await this.backgroundContinuity.reflectAutoSync(this.autoSync);
-        const storedRetentionMs = (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
+        const storedRetentionMs =
+          (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
         const applyStoredRetention = async (): Promise<void> => {
-          this.localRetentionMs = await this.history.setRetention(storedRetentionMs);
+          this.localRetentionMs =
+            await this.history.setRetention(storedRetentionMs);
           this.pendingRetentionMs = null;
           if (this.localRetentionMs !== storedRetentionMs) {
             await this.storage.set("localRetentionMs", this.localRetentionMs);
@@ -639,12 +857,16 @@ export class AndroidClient {
         } catch (error) {
           this.pendingRetentionMs = storedRetentionMs;
           this.historyPolicyError = "history_cleanup_failed";
-          log.warn("Initial local history cleanup failed; runtime will retry", error);
+          log.warn(
+            "Initial local history cleanup failed; runtime will retry",
+            error
+          );
         }
         this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
-              if (this.pendingRetentionMs !== null) await applyStoredRetention();
+              if (this.pendingRetentionMs !== null)
+                await applyStoredRetention();
               else await this.history.pruneExpired();
             },
           },
@@ -652,7 +874,7 @@ export class AndroidClient {
           (error) => {
             this.historyPolicyError = error ? "history_cleanup_failed" : null;
             void this.emitState();
-          },
+          }
         );
         this.started = true;
         if (this.identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
@@ -667,11 +889,17 @@ export class AndroidClient {
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
           this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-            void this.pairingSessions.receive(from, frame, (peerId, requestFrame) => this.pairingPending.receive(peerId, requestFrame))
-              .catch((error) => log.warn("Pairing message processing failed", error));
+            void this.pairingSessions
+              .receive(from, frame, (peerId, requestFrame) =>
+                this.pairingPending.receive(peerId, requestFrame)
+              )
+              .catch((error) =>
+                log.warn("Pairing message processing failed", error)
+              );
           });
         }
         await this.transport!.start();
+        await this.startManagedRelays();
         this.pairedConnections?.start();
         this.historyReconciliation?.start();
       },
@@ -687,6 +915,11 @@ export class AndroidClient {
   }
 
   private async stopIdentityBoundServices() {
+    this.removeRelayCallback?.();
+    this.removeRelayCallback = null;
+    await this.managedRelays
+      ?.stop()
+      .catch((error) => log.warn("Managed relay cleanup timed out", error));
     this.backgroundContinuity.stopRuntimeHeartbeat();
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
@@ -702,6 +935,7 @@ export class AndroidClient {
       ]);
     } finally {
       this.historyReconciliation = null;
+      this.managedRelays = null;
       this.membershipReconciler = null;
       this.started = false;
     }
@@ -733,12 +967,29 @@ export class AndroidClient {
       : toPublicDeviceIdentity(await this.identitySvc.get());
     const peers = this.transport?.getConnectedPeers?.() ?? [];
     const connectedTrustedDeviceCount = (
-      await Promise.all(peers.map(async (peerId) => (await this.identitySvc.membershipStatus(peerId)) === "active"))
+      await Promise.all(
+        peers.map(
+          async (peerId) =>
+            (await this.identitySvc.membershipStatus(peerId)) === "active"
+        )
+      )
     ).filter(Boolean).length;
     await this.backgroundContinuity.setConnection(connectedTrustedDeviceCount);
     const peerConnections = this.transport?.getPeerConnectionInfo?.() ?? [];
     const relayConnections = this.transport?.getRelayConnectionInfo?.() ?? [];
     const relayAddresses = await this.getRelayAddresses();
+    const managedRelayStates = (this.managedRelays?.states() ?? []).map(
+      (state) => {
+        const config = this.managedRelayConfigurations.find(
+          (item) => item.key === state.key
+        );
+        const warning =
+          config?.kind === "managed"
+            ? this.relayAuth.warning(config.discoveryUrl)
+            : undefined;
+        return warning ? { ...state, warning } : state;
+      }
+    );
 
     return {
       clips,
@@ -756,8 +1007,11 @@ export class AndroidClient {
       clipboardHistoryError: this.clipboardHistoryError,
       historyPolicyError: this.historyPolicyError,
       identityRotationRecovery: this.identityRotationRecovery,
-      identityRotationNotice: (await this.identityRotation.notice())?.reason ?? null,
+      identityRotationNotice:
+        (await this.identityRotation.notice())?.reason ?? null,
       relayAddresses,
+      managedRelayConfigurations: this.managedRelayConfigurations,
+      managedRelayStates,
       diagnostics: {
         lastPairingAttempt: this.lastPairingAttempt,
       },
@@ -771,7 +1025,10 @@ export class AndroidClient {
   }
 
   async reuseClip(id: string) {
-    const outcome = await reuseRetainedClip(id, { history: this.history, clipboard: this.clipboard });
+    const outcome = await reuseRetainedClip(id, {
+      history: this.history,
+      clipboard: this.clipboard,
+    });
     await this.emitState();
     return outcome.status;
   }
@@ -839,6 +1096,43 @@ export class AndroidClient {
     return this.localRetentionMs;
   }
 
+  async setManagedRelays(configurations: RelayConfiguration[]): Promise<void> {
+    const ordered = configurations.map((config) =>
+      config.kind === "explicit"
+        ? { ...config, addresses: androidRelayAddressOrder(config.addresses) }
+        : config
+    );
+    const normalized = normalizeRelayConfigurations(ordered);
+    await this.managedRelays?.setConfigurations(normalized);
+    try {
+      await saveManagedRelayConfigurations(
+        this.relayConfigurationStore(),
+        normalized
+      );
+    } catch (error) {
+      await this.managedRelays?.setConfigurations(
+        this.managedRelayConfigurations
+      );
+      throw error;
+    }
+    this.managedRelayConfigurations = normalized;
+    await this.emitState();
+  }
+
+  async loginManagedRelay(key: string): Promise<void> {
+    await this.managedRelays?.requestLogin(key);
+    await this.emitState();
+  }
+
+  async openManagedRelayAccount(key: string): Promise<void> {
+    await this.managedRelays?.manageAccount(key);
+  }
+
+  async retryManagedRelay(key: string): Promise<void> {
+    await this.managedRelays?.retry(key);
+    await this.emitState();
+  }
+
   private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
     this.autoSync = await this.autoSyncPreference.set(enabled);
     this.clipboardSync.setAutoSync(this.autoSync);
@@ -880,17 +1174,28 @@ export class AndroidClient {
     const id = await this.identitySvc.get();
     await this.ensureMessaging();
     await this.transport!.start();
-    if (!this.transport!.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
+    if (!this.transport!.getSignedPeerRecord)
+      throw new Error("signed_peer_record_unavailable");
     const signedPeerRecord = await this.transport!.getSignedPeerRecord();
-    const text = encodePairingTarget({ targetPeerId: await deviceIdToPeerId(id.deviceId), signedPeerRecord, deviceNameHint: id.deviceName });
+    const text = encodePairingTarget({
+      targetPeerId: await deviceIdToPeerId(id.deviceId),
+      signedPeerRecord,
+      deviceNameHint: id.deviceName,
+    });
     return {
-      image: await QRCode.toDataURL(text, { errorCorrectionLevel: "L", margin: 0, scale: 2 }),
+      image: await QRCode.toDataURL(text, {
+        errorCorrectionLevel: "L",
+        margin: 0,
+        scale: 2,
+      }),
       text,
     };
   }
 
   async pairFromText(txt: string): Promise<PairingResult> {
-    const diagnostics = this.createPairingDiagnostics(typeof txt === "string" ? txt.length : 0);
+    const diagnostics = this.createPairingDiagnostics(
+      typeof txt === "string" ? txt.length : 0
+    );
     this.lastPairingAttempt = diagnostics;
     logPairing("info", "Pairing attempt started", {
       attemptId: diagnostics.attemptId,
@@ -898,7 +1203,11 @@ export class AndroidClient {
     });
 
     const fail = async (error: PairingFailureCode): Promise<PairingResult> => {
-      const finished = this.finishPairingDiagnostics(diagnostics, "failed", error);
+      const finished = this.finishPairingDiagnostics(
+        diagnostics,
+        "failed",
+        error
+      );
       logPairing("warn", "Pairing attempt failed", {
         attemptId: finished.attemptId,
         error,
@@ -915,9 +1224,19 @@ export class AndroidClient {
       await this.transport!.start();
       const localIdentity = await this.identitySvc.get();
       if (!localIdentity.privateKey) return fail("invalid");
-      await importPairingTargetAndRequest({ text: txt, network: this.transport!, request: this.pairingSessions.request });
-      return { ok: true, diagnostics: this.finishPairingDiagnostics(diagnostics, "succeeded", null) };
-
+      await importPairingTargetAndRequest({
+        text: txt,
+        network: this.transport!,
+        request: this.pairingSessions.request,
+      });
+      return {
+        ok: true,
+        diagnostics: this.finishPairingDiagnostics(
+          diagnostics,
+          "succeeded",
+          null
+        ),
+      };
     } catch {
       logPairing("warn", "Pairing attempt failed unexpectedly", {
         attemptId: diagnostics.attemptId,
