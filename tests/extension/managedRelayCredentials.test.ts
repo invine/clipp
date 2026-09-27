@@ -108,6 +108,21 @@ describe("Chrome managed relay credentials", () => {
     expect(fetchToken).not.toHaveBeenCalled();
   });
 
+  it("gives pending-account guidance only for access_denied", async () => {
+    const { service, identity, fetchToken } = harness();
+    identity.launch = async (url) =>
+      `${identity.redirectUrl}?error=access_denied&state=${new URL(url).searchParams.get("state")}`;
+    await expect(service.interactiveLogin(endpoint)).rejects.toThrow(
+      /pending.*approval/i
+    );
+    identity.launch = async (url) =>
+      `${identity.redirectUrl}?error=server_error&state=${new URL(url).searchParams.get("state")}`;
+    await expect(service.interactiveLogin(endpoint)).rejects.toThrow(
+      /authorization failed/i
+    );
+    expect(fetchToken).not.toHaveBeenCalled();
+  });
+
   it("single-flights refresh and marks the old credential unusable before the request", async () => {
     const { service, records, events, fetchToken } = harness();
     await service.interactiveLogin(endpoint);
@@ -230,6 +245,30 @@ describe("Chrome managed relay credentials", () => {
     await expect(login).rejects.toThrow(/superseded/);
     expect(records.size).toBe(0);
     expect(fetchToken).not.toHaveBeenCalled();
+  });
+
+  it("withholds an in-flight refresh response once credential cleanup begins", async () => {
+    const { service, fetchToken, records } = harness();
+    await service.interactiveLogin(endpoint);
+    let release!: () => void;
+    fetchToken.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return {
+        access_token: "stale-access",
+        refresh_token: "stale-refresh",
+        token_type: "Bearer",
+        expires_in: 900,
+      };
+    });
+    const refresh = service.accessToken(endpoint, { forceRefresh: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const removal = service.eraseCredentials(endpoint);
+    release();
+    await expect(refresh).resolves.toBeNull();
+    await removal;
+    expect(records.size).toBe(0);
   });
 
   it("opens one browser flow for concurrent explicit login requests", async () => {

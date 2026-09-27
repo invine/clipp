@@ -56,10 +56,13 @@ import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import {
   loadManagedRelayConfigurations,
-  saveManagedRelayConfigurations,
   type RelayConfiguration,
   type RelayState,
 } from "../../../packages/core/network/managedRelays";
+import {
+  isConfiguredManagedEndpoint,
+  replaceManagedRelayConfigurations,
+} from "./managedRelayConfiguration";
 import { MANAGED_RELAY_CONFIGURATION_KEY } from "./managedRelayConstants";
 import { createChromeManagedRelayCredentials } from "./managedRelayChrome";
 import {
@@ -173,8 +176,12 @@ chrome.runtime.onConnect.addListener((port) => {
       port.postMessage({ error: "invalid_relay_access_request" });
       return;
     }
-    void managedCredentials
-      .accessToken(request.discoveryUrl)
+    void managedConfigurationsReady
+      .then(() =>
+        isConfiguredManagedEndpoint(managedConfigurations, request.discoveryUrl)
+          ? managedCredentials.accessToken(request.discoveryUrl)
+          : null
+      )
       .then((accessToken) =>
         port.postMessage({
           accessToken,
@@ -867,25 +874,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       if (msg.type === "managedRelaySet") {
         const update = managedConfigurationUpdate.then(async () => {
-          const previous = managedConfigurations;
-          const next = await saveManagedRelayConfigurations(
-            managedConfigurationStore,
-            msg.configurations
+          const next = await replaceManagedRelayConfigurations(
+            managedConfigurations,
+            msg.configurations,
+            {
+              erase: (url) => managedCredentials.eraseCredentials(url),
+              write: (configurations) =>
+                managedConfigurationStore.writeNewModel(configurations),
+            }
           );
           managedConfigurations = next;
-          const currentEndpoints = new Set(
-            next
-              .filter((entry) => entry.kind === "managed")
-              .map((entry) => entry.discoveryUrl)
-          );
-          for (const entry of previous) {
-            if (
-              entry.kind === "managed" &&
-              !currentEndpoints.has(entry.discoveryUrl)
-            ) {
-              await managedCredentials.eraseCredentials(entry.discoveryUrl);
-            }
-          }
           await offscreenReady;
           await sendOffscreen({
             action: "setManagedRelays",

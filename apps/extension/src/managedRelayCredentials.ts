@@ -106,6 +106,7 @@ export function createExtensionManagedRelayCredentials(
   const flights = new Map<string, Promise<string | null>>();
   const loginFlights = new Map<string, Promise<void>>();
   const warnings = new Set<string>();
+  const erasing = new Set<string>();
   const locks = new Map<string, Promise<void>>();
   const generations = new Map<string, number>();
 
@@ -236,10 +237,12 @@ export function createExtensionManagedRelayCredentials(
       options?: { forceRefresh?: boolean }
     ): Promise<string | null> {
       const url = canonicalDiscoveryUrl(discoveryUrl);
+      if (erasing.has(url)) return null;
       const cached = access.get(url);
       if (!options?.forceRefresh && cached && cached.expiresAt - now() > 15_000)
         return cached.token;
-      return singleFlight(url, () => refresh(url));
+      const token = await singleFlight(url, () => refresh(url));
+      return erasing.has(url) ? null : token;
     },
     async interactiveLogin(discoveryUrl: string): Promise<void> {
       const url = canonicalDiscoveryUrl(discoveryUrl);
@@ -285,8 +288,24 @@ export function createExtensionManagedRelayCredentials(
         ) {
           throw new Error("relay_state_mismatch");
         }
-        if (callback.searchParams.has("error"))
-          throw new Error("relay_access_denied");
+        if (callback.searchParams.has("error")) {
+          if (
+            callback.searchParams.getAll("error").length !== 1 ||
+            [...callback.searchParams.keys()].some(
+              (name) => name !== "error" && name !== "state"
+            )
+          ) {
+            throw new Error("invalid_relay_callback");
+          }
+          if (callback.searchParams.get("error") === "access_denied") {
+            throw new Error(
+              "Relay authorization was denied. If your account is pending approval, open Manage account to check its status."
+            );
+          }
+          throw new Error(
+            "Relay authorization failed. Please try again from the relay settings."
+          );
+        }
         const code = callback.searchParams.get("code");
         if (
           !code ||
@@ -315,6 +334,7 @@ export function createExtensionManagedRelayCredentials(
             url,
             requireToken(await options.fetchToken(tokenEndpoint(url), form))
           );
+          erasing.delete(url);
         });
       })().finally(() => {
         loginFlights.delete(url);
@@ -325,6 +345,7 @@ export function createExtensionManagedRelayCredentials(
     async eraseCredentials(discoveryUrl: string): Promise<void> {
       const url = canonicalDiscoveryUrl(discoveryUrl);
       nextGeneration(url);
+      erasing.add(url);
       await restricted;
       access.delete(url);
       await withEndpointLock(url, async () => {

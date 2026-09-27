@@ -49,6 +49,22 @@ try {
     [],
     "first adoption has no inherited relay list"
   );
+  const runtimeState = await options.evaluate(
+    async () => await chrome.runtime.sendMessage({ type: "getRuntimeState" })
+  );
+  assert.ok(runtimeState.state, "background and offscreen start together");
+  const unauthorizedShutdown = await options.evaluate(
+    async () =>
+      await chrome.runtime.sendMessage({
+        target: "offscreen",
+        action: "shutdown",
+      })
+  );
+  assert.equal(
+    unauthorizedShutdown.error,
+    "managed_relay_control_unauthorized",
+    "options cannot control the offscreen host"
+  );
 
   const credentialKey =
     "managedRelayCredentialV1:https://relay.example/v1/relay";

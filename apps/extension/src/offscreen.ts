@@ -20,6 +20,12 @@ import {
   type RelayConfiguration,
 } from "../../../packages/core/network/managedRelays";
 import { createExtensionManagedRelayController } from "./managedRelayOffscreen";
+import {
+  authorizedBackgroundControl,
+  isManagedRelayControlAction,
+  parseManagedRelayControlMessage,
+} from "./managedRelayControl";
+import { stopManagedOffscreenResources } from "./managedRelayCleanup";
 import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import {
@@ -207,23 +213,51 @@ async function initMessaging(
 async function shutdownMessaging(): Promise<void> {
   runtimeOutboundStreamControllers.forEach((controller) => controller.abort());
   runtimeOutboundStreamControllers.clear();
-  await managedController?.stop();
-  managedController = null;
-  const reconnectsStopped = pairedConnections?.stop();
-  await transport?.stop();
-  await reconnectsStopped;
-  transport = null;
-  pairedConnections = null;
-  started = false;
-  runtimeRegisteredProtocols.clear();
-  runtimeRegisteredStreamProtocols.clear();
+  const controller = managedController;
+  const connections = pairedConnections;
+  const currentTransport = transport;
+  try {
+    await stopManagedOffscreenResources({
+      controller: async () => {
+        await controller?.stop();
+      },
+      reconnects: async () => {
+        await connections?.stop();
+      },
+      transport: async () => {
+        await currentTransport?.stop();
+      },
+    });
+  } finally {
+    managedController = null;
+    transport = null;
+    pairedConnections = null;
+    started = false;
+    runtimeRegisteredProtocols.clear();
+    runtimeRegisteredStreamProtocols.clear();
+  }
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// Chrome's offscreen context omits runtime.getManifest, while the built MV3
+// service worker has this stable loader URL.
+const BACKGROUND_URL = chrome.runtime.getURL("service-worker-loader.js");
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target !== "offscreen") return;
+  const managedControl = isManagedRelayControlAction(msg.action)
+    ? parseManagedRelayControlMessage(msg)
+    : null;
+  if (
+    isManagedRelayControlAction(msg.action) &&
+    (!authorizedBackgroundControl(sender, chrome.runtime.id, BACKGROUND_URL) ||
+      !managedControl)
+  ) {
+    sendResponse({ ok: false, error: "managed_relay_control_unauthorized" });
+    return false;
+  }
   (async () => {
-    if (msg.action === "init") {
-      await initMessaging(msg.relays, msg.managedConfigurations);
+    if (managedControl?.action === "init") {
+      await initMessaging([], managedControl.configurations);
       sendResponse({ ok: true });
       return;
     }
@@ -231,21 +265,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "shutdown") {
+    if (managedControl?.action === "shutdown") {
       await shutdownMessaging();
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "setManagedRelays") {
+    if (managedControl?.action === "setManagedRelays") {
       if (!managedController) throw new Error("managed_relay_host_unavailable");
-      await managedController.setConfigurations(msg.configurations);
+      await managedController.setConfigurations(managedControl.configurations);
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "retryManagedRelay") {
-      if (!managedController || typeof msg.key !== "string")
-        throw new Error("managed_relay_host_unavailable");
-      await managedController.retry(msg.key);
+    if (managedControl?.action === "retryManagedRelay") {
+      if (!managedController) throw new Error("managed_relay_host_unavailable");
+      await managedController.retry(managedControl.key);
       sendResponse({ ok: true });
       return;
     }
