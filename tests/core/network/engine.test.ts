@@ -991,25 +991,27 @@ describe("Libp2pMessagingTransport", () => {
 
   it("closes only relay-owned connections during relay shutdown", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const node = await createClipboardNode();
+    const relayClose = jest.fn(async () => undefined);
+    const directClose = jest.fn(async () => undefined);
+    const relayConnection = {
+      remotePeer: { toString: () => "relay" },
+      remoteAddr: { toString: () => relay },
+      close: relayClose,
+    };
+    const directConnection = {
+      remotePeer: { toString: () => "relay" },
+      remoteAddr: { toString: () => "/ip4/192.0.2.1/tcp/9000/p2p/relay" },
+      close: directClose,
+    };
+    node.dial.mockResolvedValueOnce(relayConnection);
+    node.getConnections.mockReturnValueOnce([]);
+    node.getConnections.mockReturnValue([relayConnection, directConnection]);
+    createClipboardNode.mockResolvedValueOnce(node);
     const transport = createLibp2pMessagingTransport({
       relayAddresses: [relay],
     });
     await transport.start();
-    const node = await createClipboardNode.mock.results[0].value;
-    const relayClose = jest.fn(async () => undefined);
-    const directClose = jest.fn(async () => undefined);
-    node.getConnections.mockReturnValue([
-      {
-        remotePeer: { toString: () => "relay" },
-        remoteAddr: { toString: () => relay },
-        close: relayClose,
-      },
-      {
-        remotePeer: { toString: () => "relay" },
-        remoteAddr: { toString: () => "/ip4/192.0.2.1/tcp/9000/p2p/relay" },
-        close: directClose,
-      },
-    ]);
 
     await transport.stop();
 

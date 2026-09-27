@@ -55,7 +55,7 @@ jest.mock("@libp2p/ping", () => ({
   ping: jest.fn(() => ({})),
 }), { virtual: true });
 
-jest.mock("@libp2p/interface-transport", () => ({
+jest.mock("@libp2p/interface", () => ({
   FaultTolerance: { NO_FATAL: "NO_FATAL" },
 }), { virtual: true });
 

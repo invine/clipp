@@ -12,51 +12,56 @@ an earlier start from scheduling work in a later start.
 connections and listeners remain live, and their registrations are refreshed
 with the current Signed Peer Record when self addresses change. Configuration
 mutations and reservation listen attempts are serialized so a late completion
-cannot clean up a newer attempt. Cleanup tracks connections returned by relay
-dials, including DNS addresses resolved to IPs; an exact configured-address
-match also covers relay connections established by startup listeners. A
-pre-existing direct connection with the relay's Peer ID remains open.
+cannot clean up a newer attempt. Cleanup tracks new connections returned by
+relay dials and opened by managed reservation listeners, including DNS
+addresses resolved to IPs. It does not close a pre-existing direct connection
+reused at the configured relay address or another connection to the relay's
+Peer ID.
 
 `Libp2pMessagingTransport` currently calls only `start` and `stop`, retaining
-the existing `relayAddresses` option for all runtimes. `createClipboardNode`
-still installs its configured circuit listeners at host creation for startup
-compatibility; the lifecycle retries missing reservations and closes its relay
-listeners and connections when stopped. A later configuration integration can
-wire `reconfigure` after replacing that startup adapter. Relay lifecycle
-cleanup never stops the host or closes connections to Device Network members.
+the existing `relayAddresses` option for all runtimes. It disables node startup
+reservation listeners so the lifecycle can own every reservation attempt after
+host creation. Direct callers of `createClipboardNode` retain its existing
+reservation option. A later configuration integration can wire `reconfigure`.
+Relay lifecycle cleanup never stops the host or closes connections to Device
+Network members.
 
 ## Ticket 01 validation evidence
 
 Environment: Darwin arm64, Node.js v26.10.0, npm 11.19.1. The worktree uses
 the existing local `node_modules` dependency tree; no external relay was used.
 
-| Command / scope                                                                                                                                      | Starting commit `44ddde1`                  | Ticket branch after review fixes                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm test -- --runInBand tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent`                                           | 38/38 passed                               | 44/44 passed                                                                                                                                                                                           |
-| `npm test -- --runInBand tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent` | New controller test file did not exist     | 55/55 passed                                                                                                                                                                                           |
-| `npm run lint -- --quiet`                                                                                                                            | Not run                                    | Passed                                                                                                                                                                                                 |
-| `npm test -- --runInBand --silent`                                                                                                                   | Not run                                    | 447 tests passed; 55 suites passed, one suite failed to compile (`tests/core/network/nodeAddressConfig.test.ts`) because `packages/core/network/node.ts` imports missing `@libp2p/interface-transport` |
-| `npm run check`                                                                                                                                      | No `check` script in pinned `package.json` | Missing script                                                                                                                                                                                         |
+| Command / scope                                                                                                | Starting commit `44ddde1`                  | Ticket branch after review fixes         |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| `npm test -- --runInBand tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent`     | 38/38 passed                               | 44/44 passed                             |
+| `npm test -- --runInBand --silent tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts` | New controller test file did not exist     | 56/56 passed                             |
+| `npm run lint -- --quiet`                                                                                      | Not run                                    | Passed                                   |
+| `npm test -- --runInBand --silent`                                                                             | Not run                                    | 454/454 passed; 56/56 suites passed      |
+| `node --import tsx tests/harness/pairing-harness.ts` with loopback bind permission                             | Passed in 13 s after import correction     | Passed in 12.8 s after import correction |
+| `npm run check`                                                                                                | No `check` script in pinned `package.json` | Missing script                           |
 
 The local real-network acceptance harness is
 `node --import tsx tests/harness/pairing-harness.ts`. It creates a WebSocket
 relay bound to `127.0.0.1` and exercises reservation, exact Rendezvous,
-pairing, signed records, revocation and clip delivery. The ticket branch run
-failed before startup with `ERR_MODULE_NOT_FOUND` for
-`@libp2p/interface-transport`; `44ddde1` has the same import and no declared
-dependency, so a before/after real-network comparison was not run. This is a
-missing prerequisite, not passing harness evidence. `tsx` through its CLI was
-also blocked by sandbox `EPERM` while creating its local IPC pipe; the
-`node --import tsx` invocation avoids that IPC step.
+pairing, signed records, revocation and clip delivery. The baseline was an
+isolated `git archive 44ddde1` snapshot with only its two `FaultTolerance`
+imports changed from undeclared `@libp2p/interface-transport` to the already
+declared `@libp2p/interface`; the ticket branch applies the same source repair.
+Both runs exited 0. The ordinary sandbox denies loopback bind; both passing
+runs used the required bind permission. `tsx` through its CLI was also blocked
+by sandbox `EPERM` while creating its local IPC pipe; `node --import tsx`
+avoids that IPC step.
 
 Direct TypeScript checks of root, Electron main, Android and extension are not
-green at this pinned commit. They include the missing transport module and
-other existing errors outside the changed files; none reference
-`relayLifecycle.ts`, `engine.ts`, or their tests. The focused Jest suites use
-the shared controller and transport seams with libp2p boundary doubles; they
-do not substitute for the blocked real-network harness or native runtime runs.
+green at this pinned commit. They include existing errors outside the lifecycle
+changes; the root check also reports an incompatible nested libp2p `Connection`
+type in `relay/server.ts`. The focused Jest suites use the shared controller
+and transport seams with libp2p boundary doubles. Native runtime runs were not
+part of this ticket.
 
 The controller regressions were observed red before the fixes for concurrent
 reconfiguration, stale reservation completion, DNS-to-IP connection cleanup,
-and retained-relay Signed Peer Record refresh. A shutdown-during-removal test
-also went red before pending relay resources were included in stop cleanup.
+and retained-relay Signed Peer Record refresh. The DNS listener reconnection and
+same-address reused direct connection tests also went red before ownership
+tracking replaced address-based cleanup. A shutdown-during-removal test went
+red before pending relay resources were included in stop cleanup.

@@ -240,33 +240,51 @@ export class RelayLifecycle {
     for (const addr of relays) {
       if (!this.isCurrent(generation)) return;
       try {
-        const existingConnections = new Set(node.getConnections?.() ?? []);
-        const existingConnectionIds = new Set(
-          [...existingConnections]
-            .map((connection: any) => connection?.id)
-            .filter(Boolean),
-        );
+        const existingConnections = this.connectionSnapshot(node);
         const connection = await node.dial(
           ensureLegacyMultiaddrApi(multiaddr(addr)),
           this.dialOptions(),
         );
-        const owned =
-          connection &&
-          !existingConnections.has(connection) &&
-          (connection.id == null || !existingConnectionIds.has(connection.id));
+        const owned = this.isNewConnection(connection, existingConnections);
         if (!this.isCurrent(generation)) {
           if (owned) await this.closeConnection(connection);
           return;
         }
-        if (owned) {
-          const connections = this.ownedConnections.get(addr) ?? new Set<any>();
-          connections.add(connection);
-          this.ownedConnections.set(addr, connections);
-        }
+        if (owned) this.rememberConnection(addr, connection);
       } catch (err: any) {
         log.warn("Relay dial failed", { addr, error: err?.message || err });
       }
     }
+  }
+
+  private connectionSnapshot(node: any): {
+    references: Set<any>;
+    ids: Set<any>;
+  } {
+    const references = new Set<any>(node.getConnections?.() ?? []);
+    const ids = new Set(
+      [...references]
+        .map((connection) => connection?.id)
+        .filter((id) => id != null),
+    );
+    return { references, ids };
+  }
+
+  private isNewConnection(
+    connection: any,
+    before: { references: Set<any>; ids: Set<any> },
+  ): boolean {
+    return (
+      Boolean(connection) &&
+      !before.references.has(connection) &&
+      (connection.id == null || !before.ids.has(connection.id))
+    );
+  }
+
+  private rememberConnection(relay: string, connection: any): void {
+    const connections = this.ownedConnections.get(relay) ?? new Set<any>();
+    connections.add(connection);
+    this.ownedConnections.set(relay, connections);
   }
 
   private hasReservation(relay: string): boolean {
@@ -323,14 +341,18 @@ export class RelayLifecycle {
       await this.closeEmptyRelayListeners(node);
       if (!this.isCurrent(generation)) return;
       log.info("Ensuring relay reservations", { relays: circuitAddrs });
-      await manager.listen(
-        circuitAddrs.map((addr) => ensureLegacyMultiaddrApi(multiaddr(addr))),
+      await this.listenWithConnectionTracking(
+        node,
+        manager,
+        missing,
+        circuitAddrs,
       );
       if (!this.isCurrent(generation)) {
         const obsolete = relays.filter(
           (relay) => this.node !== node || !this.relays.includes(relay),
         );
         await this.closeRelayListeners(node, obsolete);
+        await this.closeRelayConnections(node, obsolete);
         return;
       }
       const stillMissing = relays.filter(
@@ -354,6 +376,47 @@ export class RelayLifecycle {
       });
     } finally {
       if (this.isCurrent(generation)) this.reservationRunning = false;
+    }
+  }
+
+  private async listenWithConnectionTracking(
+    node: any,
+    manager: any,
+    relays: string[],
+    circuitAddrs: string[],
+  ): Promise<void> {
+    const connectionManager = node.components?.connectionManager;
+    const openConnection = connectionManager?.openConnection;
+    const addresses = circuitAddrs.map((addr) =>
+      ensureLegacyMultiaddrApi(multiaddr(addr)),
+    );
+    if (typeof openConnection !== "function") {
+      await manager.listen(addresses);
+      return;
+    }
+    const configured = new Map(
+      relays.map((relay) => [relay.replace(/\/+$/, ""), relay]),
+    );
+    const trackedOpenConnection = async (target: any, ...args: any[]) => {
+      const relay = configured.get(String(target).replace(/\/+$/, ""));
+      const before = relay ? this.connectionSnapshot(node) : null;
+      const connection = await openConnection.call(
+        connectionManager,
+        target,
+        ...args,
+      );
+      if (relay && before && this.isNewConnection(connection, before)) {
+        this.rememberConnection(relay, connection);
+      }
+      return connection;
+    };
+    connectionManager.openConnection = trackedOpenConnection;
+    try {
+      await manager.listen(addresses);
+    } finally {
+      if (connectionManager.openConnection === trackedOpenConnection) {
+        connectionManager.openConnection = openConnection;
+      }
     }
   }
 
@@ -414,23 +477,11 @@ export class RelayLifecycle {
     node: any,
     relays: string[],
   ): Promise<void> {
-    const relayAddresses = new Set(
-      relays.map((relay) => relay.replace(/\/+$/, "")),
-    );
-    const connections = node.getConnections?.() ?? [];
     const toClose = new Set<any>();
     for (const relay of relays) {
       for (const connection of this.ownedConnections.get(relay) ?? [])
         toClose.add(connection);
       this.ownedConnections.delete(relay);
-    }
-    for (const connection of connections) {
-      const address = connection?.remoteAddr?.toString?.();
-      if (
-        typeof address === "string" &&
-        relayAddresses.has(address.replace(/\/+$/, ""))
-      )
-        toClose.add(connection);
     }
     await Promise.all(
       [...toClose].map((connection) => this.closeConnection(connection)),

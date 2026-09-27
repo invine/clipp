@@ -326,6 +326,46 @@ describe("RelayLifecycle", () => {
     expect(existing.close).not.toHaveBeenCalled();
   });
 
+  it("closes a DNS relay connection reopened by reservation listening after loss", async () => {
+    const relayDns = "/dns4/relay.example/tcp/9999/ws/p2p/relay-a";
+    const { node, lifecycle, connections } = harness();
+    const reopened = connection(
+      "/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a",
+      "relay-a",
+    );
+    (node.components as any).connectionManager = {
+      openConnection: jest.fn(async () => {
+        connections.push(reopened);
+        return reopened;
+      }),
+    };
+    node.components.transportManager.listen.mockImplementation(async () => {
+      await (node.components as any).connectionManager.openConnection(relayDns);
+    });
+
+    await lifecycle.start(node, [relayDns]);
+    const initial = connections[0];
+    connections.splice(0, 1);
+    await lifecycle.stop();
+
+    expect(initial.close).toHaveBeenCalledTimes(1);
+    expect(reopened.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an existing direct connection reused at the configured relay address", async () => {
+    const { node, lifecycle, connections } = harness([
+      `${relayA}/p2p-circuit/p2p/device`,
+    ]);
+    const direct = connection(relayA, "relay-a");
+    connections.push(direct);
+    node.dial.mockResolvedValueOnce(direct);
+
+    await lifecycle.start(node, [relayA]);
+    await lifecycle.stop();
+
+    expect(direct.close).not.toHaveBeenCalled();
+  });
+
   it("refreshes retained Rendezvous records after a new relay changes self addresses", async () => {
     const { node, lifecycle, setSelfAddresses, setSignedRecord } = harness([
       `${relayA}/p2p-circuit/p2p/device`,

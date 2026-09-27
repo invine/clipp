@@ -10,7 +10,7 @@ import type { Connection, PrivateKey } from "@libp2p/interface";
 import { peerIdFromMultihash, peerIdFromString } from "@libp2p/peer-id";
 import * as Digest from "multiformats/hashes/digest";
 import { defaultLogger } from "@libp2p/logger";
-import { FaultTolerance } from "@libp2p/interface-transport";
+import { FaultTolerance } from "@libp2p/interface";
 import { privateKeyFromProtobuf, privateKeyFromRaw } from "@libp2p/crypto/keys";
 import { ping, type Ping } from "@libp2p/ping";
 import { consumeOrMatchSignedPeerRecord, decodeSignedPeerRecordBytes } from "../peerRecords.js";

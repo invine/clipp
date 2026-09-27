@@ -183,7 +183,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
       dcutrRetries: this.opts.dcutrRetries,
       enableTcp: this.opts.enableTcp,
       enableWebSocketListener: this.opts.enableWebSocketListener,
-      enableRelayReservations: this.opts.enableRelayReservations,
+      // RelayLifecycle owns reservation listening after the host starts.
+      enableRelayReservations: false,
       allowInsecureBrowserDials: this.opts.allowInsecureBrowserDials,
     });
 
