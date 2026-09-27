@@ -20,8 +20,14 @@ import {
 } from "../../../packages/ui";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { shareCurrentPopupClipboard } from "./popupClipboardActions";
+import type {
+  RelayConfiguration,
+  RelayState,
+} from "../../../packages/core/network/managedRelays";
 
-function identityRotationNoticeReason(value: unknown): IdentityRotationNoticeReason | null {
+function identityRotationNoticeReason(
+  value: unknown
+): IdentityRotationNoticeReason | null {
   return value === "revoked" || value === "identity-loss" ? value : null;
 }
 
@@ -32,16 +38,30 @@ const Popup = () => {
   const [waiting, setWaiting] = useState<PairingWaiting[]>([]);
   const [pairingErrors, setPairingErrors] = useState<PairingError[]>([]);
   const [peers, setPeers] = useState<string[]>([]);
-  const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>([]);
+  const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>(
+    []
+  );
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
-  const [localRetentionMs, setLocalRetentionMs] = useState(30 * 24 * 60 * 60 * 1000);
+  const [localRetentionMs, setLocalRetentionMs] = useState(
+    30 * 24 * 60 * 60 * 1000
+  );
   const [autoSync, setAutoSync] = useState(true);
-  const [clipboardHistoryError, setClipboardHistoryError] = useState<ClipboardHistoryError | null>(null);
-  const [historyPolicyError, setHistoryPolicyError] = useState<HistoryPolicyError | null>(null);
+  const [clipboardHistoryError, setClipboardHistoryError] =
+    useState<ClipboardHistoryError | null>(null);
+  const [historyPolicyError, setHistoryPolicyError] =
+    useState<HistoryPolicyError | null>(null);
   const [initializationError, setInitializationError] = useState(false);
-  const [identityRotationRecovery, setIdentityRotationRecovery] = useState(false);
-  const [identityRotationNotice, setIdentityRotationNotice] = useState<IdentityRotationNoticeReason | null>(null);
+  const [identityRotationRecovery, setIdentityRotationRecovery] =
+    useState(false);
+  const [identityRotationNotice, setIdentityRotationNotice] =
+    useState<IdentityRotationNoticeReason | null>(null);
+  const [managedRelayConfigurations, setManagedRelayConfigurations] = useState<
+    RelayConfiguration[]
+  >([]);
+  const [managedRelayStates, setManagedRelayStates] = useState<RelayState[]>(
+    []
+  );
   const lastClipboardRef = useRef("");
 
   useEffect(() => {
@@ -53,21 +73,35 @@ const Popup = () => {
       if (res?.state?.waiting) setWaiting(res.state.waiting);
       if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
       if (res?.state?.pinnedIds) setPinnedIds(res.state.pinnedIds);
-      if (typeof res?.state?.autoSync === "boolean") setAutoSync(res.state.autoSync);
+      if (typeof res?.state?.autoSync === "boolean")
+        setAutoSync(res.state.autoSync);
       setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
       setHistoryPolicyError(res?.state?.historyPolicyError || null);
-      setIdentityRotationRecovery(res?.state?.identityRotationRecovery === true);
-      setIdentityRotationNotice(identityRotationNoticeReason(res?.state?.identityRotationNotice));
+      setIdentityRotationRecovery(
+        res?.state?.identityRotationRecovery === true
+      );
+      setIdentityRotationNotice(
+        identityRotationNoticeReason(res?.state?.identityRotationNotice)
+      );
     });
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
       if (res?.identity) setIdentity(res.identity);
     });
     chrome.runtime.sendMessage({ type: "getInitializationError" }, (res) => {
-      setInitializationError(res?.error?.code === "identity_initialization_failed");
+      setInitializationError(
+        res?.error?.code === "identity_initialization_failed"
+      );
     });
     chrome.runtime.sendMessage({ type: "getSettings" }, (res) => {
-      if (typeof res?.localRetentionMs === "number") setLocalRetentionMs(res.localRetentionMs);
+      if (typeof res?.localRetentionMs === "number")
+        setLocalRetentionMs(res.localRetentionMs);
       if (typeof res?.autoSync === "boolean") setAutoSync(res.autoSync);
+    });
+    chrome.runtime.sendMessage({ type: "managedRelayGet" }, (res) => {
+      if (res?.ok) {
+        setManagedRelayConfigurations(res.configurations ?? []);
+        setManagedRelayStates(res.states ?? []);
+      }
     });
 
     const handler = (msg: any) => {
@@ -88,11 +122,20 @@ const Popup = () => {
         setWaiting(msg.state.waiting || []);
         setPairingErrors(msg.state.pairingErrors || []);
         setPinnedIds(msg.state.pinnedIds || []);
-        if (typeof msg.state.autoSync === "boolean") setAutoSync(msg.state.autoSync);
+        if (typeof msg.state.autoSync === "boolean")
+          setAutoSync(msg.state.autoSync);
         setClipboardHistoryError(msg.state.clipboardHistoryError || null);
         setHistoryPolicyError(msg.state.historyPolicyError || null);
-        setIdentityRotationRecovery(msg.state.identityRotationRecovery === true);
-        setIdentityRotationNotice(identityRotationNoticeReason(msg.state.identityRotationNotice));
+        setIdentityRotationRecovery(
+          msg.state.identityRotationRecovery === true
+        );
+        setIdentityRotationNotice(
+          identityRotationNoticeReason(msg.state.identityRotationNotice)
+        );
+        if (Array.isArray(msg.state.managedRelayConfigurations))
+          setManagedRelayConfigurations(msg.state.managedRelayConfigurations);
+        if (Array.isArray(msg.state.managedRelayStates))
+          setManagedRelayStates(msg.state.managedRelayStates);
       }
     };
     chrome.runtime.onMessage.addListener(handler);
@@ -148,14 +191,36 @@ const Popup = () => {
     });
   }
 
-  async function runHistoryOperation<Result extends { ok: true } = { ok: true }>(
-    message: Record<string, unknown>,
-  ): Promise<Result> {
+  async function runHistoryOperation<
+    Result extends { ok: true } = { ok: true },
+  >(message: Record<string, unknown>): Promise<Result> {
     return await new Promise<Result>((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
         const error = chrome.runtime.lastError;
         if (error || !response?.ok) {
-          reject(error ?? new Error(response?.error || "history_operation_failed"));
+          reject(
+            error ?? new Error(response?.error || "history_operation_failed")
+          );
+          return;
+        }
+        resolve(response as Result);
+      });
+    });
+  }
+
+  async function relayAction<Result extends { ok: true } = { ok: true }>(
+    message: Record<string, unknown>
+  ): Promise<Result> {
+    return await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError || !response?.ok) {
+          reject(
+            new Error(
+              response?.error ??
+                chrome.runtime.lastError?.message ??
+                "relay_action_failed"
+            )
+          );
           return;
         }
         resolve(response as Result);
@@ -181,11 +246,16 @@ const Popup = () => {
     });
   }
 
-  async function handleRenameDevice(id: string, name: string): Promise<Device | null> {
+  async function handleRenameDevice(
+    id: string,
+    name: string
+  ): Promise<Device | null> {
     return await new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: "renameDevice", id, name }, (res) => {
         if (res?.device) {
-          setDevices((prev) => prev.map((d) => (d.deviceId === id ? res.device : d)));
+          setDevices((prev) =>
+            prev.map((d) => (d.deviceId === id ? res.device : d))
+          );
         }
         resolve(res?.device || null);
       });
@@ -204,21 +274,30 @@ const Popup = () => {
 
   async function handleRequestPairingCode(): Promise<PairingCode | null> {
     const target = await new Promise<string | null>((resolve) => {
-      chrome.runtime.sendMessage({ type: "getPairingTarget" }, (res) => resolve(res?.text || null));
+      chrome.runtime.sendMessage({ type: "getPairingTarget" }, (res) =>
+        resolve(res?.text || null)
+      );
     });
     if (!target) return null;
     return {
-      image: await QRCode.toDataURL(target, { errorCorrectionLevel: "L", margin: 0, scale: 2 }),
+      image: await QRCode.toDataURL(target, {
+        errorCorrectionLevel: "L",
+        margin: 0,
+        scale: 2,
+      }),
       text: target,
     };
   }
 
   async function handleRenameIdentity(name: string): Promise<Identity | null> {
     return await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: "renameLocalIdentity", name }, (res) => {
-        if (res?.identity) setIdentity(res.identity);
-        resolve(res?.identity || null);
-      });
+      chrome.runtime.sendMessage(
+        { type: "renameLocalIdentity", name },
+        (res) => {
+          if (res?.identity) setIdentity(res.identity);
+          resolve(res?.identity || null);
+        }
+      );
     });
   }
 
@@ -244,12 +323,41 @@ const Popup = () => {
         initializationError={initializationError}
         identityRotationRecovery={identityRotationRecovery}
         identityRotationNotice={identityRotationNotice}
+        managedRelayConfigurations={managedRelayConfigurations}
+        managedRelayStates={managedRelayStates}
+        onSetManagedRelays={async (configurations) => {
+          const response = await relayAction<{
+            ok: true;
+            configurations: RelayConfiguration[];
+          }>({ type: "managedRelaySet", configurations });
+          setManagedRelayConfigurations(response.configurations);
+        }}
+        onManagedRelayLogin={(key) =>
+          relayAction({ type: "managedRelayLogin", key })
+            .then(() => undefined)
+            .catch((error) => alert((error as Error).message))
+        }
+        onManagedRelayAccount={(key) =>
+          relayAction({ type: "managedRelayAccount", key })
+            .then(() => undefined)
+            .catch((error) => alert((error as Error).message))
+        }
+        onManagedRelayRetry={(key) =>
+          relayAction({ type: "managedRelayRetry", key })
+            .then(() => undefined)
+            .catch((error) => alert((error as Error).message))
+        }
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
         onRenameDevice={handleRenameDevice}
         onAccept={(dev) =>
           chrome.runtime.sendMessage(
-            { type: "respondTrust", id: dev.deviceId, accept: true, device: dev },
+            {
+              type: "respondTrust",
+              id: dev.deviceId,
+              accept: true,
+              device: dev,
+            },
             (response) => {
               if (!response?.ok) return;
               setPending((p) => p.filter((d) => d.deviceId !== dev.deviceId));
@@ -259,7 +367,12 @@ const Popup = () => {
         }
         onReject={(dev) =>
           chrome.runtime.sendMessage(
-            { type: "respondTrust", id: dev.deviceId, accept: false, device: dev },
+            {
+              type: "respondTrust",
+              id: dev.deviceId,
+              accept: false,
+              device: dev,
+            },
             (response) => {
               if (!response?.ok) return;
               setPending((p) => p.filter((d) => d.deviceId !== dev.deviceId));
@@ -269,7 +382,10 @@ const Popup = () => {
         onPairText={handlePairingText}
         onRequestPairingCode={handleRequestPairingCode}
         onReuseClip={async (id) => {
-          const response = await runHistoryOperation<{ ok: true; outcome: ReuseClipOutcome }>({
+          const response = await runHistoryOperation<{
+            ok: true;
+            outcome: ReuseClipOutcome;
+          }>({
             type: "reuseClip",
             id,
           });
@@ -278,11 +394,16 @@ const Popup = () => {
         onShareNow={async () => {
           await shareCurrentPopupClipboard(
             () => navigator.clipboard.readText(),
-            async (text) => { await runHistoryOperation({ type: "shareNow", text }); },
+            async (text) => {
+              await runHistoryOperation({ type: "shareNow", text });
+            }
           );
         }}
         onSetPinned={async (id, pinned) => {
-          const response = await runHistoryOperation<{ ok: true; pinnedIds: string[] }>({
+          const response = await runHistoryOperation<{
+            ok: true;
+            pinnedIds: string[];
+          }>({
             type: "setPin",
             id,
             pinned,
@@ -295,7 +416,10 @@ const Popup = () => {
           setPinnedIds([]);
         }}
         onSetLocalRetention={async (retentionMs) => {
-          const response = await runHistoryOperation<{ ok: true; localRetentionMs: number }>({
+          const response = await runHistoryOperation<{
+            ok: true;
+            localRetentionMs: number;
+          }>({
             type: "setLocalRetention",
             retentionMs,
           });
@@ -303,13 +427,19 @@ const Popup = () => {
         }}
         onSetAutoSync={async (enabled) => {
           await new Promise<void>((resolve, reject) => {
-            chrome.runtime.sendMessage({ type: "setSettings", settings: { autoSync: enabled } }, (response) => {
-              if (chrome.runtime.lastError || !response?.ok) {
-                reject(chrome.runtime.lastError ?? new Error("auto_sync_save_failed"));
-                return;
+            chrome.runtime.sendMessage(
+              { type: "setSettings", settings: { autoSync: enabled } },
+              (response) => {
+                if (chrome.runtime.lastError || !response?.ok) {
+                  reject(
+                    chrome.runtime.lastError ??
+                      new Error("auto_sync_save_failed")
+                  );
+                  return;
+                }
+                resolve();
               }
-              resolve();
-            });
+            );
           });
           setAutoSync(enabled);
         }}
@@ -321,11 +451,15 @@ const Popup = () => {
           await runHistoryOperation({ type: "retryHistoryCleanup" });
         }}
         onAcknowledgeIdentityRotationNotice={async () => {
-          await runHistoryOperation({ type: "acknowledgeIdentityRotationNotice" });
+          await runHistoryOperation({
+            type: "acknowledgeIdentityRotationNotice",
+          });
           setIdentityRotationNotice(null);
         }}
         onRenameIdentity={handleRenameIdentity}
-        onRetryInitialization={() => chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })}
+        onRetryInitialization={() =>
+          chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })
+        }
       />
     </div>
   );
