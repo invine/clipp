@@ -12,22 +12,32 @@ jest.mock(
       }),
       getPeerId: () => {
         const parts = addr.split("/p2p/");
-        return parts.length > 1 ? parts[parts.length - 1].split("/")[0] : undefined;
+        return parts.length > 1
+          ? parts[parts.length - 1].split("/")[0]
+          : undefined;
       },
     }),
   }),
-  { virtual: true }
+  { virtual: true },
 );
 
 const protocolHandlers = new Map<string, any>();
 const eventHandlers = new Map<string, any[]>();
 let mockSelfMultiaddrs = ["/ip4/127.0.0.1/tcp/9/ws/p2p/mock-peer"];
-const mockTransportManagerListen = jest.fn<Promise<void>, any[]>(async () => {});
+const mockTransportManagerListen = jest.fn<Promise<void>, any[]>(
+  async () => {},
+);
 const mockTransportManagerGetListeners = jest.fn<any[], any[]>(() => []);
-const mockRegisterOnRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
+const mockRegisterOnRendezvous = jest.fn<Promise<boolean>, any[]>(
+  async () => true,
+);
 const mockLookupRendezvousPeer = jest.fn<Promise<any[]>, any[]>(async () => []);
-const mockUnregisterFromRendezvous = jest.fn<Promise<boolean>, any[]>(async () => true);
-const mockConsumePeerRecord = jest.fn<Promise<boolean>, any[]>(async () => true);
+const mockUnregisterFromRendezvous = jest.fn<Promise<boolean>, any[]>(
+  async () => true,
+);
+const mockConsumePeerRecord = jest.fn<Promise<boolean>, any[]>(
+  async () => true,
+);
 
 jest.mock("../../../packages/core/network/node", () => ({
   createClipboardNode: jest.fn(async () => ({
@@ -52,7 +62,9 @@ jest.mock("../../../packages/core/network/node", () => ({
     })),
     peerId: { toString: () => "mock-peer" },
     peerStore: {
-      get: jest.fn(async () => ({ peerRecordEnvelope: Uint8Array.of(1, 2, 3) })),
+      get: jest.fn(async () => ({
+        peerRecordEnvelope: Uint8Array.of(1, 2, 3),
+      })),
       consumePeerRecord: mockConsumePeerRecord,
       delete: jest.fn(async () => undefined),
     },
@@ -73,14 +85,22 @@ jest.mock("../../../packages/core/network/rendezvous", () => ({
 }));
 
 jest.mock("../../../packages/core/network/peerId", () => ({
-  deviceIdToPeerIdObject: async (peerId: string) => ({ toString: () => peerId }),
+  deviceIdToPeerIdObject: async (peerId: string) => ({
+    toString: () => peerId,
+  }),
 }));
 
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
-import { CLIP_PROTOCOL, HISTORY_PROTOCOL, HISTORY_REQUEST_PROTOCOL } from "../../../packages/core/network/protocol";
+import {
+  CLIP_PROTOCOL,
+  HISTORY_PROTOCOL,
+  HISTORY_REQUEST_PROTOCOL,
+} from "../../../packages/core/network/protocol";
 import { encodeLiveClipFrame } from "../../../packages/core/protocols/liveClip";
 
-const { createClipboardNode } = jest.requireMock("../../../packages/core/network/node");
+const { createClipboardNode } = jest.requireMock(
+  "../../../packages/core/network/node",
+);
 
 describe("Libp2pMessagingTransport", () => {
   beforeEach(() => {
@@ -94,7 +114,9 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("returns no peers when not started", () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     expect(transport.getConnectedPeers()).toEqual([]);
   });
 
@@ -111,27 +133,42 @@ describe("Libp2pMessagingTransport", () => {
     await transport.start();
 
     expect(mockConsumePeerRecord).not.toHaveBeenCalled();
-    expect(signedPeerRecordPersistence.remove).toHaveBeenCalledWith("revoked-peer");
+    expect(signedPeerRecordPersistence.remove).toHaveBeenCalledWith(
+      "revoked-peer",
+    );
     const node = await createClipboardNode.mock.results[0].value;
-    expect(node.peerStore.delete).toHaveBeenCalledWith(expect.objectContaining({
-      toString: expect.any(Function),
-    }));
-    await expect(transport.importSignedPeerRecord?.("revoked-peer", Uint8Array.of(1))).rejects.toThrow("revoked_peer");
-    await expect(transport.refreshPeerRecord?.("revoked-peer")).rejects.toThrow("revoked_peer");
+    expect(node.peerStore.delete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toString: expect.any(Function),
+      }),
+    );
+    await expect(
+      transport.importSignedPeerRecord?.("revoked-peer", Uint8Array.of(1)),
+    ).rejects.toThrow("revoked_peer");
+    await expect(transport.refreshPeerRecord?.("revoked-peer")).rejects.toThrow(
+      "revoked_peer",
+    );
   });
 
   it("reports reachability cleanup failure so revocation enforcement can retry", async () => {
     const signedPeerRecordPersistence = {
       load: jest.fn(async () => ({})),
       save: jest.fn(async () => undefined),
-      remove: jest.fn()
+      remove: jest
+        .fn()
         .mockRejectedValueOnce(new Error("storage_failed"))
         .mockResolvedValueOnce(undefined),
     };
-    const transport = createLibp2pMessagingTransport({ signedPeerRecordPersistence });
+    const transport = createLibp2pMessagingTransport({
+      signedPeerRecordPersistence,
+    });
 
-    await expect(transport.forgetPeer?.("revoked-peer")).rejects.toThrow("storage_failed");
-    await expect(transport.forgetPeer?.("revoked-peer")).resolves.toBeUndefined();
+    await expect(transport.forgetPeer?.("revoked-peer")).rejects.toThrow(
+      "storage_failed",
+    );
+    await expect(
+      transport.forgetPeer?.("revoked-peer"),
+    ).resolves.toBeUndefined();
 
     expect(signedPeerRecordPersistence.remove).toHaveBeenCalledTimes(2);
   });
@@ -139,9 +176,12 @@ describe("Libp2pMessagingTransport", () => {
   it("does not persist a Signed Peer Record that becomes revoked during verification", async () => {
     let revoked = false;
     let finishVerification: ((accepted: boolean) => void) | undefined;
-    mockConsumePeerRecord.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
-      finishVerification = resolve;
-    }));
+    mockConsumePeerRecord.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishVerification = resolve;
+        }),
+    );
     const signedPeerRecordPersistence = {
       load: jest.fn(async () => ({})),
       save: jest.fn(async () => undefined),
@@ -153,7 +193,10 @@ describe("Libp2pMessagingTransport", () => {
     });
     await transport.start();
 
-    const importing = transport.importSignedPeerRecord?.("revoked-peer", Uint8Array.of(9));
+    const importing = transport.importSignedPeerRecord?.(
+      "revoked-peer",
+      Uint8Array.of(9),
+    );
     await Promise.resolve();
     revoked = true;
     await transport.forgetPeer?.("revoked-peer");
@@ -164,7 +207,9 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("start and stop are idempotent", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     await transport.start();
     await transport.start();
     expect(createClipboardNode).toHaveBeenCalledTimes(1);
@@ -186,16 +231,22 @@ describe("Libp2pMessagingTransport", () => {
       expect.objectContaining({
         enableDCUtR: true,
         enableTcp: true,
-      })
+      }),
     );
     await transport.stop();
   });
 
   it("send uses MessageStream send/close", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
-    await transport.send(CLIP_PROTOCOL, "/ip4/127.0.0.1/tcp/1/ws/p2p/mock", new Uint8Array([1, 2, 3]));
+    await transport.send(
+      CLIP_PROTOCOL,
+      "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+      new Uint8Array([1, 2, 3]),
+    );
     const stream = await node.dialProtocol.mock.results[0].value;
     expect(node.dialProtocol).toHaveBeenCalledTimes(1);
     expect(stream.send).toHaveBeenCalledTimes(1);
@@ -205,7 +256,9 @@ describe("Libp2pMessagingTransport", () => {
   it("times out and aborts a stalled outbound live stream write", async () => {
     jest.useFakeTimers();
     try {
-      const transport = createLibp2pMessagingTransport({ liveClipStreamIdleTimeoutMs: 25 });
+      const transport = createLibp2pMessagingTransport({
+        liveClipStreamIdleTimeoutMs: 25,
+      });
       await transport.start();
       const node = await createClipboardNode.mock.results[0].value;
       const stream = {
@@ -219,13 +272,17 @@ describe("Libp2pMessagingTransport", () => {
       const sending = transport.send(
         CLIP_PROTOCOL,
         "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
-        new Uint8Array([1, 2, 3])
+        new Uint8Array([1, 2, 3]),
       );
-      const rejection = expect(sending).rejects.toThrow("live_clip_stream_timeout");
+      const rejection = expect(sending).rejects.toThrow(
+        "live_clip_stream_timeout",
+      );
       await jest.advanceTimersByTimeAsync(25);
 
       await rejection;
-      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "live_clip_stream_timeout" }));
+      expect(stream.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "live_clip_stream_timeout" }),
+      );
       expect(stream.close).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
@@ -235,7 +292,9 @@ describe("Libp2pMessagingTransport", () => {
   it("times out and aborts a stalled outbound live stream close", async () => {
     jest.useFakeTimers();
     try {
-      const transport = createLibp2pMessagingTransport({ liveClipStreamIdleTimeoutMs: 25 });
+      const transport = createLibp2pMessagingTransport({
+        liveClipStreamIdleTimeoutMs: 25,
+      });
       await transport.start();
       const node = await createClipboardNode.mock.results[0].value;
       const stream = {
@@ -248,13 +307,17 @@ describe("Libp2pMessagingTransport", () => {
       const sending = transport.send(
         CLIP_PROTOCOL,
         "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
-        new Uint8Array([1, 2, 3])
+        new Uint8Array([1, 2, 3]),
       );
-      const rejection = expect(sending).rejects.toThrow("live_clip_stream_timeout");
+      const rejection = expect(sending).rejects.toThrow(
+        "live_clip_stream_timeout",
+      );
       await jest.advanceTimersByTimeAsync(25);
 
       await rejection;
-      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "live_clip_stream_timeout" }));
+      expect(stream.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "live_clip_stream_timeout" }),
+      );
     } finally {
       jest.useRealTimers();
     }
@@ -263,7 +326,9 @@ describe("Libp2pMessagingTransport", () => {
   it("times out opening an outbound live stream and aborts it if it opens late", async () => {
     jest.useFakeTimers();
     try {
-      const transport = createLibp2pMessagingTransport({ liveClipStreamIdleTimeoutMs: 25 });
+      const transport = createLibp2pMessagingTransport({
+        liveClipStreamIdleTimeoutMs: 25,
+      });
       await transport.start();
       const node = await createClipboardNode.mock.results[0].value;
       const stream = {
@@ -272,22 +337,28 @@ describe("Libp2pMessagingTransport", () => {
         close: jest.fn(async () => {}),
       };
       const resolveOpening = jest.fn();
-      node.dialProtocol.mockReturnValueOnce(new Promise<typeof stream>((resolve) => {
-        resolveOpening.mockImplementation(resolve);
-      }));
+      node.dialProtocol.mockReturnValueOnce(
+        new Promise<typeof stream>((resolve) => {
+          resolveOpening.mockImplementation(resolve);
+        }),
+      );
 
       const sending = transport.send(
         CLIP_PROTOCOL,
         "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
-        new Uint8Array([1, 2, 3])
+        new Uint8Array([1, 2, 3]),
       );
-      const rejection = expect(sending).rejects.toThrow("live_clip_stream_timeout");
+      const rejection = expect(sending).rejects.toThrow(
+        "live_clip_stream_timeout",
+      );
       await jest.advanceTimersByTimeAsync(25);
       await rejection;
 
       resolveOpening(stream);
       await jest.advanceTimersByTimeAsync(0);
-      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "live_clip_stream_timeout" }));
+      expect(stream.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "live_clip_stream_timeout" }),
+      );
       expect(stream.send).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
@@ -297,7 +368,9 @@ describe("Libp2pMessagingTransport", () => {
   it("aborts an in-progress outbound History stream when its signal is canceled", async () => {
     jest.useFakeTimers();
     try {
-      const transport = createLibp2pMessagingTransport({ historyStreamIdleTimeoutMs: 25 });
+      const transport = createLibp2pMessagingTransport({
+        historyStreamIdleTimeoutMs: 25,
+      });
       await transport.start();
       const node = await createClipboardNode.mock.results[0].value;
       const stream = {
@@ -313,11 +386,13 @@ describe("Libp2pMessagingTransport", () => {
           let sent = false;
           return {
             next: async () => {
-              if (sent) return await new Promise<IteratorResult<Uint8Array>>(() => {});
+              if (sent)
+                return await new Promise<IteratorResult<Uint8Array>>(() => {});
               sent = true;
               return { done: false as const, value: Uint8Array.of(1) };
             },
-            return: async () => await new Promise<IteratorResult<Uint8Array>>(() => {}),
+            return: async () =>
+              await new Promise<IteratorResult<Uint8Array>>(() => {}),
           };
         },
       };
@@ -331,13 +406,20 @@ describe("Libp2pMessagingTransport", () => {
       await jest.advanceTimersByTimeAsync(0);
       controller.abort();
       const result = Promise.race([
-        sending.then(() => "resolved", (error) => error instanceof Error ? error.message : String(error)),
-        new Promise<string>((resolve) => setTimeout(() => resolve("cleanup_stalled"), 1)),
+        sending.then(
+          () => "resolved",
+          (error) => (error instanceof Error ? error.message : String(error)),
+        ),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("cleanup_stalled"), 1),
+        ),
       ]);
       await jest.advanceTimersByTimeAsync(1);
 
       await expect(result).resolves.toBe("stream_cancelled");
-      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "stream_cancelled" }));
+      expect(stream.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "stream_cancelled" }),
+      );
     } finally {
       jest.useRealTimers();
     }
@@ -346,7 +428,9 @@ describe("Libp2pMessagingTransport", () => {
   it("enforces the History progress timeout and aborts a stalled stream", async () => {
     jest.useFakeTimers();
     try {
-      const transport = createLibp2pMessagingTransport({ historyStreamIdleTimeoutMs: 25 });
+      const transport = createLibp2pMessagingTransport({
+        historyStreamIdleTimeoutMs: 25,
+      });
       await transport.start();
       const node = await createClipboardNode.mock.results[0].value;
       const stream = {
@@ -360,24 +444,32 @@ describe("Libp2pMessagingTransport", () => {
       const sending = transport.sendStream(
         HISTORY_PROTOCOL,
         "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
-        (async function *() { yield Uint8Array.of(1); })(),
+        (async function* () {
+          yield Uint8Array.of(1);
+        })(),
       );
-      const rejection = expect(sending).rejects.toThrow("history_stream_timeout");
+      const rejection = expect(sending).rejects.toThrow(
+        "history_stream_timeout",
+      );
       await jest.advanceTimersByTimeAsync(25);
 
       await rejection;
-      expect(stream.abort).toHaveBeenCalledWith(expect.objectContaining({ message: "history_stream_timeout" }));
+      expect(stream.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "history_stream_timeout" }),
+      );
     } finally {
       jest.useRealTimers();
     }
   });
 
   it("rejects when a queued WebRTC stream write fails after the data channel closes", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     const err = new Error(
-      "libdatachannel error while sending data channel message: DataChannel is closed"
+      "libdatachannel error while sending data channel message: DataChannel is closed",
     );
     const stream: any = {
       abort: jest.fn(),
@@ -394,7 +486,11 @@ describe("Libp2pMessagingTransport", () => {
     node.dialProtocol.mockResolvedValueOnce(stream);
 
     await expect(
-      transport.send(CLIP_PROTOCOL, "/ip4/127.0.0.1/tcp/1/ws/p2p/mock", new Uint8Array([1, 2, 3]))
+      transport.send(
+        CLIP_PROTOCOL,
+        "/ip4/127.0.0.1/tcp/1/ws/p2p/mock",
+        new Uint8Array([1, 2, 3]),
+      ),
     ).rejects.toThrow("DataChannel is closed");
     expect(stream.abort).toHaveBeenCalledWith(err);
     expect(stream.close).not.toHaveBeenCalled();
@@ -435,7 +531,8 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("dials a peer ID through its imported certified relay address", async () => {
-    const target = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit/p2p/peer-1";
+    const target =
+      "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit/p2p/peer-1";
     const transport = createLibp2pMessagingTransport();
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
@@ -451,7 +548,9 @@ describe("Libp2pMessagingTransport", () => {
 
   it("does not hide peers connected through a relay circuit", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
-    const transport = createLibp2pMessagingTransport({ relayAddresses: [relay] });
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+    });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
 
@@ -489,7 +588,9 @@ describe("Libp2pMessagingTransport", () => {
     node.getConnections.mockReturnValue([
       {
         remotePeer: { toString: () => "peer-1" },
-        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1" },
+        remoteAddr: {
+          toString: () => "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1",
+        },
       },
     ]);
 
@@ -507,14 +608,18 @@ describe("Libp2pMessagingTransport", () => {
 
   it("reports WebRTC-over-relay connections as direct", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
-    const transport = createLibp2pMessagingTransport({ relayAddresses: [relay] });
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+    });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
 
     node.getConnections.mockReturnValue([
       {
         remotePeer: { toString: () => "peer-1" },
-        remoteAddr: { toString: () => `${relay}/p2p-circuit/webrtc/p2p/peer-1` },
+        remoteAddr: {
+          toString: () => `${relay}/p2p-circuit/webrtc/p2p/peer-1`,
+        },
       },
     ]);
 
@@ -552,13 +657,18 @@ describe("Libp2pMessagingTransport", () => {
     connectionOpen({
       detail: {
         remotePeer: { toString: () => "peer-1" },
-        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit/p2p/peer-1" },
+        remoteAddr: {
+          toString: () =>
+            "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit/p2p/peer-1",
+        },
       },
     });
     connectionOpen({
       detail: {
         remotePeer: { toString: () => "peer-1" },
-        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1" },
+        remoteAddr: {
+          toString: () => "/ip4/127.0.0.1/tcp/63067/ws/p2p/peer-1",
+        },
       },
     });
 
@@ -567,7 +677,7 @@ describe("Libp2pMessagingTransport", () => {
       expect.objectContaining({
         peerId: "[REDACTED]",
         directAddr: "[REDACTED]",
-      })
+      }),
     );
     expect(transport.getPeerConnectionInfo?.()).toEqual([
       {
@@ -583,7 +693,9 @@ describe("Libp2pMessagingTransport", () => {
   });
 
   it("dials discovered peers by multiaddr", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     const discovered = eventHandlers.get("peer:discovery")?.[0];
@@ -602,7 +714,9 @@ describe("Libp2pMessagingTransport", () => {
 
   it("dials direct discovery targets when an existing peer connection is relay-only", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     await transport.start();
     const node = await createClipboardNode.mock.results[0].value;
     node.getConnections.mockReturnValue([
@@ -627,7 +741,9 @@ describe("Libp2pMessagingTransport", () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(node.dial).toHaveBeenCalledTimes(1);
-    expect(node.dial.mock.calls[0][0].toString()).toBe(`${relay}/p2p-circuit/webrtc/p2p/peer-1`);
+    expect(node.dial.mock.calls[0][0].toString()).toBe(
+      `${relay}/p2p-circuit/webrtc/p2p/peer-1`,
+    );
   });
 
   it("registers only a Signed Peer Record after a relay reservation is live", async () => {
@@ -646,7 +762,58 @@ describe("Libp2pMessagingTransport", () => {
       relay,
       "clipp",
       Uint8Array.of(1, 2, 3),
-      expect.objectContaining({ timeoutMs: 12_000 })
+      expect.objectContaining({ timeoutMs: 12_000 }),
+    );
+    expect(mockLookupRendezvousPeer).not.toHaveBeenCalled();
+    await transport.stop();
+  });
+
+  it("imports exact Rendezvous Signed Peer Record bytes without granting membership", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const bytes = Uint8Array.of(9, 8, 7);
+    const signedPeerRecordPersistence = {
+      load: jest.fn(async () => ({})),
+      save: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    mockLookupRendezvousPeer.mockResolvedValueOnce([
+      { peer: "unadmitted", signedPeerRecord: bytes },
+    ]);
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      isPeerKnown: async () => false,
+      signedPeerRecordPersistence,
+    });
+    await transport.start();
+    await transport.refreshPeerRecord?.("unadmitted");
+    const node = await createClipboardNode.mock.results[0].value;
+
+    expect(signedPeerRecordPersistence.save).toHaveBeenCalledWith(
+      "unadmitted",
+      bytes,
+    );
+    node.dial.mockClear();
+    eventHandlers.get("peer:discovery")?.[0]?.({
+      detail: {
+        id: { toString: () => "unadmitted" },
+        multiaddrs: ["/ip4/192.0.2.1/tcp/9000/p2p/unadmitted"],
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(node.dial).not.toHaveBeenCalled();
+    await transport.stop();
+  });
+
+  it("does not query Rendezvous for a revoked Device Identity", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      isPeerRevoked: async () => true,
+    });
+    await transport.start();
+
+    await expect(transport.refreshPeerRecord?.("revoked")).rejects.toThrow(
+      "revoked_peer",
     );
     expect(mockLookupRendezvousPeer).not.toHaveBeenCalled();
     await transport.stop();
@@ -721,7 +888,7 @@ describe("Libp2pMessagingTransport", () => {
       relay,
       "clipp",
       Uint8Array.of(1, 2, 3),
-      expect.objectContaining({ timeoutMs: 12_000 })
+      expect.objectContaining({ timeoutMs: 12_000 }),
     );
     await transport.stop();
   });
@@ -765,7 +932,10 @@ describe("Libp2pMessagingTransport", () => {
     mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
     let finishRegistration!: (registered: boolean) => void;
     mockRegisterOnRendezvous.mockImplementationOnce(
-      () => new Promise<boolean>((resolve) => { finishRegistration = resolve; })
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishRegistration = resolve;
+        }),
     );
     const transport = createLibp2pMessagingTransport({
       relayAddresses: [relay],
@@ -784,9 +954,140 @@ describe("Libp2pMessagingTransport", () => {
       expect.anything(),
       relay,
       "clipp",
-      expect.anything()
+      expect.anything(),
     );
     await transport.stop();
+  });
+
+  it("starts a fresh relay registration after restart while an old pass is still in flight", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+    let finishOldRegistration!: (registered: boolean) => void;
+    mockRegisterOnRendezvous.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishOldRegistration = resolve;
+        }),
+    );
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(1);
+
+    await transport.stop();
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(2);
+
+    finishOldRegistration(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(2);
+    await transport.stop();
+  });
+
+  it("closes only relay-owned connections during relay shutdown", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const node = await createClipboardNode();
+    const relayClose = jest.fn(async () => undefined);
+    const directClose = jest.fn(async () => undefined);
+    const relayConnection = {
+      remotePeer: { toString: () => "relay" },
+      remoteAddr: { toString: () => relay },
+      close: relayClose,
+    };
+    const directConnection = {
+      remotePeer: { toString: () => "relay" },
+      remoteAddr: { toString: () => "/ip4/192.0.2.1/tcp/9000/p2p/relay" },
+      close: directClose,
+    };
+    node.dial.mockResolvedValueOnce(relayConnection);
+    node.getConnections.mockReturnValueOnce([]);
+    node.getConnections.mockReturnValue([relayConnection, directConnection]);
+    createClipboardNode.mockResolvedValueOnce(node);
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+    });
+    await transport.start();
+
+    await transport.stop();
+
+    expect(relayClose).toHaveBeenCalledTimes(1);
+    expect(directClose).not.toHaveBeenCalled();
+  });
+
+  it("closes a reservation listener created after shutdown", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    let finishListen!: () => void;
+    mockTransportManagerListen.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishListen = resolve;
+        }),
+    );
+    const listener = {
+      constructor: { name: "CircuitRelayTransportListener" },
+      getAddrs: () => [`${relay}/p2p-circuit`],
+      close: jest.fn(async () => undefined),
+    };
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+    });
+    const starting = transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockTransportManagerListen).toHaveBeenCalledTimes(1);
+
+    await transport.stop();
+    mockTransportManagerGetListeners.mockReturnValue([listener]);
+    finishListen();
+    await starting;
+
+    expect(listener.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers once when startup reservation changes self reachability", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    mockTransportManagerListen.mockImplementationOnce(async () => {
+      mockSelfMultiaddrs = [`${relay}/p2p-circuit/p2p/mock-peer`];
+    });
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+      rendezvousIntervalMs: 60_000,
+    });
+
+    await transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockRegisterOnRendezvous).toHaveBeenCalledTimes(1);
+    await transport.stop();
+  });
+
+  it("closes a relay dial that finishes after shutdown", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const node = await createClipboardNode();
+    let finishDial!: (connection: any) => void;
+    node.dial.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishDial = resolve;
+        }),
+    );
+    createClipboardNode.mockResolvedValueOnce(node);
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+    });
+    const starting = transport.start();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await transport.stop();
+    const close = jest.fn(async () => undefined);
+    finishDial({ close });
+    await starting;
+
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("dispatches inbound messages to protocol handlers", async () => {
@@ -794,7 +1095,9 @@ describe("Libp2pMessagingTransport", () => {
     await transport.start();
 
     const received: Array<{ from: string; data: Uint8Array }> = [];
-    transport.onMessage(CLIP_PROTOCOL, (from, data) => received.push({ from, data }));
+    transport.onMessage(CLIP_PROTOCOL, (from, data) =>
+      received.push({ from, data }),
+    );
 
     const handler = protocolHandlers.get(CLIP_PROTOCOL);
     expect(typeof handler).toBe("function");
@@ -826,11 +1129,15 @@ describe("Libp2pMessagingTransport", () => {
     await transport.start();
     transport.onStream(HISTORY_REQUEST_PROTOCOL, async () => {});
 
-    expect(protocolHandlers.get(HISTORY_REQUEST_PROTOCOL)).toEqual(expect.any(Function));
+    expect(protocolHandlers.get(HISTORY_REQUEST_PROTOCOL)).toEqual(
+      expect.any(Function),
+    );
   });
 
   it("stops an inbound history stream when incremental processing fails", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => true });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => true,
+    });
     await transport.start();
     let producedChunks = 0;
     transport.onStream!(HISTORY_PROTOCOL, async (_from, chunks) => {
@@ -842,19 +1149,24 @@ describe("Libp2pMessagingTransport", () => {
     const close = jest.fn(async () => {});
     const handler = protocolHandlers.get(HISTORY_PROTOCOL);
 
-    await handler({
-      abort,
-      close,
-      async *[Symbol.asyncIterator]() {
-        producedChunks += 1;
-        yield Uint8Array.of(0x80);
-        producedChunks += 1;
-        yield Uint8Array.of(0x01);
+    await handler(
+      {
+        abort,
+        close,
+        async *[Symbol.asyncIterator]() {
+          producedChunks += 1;
+          yield Uint8Array.of(0x80);
+          producedChunks += 1;
+          yield Uint8Array.of(0x01);
+        },
       },
-    }, { remotePeer: { toString: () => "peer-1" } });
+      { remotePeer: { toString: () => "peer-1" } },
+    );
 
     expect(producedChunks).toBe(1);
-    expect(abort).toHaveBeenCalledWith(expect.objectContaining({ message: "invalid_history_framing" }));
+    expect(abort).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "invalid_history_framing" }),
+    );
     expect(close).toHaveBeenCalled();
   });
 
@@ -862,24 +1174,33 @@ describe("Libp2pMessagingTransport", () => {
     const transport = createLibp2pMessagingTransport();
     transport.onStream(HISTORY_PROTOCOL, async () => {});
 
-    expect(() => transport.onStream(HISTORY_PROTOCOL, async () => {}))
-      .toThrow("protocol_handler_already_registered");
-    expect(() => transport.onMessage(HISTORY_PROTOCOL, () => {}))
-      .toThrow("protocol_stream_handler_already_registered");
+    expect(() => transport.onStream(HISTORY_PROTOCOL, async () => {})).toThrow(
+      "protocol_handler_already_registered",
+    );
+    expect(() => transport.onMessage(HISTORY_PROTOCOL, () => {})).toThrow(
+      "protocol_stream_handler_already_registered",
+    );
   });
 
   it("closes an unauthorised live stream without dispatching it", async () => {
-    const transport = createLibp2pMessagingTransport({ isPeerKnown: async () => false });
+    const transport = createLibp2pMessagingTransport({
+      isPeerKnown: async () => false,
+    });
     await transport.start();
     const received = jest.fn();
     transport.onMessage(CLIP_PROTOCOL, received);
     const close = jest.fn(async () => {});
     const handler = protocolHandlers.get(CLIP_PROTOCOL);
 
-    await handler({
-      close,
-      async *[Symbol.asyncIterator]() { yield new Uint8Array(); },
-    }, { remotePeer: { toString: () => "unknown-peer" } });
+    await handler(
+      {
+        close,
+        async *[Symbol.asyncIterator]() {
+          yield new Uint8Array();
+        },
+      },
+      { remotePeer: { toString: () => "unknown-peer" } },
+    );
 
     expect(close).toHaveBeenCalled();
     expect(received).not.toHaveBeenCalled();
@@ -908,20 +1229,23 @@ describe("Libp2pMessagingTransport", () => {
       });
       let readCount = 0;
       const handler = protocolHandlers.get(CLIP_PROTOCOL);
-      const handling = handler({
-        close,
-        [Symbol.asyncIterator]() {
-          return {
-            next: () => {
-              readCount += 1;
-              return readCount === 1
-                ? Promise.resolve({ done: false as const, value: frame })
-                : new Promise<IteratorResult<Uint8Array>>(() => {});
-            },
-            return: async () => ({ done: true as const, value: undefined }),
-          };
+      const handling = handler(
+        {
+          close,
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => {
+                readCount += 1;
+                return readCount === 1
+                  ? Promise.resolve({ done: false as const, value: frame })
+                  : new Promise<IteratorResult<Uint8Array>>(() => {});
+              },
+              return: async () => ({ done: true as const, value: undefined }),
+            };
+          },
         },
-      }, { remotePeer: { toString: () => "peer-1" } });
+        { remotePeer: { toString: () => "peer-1" } },
+      );
 
       await Promise.resolve();
       await jest.advanceTimersByTimeAsync(24);
@@ -959,22 +1283,26 @@ describe("Libp2pMessagingTransport", () => {
       });
       let offset = 0;
       const handler = protocolHandlers.get(CLIP_PROTOCOL);
-      const handling = handler({
-        close,
-        [Symbol.asyncIterator]() {
-          return {
-            next: () => {
-              if (offset >= 3) return new Promise<IteratorResult<Uint8Array>>(() => {});
-              const value = frame.slice(offset, offset + 1);
-              offset += 1;
-              return new Promise<IteratorResult<Uint8Array>>((resolve) => {
-                setTimeout(() => resolve({ done: false, value }), offset * 8);
-              });
-            },
-            return: async () => ({ done: true as const, value: undefined }),
-          };
+      const handling = handler(
+        {
+          close,
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => {
+                if (offset >= 3)
+                  return new Promise<IteratorResult<Uint8Array>>(() => {});
+                const value = frame.slice(offset, offset + 1);
+                offset += 1;
+                return new Promise<IteratorResult<Uint8Array>>((resolve) => {
+                  setTimeout(() => resolve({ done: false, value }), offset * 8);
+                });
+              },
+              return: async () => ({ done: true as const, value: undefined }),
+            };
+          },
         },
-      }, { remotePeer: { toString: () => "peer-1" } });
+        { remotePeer: { toString: () => "peer-1" } },
+      );
 
       await jest.advanceTimersByTimeAsync(25);
       await handling;
