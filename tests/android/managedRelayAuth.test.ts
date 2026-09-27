@@ -95,6 +95,94 @@ describe("Android managed relay authorization", () => {
     );
   });
 
+  it("keeps an explicit login when an older refresh response arrives later", async () => {
+    const native = bridge();
+    native.saved.set(endpoint, "refresh-old");
+    let finishRefresh!: (response: Response) => void;
+    const fetcher = jest.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const grant = new URLSearchParams(String(init?.body)).get("grant_type");
+        if (grant === "refresh_token")
+          return new Promise<Response>((resolve) => {
+            finishRefresh = resolve;
+          });
+        return tokens("login-access", "login-refresh");
+      }
+    );
+    const auth = new AndroidManagedRelayAuth(native, fetcher);
+    const refreshing = auth.accessToken(endpoint, new AbortController().signal);
+    while (!finishRefresh)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const login = auth.login(endpoint);
+    while (native.openBrowser.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = new URL(native.openBrowser.mock.calls[0][0]).searchParams.get(
+      "state"
+    )!;
+    expect(
+      await auth.acceptCallback(
+        `${ANDROID_RELAY_REDIRECT}?code=fresh&state=${state}`
+      )
+    ).toBe(true);
+    await login;
+    expect(native.saved.get(endpoint)).toBe("login-refresh");
+
+    finishRefresh(tokens("stale-access", "stale-refresh"));
+    await refreshing;
+    expect(native.saved.get(endpoint)).toBe("login-refresh");
+    expect(await auth.accessToken(endpoint, new AbortController().signal)).toBe(
+      "login-access"
+    );
+  });
+
+  it("does not let an older encrypted save finish after the new login save", async () => {
+    const native = bridge();
+    native.saved.set(endpoint, "refresh-old");
+    let finishOldSave!: () => void;
+    native.writeCredential.mockImplementation(async (url, value) => {
+      if (value === "stale-refresh")
+        await new Promise<void>((resolve) => {
+          finishOldSave = resolve;
+        });
+      native.saved.set(url, value);
+    });
+    const fetcher = jest.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        new URLSearchParams(String(init?.body)).get("grant_type") ===
+        "refresh_token"
+          ? tokens("stale-access", "stale-refresh")
+          : tokens("login-access", "login-refresh")
+    );
+    const auth = new AndroidManagedRelayAuth(native, fetcher);
+    const refreshing = auth.accessToken(endpoint, new AbortController().signal);
+    while (!finishOldSave)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const login = auth.login(endpoint);
+    while (native.openBrowser.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = new URL(native.openBrowser.mock.calls[0][0]).searchParams.get(
+      "state"
+    )!;
+    const callback = auth.acceptCallback(
+      `${ANDROID_RELAY_REDIRECT}?code=fresh&state=${state}`
+    );
+    const loginFinishedBeforeOldSave = await Promise.race([
+      login.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10)),
+    ]);
+    finishOldSave();
+    expect(loginFinishedBeforeOldSave).toBe(false);
+    expect(await callback).toBe(true);
+    await login;
+    await refreshing;
+    expect(native.saved.get(endpoint)).toBe("login-refresh");
+    expect(await auth.accessToken(endpoint, new AbortController().signal)).toBe(
+      "login-access"
+    );
+  });
+
   it("keeps a rotated credential in RAM with warning when encrypted save fails", async () => {
     const native = bridge();
     native.saved.set(endpoint, "refresh-old");

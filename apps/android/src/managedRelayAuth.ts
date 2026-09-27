@@ -98,6 +98,7 @@ export class AndroidManagedRelayAuth {
   private readonly flights = new Map<string, Promise<string | null>>();
   private readonly loginFlights = new Map<string, Promise<void>>();
   private readonly generations = new Map<string, number>();
+  private readonly credentialTurns = new Map<string, Promise<void>>();
   private readonly warnings = new Map<string, string>();
 
   constructor(
@@ -108,6 +109,26 @@ export class AndroidManagedRelayAuth {
 
   warning(endpoint: string): string | undefined {
     return this.warnings.get(endpoint);
+  }
+
+  private async serializedCredential<T>(
+    endpoint: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.credentialTurns.get(endpoint);
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.credentialTurns.set(endpoint, turn);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.credentialTurns.get(endpoint) === turn)
+        this.credentialTurns.delete(endpoint);
+    }
   }
 
   async accessToken(
@@ -138,11 +159,14 @@ export class AndroidManagedRelayAuth {
       try {
         old = (await this.bridge.readCredential(endpoint)) ?? undefined;
       } catch {
-        await this.bridge.eraseCredential(endpoint);
-        this.warnings.set(
-          endpoint,
-          "Stored relay credentials could not be read. Log in again."
-        );
+        await this.serializedCredential(endpoint, async () => {
+          if ((this.generations.get(endpoint) ?? 0) !== generation) return;
+          await this.bridge.eraseCredential(endpoint);
+          this.warnings.set(
+            endpoint,
+            "Stored relay credentials could not be read. Log in again."
+          );
+        });
         return null;
       }
     }
@@ -150,7 +174,13 @@ export class AndroidManagedRelayAuth {
     if (!old) return null;
     // A refresh can consume its input even when the response or later save fails.
     // Remove the durable old token before sending it, so restart cannot replay it.
-    await this.bridge.eraseCredential(endpoint);
+    const erased = await this.serializedCredential(endpoint, async () => {
+      if ((this.generations.get(endpoint) ?? 0) !== generation) return false;
+      await this.bridge.eraseCredential(endpoint);
+      return true;
+    });
+    if (!erased || (this.generations.get(endpoint) ?? 0) !== generation)
+      return null;
     this.renewable.delete(endpoint);
     let result: Awaited<ReturnType<typeof tokenResponse>>;
     try {
@@ -164,6 +194,7 @@ export class AndroidManagedRelayAuth {
         signal
       );
     } catch (error) {
+      if ((this.generations.get(endpoint) ?? 0) !== generation) return null;
       this.access.delete(endpoint);
       if (error instanceof Error && error.message === "invalid_credentials")
         return null;
@@ -176,14 +207,20 @@ export class AndroidManagedRelayAuth {
       expiresAt: this.now() + result.expires_in * 1000,
     });
     try {
-      await this.bridge.writeCredential(endpoint, result.refresh_token);
-      this.warnings.delete(endpoint);
+      await this.serializedCredential(endpoint, async () => {
+        if ((this.generations.get(endpoint) ?? 0) !== generation) return;
+        await this.bridge.writeCredential(endpoint, result.refresh_token);
+        if ((this.generations.get(endpoint) ?? 0) === generation)
+          this.warnings.delete(endpoint);
+      });
     } catch {
-      this.warnings.set(
-        endpoint,
-        "Relay credential is held only in memory. Log in again after restart."
-      );
+      if ((this.generations.get(endpoint) ?? 0) === generation)
+        this.warnings.set(
+          endpoint,
+          "Relay credential is held only in memory. Log in again after restart."
+        );
     }
+    if ((this.generations.get(endpoint) ?? 0) !== generation) return null;
     return result.access_token;
   }
 
@@ -313,6 +350,12 @@ export class AndroidManagedRelayAuth {
       pending.reject(new Error("authorization_denied"));
       return true;
     }
+    // A newly accepted explicit login supersedes any refresh already in flight.
+    // Its code exchange may finish before that older refresh response arrives.
+    this.generations.set(
+      pending.endpoint,
+      (this.generations.get(pending.endpoint) ?? 0) + 1
+    );
     const exchange = this.exchangeCallback(pending, codes[0]);
     this.loginFlights.set(pending.endpoint, exchange);
     try {
@@ -335,7 +378,11 @@ export class AndroidManagedRelayAuth {
   ): Promise<void> {
     const generation = this.generations.get(pending.endpoint) ?? 0;
     // An existing grant must not remain durable if a new code consumes its replacement.
-    await this.bridge.eraseCredential(pending.endpoint);
+    await this.serializedCredential(pending.endpoint, async () => {
+      if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+        throw new Error("login_cancelled");
+      await this.bridge.eraseCredential(pending.endpoint);
+    });
     if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
       throw new Error("login_cancelled");
     this.renewable.delete(pending.endpoint);
@@ -355,14 +402,25 @@ export class AndroidManagedRelayAuth {
       expiresAt: this.now() + result.expires_in * 1000,
     });
     try {
-      await this.bridge.writeCredential(pending.endpoint, result.refresh_token);
-      this.warnings.delete(pending.endpoint);
+      await this.serializedCredential(pending.endpoint, async () => {
+        if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+          throw new Error("login_cancelled");
+        await this.bridge.writeCredential(
+          pending.endpoint,
+          result.refresh_token
+        );
+        if ((this.generations.get(pending.endpoint) ?? 0) === generation)
+          this.warnings.delete(pending.endpoint);
+      });
     } catch {
-      this.warnings.set(
-        pending.endpoint,
-        "Relay credential is held only in memory. Log in again after restart."
-      );
+      if ((this.generations.get(pending.endpoint) ?? 0) === generation)
+        this.warnings.set(
+          pending.endpoint,
+          "Relay credential is held only in memory. Log in again after restart."
+        );
     }
+    if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+      throw new Error("login_cancelled");
   }
 
   async openAccount(endpoint: string): Promise<void> {
