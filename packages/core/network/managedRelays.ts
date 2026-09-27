@@ -318,6 +318,7 @@ const DEADLINES = {
   auth: 10_000,
   reserve: 15_000,
   rendezvous: 12_000,
+  shutdown: 15_000,
 } as const;
 const RETRY = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 
@@ -329,8 +330,9 @@ export class ManagedRelayController {
   private setupActive = 0;
   private readonly setupQueue: Array<() => void> = [];
   private stopped = false;
-  private configRevision = 0;
-  private mutationTail: Promise<void> = Promise.resolve();
+  private readonly desired = new Map<string, RelayConfiguration>();
+  private readonly cleanupByKey = new Map<string, Promise<void>>();
+  private readonly cleanupByEndpoint = new Map<string, Promise<void>>();
   constructor(
     private readonly adapter: ManagedRelayAdapter,
     private readonly random: () => number = Math.random,
@@ -461,125 +463,133 @@ export class ManagedRelayController {
       this.setupQueue.shift()?.();
     }
   }
-  private enqueueMutation<T>(work: () => Promise<T>): Promise<T> {
-    const result = this.mutationTail.then(work);
-    this.mutationTail = result.then(
-      () => undefined,
-      () => undefined
-    );
-    return result;
+  private endpointIdentity(config: RelayConfiguration): string {
+    return config.kind === "managed"
+      ? `managed:${config.discoveryUrl}`
+      : `explicit:${config.peerId}`;
   }
-  async setConfigurations(values: unknown): Promise<void> {
-    const configs = normalizeRelayConfigurations(values);
-    const attempts = await this.enqueueMutation(() =>
-      this.applyConfigurations(configs)
-    );
-    await Promise.all(attempts);
+  private sameEndpoint(
+    left: RelayConfiguration,
+    right: RelayConfiguration
+  ): boolean {
+    return this.endpointIdentity(left) === this.endpointIdentity(right);
   }
-  private async applyConfigurations(
-    configs: RelayConfiguration[]
-  ): Promise<Promise<void>[]> {
-    const revision = ++this.configRevision;
-    this.stopped = false;
-    const nextKeys = new Set(configs.map((config) => config.key));
-    for (const key of [...this.entries.keys()]) {
-      if (revision !== this.configRevision) return [];
-      if (!nextKeys.has(key)) await this.removeEntry(key);
-      if (revision !== this.configRevision) return [];
-    }
-    const attempts: Promise<void>[] = [];
-    for (const config of configs) {
-      if (revision !== this.configRevision) return [];
-      const old = this.entries.get(config.key);
-      if (old) {
-        const sameIdentity =
-          old.config.kind === config.kind &&
-          (config.kind === "managed"
-            ? old.config.kind === "managed" &&
-              old.config.discoveryUrl === config.discoveryUrl
-            : old.config.kind === "explicit" &&
-              old.config.peerId === config.peerId);
-        if (sameIdentity) {
-          old.config = config;
-          this.emit(old, { name: config.name });
-          continue;
-        }
-        await this.removeEntry(config.key);
-        if (revision !== this.configRevision) return [];
-      }
-      const entry: Entry = {
-        config,
-        state: {
-          key: config.key,
-          name: config.name,
-          kind: config.kind,
-          status: "connecting",
-        },
-        generation: 0,
-        controller: new AbortController(),
-        attempt: 0,
-        retryAt: 0,
-      };
-      this.entries.set(config.key, entry);
-      this.adapter.onStateChange?.(this.states());
-      attempts.push(this.setup(entry));
-    }
-    return attempts;
-  }
-  async remove(key: string): Promise<void> {
-    return this.enqueueMutation(async () => {
-      ++this.configRevision;
-      await this.removeEntry(key);
-    });
-  }
-  private async removeEntry(key: string): Promise<void> {
-    const entry = this.entries.get(key);
-    if (!entry) return;
-    this.entries.delete(key);
+  private detachEntry(entry: Entry, eraseCredentials: boolean): Promise<void> {
+    if (this.entries.get(entry.config.key) !== entry)
+      return this.cleanupByKey.get(entry.config.key) ?? Promise.resolve();
+    this.entries.delete(entry.config.key);
     entry.generation++;
     entry.controller.abort();
     this.clearTimers(entry);
-    const connection = entry.connection;
-    entry.connection = undefined;
-    if (connection) {
-      try {
-        await this.deadline(
-          DEADLINES.rendezvous,
-          new AbortController().signal,
-          (signal) => this.adapter.unregister(connection, signal)
-        );
-      } catch {
-        /* cleanup best effort */
-      }
-      await entry.reservation?.release().catch(() => undefined);
-      await connection.close().catch(() => undefined);
-    }
     if (entry.state.peerId && this.peerClaims.get(entry.state.peerId) === entry)
       this.peerClaims.delete(entry.state.peerId);
-    this.retryConflicts();
-    if (entry.config.kind === "managed")
-      await this.adapter.eraseCredentials(entry.config.discoveryUrl);
     this.adapter.onStateChange?.(this.states());
+    this.retryConflicts();
+    const connection = entry.connection;
+    entry.connection = undefined;
+    const cleanup = (async () => {
+      if (connection) {
+        try {
+          await this.deadline(
+            DEADLINES.rendezvous,
+            new AbortController().signal,
+            (signal) => this.adapter.unregister(connection, signal)
+          );
+        } catch {
+          /* cleanup best effort */
+        }
+        await entry.reservation?.release().catch(() => undefined);
+        await connection.close().catch(() => undefined);
+      }
+      if (eraseCredentials && entry.config.kind === "managed")
+        await this.adapter.eraseCredentials(entry.config.discoveryUrl);
+    })();
+    const key = entry.config.key;
+    const endpoint = this.endpointIdentity(entry.config);
+    this.cleanupByKey.set(key, cleanup);
+    this.cleanupByEndpoint.set(endpoint, cleanup);
+    void cleanup
+      .finally(() => {
+        if (this.cleanupByKey.get(key) === cleanup)
+          this.cleanupByKey.delete(key);
+        if (this.cleanupByEndpoint.get(endpoint) === cleanup)
+          this.cleanupByEndpoint.delete(endpoint);
+      })
+      .catch(() => undefined);
+    return cleanup;
+  }
+  private async addAfterCleanup(config: RelayConfiguration): Promise<void> {
+    const key = config.key;
+    const endpoint = this.endpointIdentity(config);
+    const pending = [
+      this.cleanupByKey.get(key),
+      this.cleanupByEndpoint.get(endpoint),
+    ].filter((value): value is Promise<void> => Boolean(value));
+    await Promise.all(pending);
+    if (
+      this.stopped ||
+      this.desired.get(key) !== config ||
+      this.entries.has(key)
+    )
+      return;
+    const entry: Entry = {
+      config,
+      state: {
+        key,
+        name: config.name,
+        kind: config.kind,
+        status: "connecting",
+      },
+      generation: 0,
+      controller: new AbortController(),
+      attempt: 0,
+      retryAt: 0,
+    };
+    this.entries.set(key, entry);
+    this.adapter.onStateChange?.(this.states());
+    await this.setup(entry);
+  }
+  async setConfigurations(values: unknown): Promise<void> {
+    const configs = normalizeRelayConfigurations(values);
+    this.stopped = false;
+    this.desired.clear();
+    for (const config of configs) this.desired.set(config.key, config);
+    const cleanups: Promise<void>[] = [];
+    for (const entry of [...this.entries.values()]) {
+      const next = this.desired.get(entry.config.key);
+      if (!next || !this.sameEndpoint(entry.config, next)) {
+        cleanups.push(this.detachEntry(entry, true));
+      } else {
+        entry.config = next;
+        this.emit(entry, { name: next.name });
+      }
+    }
+    const additions = configs
+      .filter((config) => !this.entries.has(config.key))
+      .map((config) => this.addAfterCleanup(config));
+    await Promise.all([...cleanups, ...additions]);
+  }
+  async remove(key: string): Promise<void> {
+    this.desired.delete(key);
+    const entry = this.entries.get(key);
+    if (entry) await this.detachEntry(entry, true);
+    else await this.cleanupByKey.get(key);
   }
   async stop(): Promise<void> {
-    return this.enqueueMutation(() => this.stopCore());
-  }
-  private async stopCore(): Promise<void> {
-    ++this.configRevision;
     this.stopped = true;
-    const entries = [...this.entries.values()];
-    this.entries.clear();
-    this.peerClaims.clear();
-    await Promise.all(
-      entries.map(async (entry) => {
-        entry.generation++;
-        entry.controller.abort();
-        this.clearTimers(entry);
-        await entry.reservation?.release().catch(() => undefined);
-        await entry.connection?.close().catch(() => undefined);
-      })
+    this.desired.clear();
+    const cleanups = [...this.entries.values()].map((entry) =>
+      this.detachEntry(entry, false)
     );
+    this.peerClaims.clear();
     this.adapter.onStateChange?.([]);
+    await this.deadline(
+      DEADLINES.shutdown,
+      new AbortController().signal,
+      async () => {
+        await Promise.all([...cleanups, ...this.cleanupByKey.values()]);
+      }
+    );
   }
   async connectionLost(
     key: string,

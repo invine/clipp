@@ -1095,3 +1095,166 @@ describe("public settings mutation ordering", () => {
     await controller.stop();
   });
 });
+
+describe("independent public relay teardown", () => {
+  const a = {
+    key: "a",
+    name: "A",
+    kind: "explicit" as const,
+    peerId: "peer-a",
+    addresses: ["/dns4/a.example/tcp/443/wss/p2p/peer-a"],
+  };
+  const b = {
+    key: "b",
+    name: "B",
+    kind: "explicit" as const,
+    peerId: "peer-b",
+    addresses: ["/dns4/b.example/tcp/443/wss/p2p/peer-b"],
+  };
+
+  it("removes B while A unregister is still pending", async () => {
+    const { adapter } = adapterHarness();
+    const connections = new Map<
+      string,
+      { verifiedPeerId: string; close: jest.Mock }
+    >();
+    adapter.dial = jest.fn(async (addr) => {
+      const verifiedPeerId = addr.split("/p2p/").pop()!;
+      const connection = {
+        verifiedPeerId,
+        close: jest.fn(async () => undefined),
+      };
+      connections.set(verifiedPeerId, connection);
+      return connection;
+    });
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([a, b]);
+    let finishA: (() => void) | undefined;
+    adapter.unregister = jest.fn((connection) =>
+      connection.verifiedPeerId === "peer-a"
+        ? new Promise<void>((resolve) => {
+            finishA = resolve;
+          })
+        : Promise.resolve()
+    );
+    const removingA = controller.remove("a");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(finishA).toBeDefined();
+    const removingB = controller.remove("b");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(connections.get("peer-b")!.close).toHaveBeenCalledTimes(1);
+    finishA?.();
+    await Promise.all([removingA, removingB]);
+    await controller.stop();
+  });
+
+  it("stops B while A credential erasure is still pending", async () => {
+    const { adapter } = adapterHarness();
+    const managedA = {
+      key: "a",
+      name: "A",
+      kind: "managed" as const,
+      discoveryUrl: "https://a.example/v1/relay",
+    };
+    adapter.discover = jest.fn(async () => ({
+      version: 1 as const,
+      relay: { peerId: "peer-a", addresses: a.addresses },
+      validUntil: Date.now() + 30_000,
+    }));
+    const connections = new Map<
+      string,
+      { verifiedPeerId: string; close: jest.Mock }
+    >();
+    adapter.dial = jest.fn(async (addr) => {
+      const verifiedPeerId = addr.split("/p2p/").pop()!;
+      const connection = {
+        verifiedPeerId,
+        close: jest.fn(async () => undefined),
+      };
+      connections.set(verifiedPeerId, connection);
+      return connection;
+    });
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([managedA, b]);
+    let finishErase: (() => void) | undefined;
+    adapter.eraseCredentials = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishErase = resolve;
+        })
+    );
+    const removingA = controller.remove("a");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(finishErase).toBeDefined();
+    const stopping = controller.stop();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(connections.get("peer-b")!.close).toHaveBeenCalledTimes(1);
+    finishErase?.();
+    await Promise.all([removingA, stopping]);
+  });
+});
+
+describe("bounded independent shutdown", () => {
+  it("reports an incomplete stop within fifteen seconds while closing an unrelated relay", async () => {
+    jest.useFakeTimers();
+    try {
+      const { adapter } = adapterHarness();
+      adapter.discover = jest.fn(async () => ({
+        version: 1 as const,
+        relay: {
+          peerId: "peer-a",
+          addresses: ["/dns4/a.example/tcp/443/wss/p2p/peer-a"],
+        },
+        validUntil: Date.now() + 30_000,
+      }));
+      const connections = new Map<
+        string,
+        { verifiedPeerId: string; close: jest.Mock }
+      >();
+      adapter.dial = jest.fn(async (addr) => {
+        const verifiedPeerId = addr.split("/p2p/").pop()!;
+        const connection = {
+          verifiedPeerId,
+          close: jest.fn(async () => undefined),
+        };
+        connections.set(verifiedPeerId, connection);
+        return connection;
+      });
+      const controller = new ManagedRelayController(adapter);
+      await controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://a.example/v1/relay",
+        },
+        {
+          key: "b",
+          name: "B",
+          kind: "explicit",
+          peerId: "peer-b",
+          addresses: ["/dns4/b.example/tcp/443/wss/p2p/peer-b"],
+        },
+      ]);
+      adapter.eraseCredentials = jest.fn(
+        () => new Promise<void>(() => undefined)
+      );
+      void controller.remove("a").catch(() => undefined);
+      await jest.advanceTimersByTimeAsync(0);
+      let stopOutcome = "pending";
+      void controller.stop().then(
+        () => {
+          stopOutcome = "completed";
+        },
+        (error) => {
+          stopOutcome = (error as Error).message;
+        }
+      );
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(connections.get("peer-b")!.close).toHaveBeenCalledTimes(1);
+      expect(stopOutcome).toBe("deadline_exceeded");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

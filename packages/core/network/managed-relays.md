@@ -12,4 +12,5 @@ The adapter should call `connectionLost(key, connection)` for an owned connectio
 
 UI callers pass `states()` and `configurations()` into the optional managed-relay props on `ClipboardApp`, together with add/edit/remove, login, account, and retry actions. Unmigrated callers continue using `relayAddresses` and `onSetRelayAddresses`.
 
-Public configuration mutations (`setConfigurations`, `remove`, and `stop`) are serialized in call order. A pending endpoint cleanup completes before a later re-add can acquire fresh credentials for that endpoint. Network setup continues asynchronously after reconciliation, with per-entry generation checks preventing stale completion from restoring removed state.
+Public configuration mutations synchronously detach affected entries and start each cleanup independently. A re-add waits for prior cleanup of its key and endpoint before acquiring fresh credentials, while unrelated relay removals and stop proceed without waiting for that cleanup. Network setup continues asynchronously, with desired-configuration and per-entry generation checks preventing stale completion from restoring removed state.
+`stop()` starts all remaining relay cleanups together and rejects with `deadline_exceeded` after 15 seconds if any cleanup remains pending; a rejected stop does not claim that the pending cleanup completed.
