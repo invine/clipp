@@ -267,6 +267,7 @@ export type ManagedRelayAdapter = {
     signal: AbortSignal
   ): Promise<DiscoveryDocument>;
   supportsAddress(address: string): boolean;
+  addressPriority?(address: string): number;
   dial(address: string, signal: AbortSignal): Promise<ManagedRelayConnection>;
   authenticate(
     connection: ManagedRelayConnection,
@@ -732,7 +733,13 @@ export class ManagedRelayController {
       this.emit(entry, { peerId });
       connection = await this.dialAddresses(
         entry,
-        addresses.filter((address) => this.adapter.supportsAddress(address)),
+        addresses
+          .filter((address) => this.adapter.supportsAddress(address))
+          .sort(
+            (left, right) =>
+              (this.adapter.addressPriority?.(left) ?? 0) -
+              (this.adapter.addressPriority?.(right) ?? 0)
+          ),
         peerId
       );
       if (!this.current(entry, generation)) {

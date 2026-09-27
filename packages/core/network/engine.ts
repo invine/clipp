@@ -38,6 +38,7 @@ import {
   type SignedPeerRecordPersistence,
 } from "./peerRecords.js";
 import { RelayLifecycle } from "./relayLifecycle.js";
+import { createManagedRelayHost } from "./managedRelayHost.js";
 import type {
   MessagingTransport,
   MessageHandler,
@@ -143,13 +144,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
       opts,
       () => this.selfMultiaddrs(),
       () => this.getSignedPeerRecord(),
-      () => this.handleSelfReachabilityChanged(),
+      () => this.handleSelfReachabilityChanged()
     );
   }
 
   private applicationStreamPolicy(
     protocol: string,
-    idleTimeoutOverride?: number,
+    idleTimeoutOverride?: number
   ): {
     enforceProgressTimeout: boolean;
     idleTimeoutMs: number;
@@ -248,7 +249,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     this.node.handle(
       HISTORY_REQUEST_PROTOCOL,
       handler(HISTORY_REQUEST_PROTOCOL),
-      { runOnLimitedConnection: true },
+      { runOnLimitedConnection: true }
     );
 
     await this.node.start();
@@ -276,10 +277,21 @@ class Libp2pMessagingTransport implements MessagingTransport {
     log.info("Messaging transport stopped");
   }
 
+  managedRelayHost(
+    onConnectionClosed?: Parameters<typeof createManagedRelayHost>[2]
+  ): ReturnType<typeof createManagedRelayHost> {
+    if (!this.node || !this.started) throw new Error("messaging_not_started");
+    return createManagedRelayHost(
+      this.node,
+      () => this.getSignedPeerRecord(),
+      onConnectionClosed
+    );
+  }
+
   async send(
     protocol: string,
     target: string,
-    data: Uint8Array,
+    data: Uint8Array
   ): Promise<void> {
     if (!this.node || !this.started) {
       throw new Error("messaging_not_started");
@@ -306,9 +318,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
           ? await openApplicationStreamWithTimeout(
               opening,
               idleTimeoutMs,
-              applicationStreamTimeoutError(protocol),
+              applicationStreamTimeoutError(protocol)
             )
-          : await opening,
+          : await opening
       );
 
       if (isLiveClip) {
@@ -316,13 +328,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
           writeMessageStream(stream, data),
           idleTimeoutMs,
           stream,
-          applicationStreamTimeoutError(protocol),
+          applicationStreamTimeoutError(protocol)
         );
         await applicationStreamOperationWithTimeout(
           closeMessageStream(stream, { ignoreClosedDataChannel: true }),
           idleTimeoutMs,
           stream,
-          applicationStreamTimeoutError(protocol),
+          applicationStreamTimeoutError(protocol)
         );
       } else {
         await writeMessageStream(stream, data);
@@ -344,14 +356,14 @@ class Libp2pMessagingTransport implements MessagingTransport {
     protocol: string,
     target: string,
     frames: AsyncIterable<Uint8Array>,
-    options?: StreamSendOptions,
+    options?: StreamSendOptions
   ): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     const peerId = await this.targetPeerId(target);
     const context = { protocol, target, peerId };
     const policy = this.applicationStreamPolicy(
       protocol,
-      options?.idleTimeoutMs,
+      options?.idleTimeoutMs
     );
     let stream: any;
     try {
@@ -362,9 +374,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
               opening,
               policy.idleTimeoutMs,
               policy.timeoutError,
-              options?.signal,
+              options?.signal
             )
-          : await opening,
+          : await opening
       );
       const iterator = frames[Symbol.asyncIterator]();
       let iteratorCompleted = false;
@@ -377,7 +389,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
                   policy.idleTimeoutMs,
                   stream,
                   policy.timeoutError,
-                  options?.signal,
+                  options?.signal
                 )
               : await iterator.next();
           if (next.done) {
@@ -393,7 +405,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
               policy.idleTimeoutMs,
               stream,
               policy.timeoutError,
-              options?.signal,
+              options?.signal
             );
           } else {
             await writeMessageStream(stream, frame);
@@ -412,7 +424,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
           policy.idleTimeoutMs,
           stream,
           policy.timeoutError,
-          options?.signal,
+          options?.signal
         );
       } else {
         await closeMessageStream(stream, { ignoreClosedDataChannel: true });
@@ -421,7 +433,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       const failure = err instanceof Error ? err : new Error(String(err));
       abortMessageStream(stream, failure);
       void closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(
-        () => undefined,
+        () => undefined
       );
       log.warn("Messaging stream send failed", {
         ...context,
@@ -457,7 +469,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       this.logPeerConnectionSnapshot(
         peerId,
         "dial skipped: already connected",
-        dialContext,
+        dialContext
       );
       this.markPeerConnected(peerId, true);
       return;
@@ -467,7 +479,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (target.startsWith("/")) {
       dialedConnection = await this.node.dial(
         ensureLegacyMultiaddrApi(multiaddr(target)),
-        this.dialOptions(),
+        this.dialOptions()
       );
       this.observePeerConnection(dialedConnection, "dial result", dialContext);
       if (peerId)
@@ -484,7 +496,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const storedTargets = (storedPeer?.addresses ?? [])
       .map((address: any) => address?.multiaddr?.toString?.())
       .filter(
-        (address: unknown): address is string => typeof address === "string",
+        (address: unknown): address is string => typeof address === "string"
       )
       .sort((left: string, right: string) => {
         const leftPriority = connectionPathForAddr(left) === "relay" ? 0 : 1;
@@ -500,7 +512,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       try {
         dialedConnection = await this.node.dial(
           ensureLegacyMultiaddrApi(multiaddr(storedTarget)),
-          { ...this.dialOptions(), force: true },
+          { ...this.dialOptions(), force: true }
         );
         break;
       } catch (error) {
@@ -624,12 +636,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
           peerId,
           addr: null,
           path,
-        })),
+        }))
       );
     }
 
     return Array.from(byPeer.entries()).map(([peerId, connections]) =>
-      summarizePeerConnectionInfo(peerId, connections),
+      summarizePeerConnectionInfo(peerId, connections)
     );
   }
 
@@ -643,7 +655,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       typeof this.node.getConnections !== "function"
     ) {
       return relays.map((address) =>
-        summarizeRelayConnectionInfo(address, [], true),
+        summarizeRelayConnectionInfo(address, [], true)
       );
     }
 
@@ -657,7 +669,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
 
     return relays.map((address) =>
-      summarizeRelayConnectionInfo(address, connections, false),
+      summarizeRelayConnectionInfo(address, connections, false)
     );
   }
 
@@ -680,12 +692,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
       existing?.peerRecordEnvelope instanceof Uint8Array
     ) {
       this.cachedSignedPeerRecord = Uint8Array.from(
-        existing.peerRecordEnvelope,
+        existing.peerRecordEnvelope
       );
       this.cachedSignedPeerRecordMultiaddrsKey = currentMultiaddrsKey;
       await this.persistPeerRecord(
         safePeerId(this.node.peerId),
-        this.cachedSignedPeerRecord,
+        this.cachedSignedPeerRecord
       );
       return Uint8Array.from(this.cachedSignedPeerRecord);
     }
@@ -701,10 +713,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (existing?.peerRecordEnvelope instanceof Uint8Array) {
       try {
         const previousEnvelope = RecordEnvelope.createFromProtobuf(
-          existing.peerRecordEnvelope,
+          existing.peerRecordEnvelope
         );
         const previousRecord = PeerRecord.createFromProtobuf(
-          previousEnvelope.payload,
+          previousEnvelope.payload
         );
         if (seqNumber <= previousRecord.seqNumber)
           seqNumber = previousRecord.seqNumber + 1n;
@@ -718,26 +730,26 @@ class Libp2pMessagingTransport implements MessagingTransport {
         multiaddrs: this.node.getMultiaddrs(),
         seqNumber,
       }),
-      privateKey,
+      privateKey
     );
     this.cachedSignedPeerRecord = Uint8Array.from(envelope.marshal());
     this.cachedSignedPeerRecordMultiaddrsKey = currentMultiaddrsKey;
     this.selfPeerRecordDirty = false;
     await this.persistPeerRecord(
       safePeerId(this.node.peerId),
-      this.cachedSignedPeerRecord,
+      this.cachedSignedPeerRecord
     );
     return Uint8Array.from(this.cachedSignedPeerRecord);
   }
 
   async getSignedPeerRecordFor(
-    peerId: string,
+    peerId: string
   ): Promise<Uint8Array | undefined> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     if (peerId === safePeerId(this.node.peerId))
       return this.getSignedPeerRecord();
     const record = await this.node.peerStore?.get?.(
-      await peerIdObjectForTarget(peerId),
+      await peerIdObjectForTarget(peerId)
     );
     if (record?.peerRecordEnvelope instanceof Uint8Array) {
       const envelope = Uint8Array.from(record.peerRecordEnvelope);
@@ -750,7 +762,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async importSignedPeerRecord(
     expectedPeerId: string,
-    record: Uint8Array,
+    record: Uint8Array
   ): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     if (
@@ -763,7 +775,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const imported = await consumeOrMatchSignedPeerRecord(
       this.node.peerStore,
       peerId,
-      record,
+      record
     );
     if (imported !== true) throw new Error("invalid_signed_peer_record");
     if (
@@ -785,7 +797,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     this.peerRecordWrite = this.peerRecordWrite.then(write, write);
     const persistenceResult = await this.peerRecordWrite.then(
       () => ({ ok: true as const }),
-      (error: unknown) => ({ ok: false as const, error }),
+      (error: unknown) => ({ ok: false as const, error })
     );
     let peerStoreResult: { ok: true } | { ok: false; error: unknown } = {
       ok: true,
@@ -814,7 +826,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       if (await this.opts.isPeerRevoked?.(peerId)) {
         this.forgottenPeerIds.add(peerId);
         const peerIdObject = await peerIdObjectForTarget(peerId).catch(
-          () => undefined,
+          () => undefined
         );
         await Promise.allSettled([
           this.opts.signedPeerRecordPersistence?.remove(peerId) ??
@@ -835,7 +847,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
           await consumeOrMatchSignedPeerRecord(
             this.node?.peerStore,
             expectedPeerId,
-            record,
+            record
           )
         ) {
           this.persistedPeerRecords.set(peerId, record);
@@ -848,7 +860,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   private async persistPeerRecord(
     peerId: string | null,
-    record: Uint8Array,
+    record: Uint8Array
   ): Promise<void> {
     if (!peerId) return;
     this.persistedPeerRecords.set(peerId, Uint8Array.from(record));
@@ -888,7 +900,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       return await this.node.dialProtocol(
         ensureLegacyMultiaddrApi(multiaddr(target)),
         protocol,
-        options,
+        options
       );
     }
 
@@ -1014,7 +1026,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private observePeerConnection(
     conn: any,
     source: string,
-    context?: Record<string, unknown>,
+    context?: Record<string, unknown>
   ): void {
     const detail = describeConnection(conn);
     if (!detail.peerId || this.relayPeerIds.has(detail.peerId)) return;
@@ -1057,7 +1069,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const detail = describeConnection(conn);
     if (!detail.peerId || this.relayPeerIds.has(detail.peerId)) return;
     const remainingConnections = this.describeActivePeerConnections(
-      detail.peerId,
+      detail.peerId
     );
     log.debug("Peer connection closed", {
       ...detail,
@@ -1073,11 +1085,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private logPeerConnectionSnapshot(
     peerId: string,
     reason: string,
-    context?: Record<string, unknown>,
+    context?: Record<string, unknown>
   ): void {
     const activeConnections = this.describeActivePeerConnections(peerId);
     const activePaths = Array.from(
-      new Set(activeConnections.map((c) => c.path)),
+      new Set(activeConnections.map((c) => c.path))
     );
     const observed =
       this.observedConnectionPaths.get(peerId) ?? new Set<PeerConnectionPath>();
@@ -1118,7 +1130,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   private describeActivePeerConnections(
-    peerId: string,
+    peerId: string
   ): PeerConnectionDescription[] {
     try {
       const conns = this.node?.getConnections?.() || [];
@@ -1155,7 +1167,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       const from = safePeerId(
         (conn as any)?.remotePeer ??
           (stream as any)?.remotePeer ??
-          (conn as any)?.remotePeerId,
+          (conn as any)?.remotePeerId
       );
       if (!from) {
         log.warn("Incoming stream missing peer id", {
@@ -1221,7 +1233,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
                   ? await nextBeforeDeadline(
                       iterator,
                       Date.now() + policy.idleTimeoutMs,
-                      policy.timeoutError,
+                      policy.timeoutError
                     )
                   : await iterator.next();
                 if (next.done) return;
@@ -1340,7 +1352,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
           const frame = await readBoundedLiveClipFrame(
             iterable,
             maximumBytes,
-            idleTimeoutMs,
+            idleTimeoutMs
           );
           if (!frame || !decodeLiveClipFrame(frame, maximumBytes)) {
             await closeMessageStream(stream, {
@@ -1400,7 +1412,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   private async closeInvalidPairingConnection(
     peerId: string | null,
-    conn: any,
+    conn: any
   ): Promise<void> {
     try {
       if (
@@ -1439,7 +1451,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const addrs = this.node?.getMultiaddrs?.() ?? [];
     const list = Array.isArray(addrs)
       ? addrs.map((a: any) =>
-          typeof a?.toString === "function" ? a.toString() : String(a),
+          typeof a?.toString === "function" ? a.toString() : String(a)
         )
       : [];
     const unique: string[] = [];
@@ -1471,8 +1483,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
 }
 
 export function createLibp2pMessagingTransport(
-  options?: Libp2pMessagingOptions,
-): StreamingMessagingTransport {
+  options?: Libp2pMessagingOptions
+): StreamingMessagingTransport &
+  Pick<Libp2pMessagingTransport, "managedRelayHost"> {
   return new Libp2pMessagingTransport(options);
 }
 
@@ -1533,7 +1546,7 @@ function discoveredPeerTargets(peer: any, peerId: string): string[] {
 
 function describeConnection(conn: any): PeerConnectionDescription {
   const peerId = safePeerId(
-    conn?.remotePeer ?? conn?.remotePeerId ?? conn?.peer,
+    conn?.remotePeer ?? conn?.remotePeerId ?? conn?.peer
   );
   const addr =
     typeof conn?.remoteAddr?.toString === "function"
@@ -1551,7 +1564,7 @@ function describeConnection(conn: any): PeerConnectionDescription {
 
 function summarizePeerConnectionInfo(
   peerId: string,
-  connections: PeerConnectionDescription[],
+  connections: PeerConnectionDescription[]
 ): PeerConnectionInfo {
   const hasDirect = connections.some((conn) => conn.path === "direct");
   const hasRelay = connections.some((conn) => conn.path === "relay");
@@ -1559,8 +1572,8 @@ function summarizePeerConnectionInfo(
     connections
       .map((conn) => conn.addr)
       .filter(
-        (addr): addr is string => typeof addr === "string" && addr.length > 0,
-      ),
+        (addr): addr is string => typeof addr === "string" && addr.length > 0
+      )
   );
   return {
     peerId,
@@ -1574,7 +1587,7 @@ function summarizePeerConnectionInfo(
 function summarizeRelayConnectionInfo(
   address: string,
   connections: PeerConnectionDescription[],
-  transportUnavailable: boolean,
+  transportUnavailable: boolean
 ): RelayConnectionInfo {
   const peerId = relayPeerIdForAddress(address);
   const matching = connections.filter((conn) => {
@@ -1585,8 +1598,8 @@ function summarizeRelayConnectionInfo(
     matching
       .map((conn) => conn.addr)
       .filter(
-        (addr): addr is string => typeof addr === "string" && addr.length > 0,
-      ),
+        (addr): addr is string => typeof addr === "string" && addr.length > 0
+      )
   );
 
   return {
@@ -1616,7 +1629,7 @@ function connectionPathForAddr(addr: unknown): PeerConnectionPath {
 
 function connectionPathForConnection(
   conn: any,
-  addr: unknown,
+  addr: unknown
 ): PeerConnectionPath {
   if (conn?.limits != null) return "relay";
   return connectionPathForAddr(addr);
@@ -1661,7 +1674,7 @@ function getStreamIterable(stream: any): AsyncIterable<any> | undefined {
 async function readBoundedLiveClipFrame(
   iterable: AsyncIterable<any>,
   maximumBytes: number,
-  idleTimeoutMs: number,
+  idleTimeoutMs: number
 ): Promise<Uint8Array | null> {
   const iterator = iterable[Symbol.asyncIterator]();
   const chunks: Uint8Array[] = [];
@@ -1728,14 +1741,14 @@ function decodeCanonicalLengthPrefix(bytes: number[]): number | null {
 async function nextBeforeDeadline<T>(
   iterator: AsyncIterator<T>,
   deadline: number,
-  timeoutError = applicationStreamTimeoutError(CLIP_PROTOCOL),
+  timeoutError = applicationStreamTimeoutError(CLIP_PROTOCOL)
 ): Promise<IteratorResult<T>> {
   const remainingMs = Math.max(0, deadline - Date.now());
   return await promiseWithTimeout(
     iterator.next(),
     remainingMs,
     timeoutError,
-    () => undefined,
+    () => undefined
   );
 }
 
@@ -1743,7 +1756,7 @@ async function openApplicationStreamWithTimeout(
   opening: Promise<any>,
   timeoutMs: number,
   timeoutError: Error,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<any> {
   let lateFailure: Error | null = null;
   const guardedOpening = opening.then((stream) => {
@@ -1761,7 +1774,7 @@ async function openApplicationStreamWithTimeout(
       signal,
       (error) => {
         lateFailure = error;
-      },
+      }
     );
   } catch (error) {
     lateFailure = error instanceof Error ? error : new Error(String(error));
@@ -1774,7 +1787,7 @@ async function applicationStreamOperationWithTimeout<T>(
   timeoutMs: number,
   stream: any,
   timeoutError: Error,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<T> {
   return await promiseWithTimeout(
     operation,
@@ -1782,7 +1795,7 @@ async function applicationStreamOperationWithTimeout<T>(
     timeoutError,
     () => abortMessageStream(stream, timeoutError),
     signal,
-    (error) => abortMessageStream(stream, error),
+    (error) => abortMessageStream(stream, error)
   );
 }
 
@@ -1792,7 +1805,7 @@ async function promiseWithTimeout<T>(
   timeoutError: Error,
   onTimeout: () => void,
   signal?: AbortSignal,
-  onAbort: (error: Error) => void = () => undefined,
+  onAbort: (error: Error) => void = () => undefined
 ): Promise<T> {
   if (signal?.aborted) {
     const error = streamCancelledError();
@@ -1808,7 +1821,7 @@ async function promiseWithTimeout<T>(
         onTimeout();
         reject(timeoutError);
       }, timeoutMs);
-    }),
+    })
   );
   if (signal) {
     operations.push(
@@ -1819,7 +1832,7 @@ async function promiseWithTimeout<T>(
           reject(error);
         };
         signal.addEventListener("abort", abortListener, { once: true });
-      }),
+      })
     );
   }
   try {
@@ -1843,7 +1856,7 @@ function applicationStreamTimeoutError(protocol: string): Error {
   return new Error(
     isHistoryProtocol(protocol)
       ? "history_stream_timeout"
-      : "live_clip_stream_timeout",
+      : "live_clip_stream_timeout"
   );
 }
 

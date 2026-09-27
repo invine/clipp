@@ -1,0 +1,66 @@
+import { shell } from "electron";
+import {
+  canonicalDiscoveryUrl,
+  normalizeDiscoveryResponse,
+  type ManagedRelayAdapter,
+  type RelayState,
+} from "../../../packages/core/network/managedRelays.js";
+import type { createManagedRelayHost } from "../../../packages/core/network/managedRelayHost.js";
+import type { createElectronManagedRelayAuth } from "./managedRelayAuth.js";
+
+type Host = ReturnType<typeof createManagedRelayHost>;
+type Auth = ReturnType<typeof createElectronManagedRelayAuth>;
+
+export function createElectronManagedRelayAdapter(options: {
+  auth: Auth;
+  host(): Host;
+  onStateChange(states: RelayState[]): void;
+}): ManagedRelayAdapter {
+  return {
+    accessToken: (url) => options.auth.accessToken(url),
+    async discover(url, token, signal) {
+      url = canonicalDiscoveryUrl(url);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        redirect: "manual",
+        signal,
+      });
+      if (!response.ok)
+        throw new Error(
+          response.status === 401 ? "invalid_credentials" : "discovery_failed"
+        );
+      if (
+        response.headers.get("content-length") &&
+        Number(response.headers.get("content-length")) > 16_384
+      )
+        throw new Error("discovery_too_large");
+      const text = await response.text();
+      if (Buffer.byteLength(text) > 16_384)
+        throw new Error("discovery_too_large");
+      return normalizeDiscoveryResponse(JSON.parse(text));
+    },
+    supportsAddress: (address) => options.host().supportsAddress(address),
+    addressPriority: (address) =>
+      address.includes("/webrtc-direct/")
+        ? 2
+        : /\/wss?\/p2p\//.test(address)
+          ? 1
+          : 0,
+    dial: (address, signal) => options.host().dial(address, signal),
+    authenticate: (connection, token, signal) =>
+      options.host().authenticate(connection, token, signal),
+    reserve: (connection, signal) => options.host().reserve(connection, signal),
+    register: (connection, record, version, signal) =>
+      options.host().register(connection, record, version, signal),
+    signedPeerRecord: () => options.host().signedPeerRecord(),
+    eraseCredentials: (url) => options.auth.erase(url),
+    interactiveLogin: (url) => options.auth.interactiveLogin(url),
+    openAccount: async (url) => {
+      await shell.openExternal(new URL("/", canonicalDiscoveryUrl(url)).href);
+    },
+    unregister: (connection, signal) =>
+      options.host().unregister(connection, signal),
+    onStateChange: options.onStateChange,
+  };
+}

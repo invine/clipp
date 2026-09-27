@@ -1,14 +1,37 @@
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { multiaddr } from "@multiformats/multiaddr";
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, Notification, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  safeStorage,
+  shell,
+  Tray,
+} from "electron";
 import path from "node:path";
 import QRCode from "qrcode";
-import { encodePairingTarget, decodePairingTarget } from "../../../packages/core/pairing/v2.js";
+import {
+  encodePairingTarget,
+  decodePairingTarget,
+} from "../../../packages/core/pairing/v2.js";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
-import { PAIRING_PROTOCOL, verifyPairingTrustRequestSignature } from "../../../packages/core/pairing/protocol.js";
-import { createMembershipPeerRecordBridge, createMembershipReconciler } from "../../../packages/core/membership/reconciliation.js";
-import { createKVPendingTrustRequestStore, createPendingTrustRequestCoordinator } from "../../../packages/core/pairing/pending.js";
+import {
+  PAIRING_PROTOCOL,
+  verifyPairingTrustRequestSignature,
+} from "../../../packages/core/pairing/protocol.js";
+import {
+  createMembershipPeerRecordBridge,
+  createMembershipReconciler,
+} from "../../../packages/core/membership/reconciliation.js";
+import {
+  createKVPendingTrustRequestStore,
+  createPendingTrustRequestCoordinator,
+} from "../../../packages/core/pairing/pending.js";
 import "./libp2pGlobals.js";
 import {
   openDatabase,
@@ -34,17 +57,35 @@ import {
   systemRuntimeClock,
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime/index.js";
-import { MemoryHistoryStore, RETENTION_MS, startHistoryRetentionCleanup, type HistoryRetentionCleanup } from "../../../packages/core/history/store.js";
+import {
+  MemoryHistoryStore,
+  RETENTION_MS,
+  startHistoryRetentionCleanup,
+  type HistoryRetentionCleanup,
+} from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
-import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections.js";
+import {
+  ManagedRelayController,
+  loadManagedRelayConfigurations,
+  normalizeRelayConfigurations,
+} from "../../../packages/core/network/managedRelays.js";
+import { createElectronManagedRelayAuth } from "./managedRelayAuth.js";
+import { createElectronManagedRelayAdapter } from "./managedRelayAdapter.js";
+import {
+  activeMemberReconnectPeers,
+  createPairedPeerConnectionManager,
+} from "../../../packages/core/network/pairedConnections.js";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
 import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation.js";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions.js";
 import * as log from "../../../packages/core/logger.js";
 import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip.js";
-import { deviceIdToPeerIdObject, peerIdFromPrivateKeyBase64 } from "../../../packages/core/network/peerId.js";
+import {
+  deviceIdToPeerIdObject,
+  peerIdFromPrivateKeyBase64,
+} from "../../../packages/core/network/peerId.js";
 import {
   createKVIdentityRepository,
   toPublicDeviceIdentity,
@@ -65,12 +106,31 @@ async function bootstrap() {
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const kvStore = new SQLiteKVStore(db);
+  let managedConfigurations = await loadManagedRelayConfigurations({
+    readNewModel: () => kvStore.get("managedRelayConfigurations"),
+    writeNewModel: (values) =>
+      kvStore.set("managedRelayConfigurations", values),
+  });
+  const managedAuth = createElectronManagedRelayAuth({
+    storage: {
+      get: async (key) => (await kvStore.get<string>(key)) ?? null,
+      set: (key, value) => kvStore.set(key, value),
+      delete: (key) => kvStore.remove(key),
+    },
+    protection: safeStorage,
+    openExternal: (url) => shell.openExternal(url),
+  });
   const autoSyncPreference = createAutoSyncPreference({ storage: kvStore });
-  const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({ storage: kvStore });
-  let localRetentionMs = (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
+  const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({
+    storage: kvStore,
+  });
+  let localRetentionMs =
+    (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
   let autoSync = await autoSyncPreference.load();
   const historyBackend = new SQLiteHistoryBackend(db);
-  const history = new MemoryHistoryStore(historyBackend, { retentionMs: localRetentionMs });
+  const history = new MemoryHistoryStore(historyBackend, {
+    retentionMs: localRetentionMs,
+  });
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
   let historyRetentionCleanup: HistoryRetentionCleanup | null = null;
@@ -78,12 +138,20 @@ async function bootstrap() {
     localRetentionMs = await history.setRetention(localRetentionMs);
   } catch (error) {
     historyPolicyError = "history_cleanup_failed";
-    (log as any).warn?.("Initial local history cleanup failed; runtime will retry", error);
+    (log as any).warn?.(
+      "Initial local history cleanup failed; runtime will retry",
+      error
+    );
   }
-  const identityRepo = createKVIdentityRepository({ storage: kvStore, key: IDENTITY_KEY })
-  let stopIdentityBoundServicesForRotation: () => Promise<void> = async () => undefined;
-  let prepareIdentityRotationCleanup: () => Promise<{ rollback(): Promise<void> }> =
-    async () => ({ rollback: async () => undefined });
+  const identityRepo = createKVIdentityRepository({
+    storage: kvStore,
+    key: IDENTITY_KEY,
+  });
+  let stopIdentityBoundServicesForRotation: () => Promise<void> = async () =>
+    undefined;
+  let prepareIdentityRotationCleanup: () => Promise<{
+    rollback(): Promise<void>;
+  }> = async () => ({ rollback: async () => undefined });
   const identityRotation = createRuntimeIdentityRotationCoordinator({
     repository: identityRepo,
     storage: kvStore,
@@ -97,11 +165,13 @@ async function bootstrap() {
     }),
   });
   let identityRotationRecovery = false;
-  let identityRotationLifecycle: ReturnType<typeof createRuntimeIdentityRotationLifecycle>;
+  let identityRotationLifecycle: ReturnType<
+    typeof createRuntimeIdentityRotationLifecycle
+  >;
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
     capabilities: RUNTIME_CAPABILITIES.electron,
-  })
+  });
   // TODO: remove relayAddrEnv
   // const relayAddrEnv =
   //   process.env.CLIPP_RELAY_ADDR ||
@@ -109,14 +179,19 @@ async function bootstrap() {
   //   "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
   // TODO: create Relay Service
   let relayAddresses = normalizeRelayAddrs(
-    ((await kvStore.get<string[]>("relayAddresses")) ?? DEFAULT_CIRCUIT_RELAY_ADDRESSES).filter(Boolean)
+    (
+      (await kvStore.get<string[]>("relayAddresses")) ??
+      DEFAULT_CIRCUIT_RELAY_ADDRESSES
+    ).filter(Boolean)
     // (relayAddrEnv ? [relayAddrEnv] : [])
   );
   let localIdentity;
   try {
     localIdentity = await identitySvc.get();
   } catch (error) {
-    const rotation = await identityRotation.recoverOrRotate().catch(() => undefined);
+    const rotation = await identityRotation
+      .recoverOrRotate()
+      .catch(() => undefined);
     if (rotation?.rotated) {
       app.relaunch();
       app.exit(0);
@@ -130,10 +205,16 @@ async function bootstrap() {
         app.exit(0);
       });
     }
-    (log as any).error?.("Device identity initialization failed", { error: (error as Error).message });
+    (log as any).error?.("Device identity initialization failed", {
+      error: (error as Error).message,
+    });
     await app.whenReady();
-    ipcMain.handle("clipp:get-state", async () => { throw error; });
-    ipcMain.handle("clipp:get-initialization-error", async () => ({ code: "identity_initialization_failed" }));
+    ipcMain.handle("clipp:get-state", async () => {
+      throw error;
+    });
+    ipcMain.handle("clipp:get-initialization-error", async () => ({
+      code: "identity_initialization_failed",
+    }));
     ipcMain.handle("clipp:retry-identity-initialization", async () => {
       if (rotation?.recovery) await identityRotation.recoverOrRotate();
       else await identitySvc.retryInitialization();
@@ -145,25 +226,31 @@ async function bootstrap() {
       height: 760,
       webPreferences: { preload: preloadPath, contextIsolation: true },
     });
-    await window.loadFile(path.join(__dirnameFallback, "renderer", "index.html"));
+    await window.loadFile(
+      path.join(__dirnameFallback, "renderer", "index.html")
+    );
     return;
   }
   (log as any).info?.("Loaded identity", {
     deviceId: localIdentity.deviceId,
-    hasPrivateKey: !!localIdentity.privateKey && localIdentity.privateKey.length > 20,
-    hasPublicKey: !!localIdentity.publicKey && localIdentity.publicKey.length > 20,
+    hasPrivateKey:
+      !!localIdentity.privateKey && localIdentity.privateKey.length > 20,
+    hasPublicKey:
+      !!localIdentity.publicKey && localIdentity.publicKey.length > 20,
     multiaddrs: localIdentity.multiaddrs,
   });
   const peerId =
     localIdentity.privateKey && typeof localIdentity.privateKey === "string"
-      // TODO: why it's using asnc funct?
-      ? await peerIdFromPrivateKeyBase64(localIdentity.privateKey)
-      // TODO: why it's using asnc funct?
-      : await deviceIdToPeerIdObject(localIdentity.deviceId);
+      ? // TODO: why it's using asnc funct?
+        await peerIdFromPrivateKeyBase64(localIdentity.privateKey)
+      : // TODO: why it's using asnc funct?
+        await deviceIdToPeerIdObject(localIdentity.deviceId);
   const privateKey =
     localIdentity.privateKey && typeof localIdentity.privateKey === "string"
-      // TODO: why it's using asnc funct?
-      ? await privateKeyFromProtobuf(Buffer.from(localIdentity.privateKey, "base64"))
+      ? // TODO: why it's using asnc funct?
+        await privateKeyFromProtobuf(
+          Buffer.from(localIdentity.privateKey, "base64")
+        )
       : undefined;
 
   let transport = createLibp2pMessagingTransport({
@@ -174,9 +261,24 @@ async function bootstrap() {
     enableDCUtR: true,
     enableTcp: true,
     signedPeerRecordPersistence,
-    isPeerKnown: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "active",
-    isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
+    isPeerKnown: async (remotePeerId) =>
+      (await identitySvc.membershipStatus(remotePeerId)) === "active",
+    isPeerRevoked: async (remotePeerId) =>
+      (await identitySvc.membershipStatus(remotePeerId)) === "revoked",
   });
+  let managedHost: ReturnType<typeof transport.managedRelayHost> | null = null;
+  const managedController = new ManagedRelayController(
+    createElectronManagedRelayAdapter({
+      auth: managedAuth,
+      host: () => {
+        if (!managedHost) throw new Error("messaging_not_started");
+        return managedHost;
+      },
+      onStateChange: () => {
+        void emitState();
+      },
+    })
+  );
   let pairedConnections = createPairedPeerConnectionManager({
     transport,
     getPairedPeers: activeMemberReconnectPeers(identitySvc),
@@ -190,7 +292,8 @@ async function bootstrap() {
     history,
     getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
     membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-    onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
+    onMembershipChanged: (listener) =>
+      identitySvc.onMembershipChanged(listener),
     autoSync,
   });
   let messagingStarted = false;
@@ -200,6 +303,19 @@ async function bootstrap() {
     try {
       await transport.start();
       messagingStarted = true;
+      managedHost = transport.managedRelayHost((connection) => {
+        for (const state of managedController.states()) {
+          if (state.peerId === connection.verifiedPeerId)
+            void managedController.connectionLost(state.key, connection);
+        }
+      });
+      void managedController
+        .setConfigurations(managedConfigurations)
+        .catch((error) => {
+          (log as any).warn("Managed relay startup failed", {
+            error: (error as Error).message,
+          });
+        });
     } catch (err) {
       messagingStarted = false;
       throw err;
@@ -267,7 +383,9 @@ async function bootstrap() {
     if (p2pIdx >= 0) {
       const candidate = trimmed.slice(0, p2pIdx) + trimmed.slice(p2pIdx);
       // strip any junk after peer id (non-base58 or trailing numbers)
-      const match = candidate.match(/^(.*\/p2p\/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+)(?:[^123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz].*)?$/);
+      const match = candidate.match(
+        /^(.*\/p2p\/[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+)(?:[^123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz].*)?$/
+      );
       if (match && match[1]) {
         return match[1];
       }
@@ -306,7 +424,8 @@ async function bootstrap() {
     clipboard: clipboardSvc,
     history,
     liveGossip: liveClipGossip,
-    isActiveMember: async (peerId) => await identitySvc.membershipStatus(peerId) === "active",
+    isActiveMember: async (peerId) =>
+      (await identitySvc.membershipStatus(peerId)) === "active",
     getLocalDeviceId: async () => {
       const id = await identitySvc.get();
       return id.deviceId;
@@ -314,13 +433,23 @@ async function bootstrap() {
     autoSync,
     onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
-  prepareIdentityRotationCleanup = () => clipboardSync.prepareIdentityRotationCleanup();
+  prepareIdentityRotationCleanup = () =>
+    clipboardSync.prepareIdentityRotationCleanup();
 
   let pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
-  let pairingPending: ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
+  let pairingPending:
+    ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const pairingSessions = createPairingRuntimeSessions({
-    identity: async () => { const current = await identitySvc.get(); return { peerId: peerId.toString(), deviceName: current.deviceName, nameRevision: current.nameRevision ?? 0 }; },
-    send: (targetPeerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
+    identity: async () => {
+      const current = await identitySvc.get();
+      return {
+        peerId: peerId.toString(),
+        deviceName: current.deviceName,
+        nameRevision: current.nameRevision ?? 0,
+      };
+    },
+    send: (targetPeerId, frame) =>
+      runtimeNetwork.send(PAIRING_PROTOCOL, targetPeerId, frame),
     sign: async (bytes) => {
       if (!privateKey) throw new Error("identity_unavailable");
       return privateKey.sign(bytes);
@@ -329,12 +458,22 @@ async function bootstrap() {
     membership: identitySvc,
     clock: systemRuntimeClock,
     connectionPath: (remotePeerId) => {
-      const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-      return path === "relay" ? "relayed" : path ?? "unknown";
+      const path = runtimeNetwork
+        .getPeerConnectionInfo?.()
+        .find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : (path ?? "unknown");
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId)
+        void identitySvc
+          .membershipStatus(diagnostic.authenticatedPeerId)
+          .then((status) => {
+            if (status !== "active")
+              return runtimeNetwork.disconnect?.(
+                diagnostic.authenticatedPeerId!
+              );
+          });
     },
     onChanged: () => emitState(),
   });
@@ -353,7 +492,9 @@ async function bootstrap() {
     const peers = transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
-    const identity = identityRotationRecovery ? null : toPublicDeviceIdentity(await identitySvc.get());
+    const identity = identityRotationRecovery
+      ? null
+      : toPublicDeviceIdentity(await identitySvc.get());
     return {
       clips,
       devices,
@@ -372,6 +513,20 @@ async function bootstrap() {
       identityRotationRecovery,
       identityRotationNotice: (await identityRotation.notice())?.reason ?? null,
       relayAddresses,
+      managedRelayConfigurations: managedConfigurations,
+      managedRelayStates: managedController.states().map((state) => {
+        const config = managedConfigurations.find(
+          (item) => item.key === state.key
+        );
+        return {
+          ...state,
+          warning:
+            state.warning ??
+            (config?.kind === "managed"
+              ? managedAuth.warning(config.discoveryUrl)
+              : undefined),
+        };
+      }),
     };
   }
 
@@ -425,7 +580,7 @@ async function bootstrap() {
       (error) => {
         historyPolicyError = error ? "history_cleanup_failed" : null;
         void emitState();
-      },
+      }
     );
     history.onNew(async () => {
       await emitState();
@@ -449,6 +604,12 @@ async function bootstrap() {
   }
 
   async function restartMessaging() {
+    await managedController.stop().catch((error) => {
+      (log as any).warn("Managed relay stop failed", {
+        error: (error as Error).message,
+      });
+    });
+    managedHost = null;
     try {
       const historyStopped = historyReconciliation.stop();
       const reconnectsStopped = pairedConnections.stop();
@@ -466,8 +627,10 @@ async function bootstrap() {
       enableDCUtR: true,
       enableTcp: true,
       signedPeerRecordPersistence,
-      isPeerKnown: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "active",
-      isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
+      isPeerKnown: async (remotePeerId) =>
+        (await identitySvc.membershipStatus(remotePeerId)) === "active",
+      isPeerRevoked: async (remotePeerId) =>
+        (await identitySvc.membershipStatus(remotePeerId)) === "revoked",
     });
     pairedConnections = createPairedPeerConnectionManager({
       transport,
@@ -482,7 +645,8 @@ async function bootstrap() {
       history,
       getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
       membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-      onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
+      onMembershipChanged: (listener) =>
+        identitySvc.onMembershipChanged(listener),
       autoSync,
     });
     bindTransportHandlers(transport);
@@ -668,7 +832,9 @@ async function bootstrap() {
       relayWindow = null;
     });
     const html = buildRelayWindowHtml();
-    relayWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+    relayWindow.loadURL(
+      "data:text/html;charset=utf-8," + encodeURIComponent(html)
+    );
     relayWindow.once("ready-to-show", () => {
       relayWindow?.show();
     });
@@ -720,12 +886,16 @@ async function bootstrap() {
 
   async function shutdownServices() {
     quitting = true;
+    managedAuth.cancelAll();
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     await pairingSessions.stop();
     await clipboardSync.stop();
     await historyReconciliation.stop();
     pairedConnections.stop();
+    await managedController
+      .stop()
+      .catch((error) => (log as any).warn("Managed relay stop failed", error));
     try {
       await transport.stop();
     } catch (err) {
@@ -759,11 +929,16 @@ async function bootstrap() {
   const membershipReconciler = createMembershipReconciler({
     transport: runtimeNetwork,
     identity: identitySvc,
-    ...createMembershipPeerRecordBridge({ transport: runtimeNetwork, identity: identitySvc }),
+    ...createMembershipPeerRecordBridge({
+      transport: runtimeNetwork,
+      identity: identitySvc,
+    }),
     onLocalRevoked: () => identityRotationLifecycle.rotateRevoked(),
     onChanged: emitState,
   });
   stopIdentityBoundServicesForRotation = async () => {
+    managedAuth.cancelAll();
+    await managedController.stop();
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     membershipReconciler.stop();
@@ -788,13 +963,15 @@ async function bootstrap() {
     },
     startLocalRecovery: () => clipboardSync.startLocalOnly(),
     publishState: emitState,
-    onRecoveryChanged: (recovering) => { identityRotationRecovery = recovering; },
+    onRecoveryChanged: (recovering) => {
+      identityRotationRecovery = recovering;
+    },
   });
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,
     applicationStateKey: "runtimeApplicationState",
-    initialApplicationState: () => ({} as Record<string, unknown>),
+    initialApplicationState: () => ({}) as Record<string, unknown>,
     clipboard: {
       readText: async () => clipboard.readText() ?? "",
       writeText: async (text) => clipboard.writeText(text),
@@ -829,47 +1006,75 @@ async function bootstrap() {
   });
   pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () => peerId.toString(),
-    store: createKVPendingTrustRequestStore({ storage: kvStore, key: "pairingPendingRequests" }),
+    store: createKVPendingTrustRequestStore({
+      storage: kvStore,
+      key: "pairingPendingRequests",
+    }),
     notifications: runtimeAdapter.notifications,
     lifecycle: runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
     membership: identitySvc,
-    sendResponse: (peerId, frame) => runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
-    responseIdentity: async () => { const identity = await identitySvc.get(); return { deviceName: identity.deviceName, nameRevision: BigInt(identity.nameRevision ?? 0) }; },
+    sendResponse: (peerId, frame) =>
+      runtimeNetwork.send(PAIRING_PROTOCOL, peerId, frame),
+    responseIdentity: async () => {
+      const identity = await identitySvc.get();
+      return {
+        deviceName: identity.deviceName,
+        nameRevision: BigInt(identity.nameRevision ?? 0),
+      };
+    },
     connectionPath: (remotePeerId) => {
-      const path = runtimeNetwork.getPeerConnectionInfo?.().find((entry) => entry.peerId === remotePeerId)?.path;
-      return path === "relay" ? "relayed" : path ?? "unknown";
+      const path = runtimeNetwork
+        .getPeerConnectionInfo?.()
+        .find((entry) => entry.peerId === remotePeerId)?.path;
+      return path === "relay" ? "relayed" : (path ?? "unknown");
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId) void identitySvc.membershipStatus(diagnostic.authenticatedPeerId).then((status) => { if (status !== "active") return runtimeNetwork.disconnect?.(diagnostic.authenticatedPeerId!); });
+      if (diagnostic.authenticatedPeerId)
+        void identitySvc
+          .membershipStatus(diagnostic.authenticatedPeerId)
+          .then((status) => {
+            if (status !== "active")
+              return runtimeNetwork.disconnect?.(
+                diagnostic.authenticatedPeerId!
+              );
+          });
     },
     onChanged: async (requests) => {
-      pendingRequests = requests.map((request) => ({ deviceId: request.initiatorPeerId, deviceName: request.deviceName }));
+      pendingRequests = requests.map((request) => ({
+        deviceId: request.initiatorPeerId,
+        deviceName: request.deviceName,
+      }));
       await emitState();
     },
   });
-  function bindPairingHandler(target: typeof transport) {
+  function bindPairingHandler(target: Pick<typeof transport, "onMessage">) {
     target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
-      void pairingSessions.receive(
-        from,
-        frame,
-        (peerId, requestFrame) => pairingPending?.receive(peerId, requestFrame) ?? Promise.resolve(false),
-      ).catch((error) => log.warn("Pairing message processing failed", error));
+      void pairingSessions
+        .receive(
+          from,
+          frame,
+          (peerId, requestFrame) =>
+            pairingPending?.receive(peerId, requestFrame) ??
+            Promise.resolve(false)
+        )
+        .catch((error) => log.warn("Pairing message processing failed", error));
     });
   }
   bindPairingHandler(runtimeNetwork);
   const sharedRuntime = createRuntimeOrchestrator({
     adapter: runtimeAdapter,
-    start: () => startIdentityBoundRuntimeServices({
-      initializeIdentity: () => identityRotationLifecycle.initialize(),
-      startLocalServices,
-      startNetworkServices,
-      onNetworkingFailure: (error) => {
-        (log as any).warn("Messaging start failed", error);
-      },
-    }),
+    start: () =>
+      startIdentityBoundRuntimeServices({
+        initializeIdentity: () => identityRotationLifecycle.initialize(),
+        startLocalServices,
+        startNetworkServices,
+        onNetworkingFailure: (error) => {
+          (log as any).warn("Messaging start failed", error);
+        },
+      }),
     stop: shutdownServices,
   });
 
@@ -931,12 +1136,35 @@ async function bootstrap() {
     return { ok: true, relayAddresses };
   });
 
-  ipcMain.handle("clipp:set-local-retention", async (_evt, retentionMs: number) => {
-    localRetentionMs = await history.setRetention(retentionMs);
-    await kvStore.set("localRetentionMs", localRetentionMs);
+  ipcMain.handle("clipp:set-managed-relays", async (_evt, values: unknown) => {
+    const normalized = normalizeRelayConfigurations(values);
+    await kvStore.set("managedRelayConfigurations", normalized);
+    managedConfigurations = normalized;
+    if (messagingStarted) await managedController.setConfigurations(normalized);
     await emitState();
-    return { localRetentionMs };
+    return normalized;
   });
+  ipcMain.handle("clipp:managed-relay-login", async (_evt, key: string) => {
+    await managedController.requestLogin(key);
+    await emitState();
+  });
+  ipcMain.handle("clipp:managed-relay-account", async (_evt, key: string) => {
+    await managedController.manageAccount(key);
+  });
+  ipcMain.handle("clipp:managed-relay-retry", async (_evt, key: string) => {
+    await managedController.retry(key);
+    await emitState();
+  });
+
+  ipcMain.handle(
+    "clipp:set-local-retention",
+    async (_evt, retentionMs: number) => {
+      localRetentionMs = await history.setRetention(retentionMs);
+      await kvStore.set("localRetentionMs", localRetentionMs);
+      await emitState();
+      return { localRetentionMs };
+    }
+  );
 
   ipcMain.handle("clipp:set-auto-sync", async (_evt, enabled: boolean) => {
     autoSync = await autoSyncPreference.set(enabled);
@@ -946,13 +1174,18 @@ async function bootstrap() {
   });
 
   ipcMain.handle("clipp:reuse-clip", async (_evt, id: string) => {
-    const outcome = await reuseRetainedClip(id, { history, clipboard: clipboardSvc });
+    const outcome = await reuseRetainedClip(id, {
+      history,
+      clipboard: clipboardSvc,
+    });
     await emitState();
     return { ok: true, outcome: outcome.status };
   });
 
   ipcMain.handle("clipp:share-now", async () => {
-    await clipboardSvc.processLocalText(clipboard.readText() ?? "", { shareNow: true });
+    await clipboardSvc.processLocalText(clipboard.readText() ?? "", {
+      shareNow: true,
+    });
     await emitState();
     return { ok: true };
   });
@@ -977,17 +1210,26 @@ async function bootstrap() {
     await emitState();
   });
 
-  ipcMain.handle("clipp:rename-device", async (_evt, payload: { id: string; name: string }) => {
-    const device = await identitySvc.setLocalDeviceAlias(payload.id, payload.name);
-    await emitState();
-    return device;
-  });
+  ipcMain.handle(
+    "clipp:rename-device",
+    async (_evt, payload: { id: string; name: string }) => {
+      const device = await identitySvc.setLocalDeviceAlias(
+        payload.id,
+        payload.name
+      );
+      await emitState();
+      return device;
+    }
+  );
 
-  ipcMain.handle("clipp:set-pin", async (_evt, payload: { id: string; pinned: boolean }) => {
-    const pinnedIds = await history.setPinned(payload.id, payload.pinned);
-    await emitState();
-    return { pinnedIds };
-  });
+  ipcMain.handle(
+    "clipp:set-pin",
+    async (_evt, payload: { id: string; pinned: boolean }) => {
+      const pinnedIds = await history.setPinned(payload.id, payload.pinned);
+      await emitState();
+      return { pinnedIds };
+    }
+  );
 
   ipcMain.handle("clipp:dismiss-clipboard-history-error", async () => {
     clipboardSvc.dismissHistoryError?.();
@@ -1006,7 +1248,10 @@ async function bootstrap() {
     "clipp:respond-trust",
     async (_evt, payload: { accept: boolean; device: any }) => {
       const { accept, device } = payload;
-      await pairingPending?.decide(device.deviceId, accept ? "accepted" : "rejected");
+      await pairingPending?.decide(
+        device.deviceId,
+        accept ? "accepted" : "rejected"
+      );
       await emitState();
     }
   );
@@ -1015,9 +1260,14 @@ async function bootstrap() {
     await ensureMessagingStarted();
     const target = decodePairingTarget(txt);
     if (!target) return { ok: false, error: "invalid" as const };
-    if (!privateKey) return { ok: false, error: "identity_unavailable" as const };
+    if (!privateKey)
+      return { ok: false, error: "identity_unavailable" as const };
     try {
-      await importPairingTargetAndRequest({ text: txt, network: runtimeNetwork, request: pairingSessions.request });
+      await importPairingTargetAndRequest({
+        text: txt,
+        network: runtimeNetwork,
+        request: pairingSessions.request,
+      });
       return { ok: true };
     } catch {
       return { ok: false, error: "dial_failed" as const };
@@ -1027,10 +1277,19 @@ async function bootstrap() {
   ipcMain.handle("clipp:open-qr-window", async () => {
     await ensureMessagingStarted();
     const id = await identitySvc.get();
-    if (!transport.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
+    if (!transport.getSignedPeerRecord)
+      throw new Error("signed_peer_record_unavailable");
     const signedPeerRecord = await transport.getSignedPeerRecord();
-    const txt = encodePairingTarget({ targetPeerId: peerId.toString(), signedPeerRecord, deviceNameHint: id.deviceName });
-    const img = await QRCode.toDataURL(txt, { errorCorrectionLevel: "L", margin: 0, scale: 2 });
+    const txt = encodePairingTarget({
+      targetPeerId: peerId.toString(),
+      signedPeerRecord,
+      deviceNameHint: id.deviceName,
+    });
+    const img = await QRCode.toDataURL(txt, {
+      errorCorrectionLevel: "L",
+      margin: 0,
+      scale: 2,
+    });
     return {
       image: img,
       text: txt,
@@ -1039,5 +1298,7 @@ async function bootstrap() {
 }
 
 void bootstrap().catch((error) => {
-  (log as any).error?.("Clipp bootstrap failed", { error: (error as Error).message });
+  (log as any).error?.("Clipp bootstrap failed", {
+    error: (error as Error).message,
+  });
 });
