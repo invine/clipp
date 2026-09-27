@@ -330,6 +330,7 @@ export class ManagedRelayController {
   private readonly setupQueue: Array<() => void> = [];
   private stopped = false;
   private configRevision = 0;
+  private mutationTail: Promise<void> = Promise.resolve();
   constructor(
     private readonly adapter: ManagedRelayAdapter,
     private readonly random: () => number = Math.random,
@@ -460,19 +461,35 @@ export class ManagedRelayController {
       this.setupQueue.shift()?.();
     }
   }
+  private enqueueMutation<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(work);
+    this.mutationTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
   async setConfigurations(values: unknown): Promise<void> {
     const configs = normalizeRelayConfigurations(values);
+    const attempts = await this.enqueueMutation(() =>
+      this.applyConfigurations(configs)
+    );
+    await Promise.all(attempts);
+  }
+  private async applyConfigurations(
+    configs: RelayConfiguration[]
+  ): Promise<Promise<void>[]> {
     const revision = ++this.configRevision;
     this.stopped = false;
     const nextKeys = new Set(configs.map((config) => config.key));
     for (const key of [...this.entries.keys()]) {
-      if (revision !== this.configRevision) return;
-      if (!nextKeys.has(key)) await this.remove(key);
-      if (revision !== this.configRevision) return;
+      if (revision !== this.configRevision) return [];
+      if (!nextKeys.has(key)) await this.removeEntry(key);
+      if (revision !== this.configRevision) return [];
     }
     const attempts: Promise<void>[] = [];
     for (const config of configs) {
-      if (revision !== this.configRevision) return;
+      if (revision !== this.configRevision) return [];
       const old = this.entries.get(config.key);
       if (old) {
         const sameIdentity =
@@ -487,8 +504,8 @@ export class ManagedRelayController {
           this.emit(old, { name: config.name });
           continue;
         }
-        await this.remove(config.key);
-        if (revision !== this.configRevision) return;
+        await this.removeEntry(config.key);
+        if (revision !== this.configRevision) return [];
       }
       const entry: Entry = {
         config,
@@ -507,9 +524,15 @@ export class ManagedRelayController {
       this.adapter.onStateChange?.(this.states());
       attempts.push(this.setup(entry));
     }
-    await Promise.all(attempts);
+    return attempts;
   }
   async remove(key: string): Promise<void> {
+    return this.enqueueMutation(async () => {
+      ++this.configRevision;
+      await this.removeEntry(key);
+    });
+  }
+  private async removeEntry(key: string): Promise<void> {
     const entry = this.entries.get(key);
     if (!entry) return;
     this.entries.delete(key);
@@ -539,6 +562,9 @@ export class ManagedRelayController {
     this.adapter.onStateChange?.(this.states());
   }
   async stop(): Promise<void> {
+    return this.enqueueMutation(() => this.stopCore());
+  }
+  private async stopCore(): Promise<void> {
     ++this.configRevision;
     this.stopped = true;
     const entries = [...this.entries.values()];

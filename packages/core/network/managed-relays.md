@@ -11,3 +11,5 @@ The adapter must keep access tokens, refresh credentials and browser login out o
 The adapter should call `connectionLost(key, connection)` for an owned connection closure. The captured connection argument prevents a stale close event from removing a replacement. `eligibleDialAddresses` filters signed reachability routes by current configured relay ownership without modifying the Signed Peer Record bytes or direct candidates. Runtime adapters retain their existing identity, trust, clip, and history storage.
 
 UI callers pass `states()` and `configurations()` into the optional managed-relay props on `ClipboardApp`, together with add/edit/remove, login, account, and retry actions. Unmigrated callers continue using `relayAddresses` and `onSetRelayAddresses`.
+
+Public configuration mutations (`setConfigurations`, `remove`, and `stop`) are serialized in call order. A pending endpoint cleanup completes before a later re-add can acquire fresh credentials for that endpoint. Network setup continues asynchronously after reconciliation, with per-entry generation checks preventing stale completion from restoring removed state.

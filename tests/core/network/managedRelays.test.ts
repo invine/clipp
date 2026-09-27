@@ -810,18 +810,21 @@ describe("reviewed lifecycle races", () => {
     const controller = new ManagedRelayController(adapter);
     await controller.setConfigurations([first]);
     let finishErase: (() => void) | undefined;
-    adapter.eraseCredentials = jest.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finishErase = resolve;
-        })
-    );
+    adapter.eraseCredentials = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishErase = resolve;
+          })
+      )
+      .mockImplementation(async () => undefined);
     const older = controller.setConfigurations([second]);
     await new Promise((resolve) => setImmediate(resolve));
     expect(finishErase).toBeDefined();
-    await controller.setConfigurations([]);
+    const newer = controller.setConfigurations([]);
     finishErase?.();
-    await older;
+    await Promise.all([older, newer]);
     expect(controller.configurations()).toEqual([]);
     await controller.stop();
   });
@@ -1021,5 +1024,74 @@ describe("exact discovery endpoint and Go wire timestamps", () => {
         renewAfterMillis: 1_000,
       })
     ).toThrow(/RFC3339/);
+  });
+});
+
+describe("public settings mutation ordering", () => {
+  const original = {
+    key: "a",
+    name: "A",
+    kind: "managed" as const,
+    discoveryUrl: "https://a.example/v1/relay",
+  };
+
+  it("applies a direct remove after an in-flight identity replacement", async () => {
+    const { adapter } = adapterHarness();
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([original]);
+    let finishUnregister: (() => void) | undefined;
+    adapter.unregister = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishUnregister = resolve;
+          })
+      )
+      .mockImplementation(async () => undefined);
+    const replacement = {
+      ...original,
+      discoveryUrl: "https://new.example/v1/relay",
+    };
+    const updating = controller.setConfigurations([replacement]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(finishUnregister).toBeDefined();
+    const removing = controller.remove("a");
+    finishUnregister?.();
+    await Promise.all([updating, removing]);
+    expect(controller.configurations()).toEqual([]);
+    await controller.stop();
+  });
+
+  it("finishes old endpoint erasure before a later re-add acquires fresh credentials", async () => {
+    const { adapter } = adapterHarness();
+    const controller = new ManagedRelayController(adapter);
+    let storedCredential: string | null = "old";
+    let accessCount = 0;
+    adapter.accessToken = jest.fn(async () => {
+      accessCount++;
+      if (accessCount > 1) storedCredential = "new";
+      return storedCredential;
+    });
+    await controller.setConfigurations([original]);
+    let finishErase: (() => void) | undefined;
+    adapter.eraseCredentials = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishErase = () => {
+            storedCredential = null;
+            resolve();
+          };
+        })
+    );
+    const removing = controller.setConfigurations([]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(finishErase).toBeDefined();
+    const adding = controller.setConfigurations([original]);
+    finishErase?.();
+    await Promise.all([removing, adding]);
+    expect(storedCredential).toBe("new");
+    expect(controller.states()[0].status).toBe("ready");
+    await controller.stop();
   });
 });
