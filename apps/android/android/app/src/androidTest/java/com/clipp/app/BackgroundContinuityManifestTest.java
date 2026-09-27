@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.Manifest;
 import android.content.ComponentName;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -12,12 +13,14 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.espresso.Espresso;
+import androidx.test.espresso.NoActivityResumedException;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.core.content.ContextCompat;
 
@@ -28,6 +31,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.List;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,6 +41,17 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
 public final class BackgroundContinuityManifestTest {
+    @Test
+    public void backgroundContinuityDeclaresPartialWakeLockPermission() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        PackageInfo packageInfo = context.getPackageManager().getPackageInfo(
+            context.getPackageName(),
+            PackageManager.GET_PERMISSIONS
+        );
+
+        assertTrue(Arrays.asList(packageInfo.requestedPermissions).contains(Manifest.permission.WAKE_LOCK));
+    }
+
     @Test
     public void taskRemovalIsDeliveredToBackgroundContinuityService() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -262,7 +277,13 @@ public final class BackgroundContinuityManifestTest {
             assertEquals(expectedSource, actions.getJSONObject(0).getString("source"));
         } finally {
             if (main != null) main.close();
-            else if (MainActivity.hasActivityOwnedRuntime()) Espresso.pressBack();
+            else if (MainActivity.hasActivityOwnedRuntime()) {
+                try {
+                    Espresso.pressBack();
+                } catch (NoActivityResumedException ignored) {
+                    // Android 12 can report this after Back has already killed the cold-started app.
+                }
+            }
             context.unregisterReceiver(receiver);
             preferences.edit().clear().commit();
         }

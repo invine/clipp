@@ -6,6 +6,10 @@ import {
   IDENTITY_KEY,
 } from "../../../packages/core/trust";
 import { RuntimeMessageStorageBackend } from "./runtimeMessageStorage";
+import {
+  deriveExtensionIdentityKeyMaterial,
+  generateExtensionIdentityKeyMaterial,
+} from "./identityKeyMaterial";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
 import * as log from "../../../packages/core/logger";
@@ -34,6 +38,8 @@ const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  generateKeyMaterial: generateExtensionIdentityKeyMaterial,
+  deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
 });
 let started = false;
 const writeClipboardText = createOffscreenClipboardWriter();

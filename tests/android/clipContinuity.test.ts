@@ -34,7 +34,7 @@ function createPlatform() {
   let beforeRetryEligibility: (() => void | Promise<void>) | undefined;
   const platform: AndroidBackgroundContinuityPlatform = {
     androidApiLevel: () => 36,
-    notificationPermission: async () => "granted",
+    notificationAvailability: async () => "available",
     readEnabled: async () => false,
     writeEnabled: async () => undefined,
     setClipboardCaptureEligible: async () => undefined,

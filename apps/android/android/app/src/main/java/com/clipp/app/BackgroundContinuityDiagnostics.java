@@ -159,9 +159,9 @@ final class BackgroundContinuityDiagnostics {
         append(event);
     }
 
-    void recordNotificationPermission(boolean granted) {
-        JSONObject event = event("notification_permission");
-        put(event, "granted", granted);
+    void recordNotificationAvailability(boolean available) {
+        JSONObject event = event("notification_availability");
+        put(event, "available", available);
         append(event);
     }
 
@@ -191,7 +191,7 @@ final class BackgroundContinuityDiagnostics {
     String exportJson() {
         synchronized (LOCK) {
             JSONObject exported = new JSONObject();
-            put(exported, "schemaVersion", 1);
+            put(exported, "schemaVersion", 2);
             put(exported, "exportedAt", System.currentTimeMillis());
             put(exported, "environment", environment());
             JSONObject status = statusJson();

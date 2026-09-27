@@ -5,6 +5,7 @@
   "scripts": {
     "build": "vite build",
     "test:clipboard": "npm run build && node ./scripts/verify-clipboard-io.mjs",
+    "test:integration": "npm run build && node ./scripts/verify-identity-initialization.mjs",
     "test:offscreen-storage": "npm run build && node ./scripts/verify-offscreen-storage.mjs"
   },
   "devDependencies": {

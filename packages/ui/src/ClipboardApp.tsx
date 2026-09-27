@@ -256,7 +256,7 @@ export type ClipboardAppProps = {
     service: "running" | "stopped";
     connection: "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
     connectedTrustedDeviceCount: number;
-    notificationPermission: "granted" | "denied" | "unknown";
+    notificationAvailability: "available" | "blocked" | "unknown";
   };
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
@@ -1160,27 +1160,14 @@ export function ClipboardApp({
             )}
             {devices.map((dev) => {
               const editingThisDevice = editingDeviceId === dev.deviceId;
-              const devicePeerIds = [
-                dev.deviceId,
-                ...(dev.multiaddr ? [dev.multiaddr] : []),
-                ...(dev.multiaddrs || []),
-              ];
-              const connectionInfo = devicePeerIds
-                .map((value) =>
-                  peerConnectionMap.get(value) ||
-                  peerConnections.find((conn) => value.endsWith(`/p2p/${conn.peerId}`))
-                )
-                .find(Boolean);
-              const isOnline = devicePeerIds.some((value) =>
-                connectedPeerSet.has(value) ||
-                peers.some((peer) => value.endsWith(`/p2p/${peer}`)),
-              ) || Boolean(connectionInfo);
+              const connectionInfo = peerConnectionMap.get(dev.deviceId);
+              const isOnline = connectedPeerSet.has(dev.deviceId) || Boolean(connectionInfo);
               const connectionStatus = connectionStatusFor(connectionInfo, isOnline);
               return (
                 <div
                   key={dev.deviceId}
                   className="peer-item"
-                  title={`Paired ${formatTime(dev.createdAt)}\n${connectionStatus.title}`}
+                  title={connectionStatus.title}
                   style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                 >
                   <div className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}>
@@ -1289,7 +1276,7 @@ export function ClipboardApp({
               Experimental background continuity
             </label>
             <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-              Best effort on Android 16+. It keeps a visible notification while Clipp tries to retain the current app runtime. It does not read your clipboard without an active, focused Clipp window.
+              Best effort on Android 12+. While enabled, Clipp shows a visible notification and holds a partial CPU wake lock while it tries to retain the current app runtime after screen-off. This can increase battery use. It does not read your clipboard without an active, focused Clipp window.
             </p>
             <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
               Android may interrupt the Activity-owned WebView and network during Doze, OEM process management, process pressure, task removal, Task Manager stop, force-stop, or reboot. Reopen Clipp after an explicit stop or reconnect alert.
@@ -1301,7 +1288,7 @@ export function ClipboardApp({
               onChange={(event) => {
                 const enabled = event.target.value === "enabled";
                 if (enabled && !window.confirm(
-                  "Keep Clipp connected in the background? This experimental mode shows an ongoing notification, may use battery and network resources, and works only while Android keeps Clipp's current app runtime alive. Clipboard capture still requires a focused Clipp window.",
+                  "Keep Clipp connected in the background? This experimental mode shows an ongoing notification and holds a partial CPU wake lock, which can increase battery and network use. It still works only while Android keeps Clipp's current app runtime alive. Clipboard capture requires a focused Clipp window.",
                 )) return;
                 void onSetBackgroundContinuity(enabled);
               }}
@@ -1311,12 +1298,12 @@ export function ClipboardApp({
             </select>
             {!backgroundContinuity.available && (
               <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                Available experimentally on Android 16 and later.
+                Available experimentally on Android 12 and later.
               </p>
             )}
-            {backgroundContinuity.available && backgroundContinuity.notificationPermission === "denied" && (
+            {backgroundContinuity.available && backgroundContinuity.notificationAvailability === "blocked" && (
               <p className="peer-sub" role="status" style={{ margin: "6px 0 0" }}>
-                Notification permission is denied. Background mode remains available, but ordinary reconnect alerts may not appear.
+                Notifications are blocked. Background mode remains available, but ordinary reconnect alerts may not appear.
               </p>
             )}
             {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && (

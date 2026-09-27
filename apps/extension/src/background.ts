@@ -23,6 +23,10 @@ import {
 import { ChromeStorageBackend } from "./chromeStorage";
 import { handleOffscreenStorageRequest } from "./runtimeMessageStorage";
 import {
+  deriveExtensionIdentityKeyMaterial,
+  generateExtensionIdentityKeyMaterial,
+} from "./identityKeyMaterial";
+import {
   createChromeExtensionRuntimeAdapter,
   createAutoSyncPreference,
   createRuntimeIdentityManager,
@@ -98,6 +102,8 @@ const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  generateKeyMaterial: generateExtensionIdentityKeyMaterial,
+  deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
 });
 
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
@@ -139,7 +145,7 @@ async function ensureOffscreenDocument(): Promise<void> {
     try {
       await chrome.offscreen.createDocument({
         url: OFFSCREEN_URL,
-        reasons: ["WEB_RTC", "CLIPBOARD"],
+        reasons: [chrome.offscreen.Reason.WEB_RTC, chrome.offscreen.Reason.CLIPBOARD],
         justification: "Run libp2p WebRTC networking and access the clipboard",
       });
     } catch (err) {
@@ -399,6 +405,8 @@ const identityRotation = createRuntimeIdentityRotationCoordinator({
   repository: identityRepo,
   storage,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  generateKeyMaterial: generateExtensionIdentityKeyMaterial,
+  deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
   runtimeCleanup: { prepare: () => clipboardSync.prepareIdentityRotationCleanup() },
   shutdown: async () => {
     historyRetentionCleanup?.stop();

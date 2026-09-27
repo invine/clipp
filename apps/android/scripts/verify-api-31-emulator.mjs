@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-const MINIMUM_API_LEVEL = 36;
+const MINIMUM_API_LEVEL = 31;
 const adb = process.env.CLIPP_ANDROID_ADB || "adb";
 
 function runAdb(args) {
@@ -28,13 +28,13 @@ try {
   });
 
   if (eligible.length === 0) {
-    console.error("Android instrumentation requires at least one connected API 36 or later emulator.");
+    console.error("Android instrumentation requires at least one connected API 31 or later emulator.");
     process.exitCode = 1;
   } else {
-    console.log(`Android 16+ test target: ${eligible.map(({ serial, apiLevel }) => `${serial} (API ${apiLevel})`).join(", ")}`);
+    console.log(`Android 12+ test target: ${eligible.map(({ serial, apiLevel }) => `${serial} (API ${apiLevel})`).join(", ")}`);
   }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`Unable to verify an Android API 36 or later emulator: ${message}`);
+  console.error(`Unable to verify an Android API 31 or later emulator: ${message}`);
   process.exitCode = 1;
 }

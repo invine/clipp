@@ -11,7 +11,14 @@
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
     "test:native:unit": "cd android && ./gradlew :app:testDebugUnitTest",
-    "test:native:instrumentation": "node scripts/verify-api-36-emulator.mjs && cd android && ./gradlew :app:connectedDebugAndroidTest",
+    "test:native:instrumentation": "npm run test:native:instrumentation:matrix",
+    "test:native:instrumentation:matrix": "cd android && ./gradlew :app:backgroundContinuityGroupDebugAndroidTest",
+    "test:native:instrumentation:api31": "cd android && ./gradlew :app:clippApi31DebugAndroidTest",
+    "test:native:instrumentation:api33": "cd android && ./gradlew :app:clippApi33DebugAndroidTest",
+    "test:native:instrumentation:api34": "cd android && ./gradlew :app:clippApi34DebugAndroidTest",
+    "test:native:instrumentation:api35": "cd android && ./gradlew :app:clippApi35DebugAndroidTest",
+    "test:native:instrumentation:api36": "cd android && ./gradlew :app:clippApi36DebugAndroidTest",
+    "test:native:instrumentation:connected": "node scripts/verify-api-31-emulator.mjs && cd android && ./gradlew :app:connectedDebugAndroidTest",
     "build:native:release": "cd android && ./gradlew :app:assembleRelease"
   },
   "dependencies": {

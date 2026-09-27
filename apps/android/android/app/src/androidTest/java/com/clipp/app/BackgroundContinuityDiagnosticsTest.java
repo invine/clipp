@@ -56,13 +56,13 @@ public final class BackgroundContinuityDiagnosticsTest {
         diagnostics.recordPendingActionCount(3);
         diagnostics.recordPendingApplication(true);
         diagnostics.recordCaptureEligibility(false);
-        diagnostics.recordNotificationPermission(false);
+        diagnostics.recordNotificationAvailability(false);
         diagnostics.recordEnvironmentSnapshot();
 
         JSONObject exported = new JSONObject(diagnostics.exportJson());
         JSONArray events = exported.getJSONArray("events");
 
-        assertEquals(1, exported.getInt("schemaVersion"));
+        assertEquals(2, exported.getInt("schemaVersion"));
         assertEquals(BackgroundContinuityDiagnostics.MAX_EVENTS, events.length());
         assertEquals(
             Set.of(
@@ -95,7 +95,7 @@ public final class BackgroundContinuityDiagnosticsTest {
             "durationMs",
             "present",
             "eligible",
-            "granted",
+            "available",
             "androidApiLevel",
             "androidRelease",
             "manufacturer",

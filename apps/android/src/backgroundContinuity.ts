@@ -17,7 +17,7 @@ export type BackgroundConnectionState =
   | "disconnected";
 
 export type BackgroundServiceState = "running" | "stopped";
-export type BackgroundNotificationPermission = "granted" | "denied" | "unknown";
+export type BackgroundNotificationAvailability = "available" | "blocked" | "unknown";
 export type AndroidBackgroundDiagnosticStatus = BackgroundContinuityDiagnosticStatus;
 
 export type AndroidExplicitTextAction = {
@@ -45,12 +45,12 @@ export type AndroidBackgroundContinuitySnapshot = AndroidBackgroundDiagnosticSta
   connection: BackgroundConnectionState;
   connectedTrustedDeviceCount: number;
   runtimeHealthy: boolean;
-  notificationPermission: BackgroundNotificationPermission;
+  notificationAvailability: BackgroundNotificationAvailability;
 };
 
 export type AndroidBackgroundContinuityPlatform = {
   androidApiLevel(): number | undefined;
-  notificationPermission(): Promise<Exclude<BackgroundNotificationPermission, "unknown">>;
+  notificationAvailability(): Promise<Exclude<BackgroundNotificationAvailability, "unknown">>;
   readEnabled(): Promise<boolean>;
   writeEnabled(enabled: boolean): Promise<void>;
   setClipboardCaptureEligible(eligible: boolean): Promise<void>;
@@ -90,7 +90,7 @@ export type AndroidBackgroundContinuityPlatform = {
 
 export type AndroidBackgroundNotificationAction = "pause" | "resume" | "stop";
 
-const ANDROID_16_API_LEVEL = 36;
+const ANDROID_12_API_LEVEL = 31;
 
 export function createAndroidBackgroundContinuityCoordinator(
   platform: AndroidBackgroundContinuityPlatform,
@@ -120,7 +120,7 @@ export function createAndroidBackgroundContinuityCoordinator(
   let autoSync = true;
   let wasConnected = false;
   let lastHeartbeatAt: number | null = null;
-  let notificationPermission: BackgroundNotificationPermission = "unknown";
+  let notificationAvailability: BackgroundNotificationAvailability = "unknown";
   let diagnosticStatus: AndroidBackgroundDiagnosticStatus = {
     observedBackgroundFailureCount: 0,
     supportState: "unqualified",
@@ -131,7 +131,7 @@ export function createAndroidBackgroundContinuityCoordinator(
   let activityStateGeneration = 0;
   let clipContinuityQueue = Promise.resolve();
 
-  const available = (): boolean => (platform.androidApiLevel() ?? 0) >= ANDROID_16_API_LEVEL;
+  const available = (): boolean => (platform.androidApiLevel() ?? 0) >= ANDROID_12_API_LEVEL;
   const captureEligible = (): boolean => resumed && windowFocused;
 
   const snapshot = (): AndroidBackgroundContinuitySnapshot => ({
@@ -142,12 +142,12 @@ export function createAndroidBackgroundContinuityCoordinator(
     connection,
     connectedTrustedDeviceCount,
     runtimeHealthy,
-    notificationPermission,
+    notificationAvailability,
     ...diagnosticStatus,
   });
 
-  async function refreshNotificationPermission(): Promise<void> {
-    notificationPermission = await platform.notificationPermission();
+  async function refreshNotificationAvailability(): Promise<void> {
+    notificationAvailability = await platform.notificationAvailability();
   }
 
   async function refreshDiagnosticStatus(): Promise<void> {
@@ -299,7 +299,7 @@ export function createAndroidBackgroundContinuityCoordinator(
       backgroundEnabled = available() && await platform.readEnabled();
       if (available()) {
         await Promise.all([
-          refreshNotificationPermission(),
+          refreshNotificationAvailability(),
           refreshDiagnosticStatus(),
         ]);
       }
@@ -309,7 +309,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     async setEnabledFromUser(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
       if (enabled && !available()) return snapshot();
       if (!enabled && !backgroundEnabled && service === "stopped") return snapshot();
-      if (enabled) await refreshNotificationPermission();
+      if (enabled) await refreshNotificationAvailability();
       const serviceWasRunning = service === "running";
       backgroundEnabled = enabled;
       await platform.writeEnabled(enabled);
@@ -398,7 +398,7 @@ export function createAndroidBackgroundContinuityCoordinator(
       await publishServiceState();
       service = "stopped";
       await platform.stopService();
-      if (notificationPermission === "granted") {
+      if (notificationAvailability === "available") {
         await platform.showReconnectNotification();
       }
       await refreshDiagnosticStatus();
@@ -421,8 +421,8 @@ export function createAndroidBackgroundContinuityCoordinator(
     async handleBoot(): Promise<AndroidBackgroundContinuitySnapshot> {
       backgroundEnabled = available() && await platform.readEnabled();
       if (backgroundEnabled) {
-        await refreshNotificationPermission();
-        if (notificationPermission === "granted") {
+        await refreshNotificationAvailability();
+        if (notificationAvailability === "available") {
           await platform.showReconnectNotification();
         }
       }

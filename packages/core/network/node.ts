@@ -17,7 +17,7 @@ import { kadDHT } from "@libp2p/kad-dht";
 import { identify, identifyPush } from "@libp2p/identify";
 import { ping } from "@libp2p/ping";
 import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "./constants.js";
-import { FaultTolerance } from "@libp2p/interface-transport";
+import { FaultTolerance } from "@libp2p/interface";
 import { patchGlobalMultiaddrCompat } from "./multiaddrCompat.js";
 
 patchGlobalMultiaddrCompat();

@@ -15,9 +15,11 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 
 /**
@@ -50,6 +52,7 @@ public final class BackgroundContinuityService extends Service {
     static final int RECONNECT_NOTIFICATION_ID = 4102;
     private static final long DEFAULT_HEARTBEAT_TIMEOUT_MS = 60_000L;
     private static final long DEFAULT_HEARTBEAT_CHECK_MS = 5_000L;
+    private static final String WAKE_LOCK_TAG = "com.clipp.app:BackgroundContinuity";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastHeartbeatElapsedMs;
@@ -59,6 +62,7 @@ public final class BackgroundContinuityService extends Service {
     private BackgroundContinuityConnectionState connectionState = BackgroundContinuityConnectionState.WAITING;
     private int connectedTrustedDeviceCount = 0;
     private BackgroundContinuityDiagnostics diagnostics;
+    private PowerManager.WakeLock wakeLock;
 
     private final Runnable heartbeatWatchdog = new Runnable() {
         @Override
@@ -72,6 +76,7 @@ public final class BackgroundContinuityService extends Service {
                 preferences(BackgroundContinuityService.this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
                 notifyRuntimeLost();
                 postReconnectNotification(BackgroundContinuityService.this);
+                releaseWakeLock();
                 stopForeground(STOP_FOREGROUND_REMOVE);
                 stopSelf();
                 return;
@@ -84,6 +89,11 @@ public final class BackgroundContinuityService extends Service {
     public void onCreate() {
         super.onCreate();
         diagnostics = new BackgroundContinuityDiagnostics(this);
+        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG);
+            wakeLock.setReferenceCounted(false);
+        }
     }
 
     @Override
@@ -98,6 +108,7 @@ public final class BackgroundContinuityService extends Service {
                 .putBoolean(SERVICE_ACTIVE, false)
                 .apply();
             notifyAction("stop");
+            releaseWakeLock();
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
@@ -108,6 +119,7 @@ public final class BackgroundContinuityService extends Service {
             return START_NOT_STICKY;
         }
         if (!starting && !preferences(this).getBoolean(SERVICE_ACTIVE, false)) {
+            releaseWakeLock();
             stopSelf(startId);
             return START_NOT_STICKY;
         }
@@ -149,6 +161,7 @@ public final class BackgroundContinuityService extends Service {
         diagnostics.recordConnectionTransition(connectionState, connectedTrustedDeviceCount);
         createNotificationChannel(this);
         startForegroundSafely();
+        acquireWakeLock();
         if (starting) notifyServiceStarted();
         handler.removeCallbacks(heartbeatWatchdog);
         handler.postDelayed(heartbeatWatchdog, heartbeatCheckMs);
@@ -162,6 +175,7 @@ public final class BackgroundContinuityService extends Service {
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
         sendBroadcast(new Intent(ACTION_TASK_REMOVED).setPackage(getPackageName()));
+        releaseWakeLock();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
         super.onTaskRemoved(rootIntent);
@@ -171,6 +185,7 @@ public final class BackgroundContinuityService extends Service {
     public void onDestroy() {
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
+        releaseWakeLock();
         if (diagnostics != null) {
             diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.DESTROYED);
         }
@@ -184,11 +199,19 @@ public final class BackgroundContinuityService extends Service {
 
     private void startForegroundSafely() {
         Notification notification = buildOngoingNotification(this, connectionState, connectedTrustedDeviceCount);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(ONGOING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING);
         } else {
             startForeground(ONGOING_NOTIFICATION_ID, notification);
         }
+    }
+
+    private void acquireWakeLock() {
+        if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire();
+    }
+
+    private void releaseWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
     }
 
     static SharedPreferences preferences(Context context) {
@@ -242,9 +265,9 @@ public final class BackgroundContinuityService extends Service {
     }
 
     static void postReconnectNotification(Context context) {
-        boolean granted = notificationsGranted(context);
-        new BackgroundContinuityDiagnostics(context).recordNotificationPermission(granted);
-        if (!granted) return;
+        boolean available = notificationsAvailable(context);
+        new BackgroundContinuityDiagnostics(context).recordNotificationAvailability(available);
+        if (!available) return;
         createNotificationChannel(context);
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -257,9 +280,27 @@ public final class BackgroundContinuityService extends Service {
         ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE)).notify(RECONNECT_NOTIFICATION_ID, notification);
     }
 
-    static boolean notificationsGranted(Context context) {
-        return Build.VERSION.SDK_INT < 33
-            || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    static boolean notificationsAvailable(Context context) {
+        boolean runtimePermissionGranted = !(
+            Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        );
+        boolean applicationNotificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return notificationControlsAllow(runtimePermissionGranted, applicationNotificationsEnabled, true);
+        }
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationChannel channel = manager == null ? null : manager.getNotificationChannel(CHANNEL_ID);
+        boolean channelEnabled = channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+        return notificationControlsAllow(runtimePermissionGranted, applicationNotificationsEnabled, channelEnabled);
+    }
+
+    static boolean notificationControlsAllow(
+        boolean runtimePermissionGranted,
+        boolean applicationNotificationsEnabled,
+        boolean channelEnabled
+    ) {
+        return runtimePermissionGranted && applicationNotificationsEnabled && channelEnabled;
     }
 
     private static PendingIntent openAppIntent(Context context) {

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+coverage/
+.husky/_/
+
+# Generated native projects and copied web assets
+apps/android/android/.gradle/
+apps/android/android/.idea/
+apps/android/android/app/src/main/assets/
+apps/android/android/capacitor-cordova-android-plugins/
+apps/android/ios/
+
+# Generated bundles and npm-managed lockfiles
+apps/extension/offscreen.js
+package-lock.json

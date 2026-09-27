@@ -3,7 +3,6 @@ package com.clipp.app;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
@@ -16,6 +15,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.os.ParcelFileDescriptor;
 import android.service.notification.StatusBarNotification;
 
 import androidx.test.core.app.ActivityScenario;
@@ -29,13 +29,17 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 @RunWith(AndroidJUnit4.class)
-@SdkSuppress(minSdkVersion = 36)
+@SdkSuppress(minSdkVersion = 31)
 public final class BackgroundContinuityLifecycleTest {
+    private static final String WAKE_LOCK_TAG = "com.clipp.app:BackgroundContinuity";
     private Context context;
     private SharedPreferences servicePreferences;
     private NotificationManager notifications;
@@ -114,6 +118,27 @@ public final class BackgroundContinuityLifecycleTest {
     }
 
     @Test
+    public void serviceHoldsPartialWakeLockUntilUserStops() throws Exception {
+        CountDownLatch started = registerOneShot(BackgroundContinuityService.ACTION_SERVICE_STARTED);
+        servicePreferences.edit().putBoolean(BackgroundContinuityService.ENABLED, true).commit();
+
+        ContextCompat.startForegroundService(
+            context,
+            new Intent(context, BackgroundContinuityService.class)
+                .setAction(BackgroundContinuityService.ACTION_START)
+        );
+
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        assertTrue(waitForWakeLockState(true));
+
+        CountDownLatch stopped = registerAction("stop");
+        context.startService(new Intent(context, BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_STOP));
+
+        assertTrue(stopped.await(2, TimeUnit.SECONDS));
+        assertTrue(waitForWakeLockState(false));
+    }
+
+    @Test
     public void heartbeatLossStopsTheEmptyServiceAndRecordsAnObservedFailure() throws Exception {
         CountDownLatch runtimeLost = registerOneShot(BackgroundContinuityService.ACTION_RUNTIME_LOST);
         servicePreferences.edit().putBoolean(BackgroundContinuityService.ENABLED, true).commit();
@@ -129,6 +154,7 @@ public final class BackgroundContinuityLifecycleTest {
         assertTrue(runtimeLost.await(2, TimeUnit.SECONDS));
         assertFalse(servicePreferences.getBoolean(BackgroundContinuityService.SERVICE_ACTIVE, true));
         assertEquals(1, diagnostics.statusJson().getInt("observedBackgroundFailureCount"));
+        assertTrue(waitForWakeLockState(false));
     }
 
     @Test
@@ -151,6 +177,7 @@ public final class BackgroundContinuityLifecycleTest {
             assertTrue(taskRemoved.await(5, TimeUnit.SECONDS));
             assertFalse(servicePreferences.getBoolean(BackgroundContinuityService.SERVICE_ACTIVE, true));
             assertTrue(waitForNotificationRemoval(BackgroundContinuityService.ONGOING_NOTIFICATION_ID));
+            assertTrue(waitForWakeLockState(false));
             assertTrue(diagnosticValuePresent("task_removed"));
         } finally {
             activity.close();
@@ -158,7 +185,7 @@ public final class BackgroundContinuityLifecycleTest {
     }
 
     @Test
-    public void rebootOffersReconnectWithoutStartingTheService() {
+    public void rebootOffersReconnectWithoutStartingTheService() throws Exception {
         servicePreferences.edit()
             .putBoolean(BackgroundContinuityService.ENABLED, true)
             .putBoolean(BackgroundContinuityService.SERVICE_ACTIVE, false)
@@ -167,19 +194,19 @@ public final class BackgroundContinuityLifecycleTest {
         new BackgroundContinuityBootReceiver().onReceive(context, new Intent(Intent.ACTION_BOOT_COMPLETED));
 
         assertFalse(servicePreferences.getBoolean(BackgroundContinuityService.SERVICE_ACTIVE, false));
-        assertNotNull(notification(BackgroundContinuityService.RECONNECT_NOTIFICATION_ID));
+        assertNotNull(waitForNotification(BackgroundContinuityService.RECONNECT_NOTIFICATION_ID));
     }
 
     @Test
-    public void reconnectNotificationDegradesWithoutBlockingWhenPermissionIsDenied() {
-        BackgroundContinuityService.postReconnectNotification(context);
-        assertNotNull(notification(BackgroundContinuityService.RECONNECT_NOTIFICATION_ID));
-        notifications.cancelAll();
+    public void blockedNotificationAvailabilityDoesNotCountAsARuntimeFailure() throws Exception {
+        int failuresBefore = diagnostics.statusJson().getInt("observedBackgroundFailureCount");
 
-        revokeNotifications();
-        BackgroundContinuityService.postReconnectNotification(context);
+        assertFalse(BackgroundContinuityService.notificationControlsAllow(false, true, true));
+        assertFalse(BackgroundContinuityService.notificationControlsAllow(true, false, true));
+        assertFalse(BackgroundContinuityService.notificationControlsAllow(true, true, false));
+        diagnostics.recordNotificationAvailability(false);
 
-        assertNull(notification(BackgroundContinuityService.RECONNECT_NOTIFICATION_ID));
+        assertEquals(failuresBefore, diagnostics.statusJson().getInt("observedBackgroundFailureCount"));
     }
 
     @Test
@@ -258,6 +285,48 @@ public final class BackgroundContinuityLifecycleTest {
         return notification(id) == null;
     }
 
+    private StatusBarNotification waitForNotification(int id) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 2_000L;
+        StatusBarNotification posted = notification(id);
+        while (posted == null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(25L);
+            posted = notification(id);
+        }
+        return posted;
+    }
+
+    private boolean waitForWakeLockState(boolean expectedHeld) throws Exception {
+        long deadline = System.currentTimeMillis() + 2_000L;
+        boolean held = activeWakeLocks(powerDump()).contains(WAKE_LOCK_TAG);
+        while (held != expectedHeld && System.currentTimeMillis() < deadline) {
+            Thread.sleep(25L);
+            held = activeWakeLocks(powerDump()).contains(WAKE_LOCK_TAG);
+        }
+        return held == expectedHeld;
+    }
+
+    private String activeWakeLocks(String powerDump) {
+        int start = powerDump.indexOf("Wake Locks: size=");
+        if (start < 0) return "";
+        int end = powerDump.indexOf("\nSuspend Blockers:", start);
+        return end < 0 ? powerDump.substring(start) : powerDump.substring(start, end);
+    }
+
+    private String powerDump() throws IOException {
+        ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation()
+            .executeShellCommand("dumpsys power");
+        try (
+            ParcelFileDescriptor.AutoCloseInputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+            ByteArrayOutputStream output = new ByteArrayOutputStream()
+        ) {
+            byte[] buffer = new byte[4_096];
+            int read;
+            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+
     private boolean diagnosticValuePresent(String expected) throws Exception {
         org.json.JSONArray events = new org.json.JSONObject(diagnostics.exportJson()).getJSONArray("events");
         for (int index = 0; index < events.length(); index += 1) {
@@ -274,11 +343,4 @@ public final class BackgroundContinuityLifecycleTest {
         );
     }
 
-    private void revokeNotifications() {
-        if (Build.VERSION.SDK_INT < 33) return;
-        InstrumentationRegistry.getInstrumentation().getUiAutomation().revokeRuntimePermission(
-            context.getPackageName(),
-            Manifest.permission.POST_NOTIFICATIONS
-        );
-    }
 }

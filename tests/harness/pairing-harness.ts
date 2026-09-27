@@ -243,7 +243,7 @@ async function pairOverRelay(a: HarnessPeer, b: HarnessPeer): Promise<void> {
   const session = createPairingSession({
     identity: async () => ({ peerId: a.peerId, deviceName: a.label, nameRevision: 0 }),
     send: (targetPeerId, frame) => a.transport.send(PAIRING_PROTOCOL, targetPeerId, frame),
-    sign: (bytes) => a.privateKey.sign(bytes),
+    sign: async (bytes) => a.privateKey.sign(bytes),
     verify: verifyPairingTrustRequestSignature,
     membership: a.identity,
     clock: systemRuntimeClock,

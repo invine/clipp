@@ -1,6 +1,6 @@
-# Android Background Clipboard Continuity
+# Android Background Continuity
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Problem Statement
 
@@ -12,13 +12,13 @@ The feature needs an explicit, user-visible, best-effort background mode that im
 
 ## Solution
 
-Clipp will offer an opt-in experimental background-connectivity mode on Android 16 and later. Enabling it starts a `remoteMessaging` foreground service with an ongoing, privacy-safe notification. The service raises the importance of the existing Capacitor process while the Activity-owned WebView remains healthy; it does not become a second owner of Clipp networking or domain state.
+Clipp will offer an opt-in experimental background-connectivity mode on Android 12 and later. On Android 12 and 13, enabling it uses the platform-compatible foreground-service start mechanism; on Android 14 and later, the service starts with the `remoteMessaging` type and permission required by the release SDK. The service publishes an ongoing, privacy-safe notification and raises the importance of the existing Capacitor process while the Activity-owned WebView remains healthy; it does not become a second owner of Clipp networking or domain state.
 
 Clipp will read the Android clipboard only while its Activity is resumed and its window has focus. Users can send selected text through Android's text-selection actions or send text through the Android Sharesheet. Both actions accept the text immediately without a confirmation screen, persist it until the WebView runtime can process it, and create a Share Now Local Clip through the existing shared Clip pipeline.
 
 While the WebView runtime remains alive, live Remote Clips continue to be persisted and then written automatically to the Android clipboard. Android-controlled clipboard previews are accepted. Clipboard History Reconciliation remains non-disruptive and never writes imported historical Clips to the current clipboard.
 
-The service reports accurate connection state, detects loss of the WebView runtime through a heartbeat, and stops rather than pretending to remain connected. Reboot, runtime loss, explicit task removal, Task Manager stop, and force-stop all have honest recovery behavior. The existing foreground Android experience remains available on earlier Android versions; only this experimental background feature is gated to Android 16 and later.
+The service reports accurate connection state, detects loss of the WebView runtime through a heartbeat, and stops rather than pretending to remain connected. Reboot, runtime loss, explicit task removal, Task Manager stop where available, and force-stop all have honest recovery behavior. The existing foreground Android experience remains available on earlier Android versions; only this experimental background feature is gated to Android 12 and later.
 
 ## User Stories
 
@@ -36,13 +36,13 @@ The service reports accurate connection state, detects loss of the WebView runti
 12. As an Android user, I want Clipp to reconnect with its existing backoff and history-repair behavior after temporary network or relay loss, so that transient failures do not require Pairing again.
 13. As an Android user, I want the feature labeled experimental and best-effort, so that it does not promise an immortal socket across Doze, OEM restrictions, process death, or explicit user stops.
 14. As an Android user, I want Clipp to detect when its Activity-owned WebView runtime has disappeared, so that the foreground-service notification never falsely claims connectivity.
-15. As an Android user, I want runtime loss to produce a Tap to reconnect Clipp notification when notification permission allows it, so that recovery is simple and explicit.
+15. As an Android user, I want runtime loss to produce a Tap to reconnect Clipp notification when notifications are available, so that recovery is simple and explicit.
 16. As an Android user, I want the empty shell foreground service to stop after runtime loss, so that it does not consume resources without providing Clipp behavior.
 17. As an Android user, I want removing Clipp from Recents or explicitly closing it to stop experimental background connectivity, so that normal task-closing gestures remain meaningful.
 18. As an Android user, I want Task Manager stop or force-stop to suspend background synchronization until I reopen Clipp, so that Clipp respects Android's explicit stop boundary.
 19. As an Android user, I want reboot recovery to show Tap to reconnect Clipp rather than launch an Activity unexpectedly, so that Clipp does not foreground itself without an immediate user action.
 20. As an Android user, I want Clipp to avoid sticky service recreation when the WebView cannot be reconstructed, so that Android does not create a misleading empty service.
-21. As an Android user who denied notification permission, I want background mode to remain available with a warning that reconnect alerts cannot appear normally, so that I understand the degraded recovery experience.
+21. As an Android user whose application, notification channel, or runtime notification permission is blocked, I want background mode to remain available with a warning that reconnect alerts cannot appear normally, so that I understand the degraded recovery experience.
 22. As an Android user, I want Clipp to offer battery-optimization troubleshooting only after repeated background failures, so that ordinary setup does not begin with an intrusive exemption request.
 23. As an Android user, I want Clipp to read the system clipboard only while its Activity is resumed and its window is focused, so that it obeys Android's clipboard privacy model.
 24. As an Android user, I want background mode never to claim that its foreground service enables background clipboard reads, so that product language matches platform behavior.
@@ -72,9 +72,9 @@ The service reports accurate connection state, detects loss of the WebView runti
 48. As a privacy-conscious user, I want diagnostics to exclude Clip content, private keys, Device Names, and other sensitive payloads, so that reliability investigation does not become clipboard collection.
 49. As an Android user, I want lifecycle diagnostics stored locally and exported only through an explicit user action, so that I control whether they leave my device.
 50. As a maintainer, I want lifecycle diagnostics to include service transitions, WebView heartbeat loss, connection transitions, reconnect latency, pending counts, Android version, device model, and battery configuration, so that experimental reliability can be evaluated without content.
-51. As an Android 16-or-later user, I want the experimental feature enabled only on the platform range for which it is being developed and tested, so that its support statement is precise.
+51. As an Android 12-or-later user, I want the experimental feature enabled only on the platform range for which it is being developed and tested, so that its support statement is precise.
 52. As a user on an earlier Android version, I want Clipp's existing foreground experience to remain installable and usable, so that the new feature does not unnecessarily raise the whole application's minimum version.
-53. As a Galaxy S25 Ultra user, I want the primary acceptance testing performed on that device running Android 16 or later, so that the initial support claim is grounded in the target hardware.
+53. As an Android user, I want qualified-support statements limited to physical configurations selected, exercised, and reviewed through the hardware gate, so that experimental availability is not mistaken for universal OEM reliability.
 54. As a user on an unvalidated OEM configuration, I want repeated WebView termination described as limited or unsupported rather than hidden behind a guarantee, so that troubleshooting guidance remains honest.
 55. As a maintainer, I want background-continuity behavior observable through one high-level coordination seam, so that lifecycle correctness can be tested without asserting WebView, libp2p, or notification implementation details.
 
@@ -84,8 +84,8 @@ The service reports accurate connection state, detects loss of the WebView runti
 
 - Add one Android background-continuity coordinator as the sole orchestration seam for Activity focus, WebView health, foreground-service state, notification state, boot recovery, task removal, explicit notification actions, share ingress, and pending clipboard application.
 - Keep the existing Activity-owned TypeScript runtime as the sole owner of Device Identity, Device Membership, libp2p networking, Clip synchronization, and Clipboard History. The foreground service must not create a second client, network node, or state writer.
-- Implement the service as an Android foreground service of type `remoteMessaging`, with the corresponding foreground-service declarations and permissions required by the compile/target SDK used for release.
-- Gate the experimental feature at runtime to Android 16 and later. Preserve the application's existing installation and foreground behavior on earlier Android versions.
+- Declare the service as Android foreground-service type `remoteMessaging`, with the corresponding declarations and permissions required by the compile/target SDK. Use the legacy two-argument foreground-service start on API 31–33 and the typed `remoteMessaging` start on API 34 and later.
+- Gate the experimental feature at runtime to Android 12/API 31 and later. Preserve the application's existing installation and foreground behavior on earlier Android versions without raising the application minimum SDK.
 - Start the service only from a user-visible flow after the persisted Keep Clipp connected in the background preference is explicitly enabled.
 - Use non-sticky service restart behavior. A service process restart must not imply that the Activity, WebView, Capacitor bridge, or Android client has been recreated.
 - Do not add FCM, a backend wake-up path, a hidden service-owned WebView, an embedded JavaScript engine, or native libp2p networking in this phase.
@@ -94,12 +94,14 @@ The service reports accurate connection state, detects loss of the WebView runti
 
 - The Android client emits a periodic health heartbeat through the coordinator while its operational runtime is started. Heartbeat timing and expiry are injectable for deterministic tests.
 - The foreground service treats an expired heartbeat as runtime loss, changes state to Disconnected, attempts a content-free reconnect notification when permission permits, and stops itself.
+- While the foreground service is active, hold one non-reference-counted partial CPU wake lock to mitigate screen-off suspension of the Activity-owned WebView. Acquire it only after the explicit opt-in starts the foreground service, and release it on runtime loss, notification Stop, task removal, rejected service work, and service destruction. This may materially increase battery use and does not guarantee that Android or an OEM will keep the WebView or network alive.
 - Pressing Home, switching applications, or turning off the screen does not intentionally stop the Android client or foreground service. The connection nevertheless remains best-effort under Android and OEM lifecycle controls.
 - Explicit Activity close, task removal from Recents, the notification Stop action, Task Manager stop, and force-stop are user-stop boundaries. Clipp must not silently restart background continuity after them.
 - The Stop action disables the persisted background-continuity preference before stopping the service. Opening Clipp later does not restart it until the user enables the preference again.
 - Pause maps to the existing Auto Sync preference and leaves the service available; Resume restores Auto Sync. Pausing does not erase Clipboard History or alter Device Membership.
 - A reboot receiver may inspect the persisted background preference and post Tap to reconnect Clipp, but it must not launch the Activity or start an empty shell service automatically.
-- If notification permission is denied, settings explain that the foreground-service record remains governed by Android but ordinary reconnect alerts may not appear. This degraded state does not prevent the user from enabling the experiment.
+- Model effective notification availability as Available, Blocked, or Unknown. Application-level blocking, channel-level blocking, and runtime permission denial all produce the Blocked state. Settings explain that the foreground-service record remains governed by Android but ordinary reconnect alerts may not appear. This degraded state does not prevent the user from enabling the experiment and does not count as an observed background-runtime failure.
+- If foreground-service startup fails, retain the user's persisted opt-in, report the service as stopped, and retry only from a later visible application start or explicit toggle. Never schedule a delayed background retry.
 - Battery-optimization exemption guidance is contextual troubleshooting after repeated observed failures, not a universal onboarding request.
 
 ### Notification model
@@ -141,8 +143,9 @@ The service reports accurate connection state, detects loss of the WebView runti
 - Exclude Clip content, raw share intents, private keys, signatures, Peer IDs, Device Names, Local Device Aliases, and raw protocol frames from diagnostic records and notification text.
 - Export diagnostics only through an explicit user action. No automatic telemetry or remote collection is introduced.
 - Label the setting and support copy as experimental and best-effort. Document that Android may interrupt networking during Doze or process pressure and that explicit user stop requires reopening Clipp.
-- Treat Galaxy S25 Ultra on Android 16 or later as the required hardware acceptance target. Results from Pixel, Xiaomi, OnePlus, and other Samsung devices are useful but optional for the first release.
-- If the required device repeatedly destroys the Activity-owned WebView despite the service, mark the configuration limited or unsupported and retain the diagnostics rather than weakening the stated acceptance criteria.
+- Keep the final physical qualification matrix explicitly undecided until ticket 03 records the maintainer's selection. OnePlus 7T Pro and Galaxy S25 Ultra are candidate targets, not mandatory gates.
+- Record each exercised device's actual model, Android/ROM build, root state when known, and battery-management configuration as evidence without using those properties as preliminary eligibility checks.
+- If an exercised device repeatedly destroys the Activity-owned WebView despite the service, mark that configuration limited or unsupported and retain the diagnostics rather than weakening the stated acceptance criteria. Make no qualified-support claim until the final physical matrix is selected and every selected run passes.
 
 ## Testing Decisions
 
@@ -151,13 +154,14 @@ The service reports accurate connection state, detects loss of the WebView runti
 - Reuse the existing runtime conformance harness for Auto Sync, Share Now, notification selection, runtime start/stop, and public-state behavior. Extend it only where the new Android behavior is a runtime contract rather than an Android OS detail.
 - Reuse the existing explicit-action conformance tests to prove that selected text and Sharesheet text create distinct Local Clips, preserve event identity, persist before sending, and override disabled Auto Sync for one Clip.
 - Reuse the existing Clipboard Sync and Clipboard History Reconciliation tests to prove that live Remote Clips persist before clipboard application and historical imports never write the clipboard.
-- Add Android-specific coordinator tests for resumed-plus-focused polling eligibility, loss and restoration of focus, Home/screen-off behavior, heartbeat expiry, non-sticky runtime loss, Stop persistence, Pause/Resume mapping, task removal, reboot notification intent, and notification-permission degradation.
+- Add Android-specific coordinator tests for resumed-plus-focused polling eligibility, loss and restoration of focus, Home/screen-off behavior, heartbeat expiry, non-sticky runtime loss, Stop persistence, Pause/Resume mapping, task removal, reboot notification intent, and effective notification-availability degradation.
 - Add Android-specific queue tests for cold and warm ingress, process restart before drain, identical repeated actions, persistence failure, exactly-once drain after partial failure, and no clipboard reread.
 - Add Android-specific pending-application tests for successful background writes, Android write failure, replacement by a newer live Remote Clip, one resume-time retry, second failure clearing, Auto Sync cancellation, local deletion, history clearing, Identity Rotation, and rejection of historical reconciliation as a write source.
-- Keep native Android instrumentation tests thin. Verify that Android can discover the text-selection and Sharesheet Activities, that cold and warm intents reach the ingress queue, that the foreground service publishes its required notification and actions, and that boot/task-removal boundaries produce the specified externally visible behavior.
-- Verify the complete Android build plus repository lint and shared test suites after changes. Native tests must run on an Android 16-or-later emulator where hardware is not required.
-- The hardware release gate is a Galaxy S25 Ultra running Android 16 or later. Exercise foreground launch, Home, screen-off, Doze, network loss, relay loss, process pressure, selected-text ingress, Sharesheet ingress, notification permission granted and denied, Back, Recents removal, Task Manager stop, force-stop, and reboot.
-- Run at least one eight-hour background session on the required device with lifecycle diagnostics enabled. A passing run preserves every explicitly accepted share locally, never applies an imported historical Clip to the clipboard, never replays more than the newest eligible pending live Clip, and never reports Connected without a usable Trusted Device connection.
+- Keep native Android instrumentation tests thin. Verify that Android can discover the text-selection and Sharesheet Activities, that cold and warm intents reach the ingress queue, that the foreground service publishes its required notification and actions, that its partial wake lock is held only for the active service lifetime, and that boot/task-removal boundaries produce the specified externally visible behavior.
+- Verify the complete Android build plus repository lint and shared test suites after changes. Gradle Managed Virtual Devices must run native instrumentation on APIs 31, 33, 34, 35, and 36; API 32 follows the API 31-compatible path and remains available for optional connected-emulator checks.
+- Apply notification blocking on API 31–32 and runtime notification-permission denial on API 33 and later. Exercise Task Manager Stop only on releases that expose it while preserving the user-stop invariant on every release.
+- The physical hardware matrix remains a ticket 03 decision. Each selected device runs at least one eight-hour background session with lifecycle diagnostics enabled and exercises foreground launch, Home, screen-off, Doze, network loss, relay loss, process pressure, selected-text ingress, Sharesheet ingress, notification availability transitions, Back, Recents removal, Task Manager stop where available, force-stop, and reboot.
+- A passing physical run preserves every explicitly accepted share locally, never applies an imported historical Clip to the clipboard, never replays more than the newest eligible pending live Clip, and never reports Connected without a usable Trusted Device connection.
 - Because this is experimental best-effort behavior, the test gate does not require an immortal socket. It does require accurate state transitions, bounded recovery, no false delivery claims, no unauthorized background reads, and no content leakage in logs or notifications.
 
 ## Out of Scope
@@ -172,10 +176,9 @@ The service reports accurate connection state, detects loss of the WebView runti
 - Android-only content filters for passwords, OTPs, payment data, private keys, or other sensitive values.
 - Android-only retention, pinning, recipient, Device Membership, Pairing, or Device Revocation semantics.
 - Changing Clipp's relay list, discovery model, Direct Connection behavior, protocol IDs, Clip codecs, Clip Sharing Lifetime, or Clipboard History Reconciliation protocol.
-- Shipping or validating the experimental background feature on Android 15 or earlier. Existing foreground application compatibility remains unchanged.
-- Treating non-S25-Ultra OEM hardware as a required first-release gate.
+- Shipping the experimental background feature on Android 11/API 30 or earlier. Existing foreground application compatibility remains unchanged.
+- Treating any candidate physical device as mandatory before ticket 03 selects the final matrix.
 - Automatic remote telemetry collection or inclusion of Clip content in diagnostics.
-- Creating implementation tickets. This specification is intended to be translated into separately scoped tickets later.
 
 ## Further Notes
 
@@ -185,5 +188,5 @@ The service reports accurate connection state, detects loss of the WebView runti
 - ADR-0010 remains authoritative: each explicit selection or Sharesheet action is a distinct capture event, while transport retry and pending-action recovery preserve the event rather than deduplicating by content.
 - ADR-0011 remains authoritative: Clipboard History Reconciliation repairs retained history without applying imported records to the current clipboard. The newest-pending rule applies only to Clips learned through the live path.
 - The bounded Android resume-time retry intentionally refines the existing cross-runtime decision that a failed clipboard write receives no automatic retry. It is limited to one still-eligible live Remote Clip and must be reflected in runtime capability documentation when implemented.
-- The current runtime has no native foreground service, boot receiver, share-intent receiver, lifecycle coordinator, or service-owned client. Its polling and networking live in the Activity WebView, so the implementation should preserve the spec's experimental labeling until hardware evidence says otherwise.
+- The implemented runtime includes a native foreground-service companion, boot receiver, share-intent receiver, and lifecycle coordinator, while polling and networking remain in the Activity WebView. Preserve experimental labeling until the selected hardware evidence supports a narrower configuration-specific qualification.
 - Google Play submission materials should explain the explicit opt-in toggle, the ongoing status notification, the Stop action, the user impact of interruption, and why cross-device text continuity is core and non-deferrable while enabled.

@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@koush/wrtc": "^0.5.3",
-    "better-sqlite3": "^11.10.0",
-    "electron": "^31.3.0"
+    "better-sqlite3": "13.0.3",
+    "electron": "43.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.4.1",

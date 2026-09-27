@@ -98,14 +98,14 @@ public final class BackgroundContinuityPlugin extends Plugin {
     @PluginMethod
     public void getPlatformInfo(PluginCall call) {
         BackgroundContinuityDiagnostics diagnostics = new BackgroundContinuityDiagnostics(getContext());
-        boolean notificationsGranted = BackgroundContinuityService.notificationsGranted(getContext());
-        diagnostics.recordNotificationPermission(notificationsGranted);
+        boolean notificationsAvailable = BackgroundContinuityService.notificationsAvailable(getContext());
+        diagnostics.recordNotificationAvailability(notificationsAvailable);
         JSObject result = new JSObject();
         result.put("apiLevel", Build.VERSION.SDK_INT);
         result.put("userStopped", BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.USER_STOPPED, false));
         result.put(
-            "notificationPermission",
-            notificationsGranted ? "granted" : "denied"
+            "notificationAvailability",
+            notificationsAvailable ? "available" : "blocked"
         );
         JSONObject diagnosticStatus = diagnostics.statusJson();
         result.put("observedBackgroundFailureCount", diagnosticStatus.optInt("observedBackgroundFailureCount"));
@@ -126,7 +126,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void start(PluginCall call) {
-        if (Build.VERSION.SDK_INT < 36) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             call.reject("background_continuity_unavailable");
             return;
         }

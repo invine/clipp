@@ -23,7 +23,11 @@ function cameraErrorMessage(err: unknown): Error {
   return err instanceof Error ? err : new Error("camera_unavailable");
 }
 
-function createBarcodeDetector(): any | null {
+type QrBarcodeDetector = {
+  detect(source: HTMLCanvasElement): Promise<Array<{ rawValue: string }>>;
+};
+
+function createBarcodeDetector(): QrBarcodeDetector | null {
   const detector = (globalThis as any).BarcodeDetector;
   if (!detector) return null;
   try {

@@ -354,7 +354,7 @@ export class AndroidClient {
   private backgroundEventsBound = false;
   private readonly backgroundContinuity = createAndroidBackgroundContinuityCoordinator({
     androidApiLevel: () => this.androidApiLevel,
-    notificationPermission: () => this.backgroundNative.notificationPermission(),
+    notificationAvailability: () => this.backgroundNative.notificationAvailability(),
     readEnabled: async () => (await this.storage.get<boolean>("backgroundContinuityEnabled")) === true,
     writeEnabled: async (enabled) => {
       await this.storage.set("backgroundContinuityEnabled", enabled);
@@ -617,9 +617,11 @@ export class AndroidClient {
         this.bindEvents();
         this.bindBackgroundContinuityEvents();
         this.androidApiLevel = await this.backgroundNative.apiLevel();
-        await this.backgroundContinuity.initialize();
+        const backgroundState = await this.backgroundContinuity.initialize();
         if (await this.backgroundNative.userStopped()) {
           await this.backgroundContinuity.setEnabledFromUser(false);
+        } else if (backgroundState.backgroundEnabled) {
+          await this.backgroundContinuity.setEnabledFromUser(true);
         }
         this.autoSync = await this.autoSyncPreference.load();
         this.clipboardSync.setAutoSync(this.autoSync);

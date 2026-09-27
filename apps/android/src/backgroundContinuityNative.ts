@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import type {
   BackgroundConnectionState,
-  BackgroundNotificationPermission,
+  BackgroundNotificationAvailability,
   AndroidBackgroundDiagnosticStatus,
   AndroidExplicitTextAction,
 } from "./backgroundContinuity";
@@ -9,7 +9,7 @@ import type {
 type NativePlatformInfo = AndroidBackgroundDiagnosticStatus & {
   apiLevel: number;
   userStopped: boolean;
-  notificationPermission: Exclude<BackgroundNotificationPermission, "unknown">;
+  notificationAvailability: Exclude<BackgroundNotificationAvailability, "unknown">;
 };
 
 type NativeBackgroundContinuityPlugin = {
@@ -39,7 +39,7 @@ const NativeBackgroundContinuity = registerPlugin<NativeBackgroundContinuityPlug
 export type AndroidBackgroundNative = {
   apiLevel(): Promise<number | undefined>;
   userStopped(): Promise<boolean>;
-  notificationPermission(): Promise<Exclude<BackgroundNotificationPermission, "unknown">>;
+  notificationAvailability(): Promise<Exclude<BackgroundNotificationAvailability, "unknown">>;
   setEnabled(enabled: boolean): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -108,8 +108,8 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     async userStopped() {
       return (await info())?.userStopped ?? false;
     },
-    async notificationPermission() {
-      return (await info())?.notificationPermission ?? "denied";
+    async notificationAvailability() {
+      return (await info())?.notificationAvailability ?? "blocked";
     },
     async diagnosticStatus() {
       const platform = await info();

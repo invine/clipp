@@ -33,6 +33,10 @@ The idempotent exchange of complete eligible Clip snapshots between Active Membe
 **Auto Sync**:
 The persisted device preference controlling inbound and outbound Clip exchange. Disabling Auto Sync does not stop local capture or erase Clipboard History; `Share Now` is the sole one-Clip outbound override.
 
+**Android Background Continuity**:
+An opt-in, best-effort Android capability that attempts to keep Clipp connected to its Device Network when Clipp is not foregrounded. It does not permit background clipboard capture or guarantee continuous connectivity or Clip delivery.
+_Avoid_: Background Clipboard Sync
+
 **Clip Suppression Tombstone**:
 A local, expiring marker keyed by Clip ID that prevents a removed or capacity-rejected Clip from being restored by live delivery or Clipboard History Reconciliation during its remaining sharing window. It is not propagated to other devices.
 _Avoid_: Device Revocation

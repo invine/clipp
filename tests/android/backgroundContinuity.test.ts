@@ -6,7 +6,7 @@ import {
 
 function createPlatform(
   androidApiLevel = 36,
-  notificationPermission: "granted" | "denied" = "granted",
+  notificationAvailability: "available" | "blocked" = "available",
 ) {
   const commands: string[] = [];
   const captureEligibility: boolean[] = [];
@@ -22,7 +22,7 @@ function createPlatform(
   };
   const platform: AndroidBackgroundContinuityPlatform = {
     androidApiLevel: () => androidApiLevel,
-    notificationPermission: async () => notificationPermission,
+    notificationAvailability: async () => notificationAvailability,
     readEnabled: async () => enabled,
     writeEnabled: async (next) => { enabled = next; },
     setClipboardCaptureEligible: async (next) => { captureEligibility.push(next); },
@@ -81,8 +81,8 @@ test("qualifies repeatedly failing background configurations as limited before o
   }));
 });
 
-test("only lets Android 16-or-later users opt into background continuity", async () => {
-  const unsupported = createPlatform(35);
+test("only lets Android 12-or-later users opt into background continuity", async () => {
+  const unsupported = createPlatform(30);
   const coordinator = createAndroidBackgroundContinuityCoordinator(unsupported.platform);
 
   await coordinator.setEnabledFromUser(true);
@@ -91,6 +91,19 @@ test("only lets Android 16-or-later users opt into background continuity", async
     enabled: false,
     commands: [],
     state: expect.objectContaining({ available: false, backgroundEnabled: false, service: "stopped" }),
+  });
+});
+
+test("allows Android 12 users to opt into background continuity", async () => {
+  const supported = createPlatform(31);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(supported.platform);
+
+  await coordinator.setEnabledFromUser(true);
+
+  expect({ enabled: supported.enabled(), commands: supported.commands, state: coordinator.snapshot() }).toEqual({
+    enabled: true,
+    commands: ["start"],
+    state: expect.objectContaining({ available: true, backgroundEnabled: true, service: "running" }),
   });
 });
 
@@ -142,6 +155,20 @@ test("keeps service state stopped when native startup fails", async () => {
   await expect(coordinator.setEnabledFromUser(true)).resolves.toEqual(
     expect.objectContaining({ backgroundEnabled: true, service: "stopped" }),
   );
+});
+
+test("retries a persisted opt-in from a later visible application start", async () => {
+  const fake = createPlatform(31);
+  await fake.platform.writeEnabled(true);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+
+  const initialized = await coordinator.initialize();
+  await coordinator.setEnabledFromUser(initialized.backgroundEnabled);
+
+  expect({ commands: fake.commands, state: coordinator.snapshot() }).toEqual({
+    commands: ["start"],
+    state: expect.objectContaining({ backgroundEnabled: true, service: "running" }),
+  });
 });
 
 test("allows clipboard observation only while resumed and focused, with a fresh baseline", async () => {
@@ -282,8 +309,8 @@ test("schedules runtime heartbeats through an injectable coordinator clock and c
   });
 });
 
-test("keeps background continuity available when notifications are denied without claiming a reconnect alert", async () => {
-  const fake = createPlatform(36, "denied");
+test("keeps background continuity available when notifications are blocked without claiming a reconnect alert", async () => {
+  const fake = createPlatform(31, "blocked");
   const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
   await coordinator.initialize();
   await coordinator.setEnabledFromUser(true);
@@ -295,7 +322,7 @@ test("keeps background continuity available when notifications are denied withou
     state: expect.objectContaining({
       available: true,
       backgroundEnabled: true,
-      notificationPermission: "denied",
+      notificationAvailability: "blocked",
       service: "stopped",
     }),
   });

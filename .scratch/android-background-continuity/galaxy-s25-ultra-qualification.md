@@ -2,7 +2,7 @@
 
 Status: not run — no support claim
 
-This record must be completed on a physical Galaxy S25 Ultra running Android 16 or later. Follow [`docs/android-background-continuity-release.md`](../../docs/android-background-continuity-release.md). Do not record Clip content or any device identity.
+This is a candidate physical record, not a selected release gate. Complete it only if ticket 03 selects Galaxy S25 Ultra for the final hardware matrix. Follow [`docs/android-background-continuity-release.md`](../../docs/android-background-continuity-release.md), record the device's actual configuration without using it as a preliminary eligibility check, and do not record Clip content or any device identity.
 
 ## Build and configuration
 

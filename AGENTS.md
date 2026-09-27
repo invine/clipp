@@ -55,6 +55,8 @@ Electron is the most complete runtime and is usually the best reference implemen
 
 ## Commands
 
+- `npm run check` — type-check shared code, tests, scripts, and all runtimes, then run Jest once
+- `npm run typecheck` — type-check without emitting files
 - `npm test`
 - `npm run lint`
 - `npm --workspace apps/electron run build`
@@ -66,6 +68,13 @@ Electron is the most complete runtime and is usually the best reference implemen
 - `npm run relay:websocket`
 
 Electron dev uses two processes. Start the renderer first on `http://localhost:4173`, then launch `dev:electron`.
+
+Run `npm run check` before committing code changes. `npm install` activates the
+Husky pre-commit hook, which formats staged files with Prettier through lint-staged
+and runs the same checks. Fix failures before retrying the commit. Run
+`npx prettier --write <files>` to format selected files during development;
+`npm run format` formats the whole repository. Existing formatting is adopted as
+files are staged. Development tooling requires Node.js 22.22.1 or newer.
 
 ## Storage Quick Reference
 
