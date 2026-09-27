@@ -39,7 +39,7 @@ export class RelayLifecycle {
     private readonly options: RelayLifecycleOptions,
     private readonly selfMultiaddrs: () => string[],
     private readonly signedPeerRecord: () => Promise<Uint8Array>,
-    private readonly reachabilityChanged: () => void,
+    private readonly reachabilityChanged: () => void
   ) {}
 
   async start(node: any, relays: string[]): Promise<void> {
@@ -88,8 +88,8 @@ export class RelayLifecycle {
     const options = this.rendezvousOptions();
     await Promise.allSettled(
       registered.map((relay) =>
-        unregisterFromRendezvous(node, relay, this.topic(), options),
-      ),
+        unregisterFromRendezvous(node, relay, this.topic(), options)
+      )
     );
     await this.closeListeners(this.relayListeners(node));
     this.relayListenersByAddress.clear();
@@ -104,7 +104,7 @@ export class RelayLifecycle {
 
   async lookupPeer(
     peerId: string,
-    accept: (peer: string, record: Uint8Array) => Promise<boolean>,
+    accept: (peer: string, record: Uint8Array) => Promise<boolean>
   ): Promise<void> {
     const node = this.node;
     const generation = this.generation;
@@ -118,7 +118,7 @@ export class RelayLifecycle {
           relay,
           this.topic(),
           peerId,
-          this.rendezvousOptions(),
+          this.rendezvousOptions()
         );
       } catch (error) {
         log.debug("Rendezvous lookup relay unavailable", {
@@ -173,7 +173,7 @@ export class RelayLifecycle {
   private async connectRelays(
     node: any,
     relays: string[],
-    generation: number,
+    generation: number
   ): Promise<void> {
     for (const addr of relays) {
       if (!this.isCurrent(generation)) return;
@@ -181,7 +181,7 @@ export class RelayLifecycle {
         const existingConnections = this.connectionSnapshot(node);
         const connection = await node.dial(
           ensureLegacyMultiaddrApi(multiaddr(addr)),
-          this.dialOptions(),
+          this.dialOptions()
         );
         const owned = this.isNewConnection(connection, existingConnections);
         if (!this.isCurrent(generation)) {
@@ -205,14 +205,14 @@ export class RelayLifecycle {
     const ids = new Set(
       [...references]
         .map((connection) => connection?.id)
-        .filter((id) => id != null),
+        .filter((id) => id != null)
     );
     return { references, ids };
   }
 
   private isNewConnection(
     connection: any,
-    before: { references: Set<any>; ids: Set<any> },
+    before: { references: Set<any>; ids: Set<any> }
   ): boolean {
     return (
       Boolean(connection) &&
@@ -244,17 +244,20 @@ export class RelayLifecycle {
 
   private async clearRelayKeepAlive(
     node: any,
-    relays: string[],
+    relays: string[]
   ): Promise<void> {
-    await Promise.all(
+    const results = await Promise.allSettled(
       relays.map(async (relay) => {
         const peer = this.relayPeers.get(relay);
         if (!peer) return;
         await node.peerStore?.merge?.(peer, {
           tags: { "keep-alive-circuit-relay": undefined },
         });
-      }),
+      })
     );
+    if (results.some((result) => result.status === "rejected")) {
+      log.warn("Relay keep-alive tag removal failed during shutdown");
+    }
   }
 
   private relayReservationStore(node: any): any {
@@ -263,7 +266,7 @@ export class RelayLifecycle {
       ?.find(
         (candidate: any) =>
           candidate?.[Symbol.toStringTag] ===
-          "@libp2p/circuit-relay-v2-transport",
+          "@libp2p/circuit-relay-v2-transport"
       );
     return transport?.reservationStore;
   }
@@ -275,7 +278,7 @@ export class RelayLifecycle {
 
   private ensureReservations(generation: number): Promise<void> {
     const work = this.reservationWork.then(() =>
-      this.runEnsureReservations(generation),
+      this.runEnsureReservations(generation)
     );
     this.reservationWork = work.catch(() => undefined);
     return work;
@@ -310,12 +313,12 @@ export class RelayLifecycle {
     const manager = node.components?.transportManager;
     if (typeof manager?.listen !== "function") {
       log.debug(
-        "Relay reservation retry skipped: transport manager unavailable",
+        "Relay reservation retry skipped: transport manager unavailable"
       );
       return;
     }
     const circuitAddrs = missing.map(
-      (relay) => `${relay.replace(/\/+$/, "")}/p2p-circuit`,
+      (relay) => `${relay.replace(/\/+$/, "")}/p2p-circuit`
     );
     this.reservationRunning = true;
     try {
@@ -326,14 +329,14 @@ export class RelayLifecycle {
           this.relayListenersByAddress.delete(relay);
       }
       const newRelays = missing.filter(
-        (relay) => !this.relayListenersByAddress.has(relay),
+        (relay) => !this.relayListenersByAddress.has(relay)
       );
       const retryRelays = missing.filter((relay) =>
-        this.relayListenersByAddress.has(relay),
+        this.relayListenersByAddress.has(relay)
       );
       const beforeListeners = new Set(this.relayListeners(node));
       const beforeConnections = new Map(
-        missing.map((relay) => [relay, this.connectionSnapshot(node)]),
+        missing.map((relay) => [relay, this.connectionSnapshot(node)])
       );
       const opened = new Map<string, Set<any>>();
       const peers = new Map<string, any>();
@@ -341,7 +344,7 @@ export class RelayLifecycle {
       const onReservation = (event: any) => {
         const { relay: peer, details } = event?.detail ?? {};
         const relay = missing.find(
-          (candidate) => candidate.split("/p2p/").pop() === peer?.toString?.(),
+          (candidate) => candidate.split("/p2p/").pop() === peer?.toString?.()
         );
         if (
           !relay ||
@@ -352,7 +355,7 @@ export class RelayLifecycle {
         peers.set(relay, peer);
         const before = beforeConnections.get(relay);
         const connection = (node.getConnections?.() ?? []).find(
-          (candidate: any) => candidate?.id === details.connection,
+          (candidate: any) => candidate?.id === details.connection
         );
         if (before && connection && this.isNewConnection(connection, before)) {
           const relayConnections = opened.get(relay) ?? new Set();
@@ -367,9 +370,9 @@ export class RelayLifecycle {
           await manager.listen(
             newRelays.map((relay) =>
               ensureLegacyMultiaddrApi(
-                multiaddr(`${relay.replace(/\/+$/, "")}/p2p-circuit`),
-              ),
-            ),
+                multiaddr(`${relay.replace(/\/+$/, "")}/p2p-circuit`)
+              )
+            )
           );
         }
         await Promise.all(
@@ -378,21 +381,21 @@ export class RelayLifecycle {
               .get(relay)
               ?.listen(
                 ensureLegacyMultiaddrApi(
-                  multiaddr(`${relay.replace(/\/+$/, "")}/p2p-circuit`),
-                ),
-              ),
-          ),
+                  multiaddr(`${relay.replace(/\/+$/, "")}/p2p-circuit`)
+                )
+              )
+          )
         );
       } catch (error) {
         listenError = error;
       } finally {
         store?.removeEventListener?.(
           "relay:created-reservation",
-          onReservation,
+          onReservation
         );
       }
       const created = this.relayListeners(node).filter(
-        (listener) => !beforeListeners.has(listener),
+        (listener) => !beforeListeners.has(listener)
       );
       newRelays.forEach((relay, index) => {
         if (created[index])
@@ -402,12 +405,12 @@ export class RelayLifecycle {
         await this.closeListeners(
           [
             ...this.relayListeners(node).filter(
-              (listener) => !beforeListeners.has(listener),
+              (listener) => !beforeListeners.has(listener)
             ),
             ...retryRelays.map((relay) =>
-              this.relayListenersByAddress.get(relay),
+              this.relayListenersByAddress.get(relay)
             ),
-          ].filter(Boolean),
+          ].filter(Boolean)
         );
         for (const peer of peers.values()) {
           await node.peerStore?.merge?.(peer, {
@@ -417,8 +420,8 @@ export class RelayLifecycle {
         for (const connections of opened.values()) {
           await Promise.all(
             [...connections].map((connection) =>
-              this.closeConnection(connection),
-            ),
+              this.closeConnection(connection)
+            )
           );
         }
         return;
@@ -430,7 +433,7 @@ export class RelayLifecycle {
       }
       if (listenError) throw listenError;
       const stillMissing = relays.filter(
-        (relay) => !this.hasReservation(relay),
+        (relay) => !this.hasReservation(relay)
       );
       if (stillMissing.length > 0) {
         log.warn("Relay reservation did not produce all circuit addresses", {
@@ -455,7 +458,7 @@ export class RelayLifecycle {
   private relayListeners(node: any): any[] {
     return (node.components?.transportManager?.getListeners?.() ?? []).filter(
       (listener: any) =>
-        listener?.constructor?.name === "CircuitRelayTransportListener",
+        listener?.constructor?.name === "CircuitRelayTransportListener"
     );
   }
 
@@ -469,7 +472,7 @@ export class RelayLifecycle {
         } catch {
           /* best effort */
         }
-      }),
+      })
     );
   }
 
@@ -481,7 +484,7 @@ export class RelayLifecycle {
       this.ownedConnections.delete(relay);
     }
     await Promise.all(
-      [...toClose].map((connection) => this.closeConnection(connection)),
+      [...toClose].map((connection) => this.closeConnection(connection))
     );
   }
 
@@ -532,7 +535,7 @@ export class RelayLifecycle {
     const interval = this.options.rendezvousIntervalMs ?? 30_000;
     const jitteredInterval = Math.max(
       1_000,
-      Math.round(interval * (0.8 + Math.random() * 0.4)),
+      Math.round(interval * (0.8 + Math.random() * 0.4))
     );
     this.rendezvousTimer = setTimeout(() => {
       this.rendezvousTimer = null;
@@ -542,7 +545,7 @@ export class RelayLifecycle {
 
   private async runRendezvous(
     generation: number,
-    targets: string[],
+    targets: string[]
   ): Promise<void> {
     const node = this.node;
     if (!node?.peerId?.toString?.()) return;
@@ -558,7 +561,7 @@ export class RelayLifecycle {
             relay,
             this.topic(),
             signedRecord,
-            options,
+            options
           );
           if (!this.isCurrent(generation)) {
             if (!this.relays.includes(relay)) {
@@ -566,7 +569,7 @@ export class RelayLifecycle {
                 node,
                 relay,
                 this.topic(),
-                options,
+                options
               );
             }
             return;
@@ -577,7 +580,7 @@ export class RelayLifecycle {
             await unregisterFromRendezvous(node, relay, this.topic(), options);
           log.debug(
             "Rendezvous registration skipped: relay reservation unavailable",
-            { relay, topic: this.topic() },
+            { relay, topic: this.topic() }
           );
         }
       }

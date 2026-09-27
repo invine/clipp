@@ -3,7 +3,7 @@ jest.mock(
   () => ({
     multiaddr: (address: string) => ({ toString: () => address }),
   }),
-  { virtual: true },
+  { virtual: true }
 );
 
 const register = jest.fn<Promise<boolean>, any[]>(async () => true);
@@ -81,7 +81,7 @@ function harness(addresses: string[] = [], retryMs = 15_000) {
     { rendezvousIntervalMs: 60_000, relayReservationRetryMs: retryMs },
     () => selfAddresses,
     async () => signedRecord,
-    () => undefined,
+    () => undefined
   );
   return {
     node,
@@ -94,7 +94,7 @@ function harness(addresses: string[] = [], retryMs = 15_000) {
     },
     emitReservation: (detail: any) => {
       for (const handler of reservationEvents.get(
-        "relay:created-reservation",
+        "relay:created-reservation"
       ) ?? [])
         handler({ detail });
     },
@@ -116,7 +116,7 @@ describe("RelayLifecycle", () => {
     const relayConnection = connections[0];
     const directConnection = connection(
       "/ip4/192.0.2.1/tcp/9000/p2p/relay-a",
-      "relay-a",
+      "relay-a"
     );
     connections.push(directConnection);
 
@@ -158,7 +158,7 @@ describe("RelayLifecycle", () => {
     const original = connections[0];
     const replacement = connection(
       "/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a",
-      "relay-a",
+      "relay-a"
     );
     const direct = connection(relayDns, "relay-a");
     connections.splice(0, 1);
@@ -178,7 +178,7 @@ describe("RelayLifecycle", () => {
       node,
       relayDns,
       "clipp",
-      expect.any(Object),
+      expect.any(Object)
     );
     expect(replacement.close).not.toHaveBeenCalled();
     expect(direct.close).not.toHaveBeenCalled();
@@ -253,6 +253,18 @@ describe("RelayLifecycle", () => {
     expect(node.dial).toHaveBeenCalledTimes(1);
   });
 
+  it("closes owned relay connections when keep-alive tag removal fails", async () => {
+    const { node, lifecycle, connections, merge } = harness();
+    await lifecycle.start(node, [relayA, relayB]);
+    merge.mockRejectedValueOnce(new Error("peer store unavailable"));
+
+    await expect(lifecycle.stop()).resolves.toBeUndefined();
+
+    expect(merge).toHaveBeenCalledTimes(2);
+    expect(connections[0].close).toHaveBeenCalledTimes(1);
+    expect(connections[1].close).toHaveBeenCalledTimes(1);
+  });
+
   it("closes a DNS relay listener whose announced address resolves to IP", async () => {
     const relayDns = "/dns4/relay.example/tcp/9999/ws/p2p/relay-a";
     const { node, lifecycle, listeners } = harness();
@@ -319,7 +331,7 @@ describe("RelayLifecycle", () => {
     const { node, lifecycle, connections } = harness();
     const resolved = connection(
       "/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a",
-      "relay-a",
+      "relay-a"
     );
     node.dial.mockImplementationOnce(async () => {
       connections.push(resolved);
