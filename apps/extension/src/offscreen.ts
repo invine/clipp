@@ -1,5 +1,8 @@
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
-import { activeMemberReconnectPeers, createPairedPeerConnectionManager } from "../../../packages/core/network/pairedConnections";
+import {
+  activeMemberReconnectPeers,
+  createPairedPeerConnectionManager,
+} from "../../../packages/core/network/pairedConnections";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords";
 import {
   createKVIdentityRepository,
@@ -11,7 +14,12 @@ import {
   generateExtensionIdentityKeyMaterial,
 } from "./identityKeyMaterial";
 import { deviceIdToPeerIdObject } from "../../../packages/core/network/peerId";
-import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants";
+import {
+  ManagedRelayController,
+  type ManagedRelayConnection,
+  type RelayConfiguration,
+} from "../../../packages/core/network/managedRelays";
+import { createExtensionManagedRelayController } from "./managedRelayOffscreen";
 import * as log from "../../../packages/core/logger";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import {
@@ -22,7 +30,10 @@ import {
   handleExtensionReachabilityRequest,
   isExtensionReachabilityRequest,
 } from "./networkBridge";
-import { relayExtensionStream, type ExtensionStreamResponse } from "./streamBridge";
+import {
+  relayExtensionStream,
+  type ExtensionStreamResponse,
+} from "./streamBridge";
 import {
   handleExtensionClipboardRequest,
   isExtensionClipboardRequest,
@@ -30,7 +41,9 @@ import {
 import { createOffscreenClipboardWriter } from "./offscreenClipboard";
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
-let pairedConnections: ReturnType<typeof createPairedPeerConnectionManager> | null = null;
+let pairedConnections: ReturnType<
+  typeof createPairedPeerConnectionManager
+> | null = null;
 const runtimeRegisteredProtocols = new Set<string>();
 const runtimeRegisteredStreamProtocols = new Set<string>();
 const storage = new RuntimeMessageStorageBackend();
@@ -42,6 +55,7 @@ const identitySvc = createRuntimeIdentityManager({
   deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
 });
 let started = false;
+let managedController: ManagedRelayController | null = null;
 const writeClipboardText = createOffscreenClipboardWriter();
 const runtimeOutboundStreamControllers = new Map<string, AbortController>();
 
@@ -61,8 +75,12 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES) {
+async function initMessaging(
+  relays: string[] = [],
+  managedConfigurations: RelayConfiguration[] = []
+) {
   if (transport && started) {
+    await managedController?.setConfigurations(managedConfigurations);
     pairedConnections?.start();
     return;
   }
@@ -89,10 +107,27 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
     privateKey,
     relayAddresses: relays,
     enableDCUtR: true,
-    signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({ storage }),
-    isPeerKnown: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "active",
-    isPeerRevoked: async (remotePeerId) => await identitySvc.membershipStatus(remotePeerId) === "revoked",
+    signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({
+      storage,
+    }),
+    isPeerKnown: async (remotePeerId) =>
+      (await identitySvc.membershipStatus(remotePeerId)) === "active",
+    isPeerRevoked: async (remotePeerId) =>
+      (await identitySvc.membershipStatus(remotePeerId)) === "revoked",
   });
+  const managedTransport = transport as typeof transport & {
+    managedRelayHost?: (
+      onConnectionClosed?: (connection: ManagedRelayConnection) => void
+    ) => Parameters<typeof createExtensionManagedRelayController>[0]["host"];
+    setEligibleDialAddresses?: (
+      filter: (addresses: string[]) => string[]
+    ) => void;
+  };
+  managedTransport.setEligibleDialAddresses?.((addresses) =>
+    managedController
+      ? managedController.eligibleDialAddresses(addresses)
+      : addresses.filter((address) => !address.includes("/p2p-circuit"))
+  );
   pairedConnections = createPairedPeerConnectionManager({
     transport,
     getPairedPeers: activeMemberReconnectPeers(identitySvc),
@@ -100,14 +135,23 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
 
   transport.onSelfPeerUpdate((multiaddrs: string[]) => {
     chrome.runtime
-      .sendMessage({ source: "offscreen", action: "selfPeerUpdate", multiaddrs })
+      .sendMessage({
+        source: "offscreen",
+        action: "selfPeerUpdate",
+        multiaddrs,
+      })
       .catch(() => {});
   });
   const emitPeers = () => {
     const peers = transport?.getConnectedPeers?.() ?? [];
     const peerConnections = transport?.getPeerConnectionInfo?.() ?? [];
     chrome.runtime
-      .sendMessage({ source: "offscreen", action: "peers", peers, peerConnections })
+      .sendMessage({
+        source: "offscreen",
+        action: "peers",
+        peers,
+        peerConnections,
+      })
       .catch(() => {});
   };
   transport.onPeerConnected(emitPeers);
@@ -116,13 +160,45 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
   try {
     await transport.start();
     started = true;
+    if (
+      !managedTransport.managedRelayHost ||
+      !managedTransport.setEligibleDialAddresses
+    ) {
+      if (managedConfigurations.length)
+        throw new Error("managed_relay_host_unavailable");
+    } else {
+      const host = managedTransport.managedRelayHost((connection) => {
+        for (const state of managedController?.states() ?? []) {
+          if (state.peerId === connection.verifiedPeerId)
+            void managedController?.connectionLost(state.key, connection);
+        }
+      });
+      managedController = createExtensionManagedRelayController({
+        host,
+        onStateChange: (states) => {
+          void chrome.runtime
+            .sendMessage({
+              source: "offscreen",
+              action: "managedRelayStates",
+              states,
+            })
+            .catch(() => undefined);
+        },
+      });
+      void managedController
+        .setConfigurations(managedConfigurations)
+        .catch((error) => log.warn("Managed relay setup failed", error));
+    }
     pairedConnections.start();
     emitPeers();
     log.info("Offscreen messaging started");
   } catch (err) {
     pairedConnections?.stop();
+    await transport?.stop().catch(() => undefined);
     transport = null;
     pairedConnections = null;
+    await managedController?.stop().catch(() => undefined);
+    managedController = null;
     started = false;
     throw err;
   }
@@ -131,6 +207,8 @@ async function initMessaging(relays: string[] = DEFAULT_CIRCUIT_RELAY_ADDRESSES)
 async function shutdownMessaging(): Promise<void> {
   runtimeOutboundStreamControllers.forEach((controller) => controller.abort());
   runtimeOutboundStreamControllers.clear();
+  await managedController?.stop();
+  managedController = null;
   const reconnectsStopped = pairedConnections?.stop();
   await transport?.stop();
   await reconnectsStopped;
@@ -145,7 +223,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== "offscreen") return;
   (async () => {
     if (msg.action === "init") {
-      await initMessaging(msg.relays);
+      await initMessaging(msg.relays, msg.managedConfigurations);
       sendResponse({ ok: true });
       return;
     }
@@ -158,52 +236,77 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
+    if (msg.action === "setManagedRelays") {
+      if (!managedController) throw new Error("managed_relay_host_unavailable");
+      await managedController.setConfigurations(msg.configurations);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.action === "retryManagedRelay") {
+      if (!managedController || typeof msg.key !== "string")
+        throw new Error("managed_relay_host_unavailable");
+      await managedController.retry(msg.key);
+      sendResponse({ ok: true });
+      return;
+    }
     if (isExtensionClipboardRequest(msg)) {
-      sendResponse(await handleExtensionClipboardRequest(msg, writeClipboardText));
+      sendResponse(
+        await handleExtensionClipboardRequest(msg, writeClipboardText)
+      );
       return;
     }
     if (!transport) {
       sendResponse({ ok: false, error: "not_initialized" });
       return;
     }
-    if (msg.action === "runtimeSend" && msg.peerTarget && msg.protocol && Array.isArray(msg.data)) {
-      await transport.send(msg.protocol, msg.peerTarget, Uint8Array.from(msg.data));
+    if (
+      msg.action === "runtimeSend" &&
+      msg.peerTarget &&
+      msg.protocol &&
+      Array.isArray(msg.data)
+    ) {
+      await transport.send(
+        msg.protocol,
+        msg.peerTarget,
+        Uint8Array.from(msg.data)
+      );
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "runtimeCancelSendStream" && typeof msg.streamId === "string") {
+    if (
+      msg.action === "runtimeCancelSendStream" &&
+      typeof msg.streamId === "string"
+    ) {
       runtimeOutboundStreamControllers.get(msg.streamId)?.abort();
       sendResponse({ ok: true });
       return;
     }
     if (
-      msg.action === "runtimeSendStream"
-      && typeof msg.streamId === "string"
-      && msg.peerTarget
-      && msg.protocol
-      && Array.isArray(msg.frames)
+      msg.action === "runtimeSendStream" &&
+      typeof msg.streamId === "string" &&
+      msg.peerTarget &&
+      msg.protocol &&
+      Array.isArray(msg.frames)
     ) {
       if (runtimeOutboundStreamControllers.has(msg.streamId)) {
         throw new Error("stream_already_started");
       }
       const controller = new AbortController();
       runtimeOutboundStreamControllers.set(msg.streamId, controller);
-      const frames = async function *(): AsyncIterable<Uint8Array> {
+      const frames = async function* (): AsyncIterable<Uint8Array> {
         for (const frame of msg.frames) {
           if (!Array.isArray(frame)) throw new Error("invalid_stream_frame");
           yield Uint8Array.from(frame);
         }
       };
       try {
-        await transport.sendStream?.(
-          msg.protocol,
-          msg.peerTarget,
-          frames(),
-          {
-            signal: controller.signal,
-            idleTimeoutMs: typeof msg.idleTimeoutMs === "number" ? msg.idleTimeoutMs : undefined,
-          },
-        );
+        await transport.sendStream?.(msg.protocol, msg.peerTarget, frames(), {
+          signal: controller.signal,
+          idleTimeoutMs:
+            typeof msg.idleTimeoutMs === "number"
+              ? msg.idleTimeoutMs
+              : undefined,
+        });
         sendResponse({ ok: true });
       } finally {
         runtimeOutboundStreamControllers.delete(msg.streamId);
@@ -224,7 +327,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse(await handleExtensionReachabilityRequest(msg, transport));
       return;
     }
-    if (msg.action === "runtimeRegisterProtocol" && typeof msg.protocol === "string") {
+    if (
+      msg.action === "runtimeRegisterProtocol" &&
+      typeof msg.protocol === "string"
+    ) {
       if (runtimeRegisteredProtocols.has(msg.protocol)) {
         sendResponse({ ok: true });
         return;
@@ -244,32 +350,42 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
-    if (msg.action === "runtimeRegisterStreamProtocol" && typeof msg.protocol === "string") {
+    if (
+      msg.action === "runtimeRegisterStreamProtocol" &&
+      typeof msg.protocol === "string"
+    ) {
       if (runtimeRegisteredStreamProtocols.has(msg.protocol)) {
         sendResponse({ ok: true });
         return;
       }
       runtimeRegisteredStreamProtocols.add(msg.protocol);
-      transport.onStream(msg.protocol, (from, chunks) => relayExtensionStream({
-        protocol: msg.protocol,
-        from,
-        chunks,
-        send: async (message) => await chrome.runtime.sendMessage({
-          source: "offscreen",
-          ...message,
-        }) as ExtensionStreamResponse,
-      }));
+      transport.onStream(msg.protocol, (from, chunks) =>
+        relayExtensionStream({
+          protocol: msg.protocol,
+          from,
+          chunks,
+          send: async (message) =>
+            (await chrome.runtime.sendMessage({
+              source: "offscreen",
+              ...message,
+            })) as ExtensionStreamResponse,
+        })
+      );
       sendResponse({ ok: true });
       return;
     }
     if (msg.action === "getPeers") {
-      const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
+      const peers = transport.getConnectedPeers
+        ? transport.getConnectedPeers()
+        : [];
       const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
       sendResponse({ peers, peerConnections });
       return;
     }
     if (msg.action === "getStatus") {
-      const peers = transport.getConnectedPeers ? transport.getConnectedPeers() : [];
+      const peers = transport.getConnectedPeers
+        ? transport.getConnectedPeers()
+        : [];
       const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
       sendResponse({ peers, peerConnections, started });
       return;

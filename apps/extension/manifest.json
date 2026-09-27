@@ -10,7 +10,8 @@
     "clipboardWrite",
     "notifications",
     "scripting",
-    "offscreen"
+    "offscreen",
+    "identity"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
