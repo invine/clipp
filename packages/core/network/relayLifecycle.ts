@@ -32,7 +32,6 @@ export class RelayLifecycle {
   private readonly registered = new Set<string>();
   private readonly ownedConnections = new Map<string, Set<any>>();
   private readonly relayPeers = new Map<string, any>();
-  private readonly pendingReconnect = new Set<string>();
   private readonly relayListenersByAddress = new Map<string, any>();
   private readonly closedListeners = new WeakSet<object>();
 
@@ -47,7 +46,7 @@ export class RelayLifecycle {
     if (this.node) return;
     this.node = node;
     this.relays = [...relays];
-    this.observeRelayConnections(node);
+    node.addEventListener?.("connection:close", this.onConnectionClose);
     this.ready = false;
     const generation = ++this.generation;
     log.info("Relay reservation setup", {
@@ -85,7 +84,7 @@ export class RelayLifecycle {
     const registered = [...this.registered];
     this.registered.clear();
     if (!node) return;
-    this.unobserveRelayConnections(node);
+    node.removeEventListener?.("connection:close", this.onConnectionClose);
     const options = this.rendezvousOptions();
     await Promise.allSettled(
       registered.map((relay) =>
@@ -228,49 +227,20 @@ export class RelayLifecycle {
     this.ownedConnections.set(relay, connections);
   }
 
-  private relayForPeer(peer: any): string | undefined {
-    const id = peer?.toString?.();
-    return this.relays.find((relay) => relay.split("/p2p/").pop() === id);
-  }
-
   private readonly onConnectionClose = (event: any): void => {
     const closed = event?.detail;
     for (const [relay, connections] of this.ownedConnections) {
-      if (
-        connections.has(closed) ||
-        (closed?.id != null &&
-          [...connections].some((connection) => connection?.id === closed.id))
-      ) {
-        const peer = closed?.remotePeer?.toString?.();
-        const stillConnected = (this.node?.getConnections?.() ?? []).some(
-          (connection: any) =>
-            connection !== closed &&
-            (closed?.id == null || connection?.id !== closed.id) &&
-            connection?.remotePeer?.toString?.() === peer,
-        );
-        if (!stillConnected) this.pendingReconnect.add(relay);
+      for (const connection of connections) {
+        if (
+          connection === closed ||
+          (closed?.id != null && connection?.id === closed.id)
+        ) {
+          connections.delete(connection);
+        }
       }
+      if (connections.size === 0) this.ownedConnections.delete(relay);
     }
   };
-
-  private readonly onConnectionOpen = (event: any): void => {
-    if (!this.node) return;
-    const connection = event?.detail;
-    const relay = this.relayForPeer(connection?.remotePeer);
-    if (!relay || !this.pendingReconnect.delete(relay)) return;
-    this.rememberConnection(relay, connection);
-  };
-
-  private observeRelayConnections(node: any): void {
-    node.addEventListener?.("connection:close", this.onConnectionClose);
-    node.addEventListener?.("connection:open", this.onConnectionOpen);
-  }
-
-  private unobserveRelayConnections(node: any): void {
-    node.removeEventListener?.("connection:close", this.onConnectionClose);
-    node.removeEventListener?.("connection:open", this.onConnectionOpen);
-    this.pendingReconnect.clear();
-  }
 
   private async clearRelayKeepAlive(
     node: any,

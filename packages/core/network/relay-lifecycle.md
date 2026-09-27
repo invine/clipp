@@ -8,15 +8,21 @@ Signed Peer Records through the transport's existing import and revocation
 checks. A generation fence prevents a pass from an earlier start from
 scheduling work in a later start.
 
-Cleanup tracks new connections returned by relay dials, connections identified
-by Circuit Relay reservation records, and a replacement opened after an owned
-relay connection is lost. It removes the relay-specific keep-alive tag before
-closing owned connections so libp2p's reconnect queue does not redial a stopped
-relay. A pre-existing direct connection reused at the configured relay address
-or another path to the same Peer ID remains open. Reservation listen attempts
+Cleanup tracks new connections returned by relay dials and connections opened
+during managed listen or retry attempts, identified by Circuit Relay reservation
+connection IDs. It removes the relay-specific keep-alive tag before closing
+owned connections so libp2p's reconnect queue does not redial a stopped relay.
+Direct connections remain open, including a new direct dial to the same Peer ID
+or address after relay connection loss. A ReconnectQueue connection opened
+before a managed retry is indistinguishable from an independently dialed direct
+connection reused by that retry. Stop conservatively leaves it open while
+clearing its relay tag, listener, reservation and Rendezvous work. The remaining
+physical connection closes with the host or peer. Reservation listen attempts
 are serialized; a late completion closes only listeners and connections
-created by that attempt. A failed listener is retried in place, since closing
-it would cancel reservations for all relays in stock Circuit Relay v2.
+created by that attempt. Closed owned connections are removed from the
+ownership set during long-running retry cycles. A failed listener is retried in
+place, since closing it would cancel reservations for all relays in stock
+Circuit Relay v2.
 
 `Libp2pMessagingTransport` currently calls only `start` and `stop`, retaining
 the existing `relayAddresses` option for all runtimes. It disables node startup
@@ -37,9 +43,9 @@ the existing local `node_modules` dependency tree; no external relay was used.
 | Command / scope                                                                                                | Starting commit `44ddde1`                  | Ticket branch after review fixes         |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
 | `npm test -- --runInBand tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent`     | 38/38 passed                               | 44/44 passed                             |
-| `npm test -- --runInBand --silent tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts` | New controller test file did not exist     | 55/55 passed                             |
+| `npm test -- --runInBand --silent tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts` | New controller test file did not exist     | 58/58 passed                             |
 | `npm run lint -- --quiet`                                                                                      | Not run                                    | Passed                                   |
-| `npm test -- --runInBand --silent`                                                                             | Not run                                    | 453/453 passed; 56/56 suites passed      |
+| `npm test -- --runInBand --silent`                                                                             | Not run                                    | 456/456 passed; 56/56 suites passed      |
 | `node --import tsx tests/harness/pairing-harness.ts` with loopback bind permission                             | Passed in 13 s after import correction     | Passed in 12.8 s after import correction |
 | `npm run check`                                                                                                | No `check` script in pinned `package.json` | Missing script                           |
 
@@ -63,8 +69,8 @@ and transport seams with libp2p boundary doubles. Native runtime runs were not
 part of this ticket.
 
 The controller regressions were observed red before the fixes for DNS-to-IP
-connection cleanup, a replacement opened after listening, and same-address
-reused direct connections. A second direct connection after loss also went red
-before reconnect tracking was limited to peers with no surviving connection.
+connection cleanup, a replacement opened by a retry after listening, and
+same-address reused direct connections. A direct connection after total relay
+connection loss went red before Peer ID-only ownership inference was removed.
 The shared reservation store constraint invalidated the earlier selective
 reconfiguration tests and API; both were removed before this validation run.
