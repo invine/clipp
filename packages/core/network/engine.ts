@@ -2,7 +2,11 @@ import { createClipboardNode } from "./node.js";
 import { multiaddr } from "@multiformats/multiaddr";
 import { EventBus } from "./events.js";
 import { toU8 } from "./bytes.js";
-import { closeMessageStream, guardMessageStream, writeMessageStream } from "./messageStream.js";
+import {
+  closeMessageStream,
+  guardMessageStream,
+  writeMessageStream,
+} from "./messageStream.js";
 import {
   CLIP_PROTOCOL,
   HISTORY_PROTOCOL,
@@ -10,16 +14,30 @@ import {
   HISTORY_STREAM_IDLE_TIMEOUT_MS,
   isHistoryProtocol,
 } from "./protocol.js";
-import { decodeLiveClipFrame, LIVE_CLIP_MAX_FRAME_BYTES } from "../protocols/liveClip.js";
-import { inspectPairingFrame, PAIRING_MAX_FRAME_BYTES, PAIRING_PROTOCOL } from "../pairing/protocol.js";
-import { decodeMembershipFrame, MEMBERSHIP_MAX_FRAME_BYTES, MEMBERSHIP_PROTOCOL } from "../membership/reconciliation.js";
+import {
+  decodeLiveClipFrame,
+  LIVE_CLIP_MAX_FRAME_BYTES,
+} from "../protocols/liveClip.js";
+import {
+  inspectPairingFrame,
+  PAIRING_MAX_FRAME_BYTES,
+  PAIRING_PROTOCOL,
+} from "../pairing/protocol.js";
+import {
+  decodeMembershipFrame,
+  MEMBERSHIP_MAX_FRAME_BYTES,
+  MEMBERSHIP_PROTOCOL,
+} from "../membership/reconciliation.js";
 import { createPairingRejectionReporter } from "../pairing/diagnostics.js";
-import { ensureLegacyMultiaddrApi, getPeerIdFromMultiaddr } from "./multiaddrCompat.js";
+import {
+  ensureLegacyMultiaddrApi,
+  getPeerIdFromMultiaddr,
+} from "./multiaddrCompat.js";
 import {
   consumeOrMatchSignedPeerRecord,
   type SignedPeerRecordPersistence,
 } from "./peerRecords.js";
-import { lookupRendezvousPeer, registerOnRendezvous, unregisterFromRendezvous } from "./rendezvous.js";
+import { RelayLifecycle } from "./relayLifecycle.js";
 import type {
   MessagingTransport,
   MessageHandler,
@@ -38,7 +56,10 @@ const DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS = 30_000;
 function concatBytes(parts: Uint8Array[], size: number): Uint8Array {
   const result = new Uint8Array(size);
   let offset = 0;
-  for (const part of parts) { result.set(part, offset); offset += part.length; }
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
   return result;
 }
 
@@ -70,9 +91,6 @@ export type Libp2pMessagingOptions = {
   isPeerRevoked?(peerId: string): Promise<boolean>;
 };
 
-const DEFAULT_RENDEZVOUS_TOPIC = "clipp";
-const DEFAULT_RENDEZVOUS_INTERVAL_MS = 30_000;
-
 type PeerConnectionDescription = {
   peerId: string | null;
   addr: string | null;
@@ -94,7 +112,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private peerRecordWrite: Promise<void> = Promise.resolve();
 
   private readonly handlersByProtocol = new Map<string, MessageHandler[]>();
-  private readonly streamHandlersByProtocol = new Map<string, MessageStreamHandler>();
+  private readonly streamHandlersByProtocol = new Map<
+    string,
+    MessageStreamHandler
+  >();
   private readonly connectBus = new EventBus<string>();
   private readonly disconnectBus = new EventBus<string>();
   private readonly relayConnectionBus = new EventBus<void>();
@@ -104,16 +125,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private readonly relayAddrSet: Set<string>;
   private readonly discoveryDialing = new Set<string>();
   private readonly connectedPeerIds = new Set<string>();
-  private readonly observedConnectionPaths = new Map<string, Set<PeerConnectionPath>>();
+  private readonly observedConnectionPaths = new Map<
+    string,
+    Set<PeerConnectionPath>
+  >();
   private readonly relayDialPeerIds = new Set<string>();
   private readonly relayUpgradeLoggedPeerIds = new Set<string>();
-  private rendezvousTimer: ReturnType<typeof setTimeout> | null = null;
-  private rendezvousRunning = false;
-  private rendezvousPending = false;
-  private rendezvousRelays: string[] = [];
-  private readonly registeredRendezvousRelays = new Set<string>();
-  private relayReservationRetryTimer: ReturnType<typeof setInterval> | null = null;
-  private relayReservationRunning = false;
+  private readonly relayLifecycle: RelayLifecycle;
   private readonly reportPairingRejection = createPairingRejectionReporter({
     emit: (diagnostic) => log.warn(diagnostic.event, diagnostic),
   });
@@ -121,9 +139,18 @@ class Libp2pMessagingTransport implements MessagingTransport {
   constructor(private readonly opts: Libp2pMessagingOptions = {}) {
     this.relayPeerIds = buildRelayPeerIdSet(opts.relayAddresses || []);
     this.relayAddrSet = new Set((opts.relayAddresses || []).map(String));
+    this.relayLifecycle = new RelayLifecycle(
+      opts,
+      () => this.selfMultiaddrs(),
+      () => this.getSignedPeerRecord(),
+      () => this.handleSelfReachabilityChanged(),
+    );
   }
 
-  private applicationStreamPolicy(protocol: string, idleTimeoutOverride?: number): {
+  private applicationStreamPolicy(
+    protocol: string,
+    idleTimeoutOverride?: number,
+  ): {
     enforceProgressTimeout: boolean;
     idleTimeoutMs: number;
     timeoutError: Error;
@@ -131,9 +158,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const history = isHistoryProtocol(protocol);
     return {
       enforceProgressTimeout: history,
-      idleTimeoutMs: idleTimeoutOverride ?? (history
-        ? this.opts.historyStreamIdleTimeoutMs ?? HISTORY_STREAM_IDLE_TIMEOUT_MS
-        : this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS),
+      idleTimeoutMs:
+        idleTimeoutOverride ??
+        (history
+          ? (this.opts.historyStreamIdleTimeoutMs ??
+            HISTORY_STREAM_IDLE_TIMEOUT_MS)
+          : (this.opts.liveClipStreamIdleTimeoutMs ??
+            DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS)),
       timeoutError: applicationStreamTimeoutError(protocol),
     };
   }
@@ -152,7 +183,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
       dcutrRetries: this.opts.dcutrRetries,
       enableTcp: this.opts.enableTcp,
       enableWebSocketListener: this.opts.enableWebSocketListener,
-      enableRelayReservations: this.opts.enableRelayReservations,
+      // RelayLifecycle owns reservation listening after the host starts.
+      enableRelayReservations: false,
       allowInsecureBrowserDials: this.opts.allowInsecureBrowserDials,
     });
 
@@ -201,27 +233,29 @@ class Libp2pMessagingTransport implements MessagingTransport {
     });
 
     const handler = (protocol: string) => this.handleIncoming(protocol);
-    this.node.handle(CLIP_PROTOCOL, handler(CLIP_PROTOCOL), { runOnLimitedConnection: true });
-    this.node.handle(PAIRING_PROTOCOL, handler(PAIRING_PROTOCOL), { runOnLimitedConnection: true });
-    this.node.handle(MEMBERSHIP_PROTOCOL, handler(MEMBERSHIP_PROTOCOL), { runOnLimitedConnection: true });
-    this.node.handle(HISTORY_PROTOCOL, handler(HISTORY_PROTOCOL), { runOnLimitedConnection: true });
-    this.node.handle(HISTORY_REQUEST_PROTOCOL, handler(HISTORY_REQUEST_PROTOCOL), { runOnLimitedConnection: true });
+    this.node.handle(CLIP_PROTOCOL, handler(CLIP_PROTOCOL), {
+      runOnLimitedConnection: true,
+    });
+    this.node.handle(PAIRING_PROTOCOL, handler(PAIRING_PROTOCOL), {
+      runOnLimitedConnection: true,
+    });
+    this.node.handle(MEMBERSHIP_PROTOCOL, handler(MEMBERSHIP_PROTOCOL), {
+      runOnLimitedConnection: true,
+    });
+    this.node.handle(HISTORY_PROTOCOL, handler(HISTORY_PROTOCOL), {
+      runOnLimitedConnection: true,
+    });
+    this.node.handle(
+      HISTORY_REQUEST_PROTOCOL,
+      handler(HISTORY_REQUEST_PROTOCOL),
+      { runOnLimitedConnection: true },
+    );
 
     await this.node.start();
     this.started = true;
     await this.restorePeerRecords();
 
-    // Best-effort: dial relays if explicitly configured.
-    const relays = this.relayDialAddresses(this.opts.relayAddresses || []);
-    log.info("Relay reservation setup", {
-      configuredRelays: this.opts.relayAddresses || [],
-      circuitRelays: relays,
-      enableRelayReservations: this.opts.enableRelayReservations !== false,
-    });
-    await this.connectRelays(relays);
-    await this.ensureRelayReservations(relays);
-    this.startRelayReservationRetry(relays);
-    this.startRendezvous(relays);
+    await this.relayLifecycle.start(this.node, this.opts.relayAddresses || []);
     this.emitSelfPeerUpdate();
 
     log.info("Messaging transport started");
@@ -229,8 +263,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async stop(): Promise<void> {
     if (!this.started) return;
-    this.stopRendezvous();
-    this.stopRelayReservationRetry();
+    await this.relayLifecycle.stop();
     await this.node?.stop?.();
     this.node = null;
     this.started = false;
@@ -243,7 +276,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
     log.info("Messaging transport stopped");
   }
 
-  async send(protocol: string, target: string, data: Uint8Array): Promise<void> {
+  async send(
+    protocol: string,
+    target: string,
+    data: Uint8Array,
+  ): Promise<void> {
     if (!this.node || !this.started) {
       throw new Error("messaging_not_started");
     }
@@ -260,15 +297,19 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     try {
       const isLiveClip = protocol === CLIP_PROTOCOL;
-      const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS;
+      const idleTimeoutMs =
+        this.opts.liveClipStreamIdleTimeoutMs ??
+        DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS;
       const opening = this.openStream(protocol, target);
-      const stream = guardMessageStream(isLiveClip
-        ? await openApplicationStreamWithTimeout(
-          opening,
-          idleTimeoutMs,
-          applicationStreamTimeoutError(protocol),
-        )
-        : await opening);
+      const stream = guardMessageStream(
+        isLiveClip
+          ? await openApplicationStreamWithTimeout(
+              opening,
+              idleTimeoutMs,
+              applicationStreamTimeoutError(protocol),
+            )
+          : await opening,
+      );
 
       if (isLiveClip) {
         await applicationStreamOperationWithTimeout(
@@ -287,7 +328,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
         await writeMessageStream(stream, data);
         await closeMessageStream(stream, { ignoreClosedDataChannel: true });
       }
-      if (peerId) this.logPeerConnectionSnapshot(peerId, "send completed", context);
+      if (peerId)
+        this.logPeerConnectionSnapshot(peerId, "send completed", context);
       log.debug("Messaging send completed", context);
     } catch (err: any) {
       log.warn("Messaging send failed", {
@@ -307,37 +349,44 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     const peerId = await this.targetPeerId(target);
     const context = { protocol, target, peerId };
-    const policy = this.applicationStreamPolicy(protocol, options?.idleTimeoutMs);
+    const policy = this.applicationStreamPolicy(
+      protocol,
+      options?.idleTimeoutMs,
+    );
     let stream: any;
     try {
       const opening = this.openStream(protocol, target);
-      stream = guardMessageStream(policy.enforceProgressTimeout || options?.signal
-        ? await openApplicationStreamWithTimeout(
-          opening,
-          policy.idleTimeoutMs,
-          policy.timeoutError,
-          options?.signal,
-        )
-        : await opening);
+      stream = guardMessageStream(
+        policy.enforceProgressTimeout || options?.signal
+          ? await openApplicationStreamWithTimeout(
+              opening,
+              policy.idleTimeoutMs,
+              policy.timeoutError,
+              options?.signal,
+            )
+          : await opening,
+      );
       const iterator = frames[Symbol.asyncIterator]();
       let iteratorCompleted = false;
       try {
         for (;;) {
-          const next = policy.enforceProgressTimeout || options?.signal
-            ? await applicationStreamOperationWithTimeout(
-              iterator.next(),
-              policy.idleTimeoutMs,
-              stream,
-              policy.timeoutError,
-              options?.signal,
-            )
-            : await iterator.next();
+          const next =
+            policy.enforceProgressTimeout || options?.signal
+              ? await applicationStreamOperationWithTimeout(
+                  iterator.next(),
+                  policy.idleTimeoutMs,
+                  stream,
+                  policy.timeoutError,
+                  options?.signal,
+                )
+              : await iterator.next();
           if (next.done) {
             iteratorCompleted = true;
             break;
           }
           const frame = next.value;
-          if (!(frame instanceof Uint8Array) || frame.length === 0) throw new Error("invalid_stream_frame");
+          if (!(frame instanceof Uint8Array) || frame.length === 0)
+            throw new Error("invalid_stream_frame");
           if (policy.enforceProgressTimeout || options?.signal) {
             await applicationStreamOperationWithTimeout(
               writeMessageStream(stream, frame),
@@ -371,8 +420,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
     } catch (err: any) {
       const failure = err instanceof Error ? err : new Error(String(err));
       abortMessageStream(stream, failure);
-      void closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
-      log.warn("Messaging stream send failed", { ...context, error: err?.message || err });
+      void closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(
+        () => undefined,
+      );
+      log.warn("Messaging stream send failed", {
+        ...context,
+        error: err?.message || err,
+      });
       throw err;
     }
   }
@@ -400,38 +454,53 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     const existing = peerId ? this.peerConnectionSummary(peerId) : null;
     if (peerId && existing && (existing.hasDirect || targetPath !== "direct")) {
-      this.logPeerConnectionSnapshot(peerId, "dial skipped: already connected", dialContext);
+      this.logPeerConnectionSnapshot(
+        peerId,
+        "dial skipped: already connected",
+        dialContext,
+      );
       this.markPeerConnected(peerId, true);
       return;
     }
 
     let dialedConnection: any;
     if (target.startsWith("/")) {
-      dialedConnection = await this.node.dial(ensureLegacyMultiaddrApi(multiaddr(target)), this.dialOptions());
+      dialedConnection = await this.node.dial(
+        ensureLegacyMultiaddrApi(multiaddr(target)),
+        this.dialOptions(),
+      );
       this.observePeerConnection(dialedConnection, "dial result", dialContext);
-      if (peerId) this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
+      if (peerId)
+        this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
       if (peerId) this.markPeerConnected(peerId, true);
       return;
     }
 
     const peerIdObject = await peerIdObjectForTarget(target);
     await this.node.hangUp?.(peerIdObject).catch(() => undefined);
-    const storedPeer = await this.node.peerStore?.get?.(peerIdObject).catch(() => undefined);
+    const storedPeer = await this.node.peerStore
+      ?.get?.(peerIdObject)
+      .catch(() => undefined);
     const storedTargets = (storedPeer?.addresses ?? [])
       .map((address: any) => address?.multiaddr?.toString?.())
-      .filter((address: unknown): address is string => typeof address === "string")
+      .filter(
+        (address: unknown): address is string => typeof address === "string",
+      )
       .sort((left: string, right: string) => {
         const leftPriority = connectionPathForAddr(left) === "relay" ? 0 : 1;
         const rightPriority = connectionPathForAddr(right) === "relay" ? 0 : 1;
         return leftPriority - rightPriority;
       });
-    log.debug("Peer ID dial resolved stored targets", { peerId, storedTargets });
+    log.debug("Peer ID dial resolved stored targets", {
+      peerId,
+      storedTargets,
+    });
     let lastError: unknown;
     for (const storedTarget of storedTargets) {
       try {
         dialedConnection = await this.node.dial(
           ensureLegacyMultiaddrApi(multiaddr(storedTarget)),
-          { ...this.dialOptions(), force: true }
+          { ...this.dialOptions(), force: true },
         );
         break;
       } catch (error) {
@@ -443,7 +512,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
       dialedConnection = await this.node.dial(peerIdObject, this.dialOptions());
     }
     this.observePeerConnection(dialedConnection, "dial result", dialContext);
-    if (peerId) this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
+    if (peerId)
+      this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
     if (peerId) this.markPeerConnected(peerId, true);
   }
 
@@ -453,7 +523,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   onMessage(protocol: string, cb: MessageHandler): void {
-    if (this.streamHandlersByProtocol.has(protocol)) throw new Error("protocol_stream_handler_already_registered");
+    if (this.streamHandlersByProtocol.has(protocol))
+      throw new Error("protocol_stream_handler_already_registered");
     const list = this.handlersByProtocol.get(protocol) || [];
     list.push(cb);
     this.handlersByProtocol.set(protocol, list);
@@ -463,7 +534,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   onStream(protocol: string, cb: MessageStreamHandler): void {
-    if (this.streamHandlersByProtocol.has(protocol) || (this.handlersByProtocol.get(protocol)?.length ?? 0) > 0) {
+    if (
+      this.streamHandlersByProtocol.has(protocol) ||
+      (this.handlersByProtocol.get(protocol)?.length ?? 0) > 0
+    ) {
       throw new Error("protocol_handler_already_registered");
     }
     this.streamHandlersByProtocol.set(protocol, cb);
@@ -487,7 +561,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   getConnectedPeers(): string[] {
-    if (!this.node || !this.started || typeof this.node.getConnections !== "function") {
+    if (
+      !this.node ||
+      !this.started ||
+      typeof this.node.getConnections !== "function"
+    ) {
       return [];
     }
     const peers = new Set(this.connectedPeerIds);
@@ -508,7 +586,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 
   getPeerConnectionInfo(): PeerConnectionInfo[] {
-    if (!this.node || !this.started || typeof this.node.getConnections !== "function") {
+    if (
+      !this.node ||
+      !this.started ||
+      typeof this.node.getConnections !== "function"
+    ) {
       return [];
     }
 
@@ -542,12 +624,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
           peerId,
           addr: null,
           path,
-        }))
+        })),
       );
     }
 
     return Array.from(byPeer.entries()).map(([peerId, connections]) =>
-      summarizePeerConnectionInfo(peerId, connections)
+      summarizePeerConnectionInfo(peerId, connections),
     );
   }
 
@@ -555,8 +637,14 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const relays = this.opts.relayAddresses || [];
     if (!relays.length) return [];
 
-    if (!this.node || !this.started || typeof this.node.getConnections !== "function") {
-      return relays.map((address) => summarizeRelayConnectionInfo(address, [], true));
+    if (
+      !this.node ||
+      !this.started ||
+      typeof this.node.getConnections !== "function"
+    ) {
+      return relays.map((address) =>
+        summarizeRelayConnectionInfo(address, [], true),
+      );
     }
 
     let connections: PeerConnectionDescription[] = [];
@@ -568,7 +656,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
       connections = [];
     }
 
-    return relays.map((address) => summarizeRelayConnectionInfo(address, connections, false));
+    return relays.map((address) =>
+      summarizeRelayConnectionInfo(address, connections, false),
+    );
   }
 
   async getSignedPeerRecord(): Promise<Uint8Array> {
@@ -585,10 +675,18 @@ class Libp2pMessagingTransport implements MessagingTransport {
       this.selfPeerRecordDirty = true;
     }
     const existing = await this.node.peerStore?.get?.(this.node.peerId);
-    if (!this.selfPeerRecordDirty && existing?.peerRecordEnvelope instanceof Uint8Array) {
-      this.cachedSignedPeerRecord = Uint8Array.from(existing.peerRecordEnvelope);
+    if (
+      !this.selfPeerRecordDirty &&
+      existing?.peerRecordEnvelope instanceof Uint8Array
+    ) {
+      this.cachedSignedPeerRecord = Uint8Array.from(
+        existing.peerRecordEnvelope,
+      );
       this.cachedSignedPeerRecordMultiaddrsKey = currentMultiaddrsKey;
-      await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
+      await this.persistPeerRecord(
+        safePeerId(this.node.peerId),
+        this.cachedSignedPeerRecord,
+      );
       return Uint8Array.from(this.cachedSignedPeerRecord);
     }
     const privateKey = this.opts.privateKey ?? this.node.privateKey;
@@ -602,28 +700,45 @@ class Libp2pMessagingTransport implements MessagingTransport {
     let seqNumber = BigInt(Date.now());
     if (existing?.peerRecordEnvelope instanceof Uint8Array) {
       try {
-        const previousEnvelope = RecordEnvelope.createFromProtobuf(existing.peerRecordEnvelope);
-        const previousRecord = PeerRecord.createFromProtobuf(previousEnvelope.payload);
-        if (seqNumber <= previousRecord.seqNumber) seqNumber = previousRecord.seqNumber + 1n;
+        const previousEnvelope = RecordEnvelope.createFromProtobuf(
+          existing.peerRecordEnvelope,
+        );
+        const previousRecord = PeerRecord.createFromProtobuf(
+          previousEnvelope.payload,
+        );
+        if (seqNumber <= previousRecord.seqNumber)
+          seqNumber = previousRecord.seqNumber + 1n;
       } catch {
         // Invalid existing self records are replaced using the current clock.
       }
     }
     const envelope = await RecordEnvelope.seal(
-      new PeerRecord({ peerId: this.node.peerId, multiaddrs: this.node.getMultiaddrs(), seqNumber }),
-      privateKey
+      new PeerRecord({
+        peerId: this.node.peerId,
+        multiaddrs: this.node.getMultiaddrs(),
+        seqNumber,
+      }),
+      privateKey,
     );
     this.cachedSignedPeerRecord = Uint8Array.from(envelope.marshal());
     this.cachedSignedPeerRecordMultiaddrsKey = currentMultiaddrsKey;
     this.selfPeerRecordDirty = false;
-    await this.persistPeerRecord(safePeerId(this.node.peerId), this.cachedSignedPeerRecord);
+    await this.persistPeerRecord(
+      safePeerId(this.node.peerId),
+      this.cachedSignedPeerRecord,
+    );
     return Uint8Array.from(this.cachedSignedPeerRecord);
   }
 
-  async getSignedPeerRecordFor(peerId: string): Promise<Uint8Array | undefined> {
+  async getSignedPeerRecordFor(
+    peerId: string,
+  ): Promise<Uint8Array | undefined> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
-    if (peerId === safePeerId(this.node.peerId)) return this.getSignedPeerRecord();
-    const record = await this.node.peerStore?.get?.(await peerIdObjectForTarget(peerId));
+    if (peerId === safePeerId(this.node.peerId))
+      return this.getSignedPeerRecord();
+    const record = await this.node.peerStore?.get?.(
+      await peerIdObjectForTarget(peerId),
+    );
     if (record?.peerRecordEnvelope instanceof Uint8Array) {
       const envelope = Uint8Array.from(record.peerRecordEnvelope);
       await this.persistPeerRecord(peerId, envelope);
@@ -633,15 +748,28 @@ class Libp2pMessagingTransport implements MessagingTransport {
     return persisted ? Uint8Array.from(persisted) : undefined;
   }
 
-  async importSignedPeerRecord(expectedPeerId: string, record: Uint8Array): Promise<void> {
+  async importSignedPeerRecord(
+    expectedPeerId: string,
+    record: Uint8Array,
+  ): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
-    if (this.forgottenPeerIds.has(expectedPeerId) || await this.opts.isPeerRevoked?.(expectedPeerId)) {
+    if (
+      this.forgottenPeerIds.has(expectedPeerId) ||
+      (await this.opts.isPeerRevoked?.(expectedPeerId))
+    ) {
       throw new Error("revoked_peer");
     }
     const peerId = await peerIdObjectForTarget(expectedPeerId);
-    const imported = await consumeOrMatchSignedPeerRecord(this.node.peerStore, peerId, record);
+    const imported = await consumeOrMatchSignedPeerRecord(
+      this.node.peerStore,
+      peerId,
+      record,
+    );
     if (imported !== true) throw new Error("invalid_signed_peer_record");
-    if (this.forgottenPeerIds.has(expectedPeerId) || await this.opts.isPeerRevoked?.(expectedPeerId)) {
+    if (
+      this.forgottenPeerIds.has(expectedPeerId) ||
+      (await this.opts.isPeerRevoked?.(expectedPeerId))
+    ) {
       await this.forgetPeer(expectedPeerId).catch(() => undefined);
       throw new Error("revoked_peer");
     }
@@ -659,7 +787,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
       () => ({ ok: true as const }),
       (error: unknown) => ({ ok: false as const, error }),
     );
-    let peerStoreResult: { ok: true } | { ok: false; error: unknown } = { ok: true };
+    let peerStoreResult: { ok: true } | { ok: false; error: unknown } = {
+      ok: true,
+    };
     if (this.node && this.started) {
       try {
         const peerIdObject = await peerIdObjectForTarget(peerId);
@@ -683,20 +813,31 @@ class Libp2pMessagingTransport implements MessagingTransport {
       if (peerId === selfPeerId) continue;
       if (await this.opts.isPeerRevoked?.(peerId)) {
         this.forgottenPeerIds.add(peerId);
-        const peerIdObject = await peerIdObjectForTarget(peerId).catch(() => undefined);
+        const peerIdObject = await peerIdObjectForTarget(peerId).catch(
+          () => undefined,
+        );
         await Promise.allSettled([
-          this.opts.signedPeerRecordPersistence?.remove(peerId) ?? Promise.resolve(),
+          this.opts.signedPeerRecordPersistence?.remove(peerId) ??
+            Promise.resolve(),
           peerIdObject
-            ? this.node?.peerStore?.delete?.(peerIdObject) ?? Promise.resolve()
+            ? (this.node?.peerStore?.delete?.(peerIdObject) ??
+              Promise.resolve())
             : Promise.resolve(),
         ]);
         continue;
       }
-      if (!(storedRecord instanceof Uint8Array) || storedRecord.length === 0) continue;
+      if (!(storedRecord instanceof Uint8Array) || storedRecord.length === 0)
+        continue;
       const record = Uint8Array.from(storedRecord);
       try {
         const expectedPeerId = await peerIdObjectForTarget(peerId);
-        if (await consumeOrMatchSignedPeerRecord(this.node?.peerStore, expectedPeerId, record)) {
+        if (
+          await consumeOrMatchSignedPeerRecord(
+            this.node?.peerStore,
+            expectedPeerId,
+            record,
+          )
+        ) {
           this.persistedPeerRecords.set(peerId, record);
         }
       } catch {
@@ -705,12 +846,17 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
   }
 
-  private async persistPeerRecord(peerId: string | null, record: Uint8Array): Promise<void> {
+  private async persistPeerRecord(
+    peerId: string | null,
+    record: Uint8Array,
+  ): Promise<void> {
     if (!peerId) return;
     this.persistedPeerRecords.set(peerId, Uint8Array.from(record));
     if (!this.opts.signedPeerRecordPersistence) return;
     const write = async () => {
-      await this.opts.signedPeerRecordPersistence?.save(peerId, record).catch(() => undefined);
+      await this.opts.signedPeerRecordPersistence
+        ?.save(peerId, record)
+        .catch(() => undefined);
     };
     this.peerRecordWrite = this.peerRecordWrite.then(write, write);
     await this.peerRecordWrite;
@@ -718,30 +864,19 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async refreshPeerRecord(peerId: string): Promise<void> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
-    if (await this.opts.isPeerRevoked?.(peerId)) throw new Error("revoked_peer");
-    const topic = this.opts.rendezvousTopic ?? DEFAULT_RENDEZVOUS_TOPIC;
-    const rendezvousOptions = {
-      timeoutMs: this.opts.rendezvousTimeoutMs ?? this.opts.dialTimeoutMs ?? 12_000,
-      dialOptions: this.dialOptions(),
-      log: () => log.debug("Rendezvous client diagnostic"),
-    };
-    for (const relay of this.relayDialAddresses(this.opts.relayAddresses || [])) {
-      let records: Awaited<ReturnType<typeof lookupRendezvousPeer>> = [];
+    if (await this.opts.isPeerRevoked?.(peerId))
+      throw new Error("revoked_peer");
+    await this.relayLifecycle.lookupPeer(peerId, async (peer, record) => {
       try {
-        records = await lookupRendezvousPeer(this.node, relay, topic, peerId, rendezvousOptions);
-      } catch (error) {
-        log.debug("Rendezvous lookup relay unavailable", { peerId, relay, error: (error as Error)?.message });
-        continue;
+        await this.importSignedPeerRecord(peer, record);
+        return true;
+      } catch {
+        log.debug("Rendezvous lookup returned an invalid Signed Peer Record", {
+          peerId,
+        });
+        return false;
       }
-      for (const record of records) {
-        try {
-          await this.importSignedPeerRecord(record.peer, record.signedPeerRecord);
-          return;
-        } catch {
-          log.debug("Rendezvous lookup returned an invalid Signed Peer Record", { peerId });
-        }
-      }
-    }
+    });
   }
 
   private async openStream(protocol: string, target: string): Promise<any> {
@@ -750,7 +885,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
     const options = this.openStreamOptions();
     if (target.startsWith("/")) {
-      return await this.node.dialProtocol(ensureLegacyMultiaddrApi(multiaddr(target)), protocol, options);
+      return await this.node.dialProtocol(
+        ensureLegacyMultiaddrApi(multiaddr(target)),
+        protocol,
+        options,
+      );
     }
 
     const existing = this.findConnectionByPeerId(target);
@@ -774,7 +913,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (existing?.hasDirect) return;
 
     const allTargets = discoveredPeerTargets(peer, peerId);
-    const targets = existing?.hasRelay ? allTargets.filter(isDirectConnectionTarget) : allTargets;
+    const targets = existing?.hasRelay
+      ? allTargets.filter(isDirectConnectionTarget)
+      : allTargets;
     if (targets.length === 0) {
       log.debug("Discovered peer has no dialable addresses", {
         peerId,
@@ -804,137 +945,26 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
   }
 
-  private startRendezvous(relays: string[]): void {
-    if (this.opts.enableRendezvous === false || relays.length === 0 || this.rendezvousTimer) {
-      return;
-    }
-    this.rendezvousRelays = relays;
-    this.triggerRendezvous(relays);
-  }
-
-  private stopRendezvous(): void {
-    this.rendezvousRelays = [];
-    this.registeredRendezvousRelays.clear();
-    this.rendezvousPending = false;
-    if (!this.rendezvousTimer) return;
-    clearTimeout(this.rendezvousTimer);
-    this.rendezvousTimer = null;
-  }
-
-  private scheduleRendezvousRefresh(relays: string[]): void {
-    const interval = this.opts.rendezvousIntervalMs ?? DEFAULT_RENDEZVOUS_INTERVAL_MS;
-    // Avoid synchronized registration bursts while retaining a bounded lease
-    // refresh cadence.
-    const jitteredInterval = Math.max(1_000, Math.round(interval * (0.8 + Math.random() * 0.4)));
-    this.rendezvousTimer = setTimeout(() => {
-      this.rendezvousTimer = null;
-      this.triggerRendezvous(relays);
-    }, jitteredInterval);
-  }
-
-  private triggerRendezvous(relays: string[]): void {
-    this.updateRendezvousRefreshSchedule(relays);
-    if (this.rendezvousRunning) {
-      this.rendezvousPending = true;
-      return;
-    }
-    void this.runRendezvous(relays).finally(() => {
-      if (this.rendezvousPending) {
-        this.rendezvousPending = false;
-        this.triggerRendezvous(relays);
-      } else {
-        this.updateRendezvousRefreshSchedule(relays);
-      }
-    });
-  }
-
-  private updateRendezvousRefreshSchedule(relays: string[]): void {
-    const shouldRefresh =
-      this.started && relays.some((relay) => this.hasLiveRelayReservation(relay));
-    if (!shouldRefresh) {
-      if (this.rendezvousTimer) clearTimeout(this.rendezvousTimer);
-      this.rendezvousTimer = null;
-      return;
-    }
-    if (!this.rendezvousTimer) this.scheduleRendezvousRefresh(relays);
-  }
-
-  private startRelayReservationRetry(relays: string[]): void {
-    if (
-      this.opts.enableRelayReservations === false ||
-      relays.length === 0 ||
-      this.relayReservationRetryTimer
-    ) {
-      return;
-    }
-    this.relayReservationRetryTimer = setInterval(() => {
-      void this.ensureRelayReservations(relays);
-    }, this.opts.relayReservationRetryMs ?? 15_000);
-  }
-
-  private stopRelayReservationRetry(): void {
-    if (!this.relayReservationRetryTimer) return;
-    clearInterval(this.relayReservationRetryTimer);
-    this.relayReservationRetryTimer = null;
-  }
-
-  private async runRendezvous(relays: string[]): Promise<void> {
-    if (!this.node || !this.started || this.rendezvousRunning) return;
-    this.rendezvousRunning = true;
-    try {
-      const selfPeerId = safePeerId(this.node.peerId);
-      if (!selfPeerId) return;
-      const topic = this.opts.rendezvousTopic ?? DEFAULT_RENDEZVOUS_TOPIC;
-      const rendezvousOptions = {
-        timeoutMs: this.opts.rendezvousTimeoutMs ?? this.opts.dialTimeoutMs ?? 12_000,
-        dialOptions: this.dialOptions(),
-        log: () => log.debug("Rendezvous client diagnostic"),
-      };
-
-      for (const relay of relays) {
-        if (this.hasLiveRelayReservation(relay)) {
-          await registerOnRendezvous(
-            this.node,
-            relay,
-            topic,
-            await this.getSignedPeerRecord(),
-            rendezvousOptions
-          );
-          this.registeredRendezvousRelays.add(relay);
-        } else {
-          // A relay reservation is the lease's liveness condition.  Best-effort
-          // removal makes stale records disappear promptly; server TTL bounds
-          // failures.
-          if (this.registeredRendezvousRelays.delete(relay)) {
-            await unregisterFromRendezvous(this.node, relay, topic, rendezvousOptions);
-          }
-          log.debug("Rendezvous registration skipped: relay reservation unavailable", { relay, topic });
-        }
-      }
-    } catch (err: any) {
-      log.debug("Rendezvous discovery pass failed", { error: err?.message || err });
-    } finally {
-      this.rendezvousRunning = false;
-    }
-  }
-
-  private hasLiveRelayReservation(relay: string): boolean {
-    const circuitPrefix = `${relay.replace(/\/+$/, "")}/p2p-circuit`;
-    return this.selfMultiaddrs().some((addr) => addr.startsWith(circuitPrefix));
-  }
-
-  private openStreamOptions(): { runOnLimitedConnection: true; signal?: AbortSignal } {
+  private openStreamOptions(): {
+    runOnLimitedConnection: true;
+    signal?: AbortSignal;
+  } {
     return this.dialOptions();
   }
 
-  private dialOptions(): { runOnLimitedConnection: true; signal?: AbortSignal } {
+  private dialOptions(): {
+    runOnLimitedConnection: true;
+    signal?: AbortSignal;
+  } {
     const dialTimeoutMs = this.opts.dialTimeoutMs ?? 12_000;
     const supportsTimeout =
       typeof AbortSignal !== "undefined" &&
       typeof (AbortSignal as any).timeout === "function";
     return {
       runOnLimitedConnection: true,
-      ...(supportsTimeout ? { signal: (AbortSignal as any).timeout(dialTimeoutMs) } : {}),
+      ...(supportsTimeout
+        ? { signal: (AbortSignal as any).timeout(dialTimeoutMs) }
+        : {}),
     };
   }
 
@@ -956,7 +986,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private findConnectionByPeerId(peerId: string): any | null {
     try {
       const conns = this.node?.getConnections?.() || [];
-      return conns.find((c: any) => safePeerId(c?.remotePeer) === peerId) || null;
+      return (
+        conns.find((c: any) => safePeerId(c?.remotePeer) === peerId) || null
+      );
     } catch {
       return null;
     }
@@ -982,11 +1014,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private observePeerConnection(
     conn: any,
     source: string,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
   ): void {
     const detail = describeConnection(conn);
     if (!detail.peerId || this.relayPeerIds.has(detail.peerId)) return;
-    const previous = this.observedConnectionPaths.get(detail.peerId) ?? new Set<PeerConnectionPath>();
+    const previous =
+      this.observedConnectionPaths.get(detail.peerId) ??
+      new Set<PeerConnectionPath>();
     const hadRelay = previous.has("relay");
     const hadDirect = previous.has("direct");
     if (detail.path !== "unknown") {
@@ -1022,7 +1056,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private logPeerConnectionClosed(conn: any): void {
     const detail = describeConnection(conn);
     if (!detail.peerId || this.relayPeerIds.has(detail.peerId)) return;
-    const remainingConnections = this.describeActivePeerConnections(detail.peerId);
+    const remainingConnections = this.describeActivePeerConnections(
+      detail.peerId,
+    );
     log.debug("Peer connection closed", {
       ...detail,
       remainingConnections,
@@ -1037,11 +1073,14 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private logPeerConnectionSnapshot(
     peerId: string,
     reason: string,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
   ): void {
     const activeConnections = this.describeActivePeerConnections(peerId);
-    const activePaths = Array.from(new Set(activeConnections.map((c) => c.path)));
-    const observed = this.observedConnectionPaths.get(peerId) ?? new Set<PeerConnectionPath>();
+    const activePaths = Array.from(
+      new Set(activeConnections.map((c) => c.path)),
+    );
+    const observed =
+      this.observedConnectionPaths.get(peerId) ?? new Set<PeerConnectionPath>();
     activePaths.forEach((path) => {
       if (path !== "unknown") observed.add(path);
     });
@@ -1060,7 +1099,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
       ...context,
     };
 
-    if (afterRelayDial && hasDirect && !this.relayUpgradeLoggedPeerIds.has(peerId)) {
+    if (
+      afterRelayDial &&
+      hasDirect &&
+      !this.relayUpgradeLoggedPeerIds.has(peerId)
+    ) {
       this.relayUpgradeLoggedPeerIds.add(peerId);
       log.info("Peer has direct connection after relay dial", payload);
       return;
@@ -1074,7 +1117,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
     log.debug("Peer connection snapshot", payload);
   }
 
-  private describeActivePeerConnections(peerId: string): PeerConnectionDescription[] {
+  private describeActivePeerConnections(
+    peerId: string,
+  ): PeerConnectionDescription[] {
     try {
       const conns = this.node?.getConnections?.() || [];
       return conns
@@ -1088,7 +1133,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private peerConnectionSummary(peerId: string): PeerConnectionInfo | null {
     const activeConnections = this.describeActivePeerConnections(peerId);
     const observed = this.connectedPeerIds.has(peerId)
-      ? this.observedConnectionPaths.get(peerId) ?? new Set<PeerConnectionPath>()
+      ? (this.observedConnectionPaths.get(peerId) ??
+        new Set<PeerConnectionPath>())
       : new Set<PeerConnectionPath>();
     const observedConnections = Array.from(observed).map((path) => ({
       peerId,
@@ -1096,15 +1142,20 @@ class Libp2pMessagingTransport implements MessagingTransport {
       path,
     }));
     const connections = [...activeConnections, ...observedConnections];
-    return connections.length > 0 ? summarizePeerConnectionInfo(peerId, connections) : null;
+    return connections.length > 0
+      ? summarizePeerConnectionInfo(peerId, connections)
+      : null;
   }
 
   private handleIncoming(protocol: string) {
     return async (data: any, providedConnection?: any) => {
       const stream = data?.stream ?? data;
-      const conn = providedConnection ?? data?.connection ?? (stream as any)?.connection;
+      const conn =
+        providedConnection ?? data?.connection ?? (stream as any)?.connection;
       const from = safePeerId(
-        (conn as any)?.remotePeer ?? (stream as any)?.remotePeer ?? (conn as any)?.remotePeerId
+        (conn as any)?.remotePeer ??
+          (stream as any)?.remotePeer ??
+          (conn as any)?.remotePeerId,
       );
       if (!from) {
         log.warn("Incoming stream missing peer id", {
@@ -1125,8 +1176,19 @@ class Libp2pMessagingTransport implements MessagingTransport {
       if (!iterable) {
         if (protocol === PAIRING_PROTOCOL) {
           const connectionPath = describeConnection(conn).path;
-          const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
-          this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from ?? undefined, frameSize: 0, messageType: "unknown", connectionPath: path });
+          const path =
+            connectionPath === "relay"
+              ? "relayed"
+              : connectionPath === "direct"
+                ? "direct"
+                : "unknown";
+          this.reportPairingRejection({
+            reason: "invalid_framing",
+            authenticatedPeerId: from ?? undefined,
+            frameSize: 0,
+            messageType: "unknown",
+            connectionPath: path,
+          });
           await this.closeInvalidPairingConnection(from, conn);
         }
         log.warn("Incoming stream missing async iterator", {
@@ -1141,27 +1203,32 @@ class Libp2pMessagingTransport implements MessagingTransport {
       try {
         log.debug("Incoming protocol stream", { protocol, from });
         if (streamHandler) {
-          if (!from || (this.opts.isPeerKnown && !(await this.opts.isPeerKnown(from)))) {
-            await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+          if (
+            !from ||
+            (this.opts.isPeerKnown && !(await this.opts.isPeerKnown(from)))
+          ) {
+            await closeMessageStream(stream, {
+              ignoreClosedDataChannel: true,
+            }).catch(() => undefined);
             return;
           }
           const policy = this.applicationStreamPolicy(protocol);
-          const byteChunks = async function *(): AsyncIterable<Uint8Array> {
+          const byteChunks = async function* (): AsyncIterable<Uint8Array> {
             const iterator = iterable[Symbol.asyncIterator]();
             try {
               while (true) {
                 const next = policy.enforceProgressTimeout
                   ? await nextBeforeDeadline(
-                    iterator,
-                    Date.now() + policy.idleTimeoutMs,
-                    policy.timeoutError,
-                  )
+                      iterator,
+                      Date.now() + policy.idleTimeoutMs,
+                      policy.timeoutError,
+                    )
                   : await iterator.next();
                 if (next.done) return;
                 const chunk = next.value;
-              const bytes = toU8(chunk);
-              if (!bytes) throw new Error("invalid_stream_chunk");
-              yield bytes;
+                const bytes = toU8(chunk);
+                if (!bytes) throw new Error("invalid_stream_chunk");
+                yield bytes;
               }
             } finally {
               await iterator.return?.().catch(() => undefined);
@@ -1173,9 +1240,19 @@ class Libp2pMessagingTransport implements MessagingTransport {
         if (protocol === PAIRING_PROTOCOL) {
           // Pairing is intentionally one authenticated, bounded frame per stream.
           const connectionPath = describeConnection(conn).path;
-          const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
+          const path =
+            connectionPath === "relay"
+              ? "relayed"
+              : connectionPath === "direct"
+                ? "direct"
+                : "unknown";
           if (!from) {
-            this.reportPairingRejection({ reason: "authenticated_identity_mismatch", frameSize: 0, messageType: "unknown", connectionPath: path });
+            this.reportPairingRejection({
+              reason: "authenticated_identity_mismatch",
+              frameSize: 0,
+              messageType: "unknown",
+              connectionPath: path,
+            });
             await this.closeInvalidPairingConnection(from, conn);
             return;
           }
@@ -1184,13 +1261,25 @@ class Libp2pMessagingTransport implements MessagingTransport {
           for await (const chunk of iterable) {
             const bytes = toU8(chunk);
             if (!bytes) {
-              this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from, frameSize: size, messageType: "unknown", connectionPath: path });
+              this.reportPairingRejection({
+                reason: "invalid_framing",
+                authenticatedPeerId: from,
+                frameSize: size,
+                messageType: "unknown",
+                connectionPath: path,
+              });
               await this.closeInvalidPairingConnection(from, conn);
               return;
             }
             size += bytes.length;
             if (size > PAIRING_MAX_FRAME_BYTES + 10) {
-              this.reportPairingRejection({ reason: "oversized_frame", authenticatedPeerId: from, frameSize: size, messageType: "unknown", connectionPath: path });
+              this.reportPairingRejection({
+                reason: "oversized_frame",
+                authenticatedPeerId: from,
+                frameSize: size,
+                messageType: "unknown",
+                connectionPath: path,
+              });
               await this.closeInvalidPairingConnection(from, conn);
               return;
             }
@@ -1199,7 +1288,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
           const frame = concatBytes(chunks, size);
           const inspected = inspectPairingFrame(frame);
           if (!inspected.ok) {
-            this.reportPairingRejection({ reason: inspected.reason, authenticatedPeerId: from, frameSize: size, messageType: "unknown", connectionPath: path });
+            this.reportPairingRejection({
+              reason: inspected.reason,
+              authenticatedPeerId: from,
+              frameSize: size,
+              messageType: "unknown",
+              connectionPath: path,
+            });
             await this.closeInvalidPairingConnection(from, conn);
             return;
           }
@@ -1228,15 +1323,29 @@ class Libp2pMessagingTransport implements MessagingTransport {
           // Live Clip delivery is one bounded frame per stream.  A malformed
           // stream is isolated to this protocol stream; the authenticated
           // connection remains usable for Membership and Pairing.
-          if (!from || (this.opts.isPeerKnown && !(await this.opts.isPeerKnown(from)))) {
-            await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+          if (
+            !from ||
+            (this.opts.isPeerKnown && !(await this.opts.isPeerKnown(from)))
+          ) {
+            await closeMessageStream(stream, {
+              ignoreClosedDataChannel: true,
+            }).catch(() => undefined);
             return;
           }
-          const maximumBytes = this.opts.liveClipMaxFrameBytes ?? LIVE_CLIP_MAX_FRAME_BYTES;
-          const idleTimeoutMs = this.opts.liveClipStreamIdleTimeoutMs ?? DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS;
-          const frame = await readBoundedLiveClipFrame(iterable, maximumBytes, idleTimeoutMs);
+          const maximumBytes =
+            this.opts.liveClipMaxFrameBytes ?? LIVE_CLIP_MAX_FRAME_BYTES;
+          const idleTimeoutMs =
+            this.opts.liveClipStreamIdleTimeoutMs ??
+            DEFAULT_APPLICATION_STREAM_IDLE_TIMEOUT_MS;
+          const frame = await readBoundedLiveClipFrame(
+            iterable,
+            maximumBytes,
+            idleTimeoutMs,
+          );
           if (!frame || !decodeLiveClipFrame(frame, maximumBytes)) {
-            await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+            await closeMessageStream(stream, {
+              ignoreClosedDataChannel: true,
+            }).catch(() => undefined);
             return;
           }
           for (const handler of handlers) handler(from, frame);
@@ -1259,22 +1368,46 @@ class Libp2pMessagingTransport implements MessagingTransport {
       } catch (err: any) {
         if (protocol === PAIRING_PROTOCOL) {
           const connectionPath = describeConnection(conn).path;
-          const path = connectionPath === "relay" ? "relayed" : connectionPath === "direct" ? "direct" : "unknown";
-          this.reportPairingRejection({ reason: "invalid_framing", authenticatedPeerId: from ?? undefined, frameSize: 0, messageType: "unknown", connectionPath: path });
+          const path =
+            connectionPath === "relay"
+              ? "relayed"
+              : connectionPath === "direct"
+                ? "direct"
+                : "unknown";
+          this.reportPairingRejection({
+            reason: "invalid_framing",
+            authenticatedPeerId: from ?? undefined,
+            frameSize: 0,
+            messageType: "unknown",
+            connectionPath: path,
+          });
           await this.closeInvalidPairingConnection(from, conn);
         }
         if (streamHandler) {
           abortMessageStream(stream, err);
-          await closeMessageStream(stream, { ignoreClosedDataChannel: true }).catch(() => undefined);
+          await closeMessageStream(stream, {
+            ignoreClosedDataChannel: true,
+          }).catch(() => undefined);
         }
-        log.debug("Incoming stream failed", { protocol, from, error: err?.message || err });
+        log.debug("Incoming stream failed", {
+          protocol,
+          from,
+          error: err?.message || err,
+        });
       }
     };
   }
 
-  private async closeInvalidPairingConnection(peerId: string | null, conn: any): Promise<void> {
+  private async closeInvalidPairingConnection(
+    peerId: string | null,
+    conn: any,
+  ): Promise<void> {
     try {
-      if (peerId && await (this.opts.isPeerKnown?.(peerId) ?? Promise.resolve(false))) return;
+      if (
+        peerId &&
+        (await (this.opts.isPeerKnown?.(peerId) ?? Promise.resolve(false)))
+      )
+        return;
       if (peerId) await this.disconnect(peerId);
       else await conn?.close?.();
     } catch {
@@ -1282,113 +1415,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
   }
 
-  private async connectRelays(relays: string[]) {
-    if (!this.node || !relays.length) return;
-    for (const addr of relays) {
-      try {
-        const ma = ensureLegacyMultiaddrApi(multiaddr(addr));
-        await this.node.dial(ma, this.dialOptions());
-      } catch (err: any) {
-        log.warn("Relay dial failed", { addr, error: err?.message || err });
-      }
-    }
-  }
-
-  private async ensureRelayReservations(relays: string[]): Promise<void> {
-    const selfAddrs = this.selfMultiaddrs();
-    const missingRelays = relays.filter((relay) => !this.hasLiveRelayReservation(relay));
-    const skipReason = !this.node
-      ? "node_missing"
-      : !this.started
-      ? "transport_not_started"
-      : this.opts.enableRelayReservations === false
-      ? "reservations_disabled"
-      : !relays.length
-      ? "no_circuit_relays"
-      : this.relayReservationRunning
-      ? "reservation_already_running"
-      : missingRelays.length === 0
-      ? "all_reservations_available"
-      : null;
-
-    if (skipReason) {
-      log.info("Relay reservation skipped", {
-        reason: skipReason,
-        relays,
-        selfAddrs,
-        configuredRelays: this.opts.relayAddresses || [],
-      });
-      return;
-    }
-
-    const transportManager = this.node?.components?.transportManager;
-    if (typeof transportManager?.listen !== "function") {
-      log.debug("Relay reservation retry skipped: transport manager unavailable");
-      return;
-    }
-
-    const circuitAddrs = missingRelays.map((relay) => `${relay.replace(/\/+$/, "")}/p2p-circuit`);
-    if (circuitAddrs.length === 0) return;
-
-    this.relayReservationRunning = true;
-    try {
-      await this.closeEmptyRelayListeners();
-      log.info("Ensuring relay reservations", { relays: circuitAddrs });
-      await transportManager.listen(
-        circuitAddrs.map((addr) => ensureLegacyMultiaddrApi(multiaddr(addr)))
-      );
-      const stillMissing = relays.filter((relay) => !this.hasLiveRelayReservation(relay));
-      if (stillMissing.length > 0) {
-        await this.closeEmptyRelayListeners();
-        log.warn("Relay reservation did not produce all circuit addresses", { relays: stillMissing });
-      } else {
-        log.info("Relay reservation address available", { selfAddrs: this.selfMultiaddrs() });
-      }
-      this.handleSelfReachabilityChanged();
-    } catch (err: any) {
-      log.warn("Relay reservation retry failed", {
-        relays: circuitAddrs,
-        error: err?.message || err,
-      });
-    } finally {
-      this.relayReservationRunning = false;
-    }
-  }
-
-  private async closeEmptyRelayListeners(): Promise<void> {
-    const listeners = this.node?.components?.transportManager?.getListeners?.() ?? [];
-    await Promise.all(
-      listeners
-        .filter((listener: any) => listener?.constructor?.name === "CircuitRelayTransportListener")
-        .filter((listener: any) => {
-          try {
-            return (listener.getAddrs?.() ?? []).length === 0;
-          } catch {
-            return false;
-          }
-        })
-        .map(async (listener: any) => {
-          try {
-            await listener.close?.();
-          } catch {
-            // ignore listener cleanup failures
-          }
-        })
-    );
-  }
-
-  private relayDialAddresses(relays: string[]): string[] {
-    return relays;
-  }
-
   private handleSelfReachabilityChanged(): void {
     if (!this.started) return;
     this.cachedSignedPeerRecord = null;
     this.selfPeerRecordDirty = true;
     this.emitSelfPeerUpdate();
-    if (this.rendezvousRelays.length > 0) {
-      this.triggerRendezvous(this.rendezvousRelays);
-    }
+    this.relayLifecycle.reachabilityUpdated();
   }
 
   private emitSelfPeerUpdate(): void {
@@ -1406,7 +1438,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
   private selfMultiaddrs(): string[] {
     const addrs = this.node?.getMultiaddrs?.() ?? [];
     const list = Array.isArray(addrs)
-      ? addrs.map((a: any) => (typeof a?.toString === "function" ? a.toString() : String(a)))
+      ? addrs.map((a: any) =>
+          typeof a?.toString === "function" ? a.toString() : String(a),
+        )
       : [];
     const unique: string[] = [];
     const seen = new Set<string>();
@@ -1436,7 +1470,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
   }
 }
 
-export function createLibp2pMessagingTransport(options?: Libp2pMessagingOptions): StreamingMessagingTransport {
+export function createLibp2pMessagingTransport(
+  options?: Libp2pMessagingOptions,
+): StreamingMessagingTransport {
   return new Libp2pMessagingTransport(options);
 }
 
@@ -1477,7 +1513,10 @@ function discoveredPeerTargets(peer: any, peerId: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   const add = (target: any) => {
-    const value = typeof target?.toString === "function" ? target.toString() : String(target || "");
+    const value =
+      typeof target?.toString === "function"
+        ? target.toString()
+        : String(target || "");
     if (!value || seen.has(value)) return;
     seen.add(value);
     out.push(value);
@@ -1493,8 +1532,13 @@ function discoveredPeerTargets(peer: any, peerId: string): string[] {
 }
 
 function describeConnection(conn: any): PeerConnectionDescription {
-  const peerId = safePeerId(conn?.remotePeer ?? conn?.remotePeerId ?? conn?.peer);
-  const addr = typeof conn?.remoteAddr?.toString === "function" ? conn.remoteAddr.toString() : null;
+  const peerId = safePeerId(
+    conn?.remotePeer ?? conn?.remotePeerId ?? conn?.peer,
+  );
+  const addr =
+    typeof conn?.remoteAddr?.toString === "function"
+      ? conn.remoteAddr.toString()
+      : null;
   return {
     peerId,
     addr,
@@ -1507,14 +1551,16 @@ function describeConnection(conn: any): PeerConnectionDescription {
 
 function summarizePeerConnectionInfo(
   peerId: string,
-  connections: PeerConnectionDescription[]
+  connections: PeerConnectionDescription[],
 ): PeerConnectionInfo {
   const hasDirect = connections.some((conn) => conn.path === "direct");
   const hasRelay = connections.some((conn) => conn.path === "relay");
   const addrs = dedupeStrings(
     connections
       .map((conn) => conn.addr)
-      .filter((addr): addr is string => typeof addr === "string" && addr.length > 0)
+      .filter(
+        (addr): addr is string => typeof addr === "string" && addr.length > 0,
+      ),
   );
   return {
     peerId,
@@ -1528,7 +1574,7 @@ function summarizePeerConnectionInfo(
 function summarizeRelayConnectionInfo(
   address: string,
   connections: PeerConnectionDescription[],
-  transportUnavailable: boolean
+  transportUnavailable: boolean,
 ): RelayConnectionInfo {
   const peerId = relayPeerIdForAddress(address);
   const matching = connections.filter((conn) => {
@@ -1538,19 +1584,29 @@ function summarizeRelayConnectionInfo(
   const addrs = dedupeStrings(
     matching
       .map((conn) => conn.addr)
-      .filter((addr): addr is string => typeof addr === "string" && addr.length > 0)
+      .filter(
+        (addr): addr is string => typeof addr === "string" && addr.length > 0,
+      ),
   );
 
   return {
     address,
     peerId,
-    status: matching.length > 0 ? "connected" : transportUnavailable || !peerId ? "unknown" : "disconnected",
+    status:
+      matching.length > 0
+        ? "connected"
+        : transportUnavailable || !peerId
+          ? "unknown"
+          : "disconnected",
     addrs,
   };
 }
 
 function connectionPathForAddr(addr: unknown): PeerConnectionPath {
-  const value = typeof (addr as any)?.toString === "function" ? (addr as any).toString() : String(addr || "");
+  const value =
+    typeof (addr as any)?.toString === "function"
+      ? (addr as any).toString()
+      : String(addr || "");
   if (!value) return "unknown";
   if (isWebRTCConnectionAddress(value)) return "direct";
   if (value.includes("/p2p-circuit")) return "relay";
@@ -1558,7 +1614,10 @@ function connectionPathForAddr(addr: unknown): PeerConnectionPath {
   return "unknown";
 }
 
-function connectionPathForConnection(conn: any, addr: unknown): PeerConnectionPath {
+function connectionPathForConnection(
+  conn: any,
+  addr: unknown,
+): PeerConnectionPath {
   if (conn?.limits != null) return "relay";
   return connectionPathForAddr(addr);
 }
@@ -1620,7 +1679,8 @@ async function readBoundedLiveClipFrame(
       }
       const bytes = toU8(next.value);
       if (!bytes) return null;
-      if (expectedSize !== null && size === expectedSize && bytes.length > 0) return null;
+      if (expectedSize !== null && size === expectedSize && bytes.length > 0)
+        return null;
 
       if (expectedSize === null) {
         for (const byte of bytes) {
@@ -1628,7 +1688,8 @@ async function readBoundedLiveClipFrame(
           if (prefixBytes.length > 10) return null;
           if ((byte & 0x80) === 0) {
             const payloadLength = decodeCanonicalLengthPrefix(prefixBytes);
-            if (payloadLength === null || payloadLength > maximumBytes) return null;
+            if (payloadLength === null || payloadLength > maximumBytes)
+              return null;
             expectedSize = prefixBytes.length + payloadLength;
             break;
           }
@@ -1659,7 +1720,8 @@ function decodeCanonicalLengthPrefix(bytes: number[]): number | null {
   }
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) return null;
   let canonicalLength = 1;
-  for (let remaining = value; remaining >= 0x80n; remaining >>= 7n) canonicalLength += 1;
+  for (let remaining = value; remaining >= 0x80n; remaining >>= 7n)
+    canonicalLength += 1;
   return canonicalLength === bytes.length ? Number(value) : null;
 }
 
@@ -1669,7 +1731,12 @@ async function nextBeforeDeadline<T>(
   timeoutError = applicationStreamTimeoutError(CLIP_PROTOCOL),
 ): Promise<IteratorResult<T>> {
   const remainingMs = Math.max(0, deadline - Date.now());
-  return await promiseWithTimeout(iterator.next(), remainingMs, timeoutError, () => undefined);
+  return await promiseWithTimeout(
+    iterator.next(),
+    remainingMs,
+    timeoutError,
+    () => undefined,
+  );
 }
 
 async function openApplicationStreamWithTimeout(
@@ -1688,9 +1755,13 @@ async function openApplicationStreamWithTimeout(
       guardedOpening,
       timeoutMs,
       timeoutError,
-      () => { lateFailure = timeoutError; },
+      () => {
+        lateFailure = timeoutError;
+      },
       signal,
-      (error) => { lateFailure = error; },
+      (error) => {
+        lateFailure = error;
+      },
     );
   } catch (error) {
     lateFailure = error instanceof Error ? error : new Error(String(error));
@@ -1731,36 +1802,49 @@ async function promiseWithTimeout<T>(
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
   const operations: Array<Promise<T>> = [operation];
-  operations.push(new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => {
-      onTimeout();
-      reject(timeoutError);
-    }, timeoutMs);
-  }));
+  operations.push(
+    new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        onTimeout();
+        reject(timeoutError);
+      }, timeoutMs);
+    }),
+  );
   if (signal) {
-    operations.push(new Promise<never>((_resolve, reject) => {
-      abortListener = () => {
-        const error = streamCancelledError();
-        onAbort(error);
-        reject(error);
-      };
-      signal.addEventListener("abort", abortListener, { once: true });
-    }));
+    operations.push(
+      new Promise<never>((_resolve, reject) => {
+        abortListener = () => {
+          const error = streamCancelledError();
+          onAbort(error);
+          reject(error);
+        };
+        signal.addEventListener("abort", abortListener, { once: true });
+      }),
+    );
   }
   try {
     return await Promise.race(operations);
   } finally {
     if (timeout) clearTimeout(timeout);
-    if (signal && abortListener) signal.removeEventListener("abort", abortListener);
+    if (signal && abortListener)
+      signal.removeEventListener("abort", abortListener);
   }
 }
 
 function abortMessageStream(stream: any, error: Error): void {
-  try { stream?.abort?.(error); } catch { /* the affected stream is already closed */ }
+  try {
+    stream?.abort?.(error);
+  } catch {
+    /* the affected stream is already closed */
+  }
 }
 
 function applicationStreamTimeoutError(protocol: string): Error {
-  return new Error(isHistoryProtocol(protocol) ? "history_stream_timeout" : "live_clip_stream_timeout");
+  return new Error(
+    isHistoryProtocol(protocol)
+      ? "history_stream_timeout"
+      : "live_clip_stream_timeout",
+  );
 }
 
 function streamCancelledError(): Error {
@@ -1787,7 +1871,8 @@ function describeStream(stream: any) {
           hasWrite: typeof inner.write === "function",
           hasSend: typeof inner.send === "function",
           hasSource: Boolean((inner as any)?.source),
-          hasIterable: typeof (inner as any)[Symbol.asyncIterator] === "function",
+          hasIterable:
+            typeof (inner as any)[Symbol.asyncIterator] === "function",
         }
       : undefined,
   };
