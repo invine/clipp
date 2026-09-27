@@ -1,3 +1,4 @@
+export * from "./ManagedRelaySettings";
 export * from "./types";
 export * from "./identityRotationNotice";
 export * from "./clipboardActionFeedback";

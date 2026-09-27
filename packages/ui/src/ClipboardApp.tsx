@@ -1,7 +1,28 @@
+import { ManagedRelaySettings } from "./ManagedRelaySettings";
+import type {
+  RelayConfiguration,
+  RelayState,
+} from "../../core/network/managedRelays.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, PairingCode, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo, type BackgroundContinuityDiagnosticStatus } from "./types";
-import { identityRotationNoticeMessage, type IdentityRotationNoticeReason } from "./identityRotationNotice";
+import {
+  Clip,
+  ClipboardHistoryError,
+  Device,
+  HistoryPolicyError,
+  Identity,
+  PairingCode,
+  PairingError,
+  PairingWaiting,
+  PeerConnectionInfo,
+  PendingRequest,
+  RelayConnectionInfo,
+  type BackgroundContinuityDiagnosticStatus,
+} from "./types";
+import {
+  identityRotationNoticeMessage,
+  type IdentityRotationNoticeReason,
+} from "./identityRotationNotice";
 import {
   normalizeShareNowFailureCode,
   reuseClipFeedback,
@@ -64,7 +85,10 @@ function clipboardHistoryErrorMessage(error: ClipboardHistoryError): string {
   return "Clipboard History storage is unavailable. Clipp will retry pending Clips automatically.";
 }
 
-function connectionStatusFor(connection: PeerConnectionInfo | undefined, online: boolean) {
+function connectionStatusFor(
+  connection: PeerConnectionInfo | undefined,
+  online: boolean
+) {
   if (!online) {
     return {
       kind: "offline",
@@ -99,7 +123,9 @@ function connectionStatusFor(connection: PeerConnectionInfo | undefined, online:
 
 function relayDisplayName(address: string, index: number): string {
   const parts = address.split("/").filter(Boolean);
-  const hostIndex = parts.findIndex((part) => ["dns4", "dns6", "ip4", "ip6"].includes(part));
+  const hostIndex = parts.findIndex((part) =>
+    ["dns4", "dns6", "ip4", "ip6"].includes(part)
+  );
   const host = hostIndex >= 0 ? parts[hostIndex + 1] : "";
   const tcpIndex = parts.findIndex((part) => part === "tcp");
   const port = tcpIndex >= 0 ? parts[tcpIndex + 1] : "";
@@ -120,8 +146,13 @@ function parseRelayInput(value: string): string[] {
     .filter(Boolean);
 }
 
-function relayConnectionFor(address: string, relayConnections: RelayConnectionInfo[]) {
-  return relayConnections.find((conn) => conn.address === address || conn.addrs.includes(address));
+function relayConnectionFor(
+  address: string,
+  relayConnections: RelayConnectionInfo[]
+) {
+  return relayConnections.find(
+    (conn) => conn.address === address || conn.addrs.includes(address)
+  );
 }
 
 function relayStatusFor(connection: RelayConnectionInfo | undefined) {
@@ -164,7 +195,12 @@ type MiddleEllipsisTextProps = {
   style?: React.CSSProperties;
 };
 
-function MiddleEllipsisText({ text, max, className, style }: MiddleEllipsisTextProps) {
+function MiddleEllipsisText({
+  text,
+  max,
+  className,
+  style,
+}: MiddleEllipsisTextProps) {
   const [display, setDisplay] = useState(text);
   const containerRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -210,7 +246,10 @@ function MiddleEllipsisText({ text, max, className, style }: MiddleEllipsisTextP
     };
 
     computeDisplay();
-    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(computeDisplay) : null;
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(computeDisplay)
+        : null;
     resizeObserver?.observe(container);
     window.addEventListener("resize", computeDisplay);
     return () => {
@@ -219,7 +258,9 @@ function MiddleEllipsisText({ text, max, className, style }: MiddleEllipsisTextP
     };
   }, [text, max]);
 
-  const classes = className ? `middle-ellipsis ${className}` : "middle-ellipsis";
+  const classes = className
+    ? `middle-ellipsis ${className}`
+    : "middle-ellipsis";
 
   return (
     <span ref={containerRef} className={classes} style={style} title={text}>
@@ -247,6 +288,8 @@ export type ClipboardAppProps = {
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
+  managedRelayConfigurations?: RelayConfiguration[];
+  managedRelayStates?: RelayState[];
   initializationError?: boolean;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
@@ -254,7 +297,8 @@ export type ClipboardAppProps = {
     available: boolean;
     backgroundEnabled: boolean;
     service: "running" | "stopped";
-    connection: "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
+    connection:
+      "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
     connectedTrustedDeviceCount: number;
     notificationAvailability: "available" | "blocked" | "unknown";
   };
@@ -277,7 +321,15 @@ export type ClipboardAppProps = {
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
-  onSetRelayAddresses?(addrs: string[]): Promise<string[] | void> | string[] | void;
+  onSetRelayAddresses?(
+    addrs: string[]
+  ): Promise<string[] | void> | string[] | void;
+  onSetManagedRelays?(
+    configurations: RelayConfiguration[]
+  ): Promise<void> | void;
+  onManagedRelayLogin?(key: string): Promise<void> | void;
+  onManagedRelayAccount?(key: string): Promise<void> | void;
+  onManagedRelayRetry?(key: string): Promise<void> | void;
   onRetryInitialization?(): void | Promise<void>;
   onAcknowledgeIdentityRotationNotice?(): void | Promise<void>;
 };
@@ -298,6 +350,8 @@ export function ClipboardApp({
   clipboardHistoryError = null,
   historyPolicyError = null,
   relayAddresses = [],
+  managedRelayConfigurations = [],
+  managedRelayStates = [],
   initializationError = false,
   identityRotationRecovery = false,
   identityRotationNotice = null,
@@ -322,6 +376,10 @@ export function ClipboardApp({
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
+  onSetManagedRelays,
+  onManagedRelayLogin,
+  onManagedRelayAccount,
+  onManagedRelayRetry,
   onRetryInitialization,
   onAcknowledgeIdentityRotationNotice,
 }: ClipboardAppProps) {
@@ -349,15 +407,21 @@ export function ClipboardApp({
   const [localNameDraft, setLocalNameDraft] = useState("");
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
   const [deviceNameDraft, setDeviceNameDraft] = useState("");
-  const [revocationError, setRevocationError] = useState<{ deviceId: string } | null>(null);
+  const [revocationError, setRevocationError] = useState<{
+    deviceId: string;
+  } | null>(null);
   const [relaysOpen, setRelaysOpen] = useState(true);
   const [addingRelay, setAddingRelay] = useState(false);
-  const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(null);
+  const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(
+    null
+  );
   const [relayDraft, setRelayDraft] = useState("");
   const [relaySaving, setRelaySaving] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [retryHistoryOperation, setRetryHistoryOperation] = useState<(() => void) | null>(null);
+  const [retryHistoryOperation, setRetryHistoryOperation] = useState<
+    (() => void) | null
+  >(null);
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -375,7 +439,11 @@ export function ClipboardApp({
   useEffect(() => {
     function handleDocClick(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
-      if (target?.closest(".time-filter-wrap") || target?.closest(".source-filter-wrap")) return;
+      if (
+        target?.closest(".time-filter-wrap") ||
+        target?.closest(".source-filter-wrap")
+      )
+        return;
       setTimeMenuOpen(false);
       setSourceMenuOpen(false);
     }
@@ -422,9 +490,10 @@ export function ClipboardApp({
   const connectedRelayCount = useMemo(
     () =>
       relayAddresses.filter(
-        (address) => relayConnectionFor(address, relayConnections)?.status === "connected",
+        (address) =>
+          relayConnectionFor(address, relayConnections)?.status === "connected"
       ).length,
-    [relayAddresses, relayConnections],
+    [relayAddresses, relayConnections]
   );
 
   const sources = useMemo(() => {
@@ -445,8 +514,10 @@ export function ClipboardApp({
       })
       .filter((c) => {
         if (sourceFilter === "all") return true;
-        if (sourceFilter === "local" && identity) return c.originPeerId === identity.deviceId;
-        if (sourceFilter === "remote" && identity) return c.originPeerId !== identity.deviceId;
+        if (sourceFilter === "local" && identity)
+          return c.originPeerId === identity.deviceId;
+        if (sourceFilter === "remote" && identity)
+          return c.originPeerId !== identity.deviceId;
         return c.originPeerId === sourceFilter;
       })
       .filter((c) => {
@@ -465,7 +536,16 @@ export function ClipboardApp({
     }
 
     return list;
-  }, [clips, search, timeFilter, sourceFilter, deviceNameMap, filterMode, pinnedSet, identity]);
+  }, [
+    clips,
+    search,
+    timeFilter,
+    sourceFilter,
+    deviceNameMap,
+    filterMode,
+    pinnedSet,
+    identity,
+  ]);
 
   function setPinned(id: string, pinned: boolean) {
     setOpenMenuId(null);
@@ -476,7 +556,9 @@ export function ClipboardApp({
         setRetryHistoryOperation(null);
       })
       .catch(() => {
-        setHistoryError("Could not confirm this Clip's pin state. Retry to apply it again.");
+        setHistoryError(
+          "Could not confirm this Clip's pin state. Retry to apply it again."
+        );
         setRetryHistoryOperation(() => () => setPinned(id, pinned));
       });
   }
@@ -494,14 +576,18 @@ export function ClipboardApp({
           setRetryHistoryOperation(null);
         })
         .catch(() => {
-          setHistoryError("Could not delete this Clip. It is still in your history.");
+          setHistoryError(
+            "Could not delete this Clip. It is still in your history."
+          );
           setRetryHistoryOperation(() => () => handleDelete(id));
         })
-        .finally(() => setRemovingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        }));
+        .finally(() =>
+          setRemovingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          })
+        );
     }, 180);
   }
 
@@ -513,7 +599,9 @@ export function ClipboardApp({
         setRetryHistoryOperation(null);
       })
       .catch(() => {
-        setHistoryError("Could not clear history. Your Clips are still available.");
+        setHistoryError(
+          "Could not clear history. Your Clips are still available."
+        );
         setRetryHistoryOperation(() => clearAllHistory);
       })
       .finally(() => setRemovingIds(new Set()));
@@ -537,7 +625,10 @@ export function ClipboardApp({
   }, [identity, editingLocalName]);
 
   useEffect(() => {
-    if (editingRelayIndex !== null && editingRelayIndex >= relayAddresses.length) {
+    if (
+      editingRelayIndex !== null &&
+      editingRelayIndex >= relayAddresses.length
+    ) {
       setEditingRelayIndex(null);
       setRelayDraft("");
       setRelayError(null);
@@ -555,7 +646,9 @@ export function ClipboardApp({
       setEditingLocalName(false);
       return;
     }
-    const rename = onRenameIdentity ? onRenameIdentity(trimmed) : Promise.resolve(null);
+    const rename = onRenameIdentity
+      ? onRenameIdentity(trimmed)
+      : Promise.resolve(null);
     rename
       .catch(() => {})
       .finally(() => {
@@ -579,7 +672,9 @@ export function ClipboardApp({
       cancelEditDeviceName();
       return;
     }
-    const rename = onRenameDevice ? onRenameDevice(device.deviceId, trimmed) : Promise.resolve(null);
+    const rename = onRenameDevice
+      ? onRenameDevice(device.deviceId, trimmed)
+      : Promise.resolve(null);
     rename
       .catch(() => {})
       .finally(() => {
@@ -589,7 +684,7 @@ export function ClipboardApp({
 
   async function revokeDevice(device: Device): Promise<void> {
     const confirmed = globalThis.confirm(
-      `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`,
+      `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`
     );
     if (!confirmed) return;
     try {
@@ -607,7 +702,9 @@ export function ClipboardApp({
         applyHistoryFeedback(reuseClipFeedback(outcome));
       })
       .catch(() => {
-        applyHistoryFeedback(reuseClipFeedback("write-failed"), () => reuseClip(id));
+        applyHistoryFeedback(reuseClipFeedback("write-failed"), () =>
+          reuseClip(id)
+        );
       });
   }
 
@@ -621,14 +718,19 @@ export function ClipboardApp({
       .catch((error) => {
         applyHistoryFeedback(
           shareNowFailureFeedback(normalizeShareNowFailureCode(error)),
-          shareNow,
+          shareNow
         );
       });
   }
 
-  function applyHistoryFeedback(feedback: ClipboardActionFeedback | null, retry?: () => void) {
+  function applyHistoryFeedback(
+    feedback: ClipboardActionFeedback | null,
+    retry?: () => void
+  ) {
     setHistoryError(feedback?.message ?? null);
-    setRetryHistoryOperation(feedback?.action === "retry" && retry ? () => retry : null);
+    setRetryHistoryOperation(
+      feedback?.action === "retry" && retry ? () => retry : null
+    );
   }
 
   function beginAddRelay() {
@@ -684,7 +786,9 @@ export function ClipboardApp({
       setRelayError("Enter one relay address.");
       return;
     }
-    const next = relayAddresses.map((address, i) => (i === index ? entries[0] : address));
+    const next = relayAddresses.map((address, i) =>
+      i === index ? entries[0] : address
+    );
     await updateRelayAddresses(next);
   }
 
@@ -700,7 +804,9 @@ export function ClipboardApp({
       setHistoryError(null);
     } catch {
       setHistoryError("Could not save the history retention setting.");
-      setRetryHistoryOperation(() => () => void updateLocalRetention(retentionMs));
+      setRetryHistoryOperation(
+        () => () => void updateLocalRetention(retentionMs)
+      );
     }
   }
 
@@ -779,7 +885,9 @@ export function ClipboardApp({
     if (connectedRelayCount > 0) {
       return `${connectedRelayCount}/${relayAddresses.length} connected`;
     }
-    return relayAddresses.length === 1 ? "1 configured" : `${relayAddresses.length} configured`;
+    return relayAddresses.length === 1
+      ? "1 configured"
+      : `${relayAddresses.length} configured`;
   }
 
   function renderRelayDraftCard() {
@@ -802,7 +910,9 @@ export function ClipboardApp({
             placeholder="/dns4/relay.example.com/tcp/443/wss/p2p/..."
             autoFocus
           />
-          {relayError && addingRelay && <div className="relay-error">{relayError}</div>}
+          {relayError && addingRelay && (
+            <div className="relay-error">{relayError}</div>
+          )}
         </div>
         <div className="peer-actions">
           <button
@@ -865,13 +975,19 @@ export function ClipboardApp({
             </>
           ) : (
             <>
-              <MiddleEllipsisText className="peer-name" text={relayDisplayName(address, index)} />
+              <MiddleEllipsisText
+                className="peer-name"
+                text={relayDisplayName(address, index)}
+              />
               <MiddleEllipsisText
                 className="peer-sub"
                 text={address}
                 max={isNarrow ? 24 : 34}
               />
-              <div className={`relay-status ${status.kind}`} title={status.title}>
+              <div
+                className={`relay-status ${status.kind}`}
+                title={status.title}
+              >
                 <span className="relay-status-dot"></span>
                 <span className="relay-status-label">{status.label}</span>
               </div>
@@ -934,6 +1050,17 @@ export function ClipboardApp({
   }
 
   function renderRelaysSection() {
+    if (onSetManagedRelays)
+      return (
+        <ManagedRelaySettings
+          configurations={managedRelayConfigurations}
+          states={managedRelayStates}
+          onSetConfigurations={onSetManagedRelays}
+          onLogin={onManagedRelayLogin}
+          onManageAccount={onManagedRelayAccount}
+          onRetry={onManagedRelayRetry}
+        />
+      );
     if (!onSetRelayAddresses) return null;
     return (
       <>
@@ -969,9 +1096,13 @@ export function ClipboardApp({
                 <div className="relay-empty">No relays configured.</div>
               )}
               {relayError && !addingRelay && editingRelayIndex === null && (
-                <div className="relay-error relay-section-error">{relayError}</div>
+                <div className="relay-error relay-section-error">
+                  {relayError}
+                </div>
               )}
-              {relayAddresses.map((address, index) => renderRelayCard(address, index))}
+              {relayAddresses.map((address, index) =>
+                renderRelayCard(address, index)
+              )}
               {addingRelay && renderRelayDraftCard()}
             </div>
           )}
@@ -998,7 +1129,9 @@ export function ClipboardApp({
           {identity && (
             <>
               <div className="peer-item active">
-                <div className="peer-avatar" style={{ minWidth: 32 }}>L</div>
+                <div className="peer-avatar" style={{ minWidth: 32 }}>
+                  L
+                </div>
                 <div className="peer-meta">
                   <div className="peer-name-row">
                     {editingLocalName ? (
@@ -1023,7 +1156,9 @@ export function ClipboardApp({
                       className="icon-button"
                       style={{ width: 18, height: 18 }}
                       title="Rename this device"
-                      onClick={editingLocalName ? saveLocalName : beginEditLocalName}
+                      onClick={
+                        editingLocalName ? saveLocalName : beginEditLocalName
+                      }
                     >
                       <span
                         className="icon"
@@ -1058,34 +1193,62 @@ export function ClipboardApp({
           )}
         </div>
 
-        {(pending.length > 0 || waiting.length > 0 || pairingErrors.length > 0) && (
+        {(pending.length > 0 ||
+          waiting.length > 0 ||
+          pairingErrors.length > 0) && (
           <>
             <div className="section-divider"></div>
             <div>
               <div className="nav-section-label" style={{ marginTop: 14 }}>
                 Pending requests
               </div>
-              {waiting.map((entry) => <div key={entry.targetPeerId} className="pending-card"><div className="peer-meta"><span className="peer-name">Waiting for approval</span><span className="peer-sub">{entry.targetPeerId}</span></div></div>)}
-              {pairingErrors.map((entry) => <div key={entry.targetPeerId} className="pending-card"><div className="peer-meta"><span className="peer-name">Pairing storage error; retrying</span><span className="peer-sub">{entry.targetPeerId}</span></div></div>)}
+              {waiting.map((entry) => (
+                <div key={entry.targetPeerId} className="pending-card">
+                  <div className="peer-meta">
+                    <span className="peer-name">Waiting for approval</span>
+                    <span className="peer-sub">{entry.targetPeerId}</span>
+                  </div>
+                </div>
+              ))}
+              {pairingErrors.map((entry) => (
+                <div key={entry.targetPeerId} className="pending-card">
+                  <div className="peer-meta">
+                    <span className="peer-name">
+                      Pairing storage error; retrying
+                    </span>
+                    <span className="peer-sub">{entry.targetPeerId}</span>
+                  </div>
+                </div>
+              ))}
               <div className="pending-list">
                 {pending.map((req) => {
                   return (
                     <div key={req.deviceId} className="pending-card">
                       <div className="pending-card-header">
-                        <div className="peer-avatar">{req.deviceName?.[0] || "D"}</div>
+                        <div className="peer-avatar">
+                          {req.deviceName?.[0] || "D"}
+                        </div>
                         <div className="peer-meta">
                           <MiddleEllipsisText
                             className="peer-name"
                             text={req.deviceName}
                           />
-                          <span className="peer-sub" title={req.deviceId}>{req.deviceId}</span>
+                          <span className="peer-sub" title={req.deviceId}>
+                            {req.deviceId}
+                          </span>
                         </div>
                       </div>
                       <div className="pending-actions">
-                        <button className="primary-button compact-button" onClick={() => onAccept(req)}>
+                        <button
+                          className="primary-button compact-button"
+                          onClick={() => onAccept(req)}
+                        >
                           Accept
                         </button>
-                        <button className="text-button" onClick={() => onReject(req)}>
+                        <button
+                          className="text-button"
+                          onClick={() => onReject(req)}
+                        >
                           Reject
                         </button>
                       </div>
@@ -1109,10 +1272,7 @@ export function ClipboardApp({
               value={pairText}
               onChange={(e) => setPairText(e.target.value)}
             />
-            <button
-              className="primary-button"
-              onClick={submitPairText}
-            >
+            <button className="primary-button" onClick={submitPairText}>
               Add
             </button>
           </div>
@@ -1143,14 +1303,19 @@ export function ClipboardApp({
               overflow: "auto",
             }}
           >
-            {devices.length === 0 && <div className="content-subtitle">No devices yet.</div>}
+            {devices.length === 0 && (
+              <div className="content-subtitle">No devices yet.</div>
+            )}
             {revocationError && (
               <div className="content-subtitle" role="alert">
                 Could not revoke this device. It remains trusted.
                 <button
                   className="text-button"
                   onClick={() => {
-                    const device = devices.find((candidate) => candidate.deviceId === revocationError.deviceId);
+                    const device = devices.find(
+                      (candidate) =>
+                        candidate.deviceId === revocationError.deviceId
+                    );
                     if (device) void revokeDevice(device);
                   }}
                 >
@@ -1161,8 +1326,12 @@ export function ClipboardApp({
             {devices.map((dev) => {
               const editingThisDevice = editingDeviceId === dev.deviceId;
               const connectionInfo = peerConnectionMap.get(dev.deviceId);
-              const isOnline = connectedPeerSet.has(dev.deviceId) || Boolean(connectionInfo);
-              const connectionStatus = connectionStatusFor(connectionInfo, isOnline);
+              const isOnline =
+                connectedPeerSet.has(dev.deviceId) || Boolean(connectionInfo);
+              const connectionStatus = connectionStatusFor(
+                connectionInfo,
+                isOnline
+              );
               return (
                 <div
                   key={dev.deviceId}
@@ -1170,7 +1339,9 @@ export function ClipboardApp({
                   title={connectionStatus.title}
                   style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                 >
-                  <div className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}>
+                  <div
+                    className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}
+                  >
                     {(dev.displayName || dev.deviceName)?.[0] || "D"}
                   </div>
                   <div className="peer-meta">
@@ -1207,7 +1378,11 @@ export function ClipboardApp({
                     {onRenameDevice && (
                       <button
                         className="icon-button"
-                        title={editingThisDevice ? "Save device name" : "Rename this device"}
+                        title={
+                          editingThisDevice
+                            ? "Save device name"
+                            : "Rename this device"
+                        }
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           if (editingThisDevice) {
@@ -1242,11 +1417,15 @@ export function ClipboardApp({
 
         {onSetLocalRetention && (
           <div className="relay-settings">
-            <label className="peer-sub" htmlFor="history-retention">Keep unpinned history</label>
+            <label className="peer-sub" htmlFor="history-retention">
+              Keep unpinned history
+            </label>
             <select
               id="history-retention"
               value={localRetentionMs}
-              onChange={(event) => void updateLocalRetention(Number(event.target.value))}
+              onChange={(event) =>
+                void updateLocalRetention(Number(event.target.value))
+              }
             >
               <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
               <option value={30 * 24 * 60 * 60 * 1000}>30 days</option>
@@ -1258,11 +1437,15 @@ export function ClipboardApp({
 
         {onSetAutoSync && (
           <div className="relay-settings">
-            <label className="peer-sub" htmlFor="auto-sync">Auto Sync</label>
+            <label className="peer-sub" htmlFor="auto-sync">
+              Auto Sync
+            </label>
             <select
               id="auto-sync"
               value={autoSync ? "enabled" : "disabled"}
-              onChange={(event) => void onSetAutoSync(event.target.value === "enabled")}
+              onChange={(event) =>
+                void onSetAutoSync(event.target.value === "enabled")
+              }
             >
               <option value="enabled">Enabled</option>
               <option value="disabled">Disabled — keep Clips local</option>
@@ -1276,73 +1459,118 @@ export function ClipboardApp({
               Experimental background continuity
             </label>
             <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-              Best effort on Android 12+. While enabled, Clipp shows a visible notification and holds a partial CPU wake lock while it tries to retain the current app runtime after screen-off. This can increase battery use. It does not read your clipboard without an active, focused Clipp window.
+              Best effort on Android 12+. While enabled, Clipp shows a visible
+              notification and holds a partial CPU wake lock while it tries to
+              retain the current app runtime after screen-off. This can increase
+              battery use. It does not read your clipboard without an active,
+              focused Clipp window.
             </p>
             <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-              Android may interrupt the Activity-owned WebView and network during Doze, OEM process management, process pressure, task removal, Task Manager stop, force-stop, or reboot. Reopen Clipp after an explicit stop or reconnect alert.
+              Android may interrupt the Activity-owned WebView and network
+              during Doze, OEM process management, process pressure, task
+              removal, Task Manager stop, force-stop, or reboot. Reopen Clipp
+              after an explicit stop or reconnect alert.
             </p>
             <select
               id="background-continuity"
               disabled={!backgroundContinuity.available}
-              value={backgroundContinuity.backgroundEnabled ? "enabled" : "disabled"}
+              value={
+                backgroundContinuity.backgroundEnabled ? "enabled" : "disabled"
+              }
               onChange={(event) => {
                 const enabled = event.target.value === "enabled";
-                if (enabled && !window.confirm(
-                  "Keep Clipp connected in the background? This experimental mode shows an ongoing notification and holds a partial CPU wake lock, which can increase battery and network use. It still works only while Android keeps Clipp's current app runtime alive. Clipboard capture requires a focused Clipp window.",
-                )) return;
+                if (
+                  enabled &&
+                  !window.confirm(
+                    "Keep Clipp connected in the background? This experimental mode shows an ongoing notification and holds a partial CPU wake lock, which can increase battery and network use. It still works only while Android keeps Clipp's current app runtime alive. Clipboard capture requires a focused Clipp window."
+                  )
+                )
+                  return;
                 void onSetBackgroundContinuity(enabled);
               }}
             >
               <option value="disabled">Disabled</option>
-              <option value="enabled">Experimental best-effort background continuity</option>
+              <option value="enabled">
+                Experimental best-effort background continuity
+              </option>
             </select>
             {!backgroundContinuity.available && (
               <p className="peer-sub" style={{ margin: "6px 0 0" }}>
                 Available experimentally on Android 12 and later.
               </p>
             )}
-            {backgroundContinuity.available && backgroundContinuity.notificationAvailability === "blocked" && (
-              <p className="peer-sub" role="status" style={{ margin: "6px 0 0" }}>
-                Notifications are blocked. Background mode remains available, but ordinary reconnect alerts may not appear.
-              </p>
-            )}
-            {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && (
-              <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                {backgroundContinuity.service === "running"
-                  ? backgroundContinuity.connection === "connected"
-                    ? `Connected to ${backgroundContinuity.connectedTrustedDeviceCount} Trusted Device${backgroundContinuity.connectedTrustedDeviceCount === 1 ? "" : "s"}.`
-                    : `Background mode is ${backgroundContinuity.connection}.`
-                  : "Background mode is stopped. Start it from this visible control when you are ready."}
-              </p>
-            )}
-            {backgroundContinuity.available && backgroundContinuity.backgroundEnabled && backgroundContinuity.service === "stopped" && (
-              <button className="icon-button" type="button" onClick={() => void onSetBackgroundContinuity(true)}>
-                Start background mode
-              </button>
-            )}
-            {backgroundContinuity.available && backgroundContinuity.supportState === "limited" && (
-              <p className="peer-sub" role="status" style={{ margin: "6px 0 0" }}>
-                This configuration is limited: Clipp observed {backgroundContinuity.observedBackgroundFailureCount} background runtime interruptions. Background connectivity is not reliable on this configuration.
-              </p>
-            )}
-            {backgroundContinuity.available && backgroundContinuity.batteryOptimizationGuidance && (
-              <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                Troubleshooting: check Android Settings → Apps → Clipp → Battery and allow background use, then collect another diagnostic run. Clipp does not request a battery exemption during onboarding.
-              </p>
-            )}
-            {backgroundContinuity.available && onExportBackgroundContinuityDiagnostics && (
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => {
-                  void Promise.resolve(onExportBackgroundContinuityDiagnostics()).catch(() => {
-                    window.alert("Clipp could not export background diagnostics.");
-                  });
-                }}
-              >
-                Export privacy-safe diagnostics
-              </button>
-            )}
+            {backgroundContinuity.available &&
+              backgroundContinuity.notificationAvailability === "blocked" && (
+                <p
+                  className="peer-sub"
+                  role="status"
+                  style={{ margin: "6px 0 0" }}
+                >
+                  Notifications are blocked. Background mode remains available,
+                  but ordinary reconnect alerts may not appear.
+                </p>
+              )}
+            {backgroundContinuity.available &&
+              backgroundContinuity.backgroundEnabled && (
+                <p className="peer-sub" style={{ margin: "6px 0 0" }}>
+                  {backgroundContinuity.service === "running"
+                    ? backgroundContinuity.connection === "connected"
+                      ? `Connected to ${backgroundContinuity.connectedTrustedDeviceCount} Trusted Device${backgroundContinuity.connectedTrustedDeviceCount === 1 ? "" : "s"}.`
+                      : `Background mode is ${backgroundContinuity.connection}.`
+                    : "Background mode is stopped. Start it from this visible control when you are ready."}
+                </p>
+              )}
+            {backgroundContinuity.available &&
+              backgroundContinuity.backgroundEnabled &&
+              backgroundContinuity.service === "stopped" && (
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => void onSetBackgroundContinuity(true)}
+                >
+                  Start background mode
+                </button>
+              )}
+            {backgroundContinuity.available &&
+              backgroundContinuity.supportState === "limited" && (
+                <p
+                  className="peer-sub"
+                  role="status"
+                  style={{ margin: "6px 0 0" }}
+                >
+                  This configuration is limited: Clipp observed{" "}
+                  {backgroundContinuity.observedBackgroundFailureCount}{" "}
+                  background runtime interruptions. Background connectivity is
+                  not reliable on this configuration.
+                </p>
+              )}
+            {backgroundContinuity.available &&
+              backgroundContinuity.batteryOptimizationGuidance && (
+                <p className="peer-sub" style={{ margin: "6px 0 0" }}>
+                  Troubleshooting: check Android Settings → Apps → Clipp →
+                  Battery and allow background use, then collect another
+                  diagnostic run. Clipp does not request a battery exemption
+                  during onboarding.
+                </p>
+              )}
+            {backgroundContinuity.available &&
+              onExportBackgroundContinuityDiagnostics && (
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => {
+                    void Promise.resolve(
+                      onExportBackgroundContinuityDiagnostics()
+                    ).catch(() => {
+                      window.alert(
+                        "Clipp could not export background diagnostics."
+                      );
+                    });
+                  }}
+                >
+                  Export privacy-safe diagnostics
+                </button>
+              )}
           </div>
         )}
       </>
@@ -1350,7 +1578,13 @@ export function ClipboardApp({
   }
 
   return (
-    <div className={initializationError ? "app-shell app-shell-with-initialization-error" : "app-shell"}>
+    <div
+      className={
+        initializationError
+          ? "app-shell app-shell-with-initialization-error"
+          : "app-shell"
+      }
+    >
       <header className="app-bar">
         <div className="app-bar-left">
           <div
@@ -1388,13 +1622,15 @@ export function ClipboardApp({
           <button className="icon-button" title="Toggle theme">
             <span className="icon">dark_mode</span>
           </button>
-
         </div>
       </header>
 
       {initializationError && (
         <div className="initialization-error" role="alert">
-          <span>Device identity could not be initialized. Clipboard capture and networking are paused.</span>
+          <span>
+            Device identity could not be initialized. Clipboard capture and
+            networking are paused.
+          </span>
           {onRetryInitialization && (
             <button type="button" onClick={() => void onRetryInitialization()}>
               Retry
@@ -1405,7 +1641,11 @@ export function ClipboardApp({
 
       {identityRotationRecovery && (
         <div className="initialization-error" role="alert">
-          <span>Identity rotation is recovering. Clipboard History and local capture remain available; networking will stay disabled and retry automatically.</span>
+          <span>
+            Identity rotation is recovering. Clipboard History and local capture
+            remain available; networking will stay disabled and retry
+            automatically.
+          </span>
         </div>
       )}
 
@@ -1413,7 +1653,10 @@ export function ClipboardApp({
         <div className="initialization-error" role="status">
           <span>{identityRotationNoticeMessage(identityRotationNotice)}</span>
           {onAcknowledgeIdentityRotationNotice && (
-            <button type="button" onClick={() => void onAcknowledgeIdentityRotationNotice()}>
+            <button
+              type="button"
+              onClick={() => void onAcknowledgeIdentityRotationNotice()}
+            >
               Dismiss
             </button>
           )}
@@ -1424,12 +1667,15 @@ export function ClipboardApp({
         <div className="initialization-error" role="alert">
           <span>{historyError}</span>
           {retryHistoryOperation && (
-            <button type="button" onClick={() => {
-              const retry = retryHistoryOperation;
-              setHistoryError(null);
-              setRetryHistoryOperation(null);
-              retry();
-            }}>
+            <button
+              type="button"
+              onClick={() => {
+                const retry = retryHistoryOperation;
+                setHistoryError(null);
+                setRetryHistoryOperation(null);
+                retry();
+              }}
+            >
               Retry
             </button>
           )}
@@ -1444,17 +1690,24 @@ export function ClipboardApp({
       {clipboardHistoryError && (
         <div className="initialization-error" role="alert">
           <span>{clipboardHistoryErrorMessage(clipboardHistoryError)}</span>
-          {clipboardHistoryError !== "pending_capture_failed" && onDismissClipboardHistoryError && (
-            <button type="button" onClick={() => void onDismissClipboardHistoryError()}>
-              Dismiss
-            </button>
-          )}
+          {clipboardHistoryError !== "pending_capture_failed" &&
+            onDismissClipboardHistoryError && (
+              <button
+                type="button"
+                onClick={() => void onDismissClipboardHistoryError()}
+              >
+                Dismiss
+              </button>
+            )}
         </div>
       )}
 
       {historyPolicyError && (
         <div className="initialization-error" role="alert">
-          <span>Clipboard History cleanup could not finish. Existing Clips remain available.</span>
+          <span>
+            Clipboard History cleanup could not finish. Existing Clips remain
+            available.
+          </span>
           {onRetryHistoryCleanup && (
             <button type="button" onClick={() => void onRetryHistoryCleanup()}>
               Retry
@@ -1464,7 +1717,10 @@ export function ClipboardApp({
       )}
 
       <main className="app-main">
-        <aside className="surface nav-pane" style={{ display: navHidden ? "none" : undefined }}>
+        <aside
+          className="surface nav-pane"
+          style={{ display: navHidden ? "none" : undefined }}
+        >
           {renderNavContent(false)}
         </aside>
 
@@ -1496,7 +1752,9 @@ export function ClipboardApp({
 
               <div className="content-filter-toggle">
                 <button className="text-button" onClick={toggleFilters}>
-                  <span className="icon">{filtersCollapsed ? "unfold_more" : "unfold_less"}</span>
+                  <span className="icon">
+                    {filtersCollapsed ? "unfold_more" : "unfold_less"}
+                  </span>
                   {filtersCollapsed ? "More" : "Less"}
                 </button>
               </div>
@@ -1506,12 +1764,19 @@ export function ClipboardApp({
           {!filtersCollapsed && (
             <div className="content-filters">
               <div className="time-filter-wrap">
-                <button className="text-button" onClick={() => setTimeMenuOpen((v) => !v)}>
+                <button
+                  className="text-button"
+                  onClick={() => setTimeMenuOpen((v) => !v)}
+                >
                   <span className="icon">schedule</span>
                   <span className="filter-button-label">
-                    {timeOptions.find((t) => t.value === timeFilter)?.label || "All time"}
+                    {timeOptions.find((t) => t.value === timeFilter)?.label ||
+                      "All time"}
                   </span>
-                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                  <span
+                    className="icon"
+                    style={{ fontSize: 16, marginLeft: 4 }}
+                  >
                     expand_more
                   </span>
                 </button>
@@ -1534,12 +1799,18 @@ export function ClipboardApp({
               </div>
 
               <div className="source-filter-wrap">
-                <button className="text-button" onClick={() => setSourceMenuOpen((v) => !v)}>
+                <button
+                  className="text-button"
+                  onClick={() => setSourceMenuOpen((v) => !v)}
+                >
                   <span className="icon">filter_alt</span>
                   <span className="filter-button-label">
                     {sourceFilterLabel(sourceFilter)}
                   </span>
-                  <span className="icon" style={{ fontSize: 16, marginLeft: 4 }}>
+                  <span
+                    className="icon"
+                    style={{ fontSize: 16, marginLeft: 4 }}
+                  >
                     expand_more
                   </span>
                 </button>
@@ -1554,7 +1825,9 @@ export function ClipboardApp({
                           setSourceMenuOpen(false);
                         }}
                       >
-                        <span className="filter-menu-label">{sourceOptionLabel(src)}</span>
+                        <span className="filter-menu-label">
+                          {sourceOptionLabel(src)}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -1569,15 +1842,21 @@ export function ClipboardApp({
           )}
 
           <div className="history-grid">
-          {filteredClips.length === 0 && (
-            <article className="history-card" style={{ minHeight: 120, maxHeight: 120 }}>
-              <div className="history-body">
-                <div className="history-text">No clips yet. Copy something!</div>
+            {filteredClips.length === 0 && (
+              <article
+                className="history-card"
+                style={{ minHeight: 120, maxHeight: 120 }}
+              >
+                <div className="history-body">
+                  <div className="history-text">
+                    No clips yet. Copy something!
+                  </div>
                 </div>
               </article>
             )}
             {filteredClips.map((clip) => {
-              const label = deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
+              const label =
+                deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
               const timeLabel = formatTime(clip.capturedAt);
               const isLocal = clip.originPeerId === identity?.deviceId;
               const pinned = pinnedSet.has(clip.id);
@@ -1592,7 +1871,10 @@ export function ClipboardApp({
                     <div className="history-chip" title={`From: ${label}`}>
                       <span className="chip-dot"></span>
                       <span className="history-chip-prefix">From:</span>
-                      <MiddleEllipsisText className="history-chip-label" text={label} />
+                      <MiddleEllipsisText
+                        className="history-chip-label"
+                        text={label}
+                      />
                     </div>
                     <div className="history-actions">
                       <button
@@ -1613,7 +1895,11 @@ export function ClipboardApp({
                         <button
                           className="icon-button"
                           title="More"
-                          onClick={() => setOpenMenuId(openMenuId === clip.id ? null : clip.id)}
+                          onClick={() =>
+                            setOpenMenuId(
+                              openMenuId === clip.id ? null : clip.id
+                            )
+                          }
                         >
                           <span className="icon">more_vert</span>
                         </button>
@@ -1621,7 +1907,10 @@ export function ClipboardApp({
                           <div className="history-menu-dropdown">
                             <button
                               className="text-button"
-                              style={{ width: "100%", justifyContent: "flex-start" }}
+                              style={{
+                                width: "100%",
+                                justifyContent: "flex-start",
+                              }}
                               onClick={() => {
                                 setOpenMenuId(null);
                                 handleDelete(clip.id);
@@ -1650,10 +1939,15 @@ export function ClipboardApp({
                         </span>
                         <span className="meta-time">{timeLabel}</span>
                       </div>
-                      <div className="meta-bottom-line">{clip.type === "url" ? "URL" : "Text"}</div>
+                      <div className="meta-bottom-line">
+                        {clip.type === "url" ? "URL" : "Text"}
+                      </div>
                     </div>
                     <div className="meta-actions">
-                      <button className="mini-button" onClick={() => reuseClip(clip.id)}>
+                      <button
+                        className="mini-button"
+                        onClick={() => reuseClip(clip.id)}
+                      >
                         <span className="icon" style={{ fontSize: 14 }}>
                           content_copy
                         </span>
@@ -1670,7 +1964,10 @@ export function ClipboardApp({
 
       {showNav && isNarrow && (
         <div className="nav-overlay" onClick={() => setShowNav(false)}>
-          <div className="nav-drawer nav-drawer-open" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="nav-drawer nav-drawer-open"
+            onClick={(e) => e.stopPropagation()}
+          >
             <aside className="surface nav-pane drawer-pane">
               {renderNavContent(true)}
             </aside>
@@ -1678,23 +1975,40 @@ export function ClipboardApp({
         </div>
       )}
 
-      {qrOpen && (
+      {qrOpen &&
         createPortal(
           <div className="qr-modal-backdrop" role="presentation">
-            <div className="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
+            <div
+              className="qr-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="qr-modal-title"
+            >
               <div className="qr-modal-header">
                 <div id="qr-modal-title" className="qr-modal-title">
                   Pair this device
                 </div>
-                <button className="icon-button" onClick={closeQr} aria-label="Close QR dialog">
+                <button
+                  className="icon-button"
+                  onClick={closeQr}
+                  aria-label="Close QR dialog"
+                >
                   <span className="icon">close</span>
                 </button>
               </div>
-              {qrLoading && <div className="qr-modal-status">Creating QR code...</div>}
-              {!qrLoading && qrError && <div className="qr-modal-error">{qrError}</div>}
+              {qrLoading && (
+                <div className="qr-modal-status">Creating QR code...</div>
+              )}
+              {!qrLoading && qrError && (
+                <div className="qr-modal-error">{qrError}</div>
+              )}
               {!qrLoading && !qrError && qrImage && (
                 <div className="qr-code-frame">
-                  <img src={qrImage} alt="Pairing QR" className="qr-modal-image" />
+                  <img
+                    src={qrImage}
+                    alt="Pairing QR"
+                    className="qr-modal-image"
+                  />
                 </div>
               )}
               {!qrLoading && !qrError && qrText && (
@@ -1708,9 +2022,7 @@ export function ClipboardApp({
             </div>
           </div>,
           document.body
-        )
-      )}
-
+        )}
     </div>
   );
 }
