@@ -1,7 +1,23 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import type { Clip, ClipboardHistoryError, Device, HistoryPolicyError, Identity, IdentityRotationNoticeReason, PairingError, PairingWaiting, PeerConnectionInfo, PendingRequest, RelayConnectionInfo } from "@clipp/ui";
+import type {
+  Clip,
+  ClipboardHistoryError,
+  Device,
+  HistoryPolicyError,
+  Identity,
+  IdentityRotationNoticeReason,
+  PairingError,
+  PairingWaiting,
+  PeerConnectionInfo,
+  PendingRequest,
+  RelayConnectionInfo,
+} from "@clipp/ui";
+import type {
+  RelayConfiguration,
+  RelayState,
+} from "../../../packages/core/network/managedRelays.js";
 
 type AppState = {
   clips: Clip[];
@@ -14,6 +30,8 @@ type AppState = {
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   relayAddresses: string[];
+  managedRelayConfigurations?: RelayConfiguration[];
+  managedRelayStates?: RelayState[];
   pinnedIds?: string[];
   localRetentionMs?: number;
   autoSync?: boolean;
@@ -55,8 +73,13 @@ const App = () => {
         if (!cancelled) setState(s);
       } catch (err) {
         if (!cancelled) setError("Failed to load state");
-        const initialization = await api.getInitializationError?.().catch(() => null);
-        if (!cancelled) setInitializationError(initialization?.code === "identity_initialization_failed");
+        const initialization = await api
+          .getInitializationError?.()
+          .catch(() => null);
+        if (!cancelled)
+          setInitializationError(
+            initialization?.code === "identity_initialization_failed"
+          );
         console.error("Failed to load state", err);
       }
     }
@@ -64,7 +87,12 @@ const App = () => {
     const unsubscribe = api.onUpdate((s) => !cancelled && setState(s));
     const unlog = api.onLog?.((payload) => {
       const { level, message, data } = payload || {};
-      const fn = level === "warn" ? console.warn : level === "error" ? console.error : console.info;
+      const fn =
+        level === "warn"
+          ? console.warn
+          : level === "error"
+            ? console.error
+            : console.info;
       fn(`[clipp:${level || "info"}] ${message || ""}`, data || "");
     });
     return () => {
@@ -78,7 +106,11 @@ const App = () => {
     const res = await window.clipp.pairFromText(txt);
     console.info("[clipp] pairFromText result", res);
     if (res?.ok === false) {
-      alert(res.error === "invalid" ? "Invalid pairing payload" : "Failed to reach device");
+      alert(
+        res.error === "invalid"
+          ? "Invalid pairing payload"
+          : "Failed to reach device"
+      );
     }
   }
 
@@ -100,6 +132,8 @@ const App = () => {
         clipboardHistoryError={state.clipboardHistoryError}
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}
+        managedRelayConfigurations={state.managedRelayConfigurations || []}
+        managedRelayStates={state.managedRelayStates || []}
         initializationError={initializationError}
         identityRotationRecovery={state.identityRotationRecovery}
         identityRotationNotice={state.identityRotationNotice}
@@ -114,17 +148,25 @@ const App = () => {
         onShareNow={() => window.clipp.shareNow()}
         onSetPinned={(id, pinned) => window.clipp.setPinned(id, pinned)}
         onClearAll={() => window.clipp.clearHistory()}
-        onDismissClipboardHistoryError={() => window.clipp.dismissClipboardHistoryError()}
+        onDismissClipboardHistoryError={() =>
+          window.clipp.dismissClipboardHistoryError()
+        }
         onRetryHistoryCleanup={() => window.clipp.retryHistoryCleanup()}
-        onAcknowledgeIdentityRotationNotice={() => window.clipp.acknowledgeIdentityRotationNotice()}
-        onSetLocalRetention={(retentionMs) => window.clipp.setLocalRetention(retentionMs)}
+        onAcknowledgeIdentityRotationNotice={() =>
+          window.clipp.acknowledgeIdentityRotationNotice()
+        }
+        onSetLocalRetention={(retentionMs) =>
+          window.clipp.setLocalRetention(retentionMs)
+        }
         onSetAutoSync={(enabled) => window.clipp.setAutoSync(enabled)}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
-        onSetRelayAddresses={async (addrs) => {
-          const res = await window.clipp.setRelayAddresses(addrs);
-          return res?.relayAddresses || addrs;
+        onSetManagedRelays={async (configurations) => {
+          await window.clipp.setManagedRelays(configurations);
         }}
+        onManagedRelayLogin={(key) => window.clipp.managedRelayLogin(key)}
+        onManagedRelayAccount={(key) => window.clipp.managedRelayAccount(key)}
+        onManagedRelayRetry={(key) => window.clipp.managedRelayRetry(key)}
       />
     </div>
   );

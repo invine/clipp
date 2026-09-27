@@ -572,6 +572,31 @@ describe("Libp2pMessagingTransport", () => {
     await transport.stop();
   });
 
+  it("never dials a circuit route excluded by current relay ownership", async () => {
+    const target =
+      "/ip4/127.0.0.1/tcp/9999/ws/p2p/removed-relay/p2p-circuit/p2p/peer-1";
+    const direct = "/ip4/127.0.0.1/tcp/1234/p2p/peer-1";
+    const transport = createLibp2pMessagingTransport();
+    transport.setEligibleDialAddresses((addresses) =>
+      addresses.filter((address) => !address.includes("removed-relay"))
+    );
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    node.peerStore.get.mockResolvedValueOnce({
+      addresses: [{ multiaddr: { toString: () => target } }],
+    });
+    await expect(transport.connect("peer-1")).rejects.toThrow(
+      "no_eligible_address"
+    );
+    await expect(transport.connect(target)).rejects.toThrow(
+      "no_eligible_address"
+    );
+    expect(node.dial).not.toHaveBeenCalled();
+    await transport.connect(direct);
+    expect(node.dial.mock.calls[0][0].toString()).toBe(direct);
+    await transport.stop();
+  });
+
   it("does not hide peers connected through a relay circuit", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
     const transport = createLibp2pMessagingTransport({
