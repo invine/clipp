@@ -13,6 +13,8 @@ import {
   normalizeRelayConfigurations,
   loadManagedRelayConfigurations,
   saveManagedRelayConfigurations,
+  normalizeDiscoveryResponse,
+  normalizeRelayAuthResponse,
 } from "../../../packages/core/network/managedRelays";
 
 describe("managed relay configuration", () => {
@@ -88,6 +90,9 @@ function adapterHarness() {
     }),
     register: jest.fn(async () => {
       calls.push("register");
+    }),
+    unregister: jest.fn(async () => {
+      calls.push("unregister");
     }),
     signedPeerRecord: jest.fn(async () => Uint8Array.of(1, 2, 3)),
     eraseCredentials: jest.fn(async () => {
@@ -406,6 +411,7 @@ describe("three-relay adapter scenario", () => {
         events.push(`register:${connection.verifiedPeerId}`);
       }),
       signedPeerRecord: jest.fn(async () => Uint8Array.of(9)),
+      unregister: jest.fn(async () => undefined),
       eraseCredentials: jest.fn(async (url) => {
         events.push(`erase:${url}`);
       }),
@@ -709,6 +715,9 @@ describe("session renewal", () => {
       expect.objectContaining({ status: "refused", retryAt: now + 300_000 })
     );
     expect(connection.close).not.toHaveBeenCalled();
+    expect(
+      controller.eligibleDialAddresses([`${address}/p2p-circuit/p2p/device`])
+    ).toEqual([`${address}/p2p-circuit/p2p/device`]);
     await controller.retry("a");
     expect(auth).toHaveBeenCalledTimes(2);
     now += 300_000;
@@ -740,5 +749,277 @@ describe("new-model relay settings persistence", () => {
     ];
     await saveManagedRelayConfigurations(store, expected);
     expect(await loadManagedRelayConfigurations(store)).toEqual(expected);
+  });
+});
+
+describe("late reservation ownership", () => {
+  it("releases a reservation handle that arrives after the whole-operation deadline", async () => {
+    jest.useFakeTimers();
+    try {
+      const { adapter, connection } = adapterHarness();
+      const release = jest.fn(async () => undefined);
+      let finishReserve:
+        ((value: { release(): Promise<void> }) => void) | undefined;
+      adapter.reserve = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            finishReserve = resolve;
+          })
+      );
+      const controller = new ManagedRelayController(adapter, () => 0);
+      const starting = controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "explicit",
+          peerId: peer,
+          addresses: [address],
+        },
+      ]);
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(15_000);
+      await starting;
+      expect(controller.states()[0].status).toBe("retrying");
+      finishReserve?.({ release });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(connection.close).toHaveBeenCalledTimes(1);
+      await controller.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe("reviewed lifecycle races", () => {
+  it("does not resurrect an older settings reconciliation after a newer empty update", async () => {
+    const { adapter } = adapterHarness();
+    const first = {
+      key: "a",
+      name: "A",
+      kind: "managed" as const,
+      discoveryUrl: "https://a.example/v1/relay",
+    };
+    const second = {
+      key: "b",
+      name: "B",
+      kind: "managed" as const,
+      discoveryUrl: "https://b.example/v1/relay",
+    };
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([first]);
+    let finishErase: (() => void) | undefined;
+    adapter.eraseCredentials = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishErase = resolve;
+        })
+    );
+    const older = controller.setConfigurations([second]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(finishErase).toBeDefined();
+    await controller.setConfigurations([]);
+    finishErase?.();
+    await older;
+    expect(controller.configurations()).toEqual([]);
+    await controller.stop();
+  });
+
+  it("ignores a stale renewal result after its connection is lost", async () => {
+    const { adapter, connection } = adapterHarness();
+    const access = adapter.accessToken as jest.Mock;
+    let finishToken: ((token: string) => void) | undefined;
+    access
+      .mockImplementationOnce(async () => "initial")
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            finishToken = resolve;
+          })
+      );
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([
+      {
+        key: "a",
+        name: "A",
+        kind: "managed",
+        discoveryUrl: "https://a.example/v1/relay",
+      },
+    ]);
+    const renewing = controller.refreshSession("a");
+    await Promise.resolve();
+    await controller.connectionLost("a", connection);
+    finishToken?.("late");
+    await renewing;
+    expect(controller.states()[0].status).toBe("retrying");
+    expect(adapter.authenticate).toHaveBeenCalledTimes(1);
+    await controller.stop();
+  });
+
+  it("ignores stale Rendezvous repair completion after connection loss", async () => {
+    const { adapter, connection } = adapterHarness();
+    let now = Date.now();
+    let finishRegister: (() => void) | undefined;
+    (adapter.register as jest.Mock)
+      .mockRejectedValueOnce(new Error("rv_down"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRegister = resolve;
+          })
+      );
+    const controller = new ManagedRelayController(
+      adapter,
+      () => 0,
+      () => now
+    );
+    await controller.setConfigurations([
+      {
+        key: "a",
+        name: "A",
+        kind: "managed",
+        discoveryUrl: "https://a.example/v1/relay",
+      },
+    ]);
+    now += 1_000;
+    const repairing = controller.retry("a");
+    await Promise.resolve();
+    await controller.connectionLost("a", connection);
+    finishRegister?.();
+    await repairing;
+    expect(controller.states()[0].status).toBe("retrying");
+    await controller.stop();
+  });
+
+  it("compensates a late Rendezvous registration after removal", async () => {
+    jest.useFakeTimers();
+    try {
+      const { adapter } = adapterHarness();
+      let finishRegister: (() => void) | undefined;
+      adapter.register = jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRegister = resolve;
+          })
+      );
+      adapter.unregister = jest.fn(async () => undefined);
+      const controller = new ManagedRelayController(adapter, () => 0);
+      const starting = controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "explicit",
+          peerId: peer,
+          addresses: [address],
+        },
+      ]);
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(12_000);
+      await starting;
+      await controller.remove("a");
+      expect(adapter.unregister).toHaveBeenCalledTimes(1);
+      finishRegister?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(adapter.unregister).toHaveBeenCalledTimes(2);
+      await controller.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe("complete relay addresses", () => {
+  it("rejects a bare Peer ID multiaddr for an explicit relay", () => {
+    expect(() =>
+      normalizeRelayConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "explicit",
+          peerId: peer,
+          addresses: [`/p2p/${peer}`],
+        },
+      ])
+    ).toThrow(/complete|dialable/i);
+  });
+
+  it("rejects a discovery document with a bare Peer ID multiaddr before dialing", async () => {
+    const { adapter } = adapterHarness();
+    adapter.discover = jest.fn(async () => ({
+      version: 1 as const,
+      relay: { peerId: peer, addresses: [`/p2p/${peer}`] },
+      validUntil: Date.now() + 30_000,
+    }));
+    const controller = new ManagedRelayController(adapter);
+    await controller.setConfigurations([
+      {
+        key: "a",
+        name: "A",
+        kind: "managed",
+        discoveryUrl: "https://a.example/v1/relay",
+      },
+    ]);
+    expect(adapter.dial).not.toHaveBeenCalled();
+    expect(controller.states()[0].status).toBe("retrying");
+    await controller.stop();
+  });
+});
+
+describe("exact discovery endpoint and Go wire timestamps", () => {
+  it("rejects discovery URLs outside the exact /v1/relay route", () => {
+    expect(() =>
+      normalizeRelayConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/other",
+        },
+      ])
+    ).toThrow(/v1\/relay/);
+    expect(() =>
+      normalizeRelayConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay/",
+        },
+      ])
+    ).toThrow(/v1\/relay/);
+  });
+
+  it("normalizes the actual discovery and auth RFC3339 wire fields into epoch milliseconds", () => {
+    const discovery = normalizeDiscoveryResponse({
+      version: 1,
+      relay: { peerId: peer, addresses: [address] },
+      validUntil: "2026-09-27T17:10:00Z",
+    });
+    expect(discovery.validUntil).toBe(Date.UTC(2026, 8, 27, 17, 10, 0));
+    const auth = normalizeRelayAuthResponse({
+      ok: true,
+      sessionExpiresAt: "2026-09-27T17:20:00.123Z",
+      renewAfterMillis: 120_000,
+    });
+    expect(auth).toEqual({
+      sessionExpiresAt: Date.UTC(2026, 8, 27, 17, 20, 0, 123),
+      renewAfterMillis: 120_000,
+    });
+    expect(() =>
+      normalizeDiscoveryResponse({
+        version: 1,
+        relay: { peerId: peer, addresses: [address] },
+        validUntil: Date.now(),
+      })
+    ).toThrow(/RFC3339/);
+    expect(() =>
+      normalizeRelayAuthResponse({
+        ok: true,
+        sessionExpiresAt: "2026-09-27T17:20:00+00:00",
+        renewAfterMillis: 1_000,
+      })
+    ).toThrow(/RFC3339/);
   });
 });
