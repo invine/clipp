@@ -27,13 +27,35 @@ function connection(address: string, peerId: string) {
   };
 }
 
-function harness(addresses: string[] = []) {
+function harness(addresses: string[] = [], retryMs = 15_000) {
   let selfAddresses = addresses;
   let signedRecord: Uint8Array = Uint8Array.of(1, 2, 3);
   const listeners: any[] = [];
   const connections: any[] = [];
+  const events = new Map<string, Set<(event: any) => void>>();
+  const reservationEvents = new Map<string, Set<(event: any) => void>>();
+  const merge = jest.fn<Promise<void>, any[]>(async () => undefined);
+  const reservationStore = {
+    addEventListener: (name: string, handler: (event: any) => void) => {
+      const handlers = reservationEvents.get(name) ?? new Set();
+      handlers.add(handler);
+      reservationEvents.set(name, handlers);
+    },
+    removeEventListener: (name: string, handler: (event: any) => void) => {
+      reservationEvents.get(name)?.delete(handler);
+    },
+  };
   const node = {
     peerId: { toString: () => "device" },
+    addEventListener: (name: string, handler: (event: any) => void) => {
+      const handlers = events.get(name) ?? new Set();
+      handlers.add(handler);
+      events.set(name, handlers);
+    },
+    removeEventListener: (name: string, handler: (event: any) => void) => {
+      events.get(name)?.delete(handler);
+    },
+    peerStore: { merge },
     dial: jest.fn(async (target: any) => {
       const address = String(target);
       const peerId = address.split("/p2p/").pop() ?? "";
@@ -46,11 +68,17 @@ function harness(addresses: string[] = []) {
       transportManager: {
         listen: jest.fn<Promise<void>, any[]>(async () => undefined),
         getListeners: () => listeners,
+        getTransports: () => [
+          {
+            [Symbol.toStringTag]: "@libp2p/circuit-relay-v2-transport",
+            reservationStore,
+          },
+        ],
       },
     },
   };
   const lifecycle = new RelayLifecycle(
-    { rendezvousIntervalMs: 60_000 },
+    { rendezvousIntervalMs: 60_000, relayReservationRetryMs: retryMs },
     () => selfAddresses,
     async () => signedRecord,
     () => undefined,
@@ -60,6 +88,16 @@ function harness(addresses: string[] = []) {
     lifecycle,
     connections,
     listeners,
+    merge,
+    dispatch: (name: string, detail: any) => {
+      for (const handler of events.get(name) ?? []) handler({ detail });
+    },
+    emitReservation: (detail: any) => {
+      for (const handler of reservationEvents.get(
+        "relay:created-reservation",
+      ) ?? [])
+        handler({ detail });
+    },
     setSelfAddresses: (addresses: string[]) => {
       selfAddresses = addresses;
     },
@@ -71,34 +109,6 @@ function harness(addresses: string[] = []) {
 
 describe("RelayLifecycle", () => {
   beforeEach(() => jest.clearAllMocks());
-
-  it("keeps an unchanged relay connected and registered while adding another", async () => {
-    const { node, lifecycle, connections, setSelfAddresses } = harness([
-      `${relayA}/p2p-circuit/p2p/device`,
-    ]);
-    await lifecycle.start(node, [relayA]);
-    await new Promise((resolve) => setImmediate(resolve));
-    const existing = connections[0];
-    setSelfAddresses([
-      `${relayA}/p2p-circuit/p2p/device`,
-      `${relayB}/p2p-circuit/p2p/device`,
-    ]);
-
-    await lifecycle.reconfigure(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    expect(existing.close).not.toHaveBeenCalled();
-    expect(
-      node.dial.mock.calls.map(([address]: any[]) => String(address)),
-    ).toEqual([relayA, relayB]);
-    expect(register.mock.calls.map(([, relay]: any[]) => relay)).toEqual([
-      relayA,
-      relayA,
-      relayB,
-    ]);
-    expect(unregister).not.toHaveBeenCalled();
-    await lifecycle.stop();
-  });
 
   it("preserves a direct connection to the configured relay Peer ID", async () => {
     const { node, lifecycle, connections } = harness();
@@ -116,175 +126,131 @@ describe("RelayLifecycle", () => {
     expect(directConnection.close).not.toHaveBeenCalled();
   });
 
-  it("removes one relay without tearing down the remaining relay", async () => {
-    const { node, lifecycle, connections, listeners } = harness([
-      `${relayA}/p2p-circuit/p2p/device`,
-      `${relayB}/p2p-circuit/p2p/device`,
-    ]);
-    const listenerA = {
-      constructor: { name: "CircuitRelayTransportListener" },
-      getAddrs: () => [`${relayA}/p2p-circuit`],
-      close: jest.fn(async () => undefined),
-    };
-    const listenerB = {
-      constructor: { name: "CircuitRelayTransportListener" },
-      getAddrs: () => [`${relayB}/p2p-circuit`],
-      close: jest.fn(async () => undefined),
-    };
-    listeners.push(listenerA, listenerB);
-    await lifecycle.start(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-    const [connectionA, connectionB] = connections;
-    unregister.mockClear();
-
-    await lifecycle.reconfigure(node, [relayA]);
-
-    expect(connectionA.close).not.toHaveBeenCalled();
-    expect(connectionB.close).toHaveBeenCalledTimes(1);
-    expect(listenerA.close).not.toHaveBeenCalled();
-    expect(listenerB.close).toHaveBeenCalledTimes(1);
-    expect(unregister.mock.calls.map(([, relay]: any[]) => relay)).toEqual([
-      relayB,
-    ]);
-    await lifecycle.stop();
-  });
-
-  it("does not close a new listener when an old reservation attempt finishes late", async () => {
-    const { node, lifecycle, listeners } = harness();
-    let finishOldListen!: () => void;
-    const oldListener = {
-      constructor: { name: "CircuitRelayTransportListener" },
-      getAddrs: () => [`${relayA}/p2p-circuit`],
-      close: jest.fn(async () => undefined),
-    };
-    const newListener = {
-      constructor: { name: "CircuitRelayTransportListener" },
-      getAddrs: () => [`${relayA}/p2p-circuit`],
-      close: jest.fn(async () => undefined),
-    };
-    node.components.transportManager.listen
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            finishOldListen = () => {
-              listeners.push(oldListener);
-              resolve();
-            };
-          }),
-      )
-      .mockImplementationOnce(async () => {
-        listeners.push(newListener);
-      });
-
-    const starting = lifecycle.start(node, [relayA]);
-    await new Promise((resolve) => setImmediate(resolve));
-    const reconfiguring = lifecycle.reconfigure(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-    finishOldListen();
-    await starting;
-    await reconfiguring;
-
-    expect(newListener.close).not.toHaveBeenCalled();
-    await lifecycle.stop();
-  });
-
-  it("keeps a relay newly re-added while an earlier removal is waiting to unregister", async () => {
-    const { node, lifecycle, connections, listeners, setSelfAddresses } =
-      harness([
-        `${relayA}/p2p-circuit/p2p/device`,
-        `${relayB}/p2p-circuit/p2p/device`,
-      ]);
-    await lifecycle.start(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-    let finishUnregister!: () => void;
-    unregister.mockImplementationOnce(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishUnregister = () => resolve(true);
-        }),
+  it("tracks a post-listen relay reconnect and clears its keep-alive tag before shutdown", async () => {
+    const relayDns = "/dns4/relay.example/tcp/9999/ws/p2p/relay-a";
+    const { node, lifecycle, connections, dispatch, merge } = harness();
+    await lifecycle.start(node, [relayDns]);
+    const original = connections[0];
+    const replacement = connection(
+      "/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a",
+      "relay-a",
     );
-    const listenerB = {
-      constructor: { name: "CircuitRelayTransportListener" },
-      getAddrs: () => [`${relayB}/p2p-circuit`],
-      close: jest.fn(async () => {
-        setSelfAddresses([`${relayA}/p2p-circuit/p2p/device`]);
-      }),
-    };
-    const newListenerB = {
-      constructor: { name: "CircuitRelayTransportListener" },
-      getAddrs: () => [`${relayB}/p2p-circuit`],
-      close: jest.fn(async () => undefined),
-    };
-    listeners.push(listenerB);
-    node.components.transportManager.listen.mockImplementation(async () => {
-      listeners.push(newListenerB);
-      setSelfAddresses([
-        `${relayA}/p2p-circuit/p2p/device`,
-        `${relayB}/p2p-circuit/p2p/device`,
-      ]);
+    const direct = connection(relayDns, "relay-a");
+    connections.splice(0, 1);
+    dispatch("connection:close", original);
+    connections.push(replacement, direct);
+    dispatch("connection:open", replacement);
+
+    await lifecycle.stop();
+
+    expect(merge).toHaveBeenCalledWith(original.remotePeer, {
+      tags: { "keep-alive-circuit-relay": undefined },
+    });
+    expect(merge.mock.invocationCallOrder[0]).toBeLessThan(
+      replacement.close.mock.invocationCallOrder[0],
+    );
+    expect(replacement.close).toHaveBeenCalledTimes(1);
+    expect(direct.close).not.toHaveBeenCalled();
+  });
+
+  it("does not claim a new direct path while another direct path keeps the relay peer connected", async () => {
+    const { node, lifecycle, connections, dispatch } = harness();
+    await lifecycle.start(node, [relayA]);
+    const original = connections[0];
+    const direct = connection(relayA, "relay-a");
+    const newerDirect = connection(relayA, "relay-a");
+    connections.splice(0, 1, direct);
+    dispatch("connection:close", original);
+    connections.push(newerDirect);
+    dispatch("connection:open", newerDirect);
+
+    await lifecycle.stop();
+
+    expect(direct.close).not.toHaveBeenCalled();
+    expect(newerDirect.close).not.toHaveBeenCalled();
+  });
+
+  it("removes the relay keep-alive tag before closing so the host does not redial", async () => {
+    const { node, lifecycle, connections, dispatch, merge } = harness();
+    const tags = new Set(["keep-alive-circuit-relay"]);
+    merge.mockImplementation(async (_peer: any, update: any) => {
+      for (const [tag, value] of Object.entries(update.tags)) {
+        if (value === undefined) tags.delete(tag);
+      }
+    });
+    node.addEventListener("peer:disconnect", () => {
+      if (tags.has("keep-alive-circuit-relay")) void node.dial(relayA);
+    });
+    await lifecycle.start(node, [relayA]);
+    connections[0].close.mockImplementation(async () => {
+      dispatch("peer:disconnect", connections[0].remotePeer);
     });
 
-    const removing = lifecycle.reconfigure(node, [relayA]);
-    await new Promise((resolve) => setImmediate(resolve));
-    const readding = lifecycle.reconfigure(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-    finishUnregister();
-    await Promise.all([removing, readding]);
-
-    expect(connections[connections.length - 1]?.close).not.toHaveBeenCalled();
-    expect(listenerB.close).toHaveBeenCalledTimes(1);
-    expect(newListenerB.close).not.toHaveBeenCalled();
     await lifecycle.stop();
+
+    expect(tags.has("keep-alive-circuit-relay")).toBe(false);
+    expect(node.dial).toHaveBeenCalledTimes(1);
   });
 
-  it("cleans a pending removed relay when shutdown interrupts reconfiguration", async () => {
-    const { node, lifecycle, connections } = harness([
-      `${relayA}/p2p-circuit/p2p/device`,
-      `${relayB}/p2p-circuit/p2p/device`,
-    ]);
-    await lifecycle.start(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-    let finishUnregister!: () => void;
-    unregister.mockImplementationOnce(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finishUnregister = () => resolve(true);
-        }),
-    );
-
-    const removing = lifecycle.reconfigure(node, [relayA]);
-    await new Promise((resolve) => setImmediate(resolve));
-    await lifecycle.stop();
-    finishUnregister();
-    await removing;
-
-    expect(connections[1].close).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps an unchanged listener when an old reservation attempt finishes late", async () => {
+  it("closes a DNS relay listener whose announced address resolves to IP", async () => {
+    const relayDns = "/dns4/relay.example/tcp/9999/ws/p2p/relay-a";
     const { node, lifecycle, listeners } = harness();
+    const listener = {
+      constructor: { name: "CircuitRelayTransportListener" },
+      getAddrs: () => ["/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a/p2p-circuit"],
+      close: jest.fn(async () => undefined),
+    };
+    listeners.push(listener);
+    await lifecycle.start(node, [relayDns]);
+
+    await lifecycle.stop();
+
+    expect(listener.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries one failed listener without canceling the other relay's reservation", async () => {
+    const { node, lifecycle, listeners, setSelfAddresses } = harness([], 10);
+    const cancelReservations = jest.fn();
+    let finishRetry!: () => void;
+    const retried = new Promise<void>((resolve) => {
+      finishRetry = resolve;
+    });
     const listenerA = {
       constructor: { name: "CircuitRelayTransportListener" },
       getAddrs: () => [`${relayA}/p2p-circuit`],
-      close: jest.fn(async () => undefined),
+      close: jest.fn(async () => cancelReservations()),
     };
-    listeners.push(listenerA);
-    let finishListen!: () => void;
-    node.components.transportManager.listen.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finishListen = resolve;
-        }),
-    );
+    let relayBAvailable = false;
+    const listenerB = {
+      constructor: { name: "CircuitRelayTransportListener" },
+      getAddrs: () => (relayBAvailable ? [`${relayB}/p2p-circuit`] : []),
+      listen: jest.fn(async () => {
+        relayBAvailable = true;
+        setSelfAddresses([
+          `${relayA}/p2p-circuit/p2p/device`,
+          `${relayB}/p2p-circuit/p2p/device`,
+        ]);
+        finishRetry();
+      }),
+      close: jest.fn(async () => cancelReservations()),
+    };
+    node.components.transportManager.listen.mockImplementationOnce(async () => {
+      listeners.push(listenerA, listenerB);
+      setSelfAddresses([`${relayA}/p2p-circuit/p2p/device`]);
+    });
 
-    const starting = lifecycle.start(node, [relayA]);
-    await new Promise((resolve) => setImmediate(resolve));
-    const reconfiguring = lifecycle.reconfigure(node, [relayA, relayB]);
-    finishListen();
-    await Promise.all([starting, reconfiguring]);
+    await lifecycle.start(node, [relayA, relayB]);
+    await retried;
 
+    expect(node.components.transportManager.listen).toHaveBeenCalledTimes(1);
+    expect(listenerB.listen).toHaveBeenCalledTimes(1);
+    expect(listeners).toHaveLength(2);
     expect(listenerA.close).not.toHaveBeenCalled();
+    expect(cancelReservations).not.toHaveBeenCalled();
+
     await lifecycle.stop();
+    expect(listenerA.close).toHaveBeenCalledTimes(1);
+    expect(listenerB.close).toHaveBeenCalledTimes(1);
   });
 
   it("closes a newly dialed DNS relay at its resolved IP while keeping another direct path", async () => {
@@ -328,11 +294,11 @@ describe("RelayLifecycle", () => {
 
   it("closes a DNS relay connection reopened by reservation listening after loss", async () => {
     const relayDns = "/dns4/relay.example/tcp/9999/ws/p2p/relay-a";
-    const { node, lifecycle, connections } = harness();
-    const reopened = connection(
-      "/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a",
-      "relay-a",
-    );
+    const { node, lifecycle, connections, emitReservation } = harness();
+    const reopened = {
+      ...connection("/ip4/198.51.100.7/tcp/9999/ws/p2p/relay-a", "relay-a"),
+      id: "reservation-connection",
+    };
     (node.components as any).connectionManager = {
       openConnection: jest.fn(async () => {
         connections.push(reopened);
@@ -341,6 +307,10 @@ describe("RelayLifecycle", () => {
     };
     node.components.transportManager.listen.mockImplementation(async () => {
       await (node.components as any).connectionManager.openConnection(relayDns);
+      emitReservation({
+        relay: reopened.remotePeer,
+        details: { type: "configured", connection: reopened.id },
+      });
     });
 
     await lifecycle.start(node, [relayDns]);
@@ -366,31 +336,24 @@ describe("RelayLifecycle", () => {
     expect(direct.close).not.toHaveBeenCalled();
   });
 
-  it("refreshes retained Rendezvous records after a new relay changes self addresses", async () => {
-    const { node, lifecycle, setSelfAddresses, setSignedRecord } = harness([
-      `${relayA}/p2p-circuit/p2p/device`,
-    ]);
+  it("does not claim a direct connection reused by the reservation store", async () => {
+    const { node, lifecycle, connections, emitReservation } = harness();
+    const direct = {
+      ...connection(relayA, "relay-a"),
+      id: "direct-connection",
+    };
+    connections.push(direct);
+    node.dial.mockResolvedValueOnce(direct);
+    node.components.transportManager.listen.mockImplementation(async () => {
+      emitReservation({
+        relay: direct.remotePeer,
+        details: { type: "configured", connection: direct.id },
+      });
+    });
+
     await lifecycle.start(node, [relayA]);
-    await new Promise((resolve) => setImmediate(resolve));
-    register.mockClear();
-    setSelfAddresses([
-      `${relayA}/p2p-circuit/p2p/device`,
-      `${relayB}/p2p-circuit/p2p/device`,
-    ]);
-    setSignedRecord(Uint8Array.of(4, 5, 6));
-
-    await lifecycle.reconfigure(node, [relayA, relayB]);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    expect(
-      register.mock.calls.map(([, relay, , record]: any[]) => ({
-        relay,
-        record,
-      })),
-    ).toEqual([
-      { relay: relayA, record: Uint8Array.of(4, 5, 6) },
-      { relay: relayB, record: Uint8Array.of(4, 5, 6) },
-    ]);
     await lifecycle.stop();
+
+    expect(direct.close).not.toHaveBeenCalled();
   });
 });

@@ -2,29 +2,32 @@
 
 `RelayLifecycle` owns relay dialing, reservation retries, exact Rendezvous
 registration and lookup, and relay-only cleanup on the existing libp2p host.
-Its internal lifecycle is `start(host, relayAddresses)`, `stop()`, and
-`reconfigure(host, relayAddresses)`. Reachability updates trigger a registration
-pass, while lookup accepts verified Signed Peer Records through the transport's
-existing import and revocation checks. A generation fence prevents a pass from
-an earlier start from scheduling work in a later start.
+Its internal lifecycle is whole-set `start(host, relayAddresses)` and `stop()`.
+Reachability updates trigger a registration pass, while lookup accepts verified
+Signed Peer Records through the transport's existing import and revocation
+checks. A generation fence prevents a pass from an earlier start from
+scheduling work in a later start.
 
-`reconfigure` changes only added and removed relay entries: unchanged
-connections and listeners remain live, and their registrations are refreshed
-with the current Signed Peer Record when self addresses change. Configuration
-mutations and reservation listen attempts are serialized so a late completion
-cannot clean up a newer attempt. Cleanup tracks new connections returned by
-relay dials and opened by managed reservation listeners, including DNS
-addresses resolved to IPs. It does not close a pre-existing direct connection
-reused at the configured relay address or another connection to the relay's
-Peer ID.
+Cleanup tracks new connections returned by relay dials, connections identified
+by Circuit Relay reservation records, and a replacement opened after an owned
+relay connection is lost. It removes the relay-specific keep-alive tag before
+closing owned connections so libp2p's reconnect queue does not redial a stopped
+relay. A pre-existing direct connection reused at the configured relay address
+or another path to the same Peer ID remains open. Reservation listen attempts
+are serialized; a late completion closes only listeners and connections
+created by that attempt. A failed listener is retried in place, since closing
+it would cancel reservations for all relays in stock Circuit Relay v2.
 
 `Libp2pMessagingTransport` currently calls only `start` and `stop`, retaining
 the existing `relayAddresses` option for all runtimes. It disables node startup
 reservation listeners so the lifecycle can own every reservation attempt after
 host creation. Direct callers of `createClipboardNode` retain its existing
-reservation option. A later configuration integration can wire `reconfigure`.
-Relay lifecycle cleanup never stops the host or closes connections to Device
-Network members.
+reservation option. Stock Circuit Relay v2 shares one reservation store across
+its listeners, and closing one listener cancels all reservations in that store.
+Ticket 01 therefore exposes no selective relay update; ticket 12 must provide
+a true per-relay mutation boundary without cycling retained relays. Relay
+lifecycle cleanup never stops the host or closes connections to Device Network
+members.
 
 ## Ticket 01 validation evidence
 
@@ -34,9 +37,9 @@ the existing local `node_modules` dependency tree; no external relay was used.
 | Command / scope                                                                                                | Starting commit `44ddde1`                  | Ticket branch after review fixes         |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
 | `npm test -- --runInBand tests/core/network/engine.test.ts tests/core/network/rendezvous.test.ts --silent`     | 38/38 passed                               | 44/44 passed                             |
-| `npm test -- --runInBand --silent tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts` | New controller test file did not exist     | 56/56 passed                             |
+| `npm test -- --runInBand --silent tests/core/network/relayLifecycle.test.ts tests/core/network/engine.test.ts` | New controller test file did not exist     | 55/55 passed                             |
 | `npm run lint -- --quiet`                                                                                      | Not run                                    | Passed                                   |
-| `npm test -- --runInBand --silent`                                                                             | Not run                                    | 454/454 passed; 56/56 suites passed      |
+| `npm test -- --runInBand --silent`                                                                             | Not run                                    | 453/453 passed; 56/56 suites passed      |
 | `node --import tsx tests/harness/pairing-harness.ts` with loopback bind permission                             | Passed in 13 s after import correction     | Passed in 12.8 s after import correction |
 | `npm run check`                                                                                                | No `check` script in pinned `package.json` | Missing script                           |
 
@@ -59,9 +62,9 @@ type in `relay/server.ts`. The focused Jest suites use the shared controller
 and transport seams with libp2p boundary doubles. Native runtime runs were not
 part of this ticket.
 
-The controller regressions were observed red before the fixes for concurrent
-reconfiguration, stale reservation completion, DNS-to-IP connection cleanup,
-and retained-relay Signed Peer Record refresh. The DNS listener reconnection and
-same-address reused direct connection tests also went red before ownership
-tracking replaced address-based cleanup. A shutdown-during-removal test went
-red before pending relay resources were included in stop cleanup.
+The controller regressions were observed red before the fixes for DNS-to-IP
+connection cleanup, a replacement opened after listening, and same-address
+reused direct connections. A second direct connection after loss also went red
+before reconnect tracking was limited to peers with no surviving connection.
+The shared reservation store constraint invalidated the earlier selective
+reconfiguration tests and API; both were removed before this validation run.
