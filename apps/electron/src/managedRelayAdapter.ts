@@ -44,7 +44,7 @@ export function createElectronManagedRelayAdapter(options: {
     addressPriority: (address) =>
       address.includes("/webrtc-direct/")
         ? 2
-        : /\/wss?\/p2p\//.test(address)
+        : /\/(?:wss?|tls\/ws)\/p2p\//.test(address)
           ? 1
           : 0,
     dial: (address, signal) => options.host().dial(address, signal),

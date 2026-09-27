@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { runManagedRelayAction } from "./managedRelayAction";
 import type {
   RelayConfiguration,
   RelayState,
@@ -40,6 +41,10 @@ export function ManagedRelaySettings({
   const [peerId, setPeerId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const runAction = (action: () => Promise<void> | void) => {
+    setError(null);
+    void runManagedRelayAction(action, setError);
+  };
   const edit = (config?: RelayConfiguration) => {
     setEditing(config?.key ?? "new");
     setKind(config?.kind ?? "managed");
@@ -141,7 +146,7 @@ export function ManagedRelaySettings({
                 state?.status === "login_needed" && (
                   <button
                     type="button"
-                    onClick={() => void onLogin?.(config.key)}
+                    onClick={() => runAction(() => onLogin(config.key))}
                   >
                     Log in
                   </button>
@@ -149,7 +154,7 @@ export function ManagedRelaySettings({
               {config.kind === "managed" && onManageAccount && (
                 <button
                   type="button"
-                  onClick={() => void onManageAccount?.(config.key)}
+                  onClick={() => runAction(() => onManageAccount(config.key))}
                   title="Open the relay portal"
                 >
                   Manage account
@@ -161,7 +166,7 @@ export function ManagedRelaySettings({
                   state?.status === "refused") && (
                   <button
                     type="button"
-                    onClick={() => void onRetry?.(config.key)}
+                    onClick={() => runAction(() => onRetry(config.key))}
                   >
                     Retry
                   </button>

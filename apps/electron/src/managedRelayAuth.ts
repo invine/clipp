@@ -87,6 +87,8 @@ export function createElectronManagedRelayAuth(options: Options) {
   const now = options.now ?? Date.now;
   const credentials = new Map<string, Credential>();
   const loaded = new Set<string>();
+  const credentialGeneration = new Map<string, number>();
+  const writes = new Map<string, Set<Promise<void>>>();
   const warnings = new Map<string, string>();
   const refreshFlights = new Map<string, Promise<string | null>>();
   const logins = new Map<string, Promise<void>>();
@@ -94,6 +96,18 @@ export function createElectronManagedRelayAuth(options: Options) {
   const cancelPending = new Map<string, (error: Error) => void>();
   const loginGeneration = new Map<string, number>();
   const requestTokens = options.postToken ?? postToken;
+
+  async function trackWrite(url: string, write: Promise<void>): Promise<void> {
+    const pending = writes.get(url) ?? new Set<Promise<void>>();
+    pending.add(write);
+    writes.set(url, pending);
+    try {
+      await write;
+    } finally {
+      pending.delete(write);
+      if (pending.size === 0 && writes.get(url) === pending) writes.delete(url);
+    }
+  }
 
   function key(url: string): string {
     return `managedRelayRefresh:${encodeURIComponent(canonicalDiscoveryUrl(url))}`;
@@ -115,8 +129,10 @@ export function createElectronManagedRelayAuth(options: Options) {
   async function load(url: string): Promise<void> {
     url = canonicalDiscoveryUrl(url);
     if (loaded.has(url)) return;
-    loaded.add(url);
+    const generation = credentialGeneration.get(url) ?? 0;
     const stored = await options.storage.get(key(url));
+    if ((credentialGeneration.get(url) ?? 0) !== generation) return;
+    loaded.add(url);
     if (!stored) return;
     if (!canPersist()) {
       await options.storage.delete(key(url));
@@ -138,27 +154,36 @@ export function createElectronManagedRelayAuth(options: Options) {
   async function acceptTokens(url: string, raw: unknown): Promise<void> {
     url = canonicalDiscoveryUrl(url);
     const token = parseTokens(raw);
+    const generation = credentialGeneration.get(url) ?? 0;
     credentials.set(url, {
       refresh: token.refresh_token,
       access: token.access_token,
       accessExpiresAt: now() + token.expires_in * 1_000,
     });
     loaded.add(url);
-    if (!canPersist()) {
-      await options.storage.delete(key(url));
-      warnings.set(url, warning);
-      return;
-    }
-    try {
-      await options.storage.set(
-        key(url),
-        options.protection.encryptString(token.refresh_token).toString("base64")
-      );
-      warnings.delete(url);
-    } catch {
-      await options.storage.delete(key(url)).catch(() => undefined);
-      warnings.set(url, warning);
-    }
+    const write = (async () => {
+      if (!canPersist()) {
+        await options.storage.delete(key(url));
+        if ((credentialGeneration.get(url) ?? 0) === generation)
+          warnings.set(url, warning);
+        return;
+      }
+      try {
+        await options.storage.set(
+          key(url),
+          options.protection
+            .encryptString(token.refresh_token)
+            .toString("base64")
+        );
+        if ((credentialGeneration.get(url) ?? 0) === generation)
+          warnings.delete(url);
+      } catch {
+        await options.storage.delete(key(url)).catch(() => undefined);
+        if ((credentialGeneration.get(url) ?? 0) === generation)
+          warnings.set(url, warning);
+      }
+    })();
+    await trackWrite(url, write);
   }
 
   async function accessToken(url: string): Promise<string | null> {
@@ -166,6 +191,7 @@ export function createElectronManagedRelayAuth(options: Options) {
     await load(url);
     const credential = credentials.get(url);
     if (!credential) return null;
+    const generation = credentialGeneration.get(url) ?? 0;
     if (credential.access && credential.accessExpiresAt > now() + 30_000)
       return credential.access;
     const existing = refreshFlights.get(url);
@@ -174,7 +200,7 @@ export function createElectronManagedRelayAuth(options: Options) {
       // A refresh is single-use. Remove the old generation before any ambiguous network outcome.
       credentials.delete(url);
       try {
-        await options.storage.delete(key(url));
+        await trackWrite(url, options.storage.delete(key(url)));
       } catch {
         warnings.set(url, "Could not erase old credential; sign in again.");
         return null;
@@ -188,8 +214,11 @@ export function createElectronManagedRelayAuth(options: Options) {
             refresh_token: credential.refresh,
           })
         );
+        if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
         await acceptTokens(url, token);
-        return credentials.get(url)?.access ?? null;
+        return (credentialGeneration.get(url) ?? 0) === generation
+          ? (credentials.get(url)?.access ?? null)
+          : null;
       } catch {
         warnings.set(url, "Credential renewal failed; sign in again.");
         return null;
@@ -205,10 +234,12 @@ export function createElectronManagedRelayAuth(options: Options) {
 
   async function erase(url: string): Promise<void> {
     url = canonicalDiscoveryUrl(url);
+    credentialGeneration.set(url, (credentialGeneration.get(url) ?? 0) + 1);
     cancel(url);
     credentials.delete(url);
     warnings.delete(url);
     loaded.add(url);
+    await Promise.allSettled([...(writes.get(url) ?? [])]);
     await options.storage.delete(key(url));
   }
 
@@ -217,6 +248,8 @@ export function createElectronManagedRelayAuth(options: Options) {
     const existing = logins.get(url);
     if (existing) return existing;
     const generation = loginGeneration.get(url) ?? 0;
+    const credentialVersion = (credentialGeneration.get(url) ?? 0) + 1;
+    credentialGeneration.set(url, credentialVersion);
     const login = (async () => {
       const verifier = randomBytes(32).toString("base64url");
       const challenge = createHash("sha256")
@@ -259,12 +292,37 @@ export function createElectronManagedRelayAuth(options: Options) {
                 incoming.pathname !== "/oauth/callback" ||
                 incoming.hash ||
                 incoming.searchParams.getAll("state").length !== 1 ||
-                incoming.searchParams.get("state") !== state ||
+                incoming.searchParams.get("state") !== state
+              ) {
+                rejectCallback();
+                return;
+              }
+              if (
+                incoming.searchParams.getAll("error").length === 1 &&
+                incoming.searchParams.get("error") === "access_denied" &&
+                incoming.searchParams.size === 2
+              ) {
+                callbackUsed = true;
+                warnings.set(
+                  url,
+                  "Relay account access is pending or unavailable. Manage the account in the relay portal, then try again."
+                );
+                response
+                  .writeHead(200, {
+                    "Cache-Control": "no-store",
+                    "Content-Type": "text/plain",
+                  })
+                  .end(
+                    "Relay account access is pending or unavailable. Manage the account in the relay portal, then try again."
+                  );
+                server?.close();
+                reject(new Error("access_denied"));
+                return;
+              }
+              if (
                 incoming.searchParams.getAll("code").length !== 1 ||
                 !incoming.searchParams.get("code") ||
-                [...incoming.searchParams.keys()].some(
-                  (key) => key !== "state" && key !== "code"
-                )
+                incoming.searchParams.size !== 2
               ) {
                 rejectCallback();
                 return;
@@ -324,7 +382,11 @@ export function createElectronManagedRelayAuth(options: Options) {
             code_verifier: verifier,
           })
         );
-        if ((loginGeneration.get(url) ?? 0) !== generation)
+        await Promise.allSettled([...(writes.get(url) ?? [])]);
+        if (
+          (loginGeneration.get(url) ?? 0) !== generation ||
+          (credentialGeneration.get(url) ?? 0) !== credentialVersion
+        )
           throw new Error("authorization_cancelled");
         await acceptTokens(url, token);
       } finally {

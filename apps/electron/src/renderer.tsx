@@ -161,10 +161,6 @@ const App = () => {
         onSetAutoSync={(enabled) => window.clipp.setAutoSync(enabled)}
         onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
-        onSetRelayAddresses={async (addrs) => {
-          const res = await window.clipp.setRelayAddresses(addrs);
-          return res?.relayAddresses || addrs;
-        }}
         onSetManagedRelays={async (configurations) => {
           await window.clipp.setManagedRelays(configurations);
         }}

@@ -148,6 +148,19 @@ export function createManagedRelayHost(
 ) {
   const owned = new Set<Owned>();
   const listeners = new Map<Owned, any>();
+  // Stock listener.close() clears every reservation in the shared store.
+  // Keep released listeners idle for reuse; host shutdown closes them together.
+  const idleListeners: any[] = [];
+  const parkListener = (listener: any) => {
+    // The installed libp2p listener has no per-relay close API: close()
+    // cancels the entire shared reservation store. Clear only this listener's
+    // observed addresses before it can be reused for another relay.
+    for (const address of listener.getAddrs?.() ?? [])
+      listener.addressManager?.removeObservedAddr?.(address);
+    if (Array.isArray(listener.listeningAddrs)) listener.listeningAddrs = [];
+    listener.safeDispatchEvent?.("listening");
+    if (!idleListeners.includes(listener)) idleListeners.push(listener);
+  };
   const rendezvousVersions = new Map<Owned, 2 | 1>();
   node.addEventListener?.("connection:close", (event: any) => {
     const connection = [...owned].find(
@@ -166,7 +179,7 @@ export function createManagedRelayHost(
   return {
     supportsAddress(address: string): boolean {
       return (
-        /\/tcp\/\d+(?:\/ws|\/wss)?\/p2p\//.test(address) ||
+        /\/tcp\/\d+(?:\/ws|\/wss|\/tls\/ws)?\/p2p\//.test(address) ||
         /\/udp\/\d+\/webrtc-direct\/certhash\//.test(address)
       );
     },
@@ -181,15 +194,18 @@ export function createManagedRelayHost(
       );
       if (before.has(raw) || !raw?.remotePeer)
         throw new Error("relay_connection_not_new");
+      let closed = false;
       const connection: Owned = {
         raw,
         address,
         verifiedPeerId: raw.remotePeer.toString(),
         initialAuthDeadlineMs: Date.now() + 9_000,
         async close() {
+          if (closed) return;
+          await raw.close();
+          closed = true;
           owned.delete(connection);
           rendezvousVersions.delete(connection);
-          await raw.close();
         },
       };
       owned.add(connection);
@@ -226,6 +242,7 @@ export function createManagedRelayHost(
         throw new Error("relay_reservation_verification_unavailable");
       const before = new Set(node.getMultiaddrs?.().map(String) ?? []);
       const existing = new Set(manager.getListeners?.() ?? []);
+      const reused = idleListeners.pop();
       let matchedConnection = false;
       const onReservation = (event: any) => {
         const detail = event?.detail;
@@ -237,24 +254,27 @@ export function createManagedRelayHost(
           matchedConnection = true;
       };
       store.addEventListener("relay:created-reservation", onReservation);
+      let listenError: unknown;
       try {
-        await manager.listen(
-          [
-            ensureLegacyMultiaddrApi(
-              multiaddr(`${current.address}/p2p-circuit`)
-            ),
-          ],
-          { signal }
+        const listenAddress = ensureLegacyMultiaddrApi(
+          multiaddr(`${current.address}/p2p-circuit`)
         );
+        if (reused) await reused.listen(listenAddress);
+        else await manager.listen([listenAddress], { signal });
+      } catch (error) {
+        listenError = error;
       } finally {
         store.removeEventListener?.("relay:created-reservation", onReservation);
       }
-      const created = (manager.getListeners?.() ?? []).find(
-        (candidate: any) =>
-          !existing.has(candidate) &&
-          candidate.constructor?.name === "CircuitRelayTransportListener"
-      );
+      const created =
+        reused ??
+        (manager.getListeners?.() ?? []).find(
+          (candidate: any) =>
+            !existing.has(candidate) &&
+            candidate.constructor?.name === "CircuitRelayTransportListener"
+        );
       if (
+        listenError ||
         !matchedConnection ||
         !created ||
         !(node.getMultiaddrs?.() ?? [])
@@ -265,18 +285,25 @@ export function createManagedRelayHost(
               address.includes(`${current.verifiedPeerId}/p2p-circuit`)
           )
       ) {
-        await created?.close?.();
+        await current.close();
+        if (created) parkListener(created);
+        if (listenError) throw listenError;
         throw new Error("relay_reservation_failed");
       }
       listeners.set(current, created);
       return {
         release: async () => {
           if (listeners.get(current) !== created) return;
+          try {
+            await node.peerStore?.merge?.(current.raw.remotePeer, {
+              tags: { "keep-alive-circuit-relay": undefined },
+            });
+          } catch {
+            // Releasing this connection is more important than clearing its tag.
+          }
+          await current.close();
           listeners.delete(current);
-          await created.close();
-          await node.peerStore?.merge?.(current.raw.remotePeer, {
-            tags: { "keep-alive-circuit-relay": undefined },
-          });
+          parkListener(created);
         },
       };
     },

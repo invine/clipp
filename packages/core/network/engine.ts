@@ -132,6 +132,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
   >();
   private readonly relayDialPeerIds = new Set<string>();
   private readonly relayUpgradeLoggedPeerIds = new Set<string>();
+  private relayAddressEligibility: (addresses: string[]) => string[] = (
+    addresses
+  ) => addresses;
   private readonly relayLifecycle: RelayLifecycle;
   private readonly reportPairingRejection = createPairingRejectionReporter({
     emit: (diagnostic) => log.warn(diagnostic.event, diagnostic),
@@ -286,6 +289,16 @@ class Libp2pMessagingTransport implements MessagingTransport {
       () => this.getSignedPeerRecord(),
       onConnectionClosed
     );
+  }
+
+  /** Restricts circuit routes to relays currently owned by the runtime controller. */
+  setEligibleDialAddresses(filter: (addresses: string[]) => string[]): void {
+    this.relayAddressEligibility = filter;
+  }
+
+  private eligibleDialAddresses(addresses: string[]): string[] {
+    const allowed = new Set(this.relayAddressEligibility([...addresses]));
+    return addresses.filter((address) => allowed.has(address));
   }
 
   async send(
@@ -477,6 +490,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
     let dialedConnection: any;
     if (target.startsWith("/")) {
+      if (!this.eligibleDialAddresses([target]).includes(target))
+        throw new Error("no_eligible_address");
       dialedConnection = await this.node.dial(
         ensureLegacyMultiaddrApi(multiaddr(target)),
         this.dialOptions()
@@ -493,16 +508,18 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const storedPeer = await this.node.peerStore
       ?.get?.(peerIdObject)
       .catch(() => undefined);
-    const storedTargets = (storedPeer?.addresses ?? [])
+    const allStoredTargets = (storedPeer?.addresses ?? [])
       .map((address: any) => address?.multiaddr?.toString?.())
       .filter(
         (address: unknown): address is string => typeof address === "string"
-      )
-      .sort((left: string, right: string) => {
+      );
+    const storedTargets = this.eligibleDialAddresses(allStoredTargets).sort(
+      (left: string, right: string) => {
         const leftPriority = connectionPathForAddr(left) === "relay" ? 0 : 1;
         const rightPriority = connectionPathForAddr(right) === "relay" ? 0 : 1;
         return leftPriority - rightPriority;
-      });
+      }
+    );
     log.debug("Peer ID dial resolved stored targets", {
       peerId,
       storedTargets,
@@ -520,6 +537,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
       }
     }
     if (!dialedConnection) {
+      if (allStoredTargets.length > 0 && storedTargets.length === 0)
+        throw new Error("no_eligible_address");
       if (storedTargets.length > 0 && lastError) throw lastError;
       dialedConnection = await this.node.dial(peerIdObject, this.dialOptions());
     }
@@ -897,6 +916,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
     const options = this.openStreamOptions();
     if (target.startsWith("/")) {
+      if (!this.eligibleDialAddresses([target]).includes(target))
+        throw new Error("no_eligible_address");
       return await this.node.dialProtocol(
         ensureLegacyMultiaddrApi(multiaddr(target)),
         protocol,
@@ -924,7 +945,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const existing = this.peerConnectionSummary(peerId);
     if (existing?.hasDirect) return;
 
-    const allTargets = discoveredPeerTargets(peer, peerId);
+    const allTargets = this.eligibleDialAddresses(
+      discoveredPeerTargets(peer, peerId)
+    );
     const targets = existing?.hasRelay
       ? allTargets.filter(isDirectConnectionTarget)
       : allTargets;
@@ -999,7 +1022,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
     try {
       const conns = this.node?.getConnections?.() || [];
       return (
-        conns.find((c: any) => safePeerId(c?.remotePeer) === peerId) || null
+        conns.find(
+          (c: any) =>
+            safePeerId(c?.remotePeer) === peerId &&
+            this.eligibleDialAddresses([c?.remoteAddr?.toString?.() ?? ""])
+              .length > 0
+        ) || null
       );
     } catch {
       return null;
@@ -1485,7 +1513,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
 export function createLibp2pMessagingTransport(
   options?: Libp2pMessagingOptions
 ): StreamingMessagingTransport &
-  Pick<Libp2pMessagingTransport, "managedRelayHost"> {
+  Pick<
+    Libp2pMessagingTransport,
+    "managedRelayHost" | "setEligibleDialAddresses"
+  > {
   return new Libp2pMessagingTransport(options);
 }
 

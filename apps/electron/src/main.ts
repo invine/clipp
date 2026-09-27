@@ -64,7 +64,6 @@ import {
   type HistoryRetentionCleanup,
 } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
-import { DEFAULT_CIRCUIT_RELAY_ADDRESSES } from "../../../packages/core/network/constants.js";
 import {
   ManagedRelayController,
   loadManagedRelayConfigurations,
@@ -172,19 +171,9 @@ async function bootstrap() {
     repo: identityRepo,
     capabilities: RUNTIME_CAPABILITIES.electron,
   });
-  // TODO: remove relayAddrEnv
-  // const relayAddrEnv =
-  //   process.env.CLIPP_RELAY_ADDR ||
-  //   process.env.CLIPP_RELAY_MULTIADDR ||
-  //   "/ip4/127.0.0.1/tcp/47891/ws/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
-  // TODO: create Relay Service
-  let relayAddresses = normalizeRelayAddrs(
-    (
-      (await kvStore.get<string[]>("relayAddresses")) ??
-      DEFAULT_CIRCUIT_RELAY_ADDRESSES
-    ).filter(Boolean)
-    // (relayAddrEnv ? [relayAddrEnv] : [])
-  );
+  // Managed relay configuration starts empty on first adoption. The legacy
+  // address preference is deliberately not imported into the new model.
+  let relayAddresses: string[] = [];
   let localIdentity;
   try {
     localIdentity = await identitySvc.get();
@@ -279,6 +268,12 @@ async function bootstrap() {
       },
     })
   );
+  function installRelayRouteFilter() {
+    transport.setEligibleDialAddresses((addresses) =>
+      managedController.eligibleDialAddresses(addresses)
+    );
+  }
+  installRelayRouteFilter();
   let pairedConnections = createPairedPeerConnectionManager({
     transport,
     getPairedPeers: activeMemberReconnectPeers(identitySvc),
@@ -632,6 +627,7 @@ async function bootstrap() {
       isPeerRevoked: async (remotePeerId) =>
         (await identitySvc.membershipStatus(remotePeerId)) === "revoked",
     });
+    installRelayRouteFilter();
     pairedConnections = createPairedPeerConnectionManager({
       transport,
       getPairedPeers: activeMemberReconnectPeers(identitySvc),
@@ -870,7 +866,7 @@ async function bootstrap() {
     tray = new Tray(icon);
     const contextMenu = Menu.buildFromTemplate([
       { label: "Open Clipp", click: () => showWindow() },
-      { label: "Configure Relays", click: () => openRelayWindow() },
+      { label: "Configure Relays", click: () => showWindow() },
       {
         label: "Quit",
         click: () => {
@@ -938,7 +934,11 @@ async function bootstrap() {
   });
   stopIdentityBoundServicesForRotation = async () => {
     managedAuth.cancelAll();
-    await managedController.stop();
+    await managedController.stop().catch((error) => {
+      (log as any).warn("Managed relay stop failed during identity rotation", {
+        error: (error as Error).message,
+      });
+    });
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     membershipReconciler.stop();
@@ -1131,11 +1131,6 @@ async function bootstrap() {
     return toPublicDeviceIdentity(await identitySvc.get());
   });
 
-  ipcMain.handle("clipp:set-relay-addresses", async (_evt, addrs: string[]) => {
-    await updateRelayAddresses(Array.isArray(addrs) ? addrs : []);
-    return { ok: true, relayAddresses };
-  });
-
   ipcMain.handle("clipp:set-managed-relays", async (_evt, values: unknown) => {
     const normalized = normalizeRelayConfigurations(values);
     await kvStore.set("managedRelayConfigurations", normalized);
@@ -1145,8 +1140,11 @@ async function bootstrap() {
     return normalized;
   });
   ipcMain.handle("clipp:managed-relay-login", async (_evt, key: string) => {
-    await managedController.requestLogin(key);
-    await emitState();
+    try {
+      await managedController.requestLogin(key);
+    } finally {
+      await emitState();
+    }
   });
   ipcMain.handle("clipp:managed-relay-account", async (_evt, key: string) => {
     await managedController.manageAccount(key);
