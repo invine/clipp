@@ -119,7 +119,7 @@ export function ManagedRelaySettings({
       {configurations.map((config) => {
         const state = states.find((item) => item.key === config.key);
         return (
-          <div className="relay-card" key={config.key}>
+          <div className="relay-card managed-relay-card" key={config.key}>
             <div className="peer-meta">
               <div className="peer-name">
                 {config.name ||
@@ -145,6 +145,7 @@ export function ManagedRelaySettings({
                 onLogin &&
                 state?.status === "login_needed" && (
                   <button
+                    className="primary-button compact-button"
                     type="button"
                     onClick={() => runAction(() => onLogin(config.key))}
                   >
@@ -153,6 +154,7 @@ export function ManagedRelaySettings({
                 )}
               {config.kind === "managed" && onManageAccount && (
                 <button
+                  className="text-button"
                   type="button"
                   onClick={() => runAction(() => onManageAccount(config.key))}
                   title="Open the relay portal"
@@ -165,6 +167,7 @@ export function ManagedRelaySettings({
                   state?.status === "degraded" ||
                   state?.status === "refused") && (
                   <button
+                    className="text-button"
                     type="button"
                     onClick={() => runAction(() => onRetry(config.key))}
                   >
@@ -172,6 +175,7 @@ export function ManagedRelaySettings({
                   </button>
                 )}
               <button
+                className="text-button"
                 type="button"
                 onClick={() => edit(config)}
                 disabled={busy}
@@ -179,6 +183,7 @@ export function ManagedRelaySettings({
                 Edit
               </button>
               <button
+                className="text-button"
                 type="button"
                 onClick={() => void remove(config.key)}
                 disabled={busy}
