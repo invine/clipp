@@ -692,6 +692,35 @@ body {
   gap: 2px;
 }
 
+.managed-relay-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.managed-relay-card .peer-name,
+.managed-relay-card .relay-address,
+.managed-relay-card .relay-status,
+.managed-relay-card .relay-error {
+  overflow-wrap: anywhere;
+}
+
+.managed-relay-card .relay-address {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #9ca3af;
+}
+
+.managed-relay-card .relay-status {
+  max-width: 100%;
+  width: fit-content;
+}
+
+.managed-relay-card .peer-actions {
+  margin-left: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .relay-avatar .icon {
   color: #ffffff;
 }
