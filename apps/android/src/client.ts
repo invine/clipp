@@ -1,5 +1,5 @@
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import QRCode from "qrcode";
+import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import {
   createAndroidRuntimeAdapter,
   createAutoSyncPreference,
@@ -1187,14 +1187,7 @@ export class AndroidClient {
       signedPeerRecord,
       deviceNameHint: id.deviceName,
     });
-    return {
-      image: await QRCode.toDataURL(text, {
-        errorCorrectionLevel: "L",
-        margin: 0,
-        scale: 2,
-      }),
-      text,
-    };
+    return createPairingCode(text);
   }
 
   async pairFromText(txt: string): Promise<PairingResult> {

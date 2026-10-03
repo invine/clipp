@@ -13,7 +13,7 @@ import {
   Tray,
 } from "electron";
 import path from "node:path";
-import QRCode from "qrcode";
+import { createPairingCode } from "../../../packages/core/pairing/qrCode.js";
 import {
   encodePairingTarget,
   decodePairingTarget,
@@ -1283,15 +1283,7 @@ async function bootstrap() {
       signedPeerRecord,
       deviceNameHint: id.deviceName,
     });
-    const img = await QRCode.toDataURL(txt, {
-      errorCorrectionLevel: "L",
-      margin: 0,
-      scale: 2,
-    });
-    return {
-      image: img,
-      text: txt,
-    };
+    return createPairingCode(txt);
   });
 }
 

@@ -1,7 +1,7 @@
 /* global chrome */
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
-import QRCode from "qrcode";
+import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import "./styles/tailwind-built.css";
 import {
   ClipboardApp,
@@ -279,14 +279,7 @@ const Popup = () => {
       );
     });
     if (!target) return null;
-    return {
-      image: await QRCode.toDataURL(target, {
-        errorCorrectionLevel: "L",
-        margin: 0,
-        scale: 2,
-      }),
-      text: target,
-    };
+    return createPairingCode(target);
   }
 
   async function handleRenameIdentity(name: string): Promise<Identity | null> {

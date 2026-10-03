@@ -2011,12 +2011,18 @@ export function ClipboardApp({
                   />
                 </div>
               )}
+              {!qrLoading && !qrError && !qrImage && qrText && (
+                <div className="qr-modal-status">
+                  This pairing target is too large for a QR code. Copy the
+                  pairing text and paste it on your other device.
+                </div>
+              )}
               {!qrLoading && !qrError && qrText && (
                 <button
                   className="primary-button qr-modal-copy"
                   onClick={() => navigator.clipboard.writeText(qrText)}
                 >
-                  Copy QR text
+                  Copy pairing text
                 </button>
               )}
             </div>
