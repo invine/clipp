@@ -42,7 +42,13 @@ body,
 
 body {
   margin: 0;
-  font-family: "Roboto", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    "Roboto",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   background: radial-gradient(circle at top, #202333 0, #101114 60%);
   color: var(--md-sys-color-on-surface);
   min-height: 100vh;
@@ -109,7 +115,11 @@ body {
   width: 32px;
   height: 32px;
   border-radius: 10px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.02)
+  );
   border: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
@@ -210,7 +220,11 @@ body {
 .icon {
   font-family: "Material Symbols Rounded", system-ui;
   font-size: 18px;
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 20;
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 20;
 }
 
 .icon-button {
@@ -242,11 +256,19 @@ body {
 }
 
 .pin-icon.filled {
-  font-variation-settings: "FILL" 1, "wght" 700, "GRAD" 0, "opsz" 20 !important;
+  font-variation-settings:
+    "FILL" 1,
+    "wght" 700,
+    "GRAD" 0,
+    "opsz" 20 !important;
   color: #e5e7eb;
 }
 .pin-icon.outlined {
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 20 !important;
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 20 !important;
   color: #e5e7eb;
 }
 
@@ -354,7 +376,9 @@ body {
   cursor: pointer;
   max-width: 100%;
   min-width: 0;
-  transition: background 120ms ease-out, transform 120ms ease-out;
+  transition:
+    background 120ms ease-out,
+    transform 120ms ease-out;
 }
 
 .peer-item:hover {
@@ -613,7 +637,9 @@ body {
   border-radius: var(--md-radius-md);
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.02);
-  transition: background 120ms ease-out, transform 120ms ease-out;
+  transition:
+    background 120ms ease-out,
+    transform 120ms ease-out;
 }
 
 .relay-card:hover {
@@ -623,6 +649,43 @@ body {
 
 .relay-card-editing {
   align-items: flex-start;
+}
+
+.managed-relay-editor {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.managed-relay-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.managed-relay-editor input,
+.managed-relay-editor select,
+.managed-relay-editor textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-radius-sm);
+  background: var(--md-sys-color-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.managed-relay-editor textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.managed-relay-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .relay-card .peer-actions {
@@ -996,7 +1059,9 @@ body {
   min-height: 0;
   height: 100%;
   align-self: stretch;
-  transition: grid-template-columns 160ms ease, gap 160ms ease;
+  transition:
+    grid-template-columns 160ms ease,
+    gap 160ms ease;
 }
 
 .history-grid::-webkit-scrollbar,
@@ -1036,7 +1101,11 @@ body {
   justify-content: space-between;
   padding: var(--md-spacing-md);
   border-radius: var(--md-radius-lg);
-  background: linear-gradient(145deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.9));
+  background: linear-gradient(
+    145deg,
+    rgba(17, 24, 39, 0.96),
+    rgba(15, 23, 42, 0.9)
+  );
   border: 1px solid rgba(148, 163, 184, 0.18);
   box-shadow:
     0 0 0 1px rgba(15, 23, 42, 0.6),
@@ -1045,7 +1114,9 @@ body {
   min-height: var(--history-card-height);
   max-height: var(--history-card-height);
   overflow: visible;
-  transition: transform 160ms ease, opacity 160ms ease;
+  transition:
+    transform 160ms ease,
+    opacity 160ms ease;
   animation: card-enter 180ms ease;
 }
 
@@ -1055,7 +1126,11 @@ body {
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  background: radial-gradient(circle at top right, rgba(168, 85, 247, 0.24), transparent 55%);
+  background: radial-gradient(
+    circle at top right,
+    rgba(168, 85, 247, 0.24),
+    transparent 55%
+  );
   opacity: 0.7;
   mix-blend-mode: screen;
   z-index: 0;
@@ -1374,13 +1449,13 @@ body {
   .nav-pane {
     display: none;
   }
-.nav-pane.drawer-pane {
-  display: flex !important;
-  height: 100%;
-  overflow-y: auto;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-  scrollbar-width: thin;
-}
+  .nav-pane.drawer-pane {
+    display: flex !important;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+  }
 }
 
 .nav-overlay {
@@ -1405,7 +1480,9 @@ body {
   box-shadow: var(--md-elevation-2);
   transform: translateX(-100%);
   opacity: 1;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
   overflow: hidden;
 }
 

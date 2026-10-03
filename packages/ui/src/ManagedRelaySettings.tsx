@@ -190,7 +190,7 @@ export function ManagedRelaySettings({
         );
       })}
       {editing && (
-        <div className="relay-card relay-card-editing">
+        <div className="relay-card relay-card-editing managed-relay-editor">
           <label>
             Name{" "}
             <input
@@ -229,16 +229,24 @@ export function ManagedRelaySettings({
               onChange={(event) => setEndpoint(event.target.value)}
             />
           </label>
-          <button type="button" onClick={() => void save()} disabled={busy}>
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(null)}
-            disabled={busy}
-          >
-            Cancel
-          </button>
+          <div className="managed-relay-editor-actions">
+            <button
+              className="primary-button compact-button"
+              type="button"
+              onClick={() => void save()}
+              disabled={busy}
+            >
+              Save
+            </button>
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => setEditing(null)}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       {error && (
