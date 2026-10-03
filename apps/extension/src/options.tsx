@@ -4,7 +4,7 @@ import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
 import "./styles/tailwind-built.css";
-import QRCode from "qrcode";
+import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { ManagedRelaySettings } from "../../../packages/ui/src/ManagedRelaySettings";
 import type {
@@ -106,12 +106,8 @@ const Options = () => {
     chrome.runtime.sendMessage({ type: "getPairingTarget" }, async (res) => {
       if (!res?.text) return;
       const txt = res.text as string;
-      const img = await QRCode.toDataURL(txt, {
-        errorCorrectionLevel: "L",
-        margin: 0,
-        scale: 2,
-      });
-      setMyQRImage(img);
+      const code = await createPairingCode(txt);
+      setMyQRImage(code.image);
       setMyQRText(txt);
     });
   }
@@ -166,9 +162,16 @@ const Options = () => {
             {showMyQR ? "Hide My QR" : "Generate My QR"}
           </button>
         </div>
-        {showMyQR && myQRImage && (
+        {showMyQR && myQRText && (
           <div className="mt-2 flex flex-col items-center">
-            <img src={myQRImage} alt="My QR" className="w-32 h-32" />
+            {myQRImage ? (
+              <img src={myQRImage} alt="My QR" className="w-32 h-32" />
+            ) : (
+              <p>
+                This pairing target is too large for a QR code. Copy the pairing
+                text and paste it on your other device.
+              </p>
+            )}
             <button
               className="mt-2 px-2 py-1 bg-gray-700 text-white rounded"
               onClick={copyMyQR}
