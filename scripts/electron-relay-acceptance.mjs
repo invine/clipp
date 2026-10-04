@@ -262,10 +262,19 @@ try {
 } finally {
   if (electron) {
     const child = electron.process();
+    const exited = new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        resolve(child.exitCode === 0 && child.signalCode === null);
+      } else {
+        child.once("exit", (code, signal) =>
+          resolve(code === 0 && signal === null)
+        );
+      }
+    });
     let timer;
     const close = electron.close().then(
-      () => true,
-      () => child.exitCode !== null || child.signalCode !== null
+      () => exited,
+      () => exited
     );
     const closed = await Promise.race([
       close,
@@ -274,17 +283,24 @@ try {
       }),
     ]);
     clearTimeout(timer);
-    receipt.shutdown = closed ? "graceful" : "forced-owned-process";
+    const running = child.exitCode === null && child.signalCode === null;
+    receipt.shutdown = closed
+      ? "graceful"
+      : running
+        ? "forced-owned-process"
+        : "failed-owned-process";
     if (!closed) {
       if (receipt.result === "passed") {
-        receipt.reason = "owned_test_shutdown_timeout";
+        receipt.reason = running
+          ? "owned_test_shutdown_timeout"
+          : "owned_test_shutdown_failed";
       }
       receipt.result = "failed";
       // Kill only the ChildProcess returned by this launch; never target a name,
       // process group or another app that happens to share the profile label.
-      child.kill("SIGKILL");
+      if (running) child.kill("SIGKILL");
       await Promise.race([
-        close,
+        exited,
         new Promise((resolve) => {
           timer = setTimeout(resolve, 2_000);
         }),

@@ -117,5 +117,7 @@ TCP, WebRTC Direct and bounded mixed-address fallback remain unverified.
 The runner gives its owned Electron process ten seconds to close. If runtime
 shutdown hangs, it terminates only that launched process, records
 `owned_test_shutdown_timeout`, and exits unsuccessfully. A received clip cannot
-turn this shutdown failure into a passed receipt. The private profile remains
+turn this shutdown failure into a passed receipt. A nonzero or signaled process
+exit also fails acceptance; graceful shutdown requires exit code zero and no
+signal. The private profile remains
 available for inspection; other Electron processes are unaffected.
