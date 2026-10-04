@@ -7,6 +7,7 @@ export default {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
   testPathIgnorePatterns: ["/node_modules/", "<rootDir>/.local/"],
+  modulePathIgnorePatterns: ["<rootDir>/.local/"],
   testMatch: [
     "**/tests/**/*.test.ts",
     "**/packages/core/models/__tests__/*.test.ts",

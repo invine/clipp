@@ -91,3 +91,25 @@ Real Google login/callback, authenticated reservation/Rendezvous and forced
 TCP/WSS/WebRTC Direct receipts, native restart/rotation/save-failure behavior,
 and discovery/blocked/quota/reconnect lifecycle remain acceptance gates. Existing
 deterministic credential/controller tests cover their agreed seams only.
+
+## Post-crash WSS qualification
+
+On 2026-10-05, the preserved test profile restarted and reached `ready` without
+another interactive login. A fresh marker from the paired peer passed the
+actual Electron runner: a new Remote Clip was received and applied to the
+isolated memory clipboard, its source used the expected managed circuit, the
+relay-server connection used WSS, and no direct device connection was present.
+The private receipt is under
+`.local/managed-relay/artifacts/frontier-20261004/electron/live-wss-after-crash`.
+This establishes WSS transfer and authenticated reservation/Rendezvous for this
+run; the runner did not observe the original Google browser flow.
+
+A read-only comparison with the pre-test recovery snapshot confirmed unchanged
+Device Identity, key material, creation time and Membership View. Only advertised
+multiaddrs changed. The same actual macOS/Electron versions above were used;
+OS encryption remained available. Full rotation, save-failure and provider
+invalidation behavior still require their own native evidence.
+
+On integrated local `main`, Node 24.16.0/npm 11.13.0 passed `npm run check`
+(73 suites, 600 tests and all runtime typechecks) and the Electron build.
+TCP, WebRTC Direct and bounded mixed-address fallback remain unverified.
