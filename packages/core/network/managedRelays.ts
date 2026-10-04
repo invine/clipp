@@ -315,9 +315,11 @@ export type ManagedRelayAdapter = {
 type Entry = {
   parent?: Entry;
   family?: RelayTransportFamily;
+  available?: boolean;
   lanes?: Map<RelayTransportFamily, Entry>;
   owner?: Entry;
   provisioning?: Promise<void>;
+  cleanupFlight?: Promise<void>;
   dials?: { active: number; queue: Array<() => void> };
   config: RelayConfiguration;
   state: RelayState;
@@ -379,13 +381,15 @@ export class ManagedRelayController {
         status: healthy ? owner.state.status : entry.state.status,
         reason: healthy ? owner.state.reason : entry.state.reason,
         retryAt: healthy ? owner.state.retryAt : entry.state.retryAt,
-        transports: lanes.map((lane) => ({
-          family: lane.family!,
-          status: lane.state.status,
-          reason: lane.state.reason,
-          retryAt: lane.state.retryAt,
-          reservationOwner: lane === owner,
-        })),
+        transports: lanes
+          .filter((lane) => lane.available !== false)
+          .map((lane) => ({
+            family: lane.family!,
+            status: lane.state.status,
+            reason: lane.state.reason,
+            retryAt: lane.state.retryAt,
+            reservationOwner: lane === owner,
+          })),
       };
     });
   }
@@ -424,12 +428,34 @@ export class ManagedRelayController {
     const setups: Promise<void>[] = [];
     for (const address of addresses) {
       const family = transportFamily(address);
-      if (
-        !family ||
-        !this.adapter.supportsAddress(address) ||
-        root.lanes.has(family)
-      )
+      if (!family || !this.adapter.supportsAddress(address)) continue;
+      const existing = root.lanes.get(family);
+      if (existing) {
+        if (existing.available === false) {
+          existing.available = true;
+          existing.retryAt = 0;
+          existing.attempt = 0;
+          const priorSetup = existing.setupFlight;
+          this.emit(existing, {
+            status: "connecting",
+            reason: undefined,
+            retryAt: undefined,
+          });
+          setups.push(
+            (async () => {
+              await existing.cleanupFlight;
+              await priorSetup;
+              if (
+                existing.available !== false &&
+                !existing.connection &&
+                this.entries.get(root.config.key) === root
+              )
+                await this.setup(existing);
+            })()
+          );
+        }
         continue;
+      }
       const lane: Entry = {
         config: root.config,
         parent: root,
@@ -444,6 +470,66 @@ export class ManagedRelayController {
       setups.push(this.setup(lane));
     }
     return setups;
+  }
+  private async reconcileExplicitFamilies(
+    root: Entry,
+    addresses: string[]
+  ): Promise<void> {
+    const available = new Set(
+      addresses
+        .filter((address) => this.adapter.supportsAddress(address))
+        .map(transportFamily)
+    );
+    const withdrawn = this.lanes(root).filter(
+      (lane) =>
+        lane.family && lane.available !== false && !available.has(lane.family)
+    );
+    const cleanups = withdrawn.map((lane) => {
+      const flight = (async () => {
+        lane.available = false;
+        lane.generation++;
+        lane.controller.abort();
+        this.clearTimers(lane, lane === root);
+        const connection = lane.connection;
+        const reservation = lane.reservation;
+        lane.connection = undefined;
+        lane.reservation = undefined;
+        if (root.owner === lane) {
+          root.owner = undefined;
+          this.emit(root, { status: "connecting", reason: undefined });
+          if (connection) {
+            try {
+              await this.deadline(
+                DEADLINES.rendezvous,
+                new AbortController().signal,
+                (signal) => this.adapter.unregister(connection, signal)
+              );
+            } catch {
+              /* local ownership cleanup continues when the lease is unavailable */
+            }
+          }
+        }
+        await reservation?.release().catch(() => undefined);
+        await connection?.close().catch(() => undefined);
+      })();
+      lane.cleanupFlight = flight;
+      void flight
+        .finally(() => {
+          if (lane.cleanupFlight === flight) lane.cleanupFlight = undefined;
+        })
+        .catch(() => undefined);
+      return flight;
+    });
+    this.notify();
+    await Promise.all(cleanups);
+    if (this.entries.get(root.config.key) !== root || this.stopped) return;
+    await this.promote(root);
+    await Promise.all(this.addFamilies(root, addresses));
+    if (!available.size) {
+      if (!this.lanes(root).some((lane) => lane.connection))
+        this.releaseClaims(root);
+      this.emit(root, { status: "retrying", reason: "no_supported_addresses" });
+    }
   }
   private async provision(entry: Entry): Promise<void> {
     const root = this.root(entry);
@@ -496,6 +582,7 @@ export class ManagedRelayController {
   private async promote(root: Entry): Promise<void> {
     for (const lane of this.lanes(root)) {
       if (
+        lane.available === false ||
         !lane.connection ||
         (lane.authExpiresAt && lane.authExpiresAt <= this.now())
       )
@@ -509,6 +596,11 @@ export class ManagedRelayController {
         this.failure(lane, error, Boolean(lane.reservation));
       }
     }
+  }
+  private releaseClaims(root: Entry): void {
+    for (const [peerId, owner] of this.peerClaims)
+      if (owner === root) this.peerClaims.delete(peerId);
+    this.retryConflicts();
   }
   private retryConflicts(): void {
     for (const entry of this.entries.values())
@@ -642,7 +734,6 @@ export class ManagedRelayController {
       lane.controller.abort();
       this.clearTimers(lane);
     }
-    const peerId = entry.state.peerId;
     const owner = entry.owner ?? entry;
     const connections = this.lanes(entry).map((lane) => ({
       lane,
@@ -672,15 +763,13 @@ export class ManagedRelayController {
         }
         await Promise.all(
           connections.map(async ({ lane, connection }) => {
+            await lane.cleanupFlight;
             await lane.reservation?.release().catch(() => undefined);
             await connection?.close().catch(() => undefined);
           })
         );
       } finally {
-        if (peerId && this.peerClaims.get(peerId) === entry) {
-          this.peerClaims.delete(peerId);
-          this.retryConflicts();
-        }
+        this.releaseClaims(entry);
       }
       if (eraseCredentials && entry.config.kind === "managed")
         await this.adapter.eraseCredentials(entry.config.discoveryUrl);
@@ -741,6 +830,7 @@ export class ManagedRelayController {
     this.desired.clear();
     for (const config of configs) this.desired.set(config.key, config);
     const cleanups: Promise<void>[] = [];
+    const transportSetups: Promise<void>[] = [];
     for (const entry of [...this.entries.values()]) {
       const next = this.desired.get(entry.config.key);
       if (!next || !this.sameEndpoint(entry.config, next)) {
@@ -751,12 +841,16 @@ export class ManagedRelayController {
           lane.state.name = next.name;
         }
         this.emit(entry, { name: next.name });
+        if (next.kind === "explicit")
+          transportSetups.push(
+            this.reconcileExplicitFamilies(entry, next.addresses)
+          );
       }
     }
     const additions = configs
       .filter((config) => !this.entries.has(config.key))
       .map((config) => this.addAfterCleanup(config));
-    await Promise.all([...cleanups, ...additions]);
+    await Promise.all([...cleanups, ...transportSetups, ...additions]);
   }
   async remove(key: string): Promise<void> {
     this.desired.delete(key);
@@ -805,8 +899,7 @@ export class ManagedRelayController {
       root.state.peerId &&
       this.peerClaims.get(root.state.peerId) === root
     ) {
-      this.peerClaims.delete(root.state.peerId);
-      this.retryConflicts();
+      this.releaseClaims(root);
     }
     if (entry.state.status === "login_needed") {
       this.emit(entry, { status: "login_needed" });
@@ -846,7 +939,12 @@ export class ManagedRelayController {
       await Promise.all(this.lanes(entry).map((lane) => this.retryLane(lane)));
   }
   private async retryLane(entry: Entry): Promise<void> {
-    if (entry.state.status === "ready" || this.now() < entry.retryAt) return;
+    if (
+      entry.available === false ||
+      entry.state.status === "ready" ||
+      this.now() < entry.retryAt
+    )
+      return;
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = undefined;
     if (
@@ -931,6 +1029,7 @@ export class ManagedRelayController {
         return;
       }
       this.peerClaims.set(peerId, root);
+      if (entry !== root) root.state = { ...root.state, peerId };
       this.emit(entry, { peerId });
       addresses = addresses
         .filter(
@@ -1023,8 +1122,7 @@ export class ManagedRelayController {
         root.state.peerId &&
         this.peerClaims.get(root.state.peerId) === root
       ) {
-        this.peerClaims.delete(root.state.peerId);
-        this.retryConflicts();
+        this.releaseClaims(root);
       }
     }
   }

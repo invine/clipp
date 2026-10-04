@@ -1752,3 +1752,221 @@ describe("configuration discovery ownership", () => {
     }
   });
 });
+
+describe("relay identity replacement across transports", () => {
+  it("publishes and releases the new peer claim when a secondary reconnects before a refused primary", async () => {
+    jest.useFakeTimers();
+    const { adapter } = adapterHarness();
+    const newPeer = "12D3KooWNewRelayGeneration";
+    let publishedPeer = peer;
+    const connections = new Map<
+      string,
+      { verifiedPeerId: string; close(): Promise<void> }
+    >();
+    adapter.discover = jest.fn(async () => ({
+      version: 1 as const,
+      relay: {
+        peerId: publishedPeer,
+        addresses: [
+          `/dns4/relay.example/tcp/443/wss/p2p/${publishedPeer}`,
+          `/ip4/127.0.0.1/tcp/4001/p2p/${publishedPeer}`,
+        ],
+      },
+      validUntil: Date.now() + 1_000,
+    }));
+    adapter.dial = async (value) => {
+      const connection = {
+        verifiedPeerId: value.split("/p2p/")[1],
+        close: async () => {},
+      };
+      connections.set(value, connection);
+      return connection;
+    };
+    adapter.authenticate = async (connection) => {
+      if (
+        connections.get(`/dns4/relay.example/tcp/443/wss/p2p/${peer}`) ===
+        connection
+      )
+        throw new RelayOperationError("quota_exhausted");
+      return {
+        sessionExpiresAt: Date.now() + 60_000,
+        renewAfterMillis: 40_000,
+      };
+    };
+    const controller = new ManagedRelayController(adapter, () => 0);
+    const config = {
+      key: "identity",
+      name: "Identity",
+      kind: "managed" as const,
+      discoveryUrl: "https://relay.example/v1/relay",
+    };
+    try {
+      await controller.setConfigurations([config]);
+      expect(controller.states()[0].status).toBe("ready");
+      publishedPeer = newPeer;
+      await jest.advanceTimersByTimeAsync(1_000);
+      await controller.connectionLost(
+        config.key,
+        connections.get(`/ip4/127.0.0.1/tcp/4001/p2p/${peer}`)
+      );
+      await jest.advanceTimersByTimeAsync(500);
+      expect(controller.states()[0]).toMatchObject({
+        status: "ready",
+        peerId: newPeer,
+      });
+      await controller.remove(config.key);
+      await controller.setConfigurations([{ ...config, key: "replacement" }]);
+      expect(controller.states()[0]).toMatchObject({
+        key: "replacement",
+        peerId: newPeer,
+        status: "ready",
+      });
+    } finally {
+      await controller.stop();
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe("explicit relay transport edits", () => {
+  it("connects newly configured families while retaining the existing connection", async () => {
+    const { adapter, connection } = adapterHarness();
+    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
+    const rtc = `/ip4/127.0.0.1/udp/4002/webrtc-direct/certhash/uEiAB/p2p/${peer}`;
+    const active = new Set<string>();
+    adapter.dial = async (value) => {
+      active.add(value);
+      if (value === address) return connection;
+      return {
+        verifiedPeerId: peer,
+        close: async () => {
+          active.delete(value);
+        },
+      };
+    };
+    const controller = new ManagedRelayController(adapter);
+    const config = {
+      key: "explicit-edit",
+      name: "Explicit",
+      kind: "explicit" as const,
+      peerId: peer,
+      addresses: [address],
+    };
+    try {
+      await controller.setConfigurations([config]);
+      await controller.setConfigurations([
+        { ...config, addresses: [address, tcp, rtc] },
+      ]);
+      expect([...active].sort()).toEqual([address, tcp, rtc].sort());
+      expect(connection.close).not.toHaveBeenCalled();
+      expect(adapter.authenticate).not.toHaveBeenCalled();
+      expect(controller.states()[0].status).toBe("ready");
+    } finally {
+      await controller.stop();
+    }
+  });
+});
+
+describe("explicit relay family withdrawal", () => {
+  it("releases only the withdrawn owner family, updates settings and reconnects it when re-added", async () => {
+    const { adapter } = adapterHarness();
+    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
+    const connections = new Map<
+      string,
+      { verifiedPeerId: string; close: jest.Mock }
+    >();
+    adapter.dial = async (value) => {
+      const connection = {
+        verifiedPeerId: peer,
+        close: jest.fn(async () => {}),
+      };
+      connections.set(value, connection);
+      return connection;
+    };
+    const controller = new ManagedRelayController(adapter);
+    const config = {
+      key: "withdraw",
+      name: "Original",
+      kind: "explicit" as const,
+      peerId: peer,
+      addresses: [address, tcp],
+    };
+    try {
+      await controller.setConfigurations([config]);
+      const wss = connections.get(address)!;
+      const tcpConnection = connections.get(tcp)!;
+      await controller.setConfigurations([
+        { ...config, name: "Updated", addresses: [tcp] },
+      ]);
+      expect(wss.close).toHaveBeenCalledTimes(1);
+      expect(tcpConnection.close).not.toHaveBeenCalled();
+      expect(controller.configurations()).toEqual([
+        { ...config, name: "Updated", addresses: [tcp] },
+      ]);
+      expect(controller.states()[0].transports).toEqual([
+        expect.objectContaining({
+          family: "tcp",
+          status: "ready",
+          reservationOwner: true,
+        }),
+      ]);
+      await controller.setConfigurations([{ ...config, name: "Updated" }]);
+      expect(connections.get(address)).not.toBe(wss);
+      expect(connections.get(tcp)).toBe(tcpConnection);
+      expect(controller.configurations()).toEqual([
+        { ...config, name: "Updated" },
+      ]);
+      expect(controller.states()[0].transports).toContainEqual(
+        expect.objectContaining({ family: "wss", status: "ready" })
+      );
+    } finally {
+      await controller.stop();
+    }
+  });
+});
+
+describe("explicit relay unsupported transport edits", () => {
+  it("releases the peer claim when an edit withdraws every runtime-supported family", async () => {
+    const { adapter } = adapterHarness();
+    adapter.supportsAddress = (value) => value.includes("/wss/");
+    adapter.dial = async () => ({
+      verifiedPeerId: peer,
+      close: jest.fn(async () => {}),
+    });
+    const controller = new ManagedRelayController(adapter);
+    const explicit = {
+      key: "unsupported-edit",
+      name: "Explicit",
+      kind: "explicit" as const,
+      peerId: peer,
+      addresses: [address],
+    };
+    const unsupported = {
+      ...explicit,
+      addresses: [`/ip4/127.0.0.1/tcp/4001/p2p/${peer}`],
+    };
+    try {
+      await controller.setConfigurations([explicit]);
+      await controller.setConfigurations([unsupported]);
+      expect(controller.states()[0]).toMatchObject({
+        status: "retrying",
+        reason: "no_supported_addresses",
+        transports: [],
+      });
+      await controller.setConfigurations([
+        unsupported,
+        {
+          key: "eligible",
+          name: "Eligible",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      expect(
+        controller.states().find((state) => state.key === "eligible")
+      ).toMatchObject({ status: "ready", peerId: peer });
+    } finally {
+      await controller.stop();
+    }
+  });
+});
