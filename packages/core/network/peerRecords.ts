@@ -8,7 +8,9 @@ export type SignedPeerRecordPersistence = {
   remove(peerId: string): Promise<void>;
 };
 
-export function decodeSignedPeerRecordBytes(value: unknown): Uint8Array | undefined {
+export function decodeSignedPeerRecordBytes(
+  value: unknown
+): Uint8Array | undefined {
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
@@ -20,7 +22,10 @@ export function decodeSignedPeerRecordBytes(value: unknown): Uint8Array | undefi
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((byte, index) => byte === right[index])
+  );
 }
 
 /**
@@ -29,10 +34,14 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
  * records to the peer store for signature, subject, and sequence validation.
  */
 export async function consumeOrMatchSignedPeerRecord(
-  peerStore: {
-    get?(peerId: any): Promise<{ peerRecordEnvelope?: Uint8Array } | undefined>;
-    consumePeerRecord?(record: Uint8Array, peerId: any): Promise<boolean>;
-  } | undefined,
+  peerStore:
+    | {
+        get?(
+          peerId: any
+        ): Promise<{ peerRecordEnvelope?: Uint8Array } | undefined>;
+        consumePeerRecord?(record: Uint8Array, peerId: any): Promise<boolean>;
+      }
+    | undefined,
   expectedPeerId: any,
   record: Uint8Array
 ): Promise<boolean> {
@@ -52,12 +61,27 @@ export async function verifiedSignedPeerRecordMultiaddrs(
   expectedPeerId: string
 ): Promise<string[]> {
   const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
-  const envelope = await RecordEnvelope.openAndCertify(record, PeerRecord.DOMAIN);
+  const envelope = await RecordEnvelope.openAndCertify(
+    record,
+    PeerRecord.DOMAIN
+  );
   const peerRecord = PeerRecord.createFromProtobuf(envelope.payload);
   if (peerRecord.peerId.toString() !== expectedPeerId) {
     throw new Error("signed_peer_record_subject_mismatch");
   }
-  return peerRecord.multiaddrs.map(String);
+  return peerDialTargets(expectedPeerId, peerRecord.multiaddrs.map(String));
+}
+
+/** Bind derived dial addresses to their owner without changing the signed record. */
+export function peerDialTargets(peerId: string, addresses: string[]): string[] {
+  const suffix = `/p2p/${peerId}`;
+  return addresses.flatMap((address) => {
+    const trimmed = address.trim();
+    if (!trimmed.startsWith("/")) return [];
+    const destination = trimmed.match(/\/p2p\/([^/]+)$/)?.[1];
+    if (destination && destination !== peerId) return [];
+    return [destination ? trimmed : `${trimmed}${suffix}`];
+  });
 }
 
 export function createKVSignedPeerRecordPersistence(options: {
@@ -69,7 +93,8 @@ export function createKVSignedPeerRecordPersistence(options: {
   return {
     async load() {
       const stored = await options.storage.get<Record<string, unknown>>(key);
-      if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+      if (!stored || typeof stored !== "object" || Array.isArray(stored))
+        return {};
 
       const records: Record<string, Uint8Array> = {};
       for (const [peerId, value] of Object.entries(stored)) {
@@ -81,13 +106,25 @@ export function createKVSignedPeerRecordPersistence(options: {
 
     async save(peerId, record) {
       const stored = await options.storage.get<Record<string, unknown>>(key);
-      const records = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
-      await options.storage.set(key, { ...records, [peerId]: Array.from(record) });
+      const records =
+        stored && typeof stored === "object" && !Array.isArray(stored)
+          ? stored
+          : {};
+      await options.storage.set(key, {
+        ...records,
+        [peerId]: Array.from(record),
+      });
     },
 
     async remove(peerId) {
       const stored = await options.storage.get<Record<string, unknown>>(key);
-      if (!stored || typeof stored !== "object" || Array.isArray(stored) || !(peerId in stored)) return;
+      if (
+        !stored ||
+        typeof stored !== "object" ||
+        Array.isArray(stored) ||
+        !(peerId in stored)
+      )
+        return;
       const remaining = { ...stored };
       delete remaining[peerId];
       await options.storage.set(key, remaining);

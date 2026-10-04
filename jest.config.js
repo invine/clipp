@@ -6,6 +6,7 @@ const tsJestTransformCfg = createDefaultPreset().transform;
 export default {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
+  testPathIgnorePatterns: ["/node_modules/", "<rootDir>/.local/"],
   testMatch: [
     "**/tests/**/*.test.ts",
     "**/packages/core/models/__tests__/*.test.ts",
@@ -23,7 +24,7 @@ export default {
     "^\.\.\/\.\.\/models/Clip$": "<rootDir>/packages/core/models/Clip.ts",
     "^\.\/enums$": "<rootDir>/packages/core/models/enums.ts",
     "^\.\/enums\\.js$": "<rootDir>/packages/core/models/enums.ts",
-    "^(\\.{1,2}/.*)\\.js$": "$1"
+    "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   extensionsToTreatAsEsm: [".ts"],
 };

@@ -1,6 +1,9 @@
 import * as log from "../logger.js";
 import type { MessagingTransport } from "../messaging/transport.js";
-import { verifiedSignedPeerRecordMultiaddrs } from "./peerRecords.js";
+import {
+  peerDialTargets,
+  verifiedSignedPeerRecordMultiaddrs,
+} from "./peerRecords.js";
 
 export const DEFAULT_PAIRED_PEER_RECONNECT_INTERVAL_MS = 30_000;
 
@@ -24,10 +27,16 @@ export type PairedPeerConnectionManagerOptions = {
 
 /** Adapts the membership-owned Active Member set to reconnect targets. */
 export function activeMemberReconnectPeers(
-  membership: Pick<import("../trust/identity.js").IdentityManager, "activePeerIds" | "get">
+  membership: Pick<
+    import("../trust/identity.js").IdentityManager,
+    "activePeerIds" | "get"
+  >
 ): () => Promise<PairedPeer[]> {
   return async () => {
-    const [self, activePeerIds] = await Promise.all([membership.get(), membership.activePeerIds()]);
+    const [self, activePeerIds] = await Promise.all([
+      membership.get(),
+      membership.activePeerIds(),
+    ]);
     return activePeerIds
       .filter((peerId) => peerId !== self.deviceId)
       .map((deviceId) => ({ deviceId }));
@@ -37,7 +46,8 @@ export function activeMemberReconnectPeers(
 export function createPairedPeerConnectionManager(
   options: PairedPeerConnectionManagerOptions
 ): PairedPeerConnectionManager {
-  const intervalMs = options.intervalMs ?? DEFAULT_PAIRED_PEER_RECONNECT_INTERVAL_MS;
+  const intervalMs =
+    options.intervalMs ?? DEFAULT_PAIRED_PEER_RECONNECT_INTERVAL_MS;
   let timer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
   let reconnectOperation: Promise<void> | undefined;
@@ -50,18 +60,26 @@ export function createPairedPeerConnectionManager(
       if (stopped) return;
       const connected = new Set(options.transport.getConnectedPeers());
       await Promise.all(peers.map((peer) => connectPeer(peer, connected)));
-    })().catch((err) => {
-      log.debug("Paired peer reconnect pass failed", err);
-    }).finally(() => { reconnectOperation = undefined; });
+    })()
+      .catch((err) => {
+        log.debug("Paired peer reconnect pass failed", err);
+      })
+      .finally(() => {
+        reconnectOperation = undefined;
+      });
     return reconnectOperation;
   }
 
-  async function connectPeer(peer: PairedPeer, connected: Set<string>): Promise<void> {
+  async function connectPeer(
+    peer: PairedPeer,
+    connected: Set<string>
+  ): Promise<void> {
     if (stopped || !peer?.deviceId) return;
     const connectionInfo = options.transport
       .getPeerConnectionInfo?.()
       ?.find((info) => info.peerId === peer.deviceId);
-    const relayOnly = connectionInfo?.hasRelay === true && connectionInfo.hasDirect !== true;
+    const relayOnly =
+      connectionInfo?.hasRelay === true && connectionInfo.hasDirect !== true;
     if (connected.has(peer.deviceId) && !relayOnly) return;
 
     // An Active Member is permitted to refresh only its own exact record. This
@@ -69,12 +87,17 @@ export function createPairedPeerConnectionManager(
     // discovery or another Pairing ceremony.
     let refreshedTargets: string[] = [];
     if (!relayOnly) {
-      await options.transport.refreshPeerRecord?.(peer.deviceId).catch((error) => {
-        log.debug("Paired peer exact lookup failed; using known reachability", {
-          peerId: peer.deviceId,
-          error: errorMessage(error),
+      await options.transport
+        .refreshPeerRecord?.(peer.deviceId)
+        .catch((error) => {
+          log.debug(
+            "Paired peer exact lookup failed; using known reachability",
+            {
+              peerId: peer.deviceId,
+              error: errorMessage(error),
+            }
+          );
         });
-      });
       if (stopped) return;
       const refreshedRecord = await options.transport
         .getSignedPeerRecordFor?.(peer.deviceId)
@@ -92,7 +115,9 @@ export function createPairedPeerConnectionManager(
       ...peer,
       multiaddrs: [...refreshedTargets, ...(peer.multiaddrs ?? [])],
     });
-    const targets = relayOnly ? allTargets.filter(isDirectConnectionTarget) : allTargets;
+    const targets = relayOnly
+      ? allTargets.filter(isDirectConnectionTarget)
+      : allTargets;
     if (targets.length === 0) {
       log.debug("Paired peer reconnect skipped: no target", {
         peerId: peer.deviceId,
@@ -107,6 +132,10 @@ export function createPairedPeerConnectionManager(
       if (stopped) return;
       try {
         await options.transport.connect(target);
+        if (!options.transport.getConnectedPeers().includes(peer.deviceId)) {
+          lastError = new Error("peer_not_connected");
+          continue;
+        }
         log.debug("Paired peer reconnect succeeded", {
           peerId: peer.deviceId,
           target,
@@ -154,8 +183,10 @@ export function peerConnectionTargets(peer: PairedPeer): string[] {
     out.push(trimmed);
   };
 
-  if (Array.isArray(peer.multiaddrs)) peer.multiaddrs.forEach(add);
-  add(peer.multiaddr);
+  peerDialTargets(peer.deviceId, [
+    ...(peer.multiaddrs ?? []),
+    ...(typeof peer.multiaddr === "string" ? [peer.multiaddr] : []),
+  ]).forEach(add);
   add(peer.deviceId);
   return out.sort((a, b) => targetDialPriority(a) - targetDialPriority(b));
 }
