@@ -593,16 +593,14 @@ export class ManagedRelayController {
     });
     return flight;
   }
-  private clearTimers(entry: Entry): void {
+  private clearTimers(entry: Entry, keepDiscovery = false): void {
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     if (entry.renewTimer) clearTimeout(entry.renewTimer);
     if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
-    if (entry.discoveryTimer) clearTimeout(entry.discoveryTimer);
-    entry.retryTimer =
-      entry.renewTimer =
-      entry.authExpiryTimer =
-      entry.discoveryTimer =
-        undefined;
+    if (!keepDiscovery && entry.discoveryTimer)
+      clearTimeout(entry.discoveryTimer);
+    entry.retryTimer = entry.renewTimer = entry.authExpiryTimer = undefined;
+    if (!keepDiscovery) entry.discoveryTimer = undefined;
   }
   private async setupSlot<T>(work: () => Promise<T>, root: Entry): Promise<T> {
     while (!this.setupOwners.has(root) && this.setupActive >= 4)
@@ -794,7 +792,7 @@ export class ManagedRelayController {
     if (!entry?.connection) return;
     entry.generation++;
     entry.controller.abort();
-    this.clearTimers(entry);
+    this.clearTimers(entry, true);
     const owned = entry.connection;
     entry.connection = undefined;
     if (root.owner === entry) root.owner = undefined;

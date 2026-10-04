@@ -1712,3 +1712,43 @@ describe("transport setup bounds", () => {
     }
   });
 });
+
+describe("configuration discovery ownership", () => {
+  it("keeps refreshing discovery when the primary transport is lost and another remains healthy", async () => {
+    jest.useFakeTimers();
+    const { adapter } = adapterHarness();
+    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
+    const connections = new Map<
+      string,
+      { verifiedPeerId: string; close(): Promise<void> }
+    >();
+    adapter.discover = jest.fn(async () => ({
+      version: 1 as const,
+      relay: { peerId: peer, addresses: [tcp, address] },
+      validUntil: Date.now() + 2_000,
+    }));
+    adapter.dial = async (value) => {
+      const connection = { verifiedPeerId: peer, close: async () => {} };
+      connections.set(value, connection);
+      return connection;
+    };
+    const controller = new ManagedRelayController(adapter, () => 0);
+    try {
+      await controller.setConfigurations([
+        {
+          key: "discovery",
+          name: "Discovery",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      await controller.connectionLost("discovery", connections.get(tcp));
+      await jest.advanceTimersByTimeAsync(2_000);
+      expect(adapter.discover).toHaveBeenCalledTimes(2);
+      expect(controller.states()[0].status).toBe("ready");
+    } finally {
+      await controller.stop();
+      jest.useRealTimers();
+    }
+  });
+});

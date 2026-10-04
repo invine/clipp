@@ -143,7 +143,7 @@ export function ManagedRelaySettings({
                   {state.transports
                     .map(
                       (transport) =>
-                        `${transportText[transport.family]}: ${statusText[transport.status]}${transport.reservationOwner ? " (reservation)" : ""}`
+                        `${transportText[transport.family]}: ${statusText[transport.status]}${transport.reservationOwner ? " (active relay path)" : ""}`
                     )
                     .join(" · ")}
                 </div>
@@ -160,7 +160,10 @@ export function ManagedRelaySettings({
             <div className="peer-actions">
               {config.kind === "managed" &&
                 onLogin &&
-                state?.status === "login_needed" && (
+                (state?.status === "login_needed" ||
+                  state?.transports?.some(
+                    (transport) => transport.status === "login_needed"
+                  )) && (
                   <button
                     className="primary-button compact-button"
                     type="button"
@@ -182,7 +185,12 @@ export function ManagedRelaySettings({
               {onRetry &&
                 (state?.status === "retrying" ||
                   state?.status === "degraded" ||
-                  state?.status === "refused") && (
+                  state?.status === "refused" ||
+                  state?.transports?.some((transport) =>
+                    ["retrying", "degraded", "refused"].includes(
+                      transport.status
+                    )
+                  )) && (
                   <button
                     className="text-button"
                     type="button"
