@@ -1,6 +1,9 @@
 import * as log from "../logger.js";
 import type { MessagingTransport } from "../messaging/transport.js";
-import { verifiedSignedPeerRecordMultiaddrs } from "./peerRecords.js";
+import {
+  peerDialTargets,
+  verifiedSignedPeerRecordMultiaddrs,
+} from "./peerRecords.js";
 
 export const DEFAULT_PAIRED_PEER_RECONNECT_INTERVAL_MS = 30_000;
 
@@ -135,6 +138,10 @@ export function createPairedPeerConnectionManager(
       if (stopped) return;
       try {
         await options.transport.connect(target);
+        if (!options.transport.getConnectedPeers().includes(peer.deviceId)) {
+          lastError = new Error("peer_not_connected");
+          continue;
+        }
         log.debug("Paired peer reconnect succeeded", {
           peerId: peer.deviceId,
           target,
@@ -182,8 +189,10 @@ export function peerConnectionTargets(peer: PairedPeer): string[] {
     out.push(trimmed);
   };
 
-  if (Array.isArray(peer.multiaddrs)) peer.multiaddrs.forEach(add);
-  add(peer.multiaddr);
+  peerDialTargets(peer.deviceId, [
+    ...(peer.multiaddrs ?? []),
+    ...(typeof peer.multiaddr === "string" ? [peer.multiaddr] : []),
+  ]).forEach(add);
   add(peer.deviceId);
   return out.sort((a, b) => targetDialPriority(a) - targetDialPriority(b));
 }

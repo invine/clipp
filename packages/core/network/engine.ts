@@ -36,6 +36,7 @@ import {
 import {
   consumeOrMatchSignedPeerRecord,
   newerVerifiedSignedPeerRecord,
+  peerDialTargets,
   type SignedPeerRecordPersistence,
 } from "./peerRecords.js";
 import { RelayLifecycle } from "./relayLifecycle.js";
@@ -508,10 +509,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
           force: existing?.hasRelay === true && targetPath === "direct",
         }
       );
+      assertDialedPeer(dialedConnection, peerId);
       this.observePeerConnection(dialedConnection, "dial result", dialContext);
       if (peerId)
         this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
-      if (peerId) this.markPeerConnected(peerId, true);
       return;
     }
 
@@ -524,13 +525,13 @@ class Libp2pMessagingTransport implements MessagingTransport {
       .filter(
         (address: unknown): address is string => typeof address === "string"
       );
-    const storedTargets = this.eligibleDialAddresses(allStoredTargets).sort(
-      (left: string, right: string) => {
-        const leftPriority = connectionPathForAddr(left) === "relay" ? 0 : 1;
-        const rightPriority = connectionPathForAddr(right) === "relay" ? 0 : 1;
-        return leftPriority - rightPriority;
-      }
-    );
+    const storedTargets = this.eligibleDialAddresses(
+      peerDialTargets(target, allStoredTargets)
+    ).sort((left: string, right: string) => {
+      const leftPriority = connectionPathForAddr(left) === "relay" ? 0 : 1;
+      const rightPriority = connectionPathForAddr(right) === "relay" ? 0 : 1;
+      return leftPriority - rightPriority;
+    });
     log.debug("Peer ID dial resolved stored targets", {
       peerId,
       storedTargets,
@@ -538,10 +539,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
     let lastError: unknown;
     for (const storedTarget of storedTargets) {
       try {
-        dialedConnection = await this.node.dial(
+        const connection = await this.node.dial(
           ensureLegacyMultiaddrApi(multiaddr(storedTarget)),
           { ...this.dialOptions(), force: true }
         );
+        assertDialedPeer(connection, peerId);
+        dialedConnection = connection;
         break;
       } catch (error) {
         lastError = error;
@@ -553,10 +556,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
       if (storedTargets.length > 0 && lastError) throw lastError;
       dialedConnection = await this.node.dial(peerIdObject, this.dialOptions());
     }
+    assertDialedPeer(dialedConnection, peerId);
     this.observePeerConnection(dialedConnection, "dial result", dialContext);
     if (peerId)
       this.logPeerConnectionSnapshot(peerId, "dial completed", dialContext);
-    if (peerId) this.markPeerConnected(peerId, true);
   }
 
   async disconnect(peerId: string): Promise<void> {
@@ -1654,6 +1657,18 @@ function safePeerId(peer: any): string | null {
     // ignore
   }
   return null;
+}
+
+function assertDialedPeer(
+  connection: any,
+  expectedPeerId: string | null
+): void {
+  if (expectedPeerId && safePeerId(connection?.remotePeer) !== expectedPeerId) {
+    throw new Error("peer_identity_mismatch");
+  }
+  if (!isOpenConnection(connection)) {
+    throw new Error("peer_not_connected");
+  }
 }
 
 function buildRelayPeerIdSet(relays: string[]) {

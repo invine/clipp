@@ -69,7 +69,19 @@ export async function verifiedSignedPeerRecordMultiaddrs(
   if (peerRecord.peerId.toString() !== expectedPeerId) {
     throw new Error("signed_peer_record_subject_mismatch");
   }
-  return peerRecord.multiaddrs.map(String);
+  return peerDialTargets(expectedPeerId, peerRecord.multiaddrs.map(String));
+}
+
+/** Bind derived dial addresses to their owner without changing the signed record. */
+export function peerDialTargets(peerId: string, addresses: string[]): string[] {
+  const suffix = `/p2p/${peerId}`;
+  return addresses.flatMap((address) => {
+    const trimmed = address.trim();
+    if (!trimmed.startsWith("/")) return [];
+    const destination = trimmed.match(/\/p2p\/([^/]+)$/)?.[1];
+    if (destination && destination !== peerId) return [];
+    return [destination ? trimmed : `${trimmed}${suffix}`];
+  });
 }
 
 /** A valid older Pairing Target may use retained, newer verified reachability. */

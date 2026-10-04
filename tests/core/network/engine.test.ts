@@ -53,7 +53,16 @@ jest.mock("../../../packages/core/network/node", () => ({
     stop: jest.fn(),
     getConnections: jest.fn(() => []),
     getMultiaddrs: jest.fn(() => mockSelfMultiaddrs),
-    dial: jest.fn(async () => ({})),
+    dial: jest.fn(async (target: { toString(): string }) => {
+      const value = target.toString();
+      return {
+        status: "open",
+        remotePeer: {
+          toString: () => value.split("/p2p/").at(-1)?.split("/")[0] || value,
+        },
+        remoteAddr: target,
+      };
+    }),
     dialProtocol: jest.fn(async () => ({
       send: jest.fn(() => true),
       onDrain: jest.fn(async () => {}),
@@ -746,6 +755,112 @@ describe("Libp2pMessagingTransport", () => {
     } finally {
       await transport.stop();
       jest.useRealTimers();
+    }
+  });
+
+  it("reconnects the intended member through a peer-store address without a destination suffix", async () => {
+    const base = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay/p2p-circuit";
+    const target = `${base}/p2p/peer-1`;
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    node.peerStore.get.mockResolvedValueOnce({
+      addresses: [{ isCertified: true, multiaddr: { toString: () => base } }],
+    });
+    // A bare circuit address resolves to the existing relay connection in libp2p.
+    node.dial.mockImplementation(async (address: { toString(): string }) => ({
+      status: "open",
+      remotePeer: {
+        toString: () => (address.toString() === target ? "peer-1" : "relay"),
+      },
+      remoteAddr: address,
+    }));
+
+    await transport.connect("peer-1");
+
+    expect(transport.getConnectedPeers()).toEqual(["peer-1"]);
+    expect(node.dial.mock.calls[0][0].toString()).toBe(target);
+    await transport.stop();
+  });
+
+  it("rejects a relay connection returned instead of the intended member", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const transport = createLibp2pMessagingTransport({
+      relayAddresses: [relay],
+    });
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    node.dial.mockResolvedValue({
+      status: "open",
+      remotePeer: { toString: () => "relay" },
+      remoteAddr: { toString: () => relay },
+    });
+
+    try {
+      await expect(
+        transport.connect(`${relay}/p2p-circuit/p2p/peer-1`)
+      ).rejects.toThrow("peer_identity_mismatch");
+      expect(transport.getConnectedPeers()).not.toContain("peer-1");
+    } finally {
+      await transport.stop();
+    }
+  });
+
+  it("retries an aborted direct connection instead of treating its retained node entry as connected", async () => {
+    const target = "/ip4/127.0.0.1/tcp/1234/p2p/peer-1";
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const connection = {
+      status: "open",
+      remotePeer: { toString: () => "peer-1" },
+      remoteAddr: { toString: () => target },
+    };
+    node.getConnections.mockReturnValue([connection]);
+    eventHandlers.get("connection:open")?.[0]?.({ detail: connection });
+    connection.status = "aborted";
+    eventHandlers.get("connection:close")?.[0]?.({ detail: connection });
+
+    try {
+      expect(transport.getConnectedPeers()).toEqual([]);
+      expect(transport.getPeerConnectionInfo?.()).toEqual([]);
+      await transport.connect(target);
+      expect(node.dial).toHaveBeenCalledTimes(1);
+    } finally {
+      await transport.stop();
+    }
+  });
+
+  it("redials a failed direct path while the member remains connected through a relay", async () => {
+    const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
+    const target = `${relay}/p2p-circuit/webrtc/p2p/peer-1`;
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const relayed = {
+      status: "open",
+      remotePeer: { toString: () => "peer-1" },
+      remoteAddr: { toString: () => `${relay}/p2p-circuit/p2p/peer-1` },
+    };
+    const direct = {
+      status: "open",
+      remotePeer: { toString: () => "peer-1" },
+      remoteAddr: { toString: () => target },
+    };
+    node.getConnections.mockReturnValue([relayed, direct]);
+    eventHandlers.get("connection:open")?.[0]?.({ detail: relayed });
+    eventHandlers.get("connection:open")?.[0]?.({ detail: direct });
+    direct.status = "aborted";
+    eventHandlers.get("connection:close")?.[0]?.({ detail: direct });
+
+    try {
+      expect(transport.getPeerConnectionInfo?.()).toEqual([
+        expect.objectContaining({ hasRelay: true, hasDirect: false }),
+      ]);
+      await transport.connect(target);
+      expect(node.dial).toHaveBeenCalledTimes(1);
+    } finally {
+      await transport.stop();
     }
   });
 

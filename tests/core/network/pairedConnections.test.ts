@@ -1,4 +1,5 @@
 jest.mock("../../../packages/core/network/peerRecords", () => ({
+  ...jest.requireActual("../../../packages/core/network/peerRecords"),
   verifiedSignedPeerRecordMultiaddrs: jest.fn(async () => []),
 }));
 import { verifiedSignedPeerRecordMultiaddrs } from "../../../packages/core/network/peerRecords";
@@ -19,7 +20,12 @@ function createTransport(
     start: jest.fn(async () => {}),
     stop: jest.fn(async () => {}),
     send: jest.fn(async () => {}),
-    connect: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
+    connect: jest
+      .fn<Promise<void>, [string]>()
+      .mockImplementation(async (target) => {
+        const peerId = target.split("/p2p/").at(-1)?.split("/")[0] || target;
+        if (!connectedPeers.includes(peerId)) connectedPeers.push(peerId);
+      }),
     onMessage: jest.fn(),
     onPeerConnected: jest.fn(),
     onPeerDisconnected: jest.fn(),
@@ -53,6 +59,8 @@ describe("paired peer connections", () => {
     const transport = createTransport(["peer-a"]);
     transport.connect.mockImplementation(async (target) => {
       if (target.includes("bad")) throw new Error("dial_failed");
+      const peerId = target.split("/p2p/").at(-1)?.split("/")[0] || target;
+      transport.getConnectedPeers().push(peerId);
     });
     const manager = createPairedPeerConnectionManager({
       transport,
@@ -60,7 +68,11 @@ describe("paired peer connections", () => {
         { deviceId: "peer-a", multiaddrs: ["/p2p/peer-a"] },
         {
           deviceId: "peer-b",
-          multiaddrs: ["/p2p/bad", "/p2p/good", "/p2p/unused"],
+          multiaddrs: [
+            "/dns4/bad.example/tcp/1234/p2p/peer-b",
+            "/dns4/good.example/tcp/1234/p2p/peer-b",
+            "/dns4/unused.example/tcp/1234/p2p/peer-b",
+          ],
         },
         { deviceId: "peer-c" },
       ],
@@ -71,9 +83,13 @@ describe("paired peer connections", () => {
     const targets = transport.connect.mock.calls.map(([target]) => target);
     expect(targets).not.toContain("/p2p/peer-a");
     expect(targets).toEqual(
-      expect.arrayContaining(["/p2p/bad", "/p2p/good", "peer-c"])
+      expect.arrayContaining([
+        "/dns4/bad.example/tcp/1234/p2p/peer-b",
+        "/dns4/good.example/tcp/1234/p2p/peer-b",
+        "peer-c",
+      ])
     );
-    expect(targets).not.toContain("/p2p/unused");
+    expect(targets).not.toContain("/dns4/unused.example/tcp/1234/p2p/peer-b");
   });
 
   it("keeps probing direct targets for relay-only paired peers", async () => {
@@ -138,6 +154,34 @@ describe("paired peer connections", () => {
     expect(transport.connect).toHaveBeenCalledWith(target);
   });
 
+  it("continues to another address when a dial resolves without connecting the intended member", async () => {
+    const peers: string[] = [];
+    const transport = createTransport(peers);
+    const manager = createPairedPeerConnectionManager({
+      transport,
+      getPairedPeers: async () => [
+        {
+          deviceId: "peer-1",
+          multiaddrs: [
+            "/dns4/relay.example/tcp/443/wss/p2p/relay/p2p-circuit",
+            "/ip4/192.0.2.1/tcp/1234/p2p/peer-1",
+          ],
+        },
+      ],
+    });
+    transport.connect.mockImplementation(async (target) => {
+      // The first dial succeeds to another peer. Only the fallback reaches the member.
+      if (target === "peer-1") peers.push("peer-1");
+    });
+
+    await manager.reconnectNow();
+
+    expect(transport.getConnectedPeers()).toContain("peer-1");
+    expect(transport.connect).toHaveBeenCalledWith(
+      "/dns4/relay.example/tcp/443/wss/p2p/relay/p2p-circuit/p2p/peer-1"
+    );
+  });
+
   it("runs once on start and repeats on the configured interval", async () => {
     jest.useFakeTimers();
     const transport = createTransport();
@@ -150,6 +194,8 @@ describe("paired peer connections", () => {
     manager.start();
     await flushPromises();
     expect(transport.connect).toHaveBeenCalledTimes(1);
+
+    transport.getConnectedPeers().splice(0);
 
     await jest.advanceTimersByTimeAsync(1000);
     expect(transport.connect).toHaveBeenCalledTimes(2);
