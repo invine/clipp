@@ -215,9 +215,46 @@ try {
     "selected_relay_server_transport_not_observed",
     "relay_clip_receipt_timeout",
   ];
-  receipt.reason = safeReasons.includes(error?.message)
-    ? error.message
-    : "runtime_or_receipt_gate_failed";
+  receipt.reason =
+    safeReasons.find(
+      (reason) =>
+        typeof error?.message === "string" && error.message.startsWith(reason)
+    ) ?? "runtime_or_receipt_gate_failed";
+  const safeClasses = [
+    "Error",
+    "AssertionError",
+    "TypeError",
+    "ReferenceError",
+    "TimeoutError",
+  ];
+  receipt.errorClass = safeClasses.includes(error?.name)
+    ? error.name
+    : "UnknownError";
+  // Exception detail is diagnostic evidence, never part of the public receipt.
+  // It can contain native/runtime context; preserve it only in private artifacts.
+  const failure = await open(
+    path.join(values.output, "failure.private.json"),
+    "w",
+    0o600
+  );
+  try {
+    await failure.chmod(0o600);
+    await failure.writeFile(
+      JSON.stringify(
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : { name: "NonErrorThrown" },
+        null,
+        2
+      ) + "\n"
+    );
+  } finally {
+    await failure.close();
+  }
   console.error(
     "Electron acceptance failed; inspect the private runtime log and receipt."
   );

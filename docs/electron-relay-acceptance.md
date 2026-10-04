@@ -49,7 +49,11 @@ inferring a transport pass from the configured filter alone. A timeout, degraded
 state, plaintext fallback, direct peer path or
 absence of clip receipt cannot produce a pass.
 
-The output directory contains a mode-600 receipt and private runtime log. The
+The output directory contains a mode-600 receipt and private runtime log. Failed
+runs also retain a mode-600 `failure.private.json` with exception details; keep
+this file private and inspect it before retrying an unexplained early exit.
+The public receipt reports only an allowlisted error class and assertion reason,
+including decorated assertion messages. The
 receipt records runtime/platform/provider, statuses and boolean path/receipt
 evidence, without tokens, Peer IDs, clip content or account identity. Keep logs,
 profiles, runner wrappers and screenshots ignored and private. The harness
