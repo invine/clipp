@@ -135,6 +135,20 @@ export type RelayStatus =
   | "refused"
   | "retrying"
   | "conflict";
+export type RelayTransportFamily = "tcp" | "wss" | "webrtc-direct";
+export type RelayTransportState = {
+  family: RelayTransportFamily;
+  status: RelayStatus;
+  reason?: string;
+  retryAt?: number;
+  reservationOwner: boolean;
+};
+function transportFamily(address: string): RelayTransportFamily | undefined {
+  if (address.includes("/webrtc-direct/")) return "webrtc-direct";
+  if (/\/(?:wss|ws)(?:\/|$)/.test(address)) return "wss";
+  if (address.includes("/tcp/")) return "tcp";
+  return undefined;
+}
 export type RelayState = {
   key: string;
   name: string;
@@ -144,6 +158,7 @@ export type RelayState = {
   reason?: string;
   retryAt?: number;
   warning?: string;
+  transports?: RelayTransportState[];
 };
 export type DiscoveryDocument = {
   version: 1;
@@ -234,6 +249,8 @@ export type ManagedRelayConnection = {
   close(): Promise<void>;
 };
 export type ManagedRelayReservation = {
+  /** Actual authenticated connection selected by the stock per-peer reservation store. */
+  connection?: ManagedRelayConnection;
   /** Removes this relay listener and its keep-alive/redial ownership before connection closure. */ release(): Promise<void>;
 };
 export type RelayAuthResult = {
@@ -296,6 +313,12 @@ export type ManagedRelayAdapter = {
 };
 
 type Entry = {
+  parent?: Entry;
+  family?: RelayTransportFamily;
+  lanes?: Map<RelayTransportFamily, Entry>;
+  owner?: Entry;
+  provisioning?: Promise<void>;
+  dials?: { active: number; queue: Array<() => void> };
   config: RelayConfiguration;
   state: RelayState;
   generation: number;
@@ -333,6 +356,7 @@ export class ManagedRelayController {
   private readonly tokenFlights = new Map<string, Promise<string | null>>();
   private readonly peerClaims = new Map<string, Entry>();
   private setupActive = 0;
+  private readonly setupOwners = new Map<Entry, number>();
   private readonly setupQueue: Array<() => void> = [];
   private stopped = false;
   private readonly desired = new Map<string, RelayConfiguration>();
@@ -345,7 +369,25 @@ export class ManagedRelayController {
   ) {}
 
   states(): RelayState[] {
-    return [...this.entries.values()].map(({ state }) => ({ ...state }));
+    return [...this.entries.values()].map((entry) => {
+      const lanes = this.lanes(entry);
+      if (!entry.lanes) return { ...entry.state };
+      const owner = entry.owner;
+      const healthy = owner?.connection && owner.reservation;
+      return {
+        ...entry.state,
+        status: healthy ? owner.state.status : entry.state.status,
+        reason: healthy ? owner.state.reason : entry.state.reason,
+        retryAt: healthy ? owner.state.retryAt : entry.state.retryAt,
+        transports: lanes.map((lane) => ({
+          family: lane.family!,
+          status: lane.state.status,
+          reason: lane.state.reason,
+          retryAt: lane.state.retryAt,
+          reservationOwner: lane === owner,
+        })),
+      };
+    });
   }
   configurations(): RelayConfiguration[] {
     return [...this.entries.values()].map(({ config }) =>
@@ -358,11 +400,12 @@ export class ManagedRelayController {
       [...this.entries.values()]
         .filter(
           (entry) =>
-            entry.connection &&
-            entry.reservation &&
-            (!entry.authExpiresAt || entry.authExpiresAt > this.now())
+            (entry.owner ?? entry).connection &&
+            (entry.owner ?? entry).reservation &&
+            (!(entry.owner ?? entry).authExpiresAt ||
+              (entry.owner ?? entry).authExpiresAt! > this.now())
         )
-        .map((entry) => entry.connection!.verifiedPeerId)
+        .map((entry) => (entry.owner ?? entry).connection!.verifiedPeerId)
     );
     return addresses.filter((address) => {
       const match = address.match(/\/p2p\/([^/]+)\/p2p-circuit(?:\/|$)/);
@@ -370,6 +413,103 @@ export class ManagedRelayController {
     });
   }
 
+  private root(entry: Entry): Entry {
+    return entry.parent ?? entry;
+  }
+  private lanes(entry: Entry): Entry[] {
+    return [...(this.root(entry).lanes?.values() ?? [entry])];
+  }
+  private addFamilies(root: Entry, addresses: string[]): Promise<void>[] {
+    if (!root.lanes) return [];
+    const setups: Promise<void>[] = [];
+    for (const address of addresses) {
+      const family = transportFamily(address);
+      if (
+        !family ||
+        !this.adapter.supportsAddress(address) ||
+        root.lanes.has(family)
+      )
+        continue;
+      const lane: Entry = {
+        config: root.config,
+        parent: root,
+        family,
+        state: { ...root.state, status: "connecting" },
+        generation: 0,
+        controller: new AbortController(),
+        attempt: 0,
+        retryAt: 0,
+      };
+      root.lanes.set(family, lane);
+      setups.push(this.setup(lane));
+    }
+    return setups;
+  }
+  private async provision(entry: Entry): Promise<void> {
+    const root = this.root(entry);
+    if (root.provisioning) await root.provisioning.catch(() => undefined);
+    if (root.owner?.connection && root.owner.reservation) return;
+    const generation = entry.generation;
+    const connection = entry.connection;
+    if (!connection) return;
+    const flight = (async () => {
+      const reservation = await this.deadline(
+        DEADLINES.reserve,
+        entry.controller.signal,
+        (signal) => this.adapter.reserve(connection, signal),
+        (late) => late.release().catch(() => undefined)
+      );
+      if (!this.current(entry, generation) || entry.connection !== connection) {
+        await reservation.release().catch(() => undefined);
+        return;
+      }
+      const selected = reservation.connection ?? connection;
+      const owner = this.lanes(root).find(
+        (lane) => lane.connection === selected
+      );
+      if (
+        !owner ||
+        (owner.authExpiresAt && owner.authExpiresAt <= this.now())
+      ) {
+        await reservation.release().catch(() => undefined);
+        throw new Error("relay_reservation_owner_not_authenticated");
+      }
+      owner.reservation = reservation;
+      root.owner = owner;
+      try {
+        await this.register(owner, selected);
+      } catch (error) {
+        if (owner !== entry) {
+          this.failure(owner, error, true);
+          return;
+        }
+        throw error;
+      }
+    })();
+    root.provisioning = flight;
+    try {
+      await flight;
+    } finally {
+      if (root.provisioning === flight) root.provisioning = undefined;
+    }
+  }
+  private async promote(root: Entry): Promise<void> {
+    for (const lane of this.lanes(root)) {
+      if (
+        !lane.connection ||
+        (lane.authExpiresAt && lane.authExpiresAt <= this.now())
+      )
+        continue;
+      try {
+        await this.provision(lane);
+        if (root.owner === lane)
+          this.emit(lane, { status: "ready", reason: undefined });
+        return;
+      } catch (error) {
+        this.failure(lane, error, Boolean(lane.reservation));
+      }
+    }
+  }
   private retryConflicts(): void {
     for (const entry of this.entries.values())
       if (entry.state.status === "conflict") void this.retry(entry.config.key);
@@ -388,7 +528,7 @@ export class ManagedRelayController {
   private current(entry: Entry, generation: number): boolean {
     return (
       !this.stopped &&
-      this.entries.get(entry.config.key) === entry &&
+      this.entries.get(entry.config.key) === this.root(entry) &&
       entry.generation === generation
     );
   }
@@ -446,7 +586,7 @@ export class ManagedRelayController {
   }
   private setup(entry: Entry): Promise<void> {
     if (entry.setupFlight) return entry.setupFlight;
-    const flight = this.setupSlot(() => this.attempt(entry));
+    const flight = this.setupSlot(() => this.attempt(entry), this.root(entry));
     entry.setupFlight = flight;
     void flight.finally(() => {
       if (entry.setupFlight === flight) entry.setupFlight = undefined;
@@ -464,15 +604,24 @@ export class ManagedRelayController {
       entry.discoveryTimer =
         undefined;
   }
-  private async setupSlot<T>(work: () => Promise<T>): Promise<T> {
-    if (this.setupActive >= 4)
+  private async setupSlot<T>(work: () => Promise<T>, root: Entry): Promise<T> {
+    while (!this.setupOwners.has(root) && this.setupActive >= 4)
       await new Promise<void>((resolve) => this.setupQueue.push(resolve));
-    this.setupActive++;
+    if (!this.setupOwners.has(root)) {
+      this.setupActive++;
+      this.setupOwners.set(root, 0);
+    }
+    this.setupOwners.set(root, this.setupOwners.get(root)! + 1);
     try {
       return await work();
     } finally {
-      this.setupActive--;
-      this.setupQueue.shift()?.();
+      const users = this.setupOwners.get(root)! - 1;
+      if (users) this.setupOwners.set(root, users);
+      else {
+        this.setupOwners.delete(root);
+        this.setupActive--;
+        for (const ready of this.setupQueue.splice(0)) ready();
+      }
     }
   }
   private endpointIdentity(config: RelayConfiguration): string {
@@ -490,15 +639,29 @@ export class ManagedRelayController {
     if (this.entries.get(entry.config.key) !== entry)
       return this.cleanupByKey.get(entry.config.key) ?? Promise.resolve();
     this.entries.delete(entry.config.key);
-    entry.generation++;
-    entry.controller.abort();
-    this.clearTimers(entry);
+    for (const lane of this.lanes(entry)) {
+      lane.generation++;
+      lane.controller.abort();
+      this.clearTimers(lane);
+    }
     const peerId = entry.state.peerId;
-    const connection = entry.connection;
-    entry.connection = undefined;
+    const owner = entry.owner ?? entry;
+    const connections = this.lanes(entry).map((lane) => ({
+      lane,
+      connection: lane.connection,
+    }));
+    for (const { lane } of connections) lane.connection = undefined;
     const cleanup = (async () => {
       try {
-        if (connection) {
+        if (
+          owner.connection ||
+          connections.some(
+            ({ lane, connection }) => lane === owner && connection
+          )
+        ) {
+          const connection = connections.find(
+            ({ lane }) => lane === owner
+          )?.connection!;
           try {
             await this.deadline(
               DEADLINES.rendezvous,
@@ -508,9 +671,13 @@ export class ManagedRelayController {
           } catch {
             /* cleanup best effort */
           }
-          await entry.reservation?.release().catch(() => undefined);
-          await connection.close().catch(() => undefined);
         }
+        await Promise.all(
+          connections.map(async ({ lane, connection }) => {
+            await lane.reservation?.release().catch(() => undefined);
+            await connection?.close().catch(() => undefined);
+          })
+        );
       } finally {
         if (peerId && this.peerClaims.get(peerId) === entry) {
           this.peerClaims.delete(peerId);
@@ -581,7 +748,10 @@ export class ManagedRelayController {
       if (!next || !this.sameEndpoint(entry.config, next)) {
         cleanups.push(this.detachEntry(entry, true));
       } else {
-        entry.config = next;
+        for (const lane of this.lanes(entry)) {
+          lane.config = next;
+          lane.state.name = next.name;
+        }
         this.emit(entry, { name: next.name });
       }
     }
@@ -615,24 +785,31 @@ export class ManagedRelayController {
     key: string,
     connection?: ManagedRelayConnection
   ): Promise<void> {
-    const entry = this.entries.get(key);
-    if (
-      !entry ||
-      !entry.connection ||
-      (connection && entry.connection !== connection)
-    )
-      return;
+    const root = this.entries.get(key);
+    if (!root) return;
+    const entry = this.lanes(root).find(
+      (lane) =>
+        lane.connection && (!connection || lane.connection === connection)
+    );
+    if (!entry?.connection) return;
     entry.generation++;
     entry.controller.abort();
     this.clearTimers(entry);
     const owned = entry.connection;
     entry.connection = undefined;
+    if (root.owner === entry) root.owner = undefined;
     await entry.reservation?.release().catch(() => undefined);
     entry.reservation = undefined;
     await owned.close().catch(() => undefined);
-    if (entry.state.peerId && this.peerClaims.get(entry.state.peerId) === entry)
-      this.peerClaims.delete(entry.state.peerId);
-    this.retryConflicts();
+    await this.promote(root);
+    if (
+      !this.lanes(root).some((lane) => lane.connection) &&
+      root.state.peerId &&
+      this.peerClaims.get(root.state.peerId) === root
+    ) {
+      this.peerClaims.delete(root.state.peerId);
+      this.retryConflicts();
+    }
     if (entry.state.status === "login_needed") {
       this.emit(entry, { status: "login_needed" });
       return;
@@ -641,16 +818,24 @@ export class ManagedRelayController {
   }
   async refreshSession(key: string): Promise<void> {
     const entry = this.entries.get(key);
-    if (entry && this.now() >= entry.retryAt) await this.renew(entry);
+    if (entry)
+      await Promise.all(
+        this.lanes(entry)
+          .filter((lane) => this.now() >= lane.retryAt)
+          .map((lane) => this.renew(lane))
+      );
   }
   async requestLogin(key: string): Promise<void> {
     const entry = this.entries.get(key);
     if (!entry || entry.config.kind !== "managed") return;
     await this.adapter.interactiveLogin(entry.config.discoveryUrl);
-    if (entry.connection) {
-      entry.retryAt = 0;
-      await this.renew(entry);
-    } else await this.retry(key);
+    await Promise.all(
+      this.lanes(entry).map(async (lane) => {
+        lane.retryAt = 0;
+        if (lane.connection) await this.renew(lane);
+        else await this.retryLane(lane);
+      })
+    );
   }
   async manageAccount(key: string): Promise<void> {
     const entry = this.entries.get(key);
@@ -659,11 +844,18 @@ export class ManagedRelayController {
   }
   async retry(key: string): Promise<void> {
     const entry = this.entries.get(key);
-    if (!entry || entry.state.status === "ready" || this.now() < entry.retryAt)
-      return;
+    if (entry)
+      await Promise.all(this.lanes(entry).map((lane) => this.retryLane(lane)));
+  }
+  private async retryLane(entry: Entry): Promise<void> {
+    if (entry.state.status === "ready" || this.now() < entry.retryAt) return;
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = undefined;
-    if (entry.state.status === "degraded" && entry.connection) {
+    if (
+      entry.state.status === "degraded" &&
+      entry.connection &&
+      entry.reservation
+    ) {
       await this.repairRendezvous(entry);
       return;
     }
@@ -674,7 +866,8 @@ export class ManagedRelayController {
     await this.setup(entry);
   }
   private async attempt(entry: Entry): Promise<void> {
-    if (this.stopped || this.entries.get(entry.config.key) !== entry) return;
+    if (this.stopped || this.entries.get(entry.config.key) !== this.root(entry))
+      return;
     const generation = ++entry.generation;
     entry.controller.abort();
     entry.controller = new AbortController();
@@ -683,6 +876,8 @@ export class ManagedRelayController {
       reason: undefined,
       retryAt: undefined,
     });
+    const root = this.root(entry);
+    let otherSetups: Promise<void>[] = [];
     let connection: ManagedRelayConnection | undefined;
     let authResult: RelayAuthResult | undefined;
     try {
@@ -696,7 +891,7 @@ export class ManagedRelayController {
           this.emit(entry, { status: "login_needed" });
           return;
         }
-        let document = entry.document;
+        let document = root.document;
         if (!document || document.validUntil <= this.now()) {
           document = await this.deadline(
             DEADLINES.discovery,
@@ -715,8 +910,8 @@ export class ManagedRelayController {
           );
           if (!this.current(entry, generation)) return;
           document = this.validateDocument(document);
-          entry.document = document;
-          this.scheduleDiscoveryRefresh(entry, document.validUntil);
+          root.document = document;
+          this.scheduleDiscoveryRefresh(root, document.validUntil);
         }
         peerId = document.relay.peerId;
         addresses = document.relay.addresses;
@@ -724,8 +919,12 @@ export class ManagedRelayController {
         peerId = entry.config.peerId;
         addresses = entry.config.addresses;
       }
+      const pinnedPeer = this.lanes(root).find((lane) => lane.connection)
+        ?.connection?.verifiedPeerId;
+      if (pinnedPeer && pinnedPeer !== peerId)
+        throw new Error("relay_identity_changed");
       const owner = this.peerClaims.get(peerId);
-      if (owner && owner !== entry) {
+      if (owner && owner !== root) {
         this.emit(entry, {
           status: "conflict",
           peerId,
@@ -733,17 +932,28 @@ export class ManagedRelayController {
         });
         return;
       }
-      this.peerClaims.set(peerId, entry);
+      this.peerClaims.set(peerId, root);
       this.emit(entry, { peerId });
+      addresses = addresses
+        .filter(
+          (address) =>
+            this.adapter.supportsAddress(address) && transportFamily(address)
+        )
+        .sort(
+          (left, right) =>
+            (this.adapter.addressPriority?.(left) ?? 0) -
+            (this.adapter.addressPriority?.(right) ?? 0)
+        );
+      if (!root.lanes && addresses.length) {
+        entry.family = transportFamily(addresses[0]);
+        root.lanes = new Map([[entry.family!, entry]]);
+      }
+      if (!entry.parent) otherSetups = this.addFamilies(root, addresses);
       connection = await this.dialAddresses(
         entry,
-        addresses
-          .filter((address) => this.adapter.supportsAddress(address))
-          .sort(
-            (left, right) =>
-              (this.adapter.addressPriority?.(left) ?? 0) -
-              (this.adapter.addressPriority?.(right) ?? 0)
-          ),
+        addresses.filter(
+          (address) => transportFamily(address) === entry.family
+        ),
         peerId
       );
       if (!this.current(entry, generation)) {
@@ -771,19 +981,9 @@ export class ManagedRelayController {
         }
         authResult = result;
       }
-      entry.reservation = await this.deadline(
-        DEADLINES.reserve,
-        entry.controller.signal,
-        (signal) => this.adapter.reserve(connection!, signal),
-        (lateReservation) => lateReservation.release().catch(() => undefined)
-      );
-      if (!this.current(entry, generation)) {
-        await entry.reservation.release().catch(() => undefined);
-        await connection.close().catch(() => undefined);
-        return;
-      }
       entry.connection = connection;
-      await this.register(entry, connection);
+      if (authResult) this.scheduleRenewal(entry, authResult);
+      await this.provision(entry);
       if (!this.current(entry, generation)) return;
       entry.attempt = 0;
       this.emit(entry, {
@@ -792,15 +992,20 @@ export class ManagedRelayController {
         reason: undefined,
         warning: undefined,
       });
-      if (authResult) this.scheduleRenewal(entry, authResult);
     } catch (error) {
-      if (connection && entry.connection !== connection)
+      if (connection && !entry.reservation) {
+        if (entry.connection === connection) entry.connection = undefined;
+        if (entry.renewTimer) clearTimeout(entry.renewTimer);
+        if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
         await connection.close().catch(() => undefined);
+      }
       if (!this.current(entry, generation)) return;
       if (
-        entry.connection !== connection &&
+        !this.lanes(root).some(
+          (lane) => lane.connection || (lane !== entry && lane.setupFlight)
+        ) &&
         entry.state.peerId &&
-        this.peerClaims.get(entry.state.peerId) === entry
+        this.peerClaims.get(entry.state.peerId) === root
       )
         this.peerClaims.delete(entry.state.peerId);
       this.retryConflicts();
@@ -809,8 +1014,20 @@ export class ManagedRelayController {
         (error.message === "all_address_dials_failed" ||
           error.message === "dial_deadline_exceeded")
       )
-        entry.document = undefined;
-      this.failure(entry, error, entry.connection === connection);
+        root.document = undefined;
+      this.failure(entry, error, Boolean(entry.reservation));
+    } finally {
+      await Promise.all(otherSetups);
+      if (
+        !entry.parent &&
+        this.current(entry, generation) &&
+        !this.lanes(root).some((lane) => lane.connection) &&
+        root.state.peerId &&
+        this.peerClaims.get(root.state.peerId) === root
+      ) {
+        this.peerClaims.delete(root.state.peerId);
+        this.retryConflicts();
+      }
     }
   }
   private scheduleDiscoveryRefresh(entry: Entry, at: number): void {
@@ -855,14 +1072,14 @@ export class ManagedRelayController {
       document = this.validateDocument(document);
       entry.document = document;
       this.scheduleDiscoveryRefresh(entry, document.validUntil);
-      if (
-        entry.connection &&
-        entry.connection.verifiedPeerId !== document.relay.peerId
-      )
+      const livePeer = this.lanes(entry).find((lane) => lane.connection)
+        ?.connection?.verifiedPeerId;
+      if (livePeer && livePeer !== document.relay.peerId)
         this.emit(entry, {
           warning:
             "Relay identity changed; current session remains active until reconnect",
         });
+      else await Promise.all(this.addFamilies(entry, document.relay.addresses));
     } catch (error) {
       if (!this.current(entry, generation)) return;
       const code = error instanceof Error ? error.message : "discovery_failed";
@@ -906,6 +1123,39 @@ export class ManagedRelayController {
       ),
     };
   }
+  private async dialSlot(
+    entry: Entry,
+    address: string,
+    signal: AbortSignal
+  ): Promise<ManagedRelayConnection> {
+    const root = this.root(entry);
+    const slots = (root.dials ??= { active: 0, queue: [] });
+    const queued = slots.active >= 2;
+    if (queued)
+      await new Promise<void>((resolve, reject) => {
+        const ready = () => {
+          signal.removeEventListener("abort", abort);
+          resolve();
+        };
+        const abort = () => {
+          const index = slots.queue.indexOf(ready);
+          if (index >= 0) slots.queue.splice(index, 1);
+          reject(new Error("dial_aborted"));
+        };
+        slots.queue.push(ready);
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+      });
+    if (!queued) slots.active++;
+    try {
+      signal.throwIfAborted();
+      return await this.adapter.dial(address, signal);
+    } finally {
+      const next = slots.queue.shift();
+      if (next) next();
+      else slots.active--;
+    }
+  }
   private async dialAddresses(
     entry: Entry,
     addresses: string[],
@@ -945,8 +1195,7 @@ export class ManagedRelayController {
           secondReady = false;
           const address = addresses[next++];
           active++;
-          void this.adapter
-            .dial(address, controller.signal)
+          void this.dialSlot(entry, address, controller.signal)
             .then(
               async (connection) => {
                 active--;
@@ -1074,9 +1323,10 @@ export class ManagedRelayController {
     entry.authExpiresAt = result.sessionExpiresAt;
     if (entry.renewTimer) clearTimeout(entry.renewTimer);
     if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
+    const connection = entry.connection;
     entry.authExpiryTimer = setTimeout(
       () => {
-        void this.connectionLost(entry.config.key, entry.connection);
+        if (connection) void this.connectionLost(entry.config.key, connection);
       },
       Math.max(0, result.sessionExpiresAt - this.now())
     );
@@ -1166,7 +1416,7 @@ export class ManagedRelayController {
     });
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = setTimeout(() => {
-      void this.refreshSession(entry.config.key);
+      void this.renew(entry);
     }, delay);
   }
   private failure(entry: Entry, error: unknown, rendezvousOnly = false): void {
@@ -1202,7 +1452,7 @@ export class ManagedRelayController {
     });
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = setTimeout(() => {
-      void this.retry(entry.config.key);
+      void this.retryLane(entry);
     }, delay);
   }
 }

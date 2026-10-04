@@ -157,6 +157,7 @@ export function createManagedRelayHost(
   onConnectionClosed?: (connection: ManagedRelayConnection) => void
 ) {
   const owned = new Set<Owned>();
+  const dialFlights = new Map<string, Promise<ManagedRelayConnection>>();
   const listeners = new Map<Owned, any>();
   // Stock listener.close() clears every reservation in the shared store.
   // Keep released listeners idle for reuse; host shutdown closes them together.
@@ -253,44 +254,79 @@ export function createManagedRelayHost(
   return {
     supportsAddress(address: string): boolean {
       return (
-        /\/tcp\/\d+(?:\/ws|\/wss|\/tls\/ws)?\/p2p\//.test(address) ||
-        /\/udp\/\d+\/webrtc-direct\/certhash\//.test(address)
+        /\/tcp\/\d+(?:\/ws|\/wss|\/tls\/(?:sni\/[^/]+\/)?ws)?\/p2p\//.test(
+          address
+        ) || /\/udp\/\d+\/webrtc-direct\/certhash\//.test(address)
       );
     },
     async dial(
       address: string,
       signal: AbortSignal
     ): Promise<ManagedRelayConnection> {
-      const before = new Set(node.getConnections?.() ?? []);
-      const raw = await node.dial(
-        ensureLegacyMultiaddrApi(multiaddr(address)),
-        { signal, force: true }
-      );
-      // Same-peer libp2p dials can resolve to the same physical connection.
-      // Give it one owner; otherwise loser cleanup would close the winner.
-      if (
-        before.has(raw) ||
-        !raw?.remotePeer ||
-        [...owned].some((connection) => connection.raw === raw)
-      )
-        throw new Error("relay_connection_not_new");
-      let closed = false;
-      const connection: Owned = {
-        raw,
-        address,
-        verifiedPeerId: raw.remotePeer.toString(),
-        initialAuthDeadlineMs: Date.now() + 9_000,
-        async close() {
-          if (closed) return;
-          cleanup(connection);
-          await raw.close();
-          closed = true;
-          owned.delete(connection);
-          rendezvousVersions.delete(connection);
-        },
-      };
-      owned.add(connection);
-      return connection;
+      const peerId = address.split("/p2p/").at(-1)!;
+      // force bypasses established reuse, but stock dialQueue still joins pending
+      // same-peer jobs. Sequence them so every family gets its own physical link.
+      const previous = dialFlights.get(peerId) ?? Promise.resolve();
+      const flight = previous
+        .catch(() => undefined)
+        .then(async () => {
+          signal.throwIfAborted();
+          const before = new Set(node.getConnections?.() ?? []);
+          const attempt = new AbortController();
+          const abort = () => attempt.abort();
+          signal.addEventListener("abort", abort, { once: true });
+          const timer = setTimeout(abort, 5_000);
+          let raw: any;
+          try {
+            raw = await node.dial(
+              ensureLegacyMultiaddrApi(multiaddr(address)),
+              { signal: attempt.signal, force: true }
+            );
+          } finally {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", abort);
+          }
+          if (attempt.signal.aborted) {
+            if (
+              !before.has(raw) &&
+              ![...owned].some((connection) => connection.raw === raw)
+            )
+              await raw.close().catch(() => undefined);
+            throw new Error("relay_dial_aborted");
+          }
+          // Same-peer libp2p dials can resolve to the same physical connection.
+          // Give it one owner; otherwise loser cleanup would close the winner.
+          if (
+            before.has(raw) ||
+            !raw?.remotePeer ||
+            [...owned].some((connection) => connection.raw === raw)
+          )
+            throw new Error("relay_connection_not_new");
+          let closed = false;
+          const connection: Owned = {
+            raw,
+            address,
+            verifiedPeerId: raw.remotePeer.toString(),
+            initialAuthDeadlineMs: Date.now() + 9_000,
+            async close() {
+              if (closed) return;
+              cleanup(connection);
+              await raw.close();
+              closed = true;
+              owned.delete(connection);
+              rendezvousVersions.delete(connection);
+            },
+          };
+          owned.add(connection);
+          return connection;
+        });
+      dialFlights.set(peerId, flight);
+      void flight
+        .finally(() => {
+          if (dialFlights.get(peerId) === flight) dialFlights.delete(peerId);
+        })
+        .catch(() => undefined);
+      return flight;
     },
     async authenticate(
       connection: ManagedRelayConnection,
@@ -309,7 +345,7 @@ export function createManagedRelayHost(
       connection: ManagedRelayConnection,
       signal: AbortSignal
     ): Promise<ManagedRelayReservation> {
-      const current = asOwned(connection);
+      let current = asOwned(connection);
       const manager = node.components?.transportManager;
       if (!manager?.listen) throw new Error("relay_reservation_unavailable");
       const store = manager
@@ -330,9 +366,18 @@ export function createManagedRelayHost(
         if (
           detail?.relay?.toString?.() === current.verifiedPeerId &&
           detail?.details?.type === "configured" &&
-          detail?.details?.connection === current.raw.id
-        )
-          matchedConnection = true;
+          typeof detail?.details?.connection === "string"
+        ) {
+          const selected = [...owned].find(
+            (candidate) =>
+              candidate.verifiedPeerId === current.verifiedPeerId &&
+              candidate.raw.id === detail.details.connection
+          );
+          if (selected) {
+            current = selected;
+            matchedConnection = true;
+          }
+        }
       };
       store.addEventListener("relay:created-reservation", onReservation);
       let listenError: unknown;
@@ -411,6 +456,7 @@ export function createManagedRelayHost(
       });
       listeners.set(current, created);
       return {
+        connection: current,
         release: async () => {
           if (listeners.get(current) !== created) return;
           try {

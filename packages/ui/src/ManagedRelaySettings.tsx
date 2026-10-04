@@ -3,6 +3,7 @@ import { runManagedRelayAction } from "./managedRelayAction";
 import type {
   RelayConfiguration,
   RelayState,
+  RelayTransportFamily,
 } from "../../core/network/managedRelays.js";
 
 export type ManagedRelaySettingsProps = {
@@ -24,6 +25,12 @@ const statusText: Record<RelayState["status"], string> = {
   refused: "Relay limit reached",
   retrying: "Retrying",
   conflict: "Peer ID conflict",
+};
+
+const transportText: Record<RelayTransportFamily, string> = {
+  tcp: "TCP",
+  wss: "WSS",
+  "webrtc-direct": "WebRTC Direct",
 };
 
 export function ManagedRelaySettings({
@@ -131,6 +138,16 @@ export function ManagedRelaySettings({
                 {state ? statusText[state.status] : "Connecting"}
                 {state?.reason ? `: ${state.reason}` : ""}
               </div>
+              {state?.transports && (
+                <div className="relay-status" aria-label="Relay transports">
+                  {state.transports
+                    .map(
+                      (transport) =>
+                        `${transportText[transport.family]}: ${statusText[transport.status]}${transport.reservationOwner ? " (reservation)" : ""}`
+                    )
+                    .join(" · ")}
+                </div>
+              )}
               <div className="relay-address">
                 {config.kind === "managed"
                   ? config.discoveryUrl

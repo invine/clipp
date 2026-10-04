@@ -58,12 +58,12 @@ export function createElectronManagedRelayAdapter(options: {
       (!options.acceptanceTransport ||
         acceptanceTransportAllows(options.acceptanceTransport, address)) &&
       options.host().supportsAddress(address),
-    // libp2p joins same-peer dials, so a stalled TCP attempt can prevent
-    // the later public WebSocket candidate from starting before our deadline.
+    // Schedule WSS first; the shared host serializes same-peer physical dials
+    // and bounds each attempt while the controller maintains every family.
     addressPriority: (address) =>
       address.includes("/webrtc-direct/")
         ? 2
-        : /\/(?:wss?|tls\/ws)\/p2p\//.test(address)
+        : /\/(?:wss?|tls\/(?:sni\/[^/]+\/)?ws)\/p2p\//.test(address)
           ? 0
           : 1,
     dial: (address, signal) => options.host().dial(address, signal),
