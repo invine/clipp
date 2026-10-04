@@ -5,6 +5,7 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.clipp.app"
+        manifestPlaceholders = [relayCallbackScheme: "clipp-relay"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 3
@@ -17,11 +18,21 @@ android {
         }
     }
     buildTypes {
+        // Explicitly opt in for native fixtures; never target the operator installation.
+        if (project.hasProperty("clippAcceptance")) {
+            acceptance {
+                initWith debug
+                applicationIdSuffix ".acceptance"
+                matchingFallbacks = ["debug"]
+                manifestPlaceholders = [relayCallbackScheme: "clipp-relay-acceptance"]
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    testBuildType project.hasProperty("clippAcceptance") ? "acceptance" : "debug"
     testOptions {
         managedDevices {
             devices {

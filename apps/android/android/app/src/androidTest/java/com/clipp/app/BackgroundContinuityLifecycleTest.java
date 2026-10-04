@@ -47,7 +47,9 @@ public final class BackgroundContinuityLifecycleTest {
 
     @Before
     public void setUp() {
-        context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        Context target = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        NativeAcceptanceTarget.requireIsolated(target.getPackageName());
+        context = target;
         servicePreferences = BackgroundContinuityService.preferences(context);
         servicePreferences.edit().clear().commit();
         context.getSharedPreferences(ClipContinuityPreferences.NAME, Context.MODE_PRIVATE).edit().clear().commit();
@@ -60,6 +62,7 @@ public final class BackgroundContinuityLifecycleTest {
 
     @After
     public void tearDown() {
+        if (context == null) return;
         context.stopService(new Intent(context, BackgroundContinuityService.class));
         servicePreferences.edit().clear().commit();
         context.getSharedPreferences(ClipContinuityPreferences.NAME, Context.MODE_PRIVATE).edit().clear().commit();

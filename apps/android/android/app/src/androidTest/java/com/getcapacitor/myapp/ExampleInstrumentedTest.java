@@ -21,6 +21,9 @@ public class ExampleInstrumentedTest {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
 
-        assertEquals("com.clipp.app", appContext.getPackageName());
+        assertEquals(
+            appContext.getPackageName() + ".test",
+            InstrumentationRegistry.getInstrumentation().getContext().getPackageName()
+        );
     }
 }

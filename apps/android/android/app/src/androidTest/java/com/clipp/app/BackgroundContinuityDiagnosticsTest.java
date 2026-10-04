@@ -36,12 +36,14 @@ public final class BackgroundContinuityDiagnosticsTest {
     @Before
     public void setUp() {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        NativeAcceptanceTarget.requireIsolated(context.getPackageName());
         diagnostics = new BackgroundContinuityDiagnostics(context);
         diagnostics.clearForTesting();
     }
 
     @After
     public void tearDown() {
+        if (diagnostics == null) return;
         diagnostics.clearForTesting();
     }
 

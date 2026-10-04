@@ -1,0 +1,6 @@
+// Keep build outputs inside the checkout when npm dependencies are shared or symlinked.
+gradle.beforeProject { project ->
+    if (project.projectDir.absolutePath.contains('/node_modules/')) {
+        project.layout.buildDirectory.set(new File(gradle.rootProject.projectDir, 'build/dependency-builds/' + project.name))
+    }
+}

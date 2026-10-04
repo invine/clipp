@@ -29,7 +29,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="clipp-relay" android:host="oauth" android:path="/callback" />
+                <data android:scheme="${relayCallbackScheme}" android:host="oauth" android:path="/callback" />
             </intent-filter>
 
         </activity>

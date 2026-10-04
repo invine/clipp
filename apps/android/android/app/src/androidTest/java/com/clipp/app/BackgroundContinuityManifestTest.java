@@ -24,6 +24,7 @@ import androidx.test.espresso.NoActivityResumedException;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.core.content.ContextCompat;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -41,6 +42,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
 public final class BackgroundContinuityManifestTest {
+    @Before
+    public void requireIsolatedTargetBeforeFixtures() {
+        NativeAcceptanceTarget.requireIsolated(
+            InstrumentationRegistry.getInstrumentation().getTargetContext().getPackageName()
+        );
+    }
+
     @Test
     public void backgroundContinuityDeclaresPartialWakeLockPermission() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
