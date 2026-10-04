@@ -1970,3 +1970,40 @@ describe("explicit relay unsupported transport edits", () => {
     }
   });
 });
+
+describe("concurrent explicit transport edits", () => {
+  it("keeps the latest WSS-only settings when an older family addition resumes later", async () => {
+    jest.useFakeTimers();
+    const { adapter } = adapterHarness();
+    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
+    const config = {
+      key: "concurrent-edit",
+      name: "Concurrent",
+      kind: "explicit" as const,
+      peerId: peer,
+      addresses: [address],
+    };
+    const controller = new ManagedRelayController(adapter);
+    try {
+      await controller.setConfigurations([config]);
+      const adding = controller.setConfigurations([
+        { ...config, addresses: [address, tcp] },
+      ]);
+      const withdrawing = controller.setConfigurations([config]);
+      await Promise.all([adding, withdrawing]);
+      expect(controller.configurations()).toEqual([config]);
+      expect(controller.states()[0].transports).toEqual([
+        expect.objectContaining({ family: "wss", status: "ready" }),
+      ]);
+      expect(adapter.dial).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(2_000);
+      expect(controller.states()[0].transports).toEqual([
+        expect.objectContaining({ family: "wss", status: "ready" }),
+      ]);
+      expect(adapter.dial).toHaveBeenCalledTimes(1);
+    } finally {
+      await controller.stop();
+      jest.useRealTimers();
+    }
+  });
+});

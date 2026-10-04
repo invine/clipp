@@ -475,6 +475,12 @@ export class ManagedRelayController {
     root: Entry,
     addresses: string[]
   ): Promise<void> {
+    const configuration = root.config;
+    const currentConfiguration = () =>
+      !this.stopped &&
+      this.entries.get(configuration.key) === root &&
+      root.config === configuration &&
+      this.desired.get(configuration.key) === configuration;
     const available = new Set(
       addresses
         .filter((address) => this.adapter.supportsAddress(address))
@@ -522,9 +528,11 @@ export class ManagedRelayController {
     });
     this.notify();
     await Promise.all(cleanups);
-    if (this.entries.get(root.config.key) !== root || this.stopped) return;
+    if (!currentConfiguration()) return;
     await this.promote(root);
+    if (!currentConfiguration()) return;
     await Promise.all(this.addFamilies(root, addresses));
+    if (!currentConfiguration()) return;
     if (!available.size) {
       if (!this.lanes(root).some((lane) => lane.connection))
         this.releaseClaims(root);
