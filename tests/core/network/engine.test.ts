@@ -597,6 +597,158 @@ describe("Libp2pMessagingTransport", () => {
     await transport.stop();
   });
 
+  it("forces a direct dial while retaining the working relay connection", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    node.getConnections.mockReturnValue([
+      {
+        remotePeer: { toString: () => "peer-1" },
+        remoteAddr: {
+          toString: () =>
+            "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/p2p/peer-1",
+        },
+        status: "open",
+      },
+    ]);
+    await transport.connect(
+      "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-1"
+    );
+    expect(node.dial).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ force: true })
+    );
+    await transport.stop();
+  });
+
+  it("delivers pairing responses on the open direct connection during relay replacement", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const stream = {
+      send: jest.fn(() => true),
+      close: jest.fn(async () => {}),
+    };
+    const staleStream = jest.fn(async () => {
+      throw new Error("connection_closed");
+    });
+    const directStream = jest.fn(async () => stream);
+    node.getConnections.mockReturnValue([
+      {
+        remotePeer: { toString: () => "peer-1" },
+        status: "closing",
+        newStream: staleStream,
+        remoteAddr: {
+          toString: () =>
+            "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/p2p/peer-1",
+        },
+      },
+      {
+        remotePeer: { toString: () => "peer-1" },
+        status: "open",
+        newStream: directStream,
+        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/9/ws/p2p/peer-1" },
+      },
+    ]);
+    await expect(
+      transport.send("/clipp/pairing/1.0.0", "peer-1", Uint8Array.of(1))
+    ).resolves.toBeUndefined();
+    expect(directStream).toHaveBeenCalled();
+    expect(staleStream).not.toHaveBeenCalled();
+    await transport.stop();
+  });
+
+  it("probes direct again after a direct connection closes while relay survives", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const relay = {
+      remotePeer: { toString: () => "peer-1" },
+      status: "open",
+      remoteAddr: {
+        toString: () =>
+          "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/p2p/peer-1",
+      },
+    };
+    const direct = {
+      ...relay,
+      remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/9/ws/p2p/peer-1" },
+    };
+    node.getConnections.mockReturnValue([relay, direct]);
+    eventHandlers.get("connection:open")?.[0]?.({ detail: relay });
+    eventHandlers.get("connection:open")?.[0]?.({ detail: direct });
+    node.getConnections.mockReturnValue([relay]);
+    eventHandlers.get("connection:close")?.[0]?.({ detail: direct });
+    await transport.connect(
+      "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-1"
+    );
+    expect(node.dial).toHaveBeenCalledTimes(1);
+    await transport.stop();
+  });
+
+  it("releases an idle relay after a direct upgrade", async () => {
+    const transport = createLibp2pMessagingTransport();
+    await transport.start();
+    const node = await createClipboardNode.mock.results[0].value;
+    const relay = {
+      remotePeer: { toString: () => "peer-1" },
+      status: "open",
+      streams: [],
+      remoteAddr: {
+        toString: () =>
+          "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/p2p/peer-1",
+      },
+      close: jest.fn(async () => {}),
+    };
+    const direct = {
+      ...relay,
+      remoteAddr: {
+        toString: () =>
+          "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-1",
+      },
+    };
+    node.getConnections.mockReturnValue([relay, direct]);
+    eventHandlers.get("connection:open")?.[0]?.({ detail: direct });
+    await Promise.resolve();
+    expect(relay.close).toHaveBeenCalledTimes(1);
+    await transport.stop();
+  });
+
+  it("retains a relay with a pairing stream until it drains and cancels cleanup if direct fails", async () => {
+    jest.useFakeTimers();
+    const transport = createLibp2pMessagingTransport();
+    try {
+      await transport.start();
+      const node = await createClipboardNode.mock.results[0].value;
+      const relay = {
+        remotePeer: { toString: () => "peer-1" },
+        status: "open",
+        streams: [{ protocol: "/clipp/pairing/1.0.0", status: "open" }],
+        remoteAddr: {
+          toString: () =>
+            "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/p2p/peer-1",
+        },
+        close: jest.fn(async () => {}),
+      };
+      const direct = {
+        ...relay,
+        streams: [],
+        remoteAddr: { toString: () => "/ip4/127.0.0.1/tcp/9/ws/p2p/peer-1" },
+      };
+      node.getConnections.mockReturnValue([relay, direct]);
+      eventHandlers.get("connection:open")?.[0]?.({ detail: direct });
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(relay.close).not.toHaveBeenCalled();
+      node.getConnections.mockReturnValue([relay]);
+      relay.streams = [];
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(relay.close).not.toHaveBeenCalled();
+    } finally {
+      await transport.stop();
+      jest.useRealTimers();
+    }
+  });
+
   it("does not hide peers connected through a relay circuit", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
     const transport = createLibp2pMessagingTransport({

@@ -3,6 +3,30 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 let currentLevel: LogLevel = "debug";
 const MAX_LOG_STRING_LENGTH = 256;
 const MAX_LOG_ARRAY_LENGTH = 50;
+// Only fixed classifications may survive redaction; never emit arbitrary text
+// from transport errors, which can embed addresses, tokens, or user content.
+const SAFE_ERROR_NAMES = new Map([
+  ["UnexpectedEOFError", "unexpected_eof"],
+  ["NotFoundError", "not_found"],
+  ["AbortError", "aborted"],
+  ["TimeoutError", "timeout"],
+  ["UnsupportedProtocolError", "unsupported_protocol"],
+]);
+const SAFE_ERROR_MESSAGES = new Set([
+  "messaging_not_started",
+  "peer_not_connected",
+  "no_eligible_address",
+  "revoked_peer",
+  "history_snapshot_busy",
+  "history_stream_timeout",
+  "live_clip_stream_timeout",
+  "stream_progress_timeout",
+  "stream_cancelled",
+  "stream_not_consumed",
+  "signed_peer_record_unavailable",
+  "invalid_signed_peer_record",
+  "managed_relay_host_unavailable",
+]);
 const REDACTED_LOG_KEYS = new Set([
   "content",
   "devicename",
@@ -92,9 +116,12 @@ function sanitizeLogArg(
     return `[binary ${arg.byteLength} bytes]`;
   }
   if (arg instanceof Error) {
+    const reason = SAFE_ERROR_NAMES.get(arg.name)
+      ?? (SAFE_ERROR_MESSAGES.has(arg.message) ? arg.message : undefined);
     return {
       name: boundLogString(arg.name),
       message: "[REDACTED]",
+      ...(reason ? { reason } : {}),
     };
   }
   if (typeof arg !== "object") return boundLogString(String(arg));

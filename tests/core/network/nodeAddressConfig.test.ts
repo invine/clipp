@@ -1,100 +1,170 @@
-jest.mock("libp2p", () => ({
-  createLibp2p: jest.fn(async (config: any) => ({
-    config,
-    stop: jest.fn(),
-  })),
-}), { virtual: true });
+jest.mock(
+  "libp2p",
+  () => ({
+    createLibp2p: jest.fn(async (config: any) => ({
+      config,
+      stop: jest.fn(),
+    })),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/circuit-relay-v2", () => ({
-  circuitRelayTransport: jest.fn(() => jest.fn(() => ({}))),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/circuit-relay-v2",
+  () => ({
+    circuitRelayTransport: jest.fn(() => jest.fn(() => ({}))),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/websockets", () => ({
-  webSockets: jest.fn(() => jest.fn(() => ({}))),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/websockets",
+  () => ({
+    webSockets: jest.fn(() => jest.fn(() => ({}))),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/webrtc", () => ({
-  webRTC: jest.fn(() => jest.fn(() => ({}))),
-  webRTCDirect: jest.fn(() => jest.fn(() => ({}))),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/webrtc",
+  () => ({
+    webRTC: jest.fn(() => jest.fn(() => ({}))),
+    webRTCDirect: jest.fn(() => jest.fn(() => ({}))),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@chainsafe/libp2p-noise", () => ({
-  noise: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@chainsafe/libp2p-noise",
+  () => ({
+    noise: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@chainsafe/libp2p-yamux", () => ({
-  yamux: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@chainsafe/libp2p-yamux",
+  () => ({
+    yamux: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/mplex", () => ({
-  mplex: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/mplex",
+  () => ({
+    mplex: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/bootstrap", () => ({
-  bootstrap: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/bootstrap",
+  () => ({
+    bootstrap: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/mdns", () => ({
-  mdns: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/mdns",
+  () => ({
+    mdns: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@chainsafe/libp2p-gossipsub", () => ({
-  gossipsub: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@chainsafe/libp2p-gossipsub",
+  () => ({
+    gossipsub: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/kad-dht", () => ({
-  kadDHT: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/kad-dht",
+  () => ({
+    kadDHT: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/identify", () => ({
-  identify: jest.fn(() => ({})),
-  identifyPush: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/identify",
+  () => ({
+    identify: jest.fn(() => ({})),
+    identifyPush: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/ping", () => ({
-  ping: jest.fn(() => ({})),
-}), { virtual: true });
+jest.mock(
+  "@libp2p/ping",
+  () => ({
+    ping: jest.fn(() => ({})),
+  }),
+  { virtual: true }
+);
 
-jest.mock("@libp2p/interface", () => ({
-  FaultTolerance: { NO_FATAL: "NO_FATAL" },
-}), { virtual: true });
+jest.mock(
+  "@libp2p/interface",
+  () => ({
+    FaultTolerance: { NO_FATAL: "NO_FATAL" },
+  }),
+  { virtual: true }
+);
 
-jest.mock("@multiformats/multiaddr", () => {
-  class MockMultiaddr {
-    constructor(private readonly value: string) {}
+jest.mock(
+  "@multiformats/multiaddr",
+  () => {
+    class MockMultiaddr {
+      constructor(private readonly value: string) {}
 
-    toString() {
-      return this.value;
-    }
-
-    encapsulate(suffix: string) {
-      return new MockMultiaddr(`${this.value}${suffix}`);
-    }
-
-    getComponents() {
-      const valueless = new Set(["ws", "wss", "p2p-circuit", "p2p-webrtc-star", "webrtc"]);
-      const codes: Record<string, number> = {
-        p2p: 421,
-        "p2p-circuit": 290,
-      };
-      const parts = this.value.split("/").filter(Boolean);
-      const components: Array<{ name: string; value?: string; code?: number }> = [];
-
-      for (let i = 0; i < parts.length; i++) {
-        const name = parts[i];
-        const hasValue = !valueless.has(name) && i + 1 < parts.length;
-        const value = hasValue ? parts[++i] : undefined;
-        components.push({ name, value, code: codes[name] });
+      toString() {
+        return this.value;
       }
 
-      return components;
-    }
-  }
+      encapsulate(suffix: string) {
+        return new MockMultiaddr(`${this.value}${suffix}`);
+      }
 
-  return {
-    multiaddr: (addr: string) => new MockMultiaddr(addr),
-  };
-}, { virtual: true });
+      getComponents() {
+        const valueless = new Set([
+          "ws",
+          "wss",
+          "p2p-circuit",
+          "p2p-webrtc-star",
+          "webrtc",
+        ]);
+        const codes: Record<string, number> = {
+          p2p: 421,
+          "p2p-circuit": 290,
+        };
+        const parts = this.value.split("/").filter(Boolean);
+        const components: Array<{
+          name: string;
+          value?: string;
+          code?: number;
+        }> = [];
+
+        for (let i = 0; i < parts.length; i++) {
+          const name = parts[i];
+          const hasValue = !valueless.has(name) && i + 1 < parts.length;
+          const value = hasValue ? parts[++i] : undefined;
+          components.push({ name, value, code: codes[name] });
+        }
+
+        return components;
+      }
+    }
+
+    return {
+      multiaddr: (addr: string) => new MockMultiaddr(addr),
+    };
+  },
+  { virtual: true }
+);
 
 import { createLibp2p } from "libp2p";
 import { createClipboardNode } from "../../../packages/core/network/node";
@@ -112,7 +182,8 @@ describe("createClipboardNode address config", () => {
   });
 
   afterEach(() => {
-    if (originalRTCPeerConnection === undefined) delete (globalThis as any).RTCPeerConnection;
+    if (originalRTCPeerConnection === undefined)
+      delete (globalThis as any).RTCPeerConnection;
     else (globalThis as any).RTCPeerConnection = originalRTCPeerConnection;
   });
 
@@ -136,6 +207,13 @@ describe("createClipboardNode address config", () => {
     expect(config.addresses.appendAnnounce).toBeUndefined();
   });
 
+  it("enables relay-signalled WebRTC in Electron without a browser global", async () => {
+    delete (globalThis as any).RTCPeerConnection;
+    await createClipboardNode({ relayAddresses: [] });
+    const config = (createLibp2p as jest.Mock).mock.calls[0][0];
+    expect(config.addresses.listen.map(String)).toContain("/webrtc");
+  });
+
   it("can disable browser dial gating for direct LAN websocket pairing", async () => {
     await createClipboardNode({
       peerId: { toString: () => peerId },
@@ -156,7 +234,9 @@ describe("createClipboardNode address config", () => {
 
     const config = (createLibp2p as jest.Mock).mock.calls[0][0];
 
-    expect(config.addresses.listen.map(String)).not.toContain("/ip4/0.0.0.0/udp/0/webrtc-direct");
+    expect(config.addresses.listen.map(String)).not.toContain(
+      "/ip4/0.0.0.0/udp/0/webrtc-direct"
+    );
   });
 
   it("can reserve relay circuits from browser document runtimes", async () => {
@@ -174,7 +254,10 @@ describe("createClipboardNode address config", () => {
 
       const config = (createLibp2p as jest.Mock).mock.calls[0][0];
 
-      expect(config.addresses.listen.map(String)).toEqual(["/webrtc", `${relay}/p2p-circuit`]);
+      expect(config.addresses.listen.map(String)).toEqual([
+        "/webrtc",
+        `${relay}/p2p-circuit`,
+      ]);
       expect(config.addresses.appendAnnounce).toBeUndefined();
     } finally {
       if (originalWindow === undefined) delete (globalThis as any).window;
@@ -185,7 +268,8 @@ describe("createClipboardNode address config", () => {
   });
 
   it("does not try to make circuit relay reservations on WebRTC-star relays", async () => {
-    const starRelay = "/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star";
+    const starRelay =
+      "/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star";
 
     await createClipboardNode({
       peerId: { toString: () => peerId },
@@ -195,7 +279,9 @@ describe("createClipboardNode address config", () => {
 
     const config = (createLibp2p as jest.Mock).mock.calls[0][0];
 
-    expect(config.addresses.listen.map(String)).not.toContain(`${starRelay}/p2p-circuit`);
+    expect(config.addresses.listen.map(String)).not.toContain(
+      `${starRelay}/p2p-circuit`
+    );
     expect(config.addresses.appendAnnounce).toBeUndefined();
   });
 });

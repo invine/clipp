@@ -60,4 +60,43 @@ describe("privacy-safe logging", () => {
     );
     expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
   });
+
+  it("preserves allowlisted failure reasons without exposing error text", () => {
+    const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const eof = new Error("SECRET transport address and key");
+    eof.name = "UnexpectedEOFError";
+
+    log.error("Offscreen handler error", {
+      action: "runtimeSend",
+      failure: eof,
+    });
+    log.error("Offscreen handler error", {
+      action: "runtimeSendStream",
+      failure: new Error("peer_not_connected"),
+    });
+    log.error("Offscreen handler error", {
+      failure: new Error("peer_not_connected SECRET"),
+    });
+
+    expect(error.mock.calls[0][1]).toEqual({
+      action: "runtimeSend",
+      failure: {
+        name: "UnexpectedEOFError",
+        message: "[REDACTED]",
+        reason: "unexpected_eof",
+      },
+    });
+    expect(error.mock.calls[1][1]).toEqual({
+      action: "runtimeSendStream",
+      failure: {
+        name: "Error",
+        message: "[REDACTED]",
+        reason: "peer_not_connected",
+      },
+    });
+    expect(error.mock.calls[2][1]).toEqual({
+      failure: { name: "Error", message: "[REDACTED]" },
+    });
+    expect(JSON.stringify(error.mock.calls)).not.toContain("SECRET");
+  });
 });

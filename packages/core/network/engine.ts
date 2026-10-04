@@ -35,6 +35,7 @@ import {
 } from "./multiaddrCompat.js";
 import {
   consumeOrMatchSignedPeerRecord,
+  newerVerifiedSignedPeerRecord,
   type SignedPeerRecordPersistence,
 } from "./peerRecords.js";
 import { RelayLifecycle } from "./relayLifecycle.js";
@@ -103,6 +104,7 @@ type PeerConnectionDescription = {
 
 class Libp2pMessagingTransport implements MessagingTransport {
   private node: Libp2pNode | null = null;
+  private managedHost: ReturnType<typeof createManagedRelayHost> | null = null;
   private started = false;
   private lastSelfMultiaddrsKey: string | null = null;
   private cachedSignedPeerRecord: Uint8Array | null = null;
@@ -124,6 +126,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   private readonly relayPeerIds: Set<string>;
   private readonly relayAddrSet: Set<string>;
+  private readonly relayReleaseTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private readonly discoveryDialing = new Set<string>();
   private readonly connectedPeerIds = new Set<string>();
   private readonly observedConnectionPaths = new Map<
@@ -267,9 +273,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
 
   async stop(): Promise<void> {
     if (!this.started) return;
+    for (const timer of this.relayReleaseTimers.values()) clearTimeout(timer);
+    this.relayReleaseTimers.clear();
     await this.relayLifecycle.stop();
     await this.node?.stop?.();
     this.node = null;
+    this.managedHost = null;
     this.started = false;
     this.connectedPeerIds.clear();
     this.observedConnectionPaths.clear();
@@ -284,11 +293,11 @@ class Libp2pMessagingTransport implements MessagingTransport {
     onConnectionClosed?: Parameters<typeof createManagedRelayHost>[2]
   ): ReturnType<typeof createManagedRelayHost> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
-    return createManagedRelayHost(
+    return (this.managedHost ??= createManagedRelayHost(
       this.node,
       () => this.getSignedPeerRecord(),
       onConnectionClosed
-    );
+    ));
   }
 
   /** Restricts circuit routes to relays currently owned by the runtime controller. */
@@ -359,7 +368,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     } catch (err: any) {
       log.warn("Messaging send failed", {
         ...context,
-        error: err?.message || err,
+        failure: err instanceof Error ? err : new Error(String(err)),
       });
       throw err;
     }
@@ -450,7 +459,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       );
       log.warn("Messaging stream send failed", {
         ...context,
-        error: err?.message || err,
+        failure,
       });
       throw err;
     }
@@ -494,7 +503,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
         throw new Error("no_eligible_address");
       dialedConnection = await this.node.dial(
         ensureLegacyMultiaddrApi(multiaddr(target)),
-        this.dialOptions()
+        {
+          ...this.dialOptions(),
+          force: existing?.hasRelay === true && targetPath === "direct",
+        }
       );
       this.observePeerConnection(dialedConnection, "dial result", dialContext);
       if (peerId)
@@ -504,7 +516,6 @@ class Libp2pMessagingTransport implements MessagingTransport {
     }
 
     const peerIdObject = await peerIdObjectForTarget(target);
-    await this.node.hangUp?.(peerIdObject).catch(() => undefined);
     const storedPeer = await this.node.peerStore
       ?.get?.(peerIdObject)
       .catch(() => undefined);
@@ -602,7 +613,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     const peers = new Set(this.connectedPeerIds);
     this.node
       .getConnections()
-      .filter((c: any) => !this.isRelayConnection(c))
+      .filter((c: any) => isOpenConnection(c) && !this.isRelayConnection(c))
       .map((c: any) => safePeerId(c?.remotePeer))
       .filter(Boolean)
       .forEach((peerId: string) => peers.add(peerId));
@@ -633,7 +644,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
     try {
       const conns = this.node.getConnections() || [];
       conns
-        .filter((c: any) => !this.isRelayConnection(c))
+        .filter((c: any) => isOpenConnection(c) && !this.isRelayConnection(c))
         .map((c: any) => describeConnection(c))
         .forEach((conn: PeerConnectionDescription) => {
           if (!conn.peerId) return;
@@ -695,17 +706,43 @@ class Libp2pMessagingTransport implements MessagingTransport {
   async getSignedPeerRecord(): Promise<Uint8Array> {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     const currentMultiaddrsKey = this.selfMultiaddrs().sort().join("\n");
+    const existing = await this.node.peerStore?.get?.(this.node.peerId);
     if (
       this.cachedSignedPeerRecord &&
       this.cachedSignedPeerRecordMultiaddrsKey === currentMultiaddrsKey
     ) {
-      return Uint8Array.from(this.cachedSignedPeerRecord);
+      let superseded = false;
+      if (
+        existing?.peerRecordEnvelope instanceof Uint8Array &&
+        !sameRecordBytes(
+          existing.peerRecordEnvelope,
+          this.cachedSignedPeerRecord
+        )
+      ) {
+        const { PeerRecord, RecordEnvelope } =
+          await import("@libp2p/peer-record");
+        try {
+          const sequence = (bytes: Uint8Array) =>
+            PeerRecord.createFromProtobuf(
+              RecordEnvelope.createFromProtobuf(bytes).payload
+            ).seqNumber;
+          superseded =
+            sequence(existing.peerRecordEnvelope) >=
+            sequence(this.cachedSignedPeerRecord);
+        } catch {
+          superseded = true;
+        }
+      }
+      if (!superseded) return Uint8Array.from(this.cachedSignedPeerRecord);
+      // Identify signs records independently. Even unchanged addresses need a
+      // fresh sequence when its record has overtaken our cached Pairing Target.
+      this.cachedSignedPeerRecord = null;
+      this.selfPeerRecordDirty = true;
     }
     if (this.cachedSignedPeerRecordMultiaddrsKey !== currentMultiaddrsKey) {
       this.cachedSignedPeerRecord = null;
       this.selfPeerRecordDirty = true;
     }
-    const existing = await this.node.peerStore?.get?.(this.node.peerId);
     if (
       !this.selfPeerRecordDirty &&
       existing?.peerRecordEnvelope instanceof Uint8Array
@@ -796,7 +833,22 @@ class Libp2pMessagingTransport implements MessagingTransport {
       peerId,
       record
     );
-    if (imported !== true) throw new Error("invalid_signed_peer_record");
+    let retainedRecord = record;
+    if (imported !== true) {
+      const existing = await this.node.peerStore
+        ?.get?.(peerId)
+        .catch(() => undefined);
+      const newer =
+        existing?.peerRecordEnvelope instanceof Uint8Array
+          ? await newerVerifiedSignedPeerRecord(
+              existing.peerRecordEnvelope,
+              record,
+              expectedPeerId
+            ).catch(() => undefined)
+          : undefined;
+      if (!newer) throw new Error("invalid_signed_peer_record");
+      retainedRecord = newer;
+    }
     if (
       this.forgottenPeerIds.has(expectedPeerId) ||
       (await this.opts.isPeerRevoked?.(expectedPeerId))
@@ -804,7 +856,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       await this.forgetPeer(expectedPeerId).catch(() => undefined);
       throw new Error("revoked_peer");
     }
-    await this.persistPeerRecord(expectedPeerId, record);
+    await this.persistPeerRecord(expectedPeerId, retainedRecord);
   }
 
   async forgetPeer(peerId: string): Promise<void> {
@@ -897,6 +949,16 @@ class Libp2pMessagingTransport implements MessagingTransport {
     if (!this.node || !this.started) throw new Error("messaging_not_started");
     if (await this.opts.isPeerRevoked?.(peerId))
       throw new Error("revoked_peer");
+    const managedRecord = await this.managedHost?.lookupPeer(
+      peerId,
+      AbortSignal.timeout(
+        this.opts.rendezvousTimeoutMs ?? this.opts.dialTimeoutMs ?? 12_000
+      )
+    );
+    if (managedRecord) {
+      await this.importSignedPeerRecord(peerId, managedRecord);
+      return;
+    }
     await this.relayLifecycle.lookupPeer(peerId, async (peer, record) => {
       try {
         await this.importSignedPeerRecord(peer, record);
@@ -1022,12 +1084,19 @@ class Libp2pMessagingTransport implements MessagingTransport {
     try {
       const conns = this.node?.getConnections?.() || [];
       return (
-        conns.find(
-          (c: any) =>
-            safePeerId(c?.remotePeer) === peerId &&
-            this.eligibleDialAddresses([c?.remoteAddr?.toString?.() ?? ""])
-              .length > 0
-        ) || null
+        conns
+          .filter(isOpenConnection)
+          .sort(
+            (left: any, right: any) =>
+              Number(describeConnection(right).path === "direct") -
+              Number(describeConnection(left).path === "direct")
+          )
+          .find(
+            (c: any) =>
+              safePeerId(c?.remotePeer) === peerId &&
+              this.eligibleDialAddresses([c?.remoteAddr?.toString?.() ?? ""])
+                .length > 0
+          ) || null
       );
     } catch {
       return null;
@@ -1091,6 +1160,53 @@ class Libp2pMessagingTransport implements MessagingTransport {
       });
     }
     this.markPeerConnected(detail.peerId, true);
+    if (detail.path === "direct") this.releaseRelayedConnections(detail.peerId);
+  }
+
+  private releaseRelayedConnections(peerId: string): void {
+    if (!this.started || this.relayReleaseTimers.has(peerId)) return;
+    const connections = (this.node?.getConnections?.() ?? []).filter(
+      (connection: any) =>
+        isOpenConnection(connection) &&
+        safePeerId(connection.remotePeer) === peerId
+    );
+    if (
+      !connections.some(
+        (connection: any) => describeConnection(connection).path === "direct"
+      )
+    )
+      return;
+    const relayed = connections.filter(
+      (connection: any) => describeConnection(connection).path === "relay"
+    );
+    let busy = false;
+    for (const connection of relayed) {
+      // Let in-flight one-way protocol frames finish before releasing relay
+      // capacity. WebRTC signalling addresses still carry direct data traffic.
+      if (
+        connection.streams?.some((stream: any) => stream.status !== "closed")
+      ) {
+        busy = true;
+        continue;
+      }
+      void connection
+        .close?.({ signal: AbortSignal.timeout(5_000) })
+        .catch((error: unknown) =>
+          log.debug("Upgraded relay connection cleanup failed", {
+            peerId,
+            error,
+          })
+        );
+    }
+    if (busy) {
+      this.relayReleaseTimers.set(
+        peerId,
+        setTimeout(() => {
+          this.relayReleaseTimers.delete(peerId);
+          this.releaseRelayedConnections(peerId);
+        }, 1_000)
+      );
+    }
   }
 
   private logPeerConnectionClosed(conn: any): void {
@@ -1163,7 +1279,10 @@ class Libp2pMessagingTransport implements MessagingTransport {
     try {
       const conns = this.node?.getConnections?.() || [];
       return conns
-        .filter((c: any) => safePeerId(c?.remotePeer) === peerId)
+        .filter(
+          (c: any) =>
+            isOpenConnection(c) && safePeerId(c?.remotePeer) === peerId
+        )
         .map((c: any) => describeConnection(c));
     } catch {
       return [];
@@ -1181,7 +1300,9 @@ class Libp2pMessagingTransport implements MessagingTransport {
       addr: null,
       path,
     }));
-    const connections = [...activeConnections, ...observedConnections];
+    const connections = activeConnections.length
+      ? activeConnections
+      : observedConnections;
     return connections.length > 0
       ? summarizePeerConnectionInfo(peerId, connections)
       : null;
@@ -1432,8 +1553,12 @@ class Libp2pMessagingTransport implements MessagingTransport {
         log.debug("Incoming stream failed", {
           protocol,
           from,
-          error: err?.message || err,
+          failure: err instanceof Error ? err : new Error(String(err)),
         });
+      } finally {
+        await closeMessageStream(stream, {
+          ignoreClosedDataChannel: true,
+        }).catch(() => undefined);
       }
     };
   }
@@ -1644,6 +1769,17 @@ function summarizeRelayConnectionInfo(
           : "disconnected",
     addrs,
   };
+}
+
+function isOpenConnection(connection: any): boolean {
+  return connection?.status === undefined || connection.status === "open";
+}
+
+function sameRecordBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return (
+    left.length === right.length &&
+    left.every((byte, index) => byte === right[index])
+  );
 }
 
 function connectionPathForAddr(addr: unknown): PeerConnectionPath {

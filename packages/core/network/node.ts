@@ -77,11 +77,14 @@ export async function createClipboardNode(
     relayAddresses = DEFAULT_CIRCUIT_RELAY_ADDRESSES,
     allowInsecureBrowserDials = false,
   } = options;
-  const circuitRelayAddresses = relayAddresses.filter((address) => !address.includes("/p2p-webrtc-star"));
+  const circuitRelayAddresses = relayAddresses.filter(
+    (address) => !address.includes("/p2p-webrtc-star")
+  );
   const enableWebRTCDirect = options.enableWebRTCDirect !== false;
   const isBrowserDocument = isBrowserDocumentRuntime();
   const enableTcp = options.enableTcp === true && !isBrowserDocument;
-  const enableRelayReservations = options.enableRelayReservations ?? !isBrowserDocument;
+  const enableRelayReservations =
+    options.enableRelayReservations ?? !isBrowserDocument;
   const discovery: any[] = [];
   const transports: any[] = [
     withTransportFilters(webSockets()),
@@ -126,8 +129,13 @@ export async function createClipboardNode(
               ? (webRTC as any).default
               : null;
 
-      if (enableWebRTCDirect && typeof wrtcDirectTransportFactory === "function") {
-        transports.unshift(withTransportFilters((wrtcDirectTransportFactory as any)()));
+      if (
+        enableWebRTCDirect &&
+        typeof wrtcDirectTransportFactory === "function"
+      ) {
+        transports.unshift(
+          withTransportFilters((wrtcDirectTransportFactory as any)())
+        );
         if (!isBrowserDocument) {
           listenAddrs.push(multiaddr("/ip4/0.0.0.0/udp/0/webrtc-direct"));
         }
@@ -135,7 +143,9 @@ export async function createClipboardNode(
         console.warn("WebRTC Direct transport missing or invalid; skipping");
       }
 
-      if (hasWebRTCSupport()) {
+      // The Node transport supplies its own RTCPeerConnection through
+      // node-datachannel; Electron main has no browser WebRTC global.
+      if (hasWebRTCSupport() || (!isBrowserDocument && enableWebRTCDirect)) {
         if (typeof wrtcTransportFactory === "function") {
           const factory = (wrtcTransportFactory as any)();
           if (factory) {
@@ -144,9 +154,15 @@ export async function createClipboardNode(
               const filtered = list.filter((ma: any) => {
                 try {
                   const m = typeof ma === "string" ? multiaddr(ma) : ma;
-                  return typeof m?.protoCodes === "function" || typeof m?.protoNames === "function";
+                  return (
+                    typeof m?.protoCodes === "function" ||
+                    typeof m?.protoNames === "function"
+                  );
                 } catch (err) {
-                  console.warn("[wrtc] filter proto check failed", { addr: String(ma), error: (err as any)?.message });
+                  console.warn("[wrtc] filter proto check failed", {
+                    addr: String(ma),
+                    error: (err as any)?.message,
+                  });
                   return false;
                 }
               });
@@ -205,8 +221,12 @@ export async function createClipboardNode(
       const { dcutr } = await import("@libp2p/dcutr");
       if (typeof dcutr === "function") {
         const createDCUtRService = dcutr({
-          ...(options.dcutrTimeoutMs !== undefined ? { timeout: options.dcutrTimeoutMs } : {}),
-          ...(options.dcutrRetries !== undefined ? { retries: options.dcutrRetries } : {}),
+          ...(options.dcutrTimeoutMs !== undefined
+            ? { timeout: options.dcutrTimeoutMs }
+            : {}),
+          ...(options.dcutrRetries !== undefined
+            ? { retries: options.dcutrRetries }
+            : {}),
         });
         services.dcutr = (components: any) => {
           const service: any = createDCUtRService(components);
@@ -214,7 +234,9 @@ export async function createClipboardNode(
             const original = service?.[method]?.bind(service);
             if (!original) continue;
             service[method] = async (connection: any) => {
-              options.onDCUtRAttempt?.(connection?.remotePeer?.toString?.() ?? "");
+              options.onDCUtRAttempt?.(
+                connection?.remotePeer?.toString?.() ?? ""
+              );
               return original(connection);
             };
           }

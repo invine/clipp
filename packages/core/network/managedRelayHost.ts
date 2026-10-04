@@ -1,5 +1,6 @@
 import { multiaddr } from "@multiformats/multiaddr";
 import { closeMessageStream, writeMessageStream } from "./messageStream.js";
+import { decodeSignedPeerRecordBytes } from "./peerRecords.js";
 import { ensureLegacyMultiaddrApi } from "./multiaddrCompat.js";
 import {
   normalizeRelayAuthResponse,
@@ -125,10 +126,19 @@ async function exchange(
 ): Promise<Record<string, unknown>> {
   const stream = await connection.newStream(protocol, { signal });
   try {
+    // Subscribe before ending the request: a fast reply can finish its stream
+    // before a later async iterator has attached its read/close listeners.
+    const received = response(stream, framed, framed ? 32_768 : 131_072);
+    void received.catch(() => undefined);
     const data = encoder.encode(JSON.stringify(payload));
     await writeMessageStream(stream, framed ? frame(data) : data);
-    if (protocol === AUTH) await stream.closeWrite?.();
-    const value = await response(stream, framed, framed ? 32_768 : 131_072);
+    if (protocol === AUTH) {
+      // Current libp2p close() ends only the writable side. The relay waits
+      // for request EOF before authenticating; older streams use closeWrite().
+      if (typeof stream.closeWrite === "function") await stream.closeWrite();
+      else await stream.close({ signal });
+    }
+    const value = await received;
     if (value.ok !== true) operationError(value);
     return value;
   } finally {
@@ -162,12 +172,76 @@ export function createManagedRelayHost(
     if (!idleListeners.includes(listener)) idleListeners.push(listener);
   };
   const rendezvousVersions = new Map<Owned, 2 | 1>();
+  const reservationCleanup = new Map<Owned, () => void>();
+  const registrationTimers = new Map<Owned, ReturnType<typeof setTimeout>>();
+  const cancelRegistration = (connection: Owned) => {
+    const timer = registrationTimers.get(connection);
+    if (timer) clearTimeout(timer);
+    registrationTimers.delete(connection);
+  };
+  const cleanup = (connection: Owned) => {
+    cancelRegistration(connection);
+    reservationCleanup.get(connection)?.();
+    reservationCleanup.delete(connection);
+  };
+  const scheduleRegistration = (
+    connection: Owned,
+    version: 1 | 2,
+    leaseExpiresAt?: unknown,
+    retryMs?: number
+  ) => {
+    cancelRegistration(connection);
+    if (!owned.has(connection) || !listeners.has(connection)) return;
+    const remaining =
+      typeof leaseExpiresAt === "string"
+        ? Date.parse(leaseExpiresAt) - Date.now()
+        : NaN;
+    const delay =
+      retryMs ??
+      (Number.isFinite(remaining)
+        ? Math.max(1_000, Math.min(30_000, remaining / 2))
+        : 30_000);
+    const timer = setTimeout(() => {
+      registrationTimers.delete(connection);
+      if (
+        !owned.has(connection) ||
+        !listeners.has(connection) ||
+        !rendezvousVersions.has(connection)
+      )
+        return;
+      void (async () => {
+        try {
+          const record = await signedPeerRecord();
+          if (!owned.has(connection) || !listeners.has(connection)) return;
+          const result = await exchange(
+            connection.raw,
+            version === 2 ? RV2 : RV1,
+            {
+              action: "register",
+              topic: "clipp",
+              signedPeerRecord:
+                version === 2 ? base64url(record) : Array.from(record),
+            },
+            AbortSignal.timeout(8_000),
+            version === 2
+          );
+          scheduleRegistration(connection, version, result.leaseExpiresAt);
+        } catch {
+          scheduleRegistration(connection, version, undefined, 5_000);
+        }
+      })();
+    }, delay);
+    timer.unref?.();
+    registrationTimers.set(connection, timer);
+  };
   node.addEventListener?.("connection:close", (event: any) => {
     const connection = [...owned].find(
       (candidate) => candidate.raw === event?.detail
     );
     if (connection) {
+      cleanup(connection);
       owned.delete(connection);
+      rendezvousVersions.delete(connection);
       onConnectionClosed?.(connection);
     }
   });
@@ -192,7 +266,13 @@ export function createManagedRelayHost(
         ensureLegacyMultiaddrApi(multiaddr(address)),
         { signal, force: true }
       );
-      if (before.has(raw) || !raw?.remotePeer)
+      // Same-peer libp2p dials can resolve to the same physical connection.
+      // Give it one owner; otherwise loser cleanup would close the winner.
+      if (
+        before.has(raw) ||
+        !raw?.remotePeer ||
+        [...owned].some((connection) => connection.raw === raw)
+      )
         throw new Error("relay_connection_not_new");
       let closed = false;
       const connection: Owned = {
@@ -202,6 +282,7 @@ export function createManagedRelayHost(
         initialAuthDeadlineMs: Date.now() + 9_000,
         async close() {
           if (closed) return;
+          cleanup(connection);
           await raw.close();
           closed = true;
           owned.delete(connection);
@@ -271,7 +352,10 @@ export function createManagedRelayHost(
         (manager.getListeners?.() ?? []).find(
           (candidate: any) =>
             !existing.has(candidate) &&
-            candidate.constructor?.name === "CircuitRelayTransportListener"
+            // Class names change in minified Android/extension bundles. The
+            // listener's store identifies its circuit transport even when a
+            // failed listen has not published any addresses yet.
+            candidate.reservationStore === store
         );
       if (
         listenError ||
@@ -290,6 +374,41 @@ export function createManagedRelayHost(
         if (listenError) throw listenError;
         throw new Error("relay_reservation_failed");
       }
+      let removalTimer: ReturnType<typeof setTimeout> | undefined;
+      const matchesReservation = (event: any) =>
+        event?.detail?.relay?.toString?.() === current.verifiedPeerId &&
+        event.detail.details?.type === "configured" &&
+        event.detail.details?.connection === current.raw.id;
+      const renewed = (event: any) => {
+        if (!owned.has(current) || !matchesReservation(event)) return;
+        if (removalTimer) clearTimeout(removalTimer);
+        removalTimer = undefined;
+        // The installed configured listener ignores creation events after its
+        // first listen(), so renewal otherwise leaves its advertised addresses
+        // empty. Restore only a reservation on this authenticated connection.
+        created.addedRelay?.(event.detail);
+        const version = rendezvousVersions.get(current);
+        if (version) scheduleRegistration(current, version, undefined, 0);
+      };
+      const removed = (event: any) => {
+        if (!matchesReservation(event)) return;
+        cancelRegistration(current);
+        if (removalTimer) clearTimeout(removalTimer);
+        // addRelay removes the old reservation before refreshing it. Give the
+        // five-second libp2p reservation attempt time to finish; a real loss
+        // closes ownership and lets the controller reconnect.
+        removalTimer = setTimeout(() => {
+          void current.close().catch(() => undefined);
+        }, 6_000);
+        removalTimer.unref?.();
+      };
+      store.addEventListener("relay:created-reservation", renewed);
+      store.addEventListener("relay:removed", removed);
+      reservationCleanup.set(current, () => {
+        if (removalTimer) clearTimeout(removalTimer);
+        store.removeEventListener?.("relay:created-reservation", renewed);
+        store.removeEventListener?.("relay:removed", removed);
+      });
       listeners.set(current, created);
       return {
         release: async () => {
@@ -321,7 +440,7 @@ export function createManagedRelayHost(
           version === 2 ? base64url(record) : Array.from(record),
       };
       try {
-        await exchange(
+        const result = await exchange(
           current.raw,
           version === 2 ? RV2 : RV1,
           payload,
@@ -329,6 +448,7 @@ export function createManagedRelayHost(
           version === 2
         );
         rendezvousVersions.set(current, version);
+        scheduleRegistration(current, version, result.leaseExpiresAt);
       } catch (error) {
         if (
           version === 2 &&
@@ -338,11 +458,59 @@ export function createManagedRelayHost(
         throw error;
       }
     },
+    /** Exact lookup reuses the authenticated session that owns registration. */
+    async lookupPeer(
+      peerId: string,
+      signal: AbortSignal
+    ): Promise<Uint8Array | undefined> {
+      for (const [connection, version] of rendezvousVersions) {
+        signal.throwIfAborted();
+        if (!owned.has(connection) || connection.raw.status !== "open")
+          continue;
+        try {
+          const result = await exchange(
+            connection.raw,
+            version === 2 ? RV2 : RV1,
+            { action: "lookup", topic: "clipp", peerId },
+            signal,
+            version === 2
+          );
+          if (!owned.has(connection) || !rendezvousVersions.has(connection))
+            continue;
+          const record = result.record as
+            { peer?: unknown; signedPeerRecord?: unknown } | undefined;
+          if (record?.peer !== peerId) continue;
+          if (version === 1) {
+            const bytes = decodeSignedPeerRecordBytes(record.signedPeerRecord);
+            if (bytes) return bytes;
+          } else if (
+            typeof record.signedPeerRecord === "string" &&
+            /^[A-Za-z0-9_-]+$/.test(record.signedPeerRecord)
+          ) {
+            const encoded = record.signedPeerRecord
+              .replace(/-/g, "+")
+              .replace(/_/g, "/");
+            const binary = atob(
+              encoded + "=".repeat((4 - (encoded.length % 4)) % 4)
+            );
+            if (binary.length)
+              return Uint8Array.from(binary, (character) =>
+                character.charCodeAt(0)
+              );
+          }
+        } catch {
+          signal.throwIfAborted();
+          // Another owned relay can still supply fresh reachability.
+        }
+      }
+      return undefined;
+    },
     async unregister(
       connection: ManagedRelayConnection,
       signal: AbortSignal
     ): Promise<void> {
       const current = asOwned(connection);
+      cancelRegistration(current);
       const version = rendezvousVersions.get(current) ?? 2;
       await exchange(
         current.raw,

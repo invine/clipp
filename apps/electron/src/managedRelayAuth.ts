@@ -34,6 +34,62 @@ type Credential = { refresh: string; access: string; accessExpiresAt: number };
 const warning =
   "Credential is held in memory only; sign in again after restart.";
 
+class TokenExchangeError extends Error {
+  constructor(readonly httpStatus: number) {
+    super(
+      httpStatus === 400 || httpStatus === 401
+        ? "invalid_credentials"
+        : "token_exchange_failed"
+    );
+  }
+}
+
+/** Keep only allowlisted diagnostics; error messages can contain credentials. */
+function renewalFailureReason(error: unknown): string {
+  if (!(error instanceof Error)) return "token_exchange_failed";
+  const status = (error as Error & { httpStatus?: unknown }).httpStatus;
+  if (
+    typeof status === "number" &&
+    Number.isInteger(status) &&
+    status >= 400 &&
+    status <= 599
+  )
+    return `HTTP ${status}`;
+  if (error.name === "TimeoutError") return "network_timeout";
+  if (error.name === "AbortError") return "request_aborted";
+  const cause = (error as Error & { cause?: { code?: unknown } }).cause;
+  switch (cause?.code) {
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return "dns_lookup_failed";
+    case "ETIMEDOUT":
+    case "UND_ERR_CONNECT_TIMEOUT":
+    case "UND_ERR_HEADERS_TIMEOUT":
+    case "UND_ERR_BODY_TIMEOUT":
+      return "network_timeout";
+    case "ECONNRESET":
+    case "UND_ERR_SOCKET":
+      return "connection_reset";
+    case "ECONNREFUSED":
+      return "connection_refused";
+    case "CERT_HAS_EXPIRED":
+    case "UNABLE_TO_VERIFY_LEAF_SIGNATURE":
+    case "ERR_TLS_CERT_ALTNAME_INVALID":
+    case "DEPTH_ZERO_SELF_SIGNED_CERT":
+      return "tls_verification_failed";
+  }
+  if (
+    [
+      "invalid_credentials",
+      "invalid_token_response",
+      "token_response_too_large",
+    ].includes(error.message)
+  )
+    return error.message;
+  if (error instanceof SyntaxError) return "invalid_token_response";
+  return "token_exchange_failed";
+}
+
 function tokenEndpoint(discoveryUrl: string): string {
   return new URL("/oauth/token", discoveryUrl).href;
 }
@@ -67,12 +123,7 @@ async function postToken(
     body: params.toString(),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok)
-    throw new Error(
-      response.status === 400 || response.status === 401
-        ? "invalid_credentials"
-        : "token_exchange_failed"
-    );
+  if (!response.ok) throw new TokenExchangeError(response.status);
   if (
     response.headers.get("content-length") &&
     Number(response.headers.get("content-length")) > 16_384
@@ -219,8 +270,11 @@ export function createElectronManagedRelayAuth(options: Options) {
         return (credentialGeneration.get(url) ?? 0) === generation
           ? (credentials.get(url)?.access ?? null)
           : null;
-      } catch {
-        warnings.set(url, "Credential renewal failed; sign in again.");
+      } catch (error) {
+        warnings.set(
+          url,
+          `Credential renewal failed (${renewalFailureReason(error)}); sign in again.`
+        );
         return null;
       }
     })();

@@ -19,6 +19,7 @@ function fixture(secure = true) {
   let releaseSave: (() => void) | null = null;
   let tokenGate: Promise<void> | null = null;
   let releaseToken: (() => void) | null = null;
+  let tokenFailure: unknown;
   const auth = createElectronManagedRelayAuth({
     storage: {
       get: async (key) => {
@@ -54,6 +55,7 @@ function fixture(secure = true) {
       if (tokenGate && params.get("grant_type") === "refresh_token")
         await tokenGate;
       posts.push(params);
+      if (tokenFailure) throw tokenFailure;
       return {
         access_token: `access-${posts.length}`,
         refresh_token: `refresh-${posts.length}`,
@@ -68,6 +70,9 @@ function fixture(secure = true) {
     data,
     opened,
     posts,
+    failToken: (error: unknown) => {
+      tokenFailure = error;
+    },
     advance: (ms: number) => {
       clock += ms;
     },
@@ -110,6 +115,51 @@ async function callback(url: URL): Promise<number> {
 }
 
 describe("Electron managed relay authorization", () => {
+  it.each([
+    [
+      Object.assign(new Error("token_exchange_failed"), { httpStatus: 503 }),
+      "HTTP 503",
+    ],
+    [
+      Object.assign(new Error("fetch failed with PRIVATE_TOKEN"), {
+        cause: { code: "ENOTFOUND" },
+      }),
+      "dns_lookup_failed",
+    ],
+    [
+      Object.assign(new Error("PRIVATE_TOKEN"), { name: "TimeoutError" }),
+      "network_timeout",
+    ],
+    [
+      Object.assign(new Error("PRIVATE_TOKEN"), {
+        cause: { code: "ECONNRESET" },
+      }),
+      "connection_reset",
+    ],
+    [new Error("PRIVATE_TOKEN"), "token_exchange_failed"],
+  ])(
+    "preserves a safe renewal reason without replaying an ambiguous refresh (%s)",
+    async (error, reason) => {
+      const { auth, data, posts, advance, failToken } = fixture();
+      await auth.acceptTokens(endpoint, {
+        access_token: "access",
+        refresh_token: "old-refresh",
+        token_type: "Bearer",
+        expires_in: 1,
+      });
+      advance(1_100);
+      failToken(error);
+      expect(await auth.accessToken(endpoint)).toBeNull();
+      expect(auth.warning(endpoint)).toBe(
+        `Credential renewal failed (${reason}); sign in again.`
+      );
+      expect(auth.warning(endpoint)).not.toContain("PRIVATE_TOKEN");
+      expect(data.size).toBe(0);
+      expect(await auth.accessToken(endpoint)).toBeNull();
+      expect(posts).toHaveLength(1);
+    }
+  );
+
   it("accepts only the initiating loopback callback and exchanges a fresh S256 code", async () => {
     const { auth, opened, posts, data } = fixture();
     const login = auth.interactiveLogin(endpoint);

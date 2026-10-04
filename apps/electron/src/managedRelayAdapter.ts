@@ -8,7 +8,16 @@ import {
 import type { createManagedRelayHost } from "../../../packages/core/network/managedRelayHost.js";
 import type { createElectronManagedRelayAuth } from "./managedRelayAuth.js";
 
-type Host = ReturnType<typeof createManagedRelayHost>;
+type Host = Pick<
+  ReturnType<typeof createManagedRelayHost>,
+  | "supportsAddress"
+  | "dial"
+  | "authenticate"
+  | "reserve"
+  | "register"
+  | "signedPeerRecord"
+  | "unregister"
+>;
 type Auth = ReturnType<typeof createElectronManagedRelayAuth>;
 
 export function createElectronManagedRelayAdapter(options: {
@@ -41,12 +50,14 @@ export function createElectronManagedRelayAdapter(options: {
       return normalizeDiscoveryResponse(JSON.parse(text));
     },
     supportsAddress: (address) => options.host().supportsAddress(address),
+    // libp2p joins same-peer dials, so a stalled TCP attempt can prevent
+    // the later public WebSocket candidate from starting before our deadline.
     addressPriority: (address) =>
       address.includes("/webrtc-direct/")
         ? 2
         : /\/(?:wss?|tls\/ws)\/p2p\//.test(address)
-          ? 1
-          : 0,
+          ? 0
+          : 1,
     dial: (address, signal) => options.host().dial(address, signal),
     authenticate: (connection, token, signal) =>
       options.host().authenticate(connection, token, signal),

@@ -8,7 +8,9 @@ export type SignedPeerRecordPersistence = {
   remove(peerId: string): Promise<void>;
 };
 
-export function decodeSignedPeerRecordBytes(value: unknown): Uint8Array | undefined {
+export function decodeSignedPeerRecordBytes(
+  value: unknown
+): Uint8Array | undefined {
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
@@ -20,7 +22,10 @@ export function decodeSignedPeerRecordBytes(value: unknown): Uint8Array | undefi
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((byte, index) => byte === right[index])
+  );
 }
 
 /**
@@ -29,10 +34,14 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
  * records to the peer store for signature, subject, and sequence validation.
  */
 export async function consumeOrMatchSignedPeerRecord(
-  peerStore: {
-    get?(peerId: any): Promise<{ peerRecordEnvelope?: Uint8Array } | undefined>;
-    consumePeerRecord?(record: Uint8Array, peerId: any): Promise<boolean>;
-  } | undefined,
+  peerStore:
+    | {
+        get?(
+          peerId: any
+        ): Promise<{ peerRecordEnvelope?: Uint8Array } | undefined>;
+        consumePeerRecord?(record: Uint8Array, peerId: any): Promise<boolean>;
+      }
+    | undefined,
   expectedPeerId: any,
   record: Uint8Array
 ): Promise<boolean> {
@@ -52,12 +61,44 @@ export async function verifiedSignedPeerRecordMultiaddrs(
   expectedPeerId: string
 ): Promise<string[]> {
   const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
-  const envelope = await RecordEnvelope.openAndCertify(record, PeerRecord.DOMAIN);
+  const envelope = await RecordEnvelope.openAndCertify(
+    record,
+    PeerRecord.DOMAIN
+  );
   const peerRecord = PeerRecord.createFromProtobuf(envelope.payload);
   if (peerRecord.peerId.toString() !== expectedPeerId) {
     throw new Error("signed_peer_record_subject_mismatch");
   }
   return peerRecord.multiaddrs.map(String);
+}
+
+/** A valid older Pairing Target may use retained, newer verified reachability. */
+export async function newerVerifiedSignedPeerRecord(
+  existing: Uint8Array,
+  incoming: Uint8Array,
+  expectedPeerId: string
+): Promise<Uint8Array | undefined> {
+  const { PeerRecord, RecordEnvelope } = await import("@libp2p/peer-record");
+  const verify = async (bytes: Uint8Array) => {
+    const envelope = await RecordEnvelope.openAndCertify(
+      bytes,
+      PeerRecord.DOMAIN
+    );
+    const record = PeerRecord.createFromProtobuf(envelope.payload);
+    if (
+      record.peerId.toString() !== expectedPeerId ||
+      !envelope.publicKey.toCID().equals(record.peerId.toCID())
+    )
+      throw new Error("signed_peer_record_subject_mismatch");
+    return record;
+  };
+  const [stored, received] = await Promise.all([
+    verify(existing),
+    verify(incoming),
+  ]);
+  return stored.seqNumber >= received.seqNumber
+    ? Uint8Array.from(existing)
+    : undefined;
 }
 
 export function createKVSignedPeerRecordPersistence(options: {
@@ -69,7 +110,8 @@ export function createKVSignedPeerRecordPersistence(options: {
   return {
     async load() {
       const stored = await options.storage.get<Record<string, unknown>>(key);
-      if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+      if (!stored || typeof stored !== "object" || Array.isArray(stored))
+        return {};
 
       const records: Record<string, Uint8Array> = {};
       for (const [peerId, value] of Object.entries(stored)) {
@@ -81,13 +123,25 @@ export function createKVSignedPeerRecordPersistence(options: {
 
     async save(peerId, record) {
       const stored = await options.storage.get<Record<string, unknown>>(key);
-      const records = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
-      await options.storage.set(key, { ...records, [peerId]: Array.from(record) });
+      const records =
+        stored && typeof stored === "object" && !Array.isArray(stored)
+          ? stored
+          : {};
+      await options.storage.set(key, {
+        ...records,
+        [peerId]: Array.from(record),
+      });
     },
 
     async remove(peerId) {
       const stored = await options.storage.get<Record<string, unknown>>(key);
-      if (!stored || typeof stored !== "object" || Array.isArray(stored) || !(peerId in stored)) return;
+      if (
+        !stored ||
+        typeof stored !== "object" ||
+        Array.isArray(stored) ||
+        !(peerId in stored)
+      )
+        return;
       const remaining = { ...stored };
       delete remaining[peerId];
       await options.storage.set(key, remaining);

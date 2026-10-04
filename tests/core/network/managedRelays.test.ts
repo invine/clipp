@@ -135,6 +135,83 @@ describe("managed relay controller", () => {
   });
 });
 
+describe("managed relay discovery clock difference", () => {
+  it.each([
+    { lifetime: 60_194, accepted: true },
+    { lifetime: 65_000, accepted: true },
+    { lifetime: 65_001, accepted: false },
+    { lifetime: 0, accepted: false },
+  ])(
+    "validates a $lifetime ms remaining lifetime",
+    async ({ lifetime, accepted }) => {
+      const { adapter, calls } = adapterHarness();
+      const now = Date.now();
+      adapter.discover = jest.fn(async () =>
+        normalizeDiscoveryResponse({
+          version: 1,
+          relay: { peerId: peer, addresses: [address] },
+          validUntil: new Date(now + lifetime).toISOString(),
+        })
+      );
+      const controller = new ManagedRelayController(
+        adapter,
+        () => 0,
+        () => now
+      );
+      try {
+        await controller.setConfigurations([
+          {
+            key: "clock-probe",
+            name: "Clock probe",
+            kind: "managed",
+            discoveryUrl: "https://relay.example/v1/relay",
+          },
+        ]);
+        if (accepted) {
+          expect(controller.states()[0].status).toBe("ready");
+          expect(calls).toContain("auth");
+        } else {
+          expect(controller.states()[0].reason).toBe("invalid_discovery");
+          expect(calls).not.toContain("dial");
+        }
+      } finally {
+        await controller.stop();
+      }
+    }
+  );
+
+  it("refreshes a clock-ahead discovery document within one local minute", async () => {
+    jest.useFakeTimers();
+    const { adapter } = adapterHarness();
+    adapter.discover = jest.fn(async () =>
+      normalizeDiscoveryResponse({
+        version: 1,
+        relay: { peerId: peer, addresses: [address] },
+        validUntil: new Date(Date.now() + 60_194).toISOString(),
+      })
+    );
+    const controller = new ManagedRelayController(adapter);
+    try {
+      await controller.setConfigurations([
+        {
+          key: "clock-probe",
+          name: "Clock probe",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      expect(controller.states()[0].status).toBe("ready");
+      await jest.advanceTimersByTimeAsync(59_999);
+      expect(adapter.discover).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(adapter.discover).toHaveBeenCalledTimes(2);
+    } finally {
+      await controller.stop();
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe("managed relay adapter conformance", () => {
   const config = {
     key: "a",

@@ -71,10 +71,8 @@ import {
 } from "./managedRelayBridge";
 import { authorizedRelayUi } from "./managedRelayUi";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
-import {
-  PAIRING_PROTOCOL,
-  verifyPairingTrustRequestSignature,
-} from "../../../packages/core/pairing/protocol";
+import { PAIRING_PROTOCOL } from "../../../packages/core/pairing/protocol";
+import { verifyExtensionPairingTrustRequestSignature } from "./pairingSignature";
 import {
   createMembershipPeerRecordBridge,
   createMembershipReconciler,
@@ -460,7 +458,7 @@ const pairingSessions = createPairingRuntimeSessions({
       bytes
     );
   },
-  verify: verifyPairingTrustRequestSignature,
+  verify: verifyExtensionPairingTrustRequestSignature,
   membership: identitySvc,
   clock: systemRuntimeClock,
   connectionPath: (remotePeerId) => {
@@ -730,7 +728,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
   notifications: runtimeAdapter.notifications,
   lifecycle: runtimeAdapter.lifecycle,
   clock: systemRuntimeClock,
-  verify: verifyPairingTrustRequestSignature,
+  verify: verifyExtensionPairingTrustRequestSignature,
   membership: identitySvc,
   sendResponse: (peerId, frame) =>
     extensionNetwork.send(PAIRING_PROTOCOL, peerId, frame),

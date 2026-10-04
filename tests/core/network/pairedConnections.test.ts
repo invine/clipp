@@ -1,3 +1,7 @@
+jest.mock("../../../packages/core/network/peerRecords", () => ({
+  verifiedSignedPeerRecordMultiaddrs: jest.fn(async () => []),
+}));
+import { verifiedSignedPeerRecordMultiaddrs } from "../../../packages/core/network/peerRecords";
 import type { MessagingTransport } from "../../../packages/core/messaging/transport";
 import type { PeerConnectionInfo } from "../../../packages/core/messaging/transport";
 import {
@@ -54,7 +58,10 @@ describe("paired peer connections", () => {
       transport,
       getPairedPeers: async () => [
         { deviceId: "peer-a", multiaddrs: ["/p2p/peer-a"] },
-        { deviceId: "peer-b", multiaddrs: ["/p2p/bad", "/p2p/good", "/p2p/unused"] },
+        {
+          deviceId: "peer-b",
+          multiaddrs: ["/p2p/bad", "/p2p/good", "/p2p/unused"],
+        },
         { deviceId: "peer-c" },
       ],
     });
@@ -63,21 +70,26 @@ describe("paired peer connections", () => {
 
     const targets = transport.connect.mock.calls.map(([target]) => target);
     expect(targets).not.toContain("/p2p/peer-a");
-    expect(targets).toEqual(expect.arrayContaining(["/p2p/bad", "/p2p/good", "peer-c"]));
+    expect(targets).toEqual(
+      expect.arrayContaining(["/p2p/bad", "/p2p/good", "peer-c"])
+    );
     expect(targets).not.toContain("/p2p/unused");
   });
 
   it("keeps probing direct targets for relay-only paired peers", async () => {
     const relay = "/ip4/127.0.0.1/tcp/9999/ws/p2p/relay";
-    const transport = createTransport(["peer-a"], [
-      {
-        peerId: "peer-a",
-        path: "relay",
-        hasDirect: false,
-        hasRelay: true,
-        addrs: [`${relay}/p2p-circuit/p2p/peer-a`],
-      },
-    ]);
+    const transport = createTransport(
+      ["peer-a"],
+      [
+        {
+          peerId: "peer-a",
+          path: "relay",
+          hasDirect: false,
+          hasRelay: true,
+          addrs: [`${relay}/p2p-circuit/p2p/peer-a`],
+        },
+      ]
+    );
     const manager = createPairedPeerConnectionManager({
       transport,
       getPairedPeers: async () => [
@@ -94,7 +106,36 @@ describe("paired peer connections", () => {
     await manager.reconnectNow();
 
     expect(transport.connect).toHaveBeenCalledTimes(1);
-    expect(transport.connect).toHaveBeenCalledWith(`${relay}/p2p-circuit/webrtc/p2p/peer-a`);
+    expect(transport.connect).toHaveBeenCalledWith(
+      `${relay}/p2p-circuit/webrtc/p2p/peer-a`
+    );
+  });
+
+  it("upgrades relay-only Active Members using their stored Signed Peer Record", async () => {
+    const target =
+      "/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/webrtc/p2p/peer-a";
+    const transport = createTransport(
+      ["peer-a"],
+      [
+        {
+          peerId: "peer-a",
+          path: "relay",
+          hasDirect: false,
+          hasRelay: true,
+          addrs: ["/ip4/127.0.0.1/tcp/9/ws/p2p/relay/p2p-circuit/p2p/peer-a"],
+        },
+      ]
+    );
+    transport.getSignedPeerRecordFor = jest.fn(async () => Uint8Array.of(1));
+    (verifiedSignedPeerRecordMultiaddrs as jest.Mock).mockResolvedValueOnce([
+      target,
+    ]);
+    const manager = createPairedPeerConnectionManager({
+      transport,
+      getPairedPeers: async () => [{ deviceId: "peer-a" }],
+    });
+    await manager.reconnectNow();
+    expect(transport.connect).toHaveBeenCalledWith(target);
   });
 
   it("runs once on start and repeats on the configured interval", async () => {
@@ -122,8 +163,12 @@ describe("paired peer connections", () => {
     const transport = createTransport();
     let releaseDial!: () => void;
     let markDialStarted!: () => void;
-    const dialStarted = new Promise<void>((resolve) => { markDialStarted = resolve; });
-    const dialGate = new Promise<void>((resolve) => { releaseDial = resolve; });
+    const dialStarted = new Promise<void>((resolve) => {
+      markDialStarted = resolve;
+    });
+    const dialGate = new Promise<void>((resolve) => {
+      releaseDial = resolve;
+    });
     transport.connect.mockImplementationOnce(async () => {
       markDialStarted();
       await dialGate;
@@ -131,15 +176,22 @@ describe("paired peer connections", () => {
     });
     const manager = createPairedPeerConnectionManager({
       transport,
-      getPairedPeers: async () => [{
-        deviceId: "peer-1",
-        multiaddrs: ["/ip4/127.0.0.1/tcp/1/p2p/peer-1", "/ip4/127.0.0.1/tcp/2/p2p/peer-1"],
-      }],
+      getPairedPeers: async () => [
+        {
+          deviceId: "peer-1",
+          multiaddrs: [
+            "/ip4/127.0.0.1/tcp/1/p2p/peer-1",
+            "/ip4/127.0.0.1/tcp/2/p2p/peer-1",
+          ],
+        },
+      ],
     });
     manager.start();
     await dialStarted;
     let stopped = false;
-    const stopping = Promise.resolve(manager.stop()).then(() => { stopped = true; });
+    const stopping = Promise.resolve(manager.stop()).then(() => {
+      stopped = true;
+    });
     await Promise.resolve();
     expect(stopped).toBe(false);
 

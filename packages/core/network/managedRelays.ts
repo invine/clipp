@@ -321,6 +321,10 @@ const DEADLINES = {
   rendezvous: 12_000,
   shutdown: 15_000,
 } as const;
+// Discovery is issued for one minute by the relay's clock. Allow a small
+// difference between clocks, while retaining at most one minute locally.
+const DISCOVERY_MAX_LIFETIME_MS = 60_000;
+const DISCOVERY_CLOCK_TOLERANCE_MS = 5_000;
 const RETRY = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 
 /** Shared managed-relay orchestration. The adapter owns the one existing host and all platform storage. */
@@ -710,7 +714,7 @@ export class ManagedRelayController {
               )
           );
           if (!this.current(entry, generation)) return;
-          this.validateDocument(document);
+          document = this.validateDocument(document);
           entry.document = document;
           this.scheduleDiscoveryRefresh(entry, document.validUntil);
         }
@@ -836,7 +840,7 @@ export class ManagedRelayController {
         });
         return;
       }
-      const document = await this.deadline(
+      let document = await this.deadline(
         DEADLINES.discovery,
         entry.controller.signal,
         (signal) =>
@@ -848,7 +852,7 @@ export class ManagedRelayController {
           )
       );
       if (!this.current(entry, generation)) return;
-      this.validateDocument(document);
+      document = this.validateDocument(document);
       entry.document = document;
       this.scheduleDiscoveryRefresh(entry, document.validUntil);
       if (
@@ -866,7 +870,8 @@ export class ManagedRelayController {
       this.scheduleDiscoveryRefresh(entry, this.now() + 5_000);
     }
   }
-  private validateDocument(document: DiscoveryDocument): void {
+  private validateDocument(document: DiscoveryDocument): DiscoveryDocument {
+    const now = this.now();
     if (
       !document ||
       document.version !== 1 ||
@@ -876,8 +881,9 @@ export class ManagedRelayController {
       !Array.isArray(document.relay.addresses) ||
       document.relay.addresses.length === 0 ||
       !Number.isFinite(document.validUntil) ||
-      document.validUntil <= this.now() ||
-      document.validUntil > this.now() + 60_000
+      document.validUntil <= now ||
+      document.validUntil >
+        now + DISCOVERY_MAX_LIFETIME_MS + DISCOVERY_CLOCK_TOLERANCE_MS
     )
       throw new Error("invalid_discovery");
     for (const address of document.relay.addresses) {
@@ -892,6 +898,13 @@ export class ManagedRelayController {
         throw new Error("invalid_discovery_address");
       }
     }
+    return {
+      ...document,
+      validUntil: Math.min(
+        document.validUntil,
+        now + DISCOVERY_MAX_LIFETIME_MS
+      ),
+    };
   }
   private async dialAddresses(
     entry: Entry,

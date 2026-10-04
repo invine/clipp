@@ -433,7 +433,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const error = (err as any)?.message || "offscreen_error";
     sendResponse({ ok: false, error });
     try {
-      log.error("Offscreen handler error", err);
+      log.error("Offscreen handler error", { action: msg.action, failure: err });
     } catch {
       // Response delivery is more important than diagnostics here.
     }

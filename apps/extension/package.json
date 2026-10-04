@@ -5,11 +5,13 @@
   "scripts": {
     "build": "vite build",
     "test:clipboard": "npm run build && node ./scripts/verify-clipboard-io.mjs",
-    "test:integration": "npm run build && node ./scripts/verify-identity-initialization.mjs",
+    "test:integration": "npm run build && node ./scripts/verify-identity-initialization.mjs && node ./scripts/verify-pairing-response.mjs",
+    "test:pairing-response": "node ./scripts/verify-pairing-response.mjs",
     "test:offscreen-storage": "npm run build && node ./scripts/verify-offscreen-storage.mjs",
     "test:managed-relays": "npm run build && node ./scripts/verify-managed-relay-mv3.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.27.1",
     "@crxjs/vite-plugin": "^2.0.2",
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
     "@rollup/plugin-inject": "^5.0.5",
