@@ -103,7 +103,8 @@ const preloadPath = path.join(__dirnameFallback, "preload.js");
 async function bootstrap() {
   const acceptance = electronRelayAcceptance(
     process.env,
-    app.getPath("userData")
+    app.getPath("userData"),
+    app.getPath("appData")
   );
   if (acceptance) {
     if (app.isPackaged)

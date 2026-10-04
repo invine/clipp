@@ -10,7 +10,9 @@ import path from "node:path";
 import { electronRelayAcceptance } from "../../apps/electron/src/relayAcceptance";
 
 it("requires an isolated absolute Electron profile before enabling a forced relay transport", () => {
-  expect(electronRelayAcceptance({}, "/normal/profile")).toBeUndefined();
+  expect(
+    electronRelayAcceptance({}, "/normal/profile", "/app-data")
+  ).toBeUndefined();
   for (const profile of [
     undefined,
     "relative",
@@ -24,7 +26,8 @@ it("requires an isolated absolute Electron profile before enabling a forced rela
           CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "wss",
           CLIPP_RELAY_ACCEPTANCE_PROFILE: profile,
         },
-        "/normal/profile"
+        "/normal/profile",
+        "/app-data"
       )
     ).toThrow("isolated_acceptance_profile_required");
   }
@@ -34,7 +37,8 @@ it("requires an isolated absolute Electron profile before enabling a forced rela
         CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "wss",
         CLIPP_RELAY_ACCEPTANCE_PROFILE: "/isolated/profile",
       },
-      "/normal/profile"
+      "/normal/profile",
+      "/app-data"
     )
   ).toEqual({ profile: "/isolated/profile", transport: "wss" });
   expect(() =>
@@ -43,7 +47,8 @@ it("requires an isolated absolute Electron profile before enabling a forced rela
         CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "ws",
         CLIPP_RELAY_ACCEPTANCE_PROFILE: "/isolated/profile",
       },
-      "/normal/profile"
+      "/normal/profile",
+      "/app-data"
     )
   ).toThrow("unsupported_acceptance_transport");
 });
@@ -62,7 +67,8 @@ it("rejects aliases of the normal profile, including new children through a syml
             CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "wss",
             CLIPP_RELAY_ACCEPTANCE_PROFILE: profile,
           },
-          normal
+          normal,
+          path.join(fixture, "app-data")
         )
       ).toThrow("isolated_acceptance_profile_required");
     }
@@ -73,7 +79,52 @@ it("rejects aliases of the normal profile, including new children through a syml
           CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "wss",
           CLIPP_RELAY_ACCEPTANCE_PROFILE: isolated,
         },
-        normal
+        normal,
+        path.join(fixture, "app-data")
+      )?.profile
+    ).toBe(isolated);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+it("protects every standard application profile regardless of the runner app name", () => {
+  const fixture = mkdtempSync(path.join(tmpdir(), "clipp-acceptance-appdata-"));
+  try {
+    const appData = path.join(fixture, "app-data");
+    const normal = path.join(appData, "Clipp Relay Test");
+    const alias = path.join(fixture, "app-data-alias");
+    mkdirSync(normal, { recursive: true });
+    symlinkSync(appData, alias);
+    for (const profile of [
+      appData,
+      fixture,
+      normal,
+      path.join(appData, "clipp-electron"),
+      path.join(appData, "Clipp"),
+      path.join(alias, "clipp-electron"),
+      path.join(alias, "new-profile"),
+    ]) {
+      expect(() =>
+        electronRelayAcceptance(
+          {
+            CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "wss",
+            CLIPP_RELAY_ACCEPTANCE_PROFILE: profile,
+          },
+          normal,
+          appData
+        )
+      ).toThrow("isolated_acceptance_profile_required");
+    }
+    const isolated = path.join(realpathSync(fixture), "isolated", "profile");
+    expect(
+      electronRelayAcceptance(
+        {
+          CLIPP_RELAY_ACCEPTANCE_TRANSPORT: "wss",
+          CLIPP_RELAY_ACCEPTANCE_PROFILE: isolated,
+        },
+        normal,
+        appData
       )?.profile
     ).toBe(isolated);
   } finally {

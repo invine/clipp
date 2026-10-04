@@ -13,7 +13,10 @@ node scripts/electron-relay-acceptance.mjs \
 ```
 
 Use `tcp`, `wss`, or `webrtc-direct`, one run at a time. The profile must be
-explicit and outside the normal Electron profile tree, including symlink aliases. The test opt-in works
+explicit and outside both the current Electron profile tree and the entire
+native application-data tree, including physical symlink aliases. The latter
+protects every ordinary production profile regardless of the runner app name.
+The test opt-in works
 only in a development build and is process environment configuration, never a
 renderer query or saved user preference. The runner prevents concurrent copies
 of itself from using one profile. Before using an existing test profile, stop
@@ -39,7 +42,11 @@ controller completed authentication, reservation and Rendezvous registration.
 Direct device dials, incoming direct device connections, direct listeners,
 mDNS/bootstrap discovery, DCUtR and circuit-signalled WebRTC are disabled for
 this opt-in. Relay-server connections remain direct and must use the selected
-transport. A timeout, degraded state, plaintext fallback, direct peer path or
+transport. The runtime candidate filter requires canonical discovery addresses
+with a terminal Peer ID; the receipt separately classifies transport components
+in the actual upgraded connection address. This independent observation avoids
+inferring a transport pass from the configured filter alone. A timeout, degraded
+state, plaintext fallback, direct peer path or
 absence of clip receipt cannot produce a pass.
 
 The output directory contains a mode-600 receipt and private runtime log. The

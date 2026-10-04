@@ -33,7 +33,8 @@ function physicalPath(value: string): string {
 /** Process-only test opt-in; never read this from renderer URLs or settings. */
 export function electronRelayAcceptance(
   environment: NodeJS.ProcessEnv,
-  normalProfile: string
+  normalProfile: string,
+  protectedAppData: string
 ): { profile: string; transport: RelayAcceptanceTransport } | undefined {
   const transport = environment.CLIPP_RELAY_ACCEPTANCE_TRANSPORT;
   const profile = environment.CLIPP_RELAY_ACCEPTANCE_PROFILE;
@@ -41,11 +42,14 @@ export function electronRelayAcceptance(
   if (!profile || !path.isAbsolute(profile))
     throw new Error("isolated_acceptance_profile_required");
   const resolved = physicalPath(profile);
-  const normal = physicalPath(normalProfile);
+  const protectedTrees = [normalProfile, protectedAppData].map(physicalPath);
   if (
-    resolved === normal ||
-    resolved.startsWith(`${normal}${path.sep}`) ||
-    normal.startsWith(`${resolved}${path.sep}`)
+    protectedTrees.some(
+      (tree) =>
+        resolved === tree ||
+        resolved.startsWith(`${tree}${path.sep}`) ||
+        tree.startsWith(`${resolved}${path.sep}`)
+    )
   )
     throw new Error("isolated_acceptance_profile_required");
   if (
