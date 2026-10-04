@@ -166,6 +166,15 @@ jest.mock(
   { virtual: true }
 );
 
+jest.mock("@libp2p/tcp", () => ({ tcp: jest.fn(() => jest.fn(() => ({}))) }), {
+  virtual: true,
+});
+jest.mock(
+  "@libp2p/dcutr",
+  () => ({ dcutr: jest.fn(() => jest.fn(() => ({}))) }),
+  { virtual: true }
+);
+
 import { createLibp2p } from "libp2p";
 import { createClipboardNode } from "../../../packages/core/network/node";
 
@@ -212,6 +221,73 @@ describe("createClipboardNode address config", () => {
     await createClipboardNode({ relayAddresses: [] });
     const config = (createLibp2p as jest.Mock).mock.calls[0][0];
     expect(config.addresses.listen.map(String)).toContain("/webrtc");
+  });
+
+  it("isolates relay acceptance from direct dials, listeners, discovery and upgrades", async () => {
+    const relayPeer = relay.split("/p2p/")[1];
+    await createClipboardNode({
+      relayAddresses: [],
+      enableTcp: true,
+      enableDCUtR: true,
+      relayOnly: {
+        isRelayPeer: (id: string, address: string) =>
+          id === relayPeer && address === relay,
+      },
+    });
+    const config = (createLibp2p as jest.Mock).mock.calls[0][0];
+    const circuit = `${relay}/p2p-circuit/p2p/${peerId}`;
+    const direct = `/ip4/127.0.0.1/tcp/9000/p2p/${peerId}`;
+    const otherRelayTransport = `/ip4/127.0.0.1/tcp/4001/p2p/${relayPeer}`;
+    expect(config.addresses.listen).toEqual([]);
+    expect(config.peerDiscovery).toEqual([]);
+    expect(
+      config.connectionGater.denyDialMultiaddr({
+        toString: () => otherRelayTransport,
+      })
+    ).toBe(true);
+    expect(config.services.dcutr).toBeUndefined();
+    expect(
+      config.connectionGater.denyDialMultiaddr({ toString: () => direct })
+    ).toBe(true);
+    expect(
+      config.connectionGater.denyDialMultiaddr({ toString: () => relay })
+    ).toBe(false);
+    expect(
+      config.connectionGater.denyDialMultiaddr({ toString: () => circuit })
+    ).toBe(false);
+    expect(
+      config.connectionGater.denyDialMultiaddr({
+        toString: () => `${circuit}/webrtc`,
+      })
+    ).toBe(true);
+    for (const direction of ["Inbound", "Outbound"]) {
+      const deny =
+        config.connectionGater[`deny${direction}EncryptedConnection`];
+      expect(
+        deny(
+          { toString: () => peerId },
+          { remoteAddr: { toString: () => direct } }
+        )
+      ).toBe(true);
+      expect(
+        deny(
+          { toString: () => relayPeer },
+          { remoteAddr: { toString: () => relay } }
+        )
+      ).toBe(false);
+      expect(
+        deny(
+          { toString: () => peerId },
+          { remoteAddr: { toString: () => circuit } }
+        )
+      ).toBe(false);
+      expect(
+        deny(
+          { toString: () => peerId },
+          { remoteAddr: { toString: () => `${circuit}/webrtc` } }
+        )
+      ).toBe(true);
+    }
   });
 
   it("can disable browser dial gating for direct LAN websocket pairing", async () => {

@@ -69,6 +69,10 @@ import {
   loadManagedRelayConfigurations,
   normalizeRelayConfigurations,
 } from "../../../packages/core/network/managedRelays.js";
+import {
+  electronRelayAcceptance,
+  acceptanceTransportAllows,
+} from "./relayAcceptance.js";
 import { createElectronManagedRelayAuth } from "./managedRelayAuth.js";
 import { createElectronManagedRelayAdapter } from "./managedRelayAdapter.js";
 import {
@@ -97,6 +101,15 @@ const isDev = !app.isPackaged;
 const preloadPath = path.join(__dirnameFallback, "preload.js");
 
 async function bootstrap() {
+  const acceptance = electronRelayAcceptance(
+    process.env,
+    app.getPath("userData")
+  );
+  if (acceptance) {
+    if (app.isPackaged)
+      throw new Error("acceptance_requires_development_build");
+    app.setPath("userData", acceptance.profile);
+  }
   const logLevel = process.env.CLIPP_LOG_LEVEL || "debug";
   // const logLevel = process.env.CLIPP_LOG_LEVEL || "info";
   (log as any).setLogLevel?.(logLevel);
@@ -242,10 +255,20 @@ async function bootstrap() {
         )
       : undefined;
 
+  const relayOnly = acceptance
+    ? {
+        isRelayPeer: (remotePeerId: string, address: string) =>
+          acceptanceTransportAllows(acceptance.transport, address) &&
+          managedController
+            .states()
+            .some((state) => state.peerId === remotePeerId),
+      }
+    : undefined;
   let transport = createLibp2pMessagingTransport({
     peerId,
     privateKey,
     relayAddresses,
+    relayOnly,
     enableWebRTCDirect: true,
     enableDCUtR: true,
     enableTcp: true,
@@ -259,6 +282,7 @@ async function bootstrap() {
   const managedController = new ManagedRelayController(
     createElectronManagedRelayAdapter({
       auth: managedAuth,
+      acceptanceTransport: acceptance?.transport,
       host: () => {
         if (!managedHost) throw new Error("messaging_not_started");
         return managedHost;
@@ -618,6 +642,7 @@ async function bootstrap() {
       peerId,
       privateKey,
       relayAddresses,
+      relayOnly,
       enableWebRTCDirect: true,
       enableDCUtR: true,
       enableTcp: true,

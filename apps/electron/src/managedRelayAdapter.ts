@@ -1,5 +1,9 @@
 import { shell } from "electron";
 import {
+  acceptanceTransportAllows,
+  type RelayAcceptanceTransport,
+} from "./relayAcceptance.js";
+import {
   canonicalDiscoveryUrl,
   normalizeDiscoveryResponse,
   type ManagedRelayAdapter,
@@ -22,6 +26,7 @@ type Auth = ReturnType<typeof createElectronManagedRelayAuth>;
 
 export function createElectronManagedRelayAdapter(options: {
   auth: Auth;
+  acceptanceTransport?: RelayAcceptanceTransport;
   host(): Host;
   onStateChange(states: RelayState[]): void;
 }): ManagedRelayAdapter {
@@ -49,7 +54,10 @@ export function createElectronManagedRelayAdapter(options: {
         throw new Error("discovery_too_large");
       return normalizeDiscoveryResponse(JSON.parse(text));
     },
-    supportsAddress: (address) => options.host().supportsAddress(address),
+    supportsAddress: (address) =>
+      (!options.acceptanceTransport ||
+        acceptanceTransportAllows(options.acceptanceTransport, address)) &&
+      options.host().supportsAddress(address),
     // libp2p joins same-peer dials, so a stalled TCP attempt can prevent
     // the later public WebSocket candidate from starting before our deadline.
     addressPriority: (address) =>

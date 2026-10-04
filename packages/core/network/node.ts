@@ -68,6 +68,8 @@ export async function createClipboardNode(
     enableWebSocketListener?: boolean;
     enableRelayReservations?: boolean;
     allowInsecureBrowserDials?: boolean;
+    /** Isolated acceptance: allow relay servers and plain circuits only. */
+    relayOnly?: { isRelayPeer(peerId: string, address: string): boolean };
   } = {}
 ) {
   const {
@@ -91,7 +93,9 @@ export async function createClipboardNode(
     withTransportFilters(circuitRelayTransport()),
   ];
   const listenAddrs: any[] =
-    isBrowserDocument || options.enableWebSocketListener === false
+    options.relayOnly ||
+    isBrowserDocument ||
+    options.enableWebSocketListener === false
       ? []
       : [multiaddr("/ip4/0.0.0.0/tcp/0/ws")];
 
@@ -100,7 +104,8 @@ export async function createClipboardNode(
       const { tcp } = await import("@libp2p/tcp");
       if (typeof tcp === "function") {
         transports.unshift(withTransportFilters(tcp()));
-        listenAddrs.push(multiaddr("/ip4/0.0.0.0/tcp/0"));
+        if (!options.relayOnly)
+          listenAddrs.push(multiaddr("/ip4/0.0.0.0/tcp/0"));
       } else {
         console.warn("TCP transport missing or invalid; skipping");
       }
@@ -136,7 +141,7 @@ export async function createClipboardNode(
         transports.unshift(
           withTransportFilters((wrtcDirectTransportFactory as any)())
         );
-        if (!isBrowserDocument) {
+        if (!isBrowserDocument && !options.relayOnly) {
           listenAddrs.push(multiaddr("/ip4/0.0.0.0/udp/0/webrtc-direct"));
         }
       } else if (enableWebRTCDirect) {
@@ -145,7 +150,10 @@ export async function createClipboardNode(
 
       // The Node transport supplies its own RTCPeerConnection through
       // node-datachannel; Electron main has no browser WebRTC global.
-      if (hasWebRTCSupport() || (!isBrowserDocument && enableWebRTCDirect)) {
+      if (
+        !options.relayOnly &&
+        (hasWebRTCSupport() || (!isBrowserDocument && enableWebRTCDirect))
+      ) {
         if (typeof wrtcTransportFactory === "function") {
           const factory = (wrtcTransportFactory as any)();
           if (factory) {
@@ -199,12 +207,12 @@ export async function createClipboardNode(
     });
   }
 
-  if (bootstrapList.length > 0) {
+  if (!options.relayOnly && bootstrapList.length > 0) {
     discovery.push(bootstrap({ list: bootstrapList }));
   }
   // mdns relies on Node's dgram module which is not available in browser
   // environments like the extension background service worker.
-  if (!isBrowserDocument) {
+  if (!isBrowserDocument && !options.relayOnly) {
     discovery.push(mdns());
   }
 
@@ -216,7 +224,7 @@ export async function createClipboardNode(
     ping: ping(),
   };
 
-  if (options.enableDCUtR === true) {
+  if (options.enableDCUtR === true && !options.relayOnly) {
     try {
       const { dcutr } = await import("@libp2p/dcutr");
       if (typeof dcutr === "function") {
@@ -250,6 +258,17 @@ export async function createClipboardNode(
     }
   }
 
+  // Gate every upgraded peer connection, including automatic dials and inbound
+  // WebRTC signaling. Discovery/record filtering alone cannot enforce a path.
+  const acceptanceAllows = (address: string, peer?: string): boolean => {
+    if (/\/webrtc(?:\/|$)/.test(address)) return false;
+    if (address.includes("/p2p-circuit/")) return true;
+    const id = peer ?? address.match(/\/p2p\/([^/]+)$/)?.[1];
+    return !!id && options.relayOnly!.isRelayPeer(id, address);
+  };
+  const denyAcceptanceConnection = (peer: any, connection: any) =>
+    !acceptanceAllows(connection.remoteAddr.toString(), peer.toString());
+
   return await createLibp2p({
     ...(privateKey ? { privateKey } : peerId ? { peerId } : {}),
     start: false,
@@ -260,13 +279,22 @@ export async function createClipboardNode(
     transportManager: {
       faultTolerance: FaultTolerance.NO_FATAL,
     },
-    ...(allowInsecureBrowserDials
+    ...(options.relayOnly
       ? {
           connectionGater: {
-            denyDialMultiaddr: () => false,
+            denyDialMultiaddr: (address: any) =>
+              !acceptanceAllows(address.toString()),
+            denyInboundEncryptedConnection: denyAcceptanceConnection,
+            denyOutboundEncryptedConnection: denyAcceptanceConnection,
           },
         }
-      : {}),
+      : allowInsecureBrowserDials
+        ? {
+            connectionGater: {
+              denyDialMultiaddr: () => false,
+            },
+          }
+        : {}),
     connectionEncrypters: [noise()],
     // Include both yamux and mplex to maximize compatibility (relays often use mplex).
     streamMuxers: [yamux() as any, mplex()],

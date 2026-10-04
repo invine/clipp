@@ -97,3 +97,76 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
     jest.useRealTimers();
   }
 });
+
+it.each(["tcp", "wss", "webrtc-direct"] as const)(
+  "uses only %s for isolated managed relay acceptance",
+  async (selected) => {
+    const peer = "12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
+    const addresses = {
+      tcp: `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`,
+      wss: `/dns4/relay.example/tcp/443/tls/ws/p2p/${peer}`,
+      "webrtc-direct": `/ip4/127.0.0.1/udp/4001/webrtc-direct/certhash/test/p2p/${peer}`,
+    };
+    const connection = { verifiedPeerId: peer, close: async () => {} };
+    const auth = createElectronManagedRelayAuth({
+      storage: {
+        get: async () => null,
+        set: async () => {},
+        delete: async () => {},
+      },
+      protection: {
+        isEncryptionAvailable: () => false,
+        encryptString: () => Buffer.alloc(0),
+        decryptString: () => "",
+      },
+      openExternal: async () => {},
+    });
+    const endpoint = "https://relay.example/v1/relay";
+    await auth.acceptTokens(endpoint, {
+      access_token: "test-access",
+      refresh_token: "test-refresh",
+      token_type: "Bearer",
+      expires_in: 900,
+    });
+    const host = {
+      supportsAddress: () => true,
+      dial: jest.fn(async () => connection),
+      authenticate: async () => ({
+        sessionExpiresAt: Date.now() + 60_000,
+        renewAfterMillis: 40_000,
+      }),
+      reserve: async () => ({ release: async () => {} }),
+      register: async () => {},
+      unregister: async () => {},
+      signedPeerRecord: async () => new Uint8Array(),
+    };
+    const adapter = createElectronManagedRelayAdapter({
+      auth,
+      host: () => host,
+      onStateChange: () => {},
+      acceptanceTransport: selected,
+    });
+    adapter.discover = async () => ({
+      version: 1,
+      relay: { peerId: peer, addresses: Object.values(addresses) },
+      validUntil: Date.now() + 30_000,
+    });
+    const controller = new ManagedRelayController(adapter);
+    try {
+      await controller.setConfigurations([
+        {
+          key: "relay",
+          name: "Relay",
+          kind: "managed",
+          discoveryUrl: endpoint,
+        },
+      ]);
+      expect(controller.states()[0].status).toBe("ready");
+      expect(host.dial.mock.calls).toEqual([
+        [addresses[selected], expect.any(AbortSignal)],
+      ]);
+    } finally {
+      await controller.stop();
+    }
+  }
+);

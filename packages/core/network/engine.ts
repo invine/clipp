@@ -89,6 +89,7 @@ export type Libp2pMessagingOptions = {
   liveClipStreamIdleTimeoutMs?: number;
   historyStreamIdleTimeoutMs?: number;
   allowInsecureBrowserDials?: boolean;
+  relayOnly?: { isRelayPeer(peerId: string, address: string): boolean };
   signedPeerRecordPersistence?: SignedPeerRecordPersistence;
   isPeerKnown?(peerId: string): Promise<boolean>;
   isPeerRevoked?(peerId: string): Promise<boolean>;
@@ -197,6 +198,7 @@ class Libp2pMessagingTransport implements MessagingTransport {
       // RelayLifecycle owns reservation listening after the host starts.
       enableRelayReservations: false,
       allowInsecureBrowserDials: this.opts.allowInsecureBrowserDials,
+      relayOnly: this.opts.relayOnly,
     });
 
     this.node.addEventListener("peer:connect", (evt: any) => {
