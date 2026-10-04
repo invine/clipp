@@ -5,6 +5,10 @@ import {
   type RelayState,
 } from "../../../packages/core/network/managedRelays";
 import { MANAGED_RELAY_PORT, parseAccessReply } from "./managedRelayBridge";
+import {
+  extensionRelayTransportAllows,
+  type ExtensionRelayAcceptanceTransport,
+} from "./relayAcceptance";
 
 type ManagedRelayHost = Pick<
   ManagedRelayAdapter,
@@ -46,6 +50,7 @@ function shortAccessToken(
 
 export function createExtensionManagedRelayController(options: {
   host: ManagedRelayHost;
+  acceptanceTransport?: ExtensionRelayAcceptanceTransport;
   onStateChange(states: RelayState[]): void;
 }) {
   const warnings = new Map<string, string>();
@@ -81,6 +86,11 @@ export function createExtensionManagedRelayController(options: {
     },
     supportsAddress(address) {
       return (
+        (!options.acceptanceTransport ||
+          extensionRelayTransportAllows(
+            options.acceptanceTransport,
+            address
+          )) &&
         (/\/wss\/|\/tls\/ws\//.test(address) ||
           /\/webrtc-direct\//.test(address)) &&
         options.host.supportsAddress(address)

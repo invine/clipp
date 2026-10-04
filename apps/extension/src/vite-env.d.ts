@@ -5,3 +5,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare const __CLIPP_RELAY_ACCEPTANCE_TRANSPORT__:
+  "wss" | "webrtc-direct" | null;

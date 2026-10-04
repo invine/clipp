@@ -4,11 +4,13 @@
   "version": "0.0.0",
   "scripts": {
     "build": "vite build",
+    "build:relay-acceptance": "vite build --mode relay-acceptance",
     "test:clipboard": "npm run build && node ./scripts/verify-clipboard-io.mjs",
     "test:integration": "npm run build && node ./scripts/verify-identity-initialization.mjs && node ./scripts/verify-pairing-response.mjs",
     "test:pairing-response": "node ./scripts/verify-pairing-response.mjs",
     "test:offscreen-storage": "npm run build && node ./scripts/verify-offscreen-storage.mjs",
-    "test:managed-relays": "npm run build && node ./scripts/verify-managed-relay-mv3.mjs"
+    "test:managed-relays": "npm run build && node ./scripts/verify-managed-relay-mv3.mjs",
+    "test:relay-acceptance": "node ./scripts/verify-relay-acceptance.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.27.1",

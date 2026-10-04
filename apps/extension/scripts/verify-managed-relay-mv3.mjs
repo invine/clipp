@@ -5,11 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { relayAcceptanceFixture } from "./relay-acceptance-fixture.mjs";
 
-const extensionPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "dist"
+const { extensionPath, transport } = relayAcceptanceFixture(
+  resolve(dirname(fileURLToPath(import.meta.url)), "..")
 );
 const profilePath = await mkdtemp(
   join(tmpdir(), "clipp-managed-relay-profile-")
@@ -53,6 +52,33 @@ try {
     async () => await chrome.runtime.sendMessage({ type: "getRuntimeState" })
   );
   assert.ok(runtimeState.state, "background and offscreen start together");
+  const hostStatus = await worker.evaluate(
+    async () =>
+      await chrome.runtime.sendMessage({
+        target: "offscreen",
+        action: "getStatus",
+      })
+  );
+  assert.equal(hostStatus.relayAcceptanceTransport, transport);
+  if (transport) {
+    // A valid WSS address belonging to a device rather than a configured relay
+    // must be rejected by the compiled host's shared connection gate.
+    const denied = await worker.evaluate(
+      async () =>
+        await chrome.runtime.sendMessage({
+          target: "offscreen",
+          action: "runtimeConnect",
+          peerTarget:
+            "/ip4/127.0.0.1/tcp/9/wss/p2p/12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex",
+        })
+    );
+    assert.equal(denied.ok, false);
+    assert.match(
+      denied.error,
+      /denied|gater/i,
+      "direct device dial is denied before reaching the network"
+    );
+  }
   const unauthorizedShutdown = await options.evaluate(
     async () =>
       await chrome.runtime.sendMessage({
@@ -65,7 +91,6 @@ try {
     "managed_relay_control_unauthorized",
     "options cannot control the offscreen host"
   );
-
   const credentialKey =
     "managedRelayCredentialV1:https://relay.example/v1/relay";
   await worker.evaluate(
@@ -130,9 +155,22 @@ try {
     true,
     "recreated offscreen document initializes its host"
   );
+  assert.equal(
+    recreated.relayAcceptanceTransport,
+    transport,
+    "offscreen recreation retains the build selection"
+  );
+  const afterRecreation = await options.evaluate(
+    async () => await chrome.runtime.sendMessage({ type: "getRuntimeState" })
+  );
+  assert.equal(
+    afterRecreation.state.identity.deviceId,
+    runtimeState.state.identity.deviceId,
+    "offscreen recreation preserves Device Identity"
+  );
 
   console.log(
-    `Chrome ${context.browser()?.version() ?? "unknown"} MV3 managed-relay boundary passed; extension ID ${extensionId}; no registered relay service used.`
+    `Chrome ${context.browser()?.version() ?? "unknown"} MV3 managed-relay boundary passed; fixture transport ${transport ?? "default"}; disposable extension; synthetic credential canary only; no registered relay service used.`
   );
 } finally {
   await context?.close();

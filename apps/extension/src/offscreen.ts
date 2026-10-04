@@ -45,6 +45,9 @@ import {
   isExtensionClipboardRequest,
 } from "./clipboardBridge";
 import { createOffscreenClipboardWriter } from "./offscreenClipboard";
+import { extensionRelayTransportAllows } from "./relayAcceptance";
+
+const acceptanceTransport = __CLIPP_RELAY_ACCEPTANCE_TRANSPORT__ ?? undefined;
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<
@@ -112,6 +115,16 @@ async function initMessaging(
     peerId,
     privateKey,
     relayAddresses: relays,
+    relayOnly: acceptanceTransport
+      ? {
+          isRelayPeer: (remotePeerId, address) =>
+            extensionRelayTransportAllows(acceptanceTransport, address) &&
+            (managedController
+              ?.states()
+              .some((state) => state.peerId === remotePeerId) ??
+              false),
+        }
+      : undefined,
     enableDCUtR: true,
     signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({
       storage,
@@ -181,6 +194,7 @@ async function initMessaging(
       });
       managedController = createExtensionManagedRelayController({
         host,
+        acceptanceTransport,
         onStateChange: (states) => {
           void chrome.runtime
             .sendMessage({
@@ -420,7 +434,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         ? transport.getConnectedPeers()
         : [];
       const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
-      sendResponse({ peers, peerConnections, started });
+      sendResponse({
+        peers,
+        peerConnections,
+        started,
+        ...(acceptanceTransport
+          ? { relayAcceptanceTransport: acceptanceTransport }
+          : {}),
+      });
       return;
     }
     if (msg.action === "connectPairedPeers") {
@@ -433,7 +454,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const error = (err as any)?.message || "offscreen_error";
     sendResponse({ ok: false, error });
     try {
-      log.error("Offscreen handler error", { action: msg.action, failure: err });
+      log.error("Offscreen handler error", {
+        action: msg.action,
+        failure: err,
+      });
     } catch {
       // Response delivery is more important than diagnostics here.
     }

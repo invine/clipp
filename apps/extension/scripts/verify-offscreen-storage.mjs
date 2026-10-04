@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { relayAcceptanceFixture } from "./relay-acceptance-fixture.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const extensionPath = resolve(scriptDirectory, "..", "dist");
-const profilePath = await mkdtemp(join(tmpdir(), "clipp-offscreen-storage-profile-"));
+const { extensionPath, transport } = relayAcceptanceFixture(
+  resolve(scriptDirectory, "..")
+);
+const profilePath = await mkdtemp(
+  join(tmpdir(), "clipp-offscreen-storage-profile-")
+);
 
 let context;
 try {
@@ -22,28 +27,45 @@ try {
 
   let serviceWorker = context.serviceWorkers()[0];
   if (!serviceWorker) {
-    serviceWorker = await context.waitForEvent("serviceworker", { timeout: 15_000 });
+    serviceWorker = await context.waitForEvent("serviceworker", {
+      timeout: 15_000,
+    });
   }
 
   const initialStatus = await waitForStartedOffscreen(serviceWorker);
-  assert.equal(initialStatus.started, true, "the offscreen runtime should initialize");
+  assert.equal(
+    initialStatus.started,
+    true,
+    "the offscreen runtime should initialize"
+  );
+  assert.equal(initialStatus.relayAcceptanceTransport, transport);
 
   // Recreate the document so its identity manager cannot satisfy init from its
   // module-level cache; both identity and peer-record state must use the proxy.
-  assert.deepEqual(await sendToOffscreen(serviceWorker, { action: "shutdown" }), { ok: true });
+  assert.deepEqual(
+    await sendToOffscreen(serviceWorker, { action: "shutdown" }),
+    { ok: true }
+  );
   await recreateOffscreenDocument(serviceWorker);
   assert.deepEqual(await waitForOffscreenPing(serviceWorker), { ok: true });
   assert.deepEqual(
     await sendToOffscreen(serviceWorker, { action: "init", relays: [] }),
     { ok: true },
-    "offscreen initialization should load durable state through the service worker",
+    "offscreen initialization should load durable state through the service worker"
   );
+  const recreatedStatus = await sendToOffscreen(serviceWorker, {
+    action: "getStatus",
+  });
   assert.equal(
-    (await sendToOffscreen(serviceWorker, { action: "getStatus" })).started,
+    recreatedStatus.started,
     true,
-    "the offscreen runtime should be started after proxied storage initialization",
+    "the offscreen runtime should be started after proxied storage initialization"
   );
-  assert.deepEqual(await sendToOffscreen(serviceWorker, { action: "shutdown" }), { ok: true });
+  assert.equal(recreatedStatus.relayAcceptanceTransport, transport);
+  assert.deepEqual(
+    await sendToOffscreen(serviceWorker, { action: "shutdown" }),
+    { ok: true }
+  );
 
   console.log("MV3 offscreen storage proxy verified.");
 } finally {
@@ -92,7 +114,8 @@ async function waitForOffscreenPing(serviceWorker) {
 
 async function sendToOffscreen(serviceWorker, message) {
   return await serviceWorker.evaluate(
-    async (payload) => await chrome.runtime.sendMessage({ target: "offscreen", ...payload }),
-    message,
+    async (payload) =>
+      await chrome.runtime.sendMessage({ target: "offscreen", ...payload }),
+    message
   );
 }
