@@ -113,3 +113,9 @@ invalidation behavior still require their own native evidence.
 On integrated local `main`, Node 24.16.0/npm 11.13.0 passed `npm run check`
 (73 suites, 600 tests and all runtime typechecks) and the Electron build.
 TCP, WebRTC Direct and bounded mixed-address fallback remain unverified.
+
+The runner gives its owned Electron process ten seconds to close. If runtime
+shutdown hangs, it terminates only that launched process, records
+`owned_test_shutdown_timeout`, and exits unsuccessfully. A received clip cannot
+turn this shutdown failure into a passed receipt. The private profile remains
+available for inspection; other Electron processes are unaffected.

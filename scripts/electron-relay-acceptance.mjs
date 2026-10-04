@@ -202,7 +202,7 @@ try {
   }
   assert.equal(receipt.result, "passed", "relay_clip_receipt_timeout");
   console.log(
-    "Passed: new Remote Clip received and applied in actual Electron with the selected relay transport and no direct peer path."
+    "Clip checks passed; waiting for the owned Electron process to close."
   );
 } catch (error) {
   receipt.result = "failed";
@@ -260,8 +260,42 @@ try {
   );
   process.exitCode = 1;
 } finally {
+  if (electron) {
+    const child = electron.process();
+    let timer;
+    const close = electron.close().then(
+      () => true,
+      () => child.exitCode !== null || child.signalCode !== null
+    );
+    const closed = await Promise.race([
+      close,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), 10_000);
+      }),
+    ]);
+    clearTimeout(timer);
+    receipt.shutdown = closed ? "graceful" : "forced-owned-process";
+    if (!closed) {
+      if (receipt.result === "passed") {
+        receipt.reason = "owned_test_shutdown_timeout";
+      }
+      receipt.result = "failed";
+      // Kill only the ChildProcess returned by this launch; never target a name,
+      // process group or another app that happens to share the profile label.
+      child.kill("SIGKILL");
+      await Promise.race([
+        close,
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, 2_000);
+        }),
+      ]);
+      clearTimeout(timer);
+      process.exitCode = 1;
+    }
+  } else {
+    receipt.shutdown = "not-launched";
+  }
   receipt.finishedAt = new Date().toISOString();
-  await electron?.close().catch(() => {});
   await writeFile(
     path.join(values.output, "receipt.json"),
     JSON.stringify(receipt, null, 2) + "\n",
@@ -270,4 +304,8 @@ try {
   await log.close();
   await profileLock.close();
   await unlink(path.join(values.profile, ".clipp-relay-acceptance.lock"));
+}
+
+if (receipt.result === "passed") {
+  console.log("Passed: selected relay transfer and owned Electron shutdown.");
 }

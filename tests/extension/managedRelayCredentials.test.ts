@@ -231,15 +231,20 @@ describe("Chrome managed relay credentials", () => {
   it("does not save a login that completes after its configuration was removed", async () => {
     const { service, identity, records, fetchToken } = harness();
     let complete!: (callback: string) => void;
+    let browserStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      browserStarted = resolve;
+    });
     identity.launch = (url) =>
       new Promise<string>((resolve) => {
         complete = (callback) =>
           resolve(
             `${callback}?code=x&state=${new URL(url).searchParams.get("state")}`
           );
+        browserStarted();
       });
     const login = service.interactiveLogin(endpoint);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await started;
     await service.eraseCredentials(endpoint);
     complete(identity.redirectUrl);
     await expect(login).rejects.toThrow(/superseded/);
