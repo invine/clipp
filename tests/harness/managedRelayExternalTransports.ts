@@ -208,10 +208,17 @@ export async function runExternalTransports(
       "promotion must preserve Rendezvous lookup"
     );
     await transfer("after owner loss");
-    await until(
-      () => a.controller.states()[0].status === "ready",
-      "lost family did not recover independently"
-    );
+    await until(() => {
+      const transports = a.controller.states()[0].transports;
+      return (
+        transports?.length === 3 &&
+        transports.every((transport) => transport.status === "ready") &&
+        a.node
+          .getConnections()
+          .filter((connection) => connection.remotePeer.toString() === peer)
+          .length === 3
+      );
+    }, "lost family did not recover independently");
     assert.equal(
       a.node
         .getConnections()
