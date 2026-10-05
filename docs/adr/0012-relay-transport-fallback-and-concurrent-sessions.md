@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 ---
 
-# Select relay transports with fallback; decide persistent concurrency explicitly
+# Retain one relay connection and try alternative transports on failure
 
-Clipp must try the supported transports advertised by each Relay Configuration before declaring a transport connection failure. The user clarified on 2026-10-05 that this does not request persistent concurrent connections to the same Relay Instance. The recommendation is one retained authenticated Relay Session per configuration, with bounded attempts through alternatives when establishment fails or the selected connection is lost; persistent concurrency requires a separate accepted decision.
+Clipp must try the supported transports advertised by each Relay Configuration before declaring a transport connection failure. The user clarified on 2026-10-05 that this does not request persistent concurrent connections to the same Relay Instance. On 2026-10-05 the user accepted one retained authenticated Relay Session per configuration, with bounded attempts through alternatives when establishment fails or the selected connection is lost, and requested lower overhead transports first. Persistent concurrency requires a separate decision.
 
 ## Requirement and terminology
 
@@ -45,7 +45,7 @@ The original service contract replaces the prior authenticated same-Peer-ID sess
 
 The installed stock JS Circuit Relay reservation store is keyed by Peer ID and records one owning connection. Concurrent authenticated connections need explicit promotion and lease cleanup coordination around that model. Circuit Relay itself uses reservations and an active target connection; see the [Circuit Relay v2 specification](https://github.com/libp2p/specs/blob/master/relay/circuit-v2.md). Warm connections do not establish transparent failover for existing circuits.
 
-## Recommended decision, pending acceptance
+## Decision
 
 Retain one usable authenticated connection for each Relay Configuration. Give every eligible transport family a bounded opportunity before reporting transport failure, including when an earlier route establishes a socket but then fails during transport-local relay setup. On actual connection loss, repeat selection through the alternatives. Keep a healthy selected connection rather than continuously opening other families.
 
@@ -58,7 +58,15 @@ Transport failure and policy refusal must remain distinct:
 
 Dialing bounds must allow the eligible families to be reached; an early black-hole route or repeatedly selected unusable socket must not starve later families. The exact scheduling and timeout allocation need TDD at the approved controller/host seams, with one effective session after success and complete cleanup on stop/removal.
 
-This recommendation preserves the original same-Peer-ID admission contract. Persistent warm standby or all-family retention remains an option to revisit with measured recovery benefits, idle costs, quota implications and lifecycle evidence.
+This decision preserves the original same-Peer-ID admission contract. Persistent warm standby or all-family retention remains an option to revisit with measured recovery benefits, idle costs, quota implications and lifecycle evidence.
+
+## Transport preference
+
+Use TCP → WSS → WebRTC Direct on Electron. Android and the extension currently use browser/WebView transports, so use WSS → WebRTC Direct there. Prefer lower framing and setup complexity among the transports actually supported by that runtime. Raw TCP still receives the existing libp2p security and authentication layers; this choice does not remove encryption.
+
+TCP avoids the additional WebSocket/TLS encapsulation. WSS is the simpler browser-supported setup compared with WebRTC Direct's ICE/DTLS/SCTP and Peer Identity handshake. This is a structural overhead heuristic, not measured CPU, battery, throughput or latency superiority: WebRTC may perform better on some networks. See the [WebRTC Direct specification](https://github.com/libp2p/specs/blob/master/webrtc/webrtc-direct.md) and [WebSocket specification](https://github.com/libp2p/specs/blob/master/websockets/README.md).
+
+A blocked or transport-locally unusable preferred route advances to alternatives within bounded attempts. Runtime acceptance can still force one supported family to prove its actual path. Once a connection is healthy, keep it; do not disrupt it merely because a higher-priority transport becomes available.
 
 ## Evidence and implementation disposition
 
@@ -66,11 +74,11 @@ The pre-concurrency Clipp controller at `babc3c9` races verified **dials**, then
 
 The concurrent candidate proves simultaneous TCP/WSS/WebRTC Direct connections, two opaque transfers around owner loss, promotion and recovery in local real Go/JS fixtures. It also has unresolved cleanup/retry review and verification findings. Some findings concern shared pre-existing retry/lifecycle logic; they are not evidence that every defect was caused by concurrency. Happy-path interop does not establish production resource cost or complete runtime acceptance.
 
-The coordinator had already integrated candidate code into local main branches before this clarification: Clipp `8eee176`, relay `fe4644b`. It was **not deployed**. Both snapshots are preserved as `codex/managed-relay-concurrency-candidate-20261005`; additional client commits and uncommitted changes remain in the isolated implementation worktree. Further concurrency integration and ticket resolution are paused.
+The coordinator had already integrated candidate code into local main branches before this clarification: Clipp `8eee176`, relay `fe4644b`. It was **not deployed**. Both snapshots are preserved as `codex/managed-relay-concurrency-candidate-20261005`; additional client commits and uncommitted changes remain in the isolated implementation worktree. The user accepted fallback on 2026-10-05. Reconciliation of local main is required; the candidate branches remain historical experiments.
 
-After acceptance, reconcile local main to the selected policy while preserving the candidate branches. If the recommendation is accepted, remove the concurrency-specific client/server behavior, retain unrelated runtime/acceptance work, and implement/test complete transport fallback from the single-session baseline. Independently useful retry/cleanup corrections require their own completed tests and review before reuse. Do not resolve tickets 34/35 from the concurrency candidate or push, publish or deploy as part of this decision.
+Reconcile local main to this accepted policy while preserving the candidate branches. Remove the concurrency-specific client/server behavior, retain unrelated runtime/acceptance work, and implement/test complete transport fallback from the single-session baseline. Independently useful retry/cleanup corrections require their own completed tests and review before reuse. Do not resolve tickets 34/35 from the concurrency candidate or push, publish or deploy as part of this decision.
 
-## Acceptance evidence required after the decision
+## Acceptance evidence
 
 - Preferred transport cannot dial, later supported transport succeeds.
 - Preferred route verifies the relay Peer ID but has a transport-local setup failure; a later transport succeeds without credential disclosure to the wrong peer.
