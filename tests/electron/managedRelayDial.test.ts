@@ -55,7 +55,10 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
             ? new Promise((_resolve, reject) => {
                 signal.addEventListener(
                   "abort",
-                  () => reject(new Error("aborted")),
+                  () => {
+                    flight = undefined;
+                    reject(new Error("aborted"));
+                  },
                   { once: true }
                 );
               })
@@ -90,7 +93,7 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
     await jest.advanceTimersByTimeAsync(20_001);
     await setup;
     expect(controller.states()[0].status).toBe("ready");
-    expect(host.dial.mock.calls[0][0]).toBe(wss);
+    expect(host.dial.mock.calls.map(([route]) => route)).toEqual([tcp, wss]);
     expect(host.authenticate).toHaveBeenCalled();
   } finally {
     await controller.stop();

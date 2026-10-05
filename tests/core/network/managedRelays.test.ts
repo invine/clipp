@@ -535,7 +535,8 @@ describe("three-relay adapter scenario", () => {
     await controller.stop();
   });
 
-  it("closes the late loser of a two-address race", async () => {
+  it("closes a timed-out late dial after a later address succeeds", async () => {
+    jest.useFakeTimers();
     const { adapter } = adapterHarness();
     const slow = {
       verifiedPeerId: peer,
@@ -554,7 +555,7 @@ describe("three-relay adapter scenario", () => {
         : Promise.resolve(fast)
     );
     const controller = new ManagedRelayController(adapter);
-    await controller.setConfigurations([
+    const starting = controller.setConfigurations([
       {
         key: "x",
         name: "X",
@@ -566,12 +567,15 @@ describe("three-relay adapter scenario", () => {
         ],
       },
     ]);
+    await jest.advanceTimersByTimeAsync(20_000);
+    await starting;
     expect(controller.states()[0].status).toBe("ready");
     releaseSlow?.();
-    await new Promise((resolve) => setImmediate(resolve));
+    await jest.advanceTimersByTimeAsync(0);
     expect(slow.close).toHaveBeenCalledTimes(1);
     expect(fast.close).not.toHaveBeenCalled();
     await controller.stop();
+    jest.useRealTimers();
   });
 });
 
@@ -683,8 +687,8 @@ describe("timing and credential actions", () => {
   });
 });
 
-describe("address race pacing", () => {
-  it("staggers the second address candidate while keeping two as the maximum", async () => {
+describe("bounded address attempts", () => {
+  it("reaches a later address after the preferred dial deadline", async () => {
     jest.useFakeTimers();
     try {
       const { adapter } = adapterHarness();
@@ -711,7 +715,7 @@ describe("address race pacing", () => {
       ]);
       await Promise.resolve();
       expect(adapter.dial).toHaveBeenCalledTimes(1);
-      await jest.advanceTimersByTimeAsync(100);
+      await jest.advanceTimersByTimeAsync(20_000);
       await starting;
       expect(adapter.dial).toHaveBeenCalledTimes(2);
       await controller.stop();
@@ -1443,567 +1447,283 @@ describe("relay ownership during teardown", () => {
   });
 });
 
-describe("all supported relay transports", () => {
-  it("keeps TCP, WSS and WebRTC authenticated with one reservation owner", async () => {
+describe("single relay transport fallback", () => {
+  it("uses a later transport when the preferred verified route cannot reserve", async () => {
     const { adapter } = adapterHarness();
-    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-    const rtc = `/ip4/127.0.0.1/udp/4002/webrtc-direct/certhash/uEiAB/p2p/${peer}`;
-    const active = new Set<string>();
-    adapter.discover = async () => ({
-      version: 1,
-      relay: { peerId: peer, addresses: [tcp, address, rtc] },
-      validUntil: Date.now() + 30_000,
-    });
-    adapter.dial = async (value) => {
-      active.add(value);
-      return {
-        verifiedPeerId: peer,
-        close: async () => {
-          active.delete(value);
-        },
-      };
-    };
-    const controller = new ManagedRelayController(adapter);
-    try {
-      await controller.setConfigurations([
-        {
-          key: "all",
-          name: "All",
-          kind: "managed",
-          discoveryUrl: "https://relay.example/v1/relay",
-        },
-      ]);
-      expect([...active].sort()).toEqual([tcp, address, rtc].sort());
-      expect(adapter.authenticate).toHaveBeenCalledTimes(3);
-      expect(adapter.reserve).toHaveBeenCalledTimes(1);
-      expect(adapter.register).toHaveBeenCalledTimes(1);
-      expect(controller.states()[0]).toMatchObject({
-        status: "ready",
-        transports: [
-          { family: "tcp", status: "ready" },
-          { family: "wss", status: "ready" },
-          { family: "webrtc-direct", status: "ready" },
-        ],
-      });
-    } finally {
-      await controller.stop();
-    }
-    expect(active.size).toBe(0);
-  });
-});
-
-describe("independent transport lifecycle", () => {
-  const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-  const rtc = `/ip4/127.0.0.1/udp/4002/webrtc-direct/certhash/uEiAB/p2p/${peer}`;
-  const config = {
-    key: "lanes",
-    name: "Lanes",
-    kind: "managed" as const,
-    discoveryUrl: "https://relay.example/v1/relay",
-  };
-  function fixture() {
-    const { adapter } = adapterHarness();
-    const connections = new Map<
-      string,
-      { verifiedPeerId: string; close: jest.Mock }
-    >();
-    adapter.discover = async () => ({
-      version: 1,
-      relay: { peerId: peer, addresses: [tcp, address, rtc] },
-      validUntil: Date.now() + 30_000,
-    });
-    adapter.dial = jest.fn(async (value) => {
-      const connection = {
-        verifiedPeerId: peer,
-        close: jest.fn(async () => {}),
-      };
-      connections.set(value, connection);
-      return connection;
-    });
-    return {
-      adapter,
-      connections,
-      controller: new ManagedRelayController(adapter, () => 0),
-    };
-  }
-  it("promotes a healthy authenticated transport after reservation owner loss", async () => {
-    const { adapter, connections, controller } = fixture();
-    try {
-      await controller.setConfigurations([config]);
-      const owner = (adapter.reserve as jest.Mock).mock.calls[0][0];
-      const healthy = [...connections.values()].filter(
-        (connection) => connection !== owner
-      );
-      await controller.connectionLost(config.key, owner);
-      expect(adapter.reserve).toHaveBeenCalledTimes(2);
-      expect(healthy).toContain(
-        (adapter.reserve as jest.Mock).mock.calls[1][0]
-      );
-      for (const connection of healthy)
-        expect(connection.close).not.toHaveBeenCalled();
-      expect(
-        controller.eligibleDialAddresses([
-          `${address}/p2p-circuit/p2p/destination`,
-        ])
-      ).toHaveLength(1);
-      expect(controller.states()[0].status).toBe("ready");
-    } finally {
-      await controller.stop();
-    }
-  });
-  it("retries a failed family without redialing or closing healthy families", async () => {
-    jest.useFakeTimers();
-    const { adapter, connections, controller } = fixture();
-    const dial = adapter.dial;
-    let fail = true;
-    adapter.dial = jest.fn(async (value, signal) => {
-      if (value === rtc && fail) throw new Error("transport_unavailable");
-      return dial(value, signal);
-    });
-    try {
-      await controller.setConfigurations([config]);
-      const tcpConnection = connections.get(tcp)!;
-      const wssConnection = connections.get(address)!;
-      expect(controller.states()[0]).toMatchObject({
-        status: "ready",
-        transports: [
-          expect.objectContaining({ family: "tcp", status: "ready" }),
-          expect.objectContaining({ family: "wss", status: "ready" }),
-          expect.objectContaining({
-            family: "webrtc-direct",
-            status: "retrying",
-          }),
-        ],
-      });
-      fail = false;
-      await jest.advanceTimersByTimeAsync(500);
-      expect(controller.states()[0].status).toBe("ready");
-      expect(connections.get(tcp)).toBe(tcpConnection);
-      expect(connections.get(address)).toBe(wssConnection);
-      expect(tcpConnection.close).not.toHaveBeenCalled();
-      expect(wssConnection.close).not.toHaveBeenCalled();
-    } finally {
-      await controller.stop();
-      jest.useRealTimers();
-    }
-  });
-  it("retains physical-session refusal on one family while others remain usable", async () => {
-    const { adapter, connections, controller } = fixture();
-    adapter.authenticate = jest.fn(async (connection) => {
-      if (connection === connections.get(rtc))
-        throw new RelayOperationError("session_limit_exceeded");
-      return {
-        sessionExpiresAt: Date.now() + 60_000,
-        renewAfterMillis: 40_000,
-      };
-    });
-    try {
-      await controller.setConfigurations([config]);
-      expect(controller.states()[0].transports).toContainEqual(
-        expect.objectContaining({
-          family: "webrtc-direct",
-          status: "refused",
-          reason: "session_limit_exceeded",
-        })
-      );
-      expect(controller.states()[0].status).toBe("ready");
-      expect(connections.get(tcp)!.close).not.toHaveBeenCalled();
-      expect(connections.get(address)!.close).not.toHaveBeenCalled();
-      expect(connections.get(rtc)!.close).toHaveBeenCalledTimes(1);
-      expect(adapter.eraseCredentials).not.toHaveBeenCalled();
-    } finally {
-      await controller.stop();
-    }
-  });
-});
-
-describe("transport setup bounds", () => {
-  it("uses at most two active address dials across all families", async () => {
-    jest.useFakeTimers();
-    const { adapter } = adapterHarness();
-    const addresses = [
-      `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`,
-      `/ip4/127.0.0.2/tcp/4001/p2p/${peer}`,
-      address,
-      `/dns4/alternative.example/tcp/443/wss/p2p/${peer}`,
-      `/ip4/127.0.0.1/udp/4002/webrtc-direct/certhash/uEiAB/p2p/${peer}`,
-    ];
-    let active = 0;
-    let maximum = 0;
-    const finishes: Array<() => void> = [];
-    adapter.discover = async () => ({
-      version: 1,
-      relay: { peerId: peer, addresses },
-      validUntil: Date.now() + 30_000,
-    });
-    adapter.dial = (_address, signal) =>
-      new Promise((resolve, reject) => {
-        active++;
-        maximum = Math.max(maximum, active);
-        let finished = false;
-        const finish = () => {
-          if (finished) return;
-          finished = true;
-          active--;
-          if (signal.aborted) reject(new Error("aborted"));
-          else resolve({ verifiedPeerId: peer, close: async () => {} });
-        };
-        finishes.push(finish);
-        signal.addEventListener("abort", finish, { once: true });
-      });
-    const controller = new ManagedRelayController(adapter);
-    try {
-      const setting = controller.setConfigurations([
-        {
-          key: "bounds",
-          name: "Bounds",
-          kind: "managed",
-          discoveryUrl: "https://relay.example/v1/relay",
-        },
-      ]);
-      await jest.advanceTimersByTimeAsync(100);
-      expect(active).toBe(2);
-      for (let index = 0; index < 5; index++) {
-        finishes[index]?.();
-        await jest.advanceTimersByTimeAsync(0);
-      }
-      await setting;
-      expect(maximum).toBe(2);
-      expect(controller.states()[0].status).toBe("ready");
-    } finally {
-      await controller.stop();
-      jest.useRealTimers();
-    }
-  });
-  it("adds a newly advertised family while retaining its existing authenticated connection", async () => {
-    jest.useFakeTimers();
-    const { adapter, connection } = adapterHarness();
-    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-    let expanded = false;
-    adapter.discover = async () => ({
-      version: 1,
-      relay: { peerId: peer, addresses: expanded ? [address, tcp] : [address] },
-      validUntil: Date.now() + 1_000,
-    });
-    adapter.dial = jest.fn(async (value) =>
-      value === address
-        ? connection
-        : { verifiedPeerId: peer, close: jest.fn(async () => {}) }
-    );
-    const controller = new ManagedRelayController(adapter);
-    try {
-      await controller.setConfigurations([
-        {
-          key: "new-family",
-          name: "New family",
-          kind: "managed",
-          discoveryUrl: "https://relay.example/v1/relay",
-        },
-      ]);
-      expanded = true;
-      await jest.advanceTimersByTimeAsync(1_000);
-      expect(controller.states()[0].transports).toContainEqual(
-        expect.objectContaining({ family: "tcp", status: "ready" })
-      );
-      expect(connection.close).not.toHaveBeenCalled();
-    } finally {
-      await controller.stop();
-      jest.useRealTimers();
-    }
-  });
-});
-
-describe("configuration discovery ownership", () => {
-  it("keeps refreshing discovery when the primary transport is lost and another remains healthy", async () => {
-    jest.useFakeTimers();
-    const { adapter } = adapterHarness();
-    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-    const connections = new Map<
-      string,
-      { verifiedPeerId: string; close(): Promise<void> }
-    >();
+    const tcp = `/dns4/relay.example/tcp/4001/p2p/${peer}`;
+    const retained = new Set<string>();
     adapter.discover = jest.fn(async () => ({
       version: 1 as const,
       relay: { peerId: peer, addresses: [tcp, address] },
-      validUntil: Date.now() + 2_000,
+      validUntil: Date.now() + 30_000,
     }));
-    adapter.dial = async (value) => {
-      const connection = { verifiedPeerId: peer, close: async () => {} };
-      connections.set(value, connection);
-      return connection;
-    };
-    const controller = new ManagedRelayController(adapter, () => 0);
-    try {
-      await controller.setConfigurations([
-        {
-          key: "discovery",
-          name: "Discovery",
-          kind: "managed",
-          discoveryUrl: "https://relay.example/v1/relay",
-        },
-      ]);
-      await controller.connectionLost("discovery", connections.get(tcp));
-      await jest.advanceTimersByTimeAsync(2_000);
-      expect(adapter.discover).toHaveBeenCalledTimes(2);
-      expect(controller.states()[0].status).toBe("ready");
-    } finally {
-      await controller.stop();
-      jest.useRealTimers();
-    }
-  });
-});
-
-describe("relay identity replacement across transports", () => {
-  it("publishes and releases the new peer claim when a secondary reconnects before a refused primary", async () => {
-    jest.useFakeTimers();
-    const { adapter } = adapterHarness();
-    const newPeer = "12D3KooWNewRelayGeneration";
-    let publishedPeer = peer;
-    const connections = new Map<
-      string,
-      { verifiedPeerId: string; close(): Promise<void> }
-    >();
-    adapter.discover = jest.fn(async () => ({
-      version: 1 as const,
-      relay: {
-        peerId: publishedPeer,
-        addresses: [
-          `/dns4/relay.example/tcp/443/wss/p2p/${publishedPeer}`,
-          `/ip4/127.0.0.1/tcp/4001/p2p/${publishedPeer}`,
-        ],
-      },
-      validUntil: Date.now() + 1_000,
-    }));
-    adapter.dial = async (value) => {
-      const connection = {
-        verifiedPeerId: value.split("/p2p/")[1],
-        close: async () => {},
-      };
-      connections.set(value, connection);
-      return connection;
-    };
-    adapter.authenticate = async (connection) => {
-      if (
-        connections.get(`/dns4/relay.example/tcp/443/wss/p2p/${peer}`) ===
-        connection
-      )
-        throw new RelayOperationError("quota_exhausted");
-      return {
-        sessionExpiresAt: Date.now() + 60_000,
-        renewAfterMillis: 40_000,
-      };
-    };
-    const controller = new ManagedRelayController(adapter, () => 0);
-    const config = {
-      key: "identity",
-      name: "Identity",
-      kind: "managed" as const,
-      discoveryUrl: "https://relay.example/v1/relay",
-    };
-    try {
-      await controller.setConfigurations([config]);
-      expect(controller.states()[0].status).toBe("ready");
-      publishedPeer = newPeer;
-      await jest.advanceTimersByTimeAsync(1_000);
-      await controller.connectionLost(
-        config.key,
-        connections.get(`/ip4/127.0.0.1/tcp/4001/p2p/${peer}`)
-      );
-      await jest.advanceTimersByTimeAsync(500);
-      expect(controller.states()[0]).toMatchObject({
-        status: "ready",
-        peerId: newPeer,
-      });
-      await controller.remove(config.key);
-      await controller.setConfigurations([{ ...config, key: "replacement" }]);
-      expect(controller.states()[0]).toMatchObject({
-        key: "replacement",
-        peerId: newPeer,
-        status: "ready",
-      });
-    } finally {
-      await controller.stop();
-      jest.useRealTimers();
-    }
-  });
-});
-
-describe("explicit relay transport edits", () => {
-  it("connects newly configured families while retaining the existing connection", async () => {
-    const { adapter, connection } = adapterHarness();
-    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-    const rtc = `/ip4/127.0.0.1/udp/4002/webrtc-direct/certhash/uEiAB/p2p/${peer}`;
-    const active = new Set<string>();
-    adapter.dial = async (value) => {
-      active.add(value);
-      if (value === address) return connection;
+    adapter.dial = jest.fn(async (route) => {
+      retained.add(route);
       return {
         verifiedPeerId: peer,
+        route,
         close: async () => {
-          active.delete(value);
+          retained.delete(route);
         },
       };
-    };
-    const controller = new ManagedRelayController(adapter);
-    const config = {
-      key: "explicit-edit",
-      name: "Explicit",
-      kind: "explicit" as const,
-      peerId: peer,
-      addresses: [address],
-    };
-    try {
-      await controller.setConfigurations([config]);
-      await controller.setConfigurations([
-        { ...config, addresses: [address, tcp, rtc] },
-      ]);
-      expect([...active].sort()).toEqual([address, tcp, rtc].sort());
-      expect(connection.close).not.toHaveBeenCalled();
-      expect(adapter.authenticate).not.toHaveBeenCalled();
-      expect(controller.states()[0].status).toBe("ready");
-    } finally {
-      await controller.stop();
-    }
-  });
-});
-
-describe("explicit relay family withdrawal", () => {
-  it("releases only the withdrawn owner family, updates settings and reconnects it when re-added", async () => {
-    const { adapter } = adapterHarness();
-    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-    const connections = new Map<
-      string,
-      { verifiedPeerId: string; close: jest.Mock }
-    >();
-    adapter.dial = async (value) => {
-      const connection = {
-        verifiedPeerId: peer,
-        close: jest.fn(async () => {}),
-      };
-      connections.set(value, connection);
-      return connection;
-    };
-    const controller = new ManagedRelayController(adapter);
-    const config = {
-      key: "withdraw",
-      name: "Original",
-      kind: "explicit" as const,
-      peerId: peer,
-      addresses: [address, tcp],
-    };
-    try {
-      await controller.setConfigurations([config]);
-      const wss = connections.get(address)!;
-      const tcpConnection = connections.get(tcp)!;
-      await controller.setConfigurations([
-        { ...config, name: "Updated", addresses: [tcp] },
-      ]);
-      expect(wss.close).toHaveBeenCalledTimes(1);
-      expect(tcpConnection.close).not.toHaveBeenCalled();
-      expect(controller.configurations()).toEqual([
-        { ...config, name: "Updated", addresses: [tcp] },
-      ]);
-      expect(controller.states()[0].transports).toEqual([
-        expect.objectContaining({
-          family: "tcp",
-          status: "ready",
-          reservationOwner: true,
-        }),
-      ]);
-      await controller.setConfigurations([{ ...config, name: "Updated" }]);
-      expect(connections.get(address)).not.toBe(wss);
-      expect(connections.get(tcp)).toBe(tcpConnection);
-      expect(controller.configurations()).toEqual([
-        { ...config, name: "Updated" },
-      ]);
-      expect(controller.states()[0].transports).toContainEqual(
-        expect.objectContaining({ family: "wss", status: "ready" })
-      );
-    } finally {
-      await controller.stop();
-    }
-  });
-});
-
-describe("explicit relay unsupported transport edits", () => {
-  it("releases the peer claim when an edit withdraws every runtime-supported family", async () => {
-    const { adapter } = adapterHarness();
-    adapter.supportsAddress = (value) => value.includes("/wss/");
-    adapter.dial = async () => ({
-      verifiedPeerId: peer,
-      close: jest.fn(async () => {}),
     });
-    const controller = new ManagedRelayController(adapter);
-    const explicit = {
-      key: "unsupported-edit",
-      name: "Explicit",
-      kind: "explicit" as const,
-      peerId: peer,
-      addresses: [address],
-    };
-    const unsupported = {
-      ...explicit,
-      addresses: [`/ip4/127.0.0.1/tcp/4001/p2p/${peer}`],
-    };
+    adapter.reserve = jest.fn(async (connection) => {
+      if ((connection as typeof connection & { route: string }).route === tcp)
+        throw new Error("transport_reset");
+      return { release: async () => undefined };
+    });
+    const controller = new ManagedRelayController(adapter, () => 0);
     try {
-      await controller.setConfigurations([explicit]);
-      await controller.setConfigurations([unsupported]);
-      expect(controller.states()[0]).toMatchObject({
-        status: "retrying",
-        reason: "no_supported_addresses",
-        transports: [],
-      });
       await controller.setConfigurations([
-        unsupported,
         {
-          key: "eligible",
-          name: "Eligible",
+          key: "a",
+          name: "A",
           kind: "managed",
           discoveryUrl: "https://relay.example/v1/relay",
         },
       ]);
-      expect(
-        controller.states().find((state) => state.key === "eligible")
-      ).toMatchObject({ status: "ready", peerId: peer });
+      expect(controller.states()[0].status).toBe("ready");
+      expect([...retained]).toEqual([address]);
     } finally {
       await controller.stop();
+    }
+    expect(retained.size).toBe(0);
+  });
+});
+
+describe("relay loss cleanup ownership", () => {
+  it.each(["stop", "remove"] as const)(
+    "%s waits for a lost connection to close and cannot rearm retry",
+    async (action) => {
+      jest.useFakeTimers();
+      try {
+        const { adapter, connection } = adapterHarness();
+        const controller = new ManagedRelayController(adapter, () => 0);
+        await controller.setConfigurations([
+          {
+            key: "a",
+            name: "A",
+            kind: "explicit",
+            peerId: peer,
+            addresses: [address],
+          },
+        ]);
+        let finishClose: (() => void) | undefined;
+        connection.close.mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              finishClose = resolve;
+            })
+        );
+        const lost = controller.connectionLost("a", connection);
+        await jest.advanceTimersByTimeAsync(0);
+        let completed = false;
+        const stopping = (
+          action === "stop" ? controller.stop() : controller.remove("a")
+        ).then(() => {
+          completed = true;
+        });
+        await jest.advanceTimersByTimeAsync(0);
+        expect(completed).toBe(false);
+        finishClose?.();
+        await Promise.all([lost, stopping]);
+        expect(jest.getTimerCount()).toBe(0);
+        expect(controller.states()).toEqual([]);
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
+});
+
+describe("fractional relay retry deadlines", () => {
+  it("automatically retries after fractional jitter instead of losing the retry timer", async () => {
+    jest.useFakeTimers();
+    try {
+      const { adapter } = adapterHarness();
+      (adapter.dial as jest.Mock).mockRejectedValueOnce(new Error("offline"));
+      const controller = new ManagedRelayController(adapter, () => 0.333);
+      await controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "explicit",
+          peerId: peer,
+          addresses: [address],
+        },
+      ]);
+      expect(controller.states()[0].status).toBe("retrying");
+      await jest.advanceTimersByTimeAsync(667);
+      expect(controller.states()[0].status).toBe("ready");
+      await controller.stop();
+    } finally {
+      jest.useRealTimers();
     }
   });
 });
 
-describe("concurrent explicit transport edits", () => {
-  it("keeps the latest WSS-only settings when an older family addition resumes later", async () => {
+describe("relay transport selection contract", () => {
+  const tcp = `/dns4/relay.example/tcp/4001/p2p/${peer}`;
+  const rtc = `/dns4/relay.example/udp/4001/webrtc-direct/certhash/test/p2p/${peer}`;
+  const config = {
+    key: "a",
+    name: "A",
+    kind: "explicit" as const,
+    peerId: peer,
+    addresses: [rtc, address, tcp],
+  };
+
+  it("exhausts every eligible family within its own dial bound", async () => {
     jest.useFakeTimers();
-    const { adapter } = adapterHarness();
-    const tcp = `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`;
-    const config = {
-      key: "concurrent-edit",
-      name: "Concurrent",
-      kind: "explicit" as const,
-      peerId: peer,
-      addresses: [address],
-    };
-    const controller = new ManagedRelayController(adapter);
     try {
-      await controller.setConfigurations([config]);
-      const adding = controller.setConfigurations([
-        { ...config, addresses: [address, tcp] },
-      ]);
-      const withdrawing = controller.setConfigurations([config]);
-      await Promise.all([adding, withdrawing]);
-      expect(controller.configurations()).toEqual([config]);
-      expect(controller.states()[0].transports).toEqual([
-        expect.objectContaining({ family: "wss", status: "ready" }),
-      ]);
-      expect(adapter.dial).toHaveBeenCalledTimes(1);
-      await jest.advanceTimersByTimeAsync(2_000);
-      expect(controller.states()[0].transports).toEqual([
-        expect.objectContaining({ family: "wss", status: "ready" }),
-      ]);
-      expect(adapter.dial).toHaveBeenCalledTimes(1);
-    } finally {
+      const { adapter } = adapterHarness();
+      const attempts: string[] = [];
+      const signals: AbortSignal[] = [];
+      adapter.dial = async (route, signal) => {
+        attempts.push(route);
+        signals.push(signal);
+        return new Promise(() => undefined);
+      };
+      const controller = new ManagedRelayController(adapter, () => 0);
+      const starting = controller.setConfigurations([config]);
+      await jest.advanceTimersByTimeAsync(60_000);
+      await starting;
+      expect(attempts).toEqual([tcp, address, rtc]);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      expect(controller.states()[0]).toEqual(
+        expect.objectContaining({
+          status: "retrying",
+          reason: "all_address_dials_failed",
+        })
+      );
+      expect(adapter.authenticate).not.toHaveBeenCalled();
+      expect(adapter.reserve).not.toHaveBeenCalled();
       await controller.stop();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
       jest.useRealTimers();
     }
   });
+
+  it.each([
+    ["invalid_credentials", "login_needed", undefined],
+    ["quota_exhausted", "refused", 600_000],
+    ["session_limit_exceeded", "refused", 600_000],
+    ["rate_limited", "retrying", 600_000],
+    ["temporarily_unavailable", "retrying", 600_000],
+  ] as const)(
+    "does not bypass %s by trying another transport",
+    async (code, status, hint) => {
+      const { adapter, connection } = adapterHarness();
+      adapter.discover = async () => ({
+        version: 1,
+        relay: { peerId: peer, addresses: config.addresses },
+        validUntil: Date.now() + 30_000,
+      });
+      adapter.authenticate = jest.fn(async () => {
+        throw new RelayOperationError(code, hint);
+      });
+      const controller = new ManagedRelayController(adapter, () => 0);
+      try {
+        const before = Date.now();
+        await controller.setConfigurations([
+          {
+            key: "a",
+            name: "A",
+            kind: "managed",
+            discoveryUrl: "https://relay.example/v1/relay",
+          },
+        ]);
+        expect(controller.states()[0].status).toBe(status);
+        if (hint)
+          expect(controller.states()[0].retryAt).toBeGreaterThanOrEqual(
+            before + hint
+          );
+        expect(adapter.dial).toHaveBeenCalledTimes(1);
+        expect(connection.close).toHaveBeenCalledTimes(1);
+        expect(adapter.reserve).not.toHaveBeenCalled();
+        expect(adapter.interactiveLogin).not.toHaveBeenCalled();
+        expect(adapter.eraseCredentials).not.toHaveBeenCalled();
+      } finally {
+        await controller.stop();
+      }
+    }
+  );
+
+  it("recovers selected connection loss through a later family and keeps a healthy connection across higher priority edits", async () => {
+    jest.useFakeTimers();
+    try {
+      const { adapter } = adapterHarness();
+      const live = new Set<string>();
+      const dialed: string[] = [];
+      let lost = false;
+      let selected:
+        | import("../../../packages/core/network/managedRelays").ManagedRelayConnection
+        | undefined;
+      adapter.dial = async (route) => {
+        dialed.push(route);
+        if (lost && route === tcp) throw new Error("tcp_offline");
+        live.add(route);
+        selected = {
+          verifiedPeerId: peer,
+          close: async () => {
+            live.delete(route);
+          },
+        };
+        return selected;
+      };
+      const controller = new ManagedRelayController(adapter, () => 0);
+      await controller.setConfigurations([config]);
+      expect([...live]).toEqual([tcp]);
+      lost = true;
+      await controller.connectionLost("a", selected);
+      await jest.advanceTimersByTimeAsync(500);
+      expect(controller.states()[0].status).toBe("ready");
+      expect([...live]).toEqual([address]);
+      await controller.setConfigurations([
+        { ...config, addresses: [tcp, address] },
+      ]);
+      expect(dialed).toEqual([tcp, tcp, address]);
+      await controller.stop();
+      expect(live.size).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+it("bounds stop at fifteen seconds while a lost connection close remains pending", async () => {
+  jest.useFakeTimers();
+  try {
+    const { adapter, connection } = adapterHarness();
+    const controller = new ManagedRelayController(adapter, () => 0);
+    await controller.setConfigurations([
+      {
+        key: "a",
+        name: "A",
+        kind: "explicit",
+        peerId: peer,
+        addresses: [address],
+      },
+    ]);
+    let finish: (() => void) | undefined;
+    connection.close.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const losing = controller.connectionLost("a", connection);
+    await jest.advanceTimersByTimeAsync(0);
+    const stopping = expect(controller.stop()).rejects.toThrow(
+      "deadline_exceeded"
+    );
+    await jest.advanceTimersByTimeAsync(15_000);
+    await stopping;
+    finish?.();
+    await losing;
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
 });

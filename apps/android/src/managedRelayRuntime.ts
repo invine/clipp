@@ -29,7 +29,7 @@ function isAndroidRelayAddress(address: string): boolean {
   return (
     address.includes("/wss/") ||
     address.endsWith("/wss") ||
-    /\/tls\/(?:sni\/[^/]+\/)?ws\//.test(address) ||
+    address.includes("/tls/ws/") ||
     address.includes("/webrtc-direct/") ||
     address.endsWith("/webrtc-direct")
   );

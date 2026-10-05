@@ -58,14 +58,6 @@ export function createElectronManagedRelayAdapter(options: {
       (!options.acceptanceTransport ||
         acceptanceTransportAllows(options.acceptanceTransport, address)) &&
       options.host().supportsAddress(address),
-    // Schedule WSS first; the shared host serializes same-peer physical dials
-    // and bounds each attempt while the controller maintains every family.
-    addressPriority: (address) =>
-      address.includes("/webrtc-direct/")
-        ? 2
-        : /\/(?:wss?|tls\/(?:sni\/[^/]+\/)?ws)\/p2p\//.test(address)
-          ? 0
-          : 1,
     dial: (address, signal) => options.host().dial(address, signal),
     authenticate: (connection, token, signal) =>
       options.host().authenticate(connection, token, signal),

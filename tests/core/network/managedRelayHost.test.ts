@@ -589,58 +589,29 @@ describe("configured reservation renewal", () => {
   });
 });
 
-describe("physical transport dial scheduling", () => {
-  it("bounds a stalled TCP dial so queued WSS and WebRTC can connect independently", async () => {
-    jest.useFakeTimers();
-    const peer = "12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
-    const signal = new AbortController();
-    const rawConnections: any[] = [];
-    const node = {
-      getConnections: () => rawConnections,
-      dial: jest.fn(
-        async (
-          value: { toString(): string },
-          options: { signal: AbortSignal }
-        ) => {
-          if (value.toString().includes("/tcp/4001/"))
-            await new Promise((_resolve, reject) => {
-              options.signal.addEventListener(
-                "abort",
-                () => reject(new Error("tcp_timeout")),
-                { once: true }
-              );
-            });
-          const raw = {
-            id: value.toString(),
-            remotePeer: { toString: () => peer },
-            close: jest.fn(async () => {}),
-          };
-          rawConnections.push(raw);
-          return raw;
-        }
-      ),
-    };
-    const host = createManagedRelayHost(node, async () => new Uint8Array());
-    const tcp = host
-      .dial(`/ip4/127.0.0.1/tcp/4001/p2p/${peer}`, signal.signal)
-      .catch(() => undefined);
-    const wss = host
-      .dial(`/dns4/relay.example/tcp/443/wss/p2p/${peer}`, signal.signal)
-      .catch(() => undefined);
-    const rtc = host
-      .dial(
-        `/ip4/127.0.0.1/udp/4002/webrtc-direct/certhash/uEiAB/p2p/${peer}`,
-        signal.signal
-      )
-      .catch(() => undefined);
-    try {
-      await jest.advanceTimersByTimeAsync(5_000);
-      expect(node.dial).toHaveBeenCalledTimes(3);
-      expect(rawConnections).toHaveLength(2);
-    } finally {
-      signal.abort();
-      await Promise.all([tcp, wss, rtc]);
-      jest.useRealTimers();
-    }
-  });
+it("rejects and closes a fresh raw connection that arrives after dial cancellation", async () => {
+  let finish: ((raw: typeof connection) => void) | undefined;
+  const connection = {
+    remotePeer: { toString: () => "relay" },
+    close: jest.fn(async () => {}),
+  };
+  const host = createManagedRelayHost(
+    {
+      getConnections: () => [],
+      dial: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    },
+    async () => new Uint8Array()
+  );
+  const controller = new AbortController();
+  const dialing = host.dial(
+    "/dns4/relay.example/tcp/4001/p2p/relay",
+    controller.signal
+  );
+  controller.abort();
+  finish?.(connection);
+  await expect(dialing).rejects.toThrow("relay_dial_aborted");
+  expect(connection.close).toHaveBeenCalledTimes(1);
 });
