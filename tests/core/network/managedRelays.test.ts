@@ -1761,3 +1761,82 @@ it("rearms an early automatic retry until the allowed clock deadline while suppr
     jest.useRealTimers();
   }
 });
+
+it.each([true, false])(
+  "renews after initial Rendezvous degradation (repair=%s) and keeps the original expiry after refusal",
+  async (canRepair) => {
+    jest.useFakeTimers();
+    try {
+      const { adapter, connection } = adapterHarness();
+      const originalExpiry = Date.now() + 60_000;
+      if (canRepair)
+        (adapter.register as jest.Mock).mockRejectedValueOnce(
+          new Error("rv_down")
+        );
+      else
+        (adapter.register as jest.Mock).mockRejectedValue(new Error("rv_down"));
+      adapter.authenticate = jest
+        .fn()
+        .mockResolvedValueOnce({
+          sessionExpiresAt: originalExpiry,
+          renewAfterMillis: 40_000,
+        })
+        .mockRejectedValueOnce(
+          new RelayOperationError("session_limit_exceeded", 300_000)
+        );
+      const controller = new ManagedRelayController(adapter, () => 0);
+      await controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      expect(controller.states()[0].status).toBe("degraded");
+      await jest.advanceTimersByTimeAsync(500);
+      expect(controller.states()[0].status).toBe(
+        canRepair ? "ready" : "degraded"
+      );
+      await jest.advanceTimersByTimeAsync(39_500);
+      expect(adapter.authenticate).toHaveBeenCalledTimes(2);
+      expect(controller.states()[0].status).toBe("refused");
+      expect(connection.close).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(connection.close).toHaveBeenCalledTimes(1);
+      await controller.stop();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  }
+);
+
+it("tries raw TCP before secure WebSocket with SNI and WebRTC Direct", async () => {
+  const { adapter } = adapterHarness();
+  const tcp = `/dns4/relay.example/tcp/4001/p2p/${peer}`;
+  const sni = `/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/${peer}`;
+  const rtc = `/dns4/relay.example/udp/4001/webrtc-direct/certhash/test/p2p/${peer}`;
+  const routes: string[] = [];
+  adapter.dial = async (route) => {
+    routes.push(route);
+    if (route === tcp) throw new Error("tcp_offline");
+    return { verifiedPeerId: peer, close: async () => {} };
+  };
+  const controller = new ManagedRelayController(adapter, () => 0);
+  try {
+    await controller.setConfigurations([
+      {
+        key: "a",
+        name: "A",
+        kind: "explicit",
+        peerId: peer,
+        addresses: [sni, rtc, tcp],
+      },
+    ]);
+    expect(controller.states()[0].status).toBe("ready");
+    expect(routes).toEqual([tcp, sni]);
+  } finally {
+    await controller.stop();
+  }
+});

@@ -101,13 +101,20 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
   }
 });
 
-it.each(["tcp", "wss", "webrtc-direct"] as const)(
-  "uses only %s for isolated managed relay acceptance",
-  async (selected) => {
+it.each([
+  { selected: "tcp" as const, sni: false },
+  { selected: "wss" as const, sni: false },
+  { selected: "webrtc-direct" as const, sni: false },
+  { selected: "wss" as const, sni: true },
+])(
+  "uses only $selected (SNI=$sni) for isolated managed relay acceptance",
+  async ({ selected, sni }) => {
     const peer = "12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
     const addresses = {
       tcp: `/ip4/127.0.0.1/tcp/4001/p2p/${peer}`,
-      wss: `/dns4/relay.example/tcp/443/tls/ws/p2p/${peer}`,
+      wss: sni
+        ? `/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/${peer}`
+        : `/dns4/relay.example/tcp/443/tls/ws/p2p/${peer}`,
       "webrtc-direct": `/ip4/127.0.0.1/udp/4001/webrtc-direct/certhash/test/p2p/${peer}`,
     };
     const connection = { verifiedPeerId: peer, close: async () => {} };

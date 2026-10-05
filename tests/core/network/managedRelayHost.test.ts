@@ -615,3 +615,12 @@ it("rejects and closes a fresh raw connection that arrives after dial cancellati
   await expect(dialing).rejects.toThrow("relay_dial_aborted");
   expect(connection.close).toHaveBeenCalledTimes(1);
 });
+
+it("accepts the secure WebSocket route containing an explicit SNI name", () => {
+  const host = createManagedRelayHost({}, async () => new Uint8Array());
+  expect(
+    host.supportsAddress(
+      "/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/relay"
+    )
+  ).toBe(true);
+});

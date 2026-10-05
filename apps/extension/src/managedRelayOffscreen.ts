@@ -76,13 +76,7 @@ export function createExtensionManagedRelayController(options: {
             ? "invalid_credentials"
             : "relay_discovery_unavailable"
         );
-      const document = normalizeDiscoveryResponse(await response.json());
-      document.relay.addresses.sort((left, right) => {
-        const rank = (address: string) =>
-          /\/wss\/|\/tls\/ws\//.test(address) ? 0 : 1;
-        return rank(left) - rank(right);
-      });
-      return document;
+      return normalizeDiscoveryResponse(await response.json());
     },
     supportsAddress(address) {
       return (
@@ -91,7 +85,7 @@ export function createExtensionManagedRelayController(options: {
             options.acceptanceTransport,
             address
           )) &&
-        (/\/wss\/|\/tls\/ws\//.test(address) ||
+        (/\/wss\/|\/tls\/(?:sni\/[^/]+\/)?ws\//.test(address) ||
           /\/webrtc-direct\//.test(address)) &&
         options.host.supportsAddress(address)
       );

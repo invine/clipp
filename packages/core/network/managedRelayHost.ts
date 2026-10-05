@@ -253,8 +253,9 @@ export function createManagedRelayHost(
   return {
     supportsAddress(address: string): boolean {
       return (
-        /\/tcp\/\d+(?:\/ws|\/wss|\/tls\/ws)?\/p2p\//.test(address) ||
-        /\/udp\/\d+\/webrtc-direct\/certhash\//.test(address)
+        /\/tcp\/\d+(?:\/ws|\/wss|\/tls\/(?:sni\/[^/]+\/)?ws)?\/p2p\//.test(
+          address
+        ) || /\/udp\/\d+\/webrtc-direct\/certhash\//.test(address)
       );
     },
     async dial(

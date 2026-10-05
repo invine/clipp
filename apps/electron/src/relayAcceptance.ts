@@ -66,7 +66,7 @@ export function acceptanceTransportAllows(
   address: string
 ): boolean {
   if (transport === "webrtc-direct") return address.includes("/webrtc-direct/");
-  const websocket = /\/(?:wss|tls\/ws)\/p2p\//.test(address);
+  const websocket = /\/(?:wss|tls\/(?:sni\/[^/]+\/)?ws)\/p2p\//.test(address);
   if (transport === "wss") return websocket;
   return /\/tcp\/\d+\/p2p\//.test(address);
 }

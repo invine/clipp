@@ -784,6 +784,7 @@ export class ManagedRelayController {
         return;
       }
       entry.connection = connection;
+      if (authResult) this.scheduleRenewal(entry, authResult);
       await this.register(entry, connection);
       if (!this.current(entry, generation)) return;
       entry.attempt = 0;
@@ -793,7 +794,6 @@ export class ManagedRelayController {
         reason: undefined,
         warning: undefined,
       });
-      if (authResult) this.scheduleRenewal(entry, authResult);
     } catch (error) {
       if (connection && entry.connection !== connection)
         await connection.close().catch(() => undefined);

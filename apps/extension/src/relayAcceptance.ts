@@ -19,6 +19,6 @@ export function extensionRelayTransportAllows(
   address: string
 ): boolean {
   return transport === "wss"
-    ? /\/(?:wss|tls\/ws)\/p2p\//.test(address)
+    ? /\/(?:wss|tls\/(?:sni\/[^/]+\/)?ws)\/p2p\//.test(address)
     : address.includes("/webrtc-direct/");
 }

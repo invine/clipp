@@ -39,6 +39,11 @@ describe("Android managed relay runtime adapter", () => {
       adapter.supportsAddress(`/dns4/relay.example/tcp/443/p2p/${peer}`)
     ).toBe(false);
     expect(adapter.supportsAddress(wss)).toBe(true);
+    expect(
+      adapter.supportsAddress(
+        `/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/${peer}`
+      )
+    ).toBe(true);
     const result = await adapter.discover(
       endpoint,
       "access-only-for-this-relay",

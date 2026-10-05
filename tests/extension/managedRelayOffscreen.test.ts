@@ -10,6 +10,7 @@ import { createExtensionManagedRelayController } from "../../apps/extension/src/
 
 const peer = "12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
 const wss = `/dns4/relay.example/tcp/443/wss/p2p/${peer}`;
+const sni = `/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/${peer}`;
 const direct = `/ip4/192.0.2.1/udp/443/webrtc-direct/certhash/uEiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/p2p/${peer}`;
 const configuration = {
   key: "managed",
@@ -28,6 +29,7 @@ describe("Chrome offscreen managed relay controller", () => {
 
   it.each([
     { acceptanceTransport: "wss" as const, expected: wss },
+    { acceptanceTransport: "wss" as const, expected: sni },
     { acceptanceTransport: "webrtc-direct" as const, expected: direct },
   ])(
     "uses only $acceptanceTransport for isolated relay acceptance",
@@ -52,7 +54,10 @@ describe("Chrome offscreen managed relay controller", () => {
         new Response(
           JSON.stringify({
             version: 1,
-            relay: { peerId: peer, addresses: [wss, direct] },
+            relay: {
+              peerId: peer,
+              addresses: [expected === sni ? sni : wss, direct],
+            },
             validUntil: new Date(Date.now() + 60_000).toISOString(),
           })
         );
