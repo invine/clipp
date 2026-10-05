@@ -1146,10 +1146,29 @@ export class ManagedRelayController {
         : "Renewal failed; retrying while the current session remains valid",
       retryAt: entry.retryAt,
     });
+    this.scheduleRetry(entry, () => this.refreshSession(entry.config.key));
+  }
+  private scheduleRetry(entry: Entry, retry: () => Promise<void>): void {
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
-    entry.retryTimer = setTimeout(() => {
-      void this.refreshSession(entry.config.key);
-    }, delay);
+    const generation = entry.generation;
+    if (!this.current(entry, generation)) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      timer = setTimeout(
+        () => {
+          if (!this.current(entry, generation) || entry.retryTimer !== timer)
+            return;
+          entry.retryTimer = undefined;
+          // Wall-clock changes can make a timer fire before the authoritative
+          // minimum wait. Keep automatic recovery armed without weakening it.
+          if (this.now() < entry.retryAt) arm();
+          else void retry();
+        },
+        Math.ceil(Math.max(0, entry.retryAt - this.now()))
+      );
+      entry.retryTimer = timer;
+    };
+    arm();
   }
   private failure(entry: Entry, error: unknown, rendezvousOnly = false): void {
     const code =
@@ -1182,10 +1201,7 @@ export class ManagedRelayController {
       reason: code,
       retryAt: entry.retryAt,
     });
-    if (entry.retryTimer) clearTimeout(entry.retryTimer);
-    entry.retryTimer = setTimeout(() => {
-      void this.retry(entry.config.key);
-    }, delay);
+    this.scheduleRetry(entry, () => this.retry(entry.config.key));
   }
 }
 

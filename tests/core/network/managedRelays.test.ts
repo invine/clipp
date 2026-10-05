@@ -1727,3 +1727,37 @@ it("bounds stop at fifteen seconds while a lost connection close remains pending
     jest.useRealTimers();
   }
 });
+
+it("rearms an early automatic retry until the allowed clock deadline while suppressing manual retry", async () => {
+  jest.useFakeTimers();
+  try {
+    const { adapter } = adapterHarness();
+    (adapter.dial as jest.Mock).mockRejectedValueOnce(new Error("offline"));
+    let clock = 1_000_000;
+    const controller = new ManagedRelayController(
+      adapter,
+      () => 0,
+      () => clock
+    );
+    await controller.setConfigurations([
+      {
+        key: "a",
+        name: "A",
+        kind: "explicit",
+        peerId: peer,
+        addresses: [address],
+      },
+    ]);
+    await jest.advanceTimersByTimeAsync(500);
+    await controller.retry("a");
+    expect(adapter.dial).toHaveBeenCalledTimes(1);
+    expect(controller.states()[0].status).toBe("retrying");
+    clock += 500;
+    await jest.advanceTimersByTimeAsync(500);
+    expect(controller.states()[0].status).toBe("ready");
+    await controller.stop();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
+});
