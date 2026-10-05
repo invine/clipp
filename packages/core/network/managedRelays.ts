@@ -301,6 +301,11 @@ export type ManagedRelayAdapter = {
   onStateChange?(states: RelayState[]): void;
 };
 
+type RetrySchedule = {
+  retryTimer?: ReturnType<typeof setTimeout>;
+  retryAt: number;
+  attempt: number;
+};
 type Entry = {
   config: RelayConfiguration;
   state: RelayState;
@@ -311,7 +316,12 @@ type Entry = {
   rendezvousStatus?: "connecting" | "degraded" | "ready";
   rendezvousReason?: string;
   retryTimer?: ReturnType<typeof setTimeout>;
-  retryForAuthentication?: boolean;
+  authRetry: RetrySchedule;
+  authFailure?: {
+    status?: "login_needed" | "refused";
+    reason?: string;
+    warning?: string;
+  };
   renewTimer?: ReturnType<typeof setTimeout>;
   authExpiryTimer?: ReturnType<typeof setTimeout>;
   authExpiresAt?: number;
@@ -474,6 +484,8 @@ export class ManagedRelayController {
   }
   private clearTimers(entry: Entry): void {
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    if (entry.authRetry.retryTimer) clearTimeout(entry.authRetry.retryTimer);
+    entry.authRetry.retryTimer = undefined;
     if (entry.renewTimer) clearTimeout(entry.renewTimer);
     if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
     if (entry.discoveryTimer) clearTimeout(entry.discoveryTimer);
@@ -586,6 +598,7 @@ export class ManagedRelayController {
       controller: new AbortController(),
       attempt: 0,
       retryAt: 0,
+      authRetry: { attempt: 0, retryAt: 0 },
     };
     this.entries.set(key, entry);
     this.notify();
@@ -669,14 +682,14 @@ export class ManagedRelayController {
   }
   async refreshSession(key: string): Promise<void> {
     const entry = this.entries.get(key);
-    if (entry && this.now() >= entry.retryAt) await this.renew(entry);
+    if (entry && this.now() >= entry.authRetry.retryAt) await this.renew(entry);
   }
   async requestLogin(key: string): Promise<void> {
     const entry = this.entries.get(key);
     if (!entry || entry.config.kind !== "managed") return;
     await this.adapter.interactiveLogin(entry.config.discoveryUrl);
     if (entry.connection) {
-      entry.retryAt = 0;
+      entry.authRetry.retryAt = 0;
       await this.renew(entry);
     } else await this.retry(key);
   }
@@ -687,16 +700,20 @@ export class ManagedRelayController {
   }
   async retry(key: string): Promise<void> {
     const entry = this.entries.get(key);
-    if (!entry || entry.state.status === "ready" || this.now() < entry.retryAt)
+    if (!entry || entry.state.status === "ready") return;
+    if (
+      entry.connection &&
+      entry.config.kind === "managed" &&
+      entry.state.status !== "degraded"
+    ) {
+      await this.refreshSession(key);
       return;
+    }
+    if (this.now() < entry.retryAt) return;
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
     entry.retryTimer = undefined;
     if (entry.state.status === "degraded" && entry.connection) {
       await this.repairRendezvous(entry);
-      return;
-    }
-    if (entry.connection && entry.config.kind === "managed") {
-      await this.renew(entry);
       return;
     }
     await this.setup(entry);
@@ -789,6 +806,9 @@ export class ManagedRelayController {
       entry.connection = connection;
       entry.rendezvousStatus = "connecting";
       entry.rendezvousReason = undefined;
+      entry.authFailure = undefined;
+      entry.authRetry.retryAt = 0;
+      entry.authRetry.attempt = 0;
       if (authResult) this.scheduleRenewal(entry, authResult);
       await this.register(entry, connection);
       if (!this.current(entry, generation)) return;
@@ -1014,28 +1034,29 @@ export class ManagedRelayController {
       await this.compensateLateRegistration(entry, connection, generation);
     }
   }
+  private publishSessionState(entry: Entry): void {
+    this.emit(entry, {
+      status:
+        entry.authFailure?.status ?? entry.rendezvousStatus ?? "connecting",
+      reason: entry.authFailure?.status
+        ? entry.authFailure.reason
+        : entry.rendezvousReason,
+      warning: entry.authFailure?.warning,
+      retryAt: entry.authFailure
+        ? entry.authRetry.retryAt || undefined
+        : entry.rendezvousStatus === "degraded"
+          ? entry.retryAt
+          : undefined,
+    });
+  }
   private rendezvousEstablished(entry: Entry): void {
     entry.rendezvousStatus = "ready";
     entry.rendezvousReason = undefined;
-    // Registration must not clear a concurrent authentication refusal/login.
-    if (
-      entry.state.status !== "connecting" &&
-      entry.state.status !== "degraded"
-    )
-      return;
-    const keepAuthRetry =
-      entry.retryForAuthentication && Boolean(entry.retryTimer);
-    if (!keepAuthRetry) {
-      if (entry.retryTimer) clearTimeout(entry.retryTimer);
-      entry.retryTimer = undefined;
-      entry.attempt = 0;
-    }
-    this.emit(entry, {
-      status: "ready",
-      reason: undefined,
-      warning: keepAuthRetry ? entry.state.warning : undefined,
-      retryAt: keepAuthRetry ? entry.retryAt : undefined,
-    });
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryTimer = undefined;
+    entry.retryAt = 0;
+    entry.attempt = 0;
+    this.publishSessionState(entry);
   }
   private async repairRendezvous(entry: Entry): Promise<void> {
     const connection = entry.connection;
@@ -1093,7 +1114,8 @@ export class ManagedRelayController {
         if (!this.current(entry, generation) || entry.connection !== connection)
           return;
         if (!token) {
-          this.emit(entry, { status: "login_needed" });
+          entry.authFailure = { status: "login_needed" };
+          this.publishSessionState(entry);
           return;
         }
         const result = await this.deadline(
@@ -1105,27 +1127,15 @@ export class ManagedRelayController {
           return;
         this.validateAuthResult(result);
         this.scheduleRenewal(entry, result);
-        if (entry.rendezvousStatus === "ready") {
-          entry.attempt = 0;
-          this.emit(entry, {
-            status: "ready",
-            warning: undefined,
-            reason: undefined,
-            retryAt: undefined,
-          });
-        } else {
-          this.emit(entry, {
-            status: entry.rendezvousStatus ?? "connecting",
-            warning: undefined,
-            reason: entry.rendezvousReason,
-            retryAt:
-              entry.rendezvousStatus === "degraded" ? entry.retryAt : undefined,
-          });
-          // Keep the existing repair deadline and exponential backoff even
-          // when renewed authentication has cleared a login/refusal state.
-          if (entry.rendezvousStatus === "degraded")
-            this.scheduleRetry(entry, () => this.retry(entry.config.key));
-        }
+        if (entry.authRetry.retryTimer)
+          clearTimeout(entry.authRetry.retryTimer);
+        entry.authRetry.retryTimer = undefined;
+        entry.authRetry.retryAt = 0;
+        entry.authRetry.attempt = 0;
+        entry.authFailure = undefined;
+        this.publishSessionState(entry);
+        if (entry.rendezvousStatus === "degraded" && !entry.retryTimer)
+          this.scheduleRetry(entry, () => this.repairRendezvous(entry));
       } catch (error) {
         if (!this.current(entry, generation) || entry.connection !== connection)
           return;
@@ -1147,61 +1157,64 @@ export class ManagedRelayController {
           ? error.message
           : "unknown_error";
     if (code === "invalid_credentials" || code === "authentication_failed") {
-      this.emit(entry, {
+      if (entry.authRetry.retryTimer) clearTimeout(entry.authRetry.retryTimer);
+      entry.authRetry.retryTimer = undefined;
+      entry.authRetry.retryAt = 0;
+      entry.authFailure = {
         status: "login_needed",
         reason: code,
         warning: "Existing session remains valid until expiry",
-      });
+      };
+      this.publishSessionState(entry);
       return;
     }
     const refusal =
       code === "quota_exhausted" || code === "session_limit_exceeded";
     const backoff = refusal
       ? 300_000 * (0.8 + this.random() * 0.4)
-      : RETRY[Math.min(entry.attempt++, RETRY.length - 1)] *
+      : RETRY[Math.min(entry.authRetry.attempt++, RETRY.length - 1)] *
         (0.5 + this.random() * 0.5);
     const hint =
       error instanceof RelayOperationError ? (error.retryAfterMillis ?? 0) : 0;
     const delay = Math.ceil(Math.max(backoff, hint));
-    entry.retryAt = this.now() + delay;
-    this.emit(entry, {
-      status: refusal ? "refused" : (entry.rendezvousStatus ?? "connecting"),
+    entry.authRetry.retryAt = this.now() + delay;
+    entry.authFailure = {
+      status: refusal ? "refused" : undefined,
       reason: refusal ? code : undefined,
       warning: refusal
         ? undefined
         : "Renewal failed; retrying while the current session remains valid",
-      retryAt: entry.retryAt,
-    });
+    };
+    this.publishSessionState(entry);
     this.scheduleRetry(
       entry,
       () => this.refreshSession(entry.config.key),
-      true
+      entry.authRetry
     );
   }
   private scheduleRetry(
     entry: Entry,
     retry: () => Promise<void>,
-    forAuthentication = false
+    schedule: RetrySchedule = entry
   ): void {
-    if (entry.retryTimer) clearTimeout(entry.retryTimer);
-    entry.retryForAuthentication = forAuthentication;
+    if (schedule.retryTimer) clearTimeout(schedule.retryTimer);
     const generation = entry.generation;
     if (!this.current(entry, generation)) return;
     let timer: ReturnType<typeof setTimeout>;
     const arm = () => {
       timer = setTimeout(
         () => {
-          if (!this.current(entry, generation) || entry.retryTimer !== timer)
+          if (!this.current(entry, generation) || schedule.retryTimer !== timer)
             return;
-          entry.retryTimer = undefined;
+          schedule.retryTimer = undefined;
           // Wall-clock changes can make a timer fire before the authoritative
           // minimum wait. Keep automatic recovery armed without weakening it.
-          if (this.now() < entry.retryAt) arm();
+          if (this.now() < schedule.retryAt) arm();
           else void retry();
         },
-        Math.ceil(Math.max(0, entry.retryAt - this.now()))
+        Math.ceil(Math.max(0, schedule.retryAt - this.now()))
       );
-      entry.retryTimer = timer;
+      schedule.retryTimer = timer;
     };
     arm();
   }
@@ -1212,12 +1225,16 @@ export class ManagedRelayController {
         : error instanceof Error
           ? error.message
           : "unknown_error";
-    if (rendezvousOnly) {
+    const repairingRendezvous = rendezvousOnly && Boolean(entry.connection);
+    if (repairingRendezvous) {
       entry.rendezvousStatus = "degraded";
       entry.rendezvousReason = code;
     }
     if (code === "invalid_credentials" || code === "authentication_failed") {
-      this.emit(entry, { status: "login_needed", reason: code });
+      if (repairingRendezvous) {
+        entry.authFailure = { status: "login_needed", reason: code };
+        this.publishSessionState(entry);
+      } else this.emit(entry, { status: "login_needed", reason: code });
       return;
     }
     const refusal =
@@ -1229,18 +1246,23 @@ export class ManagedRelayController {
     const hint =
       error instanceof RelayOperationError ? (error.retryAfterMillis ?? 0) : 0;
     const delay = Math.ceil(Math.max(backoff, hint));
-    entry.retryAt = this.now() + delay;
-    this.emit(entry, {
-      status:
-        rendezvousOnly && entry.connection
-          ? "degraded"
-          : refusal
-            ? "refused"
-            : "retrying",
-      reason: code,
-      retryAt: entry.retryAt,
-    });
-    this.scheduleRetry(entry, () => this.retry(entry.config.key));
+    entry.retryAt = Math.max(
+      this.now() + delay,
+      repairingRendezvous ? 0 : entry.authRetry.retryAt
+    );
+    if (repairingRendezvous) this.publishSessionState(entry);
+    else
+      this.emit(entry, {
+        status: refusal ? "refused" : "retrying",
+        reason: code,
+        retryAt: entry.retryAt,
+      });
+    this.scheduleRetry(
+      entry,
+      repairingRendezvous
+        ? () => this.repairRendezvous(entry)
+        : () => this.retry(entry.config.key)
+    );
   }
 }
 

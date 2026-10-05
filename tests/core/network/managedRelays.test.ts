@@ -1933,3 +1933,52 @@ it("keeps Rendezvous degraded and its repair backoff when authentication renewal
     jest.useRealTimers();
   }
 });
+
+it.each([20, 100])(
+  "recovers authentication renewal (at %s ms) and Rendezvous independently when both fail during initial setup",
+  async (renewAfterMillis) => {
+    jest.useFakeTimers();
+    let rejectInitial: ((error: Error) => void) | undefined;
+    let starting: Promise<void> | undefined;
+    let controller: ManagedRelayController | undefined;
+    try {
+      const { adapter } = adapterHarness();
+      (adapter.authenticate as jest.Mock)
+        .mockResolvedValueOnce({
+          sessionExpiresAt: Date.now() + 60_000,
+          renewAfterMillis,
+        })
+        .mockRejectedValueOnce(new Error("renewal_network_down"));
+      (adapter.register as jest.Mock).mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectInitial = reject;
+          })
+      );
+      controller = new ManagedRelayController(adapter, () => 0);
+      starting = controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      await jest.advanceTimersByTimeAsync(60);
+      rejectInitial?.(new Error("rv_down"));
+      await starting;
+      await jest.advanceTimersByTimeAsync(1_300);
+      expect(adapter.authenticate).toHaveBeenCalledTimes(3);
+      expect(adapter.register).toHaveBeenCalledTimes(2);
+      expect(controller.states()[0]).toEqual(
+        expect.objectContaining({ status: "ready", warning: undefined })
+      );
+    } finally {
+      rejectInitial?.(new Error("fixture_cleanup"));
+      await starting;
+      await controller?.stop();
+      expect(jest.getTimerCount()).toBe(0);
+      jest.useRealTimers();
+    }
+  }
+);
