@@ -74,7 +74,7 @@ The pre-concurrency Clipp controller at `babc3c9` races verified **dials**, then
 
 The concurrent candidate proves simultaneous TCP/WSS/WebRTC Direct connections, two opaque transfers around owner loss, promotion and recovery in local real Go/JS fixtures. It also has unresolved cleanup/retry review and verification findings. Some findings concern shared pre-existing retry/lifecycle logic; they are not evidence that every defect was caused by concurrency. Happy-path interop does not establish production resource cost or complete runtime acceptance.
 
-The coordinator had already integrated candidate code into local main branches before this clarification: Clipp `8eee176`, relay `fe4644b`. It was **not deployed**. Both snapshots are preserved as `codex/managed-relay-concurrency-candidate-20261005`; additional client commits and uncommitted changes remain in the isolated implementation worktree. The user accepted fallback on 2026-10-05. Reconciliation of local main is required; the candidate branches remain historical experiments.
+The coordinator had already integrated candidate code into local main branches before this clarification: Clipp `8eee176`, relay `fe4644b`. It was **not deployed**. Both snapshots are preserved as `codex/managed-relay-concurrency-candidate-20261005`; additional client commits and uncommitted changes remain in the isolated implementation worktree. The user accepted fallback on 2026-10-05. Local main was reconciled and verified on 2026-10-05; the candidate branches remain historical experiments.
 
 Reconcile local main to this accepted policy while preserving the candidate branches. Remove the concurrency-specific client/server behavior, retain unrelated runtime/acceptance work, and implement/test complete transport fallback from the single-session baseline. Independently useful retry/cleanup corrections require their own completed tests and review before reuse. Do not resolve tickets 34/35 from the concurrency candidate or push, publish or deploy as part of this decision.
 
@@ -86,3 +86,14 @@ Reconcile local main to this accepted policy while preserving the candidate bran
 - Success retains exactly one effective authenticated connection per configuration; other relays and direct peers remain connected.
 - Selected connection loss recovers through an alternative; policy refusals and retry hints remain enforced.
 - Removal/stop and late callbacks complete owned cleanup; real runtime tests distinguish the selected relay path from direct transfer.
+
+## Implementation result — 2026-10-05
+
+Local client main `c514e9e` and relay main `a29f581` implement this decision.
+Independent Standards/Spec findings were corrected, including initial Rendezvous
+lifetime tracking, SNI eligibility and independent authentication/Rendezvous retry
+ownership. Canonical checks passed 74 suites/627 tests, all three runtime builds,
+Go vet/full race, and real TCP/WSS/WebRTC Direct fallback transfers retaining one
+relay connection per device. Ticket 34 is resolved; runtime/live qualification
+remains separate. Candidate branches and existing uncommitted work are preserved.
+No push, publication or deployment occurred.
