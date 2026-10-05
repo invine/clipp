@@ -1840,3 +1840,96 @@ it("tries raw TCP before secure WebSocket with SNI and WebRTC Direct", async () 
     await controller.stop();
   }
 });
+
+it.each([false, true])(
+  "keeps initial relay setup connecting when authentication renewal finishes (failed=%s) before Rendezvous",
+  async (renewalFails) => {
+    jest.useFakeTimers();
+    let finishRegister: (() => void) | undefined;
+    let starting: Promise<void> | undefined;
+    let controller: ManagedRelayController | undefined;
+    try {
+      const { adapter } = adapterHarness();
+      (adapter.authenticate as jest.Mock).mockResolvedValueOnce({
+        sessionExpiresAt: Date.now() + 60_000,
+        renewAfterMillis: 1_000,
+      });
+      if (renewalFails)
+        (adapter.authenticate as jest.Mock).mockRejectedValueOnce(
+          new Error("renewal_transport_reset")
+        );
+      adapter.register = jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRegister = resolve;
+          })
+      );
+      controller = new ManagedRelayController(adapter, () => 0);
+      starting = controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(controller.states()[0].status).toBe("connecting");
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(adapter.authenticate).toHaveBeenCalledTimes(2);
+      expect(controller.states()[0].status).toBe("connecting");
+      finishRegister?.();
+      await starting;
+      expect(controller.states()[0].status).toBe("ready");
+      await jest.advanceTimersByTimeAsync(500);
+      expect(adapter.authenticate).toHaveBeenCalledTimes(renewalFails ? 3 : 2);
+    } finally {
+      finishRegister?.();
+      await starting;
+      await controller?.stop();
+      jest.useRealTimers();
+    }
+  }
+);
+
+it("keeps Rendezvous degraded and its repair backoff when authentication renewal succeeds", async () => {
+  jest.useFakeTimers();
+  try {
+    const { adapter } = adapterHarness();
+    const start = Date.now();
+    (adapter.authenticate as jest.Mock).mockResolvedValueOnce({
+      sessionExpiresAt: start + 60_000,
+      renewAfterMillis: 1_000,
+    });
+    (adapter.register as jest.Mock).mockRejectedValue(new Error("rv_down"));
+    const controller = new ManagedRelayController(adapter, () => 0);
+    try {
+      await controller.setConfigurations([
+        {
+          key: "a",
+          name: "A",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ]);
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(adapter.authenticate).toHaveBeenCalledTimes(2);
+      expect(controller.states()[0]).toEqual(
+        expect.objectContaining({
+          status: "degraded",
+          reason: "rv_down",
+          retryAt: start + 1_500,
+        })
+      );
+      await jest.advanceTimersByTimeAsync(500);
+      expect(adapter.register).toHaveBeenCalledTimes(3);
+      expect(controller.states()[0]).toEqual(
+        expect.objectContaining({ status: "degraded", retryAt: start + 3_500 })
+      );
+    } finally {
+      await controller.stop();
+    }
+  } finally {
+    jest.useRealTimers();
+  }
+});

@@ -308,7 +308,10 @@ type Entry = {
   controller: AbortController;
   connection?: ManagedRelayConnection;
   reservation?: ManagedRelayReservation;
+  rendezvousStatus?: "connecting" | "degraded" | "ready";
+  rendezvousReason?: string;
   retryTimer?: ReturnType<typeof setTimeout>;
+  retryForAuthentication?: boolean;
   renewTimer?: ReturnType<typeof setTimeout>;
   authExpiryTimer?: ReturnType<typeof setTimeout>;
   authExpiresAt?: number;
@@ -784,16 +787,12 @@ export class ManagedRelayController {
         return;
       }
       entry.connection = connection;
+      entry.rendezvousStatus = "connecting";
+      entry.rendezvousReason = undefined;
       if (authResult) this.scheduleRenewal(entry, authResult);
       await this.register(entry, connection);
       if (!this.current(entry, generation)) return;
-      entry.attempt = 0;
-      this.emit(entry, {
-        status: "ready",
-        peerId,
-        reason: undefined,
-        warning: undefined,
-      });
+      this.rendezvousEstablished(entry);
     } catch (error) {
       if (connection && entry.connection !== connection)
         await connection.close().catch(() => undefined);
@@ -975,16 +974,7 @@ export class ManagedRelayController {
     generation: number
   ): Promise<void> {
     if (this.current(entry, generation) && entry.connection === connection) {
-      if (entry.state.status === "degraded") {
-        if (entry.retryTimer) clearTimeout(entry.retryTimer);
-        entry.retryTimer = undefined;
-        entry.attempt = 0;
-        this.emit(entry, {
-          status: "ready",
-          reason: undefined,
-          retryAt: undefined,
-        });
-      }
+      this.rendezvousEstablished(entry);
       return;
     }
     try {
@@ -1024,6 +1014,29 @@ export class ManagedRelayController {
       await this.compensateLateRegistration(entry, connection, generation);
     }
   }
+  private rendezvousEstablished(entry: Entry): void {
+    entry.rendezvousStatus = "ready";
+    entry.rendezvousReason = undefined;
+    // Registration must not clear a concurrent authentication refusal/login.
+    if (
+      entry.state.status !== "connecting" &&
+      entry.state.status !== "degraded"
+    )
+      return;
+    const keepAuthRetry =
+      entry.retryForAuthentication && Boolean(entry.retryTimer);
+    if (!keepAuthRetry) {
+      if (entry.retryTimer) clearTimeout(entry.retryTimer);
+      entry.retryTimer = undefined;
+      entry.attempt = 0;
+    }
+    this.emit(entry, {
+      status: "ready",
+      reason: undefined,
+      warning: keepAuthRetry ? entry.state.warning : undefined,
+      retryAt: keepAuthRetry ? entry.retryAt : undefined,
+    });
+  }
   private async repairRendezvous(entry: Entry): Promise<void> {
     const connection = entry.connection;
     const generation = entry.generation;
@@ -1032,8 +1045,7 @@ export class ManagedRelayController {
       await this.register(entry, connection);
       if (!this.current(entry, generation) || entry.connection !== connection)
         return;
-      this.emit(entry, { status: "ready", reason: undefined });
-      entry.attempt = 0;
+      this.rendezvousEstablished(entry);
     } catch (error) {
       if (!this.current(entry, generation) || entry.connection !== connection)
         return;
@@ -1093,13 +1105,27 @@ export class ManagedRelayController {
           return;
         this.validateAuthResult(result);
         this.scheduleRenewal(entry, result);
-        entry.attempt = 0;
-        this.emit(entry, {
-          status: "ready",
-          warning: undefined,
-          reason: undefined,
-          retryAt: undefined,
-        });
+        if (entry.rendezvousStatus === "ready") {
+          entry.attempt = 0;
+          this.emit(entry, {
+            status: "ready",
+            warning: undefined,
+            reason: undefined,
+            retryAt: undefined,
+          });
+        } else {
+          this.emit(entry, {
+            status: entry.rendezvousStatus ?? "connecting",
+            warning: undefined,
+            reason: entry.rendezvousReason,
+            retryAt:
+              entry.rendezvousStatus === "degraded" ? entry.retryAt : undefined,
+          });
+          // Keep the existing repair deadline and exponential backoff even
+          // when renewed authentication has cleared a login/refusal state.
+          if (entry.rendezvousStatus === "degraded")
+            this.scheduleRetry(entry, () => this.retry(entry.config.key));
+        }
       } catch (error) {
         if (!this.current(entry, generation) || entry.connection !== connection)
           return;
@@ -1139,17 +1165,26 @@ export class ManagedRelayController {
     const delay = Math.ceil(Math.max(backoff, hint));
     entry.retryAt = this.now() + delay;
     this.emit(entry, {
-      status: refusal ? "refused" : "ready",
+      status: refusal ? "refused" : (entry.rendezvousStatus ?? "connecting"),
       reason: refusal ? code : undefined,
       warning: refusal
         ? undefined
         : "Renewal failed; retrying while the current session remains valid",
       retryAt: entry.retryAt,
     });
-    this.scheduleRetry(entry, () => this.refreshSession(entry.config.key));
+    this.scheduleRetry(
+      entry,
+      () => this.refreshSession(entry.config.key),
+      true
+    );
   }
-  private scheduleRetry(entry: Entry, retry: () => Promise<void>): void {
+  private scheduleRetry(
+    entry: Entry,
+    retry: () => Promise<void>,
+    forAuthentication = false
+  ): void {
     if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryForAuthentication = forAuthentication;
     const generation = entry.generation;
     if (!this.current(entry, generation)) return;
     let timer: ReturnType<typeof setTimeout>;
@@ -1177,6 +1212,10 @@ export class ManagedRelayController {
         : error instanceof Error
           ? error.message
           : "unknown_error";
+    if (rendezvousOnly) {
+      entry.rendezvousStatus = "degraded";
+      entry.rendezvousReason = code;
+    }
     if (code === "invalid_credentials" || code === "authentication_failed") {
       this.emit(entry, { status: "login_needed", reason: code });
       return;
