@@ -206,9 +206,12 @@ Clipp organizes an owner's devices into a logical Device Network represented by 
 - It may carry the target's Device Name as an untrusted presentation hint.
 - The version 2 logical fields are encoded in a compact protobuf message, with the Signed Peer Record retained as its original binary envelope bytes.
 - The protobuf `target_peer_id` field contains the canonical libp2p Peer ID multihash bytes rather than a textual Peer ID.
-- The protobuf bytes are encoded once as unpadded Base64URL and prefixed with `clipp:pair:`.
-- A decoder requires the `clipp:pair:` prefix before decoding the Base64URL and protobuf payload.
-- A decoder rejects an input whose Base64URL length would decode to more than 16 KiB before allocating or parsing the protobuf payload.
+- Copyable pairing text encodes the protobuf bytes once as unpadded Base64URL and prefixes them with `clipp:pair:`; this representation remains supported by existing devices.
+- A QR may carry the exact same protobuf bytes in an uppercase Base45 wrapper: `CLIPP:PAIR:Z1:<body>:` for RFC 1950 zlib-wrapped DEFLATE, or `CLIPP:PAIR:B1:<body>:` for uncompressed bytes when compression expands the payload. These version 1 transport wrappers retain logical Pairing Target version 2.
+- The final colon is mandatory framing; Base45 body characters, including internal spaces and colons, are preserved exactly. The wrappers use QR Alphanumeric mode.
+- QR generation compares complete representations and selects the smallest symbol at error correction M, falling back to L only when no representation fits M. It includes a four-module white quiet zone. If none fit L, the complete copyable pairing text remains available.
+- A decoder requires a recognized transport prefix before decoding. It bounds Base64URL and Base45 input lengths before allocating, limits both compressed input and decoded protobuf bytes to the injectable 16 KiB maximum, and aborts decompression as soon as output exceeds that limit.
+- Compressed wrappers contain exactly one complete zlib stream. Invalid Base45, unsupported wrapper versions, corrupt or truncated streams, gzip or raw DEFLATE, required dictionaries, concatenated streams, and trailing data are rejected without fallback.
 - The 16 KiB production limit is deployment-configurable and injectable for tests, but is not an end-user setting.
 - Exceeding the limit is a terminal Pairing Target validation failure and does not trigger legacy or raw-address fallback.
 - This encoding supplies compact transport, format recognition, and versioned parsing only; it provides no authorization or anti-forgery guarantee.

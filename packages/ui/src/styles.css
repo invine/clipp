@@ -1421,7 +1421,7 @@ body {
 }
 
 .qr-modal-image {
-  width: min(220px, 70vw);
+  width: min(320px, 100%);
   aspect-ratio: 1;
   height: auto;
   border-radius: 12px;

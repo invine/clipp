@@ -165,7 +165,11 @@ const Options = () => {
         {showMyQR && myQRText && (
           <div className="mt-2 flex flex-col items-center">
             {myQRImage ? (
-              <img src={myQRImage} alt="My QR" className="w-32 h-32" />
+              <img
+                src={myQRImage}
+                alt="My QR"
+                className="w-80 max-w-full h-auto"
+              />
             ) : (
               <p>
                 This pairing target is too large for a QR code. Copy the pairing
