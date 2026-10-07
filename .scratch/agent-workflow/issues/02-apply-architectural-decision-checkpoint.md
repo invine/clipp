@@ -4,7 +4,7 @@
 
 **Blocked by:** [01: Find authoritative project operations](01-find-authoritative-project-operations.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Repository scope: both projects; canonical procedure in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC2 and the workflow portion of AC6, retrospective improvement 1. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
 
@@ -25,3 +25,13 @@ Use the [source inventory](../README.md#existing-sources-to-reuse) and accepted 
 ## Comments
 
 - Planning publication only; no claim or implementation evidence yet.
+
+## Coordinator dispatch — 2026-10-07
+
+Owner: checkpoint-02; coordinator: agent-workflow-20261007.
+
+Requested outcome: project dispatch/review procedure tied to accepted decisions, integration evidence and recovery. Invariant assessment: preserve existing product/Relay Session policy and canonical Markdown lifecycle; ordinary single-session fallback proceeds under existing approval, persistent authenticated concurrency remains withheld pending its own user decision. This workflow implements the operator-approved parent specification; it does not reopen ADR 0012.
+
+Decision reference: [accepted fallback ADR](../../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md). Predecessor evidence: [01 answer](01-find-authoritative-project-operations.md#answer), with integrated source/navigation checks. Approved validation: both architectural scenarios and maintained navigation links, without exact-prose tests.
+
+Integration branches: `codex/agent-workflow-integration`; isolated branches `codex/agent-workflow-02`, initially client `a4bb66a` and relay `19967dd`. Coordinator owns claims/resolution; maximum two active implementers; local-only preparation.

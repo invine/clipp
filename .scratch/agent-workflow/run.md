@@ -15,3 +15,6 @@ Ticket Status and Blocked by fields remain authoritative. This provisional recor
 
 - 04 integrated/resolved at relay `65fad9d3ce2a1117022fca751bd58b0bc54b8502`; source and integration coincide. Actual routine/race and post-integration public fixtures passed. Local artifact names: `relay-04-evidence.md`, `relay-04-integration-evidence.md`, `relay-04-candidate-routine.log`, `relay-04-candidate-race.log`. Artifact directory is an explicit local input, not a tracked absolute path.
 - 03 claimed by verification-03 after 04 completed; client verification is independently eligible.
+
+- 01 integrated/resolved: client source `ce42c17` to integrated `a4bb66af52a4b994113756db82619447df1de261`, relay source equals integration `19967ddd7021170504192642f67e13efb3436eb2`. Client full check and integrated CLI/link/walkthrough checks passed. Local artifacts: `ticket-01-receipt.json`, `ticket-01-integration-receipt.json`, `ticket-01-integration-navigation.json`.
+- 02 claimed by checkpoint-02 after 01 integration and validation; 03 remains the other active implementer.

@@ -11,6 +11,8 @@
 
 - [04 resolved](issues/04-verify-relay-locally-and-in-ci.md#answer): relay verification integrated and exact-candidate routine/race passed; external acceptance remains separate.
 
+- [01 resolved](issues/01-find-authoritative-project-operations.md#answer): navigation and bounded lookup integrated in both repositories, enabling the decision checkpoint.
+
 ## Fog
 
 Hosted CI, live/native runtime acceptance, publication and deployment remain outside this local-only implementation run. Tooling completion must retain their independent gates and the managed-relay backlog's existing outcomes.
