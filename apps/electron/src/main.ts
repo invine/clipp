@@ -75,6 +75,7 @@ import {
 } from "./relayAcceptance.js";
 import { createElectronManagedRelayAuth } from "./managedRelayAuth.js";
 import { createElectronManagedRelayAdapter } from "./managedRelayAdapter.js";
+import { iconBasePath, pickTrayIcon } from "./trayIcon.js";
 import {
   activeMemberReconnectPeers,
   createPairedPeerConnectionManager,
@@ -341,11 +342,11 @@ async function bootstrap() {
       throw err;
     }
   }
-  // TODO: improve icon import
-  const iconRoot = app.isPackaged
-    ? path.dirname(app.getPath("exe"))
-    : path.resolve(__dirnameFallback || process.cwd(), "..", "..", "..");
-  const iconBase = path.join(iconRoot, "clipp-electron-icons-bundle");
+  const iconBase = iconBasePath(
+    app.isPackaged,
+    process.resourcesPath,
+    __dirnameFallback
+  );
   const appIconPath = path.join(iconBase, "clipp-purple-256.png");
   const trayIconCandidates = [
     "clipp-tray-16.png",
@@ -863,26 +864,13 @@ async function bootstrap() {
     return relayWindow;
   }
 
-  function pickTrayIcon(): Electron.NativeImage {
-    for (const candidate of trayIconCandidates) {
-      const img = nativeImage.createFromPath(candidate);
-      if (!img.isEmpty()) {
-        if (
-          candidate.includes("trayTemplate") &&
-          process.platform === "darwin"
-        ) {
-          img.setTemplateImage?.(true);
-        } else {
-          img.setTemplateImage?.(false);
-        }
-        return img;
-      }
-    }
-    return nativeImage.createEmpty();
-  }
-
   function createTray() {
-    let icon = pickTrayIcon();
+    let icon = pickTrayIcon(
+      trayIconCandidates,
+      nativeImage.createFromPath,
+      nativeImage.createEmpty,
+      process.platform
+    );
     if (icon.isEmpty()) {
       // Last resort: create a simple 1x1 icon to avoid crash/blank
       icon = nativeImage.createFromDataURL(
