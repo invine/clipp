@@ -5,3 +5,6 @@ dist
 .clipp-cli-store.json
 rv.json
 package-lock-old.json
+
+# Mutable coordinator tips, local root mappings and private artifact references
+.local/agent-workflow/

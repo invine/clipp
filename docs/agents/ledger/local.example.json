@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "roots": {
+    "client": "/absolute/selected/client",
+    "relay": "/absolute/selected/relay"
+  },
+  "worktrees": {
+    "example-client": "/absolute/isolated/client-worktree"
+  },
+  "artifacts": {
+    "example-receipt": "/absolute/private/artifacts/receipt.json"
+  }
+}

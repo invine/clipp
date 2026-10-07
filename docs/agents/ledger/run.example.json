@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "runId": "replace-with-run-id",
+  "coordinator": "replace-with-coordinator",
+  "maxImplementers": 2,
+  "tracker": {
+    "role": "client",
+    "path": ".scratch/example/issues"
+  },
+  "repositories": {
+    "client": {
+      "baseline": "0000000000000000000000000000000000000000",
+      "integrationBranch": "codex/example-integration",
+      "integrationTip": "0000000000000000000000000000000000000000"
+    },
+    "relay": {
+      "baseline": "0000000000000000000000000000000000000000",
+      "integrationBranch": "codex/example-integration",
+      "integrationTip": "0000000000000000000000000000000000000000"
+    }
+  },
+  "tickets": [
+    {
+      "path": "01-example.md",
+      "roles": ["client", "relay"],
+      "decision": {
+        "assessment": "preserves",
+        "references": [
+          {
+            "role": "client",
+            "path": "docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md"
+          }
+        ]
+      },
+      "externalBlockers": [],
+      "requiredProfiles": ["routine"]
+    }
+  ],
+  "claims": [
+    {
+      "id": "example-claim",
+      "ticket": "01-example.md",
+      "owner": "example-implementer",
+      "coordinator": "replace-with-coordinator",
+      "activity": "active",
+      "repositories": {
+        "client": {
+          "branch": "codex/example-01",
+          "baseline": "0000000000000000000000000000000000000000",
+          "worktree": "example-client",
+          "sourceCommits": []
+        }
+      }
+    }
+  ],
+  "integrations": [],
+  "evidence": []
+}

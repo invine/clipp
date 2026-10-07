@@ -45,7 +45,9 @@ function fixture(secure = true, useFetch = false) {
     },
     protection: {
       isEncryptionAvailable: () => secure,
-      getSelectedStorageBackend: () => (secure ? "unknown" : "basic_text"),
+      // Linux treats an unknown backend as memory-only even when encryption is available.
+      getSelectedStorageBackend: () =>
+        secure ? "gnome_libsecret" : "basic_text",
       encryptString: (value) => Buffer.from(`encrypted:${value}`),
       decryptString: (value) => {
         const text = value.toString();

@@ -99,6 +99,7 @@ async function client(token: string) {
 }
 const clients: Awaited<ReturnType<typeof client>>[] = [];
 let transfers = 0;
+let cleanupFailure: PromiseRejectedResult | undefined;
 try {
   const a = await client(tokenA);
   clients.push(a);
@@ -169,11 +170,11 @@ try {
     clients.map((c) => c.controller.stop())
   );
   const nodes = await Promise.allSettled(clients.map((c) => c.node.stop()));
-  const failure = [...stopped, ...nodes].find(
+  cleanupFailure = [...stopped, ...nodes].find(
     (result) => result.status === "rejected"
   );
-  if (failure?.status === "rejected") throw failure.reason;
 }
+if (cleanupFailure) throw cleanupFailure.reason;
 // Success requires cleanup and normal child exit; the Go wrapper enforces both.
 console.log(
   JSON.stringify({

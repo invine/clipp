@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clipp.local/agent-workflow/run-v1.schema.json",
+  "title": "Clipp agent workflow run v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "coordinator": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "maxImplementers": {
+      "const": 2
+    },
+    "tracker": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["client", "relay"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["role", "path"],
+      "additionalProperties": false
+    },
+    "repositories": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "integrationBranch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "integrationTip": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          },
+          "required": ["baseline", "integrationBranch", "integrationTip"],
+          "additionalProperties": false
+        },
+        "relay": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "integrationBranch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "integrationTip": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          },
+          "required": ["baseline", "integrationBranch", "integrationTip"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["client", "relay"],
+      "additionalProperties": false
+    },
+    "tickets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["client", "relay"]
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "decision": {
+            "type": "object",
+            "properties": {
+              "assessment": {
+                "enum": ["preserves", "approved", "pending"]
+              },
+              "references": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": ["client", "relay"]
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": ["role", "path"],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 500,
+                "uniqueItems": true
+              },
+              "userDecision": {
+                "type": "object",
+                "required": ["reference", "source", "date", "scope"],
+                "additionalProperties": false,
+                "properties": {
+                  "reference": {
+                    "type": "object",
+                    "properties": {
+                      "role": {
+                        "type": "string",
+                        "enum": ["client", "relay"]
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": ["role", "path"],
+                    "additionalProperties": false
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "date": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "scope": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                }
+              }
+            },
+            "required": ["assessment", "references"],
+            "additionalProperties": false
+          },
+          "externalBlockers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "owner": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": ["reason", "owner"],
+              "additionalProperties": false
+            },
+            "minItems": 0,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "requiredProfiles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "path",
+          "roles",
+          "decision",
+          "externalBlockers",
+          "requiredProfiles"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 500,
+      "uniqueItems": true
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "coordinator": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "activity": {
+            "enum": ["active", "blocked", "handoff"]
+          },
+          "repositories": {
+            "type": "object",
+            "properties": {
+              "client": {
+                "type": "object",
+                "properties": {
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "baseline": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  "worktree": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "sourceCommits": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "minItems": 0,
+                    "maxItems": 500,
+                    "uniqueItems": true
+                  }
+                },
+                "required": ["branch", "baseline", "worktree", "sourceCommits"],
+                "additionalProperties": false
+              },
+              "relay": {
+                "type": "object",
+                "properties": {
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "baseline": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  "worktree": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "sourceCommits": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "minItems": 0,
+                    "maxItems": 500,
+                    "uniqueItems": true
+                  }
+                },
+                "required": ["branch", "baseline", "worktree", "sourceCommits"],
+                "additionalProperties": false
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "ticket",
+          "owner",
+          "coordinator",
+          "activity",
+          "repositories"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 500,
+      "uniqueItems": true
+    },
+    "integrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "role": {
+            "type": "string",
+            "enum": ["client", "relay"]
+          },
+          "sourceCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "integratedCommit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "verifiedBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "artifact": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "ticket",
+          "role",
+          "sourceCommit",
+          "integratedCommit",
+          "verifiedBy",
+          "artifact"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 500,
+      "uniqueItems": true
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "kind": {
+            "enum": ["verification", "standards", "spec"]
+          },
+          "outcome": {
+            "enum": ["passed", "failed", "not-run", "unavailable"]
+          },
+          "profile": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minProperties": 1,
+            "maxProperties": 500
+          },
+          "observedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "revisions": {
+            "type": "object",
+            "properties": {
+              "client": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "relay": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "ticket",
+          "kind",
+          "outcome",
+          "observedAt",
+          "revisions",
+          "artifacts"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 500,
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "runId",
+    "coordinator",
+    "maxImplementers",
+    "tracker",
+    "repositories",
+    "tickets",
+    "claims",
+    "integrations",
+    "evidence"
+  ],
+  "additionalProperties": false
+}
