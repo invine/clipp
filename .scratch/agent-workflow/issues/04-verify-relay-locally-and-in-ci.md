@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Repository scope: clipp-relay; canonical claim remains in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC4 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
 
@@ -25,3 +25,13 @@ Use the [verification inventory](../README.md#routine-verification-inventory). T
 ## Comments
 
 - Planning publication only; no claim or implementation evidence yet.
+
+## Coordinator dispatch — 2026-10-07
+
+Owner: verification-04; coordinator: agent-workflow-20261007.
+
+Requested outcome and invariant assessment: Expose existing deterministic relay checks through local/CI verification. Preserve accepted single-session admission and the manual publication boundary. No product or infrastructure policy change; ADR 0012 remains unchanged.
+
+Decision reference: [accepted fallback ADR](../../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md). Test seams: approved public CLI/subprocess and navigation boundaries in the parent specification.
+
+Integration branches: `codex/agent-workflow-integration` in each participating repository. Local preparation only; maximum two implementers. Coordinator owns claim, integration and resolution.

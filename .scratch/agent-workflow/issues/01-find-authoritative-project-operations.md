@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Repository scope: Clipp and clipp-relay. Parent: [agent workflow specification](../spec.md). Covers AC1 and AC8, retrospective improvement 7. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
 
@@ -26,3 +26,13 @@ Use TDD for CLI behavior and direct link/walkthrough checks for documentation. P
 ## Comments
 
 - Planning publication only; no claim or implementation evidence yet.
+
+## Coordinator dispatch — 2026-10-07
+
+Owner: navigation-01; coordinator: agent-workflow-20261007.
+
+Requested outcome and invariant assessment: Find authoritative project operations and provide bounded read-only lookup. Preserve accepted product behavior, glossary vocabulary, historical evidence, profiles and existing worktrees. Accepted ADR 0012 remains unchanged; no new architecture decision is needed.
+
+Decision reference: [accepted fallback ADR](../../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md). Test seams: approved public CLI/subprocess and navigation boundaries in the parent specification.
+
+Integration branches: `codex/agent-workflow-integration` in each participating repository. Local preparation only; maximum two implementers. Coordinator owns claim, integration and resolution.
