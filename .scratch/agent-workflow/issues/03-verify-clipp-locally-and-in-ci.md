@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-Repository scope: Clipp. Parent: [agent workflow specification](../spec.md). Covers AC3 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
+Repository scope: Clipp. Parent: [agent workflow specification](../spec.md). Covers AC3 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation and validation are recorded below.
 
 ## Acceptance criteria
 
@@ -43,3 +43,5 @@ Implemented `npm run verify`, pre-commit ESLint coverage and read-only PR/main C
 Source equals integrated client `181606d0c2b32e494f6a07acf87f0307ea6fa0af`. Actual exact-candidate verification passed: Node 24.16.0/npm 11.13.0, zero lint errors (624 existing warnings), all typechecks, 78 suites/671 tests and all three builds. Eleven public command/hook/semantic CI fixtures passed; post-integration combined tooling tests (17), 55 maintained links and five walkthroughs passed. Focused Standards/Spec scope assessments have no outstanding findings; final effort review remains required.
 
 [Verification contract](../../../docs/agents/verification.md) and [evidence index](../run.md#dispatch-and-evidence): local artifacts `client-03-handoff.md`, `client-03-handoff-candidate-verify.log` and `ticket-03-integration-receipt.json`. Hosted CI/native packaging/signed installation/browser login/device instrumentation/forced live transfers remain not run.
+
+Final whole-effort acceptance: [review record](../review.md); exact current revisions and artifact availability are checked by the durable local ledger, rather than treating earlier receipts as current checkout truth.

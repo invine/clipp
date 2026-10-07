@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-Repository scope: clipp-relay; canonical claim remains in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC4 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
+Repository scope: clipp-relay; canonical claim remains in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC4 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation and validation are recorded below.
 
 ## Acceptance criteria
 
@@ -41,3 +41,5 @@ Integration branches: `codex/agent-workflow-integration` in each participating r
 Implemented and integrated relay routine/race verification at `65fad9d3ce2a1117022fca751bd58b0bc54b8502` (source equals integrated revision). Actual routine and race profiles passed on that exact clean commit; all eleven inventoried deterministic suites and eleven new public command/CI fixtures passed. Merger rechecked public fixtures, shell syntax and scope after integration. Focused Standards/Spec assessment has no outstanding findings; whole-effort review remains the coordinator's final gate.
 
 [Run evidence index](../run.md#dispatch-and-evidence): local artifacts `relay-04-evidence.md` and `relay-04-integration-evidence.md`, with command logs alongside. Tools include Go 1.27.1, Helm 4.3.0, Python 3.14.8, Ruby 2.6.10 and jq 1.8.2. CI configuration is locally validated; hosted execution, real PostgreSQL/images and native/live qualification are not run. No publication workflow or product behavior changed.
+
+Final whole-effort acceptance: [review record](../review.md); exact current revisions and artifact availability are checked by the durable local ledger, rather than treating earlier receipts as current checkout truth.

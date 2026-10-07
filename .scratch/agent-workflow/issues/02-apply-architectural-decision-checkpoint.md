@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-Repository scope: both projects; canonical procedure in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC2 and the workflow portion of AC6, retrospective improvement 1. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
+Repository scope: both projects; canonical procedure in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC2 and the workflow portion of AC6, retrospective improvement 1. Test boundaries and ticket graph approved 2026-10-07; implementation and validation are recorded below.
 
 ## Acceptance criteria
 
@@ -43,3 +43,5 @@ Implemented [the project decision, dispatch, evidence and recovery procedure](..
 Two scenario assessments passed: full usable-setup single-session fallback proceeds under accepted ADR 0012 without redundant approval; persistent authenticated concurrency is withheld pending its own explicit user decision and accepted record. Fifty maintained links, five bounded lookup walkthroughs, formatting and scope checks passed at integrated revisions. Focused Standards/Spec assessments have no outstanding findings; whole-effort review remains required.
 
 [Evidence index](../run.md#dispatch-and-evidence): local artifacts `ticket-02-receipt.json`, `ticket-02-evidence.md`, `ticket-02-integration-receipt.json` and navigation logs. No code/runtime/hosted/live checks or hook execution are claimed for this documentation slice.
+
+Final whole-effort acceptance: [review record](../review.md); exact current revisions and artifact availability are checked by the durable local ledger, rather than treating earlier receipts as current checkout truth.

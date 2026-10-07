@@ -6,7 +6,7 @@
 
 **Status:** resolved
 
-Repository scope: Clipp and clipp-relay. Parent: [agent workflow specification](../spec.md). Covers AC1 and AC8, retrospective improvement 7. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
+Repository scope: Clipp and clipp-relay. Parent: [agent workflow specification](../spec.md). Covers AC1 and AC8, retrospective improvement 7. Test boundaries and ticket graph approved 2026-10-07; implementation and validation are recorded below.
 
 ## Acceptance criteria
 
@@ -44,3 +44,5 @@ Implemented bounded read-only source listing/search and short operational naviga
 Source client `ce42c17a0f2a572091ceb3d44dfdb17a09131983` integrated as `a4bb66af52a4b994113756db82619447df1de261`; source relay equals integrated `19967ddd7021170504192642f67e13efb3436eb2`. Integration preserves newer coordinator metadata. Client check passed 77 suites/660 tests; six CLI tests passed at the integrated revision, 48 maintained links and four bounded lookup walkthroughs passed across both roots. Focused Standards/Spec assessments and merger scope checks have no outstanding findings; final whole-effort review remains required.
 
 [Evidence index](../run.md#dispatch-and-evidence): local artifacts `ticket-01-receipt.json`, `ticket-01-integration-receipt.json` and `ticket-01-integration-navigation.json`; exact commands/revisions are recorded there. Native/live and hosted acceptance remain not run. Existing worktrees/stashes/private runtime data remain retained.
+
+Final whole-effort acceptance: [review record](../review.md); exact current revisions and artifact availability are checked by the durable local ledger, rather than treating earlier receipts as current checkout truth.

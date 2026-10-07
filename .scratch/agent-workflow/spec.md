@@ -1,6 +1,6 @@
 # Project agent workflow and verification
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 Planning date: 2026-10-07. Test boundaries and the five-ticket breakdown approved by the operator on 2026-10-07. Scope: retrospective improvements 1, 3, 5 and 7 for Clipp and clipp-relay. The associated README is the navigation entry point and records current source pointers; this specification defines behavior.
 
