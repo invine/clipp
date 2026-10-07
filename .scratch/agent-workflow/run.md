@@ -18,3 +18,6 @@ Ticket Status and Blocked by fields remain authoritative. This provisional recor
 
 - 01 integrated/resolved: client source `ce42c17` to integrated `a4bb66af52a4b994113756db82619447df1de261`, relay source equals integration `19967ddd7021170504192642f67e13efb3436eb2`. Client full check and integrated CLI/link/walkthrough checks passed. Local artifacts: `ticket-01-receipt.json`, `ticket-01-integration-receipt.json`, `ticket-01-integration-navigation.json`.
 - 02 claimed by checkpoint-02 after 01 integration and validation; 03 remains the other active implementer.
+
+- 02 integrated/resolved: client `33b419e6f12de75fdd4e2398bea91065298cbe54`, relay `0e87f7a3f27faa68aa3ba2a2a161f97939f8e101`, source equals integrated. Documentation/scenario/navigation checks passed at those revisions. Local artifacts: `ticket-02-receipt.json`, `ticket-02-integration-receipt.json`, `ticket-02-evidence.md`.
+- 05 claimed by recovery-05 after 02 integration; 03 is the other active implementer. Actual effort ledger/status snapshot will be prepared by the coordinator using the delivered schema, keeping local root/artifact mappings outside tracked metadata.
