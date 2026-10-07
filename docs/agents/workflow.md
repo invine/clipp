@@ -68,6 +68,8 @@ Deterministic validation can check required fields, references, Git facts and co
 
 ## Resume and recover
 
+Use the [read-only status command and durable ledger](recovery.md) to reconstruct these facts from explicit roots. Its versioned report withholds the frontier on inconsistent required state; coordinator reconciliation remains explicit.
+
 1. Reopen the canonical tracker and run metadata, then inspect both selected repositories: HEAD/branch, integration tip, worktree identities and dirty counts, branch containment and stash identifiers. Inspect metadata first; source secrets, stash contents and runtime profiles are unnecessary for status.
 2. Compare observed Git with saved claims, baselines, integration mappings and evidence. Report inaccessible required roots/worktrees, duplicate claims, missing/cyclic dependencies, ticket/ownership disagreement, changed recorded tips and missing/stale artifacts. Withhold assignments that depend on inconsistent state; the coordinator reconciles the records with current facts. Elapsed time never releases a claim automatically.
 3. Locate committed but unintegrated results and preserved dirty/ignored work. A retained branch or stash is preservation evidence, not demonstrated integration. Resume the existing claim or integrate its result only after checking its scope, decision evidence and current baseline. Record each role's integration independently if an interruption happened between repositories.

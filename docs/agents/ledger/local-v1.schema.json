@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clipp.local/agent-workflow/local-v1.schema.json",
+  "title": "Clipp agent workflow local v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "roots": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "relay": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["client", "relay"],
+      "additionalProperties": false
+    },
+    "worktrees": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "maxProperties": 500
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "maxProperties": 500
+    }
+  },
+  "required": ["schemaVersion", "roots", "worktrees", "artifacts"],
+  "additionalProperties": false
+}
