@@ -160,7 +160,7 @@ try {
     report.truncated = true;
     if (!report.reasons.includes(reason)) report.reasons.push(reason);
   };
-  function add(item) {
+  const add = (item) => {
     if (report.results.length >= options.maxResults) {
       truncate("max-results");
       return false;
@@ -173,7 +173,7 @@ try {
       return false;
     }
     return true;
-  }
+  };
   let readBytes = 0;
   let inventoryPaths = 0;
   for (const path of [...candidates].sort()) {
@@ -264,6 +264,13 @@ try {
     );
   console.log(output);
 } catch (error) {
-  console.error(JSON.stringify({ version: 1, error: error.message }));
+  const message = String(error.message);
+  console.error(
+    JSON.stringify({
+      version: 1,
+      error: message.slice(0, 512),
+      truncated: message.length > 512,
+    })
+  );
   process.exitCode = 1;
 }

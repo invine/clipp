@@ -59,6 +59,9 @@ test("reports malformed selection and protects ignored files, symlinks and neste
   });
   expect(noScope.status).toBe(1);
   expect(run("--scope", "src").stdout).not.toContain("linked.md");
+  const longError = run("--scope", "x".repeat(5000), "--max-bytes", "4096");
+  expect(longError.status).toBe(1);
+  expect(Buffer.byteLength(longError.stderr)).toBeLessThanOrEqual(4096);
 });
 
 test("limits files examined and treats shell syntax as literal content", () => {

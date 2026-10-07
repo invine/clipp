@@ -9,7 +9,7 @@ Clipp must try the supported transports advertised by each Relay Configuration b
 ## Requirement and terminology
 
 - A **transport attempt** tries an advertised TCP, WSS or WebRTC Direct route. Runtime support determines which routes are eligible.
-- A **Relay Session** is an authenticated physical connection, as defined in `clipp-relay/CONTEXT.md`. Each physical session consumes an account and global session slot under the current quota contract.
+- A **Relay Session** is an authenticated physical connection, as defined in `clipp-relay/GLOSSARY.md`. Each physical session consumes an account and global session slot under the current quota contract.
 - A **Relayed Connection** carries application traffic between Device Identities through a relay. Opening several sessions to the relay does not itself duplicate a Clip, combine their bandwidth or migrate an existing application stream.
 - Trying alternative transports during establishment and retaining several authenticated sessions are separate policies. Short-lived dial attempts may overlap within existing bounds without making persistent concurrency the default.
 - Different configured relays remain independent. This decision concerns transport selection within one configuration, not selecting only one relay from the configuration list.
