@@ -1,0 +1,14 @@
+# Agent workflow implementation map
+
+## Notes
+
+[Specification](spec.md) and [canonical tickets](README.md#tickets-and-dependencies) define this effort across client and relay repository roles. Ticket Status and Blocked by fields own lifecycle and eligibility. [Run record](run.md) records the locally approved baselines and preservation scope.
+
+## Decisions-so-far
+
+- The operator's approved five-ticket graph and CLI/Git/subprocess test boundaries are recorded in the [specification](spec.md#testing-decisions).
+- Accepted [ADR 0012](../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md) governs fallback; this tooling effort preserves Relay Session policy.
+
+## Fog
+
+Hosted CI, live/native runtime acceptance, publication and deployment remain outside this local-only implementation run. Tooling completion must retain their independent gates and the managed-relay backlog's existing outcomes.
