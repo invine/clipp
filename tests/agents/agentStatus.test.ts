@@ -143,7 +143,8 @@ test("fresh coordinator sees explicit repository facts and an eligible frontier"
 
 test("restart finds committed work before integration and eligible work while preserving dirty linked worktrees and stashes", () => {
   const { ledger, local } = setup();
-  ticket("02-blocked.md");
+  ticket("01-first.md", "claimed");
+  ticket("02-blocked.md", "claimed");
   ticket("03-eligible.md");
   ticket("33-deferred.md", "deferred");
   const implementation = join(root, "implementation space");
@@ -247,7 +248,7 @@ test("inconsistent required state is diagnostic and withholds assignment", () =>
     ticket: "01-first.md",
     owner: "worker",
     coordinator: "coordinator",
-    activity: "blocked",
+    activity: "handoff",
     repositories: {},
   };
   for (const [record, config, code] of [
@@ -483,6 +484,7 @@ test("two implementation slots bound dispatch and missing worktree or changed so
   ticket("03-third.md");
   const claims = ["01-first.md", "02-second.md", "03-third.md"].map(
     (path, i) => {
+      ticket(path, "claimed");
       const worktree = join(root, `worker ${i}`);
       git(client, "worktree", "add", "--quiet", "-b", `worker-${i}`, worktree);
       return {
@@ -713,4 +715,328 @@ test("canonical no-dependency annotations are accepted without interpreting arbi
   expect(JSON.parse(result.stdout).frontier).toEqual(["01-first.md"]);
   ticket("01-first.md", "ready-for-agent", "None [but depends](99-missing.md)");
   expect(run(ledger, local).status).toBe(1);
+});
+
+test("saved claims require canonical claimed status and blocked ownership requires a recorded blocker", () => {
+  const { ledger, local } = setup();
+  ticket("02-unrelated.md");
+  const implementation = join(root, "implementation");
+  git(client, "worktree", "add", "--quiet", "-b", "worker", implementation);
+  const claim = {
+    id: "claim",
+    ticket: "01-first.md",
+    owner: "worker",
+    coordinator: "coordinator",
+    activity: "active",
+    repositories: {
+      client: {
+        branch: "worker",
+        baseline: ledger.repositories.client.integrationTip,
+        worktree: "implementation",
+        sourceCommits: [],
+      },
+    },
+  };
+  const record = {
+    ...ledger,
+    tickets: [
+      ...ledger.tickets,
+      { ...ledger.tickets[0], path: "02-unrelated.md" },
+    ],
+    claims: [claim],
+  };
+  const config = { ...local, worktrees: { implementation } };
+  for (const activity of ["active", "blocked", "handoff"]) {
+    for (const status of [
+      "ready-for-agent",
+      "ready-for-human",
+      "needs-triage",
+      "needs-info",
+      "blocked",
+      "deferred",
+      "resolved",
+      "wontfix",
+    ]) {
+      ticket("01-first.md", status);
+      const result = run(
+        { ...record, claims: [{ ...claim, activity }] },
+        config
+      );
+      const report = JSON.parse(result.stdout);
+      expect(result.status).toBe(1);
+      expect(report.complete).toBe(false);
+      expect(report.frontier).toEqual([]);
+      expect(
+        report.diagnostics.map((item: { code: string }) => item.code)
+      ).toContain("ticket-owner");
+    }
+    ticket("01-first.md", "claimed");
+    const retained = {
+      ...record,
+      tickets: [
+        {
+          ...record.tickets[0],
+          externalBlockers:
+            activity === "blocked"
+              ? [{ owner: "operator", reason: "waiting for device" }]
+              : [],
+        },
+        record.tickets[1],
+      ],
+      claims: [{ ...claim, activity }],
+    };
+    const valid = run(retained, config);
+    expect(valid.status).toBe(0);
+    expect(JSON.parse(valid.stdout).frontier).toEqual(["02-unrelated.md"]);
+    if (activity === "blocked") {
+      const missingReason = run(
+        { ...record, claims: [{ ...claim, activity }] },
+        config
+      );
+      expect(missingReason.status).toBe(1);
+      expect(
+        JSON.parse(missingReason.stdout).diagnostics.map(
+          (item: { code: string }) => item.code
+        )
+      ).toContain("claim-reason");
+    }
+  }
+});
+
+test("implementation claims reserve isolated branches and canonical worktrees while integration stays coordinator-owned", () => {
+  const { ledger, local } = setup();
+  ticket("01-first.md", "claimed");
+  ticket("02-second.md", "claimed");
+  ticket("03-eligible.md");
+  const implementation = join(root, "worker");
+  git(client, "worktree", "add", "--quiet", "-b", "worker", implementation);
+  const claim = {
+    id: "first",
+    ticket: "01-first.md",
+    owner: "first-worker",
+    coordinator: "coordinator",
+    activity: "active",
+    repositories: {
+      client: {
+        branch: "worker",
+        baseline: ledger.repositories.client.integrationTip,
+        worktree: "worker",
+        sourceCommits: [],
+      },
+    },
+  };
+  const record = {
+    ...ledger,
+    tickets: [
+      ledger.tickets[0],
+      ...["02-second.md", "03-eligible.md"].map((path) => ({
+        ...ledger.tickets[0],
+        path,
+      })),
+    ],
+    claims: [claim],
+  };
+  const config = {
+    ...local,
+    worktrees: {
+      worker: implementation,
+      alias: join(implementation, "."),
+      integration: client,
+    },
+  };
+  for (const activity of ["active", "handoff", "blocked"]) {
+    const duplicate = {
+      ...claim,
+      id: "second",
+      ticket: "02-second.md",
+      owner: "second-worker",
+      activity,
+      repositories: {
+        client: { ...claim.repositories.client, worktree: "alias" },
+      },
+    };
+    const result = run(
+      {
+        ...record,
+        tickets: record.tickets.map((item) => ({
+          ...item,
+          externalBlockers:
+            item.path === "02-second.md" && activity === "blocked"
+              ? [{ owner: "operator", reason: "waiting for device" }]
+              : [],
+        })),
+        claims: [claim, duplicate],
+      },
+      config
+    );
+    expect(result.status).toBe(1);
+    const report = JSON.parse(result.stdout);
+    expect(report.complete).toBe(false);
+    expect(report.frontier).toEqual([]);
+    expect(
+      report.diagnostics.map((item: { code: string }) => item.code)
+    ).toContain("claim-isolation");
+  }
+  const integration = run(
+    {
+      ...record,
+      claims: [
+        {
+          ...claim,
+          repositories: {
+            client: {
+              ...claim.repositories.client,
+              branch: "integration",
+              worktree: "integration",
+            },
+          },
+        },
+      ],
+    },
+    config
+  );
+  expect(integration.status).toBe(1);
+  expect(
+    JSON.parse(integration.stdout).diagnostics.map(
+      (item: { code: string }) => item.code
+    )
+  ).toContain("claim-isolation");
+  const relayWorker = join(root, "relay worker");
+  git(relay, "worktree", "add", "--quiet", "-b", "worker", relayWorker);
+  const separateRoles = run(
+    {
+      ...record,
+      claims: [
+        claim,
+        {
+          ...claim,
+          id: "second",
+          ticket: "02-second.md",
+          owner: "second-worker",
+          repositories: {
+            relay: {
+              ...claim.repositories.client,
+              baseline: ledger.repositories.relay.integrationTip,
+              worktree: "relayWorker",
+            },
+          },
+        },
+      ],
+    },
+    { ...config, worktrees: { ...config.worktrees, relayWorker } }
+  );
+  expect(separateRoles.status).toBe(0);
+  expect(JSON.parse(separateRoles.stdout).activeImplementers).toBe(2);
+});
+
+test("recovery inventories unclaimed retained branches without worktrees and distinguishes ancestry, mapping and unverified preservation", () => {
+  const { ledger, local } = setup();
+  git(client, "branch", "contained-no-worktree");
+  git(client, "checkout", "--quiet", "-b", "retained-no-worktree");
+  file(join(client, "result.txt"), "preserved result\n");
+  git(client, "add", "result.txt");
+  git(client, "commit", "--quiet", "-m", "retained result");
+  const source = git(client, "rev-parse", "HEAD");
+  git(client, "checkout", "--quiet", "integration");
+  const refs = git(client, "show-ref");
+  const index = readFileSync(join(client, ".git/index"));
+  const preserved = run(ledger, local);
+  expect(preserved.status).toBe(0);
+  const report = JSON.parse(preserved.stdout);
+  expect(report.repositories.client.branches).toEqual(
+    expect.arrayContaining([
+      {
+        branch: "contained-no-worktree",
+        tip: ledger.repositories.client.integrationTip,
+        integration: "ancestry",
+        worktrees: [],
+      },
+      {
+        branch: "retained-no-worktree",
+        tip: source,
+        integration: "unverified",
+        worktrees: [],
+      },
+    ])
+  );
+  expect(report.diagnostics).toEqual([]);
+  expect(git(client, "show-ref")).toBe(refs);
+  expect(readFileSync(join(client, ".git/index"))).toEqual(index);
+  file(join(client, "other.txt"), "other integration\n");
+  git(client, "add", "other.txt");
+  git(client, "commit", "--quiet", "-m", "other integration");
+  git(client, "cherry-pick", source);
+  const integrated = git(client, "rev-parse", "HEAD");
+  expect(integrated).not.toBe(source);
+  const next = {
+    ...ledger,
+    repositories: {
+      ...ledger.repositories,
+      client: { ...ledger.repositories.client, integrationTip: integrated },
+    },
+    integrations: [
+      {
+        ticket: "01-first.md",
+        role: "client",
+        sourceCommit: source,
+        integratedCommit: integrated,
+        verifiedBy: "coordinator",
+        artifact: "receipt",
+      },
+    ],
+  };
+  file(join(root, "receipt.txt"), "receipt canary\n");
+  const mapped = run(next, {
+    ...local,
+    artifacts: { receipt: join(root, "receipt.txt") },
+  });
+  expect(mapped.status).toBe(0);
+  expect(JSON.parse(mapped.stdout).repositories.client.branches).toContainEqual(
+    {
+      branch: "retained-no-worktree",
+      tip: source,
+      integration: "verified-mapping",
+      worktrees: [],
+    }
+  );
+  const human = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+    ],
+    { encoding: "utf8" }
+  );
+  expect(human.status).toBe(0);
+  expect(human.stdout).toContain(
+    `retained-no-worktree ${source}; verified-mapping`
+  );
+  expect(human.stdout).not.toContain("receipt canary");
+});
+
+test("oversized local branch inventories fail visibly and withhold the frontier", () => {
+  const { ledger, local } = setup();
+  execFileSync("git", ["-C", client, "update-ref", "--stdin"], {
+    input:
+      Array.from(
+        { length: 500 },
+        (_, i) =>
+          `create refs/heads/retained-${i} ${ledger.repositories.client.integrationTip}`
+      ).join("\n") + "\n",
+  });
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  const report = JSON.parse(result.stdout);
+  expect(report.complete).toBe(false);
+  expect(report.frontier).toEqual([]);
+  expect(report.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        message: expect.stringContaining("more than 500 local branches"),
+      }),
+    ])
+  );
 });

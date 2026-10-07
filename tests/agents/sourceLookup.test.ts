@@ -202,3 +202,37 @@ test("accepts unusual literal selections including leading dashes and trailing r
   ]);
   expect(JSON.parse(run("--query", "--help").stdout).results).toEqual([]);
 });
+
+test.each(["GIT_DIR", "GIT_INDEX_FILE"])(
+  "explicit repository inventory ignores ambient %s without reading foreign canaries",
+  (key) => {
+    file("src/selected.ts", "needle selected source\n");
+    file("foreign.txt", "needle foreign canary\n");
+    execFileSync("git", ["-C", root, "add", "src"]);
+    const foreign = join(root, "foreign repo");
+    mkdirSync(foreign);
+    execFileSync("git", ["init", "--quiet", foreign]);
+    writeFileSync(join(foreign, "foreign.txt"), "foreign inventory\n");
+    execFileSync("git", ["-C", foreign, "add", "foreign.txt"]);
+    const selectedIndex = readFileSync(join(root, ".git/index"));
+    const foreignIndex = readFileSync(join(foreign, ".git/index"));
+    const result = spawnSync(
+      process.execPath,
+      [cli, "--repo", root, "--scope", ".", "--query", "needle", "--json"],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          [key]: join(foreign, key === "GIT_DIR" ? ".git" : ".git/index"),
+        },
+      }
+    );
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).results).toEqual([
+      { path: "src/selected.ts", line: 1, text: "needle selected source" },
+    ]);
+    expect(result.stdout).not.toContain("foreign canary");
+    expect(readFileSync(join(root, ".git/index"))).toEqual(selectedIndex);
+    expect(readFileSync(join(foreign, ".git/index"))).toEqual(foreignIndex);
+  }
+);

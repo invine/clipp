@@ -248,6 +248,35 @@ function observeRepository(root, saved) {
       const [ref, commit] = row.split("\0");
       return { ref, commit };
     });
+  const branchRows = rawGit(
+    root,
+    "for-each-ref",
+    "--format=%(refname:strip=2)%00%(objectname)",
+    "refs/heads"
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  if (branchRows.length > 500) {
+    diagnostic(
+      "branch-inventory-limit",
+      "more than 500 local branches; reconcile the branch inventory"
+    );
+    throw new Error("branch inventory exceeds limit");
+  }
+  const branches = branchRows.map((row) => {
+    const [branch, tip] = row.split("\0");
+    return {
+      branch,
+      tip,
+      integration: ancestor(root, tip, integrationTip)
+        ? "ancestry"
+        : "unverified",
+      worktrees: worktrees
+        .filter((item) => item.branch === branch)
+        .map((item) => item.path),
+    };
+  });
   return {
     head: git(root, "rev-parse", "HEAD"),
     branch: git(root, "branch", "--show-current") || null,
@@ -255,6 +284,7 @@ function observeRepository(root, saved) {
     integrationTip,
     worktrees,
     stashes,
+    branches,
   };
 }
 function main() {
@@ -368,7 +398,7 @@ function main() {
     );
     const value = blockers[0][1].trim();
     const dependencies = [];
-    if (value && !/^(?:none(?:\s+\([^()\[\]]*\))?\.?|[-—])$/i.test(value)) {
+    if (value && !/^(?:none(?:\s+\([^()[\]]*\))?\.?|[-—])$/i.test(value)) {
       const links = [...value.matchAll(/\[[^\]]+\]\((\d+-[^)]+\.md)\)/g)];
       const remainder = value
         .replace(/\[[^\]]+\]\((\d+-[^)]+\.md)\)/g, "")
@@ -473,6 +503,8 @@ function main() {
   paths.forEach(visit);
   const claimIds = new Set();
   const claimed = new Set();
+  const implementationBranches = new Set();
+  const implementationWorktrees = new Set();
   for (const claim of ledger.claims) {
     if (claimIds.has(claim.id) || claimed.has(claim.ticket))
       diagnostic(
@@ -489,10 +521,23 @@ function main() {
     const ticket = tickets.get(claim.ticket);
     if (!ticket)
       diagnostic("claim-ticket", `${claim.id}: canonical ticket unavailable`);
-    else if (["resolved", "deferred", "wontfix"].includes(ticket.status))
+    else if (ticket.status !== "claimed")
       diagnostic(
         "ticket-owner",
         `${claim.id}: retained claim conflicts with ${ticket.status} ticket; reconcile explicitly`
+      );
+    if (
+      claim.activity === "blocked" &&
+      ticket &&
+      ticket.decision?.assessment !== "pending" &&
+      !ticket.externalBlockers.length &&
+      !ticket.dependencies.some(
+        (path) => tickets.get(path)?.status !== "resolved"
+      )
+    )
+      diagnostic(
+        "claim-reason",
+        `${claim.id}: blocked ownership requires a recorded dependency, decision or external blocker`
       );
     if (
       claim.activity === "active" &&
@@ -514,6 +559,16 @@ function main() {
         `${claim.id}: active implementation requires an isolated repository/worktree record`
       );
     for (const [role, source] of Object.entries(claim.repositories)) {
+      const branchKey = `${role}:${source.branch}`;
+      if (
+        implementationBranches.has(branchKey) ||
+        source.branch === ledger.repositories[role].integrationBranch
+      )
+        diagnostic(
+          "claim-isolation",
+          `${claim.id}:${role}: implementation branch must be exclusive to its claim and separate from integration`
+        );
+      implementationBranches.add(branchKey);
       try {
         const root = local.roots[role];
         requireValue(
@@ -545,6 +600,13 @@ function main() {
           worktreePath && isAbsolute(worktreePath),
           "claim worktree local mapping required"
         );
+        const worktreeKey = `${role}:${realpathSync(worktreePath)}`;
+        if (implementationWorktrees.has(worktreeKey))
+          diagnostic(
+            "claim-isolation",
+            `${claim.id}:${role}: implementation worktree is already reserved by another claim`
+          );
+        implementationWorktrees.add(worktreeKey);
         const worktree = report.repositories[role]?.worktrees.find(
           (item) => realpathSync(item.path) === realpathSync(worktreePath)
         );
@@ -768,6 +830,18 @@ function main() {
       )
         source.integration = "verified-mapping";
     }
+  for (const [role, repository] of Object.entries(report.repositories))
+    for (const branch of repository.branches)
+      if (
+        branch.integration === "unverified" &&
+        report.integrations.some(
+          (item) =>
+            item.role === role &&
+            item.sourceCommit === branch.tip &&
+            item.verifiedMapping
+        )
+      )
+        branch.integration = "verified-mapping";
   for (const ticket of report.tickets)
     if (ticket.status === "resolved") {
       if (
@@ -856,6 +930,10 @@ if (!args.includes("--help")) {
               `${role} worktree ${JSON.stringify(item.path)}: ${item.branch ?? "detached"} ${item.head}; ${item.dirty ? `staged ${item.dirty.staged}, unstaged ${item.dirty.unstaged}, untracked ${item.dirty.untracked}` : "unavailable"}`
           ),
           ...repo.stashes.map((item) => `${role} ${item.ref} ${item.commit}`),
+          ...repo.branches.map(
+            (item) =>
+              `${role} branch ${item.branch} ${item.tip}; ${item.integration}; ${item.worktrees.length} worktrees`
+          ),
         ]),
         ...report.tickets.map(
           (ticket) =>

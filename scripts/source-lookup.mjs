@@ -22,10 +22,20 @@ const excluded =
   /^(?:\.git|\.local|\.cache|\.config|\.worktrees?|worktrees?|node_modules|vendor|dist|build|out|coverage|target|tmp|temp|artifacts?|captures?|diagnostics?|recovery|backups?|profiles?|.*[-_]profiles?|.*[-_]cache|\.gradle|\.idea|\.next|\.turbo|\.aws|\.ssh|\.codex|\.agents)$/i;
 
 function git(root, ...args) {
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+  for (const key of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+  ])
+    delete env[key];
   return execFileSync("git", ["-C", root, ...args], {
     encoding: "utf8",
     maxBuffer: 8 * 1024 * 1024,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
