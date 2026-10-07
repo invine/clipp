@@ -13,6 +13,8 @@
 
 - [01 resolved](issues/01-find-authoritative-project-operations.md#answer): navigation and bounded lookup integrated in both repositories, enabling the decision checkpoint.
 
+- [02 resolved](issues/02-apply-architectural-decision-checkpoint.md#answer): accepted-decision checkpoint and coordinator lifecycle integrated, enabling ledger/status recovery.
+
 ## Fog
 
 Hosted CI, live/native runtime acceptance, publication and deployment remain outside this local-only implementation run. Tooling completion must retain their independent gates and the managed-relay backlog's existing outcomes.

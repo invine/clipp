@@ -4,7 +4,7 @@
 
 **Blocked by:** [02: Apply the architectural decision checkpoint](02-apply-architectural-decision-checkpoint.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Repository scope: both projects, with one canonical ledger/status implementation in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC5–AC8 and the coordination portion of AC9, retrospective improvement 5. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
 
@@ -29,3 +29,13 @@ Tickets 03 and 04 are not blockers: use available verification commands and evid
 ## Comments
 
 - Planning publication only; no claim or implementation evidence yet.
+
+## Coordinator dispatch — 2026-10-07
+
+Owner: recovery-05; coordinator: agent-workflow-20261007.
+
+Requested outcome: versioned coordinator ledger, read-only current Git/ticket status and eligible frontier, and public real-Git recovery demonstration. Invariant assessment: preserve authoritative Markdown Status/Blocked by, accepted ADR 0012, max-two implementation capacity, central ownership and all existing worktrees/stashes/private data. Metadata validation does not self-approve architectural changes or replace semantic Spec review. Product behavior, publication boundaries and managed-relay backlog outcomes remain unchanged.
+
+Decision reference: [accepted fallback ADR](../../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md); lifecycle: [canonical workflow](../../../docs/agents/workflow.md); predecessor evidence: [02 answer](02-apply-architectural-decision-checkpoint.md#answer). Approved seams: public CLI with temporary real Git repositories, revision-bound evidence and recovery, per the parent specification.
+
+Integration branches: `codex/agent-workflow-integration`; isolated `codex/agent-workflow-05` starts at client `33b419e` and relay `0e87f7a`. Coordinator owns canonical metadata updates and final effort status snapshot. Explicit local roots/artifact mappings stay outside portable tracked metadata. Maximum two active implementers; only local preparation/commits.
