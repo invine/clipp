@@ -9,7 +9,7 @@ import { createExtensionManagedRelayCredentials } from "../../apps/extension/src
 const endpoint = "https://relay.example/v1/relay";
 const extensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-function harness() {
+function harness(digest?: (bytes: Uint8Array) => Promise<Uint8Array>) {
   const events: string[] = [];
   const records = new Map<string, unknown>();
   const storage = {
@@ -53,6 +53,7 @@ function harness() {
     fetchToken,
     registeredExtensionId: extensionId,
     now: () => 1000,
+    digest,
   });
   return { service, events, records, identity, fetchToken, storage };
 }
@@ -277,8 +278,23 @@ describe("Chrome managed relay credentials", () => {
   });
 
   it("opens one browser flow for concurrent explicit login requests", async () => {
-    const { service, identity, fetchToken } = harness();
-    let complete!: (callback: string) => void;
+    let releaseDigest!: (bytes: Uint8Array) => void;
+    const pendingDigest = new Promise<Uint8Array>((resolve) => {
+      releaseDigest = resolve;
+    });
+    let markHashingStarted!: () => void;
+    const hashingStarted = new Promise<void>((resolve) => {
+      markHashingStarted = resolve;
+    });
+    const { service, identity, fetchToken } = harness(() => {
+      markHashingStarted();
+      return pendingDigest;
+    });
+    let markBrowserLaunched!: () => void;
+    const browserLaunched = new Promise<void>((resolve) => {
+      markBrowserLaunched = resolve;
+    });
+    let complete!: () => void;
     const launch = jest.fn(
       (url: string) =>
         new Promise<string>((resolve) => {
@@ -286,15 +302,20 @@ describe("Chrome managed relay credentials", () => {
             resolve(
               `${identity.redirectUrl}?code=x&state=${new URL(url).searchParams.get("state")}`
             );
+          markBrowserLaunched();
         })
     );
     identity.launch = launch;
     const first = service.interactiveLogin(endpoint);
     const second = service.interactiveLogin(endpoint);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await hashingStarted;
+    expect(launch).not.toHaveBeenCalled();
+    releaseDigest(new Uint8Array(32));
+    await browserLaunched;
     expect(launch).toHaveBeenCalledTimes(1);
-    complete(identity.redirectUrl);
+    complete();
     await Promise.all([first, second]);
+    expect(launch).toHaveBeenCalledTimes(1);
     expect(fetchToken).toHaveBeenCalledTimes(1);
   });
 });
