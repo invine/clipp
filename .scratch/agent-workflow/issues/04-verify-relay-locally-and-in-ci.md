@@ -4,19 +4,19 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** claimed
+**Status:** resolved
 
 Repository scope: clipp-relay; canonical claim remains in Clipp. Parent: [agent workflow specification](../spec.md). Covers AC4 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
 
 ## Acceptance criteria
 
-- [ ] Routine verification runs failing-on-diff Go formatting, dependency verification, tests, vet and build, and every existing deterministic suite enumerated in the planning inventory.
-- [ ] Reuse the current script bodies and fixture seams; provision/document compatible Go, Helm, Python, Ruby and shell requirements. Race checks have a supported CI job or explicit verification profile with a distinct result.
-- [ ] A verification-only workflow runs for ordinary pull requests and main-branch changes with read-only permissions, invokes the same entry point and requires no registry write credentials, kubeconfig, OCI identity or live OAuth account.
-- [ ] Preserve the existing separately authorized manual image publication workflow. Routine verification cannot publish an image or deploy resources.
-- [ ] Missing prerequisites and failed constituent checks fail with actionable diagnostics. Run actual suites locally and prove failure propagation at the public command boundary.
-- [ ] Validate workflow configuration and record tool versions/results against the candidate revision. Hosted CI execution is explicitly not run until an authorized push.
-- [ ] Real PostgreSQL/image execution, provider qualification and live cluster checks retain their separate gates; deterministic contract checks do not claim those passes. Connect the entry point to project navigation when available.
+- [x] Routine verification runs failing-on-diff Go formatting, dependency verification, tests, vet and build, and every existing deterministic suite enumerated in the planning inventory.
+- [x] Reuse the current script bodies and fixture seams; provision/document compatible Go, Helm, Python, Ruby and shell requirements. Race checks have a supported CI job or explicit verification profile with a distinct result.
+- [x] A verification-only workflow runs for ordinary pull requests and main-branch changes with read-only permissions, invokes the same entry point and requires no registry write credentials, kubeconfig, OCI identity or live OAuth account.
+- [x] Preserve the existing separately authorized manual image publication workflow. Routine verification cannot publish an image or deploy resources.
+- [x] Missing prerequisites and failed constituent checks fail with actionable diagnostics. Run actual suites locally and prove failure propagation at the public command boundary.
+- [x] Validate workflow configuration and record tool versions/results against the candidate revision. Hosted CI execution is explicitly not run until an authorized push.
+- [x] Real PostgreSQL/image execution, provider qualification and live cluster checks retain their separate gates; deterministic contract checks do not claim those passes. Connect the entry point to project navigation when available.
 
 ## Implementation context
 
@@ -35,3 +35,9 @@ Requested outcome and invariant assessment: Expose existing deterministic relay 
 Decision reference: [accepted fallback ADR](../../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md). Test seams: approved public CLI/subprocess and navigation boundaries in the parent specification.
 
 Integration branches: `codex/agent-workflow-integration` in each participating repository. Local preparation only; maximum two implementers. Coordinator owns claim, integration and resolution.
+
+## Answer
+
+Implemented and integrated relay routine/race verification at `65fad9d3ce2a1117022fca751bd58b0bc54b8502` (source equals integrated revision). Actual routine and race profiles passed on that exact clean commit; all eleven inventoried deterministic suites and eleven new public command/CI fixtures passed. Merger rechecked public fixtures, shell syntax and scope after integration. Focused Standards/Spec assessment has no outstanding findings; whole-effort review remains the coordinator's final gate.
+
+[Run evidence index](../run.md#dispatch-and-evidence): local artifacts `relay-04-evidence.md` and `relay-04-integration-evidence.md`, with command logs alongside. Tools include Go 1.27.1, Helm 4.3.0, Python 3.14.8, Ruby 2.6.10 and jq 1.8.2. CI configuration is locally validated; hosted execution, real PostgreSQL/images and native/live qualification are not run. No publication workflow or product behavior changed.

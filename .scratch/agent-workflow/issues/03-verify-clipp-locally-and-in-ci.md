@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Repository scope: Clipp. Parent: [agent workflow specification](../spec.md). Covers AC3 and AC9, retrospective improvement 3. Test boundaries and ticket graph approved 2026-10-07; implementation has not started.
 
@@ -25,3 +25,13 @@ Use the [verification inventory](../README.md#routine-verification-inventory). E
 ## Comments
 
 - Planning publication only; no claim or implementation evidence yet.
+
+## Coordinator dispatch — 2026-10-07
+
+Owner: verification-03; coordinator: agent-workflow-20261007.
+
+Requested outcome: one client routine verification command, matching read-only CI, and lint coverage in pre-commit. Invariant assessment: preserve all current checks and runtime acceptance gates; accepted ADR 0012 and product behavior remain unchanged. Necessary harness lint repair must preserve cleanup and primary failure reporting. No new architectural decision is required.
+
+Decision reference: [accepted fallback ADR](../../../docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md). Approved seams: public verification/subprocess commands, real current suites and CI/hook wiring, per parent specification.
+
+Client integration branch: `codex/agent-workflow-integration`; isolated `codex/agent-workflow-03` starts at `d929abf`. Coordinator owns claims/resolution. Local commits only; maximum two active implementers.

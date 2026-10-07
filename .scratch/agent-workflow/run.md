@@ -12,3 +12,6 @@ Repository roots are supplied locally as explicit client/relay inputs; tracked m
 - 04 claimed by verification-04; relay isolated branch based on approved integration tip.
 
 Ticket Status and Blocked by fields remain authoritative. This provisional record will point to the versioned ledger delivered by 05; it is not a second ticket state store.
+
+- 04 integrated/resolved at relay `65fad9d3ce2a1117022fca751bd58b0bc54b8502`; source and integration coincide. Actual routine/race and post-integration public fixtures passed. Local artifact names: `relay-04-evidence.md`, `relay-04-integration-evidence.md`, `relay-04-candidate-routine.log`, `relay-04-candidate-race.log`. Artifact directory is an explicit local input, not a tracked absolute path.
+- 03 claimed by verification-03 after 04 completed; client verification is independently eligible.
