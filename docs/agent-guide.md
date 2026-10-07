@@ -26,42 +26,42 @@ The clean-architecture diagram in `docs/diagrams/electron-architecture.puml` mat
 
 ### Applications
 
-| Path | Purpose | Key files |
-| --- | --- | --- |
-| `apps/electron` | Desktop runtime, tray app, SQLite-backed state, preload bridge | `src/main.ts`, `src/preload.ts`, `src/renderer.tsx`, `src/storage.ts` |
+| Path             | Purpose                                                                    | Key files                                                                                    |
+| ---------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `apps/electron`  | Desktop runtime, tray app, SQLite-backed state, preload bridge             | `src/main.ts`, `src/preload.ts`, `src/renderer.tsx`, `src/storage.ts`                        |
 | `apps/extension` | Chrome MV3 runtime with background service worker and offscreen networking | `src/background.ts`, `src/offscreen.ts`, `src/popup.tsx`, `src/options.tsx`, `manifest.json` |
-| `apps/android` | Capacitor/Vite runtime with a client wrapper around shared core services | `src/client.ts`, `src/main.tsx`, `src/storage.ts` |
+| `apps/android`   | Capacitor/Vite runtime with a client wrapper around shared core services   | `src/client.ts`, `src/main.tsx`, `src/storage.ts`                                            |
 
 ### Shared packages
 
-| Path | Responsibility |
-| --- | --- |
-| `packages/core/clipboard` | Clipboard polling/manual services plus normalization helpers |
-| `packages/core/history` | History storage abstractions, IndexedDB backend, prune/sync helpers |
-| `packages/core/messaging` | Shared authenticated transport interfaces |
-| `packages/core/models` | Shared models such as `Clip` and `HistoryItem` |
-| `packages/core/network` | Libp2p node setup, transport, peer ID helpers, relay constants |
-| `packages/core/pairing` | Pairing Target v2, Trust Request/Response framing, and pending approvals |
-| `packages/core/protocols` | Protobuf wire formats for live Clips and history |
-| `packages/core/sync` | Clipboard sync coordinator |
-| `packages/core/trust` | Device identity, Membership View persistence, presentation metadata, and rotation |
-| `packages/ui` | Shared React UI and shared frontend types |
+| Path                      | Responsibility                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `packages/core/clipboard` | Clipboard polling/manual services plus normalization helpers                      |
+| `packages/core/history`   | History storage abstractions, IndexedDB backend, prune/sync helpers               |
+| `packages/core/messaging` | Shared authenticated transport interfaces                                         |
+| `packages/core/models`    | Shared models such as `Clip` and `HistoryItem`                                    |
+| `packages/core/network`   | Libp2p node setup, transport, peer ID helpers, relay constants                    |
+| `packages/core/pairing`   | Pairing Target v2, Trust Request/Response framing, and pending approvals          |
+| `packages/core/protocols` | Protobuf wire formats for live Clips and history                                  |
+| `packages/core/sync`      | Clipboard sync coordinator                                                        |
+| `packages/core/trust`     | Device identity, Membership View persistence, presentation metadata, and rotation |
+| `packages/ui`             | Shared React UI and shared frontend types                                         |
 
 ### Tests and tooling
 
-| Path | Purpose |
-| --- | --- |
-| `tests/core` | Jest coverage for shared core modules |
-| `tests/harness` | Manual pairing/network harness |
-| `scripts` | Relay service and manual network tooling |
+| Path            | Purpose                                  |
+| --------------- | ---------------------------------------- |
+| `tests/core`    | Jest coverage for shared core modules    |
+| `tests/harness` | Manual pairing/network harness           |
+| `scripts`       | Relay service and manual network tooling |
 
 ## 3. Runtime Matrix
 
-| Runtime | Boot path | Clipboard strategy | Persistence | UI bridge | Transport notes |
-| --- | --- | --- | --- | --- | --- |
-| Electron | `apps/electron/src/main.ts` | `createPollingClipboardService` | SQLite settings/history; main-process protected relay credentials when available | `window.clipp` exposed by `src/preload.ts` | Managed relay settings start empty and can change without recreating the host |
-| Extension | `apps/extension/src/background.ts` plus `src/offscreen.ts` | `createManualClipboardService`; popup pushes clipboard text to background | `chrome.storage.local` settings/credentials plus IndexedDB history fallback | `chrome.runtime.sendMessage` between popup/options/background/offscreen | Background owns credentials; offscreen owns libp2p and receives short access tokens |
-| Android | `apps/android/src/client.ts` | `createPollingClipboardService` using Capacitor Clipboard with browser fallback | Capacitor Preferences settings and native Keystore-protected relay credentials | `AndroidClient` methods consumed by `src/main.tsx` | Managed relay settings start empty; the Activity/WebView hosts networking |
+| Runtime   | Boot path                                                  | Clipboard strategy                                                              | Persistence                                                                      | UI bridge                                                               | Transport notes                                                                     |
+| --------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Electron  | `apps/electron/src/main.ts`                                | `createPollingClipboardService`                                                 | SQLite settings/history; main-process protected relay credentials when available | `window.clipp` exposed by `src/preload.ts`                              | Managed relay settings start empty and can change without recreating the host       |
+| Extension | `apps/extension/src/background.ts` plus `src/offscreen.ts` | `createManualClipboardService`; popup pushes clipboard text to background       | `chrome.storage.local` settings/credentials plus IndexedDB history fallback      | `chrome.runtime.sendMessage` between popup/options/background/offscreen | Background owns credentials; offscreen owns libp2p and receives short access tokens |
+| Android   | `apps/android/src/client.ts`                               | `createPollingClipboardService` using Capacitor Clipboard with browser fallback | Capacitor Preferences settings and native Keystore-protected relay credentials   | `AndroidClient` methods consumed by `src/main.tsx`                      | Managed relay settings start empty; the Activity/WebView hosts networking           |
 
 ## 4. Source Of Truth Files
 
@@ -171,13 +171,7 @@ If you add or change a user action in `ClipboardApp`, verify which runtimes need
 
 Use npm workspace commands from the repo root.
 
-### Common commands
-
-- `npm test`
-- `npm run lint`
-- `npm --workspace apps/electron run build`
-- `npm --workspace apps/android run build`
-- `npm --workspace apps/extension run build`
+For verification and acceptance, start from [project operations](agents/operations.md). Command definitions live in the root and workspace `package.json` scripts.
 
 ### Runtime-specific notes
 
