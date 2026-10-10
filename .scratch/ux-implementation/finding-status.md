@@ -1,0 +1,67 @@
+# UX finding and addition status
+
+Run: `ux-implementation-20261010`. This ledger records finding/addition closure separately from the canonical ticket `Status:` fields. The approved collector and full acceptance test remain in [traceability](traceability.md). `Open` means the complete candidate evidence has not yet been collected; a contributing ticket may already be resolved.
+
+| ID | Finding | Collector ticket | Closure | Evidence / next owner |
+| --- | --- | --- | --- | --- |
+| E01 | Missing external font breaks icons and hit targets | 17 | Open | Ticket 17 collector and contributions in traceability remain to be qualified. |
+| E02 | Recovery banners overlap content and hide Retry | 08 | Open | Ticket 08 collector and contributions in traceability remain to be qualified. |
+| E03 | Exactly 1100px has no settings navigation | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| E04 | Narrowing hides an active search and its escape route | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| E05 | Opening the sidebar layout discards a relay draft | 07 | Open | Ticket 07 collector and contributions in traceability remain to be qualified. |
+| E06 | Navigation and dialogs lack keyboard behavior | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| E07 | Enlarged UI spends almost all height on chrome | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| E08 | History cannot reveal the full Clip before copying | 21 | Open | Ticket 21 collector and contributions in traceability remain to be qualified. |
+| E09 | Clear's visual context understates its scope | 03 | Open | Ticket 03 collector and contributions in traceability remain to be qualified. |
+| E10 | Configure Relays duplicates Open Clipp | 26 | Open | Ticket 26 collector and contributions in traceability remain to be qualified. |
+| E11 | Failed edits/approvals lack actionable feedback | 07 | Open | Ticket 07 collector and contributions in traceability remain to be qualified. |
+| E12 | Pending work has no closed-drawer indication | 23 | Open | Ticket 23 collector and contributions in traceability remain to be qualified. |
+| E13 | Theme control is inert; core settings use inconsistent controls | 18 | Open | Ticket 18 collector and contributions in traceability remain to be qualified. |
+| E14 | Routine preferences sit below long technical settings | 24 | Open | Ticket 24 collector and contributions in traceability remain to be qualified. |
+| E15 | Fixed cards and stretched tracks waste useful space | 21 | Open | Ticket 21 collector and contributions in traceability remain to be qualified. |
+| E16 | Labels overstate connectivity and obscure device identity | 23 | Open | Ticket 23 collector and contributions in traceability remain to be qualified. |
+| E17 | Reopening from tray leaves the Dock hidden | 26 | Open | Ticket 26 collector and contributions in traceability remain to be qualified. |
+| C01 | A stale options page silently re-enables Auto Sync | 01 | Closed | Ticket 01 integrated at `46a5bcc645c62c0372fee429de870b37021858ef`; candidate receipts in the run evidence directory and two-axis review. See ticket 01 answer. |
+| C02 | Expiry and type preferences promise behavior they do not control | 20 | Open | Ticket 01 removed inactive controls; ticket 20 must prove working retention and Clip Sharing Lifetime, with ticket 24 Settings contribution. |
+| C03 | Options relay controls lose styling and overflow with long names | 17 | Open | Ticket 17 collector and contributions in traceability remain to be qualified. |
+| C04 | Popup recovery notices overlap the header and history | 08 | Open | Ticket 08 collector and contributions in traceability remain to be qualified. |
+| C05 | Theme controls are ineffective and some fields become unreadable | 18 | Open | Ticket 18 collector and contributions in traceability remain to be qualified. |
+| C06 | The only popup navigation entry is absent from the keyboard sequence | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| C07 | Pairing failures are presented as success or silently discarded | 10 | Open | Ticket 10 collector and contributions in traceability remain to be qualified. |
+| C08 | Failed QR generation leaves a misleading Hide control in options | 06 | Open | Ticket 06 collector and contributions in traceability remain to be qualified. |
+| C09 | Options history stays stale after Clear and violates its active search | 02 | Open | Ticket 02 collector and contributions in traceability remain to be qualified. |
+| C10 | Rejected settings appear saved | 01 | Closed | Ticket 01 integrated at `46a5bcc645c62c0372fee429de870b37021858ef`; candidate receipts in the run evidence directory and two-axis review. See ticket 01 answer. |
+| C11 | Essential controls are split across surfaces without a visible handoff | 11 | Open | Ticket 11 collector and contributions in traceability remain to be qualified. |
+| C12 | Popup dismissal loses relay drafts | 11 | Open | Ticket 11 collector and contributions in traceability remain to be qualified. |
+| C13 | Popup history uses most space for chrome and fixed card structure | 21 | Open | Ticket 21 collector and contributions in traceability remain to be qualified. |
+| C14 | Dense management lists bury frequent preferences | 24 | Open | Ticket 24 collector and contributions in traceability remain to be qualified. |
+| C15 | Styling and terminology diverge beyond useful runtime adaptation | 17 | Open | Ticket 17 collector and contributions in traceability remain to be qualified. |
+| C16 | Automatic clipboard-read failure has no visible recovery context | 09 | Open | Ticket 09 collector and contributions in traceability remain to be qualified. |
+| A01 | System bars cover app controls on Android 15 | 12 | Open | Ticket 12 collector and contributions in traceability remain to be qualified. |
+| A02 | The soft keyboard covers the relay task in landscape | 12 | Open | Ticket 12 collector and contributions in traceability remain to be qualified. |
+| A03 | Back exits the app instead of closing its drawer | 13 | Open | Ticket 13 collector and contributions in traceability remain to be qualified. |
+| A04 | Text actions are squeezed into icon buttons | 17 | Open | Ticket 17 collector and contributions in traceability remain to be qualified. |
+| A05 | Everyday settings sit behind verbose advanced guidance | 24 | Open | Ticket 24 collector and contributions in traceability remain to be qualified. |
+| A06 | Pause and Resume appear together regardless of state | 25 | Open | Ticket 25 collector and contributions in traceability remain to be qualified. |
+| A07 | Notification denial explains the problem but offers no recovery route | 16 | Open | Ticket 16 collector and contributions in traceability remain to be qualified. |
+| A08 | Scan QR crashes the tested native barcode provider | 15 | Open | Ticket 15 collector and contributions in traceability remain to be qualified. |
+| A09 | Scanner actions overlap Android navigation | 15 | Open | Ticket 15 collector and contributions in traceability remain to be qualified. |
+| A10 | Compact navigation hides search and uses small touch targets | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| A11 | Native defaults, branded controls and remote icons diverge | 17 | Open | Ticket 17 collector and contributions in traceability remain to be qualified. |
+| A12 | Phone history spends too much space above and inside each Clip | 21 | Open | Ticket 21 collector and contributions in traceability remain to be qualified. |
+| A13 | Pairing diagnostics displace the entire app | 08 | Open | Ticket 08 collector and contributions in traceability remain to be qualified. |
+| A14 | Enlarged text escapes fixed history cards | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| A15 | A 320px window requires sideways history scrolling | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+| A16 | Dense navigation hides settings behind long lists and identifiers | 24 | Open | Ticket 24 collector and contributions in traceability remain to be qualified. |
+| A17 | Concurrent recovery notices overlap | 08 | Open | Ticket 08 collector and contributions in traceability remain to be qualified. |
+| A18 | Landscape QR opens cropped, with Copy below the fold | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
+
+## Separate accepted additions
+
+| Addition | Collector ticket | Closure | Evidence / next owner |
+| --- | --- | --- | --- |
+| Generate new identity | 31 | Open | Collector and contributions in [traceability](traceability.md) remain to be qualified. |
+| Use device name / alias clearing | 23 | Open | Collector and contributions in [traceability](traceability.md) remain to be qualified. |
+| Clip Sharing Lifetime | 20 | Open | Collector and contributions in [traceability](traceability.md) remain to be qualified. |
+
+The current run does not change External or Retained qualifications in [validation coverage](validation-coverage.md). A ticket resolution never implies release readiness.

@@ -1,11 +1,11 @@
 # Repair Chrome preference integrity
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-preferences-01
 Priority band: 1
 Blocked by: none
-Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
+Dispatch: integrated and reviewed in UX implementation run `ux-implementation-20261010`; branch and evidence in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -48,4 +48,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+The coordinator recorded the baseline, claim, isolated worktrees, integration revision, candidate checks and two-axis review under [project workflow](../../../docs/agents/workflow.md). The unrelated primary-checkout work remains untouched.
+
+## Answer
+
+Implemented field-scoped Chrome preference writes with an ordered authoritative snapshot feed across options and the actual toolbar popup. Rejected and unconfirmed outcomes keep truthful feedback; a lost reply blocks further preference mutations until reconciliation succeeds. An initial failed read leaves values unknown and controls disabled with Retry. Obsolete ineffective controls were removed, while Auto Sync and log level remain active. The shared Auto Sync preference stays in `packages/core` and shared feedback/presentation in `packages/ui`.
+
+Integrated candidate: `46a5bcc645c62c0372fee429de870b37021858ef` on `codex/ux-implementation-integration` (clean at review). `npm run check` passed 81 suites/700 tests before the last merge commit, and integrated `npm run verify` passed lint, typechecks, 700 tests and three builds. Disposable Chrome candidate receipts cover two open views, persistence/publication failure, overlapping writes, worker restart, rejected/unconfirmed outcomes, unknown initial state, failed refresh, blocked duplicate mutation and successful Retry in options and a real toolbar popup. Standards and Spec reviews both passed at this exact revision against fixed baseline `d23e44f33ca1a280e3933850a98d19dcb3745e81`. Candidate receipts and command logs are retained under the ignored run evidence directory identified in [run.md](../run.md).
+
+C01 and C10 finding closure is recorded in [finding status](../finding-status.md). C02 remains open until its replacement settings and later presentation contributions are verified. Native, external and retained gates outside this scoped ticket remain with their owners.
