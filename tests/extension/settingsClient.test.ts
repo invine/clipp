@@ -1,6 +1,101 @@
 import { createSettingsClient } from "../../apps/extension/src/settingsClient";
 import { createSettingsHandler } from "../../apps/extension/src/settingsHandler";
 
+it("exposes failed initial settings read as unknown until retry succeeds", async () => {
+  const snapshot = {
+    sessionId: "worker-1",
+    revision: 1,
+    state: { autoSync: false, logLevel: "warn" as const },
+  };
+  let reads = 0;
+  const client = createSettingsClient({
+    send: async () => {
+      reads += 1;
+      if (reads === 1) throw new Error("settings_offline");
+      return { ok: true, snapshot };
+    },
+    subscribe: () => () => {},
+  });
+
+  await client.start();
+  expect(client.getState()).toMatchObject({
+    snapshot: null,
+    loading: false,
+    refreshError: "settings_offline",
+    feedback: null,
+  });
+  await client.refresh();
+  expect(client.getState()).toMatchObject({
+    snapshot,
+    loading: false,
+    refreshError: null,
+  });
+});
+
+it("keeps the last applied values and reports failed reconciliation after an unconfirmed save", async () => {
+  const snapshot = {
+    sessionId: "worker-1",
+    revision: 1,
+    state: { autoSync: false, logLevel: "warn" as const },
+  };
+  let reads = 0;
+  const client = createSettingsClient({
+    send: async (message) => {
+      if (message.type === "setSettings") throw new Error("reply_lost");
+      reads += 1;
+      if (reads > 1) throw new Error("refresh_offline");
+      return { ok: true, snapshot };
+    },
+    subscribe: () => () => {},
+  });
+
+  await client.start();
+  await client.save({ logLevel: "error" });
+  expect(client.getState()).toMatchObject({
+    snapshot,
+    loading: false,
+    refreshError: "refresh_offline",
+    feedback: { status: "unconfirmed", error: "reply_lost" },
+  });
+});
+
+it("marks reconciliation in progress before describing an unconfirmed save as refreshed", async () => {
+  const snapshot = {
+    sessionId: "worker-1",
+    revision: 1,
+    state: { autoSync: true, logLevel: "info" as const },
+  };
+  let resolveRefresh!: (value: unknown) => void;
+  let reads = 0;
+  const client = createSettingsClient({
+    send: async (message) => {
+      if (message.type === "setSettings") throw new Error("reply_lost");
+      reads += 1;
+      return reads === 1
+        ? { ok: true, snapshot }
+        : new Promise((resolve) => {
+            resolveRefresh = resolve;
+          });
+    },
+    subscribe: () => () => {},
+  });
+
+  await client.start();
+  const saving = client.save({ autoSync: false });
+  await Promise.resolve();
+  expect(client.getState()).toMatchObject({
+    snapshot,
+    refreshing: true,
+    feedback: { status: "unconfirmed", error: "reply_lost" },
+  });
+  resolveRefresh({ ok: false, error: "refresh_offline" });
+  await saving;
+  expect(client.getState()).toMatchObject({
+    refreshing: false,
+    refreshError: "refresh_offline",
+  });
+});
+
 it("two open views converge after an external save and a lost reply", async () => {
   const values = new Map<string, unknown>();
   const listeners = new Set<(message: unknown) => void>();

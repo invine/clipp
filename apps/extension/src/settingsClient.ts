@@ -7,6 +7,8 @@ import type {
 export type SettingsClientState = {
   snapshot: SettingsSnapshot | null;
   loading: boolean;
+  refreshing: boolean;
+  refreshError: string | null;
   pending: boolean;
   feedback: {
     status: "applied" | "partial" | "rejected" | "unconfirmed";
@@ -24,6 +26,8 @@ export function createSettingsClient(port: {
   let state: SettingsClientState = {
     snapshot: null,
     loading: true,
+    refreshing: false,
+    refreshError: null,
     pending: false,
     feedback: null,
   };
@@ -58,7 +62,7 @@ export function createSettingsClient(port: {
       return;
     if (prior && prior.sessionId !== snapshot.sessionId)
       retiredSessions.add(prior.sessionId);
-    state = { ...state, snapshot, loading: false };
+    state = { ...state, snapshot, loading: false, refreshError: null };
     acceptedVersion += 1;
     notify();
   };
@@ -66,6 +70,13 @@ export function createSettingsClient(port: {
   async function refresh(): Promise<void> {
     const requestId = ++refreshId;
     const versionAtRequest = acceptedVersion;
+    state = {
+      ...state,
+      loading: state.snapshot === null,
+      refreshing: true,
+      refreshError: null,
+    };
+    notify();
     try {
       const response = (await port.send({ type: "getSettings" })) as
         | { ok?: boolean; snapshot?: SettingsSnapshot; error?: string }
@@ -85,9 +96,14 @@ export function createSettingsClient(port: {
       state = {
         ...state,
         loading: false,
-        feedback: { status: "unconfirmed", error: (error as Error).message },
+        refreshError: (error as Error).message,
       };
       notify();
+    } finally {
+      if (requestId === refreshId) {
+        state = { ...state, refreshing: false };
+        notify();
+      }
     }
   }
 
