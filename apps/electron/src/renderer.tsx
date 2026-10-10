@@ -33,6 +33,8 @@ type AppState = {
   managedRelayConfigurations?: RelayConfiguration[];
   managedRelayStates?: RelayState[];
   pinnedIds?: string[];
+  historyUnavailable?: boolean;
+  historyRefreshError?: boolean;
   localRetentionMs?: number;
   autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;
@@ -59,9 +61,12 @@ const App = () => {
   const [state, setState] = useState<AppState>(initialState);
   const [, setError] = useState<string | null>(null);
   const [initializationError, setInitializationError] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let receivedUpdate = false;
     const api = window.clipp;
     if (!api) {
       setError("Bridge unavailable (preload not loaded)");
@@ -70,9 +75,13 @@ const App = () => {
     async function load() {
       try {
         const s = await api.getState();
-        if (!cancelled) setState(s);
+        if (!cancelled && !receivedUpdate) setState(s);
+        if (!cancelled) setHistoryLoading(false);
+        if (!cancelled) setHistoryLoadFailed(false);
       } catch (err) {
         if (!cancelled) setError("Failed to load state");
+        if (!cancelled) setHistoryLoading(false);
+        if (!cancelled) setHistoryLoadFailed(true);
         const initialization = await api
           .getInitializationError?.()
           .catch(() => null);
@@ -84,7 +93,13 @@ const App = () => {
       }
     }
     load();
-    const unsubscribe = api.onUpdate((s) => !cancelled && setState(s));
+    const unsubscribe = api.onUpdate((s) => {
+      if (cancelled) return;
+      receivedUpdate = true;
+      setState(s);
+      setHistoryLoading(false);
+      setHistoryLoadFailed(false);
+    });
     const unlog = api.onLog?.((payload) => {
       const { level, message, data } = payload || {};
       const fn =
@@ -127,6 +142,18 @@ const App = () => {
         relayConnections={state.relayConnections || []}
         identity={state.identity}
         pinnedIds={state.pinnedIds || []}
+        historyLoading={historyLoading}
+        historyUnavailable={
+          !historyLoading &&
+          (historyLoadFailed || state.historyUnavailable || false)
+        }
+        historyRefreshError={
+          state.historyRefreshError ? "history_unavailable" : null
+        }
+        onRetryHistoryRefresh={async () => {
+          setState(await window.clipp.getState());
+          setHistoryLoadFailed(false);
+        }}
         localRetentionMs={state.localRetentionMs}
         autoSync={state.autoSync}
         clipboardHistoryError={state.clipboardHistoryError}

@@ -4,7 +4,6 @@ import ReactDOM from "react-dom/client";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import "./styles/tailwind-built.css";
 import {
-  Clip,
   ClipboardHistoryError,
   Device,
   HistoryPolicyError,
@@ -30,6 +29,7 @@ import {
   renameExtensionDevice,
   renameExtensionIdentity,
 } from "./renameActions";
+import { useHistory } from "./useHistory";
 
 function identityRotationNoticeReason(
   value: unknown
@@ -38,7 +38,7 @@ function identityRotationNoticeReason(
 }
 
 const Popup = () => {
-  const [clips, setClips] = useState<Clip[]>([]);
+  const history = useHistory();
   const [devices, setDevices] = useState<Device[]>([]);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [waiting, setWaiting] = useState<PairingWaiting[]>([]);
@@ -48,7 +48,6 @@ const Popup = () => {
     []
   );
   const [identity, setIdentity] = useState<Identity | null>(null);
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [localRetentionMs, setLocalRetentionMs] = useState(
     30 * 24 * 60 * 60 * 1000
   );
@@ -71,14 +70,12 @@ const Popup = () => {
   const lastClipboardRef = useRef("");
 
   useEffect(() => {
-    refreshHistory();
     refreshDevices();
     refreshPending();
     refreshPeers();
     chrome.runtime.sendMessage({ type: "getRuntimeState" }, (res) => {
       if (res?.state?.waiting) setWaiting(res.state.waiting);
       if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
-      if (res?.state?.pinnedIds) setPinnedIds(res.state.pinnedIds);
       setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
       setHistoryPolicyError(res?.state?.historyPolicyError || null);
       setIdentityRotationRecovery(
@@ -108,12 +105,6 @@ const Popup = () => {
     });
 
     const handler = (msg: any) => {
-      if (msg.type === "newClip" && msg.clip) {
-        setClips((prev) => [
-          msg.clip,
-          ...prev.filter((c) => c.id !== msg.clip.id),
-        ]);
-      }
       if (msg.type === "trustRequest" && msg.device) {
         setPending((p) => {
           if (p.find((d) => d.deviceId === msg.device.deviceId)) return p;
@@ -124,7 +115,6 @@ const Popup = () => {
         setPending(msg.state.pending || []);
         setWaiting(msg.state.waiting || []);
         setPairingErrors(msg.state.pairingErrors || []);
-        setPinnedIds(msg.state.pinnedIds || []);
         setClipboardHistoryError(msg.state.clipboardHistoryError || null);
         setHistoryPolicyError(msg.state.historyPolicyError || null);
         setIdentityRotationRecovery(
@@ -166,12 +156,6 @@ const Popup = () => {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
-
-  function refreshHistory() {
-    chrome.runtime.sendMessage({ type: "getClipHistory" }, (resp) => {
-      setClips(resp?.clips || []);
-    });
-  }
 
   function refreshDevices() {
     chrome.runtime.sendMessage({ type: "getTrustedDevices" }, (resp) => {
@@ -231,7 +215,7 @@ const Popup = () => {
 
   async function handleDeleteClip(id: string) {
     await runHistoryOperation({ type: "deleteClip", id });
-    setClips((prev) => prev.filter((c) => c.id !== id));
+    await history.refresh();
   }
 
   async function handleUnpair(id: string) {
@@ -297,7 +281,7 @@ const Popup = () => {
       className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-black"
     >
       <ClipboardApp
-        clips={clips}
+        clips={history.snapshot?.clips ?? []}
         devices={devices}
         pending={pending}
         waiting={waiting}
@@ -305,7 +289,11 @@ const Popup = () => {
         peers={peers}
         peerConnections={peerConnections}
         identity={identity}
-        pinnedIds={pinnedIds}
+        pinnedIds={history.snapshot?.pinnedIds ?? []}
+        historyLoading={history.loading}
+        historyUnavailable={history.snapshot === null && !history.loading}
+        historyRefreshError={history.refreshError}
+        onRetryHistoryRefresh={history.refresh}
         localRetentionMs={localRetentionMs}
         autoSync={settings.snapshot?.state.autoSync}
         autoSyncKnown={settings.snapshot !== null}
@@ -398,20 +386,16 @@ const Popup = () => {
           );
         }}
         onSetPinned={async (id, pinned) => {
-          const response = await runHistoryOperation<{
-            ok: true;
-            pinnedIds: string[];
-          }>({
+          await runHistoryOperation({
             type: "setPin",
             id,
             pinned,
           });
-          setPinnedIds(response.pinnedIds);
+          await history.refresh();
         }}
         onClearAll={async () => {
           await runHistoryOperation({ type: "clearHistory" });
-          setClips([]);
-          setPinnedIds([]);
+          await history.refresh();
         }}
         onSetLocalRetention={async (retentionMs) => {
           const response = await runHistoryOperation<{
