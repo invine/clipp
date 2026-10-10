@@ -1,3 +1,4 @@
+import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import {
@@ -1181,6 +1182,12 @@ export class AndroidClient {
     await this.identitySvc.retryInitialization();
     await this.runtime.start();
     return this.getState();
+  }
+
+  copyPairingText(text: string) {
+    return copyPayloadText(text, (value) =>
+      CapacitorClipboard.write({ string: value })
+    );
   }
 
   async getPairingCode(): Promise<PairingCode | null> {

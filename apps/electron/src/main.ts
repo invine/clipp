@@ -1,3 +1,4 @@
+import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy.js";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { multiaddr } from "@multiformats/multiaddr";
 import {
@@ -1304,6 +1305,10 @@ async function bootstrap() {
       return { ok: false, error: "dial_failed" as const };
     }
   });
+
+  ipcMain.handle("clipp:copy-pairing-text", (_event, text: string) =>
+    copyPayloadText(text, (value) => clipboard.writeText(value))
+  );
 
   ipcMain.handle("clipp:open-qr-window", async () => {
     await ensureMessagingStarted();

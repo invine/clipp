@@ -1,3 +1,6 @@
+import { PairingCodeContent } from "./PairingCodeContent";
+import { usePairingCodeTask } from "./usePairingCodeTask";
+import type { PayloadCopyResult } from "../../core/clipboard/payloadCopy";
 import { ManagedRelaySettings } from "./ManagedRelaySettings";
 import {
   PreferenceRefreshNotice,
@@ -339,6 +342,7 @@ export type ClipboardAppProps = {
   onPairText(txt: string): void | Promise<void>;
   onScanPairingCode?(): Promise<string | null> | string | null;
   onRequestPairingCode(): Promise<PairingCode | null>;
+  onCopyPairingText(text: string): Promise<PayloadCopyResult>;
   onReuseClip(id: string): ReuseClipOutcome | Promise<ReuseClipOutcome>;
   onShareNow(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
@@ -408,6 +412,7 @@ export function ClipboardApp({
   onPairText,
   onScanPairingCode,
   onRequestPairingCode,
+  onCopyPairingText,
   onReuseClip,
   onShareNow,
   onSetPinned,
@@ -438,11 +443,9 @@ export function ClipboardApp({
   const [filterMode, setFilterMode] = useState<"all" | "pinned">("all");
   const [pairText, setPairText] = useState("");
   const [isScanningPairing, setIsScanningPairing] = useState(false);
-  const [qrImage, setQrImage] = useState<string | null>(null);
-  const [qrText, setQrText] = useState<string | null>(null);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrLoading, setQrLoading] = useState(false);
-  const [qrError, setQrError] = useState<string | null>(null);
+  const { task: qrTask, state: qrState } = usePairingCodeTask(
+    identity ? `${identity.deviceId}:${identity.deviceName}` : null
+  );
   const [showNav, setShowNav] = useState(false);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
@@ -910,35 +913,13 @@ export function ClipboardApp({
     return `Source: ${deviceNameMap.get(src) || src}`;
   }
 
-  async function handleShowQr() {
+  function handleShowQr() {
     setShowNav(false);
-    setQrImage(null);
-    setQrText(null);
-    setQrError(null);
-    setQrLoading(true);
-    setQrOpen(true);
-    try {
-      const code = await onRequestPairingCode();
-      if (!code) {
-        setQrError("Unable to create a pairing QR code.");
-        return;
-      }
-      setQrImage(code.image);
-      setQrText(code.text);
-    } catch (err) {
-      console.warn("Failed to create pairing QR", err);
-      setQrError("Unable to create a pairing QR code.");
-    } finally {
-      setQrLoading(false);
-    }
+    void qrTask.generate(onRequestPairingCode);
   }
 
   function closeQr() {
-    setQrOpen(false);
-    setQrImage(null);
-    setQrText(null);
-    setQrError(null);
-    setQrLoading(false);
+    qrTask.close();
   }
 
   function submitPairText() {
@@ -2145,7 +2126,7 @@ export function ClipboardApp({
         </div>
       )}
 
-      {qrOpen &&
+      {qrState.open &&
         createPortal(
           <div className="qr-modal-backdrop" role="presentation">
             <div
@@ -2166,35 +2147,15 @@ export function ClipboardApp({
                   <span className="icon">close</span>
                 </button>
               </div>
-              {qrLoading && (
-                <div className="qr-modal-status">Creating QR code...</div>
-              )}
-              {!qrLoading && qrError && (
-                <div className="qr-modal-error">{qrError}</div>
-              )}
-              {!qrLoading && !qrError && qrImage && (
-                <div className="qr-code-frame">
-                  <img
-                    src={qrImage}
-                    alt="Pairing QR"
-                    className="qr-modal-image"
-                  />
-                </div>
-              )}
-              {!qrLoading && !qrError && !qrImage && qrText && (
-                <div className="qr-modal-status">
-                  This pairing target is too large for a QR code. Copy the
-                  pairing text and paste it on your other device.
-                </div>
-              )}
-              {!qrLoading && !qrError && qrText && (
-                <button
-                  className="primary-button qr-modal-copy"
-                  onClick={() => navigator.clipboard.writeText(qrText)}
-                >
-                  Copy pairing text
-                </button>
-              )}
+              <PairingCodeContent
+                state={qrState}
+                onRetry={() => {
+                  void qrTask.generate(onRequestPairingCode);
+                }}
+                onCopy={() => {
+                  void qrTask.copy(onCopyPairingText);
+                }}
+              />
             </div>
           </div>,
           document.body

@@ -189,6 +189,7 @@ function App() {
         onPairText={handlePairText}
         onScanPairingCode={handleScanPairingCode}
         onRequestPairingCode={() => client.getPairingCode()}
+        onCopyPairingText={(text) => client.copyPairingText(text)}
         onReuseClip={(id) => client.reuseClip(id)}
         onShareNow={() => client.shareCurrentClipboard()}
         onSetPinned={async (id, pinned) => {

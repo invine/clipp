@@ -1,3 +1,4 @@
+import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 /* global chrome */
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
@@ -382,6 +383,9 @@ const Popup = () => {
         }
         onPairText={handlePairingText}
         onRequestPairingCode={handleRequestPairingCode}
+        onCopyPairingText={(text) =>
+          copyPayloadText(text, (value) => navigator.clipboard.writeText(value))
+        }
         onReuseClip={async (id) => {
           const response = await runHistoryOperation<{
             ok: true;

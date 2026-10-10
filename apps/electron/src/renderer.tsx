@@ -170,6 +170,7 @@ const App = () => {
         onReject={(dev) => window.clipp.rejectRequest(dev)}
         onPairText={handlePairText}
         onRequestPairingCode={() => window.clipp.openQrWindow()}
+        onCopyPairingText={(text) => window.clipp.copyPairingText(text)}
         onReuseClip={async (id) => (await window.clipp.reuseClip(id)).outcome}
         onShareNow={() => window.clipp.shareNow()}
         onSetPinned={(id, pinned) => window.clipp.setPinned(id, pinned)}

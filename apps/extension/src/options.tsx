@@ -1,3 +1,6 @@
+import { PairingCodeContent } from "../../../packages/ui/src/PairingCodeContent";
+import { usePairingCodeTask } from "../../../packages/ui/src/usePairingCodeTask";
+import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { DeviceList } from "./components/DeviceList";
@@ -20,9 +23,8 @@ import { useSettings } from "./useSettings";
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
   const [qrResult, setQRResult] = useState<string | null>(null);
-  const [showMyQR, setShowMyQR] = useState(false);
-  const [myQRImage, setMyQRImage] = useState<string | null>(null);
-  const [myQRText, setMyQRText] = useState<string | null>(null);
+  const [qrIdentity, setQrIdentity] = useState<string | null>(null);
+  const { task: qrTask, state: qrState } = usePairingCodeTask(qrIdentity);
   const settings = useSettings();
   const [managedRelayConfigurations, setManagedRelayConfigurations] = useState<
     RelayConfiguration[]
@@ -52,6 +54,14 @@ const Options = () => {
   }
 
   useEffect(() => {
+    chrome.runtime.sendMessage({ type: "getState" }, (response) => {
+      if (!chrome.runtime.lastError && response?.state)
+        setQrIdentity(
+          response.state.identity
+            ? `${response.state.identity.deviceId}:${response.state.identity.deviceName}`
+            : null
+        );
+    });
     void relayAction<{
       ok: true;
       configurations: RelayConfiguration[];
@@ -63,11 +73,18 @@ const Options = () => {
     const onRuntimeState = (message: {
       type?: string;
       state?: {
+        identity?: { deviceId: string; deviceName: string } | null;
         managedRelayConfigurations?: RelayConfiguration[];
         managedRelayStates?: RelayState[];
       };
     }) => {
       if (message.type !== "runtimeState") return;
+      if (message.state && "identity" in message.state)
+        setQrIdentity(
+          message.state.identity
+            ? `${message.state.identity.deviceId}:${message.state.identity.deviceName}`
+            : null
+        );
       if (message.state?.managedRelayConfigurations)
         setManagedRelayConfigurations(message.state.managedRelayConfigurations);
       if (message.state?.managedRelayStates)
@@ -90,19 +107,17 @@ const Options = () => {
     }
   }
 
-  async function generateMyQR() {
-    // @ts-ignore
-    chrome.runtime.sendMessage({ type: "getPairingTarget" }, async (res) => {
-      if (!res?.text) return;
-      const txt = res.text as string;
-      const code = await createPairingCode(txt);
-      setMyQRImage(code.image);
-      setMyQRText(txt);
+  async function requestMyQR() {
+    const text = await new Promise<string>((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "getPairingTarget" }, (response) => {
+        if (chrome.runtime.lastError || !response?.text) {
+          reject(new Error("pairing_target_unavailable"));
+          return;
+        }
+        resolve(response.text);
+      });
     });
-  }
-
-  function copyMyQR() {
-    if (myQRText) navigator.clipboard.writeText(myQRText);
+    return createPairingCode(text);
   }
 
   return (
@@ -129,33 +144,29 @@ const Options = () => {
           <button
             className="px-3 py-1 bg-blue-600 text-white rounded"
             onClick={() => {
-              if (!showMyQR) generateMyQR();
-              setShowMyQR((v) => !v);
+              if (qrState.open) qrTask.close();
+              else void qrTask.generate(requestMyQR);
             }}
           >
-            {showMyQR ? "Hide My QR" : "Generate My QR"}
+            {qrState.open ? "Hide My QR" : "Generate My QR"}
           </button>
         </div>
-        {showMyQR && myQRText && (
+        {qrState.open && (
           <div className="mt-2 flex flex-col items-center">
-            {myQRImage ? (
-              <img
-                src={myQRImage}
-                alt="My QR"
-                className="w-80 max-w-full h-auto"
-              />
-            ) : (
-              <p>
-                This pairing target is too large for a QR code. Copy the pairing
-                text and paste it on your other device.
-              </p>
-            )}
-            <button
-              className="mt-2 px-2 py-1 bg-gray-700 text-white rounded"
-              onClick={copyMyQR}
-            >
-              Copy as Text
-            </button>
+            <PairingCodeContent
+              buttonClassName="mt-2 px-2 py-1 bg-gray-700 text-white rounded"
+              state={qrState}
+              onRetry={() => {
+                void qrTask.generate(requestMyQR);
+              }}
+              onCopy={() => {
+                void qrTask.copy((text) =>
+                  copyPayloadText(text, (value) =>
+                    navigator.clipboard.writeText(value)
+                  )
+                );
+              }}
+            />
           </div>
         )}
       </section>

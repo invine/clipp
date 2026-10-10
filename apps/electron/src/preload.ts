@@ -1,3 +1,7 @@
+import {
+  confirmPayloadCopy,
+  type PayloadCopyResult,
+} from "../../../packages/core/clipboard/payloadCopy.js";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   Clip,
@@ -64,6 +68,10 @@ const api = {
   rejectRequest: (device: PendingRequest) =>
     ipcRenderer.invoke("clipp:respond-trust", { accept: false, device }),
   pairFromText: (txt: string) => ipcRenderer.invoke("clipp:pair-text", txt),
+  copyPairingText: (text: string): Promise<PayloadCopyResult> =>
+    confirmPayloadCopy(() =>
+      ipcRenderer.invoke("clipp:copy-pairing-text", text)
+    ),
   openQrWindow: () =>
     ipcRenderer.invoke("clipp:open-qr-window") as Promise<PairingCode>,
   setPinned: (id: string, pinned: boolean) =>
