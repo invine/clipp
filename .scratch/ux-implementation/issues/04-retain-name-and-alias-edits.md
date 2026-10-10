@@ -1,11 +1,11 @@
 # Retain Device Name and alias edits
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-edits-04
 Priority band: 1
 Blocked by: 01
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
