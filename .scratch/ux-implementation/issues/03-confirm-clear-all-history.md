@@ -1,11 +1,11 @@
 # Confirm and recover Clear all local history
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-clear-03
 Priority band: 1
 Blocked by: 02
-Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
+Dispatch: integrated and reviewed in UX implementation run `ux-implementation-20261010`; branch and evidence in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -47,4 +47,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+The coordinator recorded the baseline, claim, isolated worktree, integration revision, candidate checks and two-axis review under [project workflow](../../../docs/agents/workflow.md). The unrelated primary-checkout work remains untouched.
+
+## Answer
+
+Clear all now uses the shared accessible review task, names pinned and filtered-out local Clips, explains local-only scope and no Undo, and invokes no mutation on Cancel. Confirm awaits real cleanup; durable history clearing still precedes pending-capture discard. Query/scope remains intact and live views reconcile the resulting History. After a failed or unconfirmed Clear, stale counts are hidden and another destructive attempt stays disabled until an explicit refresh confirms current History.
+
+Integrated candidate: `0644d7d79d06faf62a9c544ac77bca6d8036f9bc`, clean at review, with the same tree as its final tested source. Pre-merge `npm run check` and integrated `npm run verify` passed 93 suites/733 tests and all three builds. Actual Electron passed 18 cases and hash-verified Android API 31 passed 14 cases, including failure, refresh-before-Retry, filtered/pinned scope and bounded review actions. A fresh user-authorized exact-marker interval passed 20 actual Chrome toolbar cases with two options views; its fixed Clear code and relevant slices are byte-identical in the integrated tree. The final combined popup bundle was not separately opened during that interval; this provenance limit is retained in the receipt. Owned profiles/emulator/forwards were closed, clipboard-sharing preference restored and normal copying released.
+
+Standards and Spec reviews both passed at this revision against dispatch baseline `788d6c2c0c4a1210e1bf0f2aa2de8c5fe5fedcaa`. Candidate receipts, source mapping, logs and interval closure live in the ignored evidence directory named in [run.md](../run.md). The scoped ticket is resolved; E09's final Advanced placement and broader G35/native/layout qualifications retain their separate collectors in [finding status](../finding-status.md) and the accepted coverage ledger.
