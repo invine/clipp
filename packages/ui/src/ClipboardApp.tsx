@@ -1,5 +1,8 @@
 import { ManagedRelaySettings } from "./ManagedRelaySettings";
-import { PreferenceSaveFeedback } from "./PreferenceSaveFeedback";
+import {
+  PreferenceRefreshNotice,
+  PreferenceSaveFeedback,
+} from "./PreferenceSaveFeedback";
 import type {
   RelayConfiguration,
   RelayState,
@@ -286,7 +289,11 @@ export type ClipboardAppProps = {
   pinnedIds: string[];
   localRetentionMs?: number;
   autoSync?: boolean;
+  autoSyncKnown?: boolean;
+  autoSyncLoading?: boolean;
+  autoSyncRefreshing?: boolean;
   autoSyncPending?: boolean;
+  autoSyncRefreshError?: string | null;
   autoSyncFeedback?: {
     status: "applied" | "partial" | "rejected" | "unconfirmed";
     error?: string;
@@ -323,6 +330,7 @@ export type ClipboardAppProps = {
   onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
   onSetAutoSync?(enabled: boolean): void | Promise<void>;
+  onRetryAutoSync?(): void | Promise<void>;
   onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
   onRenameIdentity?(name: string): Promise<Identity | null>;
@@ -353,7 +361,11 @@ export function ClipboardApp({
   pinnedIds,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
   autoSync = true,
+  autoSyncKnown = true,
+  autoSyncLoading = false,
+  autoSyncRefreshing = false,
   autoSyncPending = false,
+  autoSyncRefreshError = null,
   autoSyncFeedback = null,
   clipboardHistoryError = null,
   historyPolicyError = null,
@@ -379,6 +391,7 @@ export function ClipboardApp({
   onRetryHistoryCleanup,
   onSetLocalRetention,
   onSetAutoSync,
+  onRetryAutoSync,
   onSetBackgroundContinuity,
   onExportBackgroundContinuityDiagnostics,
   onRenameIdentity,
@@ -1450,19 +1463,28 @@ export function ClipboardApp({
             </label>
             <select
               id="auto-sync"
-              value={autoSync ? "enabled" : "disabled"}
-              disabled={autoSyncPending}
+              value={autoSyncKnown ? (autoSync ? "enabled" : "disabled") : ""}
+              disabled={!autoSyncKnown || autoSyncPending}
               onChange={(event) =>
                 void onSetAutoSync(event.target.value === "enabled")
               }
             >
+              {!autoSyncKnown && <option value="">Unknown</option>}
               <option value="enabled">Enabled</option>
               <option value="disabled">Disabled — keep Clips local</option>
             </select>
+            {autoSyncLoading && <p role="status">Loading Auto Sync…</p>}
             {autoSyncPending && <p role="status">Saving Auto Sync…</p>}
+            <PreferenceRefreshNotice
+              subject="Auto Sync"
+              error={autoSyncRefreshError}
+              onRetry={onRetryAutoSync}
+            />
             <PreferenceSaveFeedback
               feedback={autoSyncFeedback}
               subject="Auto Sync"
+              refreshError={autoSyncRefreshError}
+              refreshing={autoSyncRefreshing}
             />
           </div>
         )}

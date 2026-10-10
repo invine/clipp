@@ -307,9 +307,14 @@ const Popup = () => {
         identity={identity}
         pinnedIds={pinnedIds}
         localRetentionMs={localRetentionMs}
-        autoSync={settings.snapshot?.state.autoSync ?? true}
-        autoSyncPending={settings.loading || settings.pending}
+        autoSync={settings.snapshot?.state.autoSync}
+        autoSyncKnown={settings.snapshot !== null}
+        autoSyncLoading={settings.loading}
+        autoSyncRefreshing={settings.refreshing}
+        autoSyncPending={settings.pending}
+        autoSyncRefreshError={settings.refreshError}
         autoSyncFeedback={settings.feedback}
+        onRetryAutoSync={settings.refresh}
         clipboardHistoryError={clipboardHistoryError}
         historyPolicyError={historyPolicyError}
         initializationError={initializationError}

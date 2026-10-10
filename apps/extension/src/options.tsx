@@ -7,7 +7,10 @@ import "./styles/tailwind-built.css";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { ManagedRelaySettings } from "../../../packages/ui/src/ManagedRelaySettings";
-import { PreferenceSaveFeedback } from "../../../packages/ui/src/PreferenceSaveFeedback";
+import {
+  PreferenceRefreshNotice,
+  PreferenceSaveFeedback,
+} from "../../../packages/ui/src/PreferenceSaveFeedback";
 import type {
   RelayConfiguration,
   RelayState,
@@ -195,20 +198,25 @@ const Options = () => {
             <input
               type="checkbox"
               className="accent-blue-600"
-              checked={settings.snapshot?.state.autoSync ?? true}
-              disabled={settings.loading || settings.pending}
+              checked={settings.snapshot?.state.autoSync ?? false}
+              aria-checked={settings.snapshot ? undefined : "mixed"}
+              ref={(input) => {
+                if (input) input.indeterminate = settings.snapshot === null;
+              }}
+              disabled={!settings.snapshot || settings.pending}
               onChange={(e) => {
                 void settings.save({ autoSync: e.target.checked });
               }}
             />{" "}
             Auto Sync
           </label>
+          {!settings.snapshot && <p>Applied Auto Sync: unknown</p>}
           <label className="flex items-center gap-2">
             Log level
             <select
               className="border rounded px-1"
-              value={settings.snapshot?.state.logLevel ?? "info"}
-              disabled={settings.loading || settings.pending}
+              value={settings.snapshot?.state.logLevel ?? ""}
+              disabled={!settings.snapshot || settings.pending}
               onChange={(e) => {
                 void settings.save({
                   logLevel: e.target.value as
@@ -216,17 +224,26 @@ const Options = () => {
                 });
               }}
             >
+              {!settings.snapshot && <option value="">Unknown</option>}
               <option value="debug">Debug</option>
               <option value="info">Info</option>
               <option value="warn">Warn</option>
               <option value="error">Error</option>
             </select>
           </label>
+          {settings.loading && <p role="status">Loading settings…</p>}
           {settings.pending && <p role="status">Saving settings…</p>}
+          <PreferenceRefreshNotice
+            subject="Settings"
+            error={settings.refreshError}
+            onRetry={settings.refresh}
+          />
           <PreferenceSaveFeedback
             feedback={settings.feedback}
             subject="Settings"
             plural
+            refreshError={settings.refreshError}
+            refreshing={settings.refreshing}
           />
         </div>
       </section>

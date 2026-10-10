@@ -9,10 +9,14 @@ export function PreferenceSaveFeedback({
   feedback,
   subject,
   plural = false,
+  refreshError = null,
+  refreshing = false,
 }: {
   feedback: PreferenceSaveFeedbackValue | null;
   subject: string;
   plural?: boolean;
+  refreshError?: string | null;
+  refreshing?: boolean;
 }) {
   if (!feedback) return null;
   const agreement = plural ? "were" : "was";
@@ -41,7 +45,39 @@ export function PreferenceSaveFeedback({
   return (
     <p role="alert">
       {subject} save could not be confirmed. Current{" "}
-      {plural ? "settings were" : "setting was"} refreshed. {feedback.error}
+      {plural ? "settings" : "setting"}{" "}
+      {refreshing
+        ? plural
+          ? "are being refreshed"
+          : "is being refreshed"
+        : refreshError
+          ? "could not be refreshed"
+          : plural
+            ? "were refreshed"
+            : "was refreshed"}
+      . {feedback.error}
     </p>
+  );
+}
+
+export function PreferenceRefreshNotice({
+  subject,
+  error,
+  onRetry,
+}: {
+  subject: string;
+  error: string | null;
+  onRetry?: () => void | Promise<void>;
+}) {
+  if (!error) return null;
+  return (
+    <div role="alert">
+      {subject} could not be refreshed: {error}.{" "}
+      {onRetry && (
+        <button type="button" onClick={() => void onRetry()}>
+          Retry {subject.toLowerCase()}
+        </button>
+      )}
+    </div>
   );
 }
