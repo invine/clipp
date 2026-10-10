@@ -56,4 +56,45 @@ describe("Clear all local history review", () => {
     expect(failed).toContain("Retry Clear");
     expect(failed).toContain("Close");
   });
+
+  it("hides stale counts and requires a confirmed History refresh before retry", () => {
+    const stale = renderToStaticMarkup(
+      React.createElement(ClearHistoryReview, {
+        totalCount: 5,
+        pinnedCount: 2,
+        filteredOutCount: 3,
+        pending: false,
+        error: "Clear could not be confirmed.",
+        historyReady: false,
+        refreshPending: false,
+        onRefresh: () => undefined,
+        onCancel: () => undefined,
+        onConfirm: () => undefined,
+      })
+    );
+    expect(stale).toContain("History is unavailable or may have changed");
+    expect(stale).toContain("Refresh History");
+    expect(stale).not.toContain("5 local Clips");
+    expect(stale).not.toContain("2 pinned");
+    expect(stale).toMatch(/<button[^>]*disabled=""[^>]*>Retry Clear<\/button>/);
+
+    const refreshed = renderToStaticMarkup(
+      React.createElement(ClearHistoryReview, {
+        totalCount: 4,
+        pinnedCount: 1,
+        filteredOutCount: 2,
+        pending: false,
+        error: "Clear could not be confirmed.",
+        historyReady: true,
+        refreshPending: false,
+        onRefresh: () => undefined,
+        onCancel: () => undefined,
+        onConfirm: () => undefined,
+      })
+    );
+    expect(refreshed).toContain("4 local Clips");
+    expect(refreshed).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>Retry Clear<\/button>/
+    );
+  });
 });

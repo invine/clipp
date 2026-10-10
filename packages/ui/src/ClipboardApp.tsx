@@ -302,7 +302,7 @@ export type ClipboardAppProps = {
   historyLoading?: boolean;
   historyUnavailable?: boolean;
   historyRefreshError?: string | null;
-  onRetryHistoryRefresh?(): void | Promise<void>;
+  onRetryHistoryRefresh?(): boolean | Promise<boolean>;
   localRetentionMs?: number;
   autoSync?: boolean;
   autoSyncKnown?: boolean;
@@ -474,6 +474,8 @@ export function ClipboardApp({
   const [clearReviewOpen, setClearReviewOpen] = useState(false);
   const [clearPending, setClearPending] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
+  const [clearNeedsRefresh, setClearNeedsRefresh] = useState(false);
+  const [clearRefreshPending, setClearRefreshPending] = useState(false);
   const [retryHistoryOperation, setRetryHistoryOperation] = useState<
     (() => void) | null
   >(null);
@@ -647,22 +649,49 @@ export function ClipboardApp({
   }
 
   function clearAllHistory() {
-    if (clearPending) return;
+    if (
+      clearPending ||
+      clearRefreshPending ||
+      clearNeedsRefresh ||
+      historyLoading ||
+      historyUnavailable ||
+      historyRefreshError
+    )
+      return;
     setClearPending(true);
     setClearError(null);
     void Promise.resolve()
       .then(() => onClearAll())
       .then(() => {
+        setClearNeedsRefresh(false);
         setHistoryError(null);
         setRetryHistoryOperation(null);
         setClearReviewOpen(false);
       })
       .catch(() => {
+        setClearNeedsRefresh(true);
         setClearError(
-          "Clear could not be confirmed. History may have changed. Review the current Clips, then retry."
+          "Clear could not be confirmed. History may have changed. Refresh History before trying again."
         );
       })
       .finally(() => setClearPending(false));
+  }
+
+  function refreshClearHistory() {
+    if (!onRetryHistoryRefresh || clearRefreshPending || clearPending) return;
+    setClearRefreshPending(true);
+    void Promise.resolve()
+      .then(() => onRetryHistoryRefresh())
+      .then((confirmed) => {
+        if (confirmed) {
+          setClearNeedsRefresh(false);
+          setClearError(null);
+        } else {
+          setClearNeedsRefresh(true);
+        }
+      })
+      .catch(() => setClearNeedsRefresh(true))
+      .finally(() => setClearRefreshPending(false));
   }
 
   function toggleFilters() {
@@ -2179,6 +2208,14 @@ export function ClipboardApp({
             filteredOutCount={Math.max(0, clips.length - filteredClips.length)}
             pending={clearPending}
             error={clearError}
+            historyReady={
+              !clearNeedsRefresh &&
+              !historyLoading &&
+              !historyUnavailable &&
+              !historyRefreshError
+            }
+            refreshPending={clearRefreshPending}
+            onRefresh={refreshClearHistory}
             onCancel={() => {
               if (clearPending) return;
               setClearReviewOpen(false);

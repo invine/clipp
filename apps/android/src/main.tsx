@@ -147,8 +147,10 @@ function App() {
           state.historyRefreshError ? "history_unavailable" : null
         }
         onRetryHistoryRefresh={async () => {
-          setState(await client.getState());
+          const next = await client.getState();
+          setState(next);
           setHistoryLoadFailed(false);
+          return !next.historyUnavailable && !next.historyRefreshError;
         }}
         devices={state.devices as Device[]}
         pending={state.pending as PendingRequest[]}
@@ -192,7 +194,13 @@ function App() {
         onSetPinned={async (id, pinned) => {
           await client.setPinned(id, pinned);
         }}
-        onClearAll={() => client.clearHistory()}
+        onClearAll={async () => {
+          await client.clearHistory();
+          const next = await client.getState();
+          setState(next);
+          if (next.historyUnavailable || next.historyRefreshError)
+            throw new Error("history_refresh_failed");
+        }}
         onDismissClipboardHistoryError={() =>
           client.dismissClipboardHistoryError()
         }
