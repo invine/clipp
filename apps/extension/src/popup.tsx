@@ -409,8 +409,11 @@ const Popup = () => {
           await history.refresh();
         }}
         onClearAll={async () => {
-          await runHistoryOperation({ type: "clearHistory" });
-          await history.refresh();
+          try {
+            await runHistoryOperation({ type: "clearHistory" });
+          } finally {
+            await history.refresh();
+          }
         }}
         onSetLocalRetention={async (retentionMs) => {
           const response = await runHistoryOperation<{

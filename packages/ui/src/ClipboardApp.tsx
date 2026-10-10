@@ -3,6 +3,7 @@ import {
   PreferenceRefreshNotice,
   PreferenceSaveFeedback,
 } from "./PreferenceSaveFeedback";
+import { ClearHistoryReview } from "./ClearHistoryReview";
 import type {
   RelayConfiguration,
   RelayState,
@@ -470,6 +471,9 @@ export function ClipboardApp({
   const [relaySaving, setRelaySaving] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [clearReviewOpen, setClearReviewOpen] = useState(false);
+  const [clearPending, setClearPending] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const [retryHistoryOperation, setRetryHistoryOperation] = useState<
     (() => void) | null
   >(null);
@@ -643,19 +647,22 @@ export function ClipboardApp({
   }
 
   function clearAllHistory() {
-    setRemovingIds(new Set(clips.map((c) => c.id)));
-    Promise.resolve(onClearAll())
+    if (clearPending) return;
+    setClearPending(true);
+    setClearError(null);
+    void Promise.resolve()
+      .then(() => onClearAll())
       .then(() => {
         setHistoryError(null);
         setRetryHistoryOperation(null);
+        setClearReviewOpen(false);
       })
       .catch(() => {
-        setHistoryError(
-          "Could not clear history. Your Clips are still available."
+        setClearError(
+          "Clear could not be confirmed. History may have changed. Review the current Clips, then retry."
         );
-        setRetryHistoryOperation(() => clearAllHistory);
       })
-      .finally(() => setRemovingIds(new Set()));
+      .finally(() => setClearPending(false));
   }
 
   function toggleFilters() {
@@ -1935,7 +1942,18 @@ export function ClipboardApp({
                 )}
               </div>
 
-              <button className="text-button" onClick={clearAllHistory}>
+              <button
+                className="text-button"
+                onClick={() => {
+                  setClearError(null);
+                  setClearReviewOpen(true);
+                }}
+                disabled={
+                  historyLoading ||
+                  historyUnavailable ||
+                  Boolean(historyRefreshError)
+                }
+              >
                 <span className="icon">delete_sweep</span>
                 Clear
               </button>
@@ -2150,6 +2168,24 @@ export function ClipboardApp({
               )}
             </div>
           </div>,
+          document.body
+        )}
+
+      {clearReviewOpen &&
+        createPortal(
+          <ClearHistoryReview
+            totalCount={clips.length}
+            pinnedCount={clips.filter((clip) => pinnedSet.has(clip.id)).length}
+            filteredOutCount={Math.max(0, clips.length - filteredClips.length)}
+            pending={clearPending}
+            error={clearError}
+            onCancel={() => {
+              if (clearPending) return;
+              setClearReviewOpen(false);
+              setClearError(null);
+            }}
+            onConfirm={clearAllHistory}
+          />,
           document.body
         )}
     </div>
