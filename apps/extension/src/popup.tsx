@@ -312,6 +312,7 @@ const Popup = () => {
         autoSyncLoading={settings.loading}
         autoSyncRefreshing={settings.refreshing}
         autoSyncPending={settings.pending}
+        autoSyncRecoveryRequired={settings.recoveryRequired}
         autoSyncRefreshError={settings.refreshError}
         autoSyncFeedback={settings.feedback}
         onRetryAutoSync={settings.refresh}

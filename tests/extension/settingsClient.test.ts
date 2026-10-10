@@ -96,6 +96,76 @@ it("marks reconciliation in progress before describing an unconfirmed save as re
   });
 });
 
+it("blocks only further settings writes until a lost reply is reconciled", async () => {
+  const before = {
+    sessionId: "worker-1",
+    revision: 1,
+    state: { autoSync: true, logLevel: "info" as const },
+  };
+  const after = {
+    sessionId: "worker-1",
+    revision: 2,
+    state: { autoSync: true, logLevel: "warn" as const },
+  };
+  let resolveReconciliation!: (value: unknown) => void;
+  let reads = 0;
+  let writes = 0;
+  const client = createSettingsClient({
+    send: async (message) => {
+      if (message.type === "setSettings") {
+        writes += 1;
+        if (writes === 1) throw new Error("reply_lost");
+        return { status: "applied", snapshot: after };
+      }
+      reads += 1;
+      if (reads === 1) return { ok: true, snapshot: before };
+      if (reads === 2)
+        return new Promise((resolve) => {
+          resolveReconciliation = resolve;
+        });
+      if (reads === 3) return { ok: false, error: "still_offline" };
+      return { ok: true, snapshot: after };
+    },
+    subscribe: () => () => {},
+  });
+
+  await client.start();
+  const firstSave = client.save({ logLevel: "warn" });
+  await Promise.resolve();
+  expect(client.getState()).toMatchObject({
+    pending: true,
+    recoveryRequired: true,
+    refreshing: true,
+  });
+  expect(await client.save({ autoSync: false })).toMatchObject({
+    status: "unconfirmed",
+    error: "settings_reconciliation_required",
+  });
+  expect(writes).toBe(1);
+  resolveReconciliation({ ok: false, error: "refresh_offline" });
+  await firstSave;
+  expect(client.getState()).toMatchObject({
+    pending: false,
+    recoveryRequired: true,
+    refreshError: "refresh_offline",
+  });
+  await client.save({ autoSync: false });
+  expect(writes).toBe(1);
+
+  await client.refresh();
+  expect(client.getState()).toMatchObject({
+    recoveryRequired: true,
+    refreshError: "still_offline",
+  });
+  await client.refresh();
+  expect(client.getState()).toMatchObject({
+    recoveryRequired: false,
+    refreshError: null,
+  });
+  await client.save({ autoSync: false });
+  expect(writes).toBe(2);
+});
+
 it("two open views converge after an external save and a lost reply", async () => {
   const values = new Map<string, unknown>();
   const listeners = new Set<(message: unknown) => void>();

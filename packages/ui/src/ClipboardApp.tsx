@@ -293,6 +293,7 @@ export type ClipboardAppProps = {
   autoSyncLoading?: boolean;
   autoSyncRefreshing?: boolean;
   autoSyncPending?: boolean;
+  autoSyncRecoveryRequired?: boolean;
   autoSyncRefreshError?: string | null;
   autoSyncFeedback?: {
     status: "applied" | "partial" | "rejected" | "unconfirmed";
@@ -365,6 +366,7 @@ export function ClipboardApp({
   autoSyncLoading = false,
   autoSyncRefreshing = false,
   autoSyncPending = false,
+  autoSyncRecoveryRequired = false,
   autoSyncRefreshError = null,
   autoSyncFeedback = null,
   clipboardHistoryError = null,
@@ -1464,7 +1466,9 @@ export function ClipboardApp({
             <select
               id="auto-sync"
               value={autoSyncKnown ? (autoSync ? "enabled" : "disabled") : ""}
-              disabled={!autoSyncKnown || autoSyncPending}
+              disabled={
+                !autoSyncKnown || autoSyncPending || autoSyncRecoveryRequired
+              }
               onChange={(event) =>
                 void onSetAutoSync(event.target.value === "enabled")
               }
