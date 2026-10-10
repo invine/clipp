@@ -12,7 +12,7 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 | E06 | Navigation and dialogs lack keyboard behavior | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
 | E07 | Enlarged UI spends almost all height on chrome | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
 | E08 | History cannot reveal the full Clip before copying | 21 | Open | Ticket 21 collector and contributions in traceability remain to be qualified. |
-| E09 | Clear's visual context understates its scope | 03 | Open | Ticket 03 collector and contributions in traceability remain to be qualified. |
+| E09 | Clear's visual context understates its scope | 03 | Ticket 03 completed local Clear review/recovery at `0644d7d79d06faf62a9c544ac77bca6d8036f9bc`; ticket 24 must preserve that behavior in final Advanced placement before finding closure. | Ticket 03 collector and contributions in traceability remain to be qualified. |
 | E10 | Configure Relays duplicates Open Clipp | 26 | Open | Ticket 26 collector and contributions in traceability remain to be qualified. |
 | E11 | Failed edits/approvals lack actionable feedback | 07 | Ticket 04 retained name/alias edits are complete; ticket 07 collects session recovery with tickets 05/10 immediate and terminal approval contributions. | Ticket 07 collector and contributions in traceability remain to be qualified. |
 | E12 | Pending work has no closed-drawer indication | 23 | Open | Ticket 23 collector and contributions in traceability remain to be qualified. |
