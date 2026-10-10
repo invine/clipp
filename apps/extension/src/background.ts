@@ -1113,12 +1113,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
-  if (msg.type === "renameLocalIdentity" && typeof msg.name === "string") {
-    identitySvc.rename(msg.name).then(async () => {
-      sendResponse({
-        identity: toPublicDeviceIdentity(await identitySvc.get()),
-      });
-    });
+  if (
+    msg.type === "renameLocalIdentity" &&
+    typeof msg.name === "string" &&
+    typeof msg.expectedDeviceId === "string"
+  ) {
+    void identitySvc
+      .rename(msg.name, msg.expectedDeviceId)
+      .then(async () => {
+        const identity = toPublicDeviceIdentity(await identitySvc.get());
+        try {
+          await runtimeAdapter.publicState.publish(
+            await runtimeAdapter.publicState.read()
+          );
+        } catch {
+          throw new Error("rename_state_unconfirmed");
+        }
+        sendResponse({ ok: true, identity });
+      })
+      .catch((error) =>
+        sendResponse({ ok: false, error: (error as Error).message })
+      );
     return true;
   }
   if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
@@ -1256,9 +1271,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
-    identitySvc.setLocalDeviceAlias(msg.id, msg.name).then((device) => {
-      sendResponse({ ok: true, device });
-    });
+    void identitySvc
+      .setLocalDeviceAlias(msg.id, msg.name)
+      .then(async (device) => {
+        if (!device) {
+          sendResponse({ ok: false, error: "device_unavailable" });
+          return;
+        }
+        try {
+          await runtimeAdapter.publicState.publish(
+            await runtimeAdapter.publicState.read()
+          );
+        } catch {
+          throw new Error("rename_state_unconfirmed");
+        }
+        sendResponse({ ok: true, device });
+      })
+      .catch((error) =>
+        sendResponse({ ok: false, error: (error as Error).message })
+      );
     return true;
   }
   // Settings are owned by the serialized preference handler.

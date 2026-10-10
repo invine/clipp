@@ -71,8 +71,8 @@ const api = {
   retryHistoryCleanup: () => ipcRenderer.invoke("clipp:retry-history-cleanup"),
   acknowledgeIdentityRotationNotice: () =>
     ipcRenderer.invoke("clipp:acknowledge-identity-rotation-notice"),
-  renameIdentity: (name: string) =>
-    ipcRenderer.invoke("clipp:rename-identity", name),
+  renameIdentity: (name: string, expectedDeviceId: string) =>
+    ipcRenderer.invoke("clipp:rename-identity", { name, expectedDeviceId }),
   setManagedRelays: (configurations: RelayConfiguration[]) =>
     ipcRenderer.invoke("clipp:set-managed-relays", configurations) as Promise<
       RelayConfiguration[]

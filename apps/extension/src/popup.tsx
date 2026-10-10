@@ -25,6 +25,10 @@ import type {
   RelayState,
 } from "../../../packages/core/network/managedRelays";
 import { useSettings } from "./useSettings";
+import {
+  renameExtensionDevice,
+  renameExtensionIdentity,
+} from "./renameActions";
 import { useHistory } from "./useHistory";
 
 function identityRotationNoticeReason(
@@ -231,16 +235,11 @@ const Popup = () => {
     id: string,
     name: string
   ): Promise<Device | null> {
-    return await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: "renameDevice", id, name }, (res) => {
-        if (res?.device) {
-          setDevices((prev) =>
-            prev.map((d) => (d.deviceId === id ? res.device : d))
-          );
-        }
-        resolve(res?.device || null);
-      });
-    });
+    const device = await renameExtensionDevice(chrome.runtime, id, name);
+    setDevices((prev) =>
+      prev.map((candidate) => (candidate.deviceId === id ? device : candidate))
+    );
+    return device;
   }
 
   async function handlePairingText(txt: string) {
@@ -263,16 +262,17 @@ const Popup = () => {
     return createPairingCode(target);
   }
 
-  async function handleRenameIdentity(name: string): Promise<Identity | null> {
-    return await new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: "renameLocalIdentity", name },
-        (res) => {
-          if (res?.identity) setIdentity(res.identity);
-          resolve(res?.identity || null);
-        }
-      );
-    });
+  async function handleRenameIdentity(
+    name: string,
+    expectedDeviceId: string
+  ): Promise<Identity | null> {
+    const updated = await renameExtensionIdentity(
+      chrome.runtime,
+      name,
+      expectedDeviceId
+    );
+    setIdentity(updated);
+    return updated;
   }
 
   return (

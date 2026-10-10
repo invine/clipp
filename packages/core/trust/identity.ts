@@ -48,7 +48,7 @@ export interface IdentityRepository {
 export interface IdentityManager {
   get(): Promise<DeviceIdentity>;
   retryInitialization(): Promise<DeviceIdentity>;
-  rename(name: string): Promise<void>;
+  rename(name: string, expectedDeviceId?: string): Promise<void>;
   updateMultiaddrs(multiaddrs: string[]): Promise<void>;
   membershipStatus(peerId: string): Promise<MembershipStatus>;
   activePeerIds(): Promise<string[]>;
@@ -177,8 +177,10 @@ export function createIdentityManager(options: {
   return {
     get: loadIdentity,
     retryInitialization: () => loadIdentity(true),
-    rename: (name) => serializeMutation(async () => {
+    rename: (name, expectedDeviceId) => serializeMutation(async () => {
       const current = await loadIdentity();
+      if (expectedDeviceId && current.deviceId !== expectedDeviceId)
+        throw new Error("device_unavailable");
       const normalized = normalizeDeviceName(name);
       if (!normalized) throw new Error("invalid_device_name");
       await persistMutation({ ...current, deviceName: normalized, nameRevision: (current.nameRevision ?? 0) + 1 });

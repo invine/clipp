@@ -179,7 +179,9 @@ function App() {
         onDeleteClip={(id) => client.deleteClip(id)}
         onUnpair={(id) => client.unpairDevice(id)}
         onRenameDevice={(id, name) => client.renameDevice(id, name)}
-        onRenameIdentity={(name) => client.renameIdentity(name)}
+        onRenameIdentity={(name, expectedDeviceId) =>
+          client.renameIdentity(name, expectedDeviceId)
+        }
         onAccept={(dev) => client.acceptRequest(dev)}
         onReject={(dev) => client.rejectRequest(dev)}
         onPairText={handlePairText}
