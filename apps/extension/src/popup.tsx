@@ -33,6 +33,7 @@ import {
   renameExtensionIdentity,
 } from "./renameActions";
 import { useHistory } from "./useHistory";
+import { createPopupNameState } from "./popupNameState";
 
 function identityRotationNoticeReason(
   value: unknown
@@ -71,12 +72,17 @@ const Popup = () => {
     []
   );
   const lastClipboardRef = useRef("");
+  const nameState = useRef(
+    createPopupNameState(setIdentity, setDevices)
+  ).current;
 
   useEffect(() => {
     refreshDevices();
     refreshPending();
     refreshPeers();
+    const stateReadRevision = nameState.revision();
     chrome.runtime.sendMessage({ type: "getRuntimeState" }, (res) => {
+      if (res?.state) nameState.readPublished(stateReadRevision, res.state);
       if (res?.state?.waiting) setWaiting(res.state.waiting);
       if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
       setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
@@ -88,8 +94,10 @@ const Popup = () => {
         identityRotationNoticeReason(res?.state?.identityRotationNotice)
       );
     });
+    const identityReadRevision = nameState.revision();
     chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
-      if (res?.identity) setIdentity(res.identity);
+      if (res?.identity)
+        nameState.readIdentity(identityReadRevision, res.identity);
     });
     chrome.runtime.sendMessage({ type: "getInitializationError" }, (res) => {
       setInitializationError(
@@ -115,6 +123,7 @@ const Popup = () => {
         });
       }
       if (msg.type === "runtimeState" && msg.state) {
+        nameState.publish(msg.state);
         setPending(msg.state.pending || []);
         setWaiting(msg.state.waiting || []);
         setPairingErrors(msg.state.pairingErrors || []);
@@ -161,8 +170,9 @@ const Popup = () => {
   }, []);
 
   function refreshDevices() {
+    const readRevision = nameState.revision();
     chrome.runtime.sendMessage({ type: "getTrustedDevices" }, (resp) => {
-      setDevices(resp?.devices || []);
+      nameState.readDevices(readRevision, resp?.devices || []);
     });
   }
 
@@ -238,10 +248,14 @@ const Popup = () => {
     id: string,
     name: string
   ): Promise<Device | null> {
+    const actionRevision = nameState.revision();
     const device = await renameExtensionDevice(chrome.runtime, id, name);
-    setDevices((prev) =>
-      prev.map((candidate) => (candidate.deviceId === id ? device : candidate))
-    );
+    if (actionRevision === nameState.revision())
+      setDevices((prev) =>
+        prev.map((candidate) =>
+          candidate.deviceId === id ? device : candidate
+        )
+      );
     return device;
   }
 
@@ -276,12 +290,13 @@ const Popup = () => {
     name: string,
     expectedDeviceId: string
   ): Promise<Identity | null> {
+    const actionRevision = nameState.revision();
     const updated = await renameExtensionIdentity(
       chrome.runtime,
       name,
       expectedDeviceId
     );
-    setIdentity(updated);
+    nameState.readIdentity(actionRevision, updated);
     return updated;
   }
 

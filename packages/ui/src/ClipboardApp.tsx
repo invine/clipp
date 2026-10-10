@@ -49,7 +49,11 @@ import {
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
-import { createNameEditSession, nameSaveErrorMessage } from "./nameEditSession";
+import {
+  createNameEditSession,
+  nameSaveErrorMessage,
+  saveNonEmptyAlias,
+} from "./nameEditSession";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -762,7 +766,7 @@ export function ClipboardApp({
   }
 
   function saveDeviceName() {
-    void aliasSession.save(async (targetId, raw) => {
+    void saveNonEmptyAlias(aliasSession, async (targetId, raw) => {
       if (
         !onRenameDevice ||
         !devices.some((candidate) => candidate.deviceId === targetId)

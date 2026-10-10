@@ -878,7 +878,28 @@ const sharedRuntime = createRuntimeOrchestrator({
 
 // Listen for clipboard changes (MV3: use chrome.clipboard or content script)
 // Listen for messages from popup/options
-// @ts-ignore
+async function publishedRenameResult<Value>(
+  action: () => Promise<Value | null>,
+  key: "identity" | "device"
+): Promise<
+  { ok: true; identity?: Value; device?: Value } | { ok: false; error: string }
+> {
+  try {
+    const value = await action();
+    if (!value) return { ok: false, error: "device_unavailable" };
+    try {
+      await runtimeAdapter.publicState.publish(
+        await runtimeAdapter.publicState.read()
+      );
+    } catch {
+      return { ok: false, error: "rename_state_unconfirmed" };
+    }
+    return { ok: true, [key]: value };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (typeof msg?.type === "string" && msg.type.startsWith("managedRelay")) {
     if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
@@ -1128,22 +1149,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     typeof msg.name === "string" &&
     typeof msg.expectedDeviceId === "string"
   ) {
-    void identitySvc
-      .rename(msg.name, msg.expectedDeviceId)
-      .then(async () => {
-        const identity = toPublicDeviceIdentity(await identitySvc.get());
-        try {
-          await runtimeAdapter.publicState.publish(
-            await runtimeAdapter.publicState.read()
-          );
-        } catch {
-          throw new Error("rename_state_unconfirmed");
-        }
-        sendResponse({ ok: true, identity });
-      })
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
+    void publishedRenameResult(async () => {
+      await identitySvc.rename(msg.name, msg.expectedDeviceId);
+      return toPublicDeviceIdentity(await identitySvc.get());
+    }, "identity").then(sendResponse);
     return true;
   }
   if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
@@ -1281,25 +1290,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
-    void identitySvc
-      .setLocalDeviceAlias(msg.id, msg.name)
-      .then(async (device) => {
-        if (!device) {
-          sendResponse({ ok: false, error: "device_unavailable" });
-          return;
-        }
-        try {
-          await runtimeAdapter.publicState.publish(
-            await runtimeAdapter.publicState.read()
-          );
-        } catch {
-          throw new Error("rename_state_unconfirmed");
-        }
-        sendResponse({ ok: true, device });
-      })
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
+    void publishedRenameResult(
+      () => identitySvc.setLocalDeviceAlias(msg.id, msg.name),
+      "device"
+    ).then(sendResponse);
     return true;
   }
   // Settings are owned by the serialized preference handler.

@@ -1,6 +1,7 @@
 import {
   createNameEditSession,
   nameSaveErrorMessage,
+  saveNonEmptyAlias,
 } from "../../packages/ui/src/nameEditSession";
 
 function deferred<Value>() {
@@ -87,4 +88,49 @@ describe("Device Name and Local Device Alias draft session", () => {
     edit.authoritativeValue("local", "Other desk");
     expect(edit.getSnapshot().raw).toBe("My desk");
   });
+
+  it("does not let a blank alias Save invoke the clear action", async () => {
+    const edit = createNameEditSession();
+    const action = jest.fn(async () => ({ deviceId: "peer-a" }));
+    edit.begin("peer-a", "Old alias");
+    edit.change("   ");
+
+    await saveNonEmptyAlias(edit, action);
+
+    expect(action).not.toHaveBeenCalled();
+    expect(edit.getSnapshot()).toMatchObject({
+      targetId: "peer-a",
+      raw: "   ",
+      pending: false,
+      error: "invalid_device_alias",
+    });
+  });
+
+  it.each(["resolve", "reject"])(
+    "ignores an old %s after cancel and reopen of the same target",
+    async (outcome) => {
+      const edit = createNameEditSession();
+      const old = deferred<{ deviceId: string }>();
+      const current = deferred<{ deviceId: string }>();
+      edit.begin("peer-a", "First");
+      const oldSave = edit.save(() => old.promise);
+      edit.cancel();
+      edit.begin("peer-a", "Second");
+      const currentSave = edit.save(() => current.promise);
+
+      if (outcome === "resolve") old.resolve({ deviceId: "peer-a" });
+      else old.reject(new Error("old_failure"));
+      await oldSave;
+
+      expect(edit.getSnapshot()).toMatchObject({
+        targetId: "peer-a",
+        raw: "Second",
+        pending: true,
+        error: null,
+      });
+      current.resolve({ deviceId: "peer-a" });
+      await currentSave;
+      expect(edit.getSnapshot().targetId).toBeNull();
+    }
+  );
 });
