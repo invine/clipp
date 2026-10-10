@@ -27,10 +27,12 @@ function readDataUrl(file: File): Promise<string> {
 
 export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
   const active = useRef(false);
+  const retryAction = useRef<(() => Promise<string>) | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function run(action: () => Promise<string>) {
     if (disabled || active.current) return;
+    retryAction.current = action;
     active.current = true;
     setPending(true);
     setError(null);
@@ -118,9 +120,20 @@ export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
       </button>
       {pending && <p role="status">Reading pairing input…</p>}
       {error && (
-        <p role="alert" style={{ overflowWrap: "anywhere" }}>
-          {error}
-        </p>
+        <>
+          <p role="alert" style={{ overflowWrap: "anywhere" }}>
+            {error}
+          </p>
+          <button
+            type="button"
+            disabled={disabled || pending}
+            onClick={() => {
+              if (retryAction.current) void run(retryAction.current);
+            }}
+          >
+            Retry import
+          </button>
+        </>
       )}
     </div>
   );
