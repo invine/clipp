@@ -62,8 +62,8 @@ import {
   RETENTION_MS,
   startHistoryRetentionCleanup,
   type HistoryRetentionCleanup,
-  type HistorySnapshot,
 } from "../../../packages/core/history/store.js";
+import { createHistoryStateReader } from "../../../packages/core/history/state.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import {
   ManagedRelayController,
@@ -506,16 +506,10 @@ async function bootstrap() {
   let shutdownComplete = false;
   let runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
   const pendingSelfPeerUpdates = new Set<Promise<void>>();
-  let lastHistorySnapshot: HistorySnapshot | null = null;
+  const historyState = createHistoryStateReader(history);
 
   async function getState() {
-    let historyRefreshError = false;
-    try {
-      lastHistorySnapshot = await history.snapshot();
-    } catch {
-      historyRefreshError = true;
-    }
-    const historySnapshot = lastHistorySnapshot;
+    const historyProjection = await historyState.read();
     const devices = await identitySvc.trustedDevices();
     const peers = transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
@@ -524,7 +518,7 @@ async function bootstrap() {
       ? null
       : toPublicDeviceIdentity(await identitySvc.get());
     return {
-      clips: historySnapshot?.clips ?? [],
+      clips: historyProjection.clips,
       devices,
       pending: pendingRequests,
       waiting: pairingSessions.waiting(),
@@ -533,9 +527,9 @@ async function bootstrap() {
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds: historySnapshot?.pinnedIds ?? [],
-      historyUnavailable: historySnapshot === null,
-      historyRefreshError,
+      pinnedIds: historyProjection.pinnedIds,
+      historyUnavailable: historyProjection.historyUnavailable,
+      historyRefreshError: historyProjection.historyRefreshError,
       localRetentionMs,
       autoSync: clipboardSync.isAutoSync(),
       clipboardHistoryError,

@@ -47,4 +47,35 @@ describe("History publication", () => {
     await expect(history.setRetention(-1)).rejects.toThrow();
     expect(changes).toEqual([1]);
   });
+
+  it("signals cleanup of retained rows when a new accept is locally suppressed", async () => {
+    let now = 1_000;
+    const history = new MemoryHistoryStore(undefined, {
+      now: () => now,
+      retentionMs: 100,
+      maxUnpinnedBytes: 250,
+    });
+    const changes: number[] = [];
+    const additions: string[] = [];
+    history.onChanged((revision) => changes.push(revision));
+    history.onNew((item) => additions.push(item.clip.id));
+
+    await expect(history.accept(clip("old"))).resolves.toMatchObject({
+      kind: "newly-stored",
+    });
+    now = 1_101;
+    await expect(
+      history.accept(
+        { ...clip("large"), content: "x".repeat(500) },
+        { admissionPriority: false }
+      )
+    ).resolves.toMatchObject({ kind: "locally-suppressed" });
+
+    await expect(history.snapshot()).resolves.toMatchObject({
+      clips: [],
+      revision: 2,
+    });
+    expect(changes).toEqual([1, 2]);
+    expect(additions).toEqual(["old"]);
+  });
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
+import { createHistoryInitialLoadGate } from "../../../packages/core/history/bootstrap.js";
 import type {
   Clip,
   ClipboardHistoryError,
@@ -66,7 +67,11 @@ const App = () => {
 
   useEffect(() => {
     let cancelled = false;
-    let receivedUpdate = false;
+    const initialLoad = createHistoryInitialLoadGate<AppState>({
+      onState: setState,
+      onLoading: setHistoryLoading,
+      onFailed: setHistoryLoadFailed,
+    });
     const api = window.clipp;
     if (!api) {
       setError("Bridge unavailable (preload not loaded)");
@@ -75,13 +80,10 @@ const App = () => {
     async function load() {
       try {
         const s = await api.getState();
-        if (!cancelled && !receivedUpdate) setState(s);
-        if (!cancelled) setHistoryLoading(false);
-        if (!cancelled) setHistoryLoadFailed(false);
+        initialLoad.resolved(s);
       } catch (err) {
-        if (!cancelled) setError("Failed to load state");
-        if (!cancelled) setHistoryLoading(false);
-        if (!cancelled) setHistoryLoadFailed(true);
+        if (!initialLoad.rejected()) return;
+        setError("Failed to load state");
         const initialization = await api
           .getInitializationError?.()
           .catch(() => null);
@@ -93,13 +95,7 @@ const App = () => {
       }
     }
     load();
-    const unsubscribe = api.onUpdate((s) => {
-      if (cancelled) return;
-      receivedUpdate = true;
-      setState(s);
-      setHistoryLoading(false);
-      setHistoryLoadFailed(false);
-    });
+    const unsubscribe = api.onUpdate((s) => initialLoad.live(s));
     const unlog = api.onLog?.((payload) => {
       const { level, message, data } = payload || {};
       const fn =
@@ -112,6 +108,7 @@ const App = () => {
     });
     return () => {
       cancelled = true;
+      initialLoad.cancel();
       if (unsubscribe) unsubscribe();
       if (unlog) unlog();
     };
