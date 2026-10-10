@@ -1,0 +1,234 @@
+{
+  "at": "2026-10-07T17:04:03.770894+00:00",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "branch": "codex/agent-workflow-integration",
+  "trackedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492",
+  "status": "M apps/electron/src/managedRelayAuth.ts\n M tests/electron/managedRelayAuth.test.ts\n?? .scratch/ux-study/",
+  "inventoryFileCount": 145,
+  "inventoryHashChanges": [],
+  "buildCommand": "CLIPP_RELAY_ACCEPTANCE_TRANSPORT=wss npm --workspace apps/extension run build:relay-acceptance",
+  "buildResult": "passed; Vite browser compatibility/chunk warnings",
+  "buildPath": "/Users/invine/src/js/clipp/apps/extension/.local/relay-acceptance/wss",
+  "buildFiles": [
+    {
+      "path": ".vite/manifest.json",
+      "buildSha256": "5c729fd85c0049f7a6b604e6278d8d82cb3b370ed3191ac54ebc6c6073ba44eb",
+      "observedCopySha256": "5c729fd85c0049f7a6b604e6278d8d82cb3b370ed3191ac54ebc6c6073ba44eb"
+    },
+    {
+      "path": "assets/ManagedRelaySettings-Ct3FlnRx.css",
+      "buildSha256": "a12a70d689a0ee0eb6d5b7bccf2bcd165c120956ad5c61ffcd39229a75a6be43",
+      "observedCopySha256": "a12a70d689a0ee0eb6d5b7bccf2bcd165c120956ad5c61ffcd39229a75a6be43"
+    },
+    {
+      "path": "assets/ManagedRelaySettings-VFJz4T6G.js",
+      "buildSha256": "7ab98e811d05d6b209f955d93b01229d6e7cd02f5a7143d3048189d80a8cadb0",
+      "observedCopySha256": "7ab98e811d05d6b209f955d93b01229d6e7cd02f5a7143d3048189d80a8cadb0"
+    },
+    {
+      "path": "assets/background.ts-BJqgEOcc.js",
+      "buildSha256": "d7766a462f1dc5ee8b61d1ec07426f95cad196d9d0b58e68a0a7eb19774570d7",
+      "observedCopySha256": "d7766a462f1dc5ee8b61d1ec07426f95cad196d9d0b58e68a0a7eb19774570d7"
+    },
+    {
+      "path": "assets/browser-CTv6FZlR.js",
+      "buildSha256": "db34d133ffb305d2eda6fedfa05d938ec5eee4a9ba4645467db1b8470ee54b64",
+      "observedCopySha256": "db34d133ffb305d2eda6fedfa05d938ec5eee4a9ba4645467db1b8470ee54b64"
+    },
+    {
+      "path": "assets/clipboardBridge-BH6y1KLg.js",
+      "buildSha256": "9c9cc51404e0a783e8167243a16caa002d6446a5b2bc8c838ac3e177e4d7749c",
+      "observedCopySha256": "9c9cc51404e0a783e8167243a16caa002d6446a5b2bc8c838ac3e177e4d7749c"
+    },
+    {
+      "path": "assets/clipp-purple-64-CD8VqYvQ.png",
+      "buildSha256": "1ad48e65b478164c875e113976ed8f6d7d6dacc68f847c6234fd0b5a5e0328ca",
+      "observedCopySha256": "1ad48e65b478164c875e113976ed8f6d7d6dacc68f847c6234fd0b5a5e0328ca"
+    },
+    {
+      "path": "assets/content.ts-Dj57AVJC.js",
+      "buildSha256": "58122f314695530e31b4e32ebe56bf2235674581e1d0de69a9d931819ebf9714",
+      "observedCopySha256": "58122f314695530e31b4e32ebe56bf2235674581e1d0de69a9d931819ebf9714"
+    },
+    {
+      "path": "assets/icon-32-C6L51U-H.png",
+      "buildSha256": "f73483a84a597c95ab4fd01e8aabcf041db2f031ed9088000ba42881b40ddf0a",
+      "observedCopySha256": "f73483a84a597c95ab4fd01e8aabcf041db2f031ed9088000ba42881b40ddf0a"
+    },
+    {
+      "path": "assets/index-0J7YWpsT.js",
+      "buildSha256": "5df121f27e531ed7e61da678b7de80f42710a02be90f75e1e0fe9c3030301700",
+      "observedCopySha256": "5df121f27e531ed7e61da678b7de80f42710a02be90f75e1e0fe9c3030301700"
+    },
+    {
+      "path": "assets/index-CtD1FSnN.js",
+      "buildSha256": "05bfaa3e9b1eb023377b2c1ee8a09e88686349a7d6d182255c3f02878e16a966",
+      "observedCopySha256": "05bfaa3e9b1eb023377b2c1ee8a09e88686349a7d6d182255c3f02878e16a966"
+    },
+    {
+      "path": "assets/index-D1npmLRj.js",
+      "buildSha256": "9b6719bb6419d6db1affa62dc272b81429112a41456b5b711ac9c3e4daab7019",
+      "observedCopySha256": "9b6719bb6419d6db1affa62dc272b81429112a41456b5b711ac9c3e4daab7019"
+    },
+    {
+      "path": "assets/index-DDo5qUOy.js",
+      "buildSha256": "8763887b16778d2875cae98f5cc9e80a3de22d64ced04f9b15e103506d52eef3",
+      "observedCopySha256": "8763887b16778d2875cae98f5cc9e80a3de22d64ced04f9b15e103506d52eef3"
+    },
+    {
+      "path": "assets/offscreen-B7E3YjKz.js",
+      "buildSha256": "86ab9ffce3362034d96819eff118aafc22deba70d8da2ca530506789ef4a4824",
+      "observedCopySha256": "86ab9ffce3362034d96819eff118aafc22deba70d8da2ca530506789ef4a4824"
+    },
+    {
+      "path": "assets/options.html-Byq56lzo.js",
+      "buildSha256": "83e0c67fa6c8aba6932181f256d4fd6b92dc3319d26c00f49c872e28ad0f9229",
+      "observedCopySha256": "83e0c67fa6c8aba6932181f256d4fd6b92dc3319d26c00f49c872e28ad0f9229"
+    },
+    {
+      "path": "assets/pako-DsVpkFdO.js",
+      "buildSha256": "8a7ed2da8eb6d958c1bd0ae446f201e6c1d27f5e658bdc1e79f04a37aae48ad3",
+      "observedCopySha256": "8a7ed2da8eb6d958c1bd0ae446f201e6c1d27f5e658bdc1e79f04a37aae48ad3"
+    },
+    {
+      "path": "assets/popup-DYtZmczk.css",
+      "buildSha256": "8ab6d061b7c5233d43bca6e90e19e332ce42623323e7636067e126924304e838",
+      "observedCopySha256": "8ab6d061b7c5233d43bca6e90e19e332ce42623323e7636067e126924304e838"
+    },
+    {
+      "path": "assets/popup.html-Cklcc15y.js",
+      "buildSha256": "5680947eee1bdbb9856a9723605027088dad505bf1a15a7cfbbcdd7a0edd0e1f",
+      "observedCopySha256": "5680947eee1bdbb9856a9723605027088dad505bf1a15a7cfbbcdd7a0edd0e1f"
+    },
+    {
+      "path": "assets/popupClipboardActions-DcAYFlqt.js",
+      "buildSha256": "9eeba7ccbf8a05066fc7ee26d9cf804e54c49923acd706db1148aad21c596d1a",
+      "observedCopySha256": "9eeba7ccbf8a05066fc7ee26d9cf804e54c49923acd706db1148aad21c596d1a"
+    },
+    {
+      "path": "assets/v2-BVD4g2Gw.js",
+      "buildSha256": "38da69934178bd4006f3f860271cadb80fb92b7055a3e17d88fd9c4e2194ce00",
+      "observedCopySha256": "38da69934178bd4006f3f860271cadb80fb92b7055a3e17d88fd9c4e2194ce00"
+    },
+    {
+      "path": "icon-128.png",
+      "buildSha256": "e763b76a80b3070c320a2031cf18af9ed9e504a0c03bb2be1ec34c86d03b037a",
+      "observedCopySha256": "e763b76a80b3070c320a2031cf18af9ed9e504a0c03bb2be1ec34c86d03b037a"
+    },
+    {
+      "path": "icon-16-old.png",
+      "buildSha256": "ea9f947dffd45fb713b5e98db27d2fb3f29a9d2d877b7bf6b6626983be69e697",
+      "observedCopySha256": "ea9f947dffd45fb713b5e98db27d2fb3f29a9d2d877b7bf6b6626983be69e697"
+    },
+    {
+      "path": "icon-16.png",
+      "buildSha256": "28bcedf70751c38f3f1c8dbdadbe5660ee5e9ccf3ceabfa9cf96e55c2398cc2e",
+      "observedCopySha256": "28bcedf70751c38f3f1c8dbdadbe5660ee5e9ccf3ceabfa9cf96e55c2398cc2e"
+    },
+    {
+      "path": "icon-32-old.png",
+      "buildSha256": "d545deb044aed99f6b93d5df216e5b75477847566235f1fb56c1b78cf48872bf",
+      "observedCopySha256": "d545deb044aed99f6b93d5df216e5b75477847566235f1fb56c1b78cf48872bf"
+    },
+    {
+      "path": "icon-32.png",
+      "buildSha256": "f73483a84a597c95ab4fd01e8aabcf041db2f031ed9088000ba42881b40ddf0a",
+      "observedCopySha256": "f73483a84a597c95ab4fd01e8aabcf041db2f031ed9088000ba42881b40ddf0a"
+    },
+    {
+      "path": "icon-48.png",
+      "buildSha256": "1cf3abcb284f1b0433d1fa1884ad2ffa4823c340d983cc99eef6560f949e10d0",
+      "observedCopySha256": "1cf3abcb284f1b0433d1fa1884ad2ffa4823c340d983cc99eef6560f949e10d0"
+    },
+    {
+      "path": "icons/clipp-appicon-128.png",
+      "buildSha256": "3f26c4d5f94c7fd82ebfa22abe4203d618ad8ad808ef15c339647880c3a23530",
+      "observedCopySha256": "3f26c4d5f94c7fd82ebfa22abe4203d618ad8ad808ef15c339647880c3a23530"
+    },
+    {
+      "path": "icons/clipp-appicon-16.png",
+      "buildSha256": "21b8863db19a88e5311261bea5d206ba066b1d3400289b8d45ca750be6e883b1",
+      "observedCopySha256": "21b8863db19a88e5311261bea5d206ba066b1d3400289b8d45ca750be6e883b1"
+    },
+    {
+      "path": "icons/clipp-appicon-256.png",
+      "buildSha256": "7d30c21e80495d92054cb784500d9c8332cf7b0b8ab3d66bab33bb7802bbaba8",
+      "observedCopySha256": "7d30c21e80495d92054cb784500d9c8332cf7b0b8ab3d66bab33bb7802bbaba8"
+    },
+    {
+      "path": "icons/clipp-appicon-32.png",
+      "buildSha256": "f63ad098f137d41672af1701f1e6d14e24293c89b6f937636067289185b7fb9a",
+      "observedCopySha256": "f63ad098f137d41672af1701f1e6d14e24293c89b6f937636067289185b7fb9a"
+    },
+    {
+      "path": "icons/clipp-appicon-48.png",
+      "buildSha256": "f5520dbbe29dc9569d9af5c33d22de8028fbd89d9c3126b2d66bb11d31614ef5",
+      "observedCopySha256": "f5520dbbe29dc9569d9af5c33d22de8028fbd89d9c3126b2d66bb11d31614ef5"
+    },
+    {
+      "path": "icons/clipp-appicon-512.png",
+      "buildSha256": "566a60ad5b45dcfd39ab61928f12967f8dcee95898d2b668c8178579c0f35423",
+      "observedCopySha256": "566a60ad5b45dcfd39ab61928f12967f8dcee95898d2b668c8178579c0f35423"
+    },
+    {
+      "path": "icons/clipp-appicon-64.png",
+      "buildSha256": "9bc80fe96c076d45550c9eef7c5e3238e47e72f1444d6ed820402a7f890ae7f6",
+      "observedCopySha256": "9bc80fe96c076d45550c9eef7c5e3238e47e72f1444d6ed820402a7f890ae7f6"
+    },
+    {
+      "path": "icons/clipp-trayTemplate-16.png",
+      "buildSha256": "f8a194c3b631bc4aee40ce9cad77cd4339f4f56cec6eb6de275411394e3584e9",
+      "observedCopySha256": "f8a194c3b631bc4aee40ce9cad77cd4339f4f56cec6eb6de275411394e3584e9"
+    },
+    {
+      "path": "icons/clipp-trayTemplate-32.png",
+      "buildSha256": "190b268a4196b07a90245fb10407293e4547d24242e2c5919075098df679fd74",
+      "observedCopySha256": "190b268a4196b07a90245fb10407293e4547d24242e2c5919075098df679fd74"
+    },
+    {
+      "path": "icons/clipp-trayTemplate-64.png",
+      "buildSha256": "8249bb0e52ee83d03a9765b3b4964fd5cfd35efd66a2290b9f490119c8c455c5",
+      "observedCopySha256": "8249bb0e52ee83d03a9765b3b4964fd5cfd35efd66a2290b9f490119c8c455c5"
+    },
+    {
+      "path": "manifest.json",
+      "buildSha256": "9361792c4017cf97b7a2bdc9922535bc99e8312d133538161845829379981677",
+      "observedCopySha256": "9361792c4017cf97b7a2bdc9922535bc99e8312d133538161845829379981677"
+    },
+    {
+      "path": "offscreen.html",
+      "buildSha256": "88bec247545783c38066768590d57950b05b297870d9588bb55b805b80916cef",
+      "observedCopySha256": "293872bcabeffc200ac4397b3213f9152978a9ccac07b1e4758873c9bea8e1cd"
+    },
+    {
+      "path": "options.html",
+      "buildSha256": "5cbd6e63d27e4e33feaf5c92c7e87fffa6c9c3acf6e4cf82d9026396253792c3",
+      "observedCopySha256": "5cbd6e63d27e4e33feaf5c92c7e87fffa6c9c3acf6e4cf82d9026396253792c3"
+    },
+    {
+      "path": "popup.html",
+      "buildSha256": "24ec4a5f1c033a8f5cd0402fd3031498f143ec2f18c2e357418cd9d4105ad150",
+      "observedCopySha256": "24ec4a5f1c033a8f5cd0402fd3031498f143ec2f18c2e357418cd9d4105ad150"
+    },
+    {
+      "path": "service-worker-loader.js",
+      "buildSha256": "1149210e9ff30dd7030dc5b34790c5185ce4075efd847edbf0e48b06821ae95b",
+      "observedCopySha256": "1149210e9ff30dd7030dc5b34790c5185ce4075efd847edbf0e48b06821ae95b"
+    },
+    {
+      "path": "src/options.html",
+      "buildSha256": "3ddaf7f5e70738fc54e0bd64d551a303683e42ce6a8ecee3620b5bb4dda00ee3",
+      "observedCopySha256": "41a5d0c00b423a5e2c79bef072960e9269759050263a9d524a42cb5bff18506d"
+    },
+    {
+      "path": "src/popup.html",
+      "buildSha256": "0553ec1a2782a9fa02ef503cdf7ffcc85d0fc51c2fa10e8aba4eedd71dadb5ba",
+      "observedCopySha256": "d2b693e8e4c91ff4d801af06eb954628de11095a90da79edb85d2d9487ad4fff"
+    }
+  ],
+  "isolationChanges": "Disposable copy HTML loads memory clipboard guard before app modules. Fixture phases additionally load public synthetic response seam in popup/options only. Production JS and CSS unchanged. Fixture script tags removed before final native validation.",
+  "profileClosed": {
+    "at": "2026-10-07T17:01:34.133Z",
+    "closed": true
+  }
+}

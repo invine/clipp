@@ -1,0 +1,381 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clipp Chrome UX evidence</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#10151d;color:#eef2f9;font:15px/1.5 system-ui}header{padding:24px;max-width:1500px;margin:auto}h1{margin:0 0 8px}a{color:#9bc9ff}p{margin:8px 0}.controls{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}label{display:grid;gap:4px}input,select{background:#223045;color:#fff;border:1px solid #708197;border-radius:5px;padding:8px;font:inherit;max-width:400px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;padding:0 24px 24px;max-width:1500px;margin:auto}article{background:#1b2533;border:1px solid #445367;padding:16px;border-radius:10px;min-width:0}h2{font-size:17px;overflow-wrap:anywhere;margin:0}img{display:block;max-width:100%;max-height:650px;margin:12px auto 0;object-fit:contain}.meta{color:#c3cfdf;font-size:13px}.note{background:#49380a;color:#fff0bf;padding:10px}article[hidden]{display:none}</style>
+<header><h1>Clipp · Chrome UX evidence</h1><p>94 capture attempts · 16 findings · 7 October 2026</p><p><a href="../extension-observations.md">Read the report</a> · <a href="evidence.jsonl">Evidence ledger</a> · <a href="README.md">Methods and limits</a></p><p>The toolbar popup is real Chrome POPUP UI. Rendered fixtures replace public responses. Enlarged options screenshots marked unsuitable have direct-CDP replacements. Recommendations are not accepted decisions.</p>
+<div class="controls"><label>Search<input id="search" placeholder="Search scenarios or evidence IDs"></label><label>Surface<select id="surface"><option value="">All surfaces</option><option>popup</option><option>options</option></select></label><label>Evidence<select id="kind"><option value="">All evidence</option><option>native-isolated</option><option>rendered-fixture</option></select></label><label>Finding<select id="finding"><option value="">All findings / measurements</option><option value="C01">C01: A stale options page silently re-enables Auto Sync</option><option value="C02">C02: Expiry and type preferences promise behavior they do not control</option><option value="C03">C03: Options relay controls lose styling and overflow with long names</option><option value="C04">C04: Popup recovery notices overlap the header and history</option><option value="C05">C05: Theme controls are ineffective and some fields become unreadable</option><option value="C06">C06: The only popup navigation entry is absent from the keyboard sequence</option><option value="C07">C07: Pairing failures are presented as success or silently discarded</option><option value="C08">C08: Failed QR generation leaves a misleading Hide control in options</option><option value="C09">C09: Options history stays stale after Clear and violates its active search</option><option value="C10">C10: Rejected settings appear saved</option><option value="C11">C11: Essential controls are split across surfaces without a visible handoff</option><option value="C12">C12: Popup dismissal loses relay drafts</option><option value="C13">C13: Popup history uses most space for chrome and fixed card structure</option><option value="C14">C14: Dense management lists bury frequent preferences</option><option value="C15">C15: Styling and terminology diverge beyond useful runtime adaptation</option><option value="C16">C16: Automatic clipboard-read failure has no visible recovery context</option></select></label></div><p id="count" aria-live="polite"></p></header><main class="grid"><article id="options-native-empty" data-kind="native-isolated" data-surface="options" data-findings="C15">
+<h2><a href="options-native-empty.png">options-native-empty</a></h2><p>Initial options tab</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C15</p>
+
+<a href="options-native-empty.png"><img loading="lazy" src="options-native-empty.png" alt="Initial options tab"></a></article><article id="popup-native-empty" data-kind="native-isolated" data-surface="popup" data-findings="C15">
+<h2><a href="popup-native-empty.png">popup-native-empty</a></h2><p>Actual toolbar popup initial state</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · C15</p>
+
+<a href="popup-native-empty.png"><img loading="lazy" src="popup-native-empty.png" alt="Actual toolbar popup initial state"></a></article><article id="popup-native-drawer" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-drawer.png">popup-native-drawer</a></h2><p>Settings drawer in actual toolbar popup</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-native-drawer.png"><img loading="lazy" src="popup-native-drawer.png" alt="Settings drawer in actual toolbar popup"></a></article><article id="popup-native-drawer-bottom" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-drawer-bottom.png">popup-native-drawer-bottom</a></h2><p>Reach bottom settings in real popup</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-native-drawer-bottom.png"><img loading="lazy" src="popup-native-drawer-bottom.png" alt="Reach bottom settings in real popup"></a></article><article id="popup-native-qr" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-qr.png">popup-native-qr</a></h2><p>Generate actual pairing QR</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-native-qr.png"><img loading="lazy" src="popup-native-qr.png" alt="Generate actual pairing QR"></a></article><article id="popup-native-populated" data-kind="native-isolated" data-surface="popup" data-findings="C13">
+<h2><a href="popup-native-populated.png">popup-native-populated</a></h2><p>Twelve real synthetic local Clips</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · C13</p>
+
+<a href="popup-native-populated.png"><img loading="lazy" src="popup-native-populated.png" alt="Twelve real synthetic local Clips"></a></article><article id="popup-native-share-denied" data-kind="native-isolated" data-surface="popup" data-findings="C04 C16">
+<h2><a href="popup-native-share-denied.png">popup-native-share-denied</a></h2><p>Clipboard denial through memory boundary</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · C04 / C16</p>
+
+<a href="popup-native-share-denied.png"><img loading="lazy" src="popup-native-share-denied.png" alt="Clipboard denial through memory boundary"></a></article><article id="options-native-stale-autosync" data-kind="native-isolated" data-surface="options" data-findings="C01">
+<h2><a href="options-native-stale-autosync.png">options-native-stale-autosync</a></h2><p>Options after Auto Sync changed in popup</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C01</p>
+
+<a href="options-native-stale-autosync.png"><img loading="lazy" src="options-native-stale-autosync.png" alt="Options after Auto Sync changed in popup"></a></article><article id="options-native-relay-editor" data-kind="native-isolated" data-surface="options" data-findings="C03">
+<h2><a href="options-native-relay-editor.png">options-native-relay-editor</a></h2><p>Relay editor styling</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C03</p>
+
+<a href="options-native-relay-editor.png"><img loading="lazy" src="options-native-relay-editor.png" alt="Relay editor styling"></a></article><article id="options-native-relay-invalid" data-kind="native-isolated" data-surface="options" data-findings="C03">
+<h2><a href="options-native-relay-invalid.png">options-native-relay-invalid</a></h2><p>Native invalid relay save</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C03</p>
+
+<a href="options-native-relay-invalid.png"><img loading="lazy" src="options-native-relay-invalid.png" alt="Native invalid relay save"></a></article><article id="options-native-dark-toggle" data-kind="native-isolated" data-surface="options" data-findings="C05">
+<h2><a href="options-native-dark-toggle.png">options-native-dark-toggle</a></h2><p>Options theme control</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C05</p>
+
+<a href="options-native-dark-toggle.png"><img loading="lazy" src="options-native-dark-toggle.png" alt="Options theme control"></a></article><article id="options-native-search-newclip" data-kind="native-isolated" data-surface="options" data-findings="C09">
+<h2><a href="options-native-search-newclip.png">options-native-search-newclip</a></h2><p>New Clip arrives while unmatched search is active</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C09</p>
+
+<a href="options-native-search-newclip.png"><img loading="lazy" src="options-native-search-newclip.png" alt="New Clip arrives while unmatched search is active"></a></article><article id="options-native-types-off" data-kind="native-isolated" data-surface="options" data-findings="C02">
+<h2><a href="options-native-types-off.png">options-native-types-off</a></h2><p>Disabled Text type followed by local text capture</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C02</p>
+
+<a href="options-native-types-off.png"><img loading="lazy" src="options-native-types-off.png" alt="Disabled Text type followed by local text capture"></a></article><article id="options-native-qr" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-qr.png">options-native-qr</a></h2><p>Real Pairing QR in options</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · measurement</p>
+
+<a href="options-native-qr.png"><img loading="lazy" src="options-native-qr.png" alt="Real Pairing QR in options"></a></article><article id="options-native-invalid-paste" data-kind="native-isolated" data-surface="options" data-findings="C07">
+<h2><a href="options-native-invalid-paste.png">options-native-invalid-paste</a></h2><p>Paste invalid pairing text into QR scanner</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C07</p>
+
+<a href="options-native-invalid-paste.png"><img loading="lazy" src="options-native-invalid-paste.png" alt="Paste invalid pairing text into QR scanner"></a></article><article id="popup-native-reopened" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-reopened.png">popup-native-reopened</a></h2><p>Actual popup reopened after undebugged focus loss</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-native-reopened.png"><img loading="lazy" src="popup-native-reopened.png" alt="Actual popup reopened after undebugged focus loss"></a></article><article id="popup-native-unsaved-draft" data-kind="native-isolated" data-surface="popup" data-findings="C12">
+<h2><a href="popup-native-unsaved-draft.png">popup-native-unsaved-draft</a></h2><p>Relay draft before native popup closes</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · C12</p>
+
+<a href="popup-native-unsaved-draft.png"><img loading="lazy" src="popup-native-unsaved-draft.png" alt="Relay draft before native popup closes"></a></article><article id="popup-native-draft-lost" data-kind="native-isolated" data-surface="popup" data-findings="C12">
+<h2><a href="popup-native-draft-lost.png">popup-native-draft-lost</a></h2><p>Reopen after real click-away closes popup</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · C12</p>
+
+<a href="popup-native-draft-lost.png"><img loading="lazy" src="popup-native-draft-lost.png" alt="Reopen after real click-away closes popup"></a></article><article id="options-native-stale-overwrite" data-kind="native-isolated" data-surface="options" data-findings="C01">
+<h2><a href="options-native-stale-overwrite.png">options-native-stale-overwrite</a></h2><p>Change Expiry while stale Auto-sync checkbox is enabled; stored Auto Sync becomes true</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C01</p>
+
+<a href="options-native-stale-overwrite.png"><img loading="lazy" src="options-native-stale-overwrite.png" alt="Change Expiry while stale Auto-sync checkbox is enabled; stored Auto Sync becomes true"></a></article><article id="popup-native-cleared" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-cleared.png">popup-native-cleared</a></h2><p>Clear synthetic history from actual popup</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-native-cleared.png"><img loading="lazy" src="popup-native-cleared.png" alt="Clear synthetic history from actual popup"></a></article><article id="options-native-stale-history" data-kind="native-isolated" data-surface="options" data-findings="C09">
+<h2><a href="options-native-stale-history.png">options-native-stale-history</a></h2><p>Options history still displays Clips cleared from popup</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C09</p>
+
+<a href="options-native-stale-history.png"><img loading="lazy" src="options-native-stale-history.png" alt="Options history still displays Clips cleared from popup"></a></article><article id="options-native-clear-after-reload" data-kind="native-isolated" data-surface="options" data-findings="C09">
+<h2><a href="options-native-clear-after-reload.png">options-native-clear-after-reload</a></h2><p>Options reload reflects cleared history</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · C09</p>
+
+<a href="options-native-clear-after-reload.png"><img loading="lazy" src="options-native-clear-after-reload.png" alt="Options reload reflects cleared history"></a></article><article id="options-native-short" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-short.png">options-native-short</a></h2><p>Actual short nonmaximized Chrome window</p>
+<p class="meta">options · native-isolated · 520×353 CSS · DPR 2 · measurement</p>
+
+<a href="options-native-short.png"><img loading="lazy" src="options-native-short.png" alt="Actual short nonmaximized Chrome window"></a></article><article id="popup-native-short-window" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-short-window.png">popup-native-short-window</a></h2><p>Actual toolbar popup from a short window</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-native-short-window.png"><img loading="lazy" src="popup-native-short-window.png" alt="Actual toolbar popup from a short window"></a></article><article id="options-native-maximized" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-maximized.png">options-native-maximized</a></h2><p>Native maximized window</p>
+<p class="meta">options · native-isolated · 1512×862 CSS · DPR 2 · measurement</p>
+
+<a href="options-native-maximized.png"><img loading="lazy" src="options-native-maximized.png" alt="Native maximized window"></a></article><article id="options-native-fullscreen" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-fullscreen.png">options-native-fullscreen</a></h2><p>Native fullscreen window</p>
+<p class="meta">options · native-isolated · 992×440 CSS · DPR 2 · measurement</p>
+<p class="note">Taken during the fullscreen transition. Excluded from settled bounds; use options-native-fullscreen-settled and the report limitation.</p>
+<a href="options-native-fullscreen.png"><img loading="lazy" src="options-native-fullscreen.png" alt="Native fullscreen window"></a></article><article id="options-native-fullscreen-settled" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-fullscreen-settled.png">options-native-fullscreen-settled</a></h2><p>Native fullscreen after animation settles</p>
+<p class="meta">options · native-isolated · 1100×820 CSS · DPR 2 · measurement</p>
+
+<a href="options-native-fullscreen-settled.png"><img loading="lazy" src="options-native-fullscreen-settled.png" alt="Native fullscreen after animation settles"></a></article><article id="options-native-zoom-1" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-zoom-1.png">options-native-zoom-1</a></h2><p>Native Chrome tab zoom</p>
+<p class="meta">options · native-isolated · 1100×733 CSS · DPR 2 · measurement</p>
+
+<a href="options-native-zoom-1.png"><img loading="lazy" src="options-native-zoom-1.png" alt="Native Chrome tab zoom"></a></article><article id="popup-native-zoom-1" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-zoom-1.png">popup-native-zoom-1</a></h2><p>Native toolbar popup after setting extension-origin tab zoom</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+<p class="note">Tab zoom setting did not affect this native popup: actual viewport 480×600 and DPR 2. Not an enlarged-popup test.</p>
+<a href="popup-native-zoom-1.png"><img loading="lazy" src="popup-native-zoom-1.png" alt="Native toolbar popup after setting extension-origin tab zoom"></a></article><article id="options-native-zoom-1.25" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-zoom-1.25.png">options-native-zoom-1.25</a></h2><p>Native Chrome tab zoom</p>
+<p class="meta">options · native-isolated · 880×586 CSS · DPR 2.5 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-native-zoom-1.25.png"><img loading="lazy" src="options-native-zoom-1.25.png" alt="Native Chrome tab zoom"></a></article><article id="popup-native-zoom-1.25" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-zoom-1.25.png">popup-native-zoom-1.25</a></h2><p>Native toolbar popup after setting extension-origin tab zoom</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+<p class="note">Tab zoom setting did not affect this native popup: actual viewport 480×600 and DPR 2. Not an enlarged-popup test.</p>
+<a href="popup-native-zoom-1.25.png"><img loading="lazy" src="popup-native-zoom-1.25.png" alt="Native toolbar popup after setting extension-origin tab zoom"></a></article><article id="options-native-zoom-1.5" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-zoom-1.5.png">options-native-zoom-1.5</a></h2><p>Native Chrome tab zoom</p>
+<p class="meta">options · native-isolated · 733×488 CSS · DPR 3 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-native-zoom-1.5.png"><img loading="lazy" src="options-native-zoom-1.5.png" alt="Native Chrome tab zoom"></a></article><article id="popup-native-zoom-1.5" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-zoom-1.5.png">popup-native-zoom-1.5</a></h2><p>Native toolbar popup after setting extension-origin tab zoom</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+<p class="note">Tab zoom setting did not affect this native popup: actual viewport 480×600 and DPR 2. Not an enlarged-popup test.</p>
+<a href="popup-native-zoom-1.5.png"><img loading="lazy" src="popup-native-zoom-1.5.png" alt="Native toolbar popup after setting extension-origin tab zoom"></a></article><article id="options-native-zoom-2" data-kind="native-isolated" data-surface="options" data-findings="">
+<h2><a href="options-native-zoom-2.png">options-native-zoom-2</a></h2><p>Native Chrome tab zoom</p>
+<p class="meta">options · native-isolated · 550×366 CSS · DPR 4 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-native-zoom-2.png"><img loading="lazy" src="options-native-zoom-2.png" alt="Native Chrome tab zoom"></a></article><article id="popup-native-zoom-2" data-kind="native-isolated" data-surface="popup" data-findings="">
+<h2><a href="popup-native-zoom-2.png">popup-native-zoom-2</a></h2><p>Native toolbar popup after setting extension-origin tab zoom</p>
+<p class="meta">popup · native-isolated · 480×600 CSS · DPR 2 · measurement</p>
+<p class="note">Tab zoom setting did not affect this native popup: actual viewport 480×600 and DPR 2. Not an enlarged-popup test.</p>
+<a href="popup-native-zoom-2.png"><img loading="lazy" src="popup-native-zoom-2.png" alt="Native toolbar popup after setting extension-origin tab zoom"></a></article><article id="options-fixture-480x640" data-kind="rendered-fixture" data-surface="options" data-findings="C11 C13">
+<h2><a href="options-fixture-480x640.png">options-fixture-480x640</a></h2><p>Typical options at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C11 / C13</p>
+
+<a href="options-fixture-480x640.png"><img loading="lazy" src="options-fixture-480x640.png" alt="Typical options at controlled CSS viewport"></a></article><article id="options-fixture-480x640-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-480x640-bottom.png">options-fixture-480x640-bottom</a></h2><p>Reach settings at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-480x640-bottom.png"><img loading="lazy" src="options-fixture-480x640-bottom.png" alt="Reach settings at controlled CSS viewport"></a></article><article id="options-fixture-768x800" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-768x800.png">options-fixture-768x800</a></h2><p>Typical options at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 768×800 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-768x800.png"><img loading="lazy" src="options-fixture-768x800.png" alt="Typical options at controlled CSS viewport"></a></article><article id="options-fixture-768x800-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-768x800-bottom.png">options-fixture-768x800-bottom</a></h2><p>Reach settings at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 768×800 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-768x800-bottom.png"><img loading="lazy" src="options-fixture-768x800-bottom.png" alt="Reach settings at controlled CSS viewport"></a></article><article id="options-fixture-1024x768" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-1024x768.png">options-fixture-1024x768</a></h2><p>Typical options at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 1024×768 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-1024x768.png"><img loading="lazy" src="options-fixture-1024x768.png" alt="Typical options at controlled CSS viewport"></a></article><article id="options-fixture-1024x768-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-1024x768-bottom.png">options-fixture-1024x768-bottom</a></h2><p>Reach settings at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 1024×768 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-1024x768-bottom.png"><img loading="lazy" src="options-fixture-1024x768-bottom.png" alt="Reach settings at controlled CSS viewport"></a></article><article id="options-fixture-1440x900" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-1440x900.png">options-fixture-1440x900</a></h2><p>Typical options at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 1440×900 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-1440x900.png"><img loading="lazy" src="options-fixture-1440x900.png" alt="Typical options at controlled CSS viewport"></a></article><article id="options-fixture-1440x900-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-1440x900-bottom.png">options-fixture-1440x900-bottom</a></h2><p>Reach settings at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 1440×900 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-1440x900-bottom.png"><img loading="lazy" src="options-fixture-1440x900-bottom.png" alt="Reach settings at controlled CSS viewport"></a></article><article id="options-fixture-1920x1080" data-kind="rendered-fixture" data-surface="options" data-findings="C15">
+<h2><a href="options-fixture-1920x1080.png">options-fixture-1920x1080</a></h2><p>Typical options at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 1920×1080 CSS · DPR 1 · C15</p>
+
+<a href="options-fixture-1920x1080.png"><img loading="lazy" src="options-fixture-1920x1080.png" alt="Typical options at controlled CSS viewport"></a></article><article id="options-fixture-1920x1080-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-1920x1080-bottom.png">options-fixture-1920x1080-bottom</a></h2><p>Reach settings at controlled CSS viewport</p>
+<p class="meta">options · rendered-fixture · 1920×1080 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-1920x1080-bottom.png"><img loading="lazy" src="options-fixture-1920x1080-bottom.png" alt="Reach settings at controlled CSS viewport"></a></article><article id="options-fixture-dense-top" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-dense-top.png">options-fixture-dense-top</a></h2><p>Twenty Trusted Devices and concurrent Pairing requests</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-dense-top.png"><img loading="lazy" src="options-fixture-dense-top.png" alt="Twenty Trusted Devices and concurrent Pairing requests"></a></article><article id="options-fixture-dense-relays" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-dense-relays.png">options-fixture-dense-relays</a></h2><p>Seven relays with long names and statuses</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-dense-relays.png"><img loading="lazy" src="options-fixture-dense-relays.png" alt="Seven relays with long names and statuses"></a></article><article id="options-fixture-dense-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="C14">
+<h2><a href="options-fixture-dense-bottom.png">options-fixture-dense-bottom</a></h2><p>Everyday settings after dense lists</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C14</p>
+
+<a href="options-fixture-dense-bottom.png"><img loading="lazy" src="options-fixture-dense-bottom.png" alt="Everyday settings after dense lists"></a></article><article id="popup-fixture-dense-main" data-kind="rendered-fixture" data-surface="popup" data-findings="">
+<h2><a href="popup-fixture-dense-main.png">popup-fixture-dense-main</a></h2><p>Pending requests with navigation closed in native popup host</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-fixture-dense-main.png"><img loading="lazy" src="popup-fixture-dense-main.png" alt="Pending requests with navigation closed in native popup host"></a></article><article id="popup-fixture-dense-drawer" data-kind="rendered-fixture" data-surface="popup" data-findings="">
+<h2><a href="popup-fixture-dense-drawer.png">popup-fixture-dense-drawer</a></h2><p>Pending requests and long names</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-fixture-dense-drawer.png"><img loading="lazy" src="popup-fixture-dense-drawer.png" alt="Pending requests and long names"></a></article><article id="popup-fixture-accept-failure" data-kind="rendered-fixture" data-surface="popup" data-findings="">
+<h2><a href="popup-fixture-accept-failure.png">popup-fixture-accept-failure</a></h2><p>Accept Pairing persistence failure</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-fixture-accept-failure.png"><img loading="lazy" src="popup-fixture-accept-failure.png" alt="Accept Pairing persistence failure"></a></article><article id="popup-fixture-dense-relays" data-kind="rendered-fixture" data-surface="popup" data-findings="C03 C14">
+<h2><a href="popup-fixture-dense-relays.png">popup-fixture-dense-relays</a></h2><p>Long relay card and available actions</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C03 / C14</p>
+
+<a href="popup-fixture-dense-relays.png"><img loading="lazy" src="popup-fixture-dense-relays.png" alt="Long relay card and available actions"></a></article><article id="popup-fixture-dense-bottom" data-kind="rendered-fixture" data-surface="popup" data-findings="C14">
+<h2><a href="popup-fixture-dense-bottom.png">popup-fixture-dense-bottom</a></h2><p>Scroll to Auto Sync after dense navigation</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C14</p>
+
+<a href="popup-fixture-dense-bottom.png"><img loading="lazy" src="popup-fixture-dense-bottom.png" alt="Scroll to Auto Sync after dense navigation"></a></article><article id="options-fixture-qr-failure" data-kind="rendered-fixture" data-surface="options" data-findings="C08">
+<h2><a href="options-fixture-qr-failure.png">options-fixture-qr-failure</a></h2><p>QR generation response has no target</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C08</p>
+
+<a href="options-fixture-qr-failure.png"><img loading="lazy" src="options-fixture-qr-failure.png" alt="QR generation response has no target"></a></article><article id="options-fixture-pair-failure" data-kind="rendered-fixture" data-surface="options" data-findings="C07">
+<h2><a href="options-fixture-pair-failure.png">options-fixture-pair-failure</a></h2><p>Valid pairing text rejected by mocked runtime</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C07</p>
+
+<a href="options-fixture-pair-failure.png"><img loading="lazy" src="options-fixture-pair-failure.png" alt="Valid pairing text rejected by mocked runtime"></a></article><article id="options-fixture-revoke-failure" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-revoke-failure.png">options-fixture-revoke-failure</a></h2><p>Revoke failure has a Retry control</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-revoke-failure.png"><img loading="lazy" src="options-fixture-revoke-failure.png" alt="Revoke failure has a Retry control"></a></article><article id="options-fixture-setting-save-failure" data-kind="rendered-fixture" data-surface="options" data-findings="C10">
+<h2><a href="options-fixture-setting-save-failure.png">options-fixture-setting-save-failure</a></h2><p>Settings rejected but checkbox shows new value</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C10</p>
+
+<a href="options-fixture-setting-save-failure.png"><img loading="lazy" src="options-fixture-setting-save-failure.png" alt="Settings rejected but checkbox shows new value"></a></article><article id="popup-fixture-pending-hidden" data-kind="rendered-fixture" data-surface="popup" data-findings="C11">
+<h2><a href="popup-fixture-pending-hidden.png">popup-fixture-pending-hidden</a></h2><p>One incoming request, drawer closed</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C11</p>
+
+<a href="popup-fixture-pending-hidden.png"><img loading="lazy" src="popup-fixture-pending-hidden.png" alt="One incoming request, drawer closed"></a></article><article id="popup-fixture-visible-accept-failure" data-kind="rendered-fixture" data-surface="popup" data-findings="C07">
+<h2><a href="popup-fixture-visible-accept-failure.png">popup-fixture-visible-accept-failure</a></h2><p>Visible Accept action fails without feedback</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C07</p>
+
+<a href="popup-fixture-visible-accept-failure.png"><img loading="lazy" src="popup-fixture-visible-accept-failure.png" alt="Visible Accept action fails without feedback"></a></article><article id="popup-fixture-pair-failure" data-kind="rendered-fixture" data-surface="popup" data-findings="C07">
+<h2><a href="popup-fixture-pair-failure.png">popup-fixture-pair-failure</a></h2><p>Valid Pairing submission fails and clears input</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C07</p>
+
+<a href="popup-fixture-pair-failure.png"><img loading="lazy" src="popup-fixture-pair-failure.png" alt="Valid Pairing submission fails and clears input"></a></article><article id="popup-fixture-qr-failure" data-kind="rendered-fixture" data-surface="popup" data-findings="">
+<h2><a href="popup-fixture-qr-failure.png">popup-fixture-qr-failure</a></h2><p>Popup QR generation failure supplies a visible error</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · measurement</p>
+
+<a href="popup-fixture-qr-failure.png"><img loading="lazy" src="popup-fixture-qr-failure.png" alt="Popup QR generation failure supplies a visible error"></a></article><article id="popup-fixture-qr-failure-confirmed" data-kind="rendered-fixture" data-surface="popup" data-findings="">
+<h2><a href="popup-fixture-qr-failure-confirmed.png">popup-fixture-qr-failure-confirmed</a></h2><p>QR failure dialog confirmed after explicit control activation</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · measurement</p>
+<p class="note">Mislabeled intermediate capture: failure injection had been removed. Shows a successful QR, not an error. Use popup-fixture-qr-error-verified for the failure claim.</p>
+<a href="popup-fixture-qr-failure-confirmed.png"><img loading="lazy" src="popup-fixture-qr-failure-confirmed.png" alt="QR failure dialog confirmed after explicit control activation"></a></article><article id="popup-fixture-qr-error-verified" data-kind="rendered-fixture" data-surface="popup" data-findings="C08">
+<h2><a href="popup-fixture-qr-error-verified.png">popup-fixture-qr-error-verified</a></h2><p>QR generation failure message verified</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C08</p>
+
+<a href="popup-fixture-qr-error-verified.png"><img loading="lazy" src="popup-fixture-qr-error-verified.png" alt="QR generation failure message verified"></a></article><article id="popup-fixture-qr-keyboard" data-kind="rendered-fixture" data-surface="popup" data-findings="C06">
+<h2><a href="popup-fixture-qr-keyboard.png">popup-fixture-qr-keyboard</a></h2><p>QR opens without focus transfer</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C06</p>
+
+<a href="popup-fixture-qr-keyboard.png"><img loading="lazy" src="popup-fixture-qr-keyboard.png" alt="QR opens without focus transfer"></a></article><article id="popup-fixture-select-contrast" data-kind="rendered-fixture" data-surface="popup" data-findings="C05">
+<h2><a href="popup-fixture-select-contrast.png">popup-fixture-select-contrast</a></h2><p>Everyday dropdown contrast</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C05</p>
+
+<a href="popup-fixture-select-contrast.png"><img loading="lazy" src="popup-fixture-select-contrast.png" alt="Everyday dropdown contrast"></a></article><article id="options-fixture-recovery-invisible" data-kind="rendered-fixture" data-surface="options" data-findings="C11">
+<h2><a href="options-fixture-recovery-invisible.png">options-fixture-recovery-invisible</a></h2><p>Identity recovery has no options notice</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C11</p>
+
+<a href="options-fixture-recovery-invisible.png"><img loading="lazy" src="options-fixture-recovery-invisible.png" alt="Identity recovery has no options notice"></a></article><article id="popup-fixture-recovery" data-kind="rendered-fixture" data-surface="popup" data-findings="C04">
+<h2><a href="popup-fixture-recovery.png">popup-fixture-recovery</a></h2><p>Single identity recovery notice</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C04</p>
+
+<a href="popup-fixture-recovery.png"><img loading="lazy" src="popup-fixture-recovery.png" alt="Single identity recovery notice"></a></article><article id="popup-fixture-stacked-recovery" data-kind="rendered-fixture" data-surface="popup" data-findings="C04">
+<h2><a href="popup-fixture-stacked-recovery.png">popup-fixture-stacked-recovery</a></h2><p>Adversarial simultaneous errors; not a claim these all co-occur natively</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C04</p>
+<p class="note">Adversarial simultaneous error fixture; not evidence that all these states co-occur natively.</p>
+<a href="popup-fixture-stacked-recovery.png"><img loading="lazy" src="popup-fixture-stacked-recovery.png" alt="Adversarial simultaneous errors; not a claim these all co-occur natively"></a></article><article id="options-fixture-320-reflow" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-320-reflow.png">options-fixture-320-reflow</a></h2><p>320 CSS pixel options reflow</p>
+<p class="meta">options · rendered-fixture · 320×640 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-320-reflow.png"><img loading="lazy" src="options-fixture-320-reflow.png" alt="320 CSS pixel options reflow"></a></article><article id="options-fixture-system-dark" data-kind="rendered-fixture" data-surface="options" data-findings="C05">
+<h2><a href="options-fixture-system-dark.png">options-fixture-system-dark</a></h2><p>Emulated prefers-color-scheme dark</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C05</p>
+
+<a href="options-fixture-system-dark.png"><img loading="lazy" src="options-fixture-system-dark.png" alt="Emulated prefers-color-scheme dark"></a></article><article id="options-fixture-native-zoom-1" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-1.png">options-fixture-native-zoom-1</a></h2><p>Typical content at native Chrome tab zoom</p>
+<p class="meta">options · rendered-fixture · 1100×733 CSS · DPR 2 · measurement</p>
+
+<a href="options-fixture-native-zoom-1.png"><img loading="lazy" src="options-fixture-native-zoom-1.png" alt="Typical content at native Chrome tab zoom"></a></article><article id="options-fixture-native-zoom-1-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-1-bottom.png">options-fixture-native-zoom-1-bottom</a></h2><p>Settings reachable at native Chrome zoom</p>
+<p class="meta">options · rendered-fixture · 1100×733 CSS · DPR 2 · measurement</p>
+
+<a href="options-fixture-native-zoom-1-bottom.png"><img loading="lazy" src="options-fixture-native-zoom-1-bottom.png" alt="Settings reachable at native Chrome zoom"></a></article><article id="options-fixture-native-zoom-1.25" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-1.25.png">options-fixture-native-zoom-1.25</a></h2><p>Typical content at native Chrome tab zoom</p>
+<p class="meta">options · rendered-fixture · 880×586 CSS · DPR 2.5 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-fixture-native-zoom-1.25.png"><img loading="lazy" src="options-fixture-native-zoom-1.25.png" alt="Typical content at native Chrome tab zoom"></a></article><article id="options-fixture-native-zoom-1.25-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-1.25-bottom.png">options-fixture-native-zoom-1.25-bottom</a></h2><p>Settings reachable at native Chrome zoom</p>
+<p class="meta">options · rendered-fixture · 880×586 CSS · DPR 2.5 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-fixture-native-zoom-1.25-bottom.png"><img loading="lazy" src="options-fixture-native-zoom-1.25-bottom.png" alt="Settings reachable at native Chrome zoom"></a></article><article id="options-fixture-native-zoom-1.5" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-1.5.png">options-fixture-native-zoom-1.5</a></h2><p>Typical content at native Chrome tab zoom</p>
+<p class="meta">options · rendered-fixture · 733×488 CSS · DPR 3 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-fixture-native-zoom-1.5.png"><img loading="lazy" src="options-fixture-native-zoom-1.5.png" alt="Typical content at native Chrome tab zoom"></a></article><article id="options-fixture-native-zoom-1.5-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-1.5-bottom.png">options-fixture-native-zoom-1.5-bottom</a></h2><p>Settings reachable at native Chrome zoom</p>
+<p class="meta">options · rendered-fixture · 733×488 CSS · DPR 3 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-fixture-native-zoom-1.5-bottom.png"><img loading="lazy" src="options-fixture-native-zoom-1.5-bottom.png" alt="Settings reachable at native Chrome zoom"></a></article><article id="options-fixture-native-zoom-2" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-2.png">options-fixture-native-zoom-2</a></h2><p>Typical content at native Chrome tab zoom</p>
+<p class="meta">options · rendered-fixture · 550×366 CSS · DPR 4 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-fixture-native-zoom-2.png"><img loading="lazy" src="options-fixture-native-zoom-2.png" alt="Typical content at native Chrome tab zoom"></a></article><article id="options-fixture-native-zoom-2-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-native-zoom-2-bottom.png">options-fixture-native-zoom-2-bottom</a></h2><p>Settings reachable at native Chrome zoom</p>
+<p class="meta">options · rendered-fixture · 550×366 CSS · DPR 4 · measurement</p>
+<p class="note">Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.</p>
+<a href="options-fixture-native-zoom-2-bottom.png"><img loading="lazy" src="options-fixture-native-zoom-2-bottom.png" alt="Settings reachable at native Chrome zoom"></a></article><article id="options-fixture-fullscreen" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-fullscreen.png">options-fixture-fullscreen</a></h2><p>Native fullscreen API state with populated options; record actual bounds</p>
+<p class="meta">options · rendered-fixture · 1100×820 CSS · DPR 2 · measurement</p>
+
+<a href="options-fixture-fullscreen.png"><img loading="lazy" src="options-fixture-fullscreen.png" alt="Native fullscreen API state with populated options; record actual bounds"></a></article><article id="options-fixture-dpr1" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-dpr1.png">options-fixture-dpr1</a></h2><p>Synthetic DPR 1 on the same physical DPR 2 display</p>
+<p class="meta">options · rendered-fixture · 1024×768 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-dpr1.png"><img loading="lazy" src="options-fixture-dpr1.png" alt="Synthetic DPR 1 on the same physical DPR 2 display"></a></article><article id="options-fixture-long-relay-name" data-kind="rendered-fixture" data-surface="options" data-findings="C03">
+<h2><a href="options-fixture-long-relay-name.png">options-fixture-long-relay-name</a></h2><p>Unbroken 236-character relay name widens page</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · C03</p>
+
+<a href="options-fixture-long-relay-name.png"><img loading="lazy" src="options-fixture-long-relay-name.png" alt="Unbroken 236-character relay name widens page"></a></article><article id="popup-fixture-pending-overflow" data-kind="rendered-fixture" data-surface="popup" data-findings="C14">
+<h2><a href="popup-fixture-pending-overflow.png">popup-fixture-pending-overflow</a></h2><p>Pending Peer IDs overflow drawer</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C14</p>
+<p class="note">Text glyphs extend beyond constrained Peer ID boxes; box-only overflow checks miss this. Relay actions were reachable.</p>
+<a href="popup-fixture-pending-overflow.png"><img loading="lazy" src="popup-fixture-pending-overflow.png" alt="Pending Peer IDs overflow drawer"></a></article><article id="options-fixture-qr-480" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-fixture-qr-480.png">options-fixture-qr-480</a></h2><p>QR expansion pushes history below fold</p>
+<p class="meta">options · rendered-fixture · 480×640 CSS · DPR 1 · measurement</p>
+
+<a href="options-fixture-qr-480.png"><img loading="lazy" src="options-fixture-qr-480.png" alt="QR expansion pushes history below fold"></a></article><article id="popup-fixture-last-clip" data-kind="rendered-fixture" data-surface="popup" data-findings="C13">
+<h2><a href="popup-fixture-last-clip.png">popup-fixture-last-clip</a></h2><p>Reach last Clip and its Copy button</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C13</p>
+
+<a href="popup-fixture-last-clip.png"><img loading="lazy" src="popup-fixture-last-clip.png" alt="Reach last Clip and its Copy button"></a></article><article id="popup-fixture-focus-read-denied" data-kind="rendered-fixture" data-surface="popup" data-findings="C16">
+<h2><a href="popup-fixture-focus-read-denied.png">popup-fixture-focus-read-denied</a></h2><p>Automatic focus capture denial has no visible notice</p>
+<p class="meta">popup · rendered-fixture · 480×600 CSS · DPR 2 · C16</p>
+
+<a href="popup-fixture-focus-read-denied.png"><img loading="lazy" src="popup-fixture-focus-read-denied.png" alt="Automatic focus capture denial has no visible notice"></a></article><article id="options-native-invalid-settings" data-kind="native-isolated" data-surface="options" data-findings="C10">
+<h2><a href="options-native-invalid-settings.png">options-native-invalid-settings</a></h2><p>Expiry zero rejected by production validation but UI retains zero</p>
+<p class="meta">options · native-isolated · 480×640 CSS · DPR 1 · C10</p>
+<p class="note">Real background validation, but 480×640 options viewport/DPR 1 is emulated.</p>
+<a href="options-native-invalid-settings.png"><img loading="lazy" src="options-native-invalid-settings.png" alt="Expiry zero rejected by production validation but UI retains zero"></a></article><article id="options-zoom-cdp-1-top" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-1-top.png">options-zoom-cdp-1-top</a></h2><p>Replacement native Chrome zoom screenshot, top</p>
+<p class="meta">options · rendered-fixture · 1100×733 CSS · DPR 2 · measurement</p>
+
+<a href="options-zoom-cdp-1-top.png"><img loading="lazy" src="options-zoom-cdp-1-top.png" alt="Replacement native Chrome zoom screenshot, top"></a></article><article id="options-zoom-cdp-1-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-1-bottom.png">options-zoom-cdp-1-bottom</a></h2><p>Replacement native Chrome zoom screenshot, bottom</p>
+<p class="meta">options · rendered-fixture · 1100×733 CSS · DPR 2 · measurement</p>
+
+<a href="options-zoom-cdp-1-bottom.png"><img loading="lazy" src="options-zoom-cdp-1-bottom.png" alt="Replacement native Chrome zoom screenshot, bottom"></a></article><article id="options-zoom-cdp-1.25-top" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-1.25-top.png">options-zoom-cdp-1.25-top</a></h2><p>Replacement native Chrome zoom screenshot, top</p>
+<p class="meta">options · rendered-fixture · 880×586 CSS · DPR 2.5 · measurement</p>
+
+<a href="options-zoom-cdp-1.25-top.png"><img loading="lazy" src="options-zoom-cdp-1.25-top.png" alt="Replacement native Chrome zoom screenshot, top"></a></article><article id="options-zoom-cdp-1.25-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-1.25-bottom.png">options-zoom-cdp-1.25-bottom</a></h2><p>Replacement native Chrome zoom screenshot, bottom</p>
+<p class="meta">options · rendered-fixture · 880×586 CSS · DPR 2.5 · measurement</p>
+
+<a href="options-zoom-cdp-1.25-bottom.png"><img loading="lazy" src="options-zoom-cdp-1.25-bottom.png" alt="Replacement native Chrome zoom screenshot, bottom"></a></article><article id="options-zoom-cdp-1.5-top" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-1.5-top.png">options-zoom-cdp-1.5-top</a></h2><p>Replacement native Chrome zoom screenshot, top</p>
+<p class="meta">options · rendered-fixture · 733×488 CSS · DPR 3 · measurement</p>
+
+<a href="options-zoom-cdp-1.5-top.png"><img loading="lazy" src="options-zoom-cdp-1.5-top.png" alt="Replacement native Chrome zoom screenshot, top"></a></article><article id="options-zoom-cdp-1.5-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-1.5-bottom.png">options-zoom-cdp-1.5-bottom</a></h2><p>Replacement native Chrome zoom screenshot, bottom</p>
+<p class="meta">options · rendered-fixture · 733×488 CSS · DPR 3 · measurement</p>
+
+<a href="options-zoom-cdp-1.5-bottom.png"><img loading="lazy" src="options-zoom-cdp-1.5-bottom.png" alt="Replacement native Chrome zoom screenshot, bottom"></a></article><article id="options-zoom-cdp-2-top" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-2-top.png">options-zoom-cdp-2-top</a></h2><p>Replacement native Chrome zoom screenshot, top</p>
+<p class="meta">options · rendered-fixture · 550×366 CSS · DPR 4 · measurement</p>
+
+<a href="options-zoom-cdp-2-top.png"><img loading="lazy" src="options-zoom-cdp-2-top.png" alt="Replacement native Chrome zoom screenshot, top"></a></article><article id="options-zoom-cdp-2-bottom" data-kind="rendered-fixture" data-surface="options" data-findings="">
+<h2><a href="options-zoom-cdp-2-bottom.png">options-zoom-cdp-2-bottom</a></h2><p>Replacement native Chrome zoom screenshot, bottom</p>
+<p class="meta">options · rendered-fixture · 550×366 CSS · DPR 4 · measurement</p>
+
+<a href="options-zoom-cdp-2-bottom.png"><img loading="lazy" src="options-zoom-cdp-2-bottom.png" alt="Replacement native Chrome zoom screenshot, bottom"></a></article></main>
+<script>const controls=['search','surface','kind','finding'].map(id=>document.getElementById(id));function filter(){let n=0;for(const card of document.querySelectorAll('article')){const [q,s,k,f]=controls.map(c=>c.value);card.hidden=!!((q&&!card.textContent.toLowerCase().includes(q.toLowerCase()))||(s&&card.dataset.surface!==s)||(k&&card.dataset.kind!==k)||(f&&!card.dataset.findings.split(' ').includes(f)));if(!card.hidden)n++}document.getElementById('count').textContent=n+' captures shown'}for(const c of controls)c.addEventListener('input',filter);filter()</script></html>

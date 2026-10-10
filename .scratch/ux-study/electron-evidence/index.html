@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width"
+  /><title>Clipp — Electron UX evidence</title
+  ><style>
+    body {
+      font: 16px system-ui;
+      margin: 32px;
+      background: #11151f;
+      color: #e8ebf1;
+    }
+    a {
+      color: #abbcff;
+    }
+    header {
+      max-width: 950px;
+    }
+    input {
+      padding: 12px;
+      width: min(90%, 640px);
+      margin: 12px 0;
+      background: #222b3c;
+      border: 1px solid #7381a0;
+      border-radius: 8px;
+      color: inherit;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 24px;
+    }
+    figure {
+      margin: 0;
+      padding: 14px;
+      background: #1d2432;
+      border-radius: 12px;
+    }
+    img {
+      width: 100%;
+      height: 330px;
+      object-fit: contain;
+      background: #0c0c10;
+    }
+    p {
+      line-height: 1.5;
+    }
+    small {
+      color: #bcc5d8;
+    }
+    figcaption {
+      margin-top: 12px;
+      overflow-wrap: anywhere;
+    }
+    [hidden] {
+      display: none;
+    }
+  </style>
+  <header>
+    <h1>Clipp: Electron UX evidence</h1>
+    <p>
+      76 observations on macOS / Electron 43.4.0. Eight native-isolated
+      captures; other captures use font/state fixtures. Click a screenshot for
+      its full size. Native window size, CSS viewport and DPR are different
+      measurements.
+    </p>
+    <p>
+      <a href="../electron-observations.md">Findings and limitations</a> ·
+      <a href="evidence.jsonl">Evidence ledger</a> ·
+      <a href="README.md">Reproduction notes</a>
+    </p>
+    <label
+      >Filter by scenario, capture name, evidence class or finding
+      <input
+        id="filter"
+        placeholder="e.g. E02, reflow, drawer, native-isolated"
+    /></label>
+    <p id="count"></p>
+  </header>
+  <main>
+    <figure data-text="native-default-empty First launch native-isolated E01">
+      <a href="native-default-empty.png"
+        ><img loading="lazy" src="native-default-empty.png" alt="First launch"
+      /></a>
+      <figcaption>
+        <strong>native-default-empty</strong>
+        <p>First launch</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br />E01</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-default-drawer Open settings and pairing native-isolated "
+    >
+      <a href="native-default-drawer.png"
+        ><img
+          loading="lazy"
+          src="native-default-drawer.png"
+          alt="Open settings and pairing"
+      /></a>
+      <figcaption>
+        <strong>native-default-drawer</strong>
+        <p>Open settings and pairing</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="native-qr-default Display pairing code native-isolated ">
+      <a href="native-qr-default.png"
+        ><img
+          loading="lazy"
+          src="native-qr-default.png"
+          alt="Display pairing code"
+      /></a>
+      <figcaption>
+        <strong>native-qr-default</strong>
+        <p>Display pairing code</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-local-capture Capture and reuse a local Clip native-isolated "
+    >
+      <a href="native-local-capture.png"
+        ><img
+          loading="lazy"
+          src="native-local-capture.png"
+          alt="Capture and reuse a local Clip"
+      /></a>
+      <figcaption>
+        <strong>native-local-capture</strong>
+        <p>Capture and reuse a local Clip</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-font-failure-pin-overlap Pin a Clip with unavailable icon font native-isolated E01"
+    >
+      <a href="native-font-failure-pin-overlap.png"
+        ><img
+          loading="lazy"
+          src="native-font-failure-pin-overlap.png"
+          alt="Pin a Clip with unavailable icon font"
+      /></a>
+      <figcaption>
+        <strong>native-font-failure-pin-overlap</strong>
+        <p>Pin a Clip with unavailable icon font</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br />E01</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-relay-editor Add a managed relay native-isolated "
+    >
+      <a href="native-relay-editor.png"
+        ><img
+          loading="lazy"
+          src="native-relay-editor.png"
+          alt="Add a managed relay"
+      /></a>
+      <figcaption>
+        <strong>native-relay-editor</strong>
+        <p>Add a managed relay</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-relay-invalid Relay form validation native-isolated E11"
+    >
+      <a href="native-relay-invalid.png"
+        ><img
+          loading="lazy"
+          src="native-relay-invalid.png"
+          alt="Relay form validation"
+      /></a>
+      <figcaption>
+        <strong>native-relay-invalid</strong>
+        <p>Relay form validation</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br />E11</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-tray-configure-relays Tray Configure Relays entry native-isolated E10"
+    >
+      <a href="native-tray-configure-relays.png"
+        ><img
+          loading="lazy"
+          src="native-tray-configure-relays.png"
+          alt="Tray Configure Relays entry"
+      /></a>
+      <figcaption>
+        <strong>native-tray-configure-relays</strong>
+        <p>Tray Configure Relays entry</p>
+        <small>native-isolated · 520×728 CSS · zoom 1 · DPR 2<br />E10</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="loaded-fonts-default Fonts available comparison rendered-fixture "
+    >
+      <a href="loaded-fonts-default.png"
+        ><img
+          loading="lazy"
+          src="loaded-fonts-default.png"
+          alt="Fonts available comparison"
+      /></a>
+      <figcaption>
+        <strong>loaded-fonts-default</strong>
+        <p>Fonts available comparison</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-minimum Typical history resize rendered-fixture ">
+      <a href="sizing-minimum.png"
+        ><img
+          loading="lazy"
+          src="sizing-minimum.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-minimum</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 480×608 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-default Typical history resize rendered-fixture ">
+      <a href="sizing-default.png"
+        ><img
+          loading="lazy"
+          src="sizing-default.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-default</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-ordinary Typical history resize rendered-fixture "
+    >
+      <a href="sizing-ordinary.png"
+        ><img
+          loading="lazy"
+          src="sizing-ordinary.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-ordinary</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 800×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-short-wide Typical history resize rendered-fixture "
+    >
+      <a href="sizing-short-wide.png"
+        ><img
+          loading="lazy"
+          src="sizing-short-wide.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-short-wide</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 1200×608 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-1280x720-outer Typical history resize rendered-fixture "
+    >
+      <a href="sizing-1280x720-outer.png"
+        ><img
+          loading="lazy"
+          src="sizing-1280x720-outer.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-1280x720-outer</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 1280×688 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-1440x900-outer Typical history resize rendered-fixture "
+    >
+      <a href="sizing-1440x900-outer.png"
+        ><img
+          loading="lazy"
+          src="sizing-1440x900-outer.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-1440x900-outer</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 1440×868 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-599 Typical history resize rendered-fixture ">
+      <a href="sizing-599.png"
+        ><img loading="lazy" src="sizing-599.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-599</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 599×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-600 Typical history resize rendered-fixture ">
+      <a href="sizing-600.png"
+        ><img loading="lazy" src="sizing-600.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-600</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 600×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-601 Typical history resize rendered-fixture ">
+      <a href="sizing-601.png"
+        ><img loading="lazy" src="sizing-601.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-601</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 601×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-899 Typical history resize rendered-fixture ">
+      <a href="sizing-899.png"
+        ><img loading="lazy" src="sizing-899.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-899</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 899×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-900 Typical history resize rendered-fixture ">
+      <a href="sizing-900.png"
+        ><img loading="lazy" src="sizing-900.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-900</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 900×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-901 Typical history resize rendered-fixture ">
+      <a href="sizing-901.png"
+        ><img loading="lazy" src="sizing-901.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-901</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 901×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-1099 Typical history resize rendered-fixture ">
+      <a href="sizing-1099.png"
+        ><img loading="lazy" src="sizing-1099.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-1099</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 1099×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-1100 Typical history resize rendered-fixture E03">
+      <a href="sizing-1100.png"
+        ><img loading="lazy" src="sizing-1100.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-1100</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 1100×728 CSS · zoom 1 · DPR 2<br />E03</small>
+      </figcaption>
+    </figure>
+    <figure data-text="sizing-1101 Typical history resize rendered-fixture ">
+      <a href="sizing-1101.png"
+        ><img loading="lazy" src="sizing-1101.png" alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-1101</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 1101×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-height759 Typical history resize rendered-fixture "
+    >
+      <a href="sizing-height759.png"
+        ><img
+          loading="lazy"
+          src="sizing-height759.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-height759</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 800×759 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-height760 Typical history resize rendered-fixture "
+    >
+      <a href="sizing-height760.png"
+        ><img
+          loading="lazy"
+          src="sizing-height760.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-height760</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 800×760 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sizing-height761 Typical history resize rendered-fixture "
+    >
+      <a href="sizing-height761.png"
+        ><img
+          loading="lazy"
+          src="sizing-height761.png"
+          alt="Typical history resize"
+      /></a>
+      <figcaption>
+        <strong>sizing-height761</strong>
+        <p>Typical history resize</p>
+        <small>rendered-fixture · 800×761 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-maximized-typical Native maximized with typical fixture rendered-fixture "
+    >
+      <a href="native-maximized-typical.png"
+        ><img
+          loading="lazy"
+          src="native-maximized-typical.png"
+          alt="Native maximized with typical fixture"
+      /></a>
+      <figcaption>
+        <strong>native-maximized-typical</strong>
+        <p>Native maximized with typical fixture</p>
+        <small>rendered-fixture · 1512×917 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-fullscreen-typical Native fullscreen with typical fixture rendered-fixture "
+    >
+      <a href="native-fullscreen-typical.png"
+        ><img
+          loading="lazy"
+          src="native-fullscreen-typical.png"
+          alt="Native fullscreen with typical fixture"
+      /></a>
+      <figcaption>
+        <strong>native-fullscreen-typical</strong>
+        <p>Native fullscreen with typical fixture</p>
+        <small>rendered-fixture · 1512×949 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="search-no-results Search with no results rendered-fixture E04"
+    >
+      <a href="search-no-results.png"
+        ><img
+          loading="lazy"
+          src="search-no-results.png"
+          alt="Search with no results"
+      /></a>
+      <figcaption>
+        <strong>search-no-results</strong>
+        <p>Search with no results</p>
+        <small>rendered-fixture · 800×728 CSS · zoom 1 · DPR 2<br />E04</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="search-hidden-active Resize with active search rendered-fixture E04"
+    >
+      <a href="search-hidden-active.png"
+        ><img
+          loading="lazy"
+          src="search-hidden-active.png"
+          alt="Resize with active search"
+      /></a>
+      <figcaption>
+        <strong>search-hidden-active</strong>
+        <p>Resize with active search</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E04</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="relay-draft-before-resize Resize during relay editing rendered-fixture E05"
+    >
+      <a href="relay-draft-before-resize.png"
+        ><img
+          loading="lazy"
+          src="relay-draft-before-resize.png"
+          alt="Resize during relay editing"
+      /></a>
+      <figcaption>
+        <strong>relay-draft-before-resize</strong>
+        <p>Resize during relay editing</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E05</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="relay-draft-after-resize Resize during relay editing rendered-fixture E05"
+    >
+      <a href="relay-draft-after-resize.png"
+        ><img
+          loading="lazy"
+          src="relay-draft-after-resize.png"
+          alt="Resize during relay editing"
+      /></a>
+      <figcaption>
+        <strong>relay-draft-after-resize</strong>
+        <p>Resize during relay editing</p>
+        <small>rendered-fixture · 1101×728 CSS · zoom 1 · DPR 2<br />E05</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="auto-sync-off-synced Auto Sync off with connected peer rendered-fixture E16"
+    >
+      <a href="auto-sync-off-synced.png"
+        ><img
+          loading="lazy"
+          src="auto-sync-off-synced.png"
+          alt="Auto Sync off with connected peer"
+      /></a>
+      <figcaption>
+        <strong>auto-sync-off-synced</strong>
+        <p>Auto Sync off with connected peer</p>
+        <small>rendered-fixture · 1101×728 CSS · zoom 1 · DPR 2<br />E16</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="qr-minimum Resize open QR dialog to native minimum rendered-fixture "
+    >
+      <a href="qr-minimum.png"
+        ><img
+          loading="lazy"
+          src="qr-minimum.png"
+          alt="Resize open QR dialog to native minimum"
+      /></a>
+      <figcaption>
+        <strong>qr-minimum</strong>
+        <p>Resize open QR dialog to native minimum</p>
+        <small>rendered-fixture · 480×608 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="qr-200-percent Open QR dialog at 200 percent zoom rendered-fixture "
+    >
+      <a href="qr-200-percent.png"
+        ><img
+          loading="lazy"
+          src="qr-200-percent.png"
+          alt="Open QR dialog at 200 percent zoom"
+      /></a>
+      <figcaption>
+        <strong>qr-200-percent</strong>
+        <p>Open QR dialog at 200 percent zoom</p>
+        <small
+          >rendered-fixture · 240×304 CSS · zoom 2 · DPR 4<br /><br /><b
+            >Superseded zoom image: capture cropped. Use native replacement.</b
+          ></small
+        >
+      </figcaption>
+    </figure>
+    <figure
+      data-text="history-200-percent Minimum native window at 200 percent zoom rendered-fixture E07"
+    >
+      <a href="history-200-percent.png"
+        ><img
+          loading="lazy"
+          src="history-200-percent.png"
+          alt="Minimum native window at 200 percent zoom"
+      /></a>
+      <figcaption>
+        <strong>history-200-percent</strong>
+        <p>Minimum native window at 200 percent zoom</p>
+        <small
+          >rendered-fixture · 240×304 CSS · zoom 2 · DPR 4<br />E07<br /><b
+            >Superseded zoom image: capture cropped. Use native replacement.</b
+          ></small
+        >
+      </figcaption>
+    </figure>
+    <figure
+      data-text="banner-pending-capture Recovery and failure banners rendered-fixture E02"
+    >
+      <a href="banner-pending-capture.png"
+        ><img
+          loading="lazy"
+          src="banner-pending-capture.png"
+          alt="Recovery and failure banners"
+      /></a>
+      <figcaption>
+        <strong>banner-pending-capture</strong>
+        <p>Recovery and failure banners</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="banner-cleanup Recovery and failure banners rendered-fixture E02"
+    >
+      <a href="banner-cleanup.png"
+        ><img
+          loading="lazy"
+          src="banner-cleanup.png"
+          alt="Recovery and failure banners"
+      /></a>
+      <figcaption>
+        <strong>banner-cleanup</strong>
+        <p>Recovery and failure banners</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="banner-recovery Recovery and failure banners rendered-fixture E02"
+    >
+      <a href="banner-recovery.png"
+        ><img
+          loading="lazy"
+          src="banner-recovery.png"
+          alt="Recovery and failure banners"
+      /></a>
+      <figcaption>
+        <strong>banner-recovery</strong>
+        <p>Recovery and failure banners</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="banner-notice Recovery and failure banners rendered-fixture E02"
+    >
+      <a href="banner-notice.png"
+        ><img
+          loading="lazy"
+          src="banner-notice.png"
+          alt="Recovery and failure banners"
+      /></a>
+      <figcaption>
+        <strong>banner-notice</strong>
+        <p>Recovery and failure banners</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="banner-stacked Recovery and failure banners rendered-fixture E02"
+    >
+      <a href="banner-stacked.png"
+        ><img
+          loading="lazy"
+          src="banner-stacked.png"
+          alt="Recovery and failure banners"
+      /></a>
+      <figcaption>
+        <strong>banner-stacked</strong>
+        <p>Recovery and failure banners</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="dense-drawer-top Concurrent pending requests and dense settings rendered-fixture E16"
+    >
+      <a href="dense-drawer-top.png"
+        ><img
+          loading="lazy"
+          src="dense-drawer-top.png"
+          alt="Concurrent pending requests and dense settings"
+      /></a>
+      <figcaption>
+        <strong>dense-drawer-top</strong>
+        <p>Concurrent pending requests and dense settings</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E16</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="dense-relay-long-name Long relay name and endpoint rendered-fixture E14"
+    >
+      <a href="dense-relay-long-name.png"
+        ><img
+          loading="lazy"
+          src="dense-relay-long-name.png"
+          alt="Long relay name and endpoint"
+      /></a>
+      <figcaption>
+        <strong>dense-relay-long-name</strong>
+        <p>Long relay name and endpoint</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E14</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="dense-drawer-bottom Reach final relay and everyday settings rendered-fixture E14"
+    >
+      <a href="dense-drawer-bottom.png"
+        ><img
+          loading="lazy"
+          src="dense-drawer-bottom.png"
+          alt="Reach final relay and everyday settings"
+      /></a>
+      <figcaption>
+        <strong>dense-drawer-bottom</strong>
+        <p>Reach final relay and everyday settings</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E14</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="dense-sidebar-bottom Long relay actions in 260px sidebar rendered-fixture E14"
+    >
+      <a href="dense-sidebar-bottom.png"
+        ><img
+          loading="lazy"
+          src="dense-sidebar-bottom.png"
+          alt="Long relay actions in 260px sidebar"
+      /></a>
+      <figcaption>
+        <strong>dense-sidebar-bottom</strong>
+        <p>Long relay actions in 260px sidebar</p>
+        <small>rendered-fixture · 1101×728 CSS · zoom 1 · DPR 2<br />E14</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="pending-main-no-indicator Incoming approval while drawer closed rendered-fixture E12"
+    >
+      <a href="pending-main-no-indicator.png"
+        ><img
+          loading="lazy"
+          src="pending-main-no-indicator.png"
+          alt="Incoming approval while drawer closed"
+      /></a>
+      <figcaption>
+        <strong>pending-main-no-indicator</strong>
+        <p>Incoming approval while drawer closed</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E12</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="pending-accept-failure Accept request fails rendered-fixture E11"
+    >
+      <a href="pending-accept-failure.png"
+        ><img
+          loading="lazy"
+          src="pending-accept-failure.png"
+          alt="Accept request fails"
+      /></a>
+      <figcaption>
+        <strong>pending-accept-failure</strong>
+        <p>Accept request fails</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E11</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="source-menu-long-names Source filter with long device names rendered-fixture "
+    >
+      <a href="source-menu-long-names.png"
+        ><img
+          loading="lazy"
+          src="source-menu-long-names.png"
+          alt="Source filter with long device names"
+      /></a>
+      <figcaption>
+        <strong>source-menu-long-names</strong>
+        <p>Source filter with long device names</p>
+        <small>rendered-fixture · 800×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-minimum Ancestor-clipped card visibility rendered-fixture "
+    >
+      <a href="measured-minimum.png"
+        ><img
+          loading="lazy"
+          src="measured-minimum.png"
+          alt="Ancestor-clipped card visibility"
+      /></a>
+      <figcaption>
+        <strong>measured-minimum</strong>
+        <p>Ancestor-clipped card visibility</p>
+        <small>rendered-fixture · 480×608 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-default Ancestor-clipped card visibility rendered-fixture "
+    >
+      <a href="measured-default.png"
+        ><img
+          loading="lazy"
+          src="measured-default.png"
+          alt="Ancestor-clipped card visibility"
+      /></a>
+      <figcaption>
+        <strong>measured-default</strong>
+        <p>Ancestor-clipped card visibility</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-search-start Ancestor-clipped card visibility rendered-fixture "
+    >
+      <a href="measured-search-start.png"
+        ><img
+          loading="lazy"
+          src="measured-search-start.png"
+          alt="Ancestor-clipped card visibility"
+      /></a>
+      <figcaption>
+        <strong>measured-search-start</strong>
+        <p>Ancestor-clipped card visibility</p>
+        <small>rendered-fixture · 601×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-ordinary Ancestor-clipped card visibility rendered-fixture "
+    >
+      <a href="measured-ordinary.png"
+        ><img
+          loading="lazy"
+          src="measured-ordinary.png"
+          alt="Ancestor-clipped card visibility"
+      /></a>
+      <figcaption>
+        <strong>measured-ordinary</strong>
+        <p>Ancestor-clipped card visibility</p>
+        <small>rendered-fixture · 800×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-sidebar-start Ancestor-clipped card visibility rendered-fixture "
+    >
+      <a href="measured-sidebar-start.png"
+        ><img
+          loading="lazy"
+          src="measured-sidebar-start.png"
+          alt="Ancestor-clipped card visibility"
+      /></a>
+      <figcaption>
+        <strong>measured-sidebar-start</strong>
+        <p>Ancestor-clipped card visibility</p>
+        <small>rendered-fixture · 1101×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-wide Ancestor-clipped card visibility rendered-fixture "
+    >
+      <a href="measured-wide.png"
+        ><img
+          loading="lazy"
+          src="measured-wide.png"
+          alt="Ancestor-clipped card visibility"
+      /></a>
+      <figcaption>
+        <strong>measured-wide</strong>
+        <p>Ancestor-clipped card visibility</p>
+        <small>rendered-fixture · 1440×868 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="wide-zoom-1.25 Wider window with page zoom rendered-fixture "
+    >
+      <a href="wide-zoom-1.25.png"
+        ><img
+          loading="lazy"
+          src="wide-zoom-1.25.png"
+          alt="Wider window with page zoom"
+      /></a>
+      <figcaption>
+        <strong>wide-zoom-1.25</strong>
+        <p>Wider window with page zoom</p>
+        <small
+          >rendered-fixture · 1152×694 CSS · zoom 1.25 · DPR 2.5<br /><br /><b
+            >Superseded zoom image: capture cropped. Use native replacement.</b
+          ></small
+        >
+      </figcaption>
+    </figure>
+    <figure
+      data-text="wide-zoom-1.5 Wider window with page zoom rendered-fixture "
+    >
+      <a href="wide-zoom-1.5.png"
+        ><img
+          loading="lazy"
+          src="wide-zoom-1.5.png"
+          alt="Wider window with page zoom"
+      /></a>
+      <figcaption>
+        <strong>wide-zoom-1.5</strong>
+        <p>Wider window with page zoom</p>
+        <small
+          >rendered-fixture · 960×578 CSS · zoom 1.5 · DPR 3<br /><br /><b
+            >Superseded zoom image: capture cropped. Use native replacement.</b
+          ></small
+        >
+      </figcaption>
+    </figure>
+    <figure
+      data-text="wide-zoom-2 Wider window with page zoom rendered-fixture "
+    >
+      <a href="wide-zoom-2.png"
+        ><img
+          loading="lazy"
+          src="wide-zoom-2.png"
+          alt="Wider window with page zoom"
+      /></a>
+      <figcaption>
+        <strong>wide-zoom-2</strong>
+        <p>Wider window with page zoom</p>
+        <small
+          >rendered-fixture · 720×434 CSS · zoom 2 · DPR 4<br /><br /><b
+            >Superseded zoom image: capture cropped. Use native replacement.</b
+          ></small
+        >
+      </figcaption>
+    </figure>
+    <figure
+      data-text="reflow-320-css 320 CSS px at 200 percent zoom rendered-fixture E07"
+    >
+      <a href="reflow-320-css.png"
+        ><img
+          loading="lazy"
+          src="reflow-320-css.png"
+          alt="320 CSS px at 200 percent zoom"
+      /></a>
+      <figcaption>
+        <strong>reflow-320-css</strong>
+        <p>320 CSS px at 200 percent zoom</p>
+        <small
+          >rendered-fixture · 320×364 CSS · zoom 2 · DPR 4<br />E07<br /><b
+            >Superseded zoom image: capture cropped. Use native replacement.</b
+          ></small
+        >
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-cleanup-banner Notice geometry and hit targets rendered-fixture "
+    >
+      <a href="measured-cleanup-banner.png"
+        ><img
+          loading="lazy"
+          src="measured-cleanup-banner.png"
+          alt="Notice geometry and hit targets"
+      /></a>
+      <figcaption>
+        <strong>measured-cleanup-banner</strong>
+        <p>Notice geometry and hit targets</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="initialization-error-fixture Identity initialization failure rendered-fixture "
+    >
+      <a href="initialization-error-fixture.png"
+        ><img
+          loading="lazy"
+          src="initialization-error-fixture.png"
+          alt="Identity initialization failure"
+      /></a>
+      <figcaption>
+        <strong>initialization-error-fixture</strong>
+        <p>Identity initialization failure</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-capture-reflow-320 320 CSS px native capture at zoom 2 rendered-fixture E07"
+    >
+      <a href="native-capture-reflow-320.png"
+        ><img
+          loading="lazy"
+          src="native-capture-reflow-320.png"
+          alt="320 CSS px native capture at zoom 2"
+      /></a>
+      <figcaption>
+        <strong>native-capture-reflow-320</strong>
+        <p>320 CSS px native capture at zoom 2</p>
+        <small>rendered-fixture · 320×364 CSS · zoom 2 · DPR 4<br />E07</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-capture-minimum-zoom2 Minimum window at zoom 2 rendered-fixture E07"
+    >
+      <a href="native-capture-minimum-zoom2.png"
+        ><img
+          loading="lazy"
+          src="native-capture-minimum-zoom2.png"
+          alt="Minimum window at zoom 2"
+      /></a>
+      <figcaption>
+        <strong>native-capture-minimum-zoom2</strong>
+        <p>Minimum window at zoom 2</p>
+        <small>rendered-fixture · 240×304 CSS · zoom 2 · DPR 4<br />E07</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="filtered-before-clear Clear filtered history rendered-fixture E09"
+    >
+      <a href="filtered-before-clear.png"
+        ><img
+          loading="lazy"
+          src="filtered-before-clear.png"
+          alt="Clear filtered history"
+      /></a>
+      <figcaption>
+        <strong>filtered-before-clear</strong>
+        <p>Clear filtered history</p>
+        <small>rendered-fixture · 800×728 CSS · zoom 1 · DPR 2<br />E09</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="filtered-after-clear Clear filtered history rendered-fixture E09"
+    >
+      <a href="filtered-after-clear.png"
+        ><img
+          loading="lazy"
+          src="filtered-after-clear.png"
+          alt="Clear filtered history"
+      /></a>
+      <figcaption>
+        <strong>filtered-after-clear</strong>
+        <p>Clear filtered history</p>
+        <small>rendered-fixture · 800×728 CSS · zoom 1 · DPR 2<br />E09</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="rename-save-failure Name save rejected rendered-fixture E11"
+    >
+      <a href="rename-save-failure.png"
+        ><img
+          loading="lazy"
+          src="rename-save-failure.png"
+          alt="Name save rejected"
+      /></a>
+      <figcaption>
+        <strong>rename-save-failure</strong>
+        <p>Name save rejected</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E11</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="copy-failure-banner Retained Copy failure feedback rendered-fixture E02"
+    >
+      <a href="copy-failure-banner.png"
+        ><img
+          loading="lazy"
+          src="copy-failure-banner.png"
+          alt="Retained Copy failure feedback"
+      /></a>
+      <figcaption>
+        <strong>copy-failure-banner</strong>
+        <p>Retained Copy failure feedback</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="copy-partial-success-banner Copied without storing a new Clip rendered-fixture E02"
+    >
+      <a href="copy-partial-success-banner.png"
+        ><img
+          loading="lazy"
+          src="copy-partial-success-banner.png"
+          alt="Copied without storing a new Clip"
+      /></a>
+      <figcaption>
+        <strong>copy-partial-success-banner</strong>
+        <p>Copied without storing a new Clip</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br />E02</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="last-card-menu Bottom-row overflow menu rendered-fixture "
+    >
+      <a href="last-card-menu.png"
+        ><img
+          loading="lazy"
+          src="last-card-menu.png"
+          alt="Bottom-row overflow menu"
+      /></a>
+      <figcaption>
+        <strong>last-card-menu</strong>
+        <p>Bottom-row overflow menu</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="qr-copy-fallback Pairing target too large for QR rendered-fixture "
+    >
+      <a href="qr-copy-fallback.png"
+        ><img
+          loading="lazy"
+          src="qr-copy-fallback.png"
+          alt="Pairing target too large for QR"
+      /></a>
+      <figcaption>
+        <strong>qr-copy-fallback</strong>
+        <p>Pairing target too large for QR</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="qr-generation-error Pairing QR generation fails rendered-fixture "
+    >
+      <a href="qr-generation-error.png"
+        ><img
+          loading="lazy"
+          src="qr-generation-error.png"
+          alt="Pairing QR generation fails"
+      /></a>
+      <figcaption>
+        <strong>qr-generation-error</strong>
+        <p>Pairing QR generation fails</p>
+        <small>rendered-fixture · 520×728 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="sidebar-ordinary-labels Label truncation at sidebar boundary rendered-fixture E16"
+    >
+      <a href="sidebar-ordinary-labels.png"
+        ><img
+          loading="lazy"
+          src="sidebar-ordinary-labels.png"
+          alt="Label truncation at sidebar boundary"
+      /></a>
+      <figcaption>
+        <strong>sidebar-ordinary-labels</strong>
+        <p>Label truncation at sidebar boundary</p>
+        <small>rendered-fixture · 1101×728 CSS · zoom 1 · DPR 2<br />E16</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-maximized Ancestor-clipped visibility in maximized mode rendered-fixture "
+    >
+      <a href="measured-maximized.png"
+        ><img
+          loading="lazy"
+          src="measured-maximized.png"
+          alt="Ancestor-clipped visibility in maximized mode"
+      /></a>
+      <figcaption>
+        <strong>measured-maximized</strong>
+        <p>Ancestor-clipped visibility in maximized mode</p>
+        <small>rendered-fixture · 1512×917 CSS · zoom 1 · DPR 2<br /></small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="measured-fullscreen Fullscreen space use rendered-fixture E15"
+    >
+      <a href="measured-fullscreen.png"
+        ><img
+          loading="lazy"
+          src="measured-fullscreen.png"
+          alt="Fullscreen space use"
+      /></a>
+      <figcaption>
+        <strong>measured-fullscreen</strong>
+        <p>Fullscreen space use</p>
+        <small>rendered-fixture · 1512×949 CSS · zoom 1 · DPR 2<br />E15</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="fullscreen-one-clip Fullscreen sparse history rendered-fixture E15"
+    >
+      <a href="fullscreen-one-clip.png"
+        ><img
+          loading="lazy"
+          src="fullscreen-one-clip.png"
+          alt="Fullscreen sparse history"
+      /></a>
+      <figcaption>
+        <strong>fullscreen-one-clip</strong>
+        <p>Fullscreen sparse history</p>
+        <small>rendered-fixture · 1512×949 CSS · zoom 1 · DPR 2<br />E15</small>
+      </figcaption>
+    </figure>
+    <figure
+      data-text="native-reflow-320-collapsed 320 CSS px with collapsed filters rendered-fixture E07"
+    >
+      <a href="native-reflow-320-collapsed.png"
+        ><img
+          loading="lazy"
+          src="native-reflow-320-collapsed.png"
+          alt="320 CSS px with collapsed filters"
+      /></a>
+      <figcaption>
+        <strong>native-reflow-320-collapsed</strong>
+        <p>320 CSS px with collapsed filters</p>
+        <small>rendered-fixture · 320×364 CSS · zoom 2 · DPR 4<br />E07</small>
+      </figcaption>
+    </figure>
+  </main>
+  <script>
+    const f = document.querySelector("#filter"),
+      cards = [...document.querySelectorAll("figure")];
+    f.oninput = () => {
+      let n = 0;
+      for (const c of cards) {
+        c.hidden = !c.dataset.text
+          .toLowerCase()
+          .includes(f.value.toLowerCase());
+        if (!c.hidden) n++;
+      }
+      document.querySelector("#count").textContent = n + " observations";
+    };
+    f.oninput();
+  </script>
+</html>
