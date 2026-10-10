@@ -82,23 +82,7 @@ function App() {
   }, [client]);
 
   async function handlePairText(txt: string) {
-    const res = await client.pairFromText(txt);
-    console.info(
-      "[clipp:android:pairing] pairFromText result",
-      JSON.stringify(res)
-    );
-    if (res?.ok === false) {
-      const suffix = res.diagnostics?.attemptId
-        ? `\n\nAttempt: ${res.diagnostics.attemptId}\nDetails are logged under [clipp:android:pairing].`
-        : "";
-      alert(
-        res.error === "invalid"
-          ? `Invalid pairing payload${suffix}`
-          : res.error === "no_target"
-            ? `Could not find a dialable address${suffix}`
-            : `Failed to reach device${suffix}`
-      );
-    }
+    return await client.pairFromText(txt);
   }
 
   async function handleScanPairingCode(): Promise<string | null> {
@@ -133,10 +117,12 @@ function App() {
           {error}
         </div>
       )}
-      <PairingDiagnosticsPanel
-        attempt={state.diagnostics?.lastPairingAttempt || null}
-      />
       <ClipboardApp
+        pairingDiagnostics={
+          <PairingDiagnosticsPanel
+            attempt={state.diagnostics?.lastPairingAttempt || null}
+          />
+        }
         clips={state.clips as Clip[]}
         historyLoading={historyLoading}
         historyUnavailable={
@@ -234,9 +220,12 @@ function PairingDiagnosticsPanel({
 
   return (
     <details
-      open={attempt.status === "failed"}
       style={{
-        margin: 12,
+        maxWidth: "100%",
+        maxHeight: "25dvh",
+        overflow: "auto",
+        overflowWrap: "anywhere",
+        margin: 0,
         padding: 12,
         borderRadius: 12,
         border:
@@ -254,7 +243,7 @@ function PairingDiagnosticsPanel({
       <pre
         style={{
           marginTop: 10,
-          maxHeight: 260,
+          maxHeight: "15dvh",
           overflow: "auto",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",

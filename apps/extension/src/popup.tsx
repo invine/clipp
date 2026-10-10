@@ -1,3 +1,7 @@
+import {
+  submitExtensionPairing,
+  decideExtensionPairing,
+} from "./pairingActions";
 /* global chrome */
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
@@ -18,7 +22,6 @@ import {
 } from "../../../packages/ui";
 import { ClipboardApp } from "../../../packages/ui/src/ClipboardApp";
 import "../../../packages/ui/src/styles.css";
-import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { shareCurrentPopupClipboard } from "./popupClipboardActions";
 import type {
   RelayConfiguration,
@@ -243,13 +246,20 @@ const Popup = () => {
   }
 
   async function handlePairingText(txt: string) {
-    if (!decodePairingTarget(txt)) {
-      alert("Invalid pairing payload");
-      return;
-    }
-    chrome.runtime.sendMessage({ type: "pairDevice", pairingText: txt }, () => {
-      refreshPending();
-    });
+    const result = await submitExtensionPairing(chrome.runtime, txt);
+    refreshPending();
+    return result;
+  }
+
+  async function handleDecision(device: PendingRequest, accepted: boolean) {
+    const result = await decideExtensionPairing(
+      chrome.runtime,
+      device,
+      accepted
+    );
+    refreshPending();
+    refreshDevices();
+    return result;
   }
 
   async function handleRequestPairingCode(): Promise<PairingCode | null> {
@@ -336,35 +346,8 @@ const Popup = () => {
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
         onRenameDevice={handleRenameDevice}
-        onAccept={(dev) =>
-          chrome.runtime.sendMessage(
-            {
-              type: "respondTrust",
-              id: dev.deviceId,
-              accept: true,
-              device: dev,
-            },
-            (response) => {
-              if (!response?.ok) return;
-              setPending((p) => p.filter((d) => d.deviceId !== dev.deviceId));
-              refreshDevices();
-            }
-          )
-        }
-        onReject={(dev) =>
-          chrome.runtime.sendMessage(
-            {
-              type: "respondTrust",
-              id: dev.deviceId,
-              accept: false,
-              device: dev,
-            },
-            (response) => {
-              if (!response?.ok) return;
-              setPending((p) => p.filter((d) => d.deviceId !== dev.deviceId));
-            }
-          )
-        }
+        onAccept={(dev) => handleDecision(dev, true)}
+        onReject={(dev) => handleDecision(dev, false)}
         onPairText={handlePairingText}
         onRequestPairingCode={handleRequestPairingCode}
         onReuseClip={async (id) => {

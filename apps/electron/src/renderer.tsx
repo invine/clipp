@@ -115,15 +115,7 @@ const App = () => {
   }, []);
 
   async function handlePairText(txt: string) {
-    const res = await window.clipp.pairFromText(txt);
-    console.info("[clipp] pairFromText result", res);
-    if (res?.ok === false) {
-      alert(
-        res.error === "invalid"
-          ? "Invalid pairing payload"
-          : "Failed to reach device"
-      );
-    }
+    return await window.clipp.pairFromText(txt);
   }
 
   return (
