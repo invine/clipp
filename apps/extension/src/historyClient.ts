@@ -34,35 +34,36 @@ export function createHistoryClient(port: {
   const apply = (
     snapshot: ExtensionHistorySnapshot,
     versionAtRequest: number
-  ) => {
+  ): boolean => {
     if (
       typeof snapshot?.sessionId !== "string" ||
       typeof snapshot.revision !== "number" ||
       !Array.isArray(snapshot.clips) ||
       !Array.isArray(snapshot.pinnedIds)
     )
-      return;
+      return false;
     const previous = state.snapshot;
-    if (retiredSessions.has(snapshot.sessionId)) return;
+    if (retiredSessions.has(snapshot.sessionId)) return false;
     if (
       previous &&
       previous.sessionId !== snapshot.sessionId &&
       acceptedVersion !== versionAtRequest
     )
-      return;
+      return false;
     if (
       previous?.sessionId === snapshot.sessionId &&
       previous.revision > snapshot.revision
     )
-      return;
+      return false;
     if (previous && previous.sessionId !== snapshot.sessionId)
       retiredSessions.add(previous.sessionId);
     state = { ...state, snapshot, loading: false, refreshError: null };
     acceptedVersion += 1;
     notify();
+    return true;
   };
 
-  async function refresh(): Promise<void> {
+  async function refresh(): Promise<boolean> {
     const currentRequest = ++requestId;
     const versionAtRequest = acceptedVersion;
     state = {
@@ -76,18 +77,19 @@ export function createHistoryClient(port: {
       const reply = (await port.send({ type: "getClipHistory" })) as
         | { ok?: boolean; snapshot?: ExtensionHistorySnapshot; error?: string }
         | undefined;
-      if (currentRequest !== requestId) return;
+      if (currentRequest !== requestId) return false;
       if (!reply?.ok || !reply.snapshot)
         throw new Error(reply?.error ?? "history_unavailable");
-      apply(reply.snapshot, versionAtRequest);
+      return apply(reply.snapshot, versionAtRequest);
     } catch (error) {
-      if (currentRequest !== requestId) return;
+      if (currentRequest !== requestId) return false;
       state = {
         ...state,
         loading: false,
         refreshError: (error as Error).message,
       };
       notify();
+      return false;
     } finally {
       if (currentRequest === requestId) {
         state = { ...state, refreshing: false };
