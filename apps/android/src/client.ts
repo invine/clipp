@@ -1044,8 +1044,11 @@ export class AndroidClient {
   }
 
   async clearHistory() {
-    await this.backgroundContinuity.clearHistory();
-    await this.emitState();
+    try {
+      await this.backgroundContinuity.clearHistory();
+    } finally {
+      await this.emitState();
+    }
   }
 
   async unpairDevice(id: string) {

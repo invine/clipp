@@ -358,11 +358,17 @@ export class MemoryHistoryStore implements ClipHistoryStore {
 
   async clearAll(): Promise<void> {
     await this.serialized(async () => {
-      await this.backend.applyHistoryMutation({
-        kind: "clear",
-        now: this.now(),
-        policy: this.mutationPolicy(),
-      });
+      try {
+        await this.backend.applyHistoryMutation({
+          kind: "clear",
+          now: this.now(),
+          policy: this.mutationPolicy(),
+        });
+      } catch (error) {
+        // A backend can report failure after partial effects. Reconcile every open view.
+        this.changed();
+        throw error;
+      }
       this.sessionPinnedIds.clear();
       this.changed();
     });
