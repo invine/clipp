@@ -30,6 +30,8 @@ export function createSettingsClient(port: {
   let listener: ((state: SettingsClientState) => void) | undefined;
   let unsubscribe: (() => void) | undefined;
   let refreshId = 0;
+  let acceptedVersion = 0;
+  const retiredSessions = new Set<string>();
 
   const notify = () => listener?.({ ...state });
   const apply = (snapshot: SettingsSnapshot, allowSessionChange = false) => {
@@ -40,6 +42,7 @@ export function createSettingsClient(port: {
     )
       return;
     const prior = state.snapshot;
+    if (retiredSessions.has(snapshot.sessionId)) return;
     if (
       prior &&
       prior.sessionId !== snapshot.sessionId &&
@@ -50,15 +53,19 @@ export function createSettingsClient(port: {
     }
     if (
       prior?.sessionId === snapshot.sessionId &&
-      prior.revision > snapshot.revision
+      prior.revision >= snapshot.revision
     )
       return;
+    if (prior && prior.sessionId !== snapshot.sessionId)
+      retiredSessions.add(prior.sessionId);
     state = { ...state, snapshot, loading: false };
+    acceptedVersion += 1;
     notify();
   };
 
   async function refresh(): Promise<void> {
     const requestId = ++refreshId;
+    const versionAtRequest = acceptedVersion;
     try {
       const response = (await port.send({ type: "getSettings" })) as
         | { ok?: boolean; snapshot?: SettingsSnapshot; error?: string }
@@ -66,6 +73,12 @@ export function createSettingsClient(port: {
       if (requestId !== refreshId) return;
       if (!response?.ok || !response.snapshot)
         throw new Error(response?.error ?? "settings_unavailable");
+      if (
+        state.snapshot &&
+        response.snapshot.sessionId !== state.snapshot.sessionId &&
+        acceptedVersion !== versionAtRequest
+      )
+        return;
       apply(response.snapshot, true);
     } catch (error) {
       if (requestId !== refreshId) return;

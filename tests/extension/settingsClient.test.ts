@@ -86,6 +86,128 @@ it("does not replace a newer publication with delayed bootstrap", async () => {
   expect(client.getState().snapshot).toEqual(newer);
 });
 
+it("does not switch back to an old worker after accepting a new worker publication", async () => {
+  let answerOldRefresh!: (value: unknown) => void;
+  let onMessage!: (message: unknown) => void;
+  let reads = 0;
+  const client = createSettingsClient({
+    send: async () => {
+      reads += 1;
+      if (reads === 1) {
+        return {
+          ok: true,
+          snapshot: {
+            sessionId: "worker-B",
+            revision: 1,
+            state: { autoSync: false, logLevel: "info" },
+          },
+        };
+      }
+      return new Promise((resolve) => {
+        answerOldRefresh = resolve;
+      });
+    },
+    subscribe: (listener) => {
+      onMessage = listener;
+      return () => {};
+    },
+  });
+  await client.start();
+  const oldRefresh = client.refresh();
+  const newer = {
+    sessionId: "worker-B",
+    revision: 2,
+    state: { autoSync: false, logLevel: "warn" as const },
+  };
+  onMessage({ type: "settingsState", snapshot: newer });
+  answerOldRefresh({
+    ok: true,
+    snapshot: {
+      sessionId: "worker-A",
+      revision: 99,
+      state: { autoSync: true, logLevel: "debug" },
+    },
+  });
+  await oldRefresh;
+
+  expect(client.getState().snapshot).toEqual(newer);
+});
+
+it("accepts a current worker handshake and rejects replies from a retired worker", async () => {
+  const snapshots = [
+    {
+      sessionId: "worker-A",
+      revision: 3,
+      state: { autoSync: true, logLevel: "info" },
+    },
+    {
+      sessionId: "worker-B",
+      revision: 1,
+      state: { autoSync: false, logLevel: "warn" },
+    },
+    {
+      sessionId: "worker-A",
+      revision: 4,
+      state: { autoSync: true, logLevel: "debug" },
+    },
+  ];
+  const client = createSettingsClient({
+    send: async () => ({ ok: true, snapshot: snapshots.shift() }),
+    subscribe: () => () => {},
+  });
+  await client.start();
+  await client.refresh();
+  await client.refresh();
+
+  expect(client.getState().snapshot).toEqual({
+    sessionId: "worker-B",
+    revision: 1,
+    state: { autoSync: false, logLevel: "warn" },
+  });
+});
+
+it("does not let a duplicate old-session publication block a current-worker handshake", async () => {
+  let answerRestart!: (value: unknown) => void;
+  let onMessage!: (message: unknown) => void;
+  const old = {
+    sessionId: "worker-A",
+    revision: 4,
+    state: { autoSync: true, logLevel: "info" as const },
+  };
+  let reads = 0;
+  const client = createSettingsClient({
+    send: async () => {
+      reads += 1;
+      return reads === 1
+        ? { ok: true, snapshot: old }
+        : new Promise((resolve) => {
+            answerRestart = resolve;
+          });
+    },
+    subscribe: (listener) => {
+      onMessage = listener;
+      return () => {};
+    },
+  });
+  await client.start();
+  const reconnect = client.refresh();
+  onMessage({ type: "settingsState", snapshot: old });
+  answerRestart({
+    ok: true,
+    snapshot: {
+      sessionId: "worker-B",
+      revision: 1,
+      state: { autoSync: false, logLevel: "warn" },
+    },
+  });
+  await reconnect;
+
+  expect(client.getState().snapshot).toMatchObject({
+    sessionId: "worker-B",
+    state: { autoSync: false, logLevel: "warn" },
+  });
+});
+
 it("keeps rejected-save feedback beside the applied value", async () => {
   const snapshot = {
     sessionId: "worker-1",

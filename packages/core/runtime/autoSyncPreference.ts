@@ -8,7 +8,7 @@ export type AutoSyncPreference = {
 };
 
 export function createAutoSyncPreference(options: {
-  storage: KVStorageBackend;
+  storage: Pick<KVStorageBackend, "get" | "set">;
   key?: string;
 }): AutoSyncPreference {
   const key = options.key ?? AUTO_SYNC_PREFERENCE_KEY;

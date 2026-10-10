@@ -1,4 +1,5 @@
 import { ManagedRelaySettings } from "./ManagedRelaySettings";
+import { PreferenceSaveFeedback } from "./PreferenceSaveFeedback";
 import type {
   RelayConfiguration,
   RelayState,
@@ -1459,29 +1460,10 @@ export function ClipboardApp({
               <option value="disabled">Disabled — keep Clips local</option>
             </select>
             {autoSyncPending && <p role="status">Saving Auto Sync…</p>}
-            {autoSyncFeedback?.status === "applied" && (
-              <p role="status">
-                Auto Sync saved.
-                {autoSyncFeedback.error &&
-                  ` Other views may need refresh: ${autoSyncFeedback.error}`}
-              </p>
-            )}
-            {autoSyncFeedback?.status === "rejected" && (
-              <p role="alert">
-                Auto Sync was not saved: {autoSyncFeedback.error}
-              </p>
-            )}
-            {autoSyncFeedback?.status === "partial" && (
-              <p role="alert">
-                Auto Sync was only partly saved: {autoSyncFeedback.error}
-              </p>
-            )}
-            {autoSyncFeedback?.status === "unconfirmed" && (
-              <p role="alert">
-                Auto Sync save could not be confirmed. Current setting was
-                refreshed. {autoSyncFeedback.error}
-              </p>
-            )}
+            <PreferenceSaveFeedback
+              feedback={autoSyncFeedback}
+              subject="Auto Sync"
+            />
           </div>
         )}
 
