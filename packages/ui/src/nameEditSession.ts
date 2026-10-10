@@ -33,6 +33,7 @@ export function createNameEditSession() {
   };
   let base = "";
   let version = 0;
+  let session = 0;
   const listeners = new Set<() => void>();
 
   function publish(next: NameEditSnapshot) {
@@ -42,6 +43,7 @@ export function createNameEditSession() {
 
   function cancel() {
     version += 1;
+    session += 1;
     base = "";
     publish({ targetId: null, raw: "", pending: false, error: null });
   }
@@ -54,6 +56,7 @@ export function createNameEditSession() {
     },
     begin(targetId: string, value: string) {
       version += 1;
+      session += 1;
       base = value;
       publish({ targetId, raw: value, pending: false, error: null });
     },
@@ -80,10 +83,12 @@ export function createNameEditSession() {
       const targetId = snapshot.targetId;
       const raw = snapshot.raw;
       const submittedVersion = version;
+      const submittedSession = session;
       publish({ ...snapshot, pending: true, error: null });
       try {
         const result = await action(targetId, raw);
-        if (snapshot.targetId !== targetId) return;
+        if (session !== submittedSession || snapshot.targetId !== targetId)
+          return;
         if (!result || result.deviceId !== targetId) {
           throw new Error("device_unavailable");
         }
@@ -93,7 +98,8 @@ export function createNameEditSession() {
           publish({ ...snapshot, pending: false });
         }
       } catch (error) {
-        if (snapshot.targetId !== targetId) return;
+        if (session !== submittedSession || snapshot.targetId !== targetId)
+          return;
         publish({
           ...snapshot,
           pending: false,
@@ -102,4 +108,14 @@ export function createNameEditSession() {
       }
     },
   };
+}
+
+export function saveNonEmptyAlias<Result extends { deviceId: string }>(
+  session: ReturnType<typeof createNameEditSession>,
+  action: (targetId: string, raw: string) => Promise<Result | null>
+): Promise<void> {
+  return session.save((targetId, raw) => {
+    if (raw.trim() === "") throw new Error("invalid_device_alias");
+    return action(targetId, raw);
+  });
 }
