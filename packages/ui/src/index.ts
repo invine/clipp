@@ -4,3 +4,4 @@ export * from "./identityRotationNotice";
 export * from "./clipboardActionFeedback";
 export * from "./ClipboardApp";
 import "./styles.css";
+export * from "./pairingFeedback";

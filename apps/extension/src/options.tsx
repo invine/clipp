@@ -3,7 +3,7 @@ import { PairingCodeContent } from "../../../packages/ui/src/PairingCodeContent"
 import { usePairingCodeTask } from "../../../packages/ui/src/usePairingCodeTask";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import { createPairingSubmission } from "../../../packages/ui/src/pairingSubmission";
-import { pairingSubmissionMessage } from "../../../packages/core/pairing/results";
+import { pairingSubmissionMessage } from "../../../packages/ui/src/pairingFeedback";
 import { submitExtensionPairing } from "./pairingActions";
 import React, { useEffect, useState, useSyncExternalStore } from "react";
 import ReactDOM from "react-dom/client";
