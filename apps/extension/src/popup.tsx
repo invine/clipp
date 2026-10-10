@@ -18,6 +18,7 @@ import {
   ReuseClipOutcome,
 } from "../../../packages/ui";
 import { ClipboardApp } from "../../../packages/ui/src/ClipboardApp";
+import "../../../packages/ui/src/styles.css";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { shareCurrentPopupClipboard } from "./popupClipboardActions";
 import type {

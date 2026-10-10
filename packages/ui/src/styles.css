@@ -578,6 +578,14 @@ body {
   min-width: 0;
 }
 
+.relay-settings select {
+  min-height: 40px;
+  padding: 6px 8px;
+  color: #111827;
+  background: #fff;
+  border-radius: var(--md-radius-sm);
+}
+
 .relay-accordion-head {
   display: flex;
   align-items: center;
