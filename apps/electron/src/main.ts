@@ -1151,11 +1151,14 @@ async function bootstrap() {
     app.exit(0);
   });
 
-  ipcMain.handle("clipp:rename-identity", async (_evt, name: string) => {
-    await identitySvc.rename(name);
-    await emitState();
-    return toPublicDeviceIdentity(await identitySvc.get());
-  });
+  ipcMain.handle(
+    "clipp:rename-identity",
+    async (_evt, payload: { name: string; expectedDeviceId: string }) => {
+      await identitySvc.rename(payload.name, payload.expectedDeviceId);
+      await emitState();
+      return toPublicDeviceIdentity(await identitySvc.get());
+    }
+  );
 
   ipcMain.handle("clipp:set-managed-relays", async (_evt, values: unknown) => {
     const normalized = normalizeRelayConfigurations(values);

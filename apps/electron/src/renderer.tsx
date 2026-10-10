@@ -159,7 +159,9 @@ const App = () => {
           window.clipp.setLocalRetention(retentionMs)
         }
         onSetAutoSync={(enabled) => window.clipp.setAutoSync(enabled)}
-        onRenameIdentity={(name) => window.clipp.renameIdentity(name)}
+        onRenameIdentity={(name, expectedDeviceId) =>
+          window.clipp.renameIdentity(name, expectedDeviceId)
+        }
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
         onSetManagedRelays={async (configurations) => {
           await window.clipp.setManagedRelays(configurations);

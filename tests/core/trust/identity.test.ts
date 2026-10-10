@@ -213,6 +213,20 @@ describe("Device Identity initialization", () => {
     await expect(manager.setLocalDeviceAlias(remotePeerId, "Former phone")).resolves.toBeNull();
   });
 
+  it("rejects a Device Name Save addressed to a former identity", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    const current = await manager.get();
+
+    await expect(manager.rename("Former edit", "former-device-id")).rejects.toThrow("device_unavailable");
+    expect((await manager.get()).deviceName).toBe("Desktop");
+    await expect(manager.rename("Current edit", current.deviceId)).resolves.toBeUndefined();
+    expect((await manager.get()).deviceName).toBe("Current edit");
+  });
+
   it("waits for an in-flight presentation mutation before listing Trusted Devices", async () => {
     let stored: DeviceIdentity | undefined;
     let releaseAliasWrite!: () => void;

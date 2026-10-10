@@ -1054,11 +1054,11 @@ export class AndroidClient {
     return device;
   }
 
-  async renameIdentity(name: string): Promise<Identity | null> {
-    const trimmed = name.trim();
-    if (!trimmed) return this.getIdentity();
-
-    await this.identitySvc.rename(trimmed);
+  async renameIdentity(
+    name: string,
+    expectedDeviceId: string
+  ): Promise<Identity | null> {
+    await this.identitySvc.rename(name, expectedDeviceId);
     const identity = await this.getIdentity();
     await this.emitState();
     return identity;

@@ -7,7 +7,13 @@ import type {
   RelayConfiguration,
   RelayState,
 } from "../../core/network/managedRelays.js";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   Clip,
@@ -35,6 +41,7 @@ import {
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
+import { createNameEditSession } from "./nameEditSession";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -87,6 +94,22 @@ function clipboardHistoryErrorMessage(error: ClipboardHistoryError): string {
     return "Clipboard History storage is unavailable. One or more pending Clips could not be saved.";
   }
   return "Clipboard History storage is unavailable. Clipp will retry pending Clips automatically.";
+}
+
+function nameSaveErrorMessage(error: string, alias: boolean): string {
+  if (error === "invalid_device_name" || error === "invalid_device_alias") {
+    return `${alias ? "Alias" : "Device Name"} must contain 1–64 characters without control or line breaks. Edit and Save again.`;
+  }
+  if (error === "device_unavailable") {
+    return "This device is no longer available. Your edit was not applied.";
+  }
+  if (
+    error === "rename_outcome_unconfirmed" ||
+    error === "rename_state_unconfirmed"
+  ) {
+    return "The Save result could not be confirmed. Check the current name before saving again.";
+  }
+  return `${alias ? "Alias" : "Device Name"} Save was not confirmed. Your edit is still here; check the current value before saving again.`;
 }
 
 function connectionStatusFor(
@@ -334,7 +357,10 @@ export type ClipboardAppProps = {
   onRetryAutoSync?(): void | Promise<void>;
   onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
-  onRenameIdentity?(name: string): Promise<Identity | null>;
+  onRenameIdentity?(
+    name: string,
+    expectedDeviceId: string
+  ): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(
     addrs: string[]
@@ -426,10 +452,16 @@ export function ClipboardApp({
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [userToggledFilters, setUserToggledFilters] = useState(false);
-  const [editingLocalName, setEditingLocalName] = useState(false);
-  const [localNameDraft, setLocalNameDraft] = useState("");
-  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
-  const [deviceNameDraft, setDeviceNameDraft] = useState("");
+  const [localNameSession] = useState(createNameEditSession);
+  const localNameEdit = useSyncExternalStore(
+    localNameSession.subscribe,
+    localNameSession.getSnapshot
+  );
+  const [aliasSession] = useState(createNameEditSession);
+  const aliasEdit = useSyncExternalStore(
+    aliasSession.subscribe,
+    aliasSession.getSnapshot
+  );
   const [revocationError, setRevocationError] = useState<{
     deviceId: string;
   } | null>(null);
@@ -637,15 +669,29 @@ export function ClipboardApp({
 
   function beginEditLocalName() {
     if (!identity) return;
-    setLocalNameDraft(identity.deviceName || "");
-    setEditingLocalName(true);
+    localNameSession.begin(identity.deviceId, identity.deviceName || "");
   }
 
   useEffect(() => {
-    if (!editingLocalName && identity) {
-      setLocalNameDraft(identity.deviceName || "");
-    }
-  }, [identity, editingLocalName]);
+    const targetId = localNameSession.getSnapshot().targetId;
+    if (!targetId) return;
+    if (identity?.deviceId !== targetId)
+      localNameSession.removeTarget(targetId);
+    else
+      localNameSession.authoritativeValue(targetId, identity.deviceName || "");
+  }, [identity, localNameSession]);
+
+  useEffect(() => {
+    const targetId = aliasSession.getSnapshot().targetId;
+    if (!targetId) return;
+    const device = devices.find((candidate) => candidate.deviceId === targetId);
+    if (!device) aliasSession.removeTarget(targetId);
+    else
+      aliasSession.authoritativeValue(
+        targetId,
+        device.localAlias || device.deviceName || ""
+      );
+  }, [devices, aliasSession]);
 
   useEffect(() => {
     if (
@@ -663,46 +709,31 @@ export function ClipboardApp({
   }, [relayAddresses, addingRelay, editingRelayIndex]);
 
   function saveLocalName() {
-    const trimmed = localNameDraft.trim();
-    if (!identity) return;
-    if (!trimmed) {
-      setEditingLocalName(false);
-      return;
-    }
-    const rename = onRenameIdentity
-      ? onRenameIdentity(trimmed)
-      : Promise.resolve(null);
-    rename
-      .catch(() => {})
-      .finally(() => {
-        setEditingLocalName(false);
-      });
+    void localNameSession.save(async (targetId, raw) => {
+      if (!identity || identity.deviceId !== targetId || !onRenameIdentity) {
+        throw new Error("device_unavailable");
+      }
+      return onRenameIdentity(raw, targetId);
+    });
   }
 
   function beginEditDeviceName(device: Device) {
-    setDeviceNameDraft(device.displayName || device.deviceName || "");
-    setEditingDeviceId(device.deviceId);
+    aliasSession.begin(
+      device.deviceId,
+      device.localAlias || device.deviceName || ""
+    );
   }
 
-  function cancelEditDeviceName() {
-    setEditingDeviceId(null);
-    setDeviceNameDraft("");
-  }
-
-  function saveDeviceName(device: Device) {
-    const trimmed = deviceNameDraft.trim();
-    if (!trimmed || trimmed === (device.displayName || device.deviceName)) {
-      cancelEditDeviceName();
-      return;
-    }
-    const rename = onRenameDevice
-      ? onRenameDevice(device.deviceId, trimmed)
-      : Promise.resolve(null);
-    rename
-      .catch(() => {})
-      .finally(() => {
-        cancelEditDeviceName();
-      });
+  function saveDeviceName() {
+    void aliasSession.save(async (targetId, raw) => {
+      if (
+        !onRenameDevice ||
+        !devices.some((candidate) => candidate.deviceId === targetId)
+      ) {
+        throw new Error("device_unavailable");
+      }
+      return onRenameDevice(targetId, raw);
+    });
   }
 
   async function revokeDevice(device: Device): Promise<void> {
@@ -1157,15 +1188,18 @@ export function ClipboardApp({
                 </div>
                 <div className="peer-meta">
                   <div className="peer-name-row">
-                    {editingLocalName ? (
+                    {localNameEdit.targetId === identity.deviceId ? (
                       <input
                         className="peer-name-input"
-                        value={localNameDraft}
-                        onChange={(e) => setLocalNameDraft(e.target.value)}
-                        onBlur={saveLocalName}
+                        aria-label="Device Name"
+                        aria-busy={localNameEdit.pending}
+                        value={localNameEdit.raw}
+                        onChange={(e) =>
+                          localNameSession.change(e.target.value)
+                        }
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveLocalName();
-                          if (e.key === "Escape") setEditingLocalName(false);
+                          if (e.key === "Escape") localNameSession.cancel();
                         }}
                         autoFocus
                       />
@@ -1178,19 +1212,38 @@ export function ClipboardApp({
                     <button
                       className="icon-button"
                       style={{ width: 18, height: 18 }}
-                      title="Rename this device"
+                      title={
+                        localNameEdit.targetId
+                          ? "Save Device Name"
+                          : "Rename this device"
+                      }
+                      disabled={localNameEdit.pending}
                       onClick={
-                        editingLocalName ? saveLocalName : beginEditLocalName
+                        localNameEdit.targetId
+                          ? saveLocalName
+                          : beginEditLocalName
                       }
                     >
                       <span
                         className="icon"
                         style={{ fontSize: 12, lineHeight: 1 }}
                       >
-                        {editingLocalName ? "check" : "edit"}
+                        {localNameEdit.targetId ? "check" : "edit"}
                       </span>
                     </button>
                   </div>
+                  {localNameEdit.targetId === identity.deviceId &&
+                    localNameEdit.error && (
+                      <div className="content-subtitle" role="alert">
+                        {nameSaveErrorMessage(localNameEdit.error, false)}
+                      </div>
+                    )}
+                  {localNameEdit.targetId === identity.deviceId &&
+                    localNameEdit.pending && (
+                      <div className="content-subtitle" role="status">
+                        Saving Device Name…
+                      </div>
+                    )}
                   <MiddleEllipsisText
                     className="peer-sub"
                     text={identity.deviceId}
@@ -1347,7 +1400,7 @@ export function ClipboardApp({
               </div>
             )}
             {devices.map((dev) => {
-              const editingThisDevice = editingDeviceId === dev.deviceId;
+              const editingThisDevice = aliasEdit.targetId === dev.deviceId;
               const connectionInfo = peerConnectionMap.get(dev.deviceId);
               const isOnline =
                 connectedPeerSet.has(dev.deviceId) || Boolean(connectionInfo);
@@ -1371,12 +1424,13 @@ export function ClipboardApp({
                     {editingThisDevice ? (
                       <input
                         className="peer-name-input"
-                        value={deviceNameDraft}
-                        onChange={(e) => setDeviceNameDraft(e.target.value)}
-                        onBlur={() => saveDeviceName(dev)}
+                        aria-label={`Local Device Alias for ${dev.deviceName}`}
+                        aria-busy={aliasEdit.pending}
+                        value={aliasEdit.raw}
+                        onChange={(e) => aliasSession.change(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") saveDeviceName(dev);
-                          if (e.key === "Escape") cancelEditDeviceName();
+                          if (e.key === "Enter") saveDeviceName();
+                          if (e.key === "Escape") aliasSession.cancel();
                         }}
                         autoFocus
                       />
@@ -1391,6 +1445,16 @@ export function ClipboardApp({
                       text={dev.deviceId}
                       max={isNarrow ? 22 : 32}
                     />
+                    {editingThisDevice && aliasEdit.error && (
+                      <div className="content-subtitle" role="alert">
+                        {nameSaveErrorMessage(aliasEdit.error, true)}
+                      </div>
+                    )}
+                    {editingThisDevice && aliasEdit.pending && (
+                      <div className="content-subtitle" role="status">
+                        Saving alias…
+                      </div>
+                    )}
                   </div>
                   <div className="peer-actions">
                     <div className="peer-indicator">
@@ -1403,13 +1467,14 @@ export function ClipboardApp({
                         className="icon-button"
                         title={
                           editingThisDevice
-                            ? "Save device name"
-                            : "Rename this device"
+                            ? "Save Local Device Alias"
+                            : "Edit Local Device Alias"
                         }
+                        disabled={editingThisDevice && aliasEdit.pending}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           if (editingThisDevice) {
-                            saveDeviceName(dev);
+                            saveDeviceName();
                           } else {
                             beginEditDeviceName(dev);
                           }
