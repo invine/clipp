@@ -2,8 +2,10 @@ import { createPairingSubmission } from "./pairingSubmission";
 import {
   pairingSubmissionMessage,
   pairingApprovalMessage,
-  type PairingSubmissionResult,
-  type PairingApprovalResult,
+} from "./pairingFeedback";
+import type {
+  PairingSubmissionResult,
+  PairingApprovalResult,
 } from "../../core/pairing/results";
 import { ManagedRelaySettings } from "./ManagedRelaySettings";
 import {
@@ -1337,7 +1339,8 @@ export function ClipboardApp({
 
         {(pending.length > 0 ||
           waiting.length > 0 ||
-          pairingErrors.length > 0) && (
+          pairingErrors.length > 0 ||
+          Object.keys(approvalFeedback).length > 0) && (
           <>
             <div className="section-divider"></div>
             <div>

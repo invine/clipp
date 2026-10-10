@@ -1,5 +1,5 @@
 import { createPairingSubmission } from "../../../packages/ui/src/pairingSubmission";
-import { pairingSubmissionMessage } from "../../../packages/core/pairing/results";
+import { pairingSubmissionMessage } from "../../../packages/ui/src/pairingFeedback";
 import { submitExtensionPairing } from "./pairingActions";
 import React, { useEffect, useState, useSyncExternalStore } from "react";
 import ReactDOM from "react-dom/client";

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { PendingRequest } from "../../../../packages/ui/src/types";
 import { decideExtensionPairing } from "../pairingActions";
-import { pairingApprovalMessage } from "../../../../packages/core/pairing/results";
+import { pairingApprovalMessage } from "../../../../packages/ui/src/pairingFeedback";
 
 export const TrustPrompt = () => {
   const [requests, setRequests] = useState<PendingRequest[]>([]);
