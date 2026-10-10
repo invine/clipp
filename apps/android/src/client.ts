@@ -36,6 +36,7 @@ import {
   RETENTION_MS,
   startHistoryRetentionCleanup,
   type HistoryRetentionCleanup,
+  type HistorySnapshot,
 } from "@core/history/store";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
@@ -110,6 +111,8 @@ export type AndroidAppState = {
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  historyUnavailable?: boolean;
+  historyRefreshError?: boolean;
   localRetentionMs?: number;
   autoSync?: boolean;
   clipboardHistoryError?: RuntimeClipboardHistoryError | null;
@@ -225,6 +228,7 @@ export class AndroidClient {
   });
   private readonly historyBackend = createHistoryBackend();
   private readonly history = new MemoryHistoryStore(this.historyBackend);
+  private lastHistorySnapshot: HistorySnapshot | null = null;
   private readonly identityRepo = createKVIdentityRepository({
     storage: this.storage,
     key: IDENTITY_KEY,
@@ -733,8 +737,8 @@ export class AndroidClient {
     if (this.eventsBound) return;
     this.eventsBound = true;
 
-    this.history.onNew(async () => {
-      await this.emitState();
+    this.history.onChanged(() => {
+      void this.emitState();
     });
   }
 
@@ -814,8 +818,7 @@ export class AndroidClient {
   }
 
   private async emitState() {
-    const state = await this.getState();
-    await this.runtimeAdapter.publicState.publish(state);
+    await this.runtime.publishState();
   }
 
   private async startServices() {
@@ -965,7 +968,13 @@ export class AndroidClient {
   }
 
   async getState(): Promise<AndroidAppState> {
-    const clips = await this.history.exportAll();
+    let historyRefreshError = false;
+    try {
+      this.lastHistorySnapshot = await this.history.snapshot();
+    } catch {
+      historyRefreshError = true;
+    }
+    const historySnapshot = this.lastHistorySnapshot;
     const devices = await this.identitySvc.trustedDevices();
     const identity = this.identityRotationRecovery
       ? null
@@ -997,7 +1006,7 @@ export class AndroidClient {
     );
 
     return {
-      clips,
+      clips: historySnapshot?.clips ?? [],
       devices,
       pending: this.pendingRequests,
       waiting: this.pairingSessions.waiting(),
@@ -1006,7 +1015,9 @@ export class AndroidClient {
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds: await this.history.pinnedIds(),
+      pinnedIds: historySnapshot?.pinnedIds ?? [],
+      historyUnavailable: historySnapshot === null,
+      historyRefreshError,
       localRetentionMs: this.localRetentionMs,
       autoSync: this.clipboardSync.isAutoSync(),
       clipboardHistoryError: this.clipboardHistoryError,

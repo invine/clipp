@@ -62,6 +62,7 @@ import {
   RETENTION_MS,
   startHistoryRetentionCleanup,
   type HistoryRetentionCleanup,
+  type HistorySnapshot,
 } from "../../../packages/core/history/store.js";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
 import {
@@ -505,9 +506,16 @@ async function bootstrap() {
   let shutdownComplete = false;
   let runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
   const pendingSelfPeerUpdates = new Set<Promise<void>>();
+  let lastHistorySnapshot: HistorySnapshot | null = null;
 
   async function getState() {
-    const clips = await history.exportAll();
+    let historyRefreshError = false;
+    try {
+      lastHistorySnapshot = await history.snapshot();
+    } catch {
+      historyRefreshError = true;
+    }
+    const historySnapshot = lastHistorySnapshot;
     const devices = await identitySvc.trustedDevices();
     const peers = transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
@@ -516,7 +524,7 @@ async function bootstrap() {
       ? null
       : toPublicDeviceIdentity(await identitySvc.get());
     return {
-      clips,
+      clips: historySnapshot?.clips ?? [],
       devices,
       pending: pendingRequests,
       waiting: pairingSessions.waiting(),
@@ -525,7 +533,9 @@ async function bootstrap() {
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds: await history.pinnedIds(),
+      pinnedIds: historySnapshot?.pinnedIds ?? [],
+      historyUnavailable: historySnapshot === null,
+      historyRefreshError,
       localRetentionMs,
       autoSync: clipboardSync.isAutoSync(),
       clipboardHistoryError,
@@ -551,8 +561,7 @@ async function bootstrap() {
   }
 
   async function emitState() {
-    const state = await getState();
-    await runtimeAdapter.publicState.publish(state);
+    await sharedRuntime.publishState();
   }
 
   function scheduleSelfPeerUpdate(multiaddrs: string[]) {
@@ -602,8 +611,8 @@ async function bootstrap() {
         void emitState();
       }
     );
-    history.onNew(async () => {
-      await emitState();
+    history.onChanged(() => {
+      void emitState();
     });
 
     if (identityRotationLifecycle.startLocalOnlyIfRecovering()) return;

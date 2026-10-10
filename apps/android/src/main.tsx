@@ -39,18 +39,25 @@ function App() {
   const [state, setState] = useState<AndroidAppState>(initialState);
   const [error, setError] = useState<string | null>(null);
   const [initializationError, setInitializationError] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let receivedUpdate = false;
 
     client
       .start()
       .then(() => client.getState())
       .then((next) => {
-        if (!cancelled) setState(next);
+        if (!cancelled && !receivedUpdate) setState(next);
+        if (!cancelled) setHistoryLoading(false);
+        if (!cancelled) setHistoryLoadFailed(false);
       })
       .catch((err) => {
         console.error("Failed to start Android client", err);
+        if (!cancelled) setHistoryLoading(false);
+        if (!cancelled) setHistoryLoadFailed(true);
         void client.getInitializationError().then((initialization) => {
           if (cancelled) return;
           if (initialization) {
@@ -65,7 +72,12 @@ function App() {
       });
 
     const unsubscribe = client.onUpdate((next) => {
-      if (!cancelled) setState(next);
+      if (!cancelled) {
+        receivedUpdate = true;
+        setState(next);
+        setHistoryLoading(false);
+        setHistoryLoadFailed(false);
+      }
     });
 
     return () => {
@@ -132,6 +144,18 @@ function App() {
       />
       <ClipboardApp
         clips={state.clips as Clip[]}
+        historyLoading={historyLoading}
+        historyUnavailable={
+          !historyLoading &&
+          (historyLoadFailed || state.historyUnavailable || false)
+        }
+        historyRefreshError={
+          state.historyRefreshError ? "history_unavailable" : null
+        }
+        onRetryHistoryRefresh={async () => {
+          setState(await client.getState());
+          setHistoryLoadFailed(false);
+        }}
         devices={state.devices as Device[]}
         pending={state.pending as PendingRequest[]}
         waiting={state.waiting || []}

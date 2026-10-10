@@ -437,6 +437,22 @@ chrome.storage.local.get(["localRetentionMs"], (res) => {
       resolveHistoryPolicyReady = undefined;
     });
 });
+const historySessionId = crypto.randomUUID();
+history.onChanged((revision) => {
+  chrome.runtime.sendMessage({
+    type: "historyChanged",
+    sessionId: historySessionId,
+    revision,
+  });
+});
+void historyPolicyReady.then(async () => {
+  const snapshot = await history.snapshot();
+  chrome.runtime.sendMessage({
+    type: "historyChanged",
+    sessionId: historySessionId,
+    revision: snapshot.revision,
+  });
+});
 history.onNew((item) => {
   // Notify all extension pages about the new clip
   // @ts-ignore
@@ -989,10 +1005,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Handle clipboard history for options page
   if (msg.type === "getClipHistory") {
     historyPolicyReady
-      .then(() => history.exportAll())
-      .then((clips) => {
-        sendResponse({ clips });
-      });
+      .then(() => history.snapshot())
+      .then((snapshot) =>
+        sendResponse({
+          ok: true,
+          snapshot: { ...snapshot, sessionId: historySessionId },
+          clips: snapshot.clips,
+        })
+      )
+      .catch(() => sendResponse({ ok: false, error: "history_unavailable" }));
     return true;
   }
   if (msg.type === "clearHistory") {

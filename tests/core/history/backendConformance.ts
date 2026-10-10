@@ -22,10 +22,12 @@ function clip(id: string, capturedAt: number) {
 export function runHistoryBackendConformance(
   name: string,
   createHarness: () => BackendHarness | Promise<BackendHarness>,
-  registerSuite: typeof describe = describe,
+  registerSuite: typeof describe = describe
 ): void {
   registerSuite(`${name} atomic history conformance`, () => {
-    async function withHarness(run: (backend: HistoryStorageBackend) => Promise<void>): Promise<void> {
+    async function withHarness(
+      run: (backend: HistoryStorageBackend) => Promise<void>
+    ): Promise<void> {
       const harness = await createHarness();
       try {
         await harness.backend.clearAll();
@@ -40,9 +42,15 @@ export function runHistoryBackendConformance(
         const history = new MemoryHistoryStore(backend);
         const original = clip("00000000-0000-4000-8000-000000000101", 1);
 
-        await expect(history.accept(original)).resolves.toMatchObject({ kind: "newly-stored" });
-        await expect(history.accept(original)).resolves.toMatchObject({ kind: "exact-duplicate" });
-        await expect(history.accept({ ...original, content: "conflict" })).resolves.toMatchObject({
+        await expect(history.accept(original)).resolves.toMatchObject({
+          kind: "newly-stored",
+        });
+        await expect(history.accept(original)).resolves.toMatchObject({
+          kind: "exact-duplicate",
+        });
+        await expect(
+          history.accept({ ...original, content: "conflict" })
+        ).resolves.toMatchObject({
           kind: "immutable-conflict",
           clip: expect.objectContaining({ content: original.content }),
         });
@@ -59,7 +67,9 @@ export function runHistoryBackendConformance(
         await first.remove(suppressed.id);
 
         await expect(second.getById(suppressed.id)).resolves.toBeNull();
-        await expect(second.accept(suppressed)).resolves.toMatchObject({ kind: "locally-suppressed" });
+        await expect(second.accept(suppressed)).resolves.toMatchObject({
+          kind: "locally-suppressed",
+        });
       });
     });
 
@@ -71,7 +81,38 @@ export function runHistoryBackendConformance(
 
         await first.setPinned(pinned.id, true);
 
-        await expect(new MemoryHistoryStore(backend).pinnedIds()).resolves.toEqual([pinned.id]);
+        await expect(
+          new MemoryHistoryStore(backend).pinnedIds()
+        ).resolves.toEqual([pinned.id]);
+      });
+    });
+
+    it("projects durable pin, delete and Clear results from the committed store", async () => {
+      await withHarness(async (backend) => {
+        const history = new MemoryHistoryStore(backend);
+        const first = clip("00000000-0000-4000-8000-000000000108", 8);
+        const second = clip("00000000-0000-4000-8000-000000000109", 9);
+        await history.accept(first);
+        await history.accept(second);
+        await history.setPinned(first.id, true);
+
+        await expect(history.snapshot()).resolves.toMatchObject({
+          revision: 3,
+          clips: [second, first],
+          pinnedIds: [first.id],
+        });
+        await history.remove(second.id);
+        await expect(history.snapshot()).resolves.toMatchObject({
+          revision: 4,
+          clips: [first],
+          pinnedIds: [first.id],
+        });
+        await history.clearAll();
+        await expect(history.snapshot()).resolves.toMatchObject({
+          revision: 5,
+          clips: [],
+          pinnedIds: [],
+        });
       });
     });
 
@@ -88,7 +129,9 @@ export function runHistoryBackendConformance(
         await history.accept(newer);
 
         await expect(history.getById(older.id)).resolves.toBeNull();
-        await expect(new MemoryHistoryStore(backend).accept(older)).resolves.toMatchObject({
+        await expect(
+          new MemoryHistoryStore(backend).accept(older)
+        ).resolves.toMatchObject({
           kind: "locally-suppressed",
         });
       });
@@ -105,7 +148,9 @@ export function runHistoryBackendConformance(
         await history.accept(first);
         await history.accept(second);
 
-        await expect(history.clearAll()).rejects.toMatchObject({ code: "suppression_capacity" });
+        await expect(history.clearAll()).rejects.toMatchObject({
+          code: "suppression_capacity",
+        });
         await expect(history.getById(first.id)).resolves.not.toBeNull();
         await expect(history.getById(second.id)).resolves.not.toBeNull();
       });
