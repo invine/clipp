@@ -1,0 +1,58 @@
+# Desktop display scaling and accessibility observations
+
+Observed 2026-10-10 against unchanged production sources and reused builds: Electron 43.4.0 and Chrome for Testing 143.0.7499.4. The [source receipt](display-accessibility-evidence/native/source-receipt.json) verifies 145 source hashes plus eight Electron and 43 Chrome artifacts. All test identities/data were synthetic, relays empty and clipboard access memory-only. Native input used CUA; observers collected public state, focus events and geometry. No production code changed.
+
+The user reported **no external display**, approved temporary built-in display modes **1024×665 and 1800×1169**, then restoration to **1512×982**, and selected **VoiceOver as an explicit unverified gap**. The OS display setting is restored and both owned hosts closed normally. [User decisions](display-accessibility-evidence/native/user-decisions.json), [restoration](display-accessibility-evidence/native/display-restoration.json), [closure](display-accessibility-evidence/native/closure-receipt.json).
+
+## Native display modes and window states
+
+The same built-in Retina display retained native scale factor 2 in all three OS modes. These are real OS display-setting changes, not CSS/DPR emulation, additional physical panels or native 1× coverage. Display and native window measurements are logical units; renderer sizes are CSS pixels; screenshot dimensions are separate backing-image pixels. The [initial inventory](display-accessibility-evidence/native/display-inventory.json) and paired geometry receipts preserve that distinction.
+
+| OS display / measured work area | Surface and actual state | Renderer / screenshot pixels | Result |
+| --- | --- | --- | --- |
+| 1512×982 / 1512×949 | Electron restored, outer 520×760 | 520×728 / 1040×1456 | Baseline native keyboard, name and QR checks below. |
+| 1024×665 / 1024×639 | Electron restored, outer 520×640 | 520×608 / 1040×1216 | QR controls remained visible in the sampled state. [Image](display-accessibility-evidence/native/electron-os1024-restored-qr.png), [geometry](display-accessibility-evidence/native/electron-os1024-restored-qr.json). |
+| Same | Electron `isMaximized:true` | 1024×607 / 2048×1214 | Native maximize established. [Geometry](display-accessibility-evidence/native/electron-os1024-maximized.json). |
+| Same | Electron `isFullScreen:true` | 1024×639 / 2048×1278 | Content fills the measured work area; native fullscreen flag is verified. [Geometry](display-accessibility-evidence/native/electron-os1024-fullscreen.json). |
+| Same | Electron exit fullscreen | 520×608 / 1040×1216 | Restored usable window, no lasting negative-position loss. [Geometry](display-accessibility-evidence/native/electron-os1024-after-fullscreen.json). |
+| Same | Fresh real Chrome toolbar popup | **495×559** / 990×1118 | Host is shorter than the ordinary 600px popup. Final Auto Sync remains reachable by Tab and scrolls fully into view. [Image](display-accessibility-evidence/native/popup-os1024-drawer-bottom.png), [geometry](display-accessibility-evidence/native/popup-os1024-reopened.json). |
+| Same | Chrome options, reset native tab zoom | 1024×500 / 2048×1000 | Native small work-area evidence at DPR 2. [Geometry](display-accessibility-evidence/native/options-os1024-resetzoom.json). |
+| 1800×1169 / 1800×1130 | Electron `isMaximized:true` | 1800×1098 / 3600×2196 | Settled native maximize. [Geometry](display-accessibility-evidence/native/electron-os1800-maximized-settled.json). |
+| Same | Electron `isFullScreen:true` | 1800×1130 / 3600×2260 | Native fullscreen, measured work-area content. [Geometry](display-accessibility-evidence/native/electron-os1800-fullscreen.json). |
+| Same | Chrome options, restored native window | 1024×500 / 2048×1000 | Native window retained its smaller restored size after OS scaling. [Geometry](display-accessibility-evidence/native/options-os1800-restored.json). |
+| Same | Chrome reports fullscreen | 1800×990 / 3600×1980 | Native bounds are x0/y127, 1800×1042; this still does **not** prove complete-display pixel coverage. [Content](display-accessibility-evidence/native/options-os1800-fullscreen.json), [native bounds](display-accessibility-evidence/native/chrome-fullscreen-native-bounds.json). |
+| Same | Toolbar popup opened from Chrome fullscreen | 495×600 / 990×1200 | Actual popup opens and retains controls. [Geometry](display-accessibility-evidence/native/popup-os1800-fullscreen.json). |
+
+The initial still-open popup did not refresh its screen metrics after OS scaling; exclude that capture and use the reopened popup. The first 1800-mode Electron sample was restored, despite its initial trace filename suggesting maximize; the settled sample above is authoritative. See [capture qualifications](display-accessibility-evidence/native/README.md#capture-qualifications). These empty/identity/QR cases extend native coverage; they do not repeat or qualify every dense-data fixture at every mode.
+
+At 1024 mode, native scrolling through CUA returned `noWindowsAvailable`. Real Tab navigation nevertheless reached the final Auto Sync select at y525–541 in the 559px popup. Its drawer scrollTop was 61.5, client height 555, scroll height 617. The final preference is reachable; do not turn that failed input-tool method into a lost-control finding.
+
+## Native keyboard findings
+
+**E06 and C06 gain native input evidence.** From compact History, six real Tab presses cycle through Toggle theme → Share Now → All → Pinned → More → Toggle theme. The Clipp logo that opens management is a `DIV` with no role and tabIndex −1, and is absent from the sequence. Pointer activation reaches the drawer. The current layout therefore gives keyboard-only users no equivalent management entry from that initial view. [Electron trace](display-accessibility-evidence/native/electron-keyboard-cycle.json), [image](display-accessibility-evidence/native/electron-keyboard-cycle.png); Chrome’s focus events are in the [native shortcut capture](display-accessibility-evidence/native/popup-after-native-zoom-shortcut.json). These are focused native key events, not dispatched DOM events.
+
+**Electron QR containment and Escape fail.** Opening QR leaves DOM focus on Body. The first Tab reaches Close and the next reaches Copy, but the following Tab moves behind the modal to Toggle theme. Native Escape leaves the dialog open. [Focus/key receipt](display-accessibility-evidence/native/electron-qr-keyboard.json), [actual image](display-accessibility-evidence/native/electron-qr-escape-background-focus.png). This strengthens E06 and the approved focus/Back contract. It does not establish a VoiceOver announcement result. Electron’s accessibility-support flag became true during native accessibility inspection; that flag alone is not a screen-reader pass.
+
+## Device-name validation and Unicode preview
+
+The native Electron editor accepts **64 ASCII characters** and **64 emoji** (128 UTF-16 code units), preserving the stored value. A **65-character ASCII name** is rejected: the prior name remains, but the editor closes, the draft disappears and no visible error or alert appears. This strengthens **E11** with an actual runtime validation result. The full saved ASCII name is present when its editor reopens, so full name inspection is available after reaching management. [64-character state](display-accessibility-evidence/native/electron-name-64.json), [65-character result](display-accessibility-evidence/native/electron-name-65.json), [rejected UI](display-accessibility-evidence/native/electron-name-65-rejected.png).
+
+The emoji case also strengthens **E16**: the stored name and full hover title are well-formed, but the narrow visible preview contains six emoji, a **lone high surrogate**, ellipsis and six emoji. It renders a replacement glyph. The bug reproduces after restoring the original 520×728 content size. [Image](display-accessibility-evidence/native/electron-name-emoji64-reproduced.png), [encoding receipt](display-accessibility-evidence/native/electron-name-preview-encoding.json). The shared `truncateMiddle` uses `String.slice` on UTF-16 units; `MiddleEllipsisText` measures candidates using that function. [Source](../../packages/ui/src/ClipboardApp.tsx), lines 66 and 198. The domain normalizer correctly counts Unicode code points; this is a presentation defect, not corrupted stored identity.
+
+Recommendation: retain rejected drafts and display the actual validation error; truncate displayed names at grapheme boundaries and expose complete values through an accessible inspection route. Extend E16’s acceptance check to emoji, combining characters and joined emoji. Only the two 64-code-point inputs and 65-ASCII rejection were exercised here; whitespace, 1/63, normalization/control-character and all alias combinations are not comprehensively qualified. This is an additional case under existing findings, keeping the register at 51 runtime findings.
+
+## Popup enlargement is still not qualified
+
+With the actual popup open, native Cmd-plus and Cmd-equal leave it at 495×600, DPR 2, body 12px/root 16px. Afterward the underlying options page measures DPR 2.5 and 819×400 on a 1024-wide display; Cmd-0 restores DPR 2 and 1024×500. This establishes that the popup was not enlarged while the underlying tab was. The exact shortcut responsible for the tab change was not separately isolated. [Popup measurements](display-accessibility-evidence/native/popup-after-native-equal-shortcut.json), [options before reset](display-accessibility-evidence/native/options-os1024.json), [after reset](display-accessibility-evidence/native/options-os1024-resetzoom.json).
+
+A separate native `chrome://settings/fonts` attempt changed the disposable browser’s default font preference from 16 to **32**, leaving minimum font size 0. Repeated popup/menu lifecycle and CUA invalid-element/user-changed responses prevented a reliable final capture. The settings UI confirmed 32, but **no popup typography/reflow result is claimed**. [Attempt receipt](display-accessibility-evidence/native/font-preference-attempt.json). No personal browser or global OS text preference was changed. The browser is now closed, and no manual popup request remains pending.
+
+## Remaining prerequisites and disposition
+
+- **External / native 1× / physical 1920-wide panel:** unavailable on this host, confirmed by the user. Requires an actual connected display; the 1800 logical OS mode on the same Retina panel cannot substitute.
+- **VoiceOver:** explicitly left unverified by the user. Keyboard and AX inspection do not qualify spoken names, reading order or screen-reader operation.
+- **OS text-only scaling:** not run; it requires a separately coordinated supported macOS text setting, recording the current value, checking the real apps and restoring it. The approved interval covered display resolution only.
+- **Independent enlarged Chrome popup text:** requires a stable focused toolbar popup under a supported font/enlargement preference, with measured rendered text and full control reachability. The font preference attempt above does not close this gap.
+- **Complete-display Chrome fullscreen, all name/alias boundaries and comprehensive assistive coverage:** remain bounded follow-up cases. Native fullscreen flags and this sample do not establish every variant.
+
+The task has established which native cases this host can qualify, the resulting defects and the exact unavailable prerequisites. The final handoff must retain these limits; reporting hardware absence does not waive coverage. The separate live Pairing/account task remains open, and this frontier does not close the overall study.

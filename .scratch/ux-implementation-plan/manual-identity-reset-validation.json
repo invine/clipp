@@ -1,0 +1,88 @@
+{
+  "at": "2026-10-10T14:02:07.557699+00:00",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "headMatchesPlanningBaseline": true,
+  "filesChecked": 50,
+  "localLinksChecked": 1382,
+  "anchorsChecked": 228,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "studyInputsChanged": [],
+  "preexistingTrackedChangesModified": [],
+  "tickets": [
+    {
+      "id": "01",
+      "title": "Choose the correctness-first migration sequence",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "none"
+    },
+    {
+      "id": "02",
+      "title": "Define shared state, actions and task boundaries",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "01"
+    },
+    {
+      "id": "03",
+      "title": "Scope correctness and recovery delivery",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "04",
+      "title": "Plan native host integration and interaction repairs",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "05",
+      "title": "Plan compact workspace and routine control delivery",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "03, 04"
+    },
+    {
+      "id": "06",
+      "title": "Design the durable manual identity-reset boundary",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "07",
+      "title": "Finalize validation gates and the implementation backlog",
+      "status": "claimed",
+      "assignee": "Codex (current session)",
+      "blockedBy": "05, 06"
+    }
+  ],
+  "resolvedPlanningTickets": 6,
+  "runtimeActions": false,
+  "productionEdits": false,
+  "applicationTestsRun": false,
+  "implementationOrReleaseQualified": false,
+  "purpose": "Validate approved manual reset resolution and current final-consolidation planning state; not runtime acceptance",
+  "activeDecision": "Finalize validation gates and the implementation backlog",
+  "proposalStatus": "Approved by explicit user answers; reset decision resolved",
+  "proposalSha256": "03efde2959d4ed4aff8303f6733315cd1ce5aafacf89a49e85fc1d67d7c96553",
+  "packageCount": 5,
+  "packages": [
+    "Core manual transition and journal",
+    "Durable storage adapters",
+    "Runtime quiescence and restart",
+    "Authenticated actions and shared recovery UI",
+    "Fault and restart qualification"
+  ],
+  "pendingDecisions": [],
+  "independentAudits": "Core, runtime/native, and accepted-contract audits completed; finalization ordering clarified and ADR link corrected",
+  "executionAuthorized": false,
+  "userDecisions": [
+    "Adopt reset design",
+    "One reminder; dismiss before another manual reset"
+  ]
+}

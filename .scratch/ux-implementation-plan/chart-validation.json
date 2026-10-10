@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-10T10:28:43.721098+00:00",
+  "purpose": "Validate new planning map references and dependency graph; no production test or native acceptance",
+  "filesChecked": 9,
+  "localLinksChecked": 70,
+  "anchorsChecked": 6,
+  "errors": [],
+  "ticketCount": 7,
+  "resolvedPlanningTickets": 0,
+  "frontier": [
+    "Choose the correctness-first migration sequence"
+  ],
+  "studyInputsChanged": [],
+  "preexistingTrackedChangesModified": [],
+  "sequenceQuestion": "awaiting user; recommended small independently verifiable steps is not yet a decision",
+  "studyMapStatus": "resolved"
+}

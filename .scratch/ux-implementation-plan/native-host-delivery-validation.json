@@ -1,0 +1,102 @@
+{
+  "at": "2026-10-10T13:07:00.848663+00:00",
+  "purpose": "Validate approved native host delivery resolution, frontier and unchanged evidence; not application/native acceptance",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "headMatchesPlanningBaseline": true,
+  "filesChecked": 13,
+  "localLinksChecked": 235,
+  "anchorsChecked": 26,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "studyInputsChanged": [],
+  "preexistingTrackedChangesModified": [],
+  "tickets": [
+    {
+      "id": "01",
+      "title": "Choose the correctness-first migration sequence",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "none"
+    },
+    {
+      "id": "02",
+      "title": "Define shared state, actions and task boundaries",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "01"
+    },
+    {
+      "id": "03",
+      "title": "Scope correctness and recovery delivery",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "04",
+      "title": "Plan native host integration and interaction repairs",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "05",
+      "title": "Plan compact workspace and routine control delivery",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "03, 04"
+    },
+    {
+      "id": "06",
+      "title": "Design the durable manual identity-reset boundary",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "07",
+      "title": "Finalize validation gates and the implementation backlog",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "05, 06"
+    }
+  ],
+  "resolvedPlanningTickets": 4,
+  "activeDecision": null,
+  "proposalStatus": "Approved delivery breakdown",
+  "proposalSha256": "49addd849f833598f29d6b38a00f804b9e089f4c7b363f57948e51c491bc06d6",
+  "packageCount": 7,
+  "packages": [
+    "Android content bounds and IME",
+    "Native task input and focus",
+    "Android scanner-provider diagnosis",
+    "Android scanner safety and lifecycle",
+    "Notifications, permission recovery and Requests entry",
+    "Android continuity controls",
+    "Desktop tray and window behavior"
+  ],
+  "primaryNativeClosureOwners": [
+    "A01",
+    "A02",
+    "A03",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "E10",
+    "E17"
+  ],
+  "independentAudits": "Two read-only proposal audits complete; no remaining blockers after C04 closure-owner and selected-notification clarifications",
+  "runtimeActions": false,
+  "productionEdits": false,
+  "applicationTestsRun": false,
+  "implementationOrReleaseQualified": false,
+  "questionRound": "User selected: Adopt the native delivery breakdown (Recommended)",
+  "resolvedDecision": "Plan native host integration and interaction repairs",
+  "frontier": [
+    "Plan compact workspace and routine control delivery",
+    "Design the durable manual identity-reset boundary"
+  ],
+  "nextFrontier": "Plan compact workspace and routine control delivery"
+}

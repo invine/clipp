@@ -1,0 +1,131 @@
+{
+  "at": "2026-10-09T20:01:47.304714+00:00",
+  "purpose": "Read-only handoff source consistency check; no runtime execution or fresh visual acceptance",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "inventorySourceCount": 145,
+  "changedSinceInventory": [],
+  "runtimeActions": false,
+  "privateRuntimeStateAccessed": false,
+  "documentValidation": {
+    "at": "2026-10-10T10:11:24.836637+00:00",
+    "purpose": "Final UX study handoff consistency and document validation; no runtime actions or new acceptance claims",
+    "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+    "findingCount": 51,
+    "uniqueFindingCount": 51,
+    "runtimeCounts": {
+      "E": 17,
+      "C": 16,
+      "A": 18
+    },
+    "sourceSupportedAdditionCount": 3,
+    "filesValidated": [
+      "map.md",
+      "handoff.md",
+      "handoff-findings.md",
+      "remaining-native-coverage.md",
+      "layout-state-contract.md",
+      "control-flow-contract.md",
+      "electron-observations.md",
+      "extension-observations.md",
+      "android-observations.md",
+      "native-host-observations.md",
+      "native-host-continuation.md",
+      "live-journey-observations.md",
+      "sign-in-free-journeys.md",
+      "display-accessibility-observations.md",
+      "flow-control-inventory.md",
+      "inventory-fixtures.md",
+      "issues/01-establish-platform-constraints.md",
+      "issues/02-inventory-flows-and-controls.md",
+      "issues/03-observe-electron-ux.md",
+      "issues/04-observe-extension-ux.md",
+      "issues/05-observe-android-ux.md",
+      "issues/06-decide-control-gaps-and-retirements.md",
+      "issues/07-decide-layout-and-visual-direction.md",
+      "issues/08-prioritize-ux-study-handoff.md",
+      "issues/09-compare-history-density-and-navigation.md",
+      "issues/10-compare-lightweight-narrow-toolbars.md",
+      "issues/11-compare-devices-and-settings-organization.md",
+      "issues/12-explore-compact-connection-status.md",
+      "issues/13-observe-native-window-and-popup-lifecycle.md",
+      "issues/14-observe-live-pairing-and-account-journeys.md",
+      "issues/15-qualify-display-scaling-and-accessibility.md"
+    ],
+    "localLinksChecked": 841,
+    "anchorsChecked": 149,
+    "sourceCount": 145,
+    "changedSources": [],
+    "errors": [],
+    "mapStatus": "resolved",
+    "remainingStudyFrontier": [],
+    "coverageDisposition": "User accepted exact residual gaps into implementation validation as unverified; account deferral and prior Android/VoiceOver dispositions preserved",
+    "runtimeActions": false,
+    "productionEdits": false,
+    "implementationOrReleaseQualified": false
+  },
+  "handoffDocumentHashes": {
+    "handoff.md": "2adad1f334ce55ab75552f568384a8d284c241536491bd4e598957b4d8016f62",
+    "handoff-findings.md": "a67c55145a6bd1d8b1f44099ab10e72881540569930b6f19f6e0a9a52f373141"
+  },
+  "initialDocumentValidation": {
+    "findingCount": 51,
+    "runtimeCounts": {
+      "E": 17,
+      "C": 16,
+      "A": 18
+    },
+    "localLinksChecked": 88,
+    "anchorsChecked": 57,
+    "errors": [],
+    "decisionStatus": "Priority order and remaining Electron/Chrome coverage disposition awaiting user",
+    "noRuntimeRetest": true
+  },
+  "initialHandoffDocumentHashes": {
+    "handoff.md": "9b06f065819bb52b6ecd0753ddf215c9345d3ed4d7b7cd69254b3ca8924593f2",
+    "handoff-findings.md": "0bf8f33c692b81b3ef74c0036d36a5034bf7381f641c8082808e98f48ad28c75"
+  },
+  "documentHashesRecordedAt": "2026-10-10T10:11:24.836637+00:00",
+  "subsequentRuntimeEvidence": {
+    "receipt": "native-host-evidence/source-build-receipt.json",
+    "report": "native-host-observations.md",
+    "note": "Initial source-review timestamp/purpose/runtimeActions above remain historical; the later native follow-up did execute both isolated runtimes."
+  },
+  "subsequentLocalJourneyEvidence": {
+    "receipt": "live-journey-evidence/existing-build-receipt.json",
+    "report": "live-journey-observations.md"
+  },
+  "subsequentAccountJourneyEvidence": {
+    "receipt": "live-journey-evidence/fixed-id/auth-handoff.json",
+    "sourceReceipt": "live-journey-evidence/fixed-id/original-source-check.json",
+    "report": "live-journey-observations.md"
+  },
+  "subsequentNonAccountNativeEvidence": {
+    "report": "native-host-continuation.md",
+    "receipt": "native-host-evidence/continuation/source-receipt.json",
+    "validation": "native-host-evidence/continuation/document-validation.json"
+  },
+  "latestNativeJourneyReport": "sign-in-free-journeys.md",
+  "latestNativeClipboardEvidence": {
+    "receipt": "live-journey-evidence/native-clipboard/interval-progress.json",
+    "closure": "live-journey-evidence/native-clipboard/closure-receipt.json",
+    "validation": "live-journey-evidence/native-clipboard/document-validation.json"
+  },
+  "latestNativeDisplayEvidence": {
+    "report": "display-accessibility-observations.md",
+    "restoration": "display-accessibility-evidence/native/display-restoration.json",
+    "closure": "display-accessibility-evidence/native/closure-receipt.json",
+    "validation": "display-accessibility-evidence/native/document-validation.json"
+  },
+  "remainingCoverageDecision": {
+    "report": "remaining-native-coverage.md",
+    "resolution": "issues/14-observe-live-pairing-and-account-journeys.md#answer",
+    "validation": "remaining-native-coverage-validation.json",
+    "status": "accepted by user; retained cases remain unverified"
+  },
+  "finalStudyDisposition": {
+    "status": "complete",
+    "resolution": "issues/08-prioritize-ux-study-handoff.md#answer",
+    "validation": "handoff-final-validation.json",
+    "coverage": "explicit user-approved unverified implementation follow-up"
+  }
+}

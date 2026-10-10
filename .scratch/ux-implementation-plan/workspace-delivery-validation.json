@@ -1,0 +1,156 @@
+{
+  "at": "2026-10-10T13:45:18.374864+00:00",
+  "purpose": "Validate approved workspace delivery and its resolution, current planning state and unchanged evidence; not application/native acceptance",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "headMatchesPlanningBaseline": true,
+  "filesChecked": 15,
+  "localLinksChecked": 304,
+  "anchorsChecked": 37,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "studyInputsChanged": [],
+  "preexistingTrackedChangesModified": [],
+  "tickets": [
+    {
+      "id": "01",
+      "title": "Choose the correctness-first migration sequence",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "none"
+    },
+    {
+      "id": "02",
+      "title": "Define shared state, actions and task boundaries",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "01"
+    },
+    {
+      "id": "03",
+      "title": "Scope correctness and recovery delivery",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "04",
+      "title": "Plan native host integration and interaction repairs",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "05",
+      "title": "Plan compact workspace and routine control delivery",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "03, 04"
+    },
+    {
+      "id": "06",
+      "title": "Design the durable manual identity-reset boundary",
+      "status": "claimed",
+      "assignee": "Codex (current session)",
+      "blockedBy": "02"
+    },
+    {
+      "id": "07",
+      "title": "Finalize validation gates and the implementation backlog",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "05, 06"
+    }
+  ],
+  "resolvedPlanningTickets": 5,
+  "activeDecision": "Design the durable manual identity-reset boundary",
+  "proposalStatus": "Approved by explicit user response; workspace decision resolved",
+  "proposalSha256": "1e54eaeeb3fa428d8bde662c8906152cf87212e14d3a1126677afdb8138f2e91",
+  "packageCount": 8,
+  "packages": [
+    "Local assets, shared controls and host stylesheet integration",
+    "Persisted System, Light and Dark",
+    "Accessible responsive navigation and task presentation",
+    "Compact History, full details and safe preview text",
+    "S2 connection summary and panel",
+    "M1 Devices, Requests and alias clearing",
+    "M3 Settings and existing management tasks",
+    "Real local retention and Clip Sharing Lifetime"
+  ],
+  "workspacePrimaryFindings": [
+    "A04",
+    "A05",
+    "A10",
+    "A11",
+    "A12",
+    "A14",
+    "A15",
+    "A16",
+    "A18",
+    "C02",
+    "C03",
+    "C05",
+    "C06",
+    "C13",
+    "C14",
+    "C15",
+    "E01",
+    "E03",
+    "E04",
+    "E06",
+    "E07",
+    "E08",
+    "E12",
+    "E13",
+    "E14",
+    "E15",
+    "E16"
+  ],
+  "correctnessPrimaryFindings": [
+    "A13",
+    "A17",
+    "C01",
+    "C04",
+    "C07",
+    "C08",
+    "C09",
+    "C10",
+    "C11",
+    "C12",
+    "C16",
+    "E02",
+    "E05",
+    "E09",
+    "E11"
+  ],
+  "nativePrimaryFindings": [
+    "A01",
+    "A02",
+    "A03",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "E10",
+    "E17"
+  ],
+  "workspaceBands": {
+    "1": 15,
+    "2": 12,
+    "3": 0
+  },
+  "allocationMissing": [],
+  "allocationUnexpected": [],
+  "allocationDuplicates": [],
+  "additions": {
+    "aliasClearing": "Devices package",
+    "clipSharingLifetime": "Real settings package",
+    "manualIdentityReset": "Dedicated lifecycle decision"
+  },
+  "independentAudits": "Three read-only proposal audits complete; no remaining blockers or new product decisions",
+  "questionRound": "User selected Adopt the workspace delivery plan (Recommended); recorded in canonical ticket answer",
+  "runtimeActions": false,
+  "productionEdits": false,
+  "applicationTestsRun": false,
+  "implementationOrReleaseQualified": false
+}
