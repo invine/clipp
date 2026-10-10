@@ -14,7 +14,7 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 | E08 | History cannot reveal the full Clip before copying | 21 | Open | Ticket 21 collector and contributions in traceability remain to be qualified. |
 | E09 | Clear's visual context understates its scope | 03 | Open | Ticket 03 collector and contributions in traceability remain to be qualified. |
 | E10 | Configure Relays duplicates Open Clipp | 26 | Open | Ticket 26 collector and contributions in traceability remain to be qualified. |
-| E11 | Failed edits/approvals lack actionable feedback | 07 | Open | Ticket 07 collector and contributions in traceability remain to be qualified. |
+| E11 | Failed edits/approvals lack actionable feedback | 07 | Ticket 04 retained name/alias edits are complete; ticket 07 collects session recovery with tickets 05/10 immediate and terminal approval contributions. | Ticket 07 collector and contributions in traceability remain to be qualified. |
 | E12 | Pending work has no closed-drawer indication | 23 | Open | Ticket 23 collector and contributions in traceability remain to be qualified. |
 | E13 | Theme control is inert; core settings use inconsistent controls | 18 | Open | Ticket 18 collector and contributions in traceability remain to be qualified. |
 | E14 | Routine preferences sit below long technical settings | 24 | Open | Ticket 24 collector and contributions in traceability remain to be qualified. |
@@ -61,7 +61,7 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 | Addition | Collector ticket | Closure | Evidence / next owner |
 | --- | --- | --- | --- |
 | Generate new identity | 31 | Open | Collector and contributions in [traceability](traceability.md) remain to be qualified. |
-| Use device name / alias clearing | 23 | Open | Collector and contributions in [traceability](traceability.md) remain to be qualified. |
+| Use device name / alias clearing | 23 | Open | Ticket 04 completed retained edit/results at `6f8da6c0855024bf9edd88696080ed231bceaa2d`; ticket 23 still owns explicit alias clearing and its candidate qualification. |
 | Clip Sharing Lifetime | 20 | Open | Collector and contributions in [traceability](traceability.md) remain to be qualified. |
 
 The current run does not change External or Retained qualifications in [validation coverage](validation-coverage.md). A ticket resolution never implies release readiness.
