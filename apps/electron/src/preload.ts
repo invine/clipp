@@ -32,6 +32,8 @@ type AppState = {
   managedRelayConfigurations?: RelayConfiguration[];
   managedRelayStates?: RelayState[];
   pinnedIds?: string[];
+  historyUnavailable?: boolean;
+  historyRefreshError?: boolean;
   localRetentionMs?: number;
   autoSync?: boolean;
   clipboardHistoryError?: ClipboardHistoryError | null;

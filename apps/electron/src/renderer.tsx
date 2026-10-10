@@ -148,8 +148,10 @@ const App = () => {
           state.historyRefreshError ? "history_unavailable" : null
         }
         onRetryHistoryRefresh={async () => {
-          setState(await window.clipp.getState());
+          const next = await window.clipp.getState();
+          setState(next);
           setHistoryLoadFailed(false);
+          return !next.historyUnavailable && !next.historyRefreshError;
         }}
         localRetentionMs={state.localRetentionMs}
         autoSync={state.autoSync}
@@ -171,7 +173,13 @@ const App = () => {
         onReuseClip={async (id) => (await window.clipp.reuseClip(id)).outcome}
         onShareNow={() => window.clipp.shareNow()}
         onSetPinned={(id, pinned) => window.clipp.setPinned(id, pinned)}
-        onClearAll={() => window.clipp.clearHistory()}
+        onClearAll={async () => {
+          await window.clipp.clearHistory();
+          const next = await window.clipp.getState();
+          setState(next);
+          if (next.historyUnavailable || next.historyRefreshError)
+            throw new Error("history_refresh_failed");
+        }}
         onDismissClipboardHistoryError={() =>
           window.clipp.dismissClipboardHistoryError()
         }
