@@ -1,6 +1,13 @@
 import { PairingCodeContent } from "./PairingCodeContent";
 import { usePairingCodeTask } from "./usePairingCodeTask";
 import type { PayloadCopyResult } from "../../core/clipboard/payloadCopy";
+import { createPairingSubmission } from "./pairingSubmission";
+import {
+  pairingSubmissionMessage,
+  pairingApprovalMessage,
+  type PairingSubmissionResult,
+  type PairingApprovalResult,
+} from "../../core/pairing/results";
 import { ManagedRelaySettings } from "./ManagedRelaySettings";
 import {
   PreferenceRefreshNotice,
@@ -337,9 +344,10 @@ export type ClipboardAppProps = {
   };
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
-  onAccept(dev: PendingRequest): void | Promise<void>;
-  onReject(dev: PendingRequest): void | Promise<void>;
-  onPairText(txt: string): void | Promise<void>;
+  onAccept(dev: PendingRequest): Promise<PairingApprovalResult>;
+  onReject(dev: PendingRequest): Promise<PairingApprovalResult>;
+  onPairText(txt: string): Promise<PairingSubmissionResult>;
+  pairingDiagnostics?: React.ReactNode;
   onScanPairingCode?(): Promise<string | null> | string | null;
   onRequestPairingCode(): Promise<PairingCode | null>;
   onCopyPairingText(text: string): Promise<PayloadCopyResult>;
@@ -410,6 +418,7 @@ export function ClipboardApp({
   onAccept,
   onReject,
   onPairText,
+  pairingDiagnostics,
   onScanPairingCode,
   onRequestPairingCode,
   onCopyPairingText,
@@ -441,7 +450,36 @@ export function ClipboardApp({
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [filterMode, setFilterMode] = useState<"all" | "pinned">("all");
-  const [pairText, setPairText] = useState("");
+  const [pairingTask] = useState(createPairingSubmission);
+  const pair = useSyncExternalStore(
+    pairingTask.subscribe,
+    pairingTask.getSnapshot,
+    pairingTask.getSnapshot
+  );
+  const approvalBusy = useRef(new Set<string>());
+  const [approvalsPending, setApprovalsPending] = useState<string[]>([]);
+  const [approvalFeedback, setApprovalFeedback] = useState<
+    Record<string, string>
+  >({});
+  async function decideRequest(request: PendingRequest, accepted: boolean) {
+    if (approvalBusy.current.has(request.deviceId)) return;
+    approvalBusy.current.add(request.deviceId);
+    setApprovalsPending([...approvalBusy.current]);
+    let result: PairingApprovalResult;
+    try {
+      result = await (accepted ? onAccept(request) : onReject(request));
+    } catch {
+      result = { ok: false, error: "outcome_unconfirmed", admitted: null };
+    }
+    if (!result || typeof result.ok !== "boolean")
+      result = { ok: false, error: "outcome_unconfirmed", admitted: null };
+    setApprovalFeedback((previous) => ({
+      ...previous,
+      [request.deviceId]: pairingApprovalMessage(result, accepted),
+    }));
+    approvalBusy.current.delete(request.deviceId);
+    setApprovalsPending([...approvalBusy.current]);
+  }
   const [isScanningPairing, setIsScanningPairing] = useState(false);
   const { task: qrTask, state: qrState } = usePairingCodeTask(
     identity ? `${identity.deviceId}:${identity.deviceName}` : null
@@ -922,23 +960,19 @@ export function ClipboardApp({
     qrTask.close();
   }
 
-  function submitPairText() {
-    const trimmed = pairText.trim();
-    setPairText("");
-    if (!trimmed) {
-      return;
-    }
-    void Promise.resolve(onPairText(trimmed));
+  async function submitPairText() {
+    await pairingTask.submit(onPairText);
   }
 
   async function scanPairingCode() {
-    if (!onScanPairingCode || isScanningPairing) return;
+    if (!onScanPairingCode || isScanningPairing || pair.pending) return;
     setIsScanningPairing(true);
     try {
       const scanned = await onScanPairingCode();
       const trimmed = scanned?.trim();
       if (trimmed) {
-        await onPairText(trimmed);
+        pairingTask.change(trimmed);
+        await pairingTask.submit(onPairText);
       }
     } catch (err) {
       console.warn("Pairing QR scan failed", err);
@@ -1309,6 +1343,11 @@ export function ClipboardApp({
                   </div>
                 </div>
               ))}
+              {Object.entries(approvalFeedback).map(([id, message]) => (
+                <p key={id} role="status" style={{ overflowWrap: "anywhere" }}>
+                  {message}
+                </p>
+              ))}
               <div className="pending-list">
                 {pending.map((req) => {
                   return (
@@ -1330,13 +1369,15 @@ export function ClipboardApp({
                       <div className="pending-actions">
                         <button
                           className="primary-button compact-button"
-                          onClick={() => onAccept(req)}
+                          disabled={approvalsPending.includes(req.deviceId)}
+                          onClick={() => void decideRequest(req, true)}
                         >
                           Accept
                         </button>
                         <button
                           className="text-button"
-                          onClick={() => onReject(req)}
+                          disabled={approvalsPending.includes(req.deviceId)}
+                          onClick={() => void decideRequest(req, false)}
                         >
                           Reject
                         </button>
@@ -1358,19 +1399,29 @@ export function ClipboardApp({
               className="search-field"
               style={{ flex: 1, minWidth: 0, borderRadius: 12 }}
               placeholder="Paste pairing text (base64)…"
-              value={pairText}
-              onChange={(e) => setPairText(e.target.value)}
+              value={pair.raw}
+              onChange={(e) => pairingTask.change(e.target.value)}
             />
-            <button className="primary-button" onClick={submitPairText}>
-              Add
+            <button
+              className="primary-button"
+              disabled={pair.pending || isScanningPairing}
+              onClick={() => void submitPairText()}
+            >
+              {pair.pending ? "Submitting…" : "Add"}
             </button>
           </div>
+          {pairingDiagnostics}
+          {pair.result && (
+            <p role="status" style={{ overflowWrap: "anywhere" }}>
+              {pairingSubmissionMessage(pair.result)}
+            </p>
+          )}
           {onScanPairingCode && (
             <button
               className="text-button"
               style={{ marginTop: 8, alignSelf: "flex-start" }}
               onClick={scanPairingCode}
-              disabled={isScanningPairing}
+              disabled={isScanningPairing || pair.pending}
             >
               <span className="icon">qr_code_scanner</span>
               {isScanningPairing ? "Scanning" : "Scan QR"}

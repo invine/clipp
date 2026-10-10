@@ -458,7 +458,11 @@ async function bootstrap() {
   prepareIdentityRotationCleanup = () =>
     clipboardSync.prepareIdentityRotationCleanup();
 
-  let pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
+  let pendingRequests: Array<{
+    deviceId: string;
+    deviceName: string;
+    requestVersion: string;
+  }> = [];
   let pairingPending:
     ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const pairingSessions = createPairingRuntimeSessions({
@@ -1076,6 +1080,7 @@ async function bootstrap() {
       pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,
         deviceName: request.deviceName,
+        requestVersion: request.requestVersion,
       }));
       await emitState();
     },
@@ -1280,21 +1285,34 @@ async function bootstrap() {
     "clipp:respond-trust",
     async (_evt, payload: { accept: boolean; device: any }) => {
       const { accept, device } = payload;
-      await pairingPending?.decide(
+      if (!pairingPending)
+        return { ok: false, error: "stale_request", admitted: false };
+      const result = await pairingPending.decide(
         device.deviceId,
-        accept ? "accepted" : "rejected"
+        accept ? "accepted" : "rejected",
+        device.requestVersion
       );
-      await emitState();
+      try {
+        await emitState();
+      } catch {
+        if (result.ok)
+          return {
+            ok: false,
+            error: "cleanup_failed",
+            admitted: result.admitted,
+          };
+      }
+      return result;
     }
   );
 
   ipcMain.handle("clipp:pair-text", async (_evt, txt: string) => {
-    await ensureMessagingStarted();
     const target = decodePairingTarget(txt);
     if (!target) return { ok: false, error: "invalid" as const };
     if (!privateKey)
       return { ok: false, error: "identity_unavailable" as const };
     try {
+      await ensureMessagingStarted();
       await importPairingTargetAndRequest({
         text: txt,
         network: runtimeNetwork,

@@ -2,6 +2,10 @@ import {
   confirmPayloadCopy,
   type PayloadCopyResult,
 } from "../../../packages/core/clipboard/payloadCopy.js";
+import type {
+  PairingApprovalResult,
+  PairingSubmissionResult,
+} from "../../../packages/core/pairing/results";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   Clip,
@@ -64,10 +68,20 @@ const api = {
   renameDevice: (id: string, name: string) =>
     ipcRenderer.invoke("clipp:rename-device", { id, name }),
   acceptRequest: (device: PendingRequest) =>
-    ipcRenderer.invoke("clipp:respond-trust", { accept: true, device }),
+    ipcRenderer.invoke("clipp:respond-trust", {
+      accept: true,
+      device,
+    }) as Promise<PairingApprovalResult>,
   rejectRequest: (device: PendingRequest) =>
-    ipcRenderer.invoke("clipp:respond-trust", { accept: false, device }),
-  pairFromText: (txt: string) => ipcRenderer.invoke("clipp:pair-text", txt),
+    ipcRenderer.invoke("clipp:respond-trust", {
+      accept: false,
+      device,
+    }) as Promise<PairingApprovalResult>,
+  pairFromText: (txt: string) =>
+    ipcRenderer.invoke(
+      "clipp:pair-text",
+      txt
+    ) as Promise<PairingSubmissionResult>,
   copyPairingText: (text: string): Promise<PayloadCopyResult> =>
     confirmPayloadCopy(() =>
       ipcRenderer.invoke("clipp:copy-pairing-text", text)
