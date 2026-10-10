@@ -1225,10 +1225,11 @@ async function bootstrap() {
   ipcMain.handle("clipp:clear-history", async () => {
     try {
       await clipboardSvc.clearHistory(() => history.clearAll());
-      await emitState();
     } catch (err) {
       (log as any).error?.("Failed to clear history", err);
       throw err;
+    } finally {
+      await emitState();
     }
   });
 

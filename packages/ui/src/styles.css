@@ -1365,6 +1365,7 @@ body {
   transform: translateY(-8px) scale(0.98);
 }
 
+.task-dialog-backdrop,
 .qr-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1377,6 +1378,7 @@ body {
   backdrop-filter: blur(2px);
 }
 
+.task-dialog,
 .qr-modal {
   width: min(360px, 100%);
   max-height: calc(100vh - 32px);
@@ -1387,6 +1389,34 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(16, 17, 20, 0.97);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.task-dialog h2 {
+  margin: 0 0 12px;
+  color: #fff;
+  font-size: 18px;
+}
+
+.task-dialog-description {
+  line-height: 1.5;
+}
+
+.task-dialog-description p {
+  margin: 0 0 12px;
+}
+
+.task-dialog-error {
+  color: #fecdd3;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.task-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 16px 0 8px;
 }
 
 .qr-modal-header {
