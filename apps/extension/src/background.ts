@@ -26,6 +26,7 @@ import {
   IDENTITY_KEY,
 } from "../../../packages/core/trust";
 import { ChromeStorageBackend } from "./chromeStorage";
+import { createSettingsHandler } from "./settingsHandler";
 import { handleOffscreenStorageRequest } from "./runtimeMessageStorage";
 import {
   deriveExtensionIdentityKeyMaterial,
@@ -33,7 +34,6 @@ import {
 } from "./identityKeyMaterial";
 import {
   createChromeExtensionRuntimeAdapter,
-  createAutoSyncPreference,
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
@@ -98,14 +98,6 @@ import {
   sendBufferedExtensionStream,
 } from "./streamBridge";
 
-// Initialize log level from storage
-chrome.storage.local.get(["logLevel"], (res) => {
-  if (res.logLevel) {
-    log.setLogLevel(res.logLevel);
-  }
-  log.info("Background script initialized");
-});
-
 const historyBackend =
   typeof (globalThis as any).indexedDB !== "undefined"
     ? new IndexedDBHistoryBackend()
@@ -135,11 +127,7 @@ const managedConfigurationsReady = loadManagedRelayConfigurations(
   managedConfigurations = values;
 });
 let managedConfigurationUpdate: Promise<void> = Promise.resolve();
-const autoSyncPreference = createAutoSyncPreference({ storage });
 let autoSync = true;
-const autoSyncReady = autoSyncPreference.load().then((persisted) => {
-  autoSync = persisted;
-});
 let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
   resolveHistoryPolicyReady = resolve;
@@ -404,6 +392,21 @@ const clipboardSync = createClipboardSyncManager({
     return id.deviceId;
   },
   onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
+});
+const settingsHandler = createSettingsHandler({
+  storage,
+  applyAutoSync: (enabled) => {
+    autoSync = enabled;
+    clipboardSync.setAutoSync(enabled);
+  },
+  applyLogLevel: (level) => log.setLogLevel(level),
+  publish: async (snapshot) => {
+    await chrome.runtime.sendMessage({ type: "settingsState", snapshot });
+  },
+});
+const autoSyncReady = settingsHandler.read().then((snapshot) => {
+  autoSync = snapshot.state.autoSync;
+  log.info("Background script initialized");
 });
 chrome.storage.local.get(["localRetentionMs"], (res) => {
   const storedRetentionMs = res.localRetentionMs;
@@ -1237,97 +1240,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
-  // Settings: auto-sync, expiry, type filters
+  // Settings are owned by the serialized preference handler.
   if (msg.type === "getSettings") {
-    void historyPolicyReady.then(() => {
-      // @ts-ignore
-      chrome.storage.local.get(
-        [
-          "autoSync",
-          "expiryDays",
-          "typesEnabled",
-          "logLevel",
-          "localRetentionMs",
-        ],
-        (res) => {
-          sendResponse({
-            autoSync: res.autoSync !== false,
-            expiryDays: res.expiryDays || 365,
-            localRetentionMs,
-            typesEnabled: res.typesEnabled || {
-              text: true,
-              image: true,
-              file: true,
-            },
-            logLevel: res.logLevel || "info",
-          });
-        }
-      );
-    });
-    return true;
-  }
-  if (msg.type === "setSettings" && msg.settings) {
-    if (
-      !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL) ||
-      typeof msg.settings !== "object" ||
-      Array.isArray(msg.settings)
-    ) {
+    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
       sendResponse({ ok: false, error: "settings_unauthorized" });
       return false;
     }
-    const candidate = msg.settings as Record<string, unknown>;
-    const keys = Object.keys(candidate);
-    const allowed = ["autoSync", "expiryDays", "typesEnabled", "logLevel"];
-    const types = candidate.typesEnabled as Record<string, unknown> | undefined;
-    if (
-      keys.some((key) => !allowed.includes(key)) ||
-      (candidate.autoSync !== undefined &&
-        typeof candidate.autoSync !== "boolean") ||
-      (candidate.expiryDays !== undefined &&
-        (!Number.isInteger(candidate.expiryDays) ||
-          (candidate.expiryDays as number) < 1 ||
-          (candidate.expiryDays as number) > 3650)) ||
-      (candidate.logLevel !== undefined &&
-        !["debug", "info", "warn", "error"].includes(
-          candidate.logLevel as string
-        )) ||
-      (types !== undefined &&
-        (!types ||
-          typeof types !== "object" ||
-          Array.isArray(types) ||
-          Object.keys(types).some(
-            (key) => !["text", "image", "file"].includes(key)
-          ) ||
-          Object.values(types).some((value) => typeof value !== "boolean")))
-    ) {
-      sendResponse({ ok: false, error: "invalid_settings" });
-      return false;
-    }
-    void new Promise<void>((resolve, reject) => {
-      chrome.storage.local.set(candidate, () =>
-        chrome.runtime.lastError
-          ? reject(new Error(chrome.runtime.lastError.message))
-          : resolve()
-      );
-    })
-      .then(async () => {
-        if (candidate.logLevel)
-          log.setLogLevel(
-            candidate.logLevel as Parameters<typeof log.setLogLevel>[0]
-          );
-        if (candidate.autoSync !== undefined) {
-          autoSync = await autoSyncPreference.set(
-            candidate.autoSync as boolean
-          );
-          clipboardSync.setAutoSync(autoSync);
-          await runtimeAdapter.publicState
-            .read()
-            .then((state) => runtimeAdapter.publicState.publish(state));
-        }
-        sendResponse({ ok: true });
-      })
+    void Promise.all([historyPolicyReady, settingsHandler.read()])
+      .then(([, snapshot]) =>
+        sendResponse({ ok: true, snapshot, localRetentionMs })
+      )
       .catch((error) =>
         sendResponse({ ok: false, error: (error as Error).message })
+      );
+    return true;
+  }
+  if (msg.type === "setSettings") {
+    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
+      sendResponse({ ok: false, error: "settings_unauthorized" });
+      return false;
+    }
+    void settingsHandler
+      .write(msg.settings)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ status: "unconfirmed", error: (error as Error).message })
       );
     return true;
   }

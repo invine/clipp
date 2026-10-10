@@ -11,8 +11,7 @@ import type {
   RelayConfiguration,
   RelayState,
 } from "../../../packages/core/network/managedRelays";
-
-const defaultTypes = { text: true, image: true, file: true };
+import { useSettings } from "./useSettings";
 
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
@@ -20,12 +19,7 @@ const Options = () => {
   const [showMyQR, setShowMyQR] = useState(false);
   const [myQRImage, setMyQRImage] = useState<string | null>(null);
   const [myQRText, setMyQRText] = useState<string | null>(null);
-  const [settings, setSettings] = useState({
-    autoSync: true,
-    expiryDays: 365,
-    typesEnabled: defaultTypes,
-    logLevel: "info",
-  });
+  const settings = useSettings();
   const [managedRelayConfigurations, setManagedRelayConfigurations] = useState<
     RelayConfiguration[]
   >([]);
@@ -76,15 +70,6 @@ const Options = () => {
         setManagedRelayStates(message.state.managedRelayStates);
     };
     chrome.runtime.onMessage.addListener(onRuntimeState);
-    // @ts-ignore
-    chrome.runtime.sendMessage({ type: "getSettings" }, (resp) => {
-      setSettings({
-        autoSync: resp?.autoSync !== false,
-        expiryDays: resp?.expiryDays || 365,
-        typesEnabled: resp?.typesEnabled || defaultTypes,
-        logLevel: resp?.logLevel || "info",
-      });
-    });
     return () => chrome.runtime.onMessage.removeListener(onRuntimeState);
   }, []);
 
@@ -114,21 +99,6 @@ const Options = () => {
 
   function copyMyQR() {
     if (myQRText) navigator.clipboard.writeText(myQRText);
-  }
-
-  function handleSettingChange(key: string, value: any) {
-    const newSettings = { ...settings, [key]: value };
-    setSettings(newSettings);
-    // @ts-ignore
-    chrome.runtime.sendMessage({ type: "setSettings", settings: newSettings });
-  }
-
-  function handleTypeToggle(type: keyof typeof defaultTypes) {
-    const newTypes = {
-      ...settings.typesEnabled,
-      [type]: !settings.typesEnabled[type],
-    };
-    handleSettingChange("typesEnabled", newTypes);
   }
 
   return (
@@ -224,32 +194,26 @@ const Options = () => {
             <input
               type="checkbox"
               className="accent-blue-600"
-              checked={settings.autoSync}
-              onChange={(e) =>
-                handleSettingChange("autoSync", e.target.checked)
-              }
+              checked={settings.snapshot?.state.autoSync ?? true}
+              disabled={settings.loading || settings.pending}
+              onChange={(e) => {
+                void settings.save({ autoSync: e.target.checked });
+              }}
             />{" "}
-            Auto-sync
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="number"
-              className="w-16 px-1 border rounded"
-              min={1}
-              max={3650}
-              value={settings.expiryDays}
-              onChange={(e) =>
-                handleSettingChange("expiryDays", Number(e.target.value))
-              }
-            />{" "}
-            Expiry (days)
+            Auto Sync
           </label>
           <label className="flex items-center gap-2">
             Log level
             <select
               className="border rounded px-1"
-              value={settings.logLevel}
-              onChange={(e) => handleSettingChange("logLevel", e.target.value)}
+              value={settings.snapshot?.state.logLevel ?? "info"}
+              disabled={settings.loading || settings.pending}
+              onChange={(e) => {
+                void settings.save({
+                  logLevel: e.target.value as
+                    "debug" | "info" | "warn" | "error",
+                });
+              }}
             >
               <option value="debug">Debug</option>
               <option value="info">Info</option>
@@ -257,33 +221,30 @@ const Options = () => {
               <option value="error">Error</option>
             </select>
           </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="accent-blue-600"
-              checked={settings.typesEnabled.text}
-              onChange={() => handleTypeToggle("text")}
-            />{" "}
-            Text
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="accent-blue-600"
-              checked={settings.typesEnabled.image}
-              onChange={() => handleTypeToggle("image")}
-            />{" "}
-            Images
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="accent-blue-600"
-              checked={settings.typesEnabled.file}
-              onChange={() => handleTypeToggle("file")}
-            />{" "}
-            Files
-          </label>
+          {settings.pending && <p role="status">Saving settings…</p>}
+          {settings.feedback?.status === "applied" && (
+            <p role="status">
+              Settings saved.
+              {settings.feedback.error &&
+                ` Other views may need refresh: ${settings.feedback.error}`}
+            </p>
+          )}
+          {settings.feedback?.status === "rejected" && (
+            <p role="alert">
+              Settings were not saved: {settings.feedback.error}
+            </p>
+          )}
+          {settings.feedback?.status === "partial" && (
+            <p role="alert">
+              Settings were only partly saved: {settings.feedback.error}
+            </p>
+          )}
+          {settings.feedback?.status === "unconfirmed" && (
+            <p role="alert">
+              Save could not be confirmed. Current settings were refreshed.{" "}
+              {settings.feedback.error}
+            </p>
+          )}
         </div>
       </section>
       <button

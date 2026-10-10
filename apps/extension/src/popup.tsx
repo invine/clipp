@@ -4,7 +4,6 @@ import ReactDOM from "react-dom/client";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import "./styles/tailwind-built.css";
 import {
-  ClipboardApp,
   Clip,
   ClipboardHistoryError,
   Device,
@@ -18,12 +17,15 @@ import {
   PendingRequest,
   ReuseClipOutcome,
 } from "../../../packages/ui";
+import { ClipboardApp } from "../../../packages/ui/src/ClipboardApp";
+import "../../../packages/ui/src/styles.css";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { shareCurrentPopupClipboard } from "./popupClipboardActions";
 import type {
   RelayConfiguration,
   RelayState,
 } from "../../../packages/core/network/managedRelays";
+import { useSettings } from "./useSettings";
 
 function identityRotationNoticeReason(
   value: unknown
@@ -46,7 +48,7 @@ const Popup = () => {
   const [localRetentionMs, setLocalRetentionMs] = useState(
     30 * 24 * 60 * 60 * 1000
   );
-  const [autoSync, setAutoSync] = useState(true);
+  const settings = useSettings();
   const [clipboardHistoryError, setClipboardHistoryError] =
     useState<ClipboardHistoryError | null>(null);
   const [historyPolicyError, setHistoryPolicyError] =
@@ -73,8 +75,6 @@ const Popup = () => {
       if (res?.state?.waiting) setWaiting(res.state.waiting);
       if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
       if (res?.state?.pinnedIds) setPinnedIds(res.state.pinnedIds);
-      if (typeof res?.state?.autoSync === "boolean")
-        setAutoSync(res.state.autoSync);
       setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
       setHistoryPolicyError(res?.state?.historyPolicyError || null);
       setIdentityRotationRecovery(
@@ -95,7 +95,6 @@ const Popup = () => {
     chrome.runtime.sendMessage({ type: "getSettings" }, (res) => {
       if (typeof res?.localRetentionMs === "number")
         setLocalRetentionMs(res.localRetentionMs);
-      if (typeof res?.autoSync === "boolean") setAutoSync(res.autoSync);
     });
     chrome.runtime.sendMessage({ type: "managedRelayGet" }, (res) => {
       if (res?.ok) {
@@ -122,8 +121,6 @@ const Popup = () => {
         setWaiting(msg.state.waiting || []);
         setPairingErrors(msg.state.pairingErrors || []);
         setPinnedIds(msg.state.pinnedIds || []);
-        if (typeof msg.state.autoSync === "boolean")
-          setAutoSync(msg.state.autoSync);
         setClipboardHistoryError(msg.state.clipboardHistoryError || null);
         setHistoryPolicyError(msg.state.historyPolicyError || null);
         setIdentityRotationRecovery(
@@ -310,7 +307,9 @@ const Popup = () => {
         identity={identity}
         pinnedIds={pinnedIds}
         localRetentionMs={localRetentionMs}
-        autoSync={autoSync}
+        autoSync={settings.snapshot?.state.autoSync ?? true}
+        autoSyncPending={settings.loading || settings.pending}
+        autoSyncFeedback={settings.feedback}
         clipboardHistoryError={clipboardHistoryError}
         historyPolicyError={historyPolicyError}
         initializationError={initializationError}
@@ -419,22 +418,7 @@ const Popup = () => {
           setLocalRetentionMs(response.localRetentionMs);
         }}
         onSetAutoSync={async (enabled) => {
-          await new Promise<void>((resolve, reject) => {
-            chrome.runtime.sendMessage(
-              { type: "setSettings", settings: { autoSync: enabled } },
-              (response) => {
-                if (chrome.runtime.lastError || !response?.ok) {
-                  reject(
-                    chrome.runtime.lastError ??
-                      new Error("auto_sync_save_failed")
-                  );
-                  return;
-                }
-                resolve();
-              }
-            );
-          });
-          setAutoSync(enabled);
+          await settings.save({ autoSync: enabled });
         }}
         onDismissClipboardHistoryError={async () => {
           await runHistoryOperation({ type: "dismissClipboardHistoryError" });

@@ -285,6 +285,11 @@ export type ClipboardAppProps = {
   pinnedIds: string[];
   localRetentionMs?: number;
   autoSync?: boolean;
+  autoSyncPending?: boolean;
+  autoSyncFeedback?: {
+    status: "applied" | "partial" | "rejected" | "unconfirmed";
+    error?: string;
+  } | null;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
@@ -347,6 +352,8 @@ export function ClipboardApp({
   pinnedIds,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
   autoSync = true,
+  autoSyncPending = false,
+  autoSyncFeedback = null,
   clipboardHistoryError = null,
   historyPolicyError = null,
   relayAddresses = [],
@@ -1443,6 +1450,7 @@ export function ClipboardApp({
             <select
               id="auto-sync"
               value={autoSync ? "enabled" : "disabled"}
+              disabled={autoSyncPending}
               onChange={(event) =>
                 void onSetAutoSync(event.target.value === "enabled")
               }
@@ -1450,6 +1458,30 @@ export function ClipboardApp({
               <option value="enabled">Enabled</option>
               <option value="disabled">Disabled — keep Clips local</option>
             </select>
+            {autoSyncPending && <p role="status">Saving Auto Sync…</p>}
+            {autoSyncFeedback?.status === "applied" && (
+              <p role="status">
+                Auto Sync saved.
+                {autoSyncFeedback.error &&
+                  ` Other views may need refresh: ${autoSyncFeedback.error}`}
+              </p>
+            )}
+            {autoSyncFeedback?.status === "rejected" && (
+              <p role="alert">
+                Auto Sync was not saved: {autoSyncFeedback.error}
+              </p>
+            )}
+            {autoSyncFeedback?.status === "partial" && (
+              <p role="alert">
+                Auto Sync was only partly saved: {autoSyncFeedback.error}
+              </p>
+            )}
+            {autoSyncFeedback?.status === "unconfirmed" && (
+              <p role="alert">
+                Auto Sync save could not be confirmed. Current setting was
+                refreshed. {autoSyncFeedback.error}
+              </p>
+            )}
           </div>
         )}
 
