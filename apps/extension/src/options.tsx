@@ -1,3 +1,4 @@
+import { subscribePairingCodeIdentity } from "./pairingCodeIdentity";
 import { PairingCodeContent } from "../../../packages/ui/src/PairingCodeContent";
 import { usePairingCodeTask } from "../../../packages/ui/src/usePairingCodeTask";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
@@ -61,14 +62,6 @@ const Options = () => {
   }
 
   useEffect(() => {
-    chrome.runtime.sendMessage({ type: "getState" }, (response) => {
-      if (!chrome.runtime.lastError && response?.state)
-        setQrIdentity(
-          response.state.identity
-            ? `${response.state.identity.deviceId}:${response.state.identity.deviceName}`
-            : null
-        );
-    });
     void relayAction<{
       ok: true;
       configurations: RelayConfiguration[];
@@ -80,18 +73,11 @@ const Options = () => {
     const onRuntimeState = (message: {
       type?: string;
       state?: {
-        identity?: { deviceId: string; deviceName: string } | null;
         managedRelayConfigurations?: RelayConfiguration[];
         managedRelayStates?: RelayState[];
       };
     }) => {
       if (message.type !== "runtimeState") return;
-      if (message.state && "identity" in message.state)
-        setQrIdentity(
-          message.state.identity
-            ? `${message.state.identity.deviceId}:${message.state.identity.deviceName}`
-            : null
-        );
       if (message.state?.managedRelayConfigurations)
         setManagedRelayConfigurations(message.state.managedRelayConfigurations);
       if (message.state?.managedRelayStates)
@@ -100,6 +86,27 @@ const Options = () => {
     chrome.runtime.onMessage.addListener(onRuntimeState);
     return () => chrome.runtime.onMessage.removeListener(onRuntimeState);
   }, []);
+
+  useEffect(
+    () =>
+      subscribePairingCodeIdentity(
+        {
+          send: (message, receive) =>
+            chrome.runtime.sendMessage(message, (reply) => {
+              if (!chrome.runtime.lastError) receive(reply);
+            }),
+          subscribe: (receive) => {
+            chrome.runtime.onMessage.addListener(receive);
+            return () => chrome.runtime.onMessage.removeListener(receive);
+          },
+        },
+        (identity) =>
+          setQrIdentity(
+            identity ? `${identity.deviceId}:${identity.deviceName}` : null
+          )
+      ),
+    []
+  );
 
   async function handleScan(payload: string) {
     if (pairing.pending) return;
