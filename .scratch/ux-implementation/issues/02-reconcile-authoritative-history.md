@@ -1,11 +1,11 @@
 # Reconcile authoritative History and queries
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-history-02
 Priority band: 1
 Blocked by: 01
-Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
+Dispatch: integrated and reviewed in UX implementation run `ux-implementation-20261010`; branch and evidence in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -48,4 +48,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+The coordinator recorded the baseline, claim, isolated worktree, integration revision, candidate checks and two-axis review under [project workflow](../../../docs/agents/workflow.md). The unrelated primary-checkout work remains untouched.
+
+## Answer
+
+History now publishes general changes for retained additions, removals, suppression cleanup and policy effects while preserving the existing addition-only `onNew` signal. Ordered projections and bootstrap gates prevent stale reads, replies and failed initial loads from replacing newer authority across the affected runtime bridges and views. Visible query/scope derives from the accepted History snapshot and distinguishes unavailable, empty and no-match states.
+
+Integrated candidate: `1ce9217fb2b95a11a30dfc6aa0836545195da994` on `codex/ux-implementation-integration` (clean at review). The integrated `npm run check` passed 86 suites/713 tests before the final merge commit (after a recorded timing-sensitive unrelated failure on the first full run); integrated `npm run verify` passed lint, typechecks, 713 tests and Electron/Android web/Chrome builds. Fresh candidate checks passed 11 Chrome cases across two options views and an actual toolbar popup, 17 Electron native/SQLite cases including real writer-lock Delete/Clear failure and Retry, and five Android API 31 WebView/IndexedDB History cases. The full source and integration receipts and logs live in the ignored run evidence directory named in [run.md](../run.md). Standards and Spec reviews both passed at this exact revision against dispatch baseline `3045bad0b45ccbc03f2dd169993d155b8c147b93`.
+
+The scoped ticket is complete. C09 finding closure remains open for the later compact History presentation contribution. G35's additional abrupt-stop partial cleanup, Android-specific retention/unpin and forced IndexedDB outage are explicitly unqualified and remain with later Clear/retention collectors or the final G35 collection; they are not evidence for this scoped ticket. G31 transfer is External/Retained under the accepted coverage ledger.

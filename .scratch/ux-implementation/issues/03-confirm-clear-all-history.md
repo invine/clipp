@@ -1,11 +1,11 @@
 # Confirm and recover Clear all local history
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-clear-03
 Priority band: 1
 Blocked by: 02
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome

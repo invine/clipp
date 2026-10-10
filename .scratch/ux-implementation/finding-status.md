@@ -29,7 +29,7 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 | C06 | The only popup navigation entry is absent from the keyboard sequence | 19 | Open | Ticket 19 collector and contributions in traceability remain to be qualified. |
 | C07 | Pairing failures are presented as success or silently discarded | 10 | Open | Ticket 10 collector and contributions in traceability remain to be qualified. |
 | C08 | Failed QR generation leaves a misleading Hide control in options | 06 | Open | Ticket 06 collector and contributions in traceability remain to be qualified. |
-| C09 | Options history stays stale after Clear and violates its active search | 02 | Open | Ticket 02 collector and contributions in traceability remain to be qualified. |
+| C09 | Options history stays stale after Clear and violates its active search | 02 | Ticket 02 completed authoritative state and two-view reconciliation at `1ce9217fb2b95a11a30dfc6aa0836545195da994`; ticket 21 must preserve accurate query/scoped presentation before finding closure. | Ticket 02 collector and contributions in traceability remain to be qualified. |
 | C10 | Rejected settings appear saved | 01 | Closed | Ticket 01 integrated at `46a5bcc645c62c0372fee429de870b37021858ef`; candidate receipts in the run evidence directory and two-axis review. See ticket 01 answer. |
 | C11 | Essential controls are split across surfaces without a visible handoff | 11 | Open | Ticket 11 collector and contributions in traceability remain to be qualified. |
 | C12 | Popup dismissal loses relay drafts | 11 | Open | Ticket 11 collector and contributions in traceability remain to be qualified. |
