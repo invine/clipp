@@ -1,4 +1,7 @@
-import { createNameEditSession } from "../../packages/ui/src/nameEditSession";
+import {
+  createNameEditSession,
+  nameSaveErrorMessage,
+} from "../../packages/ui/src/nameEditSession";
 
 function deferred<Value>() {
   let resolve!: (value: Value) => void;
@@ -11,6 +14,20 @@ function deferred<Value>() {
 }
 
 describe("Device Name and Local Device Alias draft session", () => {
+  it("shows validation recovery for Electron IPC-wrapped name and alias failures", () => {
+    expect(
+      nameSaveErrorMessage(
+        "Error invoking remote method 'clipp:rename-identity': Error: invalid_device_name",
+        false
+      )
+    ).toMatch(/Device Name must contain 1–64 characters/);
+    expect(
+      nameSaveErrorMessage(
+        "Error invoking remote method 'clipp:rename-device': Error: invalid_device_alias",
+        true
+      )
+    ).toMatch(/Alias must contain 1–64 characters/);
+  });
   it("retains the raw invalid input and reports the failure", async () => {
     const edit = createNameEditSession();
     edit.begin("local", "Desktop");

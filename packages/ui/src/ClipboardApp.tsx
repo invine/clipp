@@ -41,7 +41,7 @@ import {
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
-import { createNameEditSession } from "./nameEditSession";
+import { createNameEditSession, nameSaveErrorMessage } from "./nameEditSession";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -94,22 +94,6 @@ function clipboardHistoryErrorMessage(error: ClipboardHistoryError): string {
     return "Clipboard History storage is unavailable. One or more pending Clips could not be saved.";
   }
   return "Clipboard History storage is unavailable. Clipp will retry pending Clips automatically.";
-}
-
-function nameSaveErrorMessage(error: string, alias: boolean): string {
-  if (error === "invalid_device_name" || error === "invalid_device_alias") {
-    return `${alias ? "Alias" : "Device Name"} must contain 1–64 characters without control or line breaks. Edit and Save again.`;
-  }
-  if (error === "device_unavailable") {
-    return "This device is no longer available. Your edit was not applied.";
-  }
-  if (
-    error === "rename_outcome_unconfirmed" ||
-    error === "rename_state_unconfirmed"
-  ) {
-    return "The Save result could not be confirmed. Check the current name before saving again.";
-  }
-  return `${alias ? "Alias" : "Device Name"} Save was not confirmed. Your edit is still here; check the current value before saving again.`;
 }
 
 function connectionStatusFor(

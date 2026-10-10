@@ -5,6 +5,25 @@ export type NameEditSnapshot = Readonly<{
   error: string | null;
 }>;
 
+export function nameSaveErrorMessage(error: string, alias: boolean): string {
+  if (
+    error.includes("invalid_device_name") ||
+    error.includes("invalid_device_alias")
+  ) {
+    return `${alias ? "Alias" : "Device Name"} must contain 1–64 characters without control or line breaks. Edit and Save again.`;
+  }
+  if (error.includes("device_unavailable")) {
+    return "This device is no longer available. Your edit was not applied.";
+  }
+  if (
+    error.includes("rename_outcome_unconfirmed") ||
+    error.includes("rename_state_unconfirmed")
+  ) {
+    return "The Save result could not be confirmed. Check the current name before saving again.";
+  }
+  return `${alias ? "Alias" : "Device Name"} Save was not confirmed. Your edit is still here; check the current value before saving again.`;
+}
+
 export function createNameEditSession() {
   let snapshot: NameEditSnapshot = {
     targetId: null,
