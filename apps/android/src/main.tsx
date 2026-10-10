@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
+import { createHistoryInitialLoadGate } from "@core/history/bootstrap";
 import type { Clip, Device, Identity, PendingRequest } from "@clipp/ui";
 import {
   AndroidClient,
@@ -44,20 +45,19 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    let receivedUpdate = false;
+    const initialLoad = createHistoryInitialLoadGate<AndroidAppState>({
+      onState: setState,
+      onLoading: setHistoryLoading,
+      onFailed: setHistoryLoadFailed,
+    });
 
     client
       .start()
       .then(() => client.getState())
-      .then((next) => {
-        if (!cancelled && !receivedUpdate) setState(next);
-        if (!cancelled) setHistoryLoading(false);
-        if (!cancelled) setHistoryLoadFailed(false);
-      })
+      .then((next) => initialLoad.resolved(next))
       .catch((err) => {
         console.error("Failed to start Android client", err);
-        if (!cancelled) setHistoryLoading(false);
-        if (!cancelled) setHistoryLoadFailed(true);
+        if (!initialLoad.rejected()) return;
         void client.getInitializationError().then((initialization) => {
           if (cancelled) return;
           if (initialization) {
@@ -71,17 +71,11 @@ function App() {
         });
       });
 
-    const unsubscribe = client.onUpdate((next) => {
-      if (!cancelled) {
-        receivedUpdate = true;
-        setState(next);
-        setHistoryLoading(false);
-        setHistoryLoadFailed(false);
-      }
-    });
+    const unsubscribe = client.onUpdate((next) => initialLoad.live(next));
 
     return () => {
       cancelled = true;
+      initialLoad.cancel();
       unsubscribe();
       client.stop();
     };

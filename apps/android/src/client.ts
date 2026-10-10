@@ -36,8 +36,8 @@ import {
   RETENTION_MS,
   startHistoryRetentionCleanup,
   type HistoryRetentionCleanup,
-  type HistorySnapshot,
 } from "@core/history/store";
+import { createHistoryStateReader } from "@core/history/state";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
@@ -228,7 +228,7 @@ export class AndroidClient {
   });
   private readonly historyBackend = createHistoryBackend();
   private readonly history = new MemoryHistoryStore(this.historyBackend);
-  private lastHistorySnapshot: HistorySnapshot | null = null;
+  private readonly historyState = createHistoryStateReader(this.history);
   private readonly identityRepo = createKVIdentityRepository({
     storage: this.storage,
     key: IDENTITY_KEY,
@@ -968,13 +968,7 @@ export class AndroidClient {
   }
 
   async getState(): Promise<AndroidAppState> {
-    let historyRefreshError = false;
-    try {
-      this.lastHistorySnapshot = await this.history.snapshot();
-    } catch {
-      historyRefreshError = true;
-    }
-    const historySnapshot = this.lastHistorySnapshot;
+    const historyProjection = await this.historyState.read();
     const devices = await this.identitySvc.trustedDevices();
     const identity = this.identityRotationRecovery
       ? null
@@ -1006,7 +1000,7 @@ export class AndroidClient {
     );
 
     return {
-      clips: historySnapshot?.clips ?? [],
+      clips: historyProjection.clips,
       devices,
       pending: this.pendingRequests,
       waiting: this.pairingSessions.waiting(),
@@ -1015,9 +1009,9 @@ export class AndroidClient {
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds: historySnapshot?.pinnedIds ?? [],
-      historyUnavailable: historySnapshot === null,
-      historyRefreshError,
+      pinnedIds: historyProjection.pinnedIds,
+      historyUnavailable: historyProjection.historyUnavailable,
+      historyRefreshError: historyProjection.historyRefreshError,
       localRetentionMs: this.localRetentionMs,
       autoSync: this.clipboardSync.isAutoSync(),
       clipboardHistoryError: this.clipboardHistoryError,

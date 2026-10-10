@@ -168,8 +168,10 @@ export class MemoryHistoryStore implements ClipHistoryStore {
         policy: this.mutationPolicy(),
       });
       const acceptance = result.acceptance!;
-      if (acceptance.kind === "newly-stored") {
+      if (acceptance.kind === "newly-stored" || result.retainedHistoryChanged) {
         this.changed();
+      }
+      if (acceptance.kind === "newly-stored") {
         const item = await this.getById(clip.id);
         if (item) for (const listener of this.listeners) listener(item);
       }
