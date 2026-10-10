@@ -1,31 +1,45 @@
 import type { RuntimeAdapter, RuntimeContext } from "./contract";
+import { createOrderedStatePublisher } from "./orderedPublication";
 
-export type RuntimeStatus = "idle" | "starting" | "running" | "stopping" | "stopped";
+export type RuntimeStatus =
+  "idle" | "starting" | "running" | "stopping" | "stopped";
 
 export type RuntimeOrchestration<Identity, ApplicationState, PublicState> = {
   adapter: RuntimeAdapter<Identity, ApplicationState, PublicState>;
-  start(context: RuntimeContext<Identity, ApplicationState, PublicState>): void | Promise<void>;
-  stop?(context: RuntimeContext<Identity, ApplicationState, PublicState>): void | Promise<void>;
+  start(
+    context: RuntimeContext<Identity, ApplicationState, PublicState>
+  ): void | Promise<void>;
+  stop?(
+    context: RuntimeContext<Identity, ApplicationState, PublicState>
+  ): void | Promise<void>;
 };
 
-export function createRuntimeOrchestrator<Identity, ApplicationState, PublicState>(
+export function createRuntimeOrchestrator<
+  Identity,
+  ApplicationState,
+  PublicState,
+>(
   orchestration: RuntimeOrchestration<Identity, ApplicationState, PublicState>
 ) {
   let currentStatus: RuntimeStatus = "idle";
   let unsubscribeShutdown: (() => void) | undefined;
 
-  const publishState = async (): Promise<PublicState> => {
-    const state = await orchestration.adapter.publicState.read();
-    await orchestration.adapter.publicState.publish(state);
-    return state;
-  };
+  const publisher = createOrderedStatePublisher(
+    orchestration.adapter.publicState
+  );
+  const publishState = () => publisher.request();
   const context: RuntimeContext<Identity, ApplicationState, PublicState> = {
     ...orchestration.adapter,
     publishState,
   };
 
   const stop = async (): Promise<void> => {
-    if (currentStatus === "idle" || currentStatus === "stopped" || currentStatus === "stopping") return;
+    if (
+      currentStatus === "idle" ||
+      currentStatus === "stopped" ||
+      currentStatus === "stopping"
+    )
+      return;
     currentStatus = "stopping";
     try {
       await orchestration.stop?.(context);
@@ -55,7 +69,7 @@ export function createRuntimeOrchestrator<Identity, ApplicationState, PublicStat
     stop,
     publishState,
     status: (): RuntimeStatus => currentStatus,
-    context: (): RuntimeContext<Identity, ApplicationState, PublicState> => context,
+    context: (): RuntimeContext<Identity, ApplicationState, PublicState> =>
+      context,
   };
 }
-

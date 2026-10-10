@@ -26,7 +26,11 @@ export type RuntimeTransaction<State, Result> = {
 export interface RuntimeApplicationState<State> {
   read(): Promise<State>;
   transact<Result>(
-    update: (state: State) => RuntimeTransaction<State, Result> | Promise<RuntimeTransaction<State, Result>>
+    update: (
+      state: State
+    ) =>
+      | RuntimeTransaction<State, Result>
+      | Promise<RuntimeTransaction<State, Result>>
   ): Promise<Result>;
 }
 
@@ -94,5 +98,5 @@ export type RuntimeAdapter<Identity, ApplicationState, PublicState> = {
 
 export type RuntimeContext<Identity, ApplicationState, PublicState> =
   RuntimeAdapter<Identity, ApplicationState, PublicState> & {
-    publishState(): Promise<PublicState>;
+    publishState(): Promise<void>;
   };

@@ -287,6 +287,10 @@ export type ClipboardAppProps = {
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  historyLoading?: boolean;
+  historyUnavailable?: boolean;
+  historyRefreshError?: string | null;
+  onRetryHistoryRefresh?(): void | Promise<void>;
   localRetentionMs?: number;
   autoSync?: boolean;
   autoSyncKnown?: boolean;
@@ -360,6 +364,10 @@ export function ClipboardApp({
   relayConnections = [],
   identity,
   pinnedIds,
+  historyLoading = false,
+  historyUnavailable = false,
+  historyRefreshError = null,
+  onRetryHistoryRefresh,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
   autoSync = true,
   autoSyncKnown = true,
@@ -1881,19 +1889,41 @@ export function ClipboardApp({
             </div>
           )}
 
+          {historyLoading && <p role="status">Loading History…</p>}
+          {(historyUnavailable || historyRefreshError) && (
+            <div className="initialization-error" role="alert">
+              <span>
+                {historyUnavailable
+                  ? "History unavailable."
+                  : "History refresh failed. Showing last known Clips."}
+              </span>
+              {onRetryHistoryRefresh && (
+                <button
+                  type="button"
+                  onClick={() => void onRetryHistoryRefresh()}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
           <div className="history-grid">
-            {filteredClips.length === 0 && (
-              <article
-                className="history-card"
-                style={{ minHeight: 120, maxHeight: 120 }}
-              >
-                <div className="history-body">
-                  <div className="history-text">
-                    No clips yet. Copy something!
+            {!historyLoading &&
+              !historyUnavailable &&
+              filteredClips.length === 0 && (
+                <article
+                  className="history-card"
+                  style={{ minHeight: 120, maxHeight: 120 }}
+                >
+                  <div className="history-body">
+                    <div className="history-text">
+                      {clips.length === 0
+                        ? "No history yet."
+                        : "No Clips match these filters."}
+                    </div>
                   </div>
-                </div>
-              </article>
-            )}
+                </article>
+              )}
             {filteredClips.map((clip) => {
               const label =
                 deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
