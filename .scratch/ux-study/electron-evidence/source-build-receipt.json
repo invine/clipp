@@ -1,0 +1,34 @@
+{
+  "recordedAtUtc": "2026-10-07T15:07:01.332Z",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "trackedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492",
+  "baselineManifest": "../inventory-source-baseline.json",
+  "baselineFiles": 145,
+  "changedSinceBaseline": [],
+  "buildCommand": "npm --workspace apps/electron run build",
+  "buildResult": "passed",
+  "artifacts": [
+    {
+      "path": "apps/electron/dist/main.cjs",
+      "sha256": "fccbb9109dbaefb45956a3c8383e39c451535b798f3bc556f1f3bea47d6a0419"
+    },
+    {
+      "path": "apps/electron/dist/preload.js",
+      "sha256": "3f009f1edf0e071d5b6b9e82849041e97250df0c9dbd3b5946df02712c3a937f"
+    },
+    {
+      "path": "apps/electron/dist/renderer/assets/clipp-purple-64-CD8VqYvQ.png",
+      "sha256": "1ad48e65b478164c875e113976ed8f6d7d6dacc68f847c6234fd0b5a5e0328ca"
+    },
+    {
+      "path": "apps/electron/dist/renderer/assets/index-CxP8MEE-.js",
+      "sha256": "2591a1639a23cf81c3eda1e67d68b9b79593a584aab34d9cceb622e4c55eb985"
+    },
+    {
+      "path": "apps/electron/dist/renderer/assets/index-DYtZmczk.css",
+      "sha256": "8ab6d061b7c5233d43bca6e90e19e332ce42623323e7636067e126924304e838"
+    }
+  ],
+  "scopedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492",
+  "scopedDiffPaths": ["apps", "packages", "tests"]
+}

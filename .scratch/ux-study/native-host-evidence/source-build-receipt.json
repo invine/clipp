@@ -1,0 +1,242 @@
+{
+  "recordedAtUtc": "2026-10-09T20:43:54.484491+00:00",
+  "purpose": "Additional native host observation; lifecycle checks and controlled offline network test, not release acceptance",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "branch": "codex/agent-workflow-integration",
+  "node": "v24.16.0",
+  "baselineManifest": "../inventory-source-baseline.json",
+  "baselineFiles": 145,
+  "changedSinceBaseline": [],
+  "trackedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492",
+  "preservedModifiedFiles": [
+    "apps/electron/src/managedRelayAuth.ts",
+    "tests/electron/managedRelayAuth.test.ts"
+  ],
+  "builds": [
+    {
+      "command": "npm --workspace apps/electron run build",
+      "result": "passed (exit 0), this session",
+      "artifacts": [
+        {
+          "path": "apps/electron/dist/main.cjs",
+          "sha256": "fccbb9109dbaefb45956a3c8383e39c451535b798f3bc556f1f3bea47d6a0419"
+        },
+        {
+          "path": "apps/electron/dist/main.cjs.map",
+          "sha256": "d462e912ba771e8e5f1f761ec236f426276c59400b14084a913f267e73ab7e06"
+        },
+        {
+          "path": "apps/electron/dist/preload.js",
+          "sha256": "3f009f1edf0e071d5b6b9e82849041e97250df0c9dbd3b5946df02712c3a937f"
+        },
+        {
+          "path": "apps/electron/dist/preload.js.map",
+          "sha256": "2b4375401f30904a7f2475edf212b2a0b3686d2f2153db3cae2adccf80261143"
+        },
+        {
+          "path": "apps/electron/dist/renderer/assets/clipp-purple-64-CD8VqYvQ.png",
+          "sha256": "1ad48e65b478164c875e113976ed8f6d7d6dacc68f847c6234fd0b5a5e0328ca"
+        },
+        {
+          "path": "apps/electron/dist/renderer/assets/index-CxP8MEE-.js",
+          "sha256": "2591a1639a23cf81c3eda1e67d68b9b79593a584aab34d9cceb622e4c55eb985"
+        },
+        {
+          "path": "apps/electron/dist/renderer/assets/index-DYtZmczk.css",
+          "sha256": "8ab6d061b7c5233d43bca6e90e19e332ce42623323e7636067e126924304e838"
+        },
+        {
+          "path": "apps/electron/dist/renderer/index.html",
+          "sha256": "a79ae5e5fb0aa4d5106f082111792e52c6b84785dd0a13da8c39c83d7b443b98"
+        }
+      ]
+    },
+    {
+      "command": "CLIPP_RELAY_ACCEPTANCE_TRANSPORT=wss npm --workspace apps/extension run build:relay-acceptance",
+      "result": "passed (exit 0), this session",
+      "artifacts": [
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/.vite/manifest.json",
+          "sha256": "5c729fd85c0049f7a6b604e6278d8d82cb3b370ed3191ac54ebc6c6073ba44eb"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/ManagedRelaySettings-Ct3FlnRx.css",
+          "sha256": "a12a70d689a0ee0eb6d5b7bccf2bcd165c120956ad5c61ffcd39229a75a6be43"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/ManagedRelaySettings-VFJz4T6G.js",
+          "sha256": "7ab98e811d05d6b209f955d93b01229d6e7cd02f5a7143d3048189d80a8cadb0"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/background.ts-BJqgEOcc.js",
+          "sha256": "d7766a462f1dc5ee8b61d1ec07426f95cad196d9d0b58e68a0a7eb19774570d7"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/browser-CTv6FZlR.js",
+          "sha256": "db34d133ffb305d2eda6fedfa05d938ec5eee4a9ba4645467db1b8470ee54b64"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/clipboardBridge-BH6y1KLg.js",
+          "sha256": "9c9cc51404e0a783e8167243a16caa002d6446a5b2bc8c838ac3e177e4d7749c"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/clipp-purple-64-CD8VqYvQ.png",
+          "sha256": "1ad48e65b478164c875e113976ed8f6d7d6dacc68f847c6234fd0b5a5e0328ca"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/content.ts-Dj57AVJC.js",
+          "sha256": "58122f314695530e31b4e32ebe56bf2235674581e1d0de69a9d931819ebf9714"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/icon-32-C6L51U-H.png",
+          "sha256": "f73483a84a597c95ab4fd01e8aabcf041db2f031ed9088000ba42881b40ddf0a"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/index-0J7YWpsT.js",
+          "sha256": "5df121f27e531ed7e61da678b7de80f42710a02be90f75e1e0fe9c3030301700"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/index-CtD1FSnN.js",
+          "sha256": "05bfaa3e9b1eb023377b2c1ee8a09e88686349a7d6d182255c3f02878e16a966"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/index-D1npmLRj.js",
+          "sha256": "9b6719bb6419d6db1affa62dc272b81429112a41456b5b711ac9c3e4daab7019"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/index-DDo5qUOy.js",
+          "sha256": "8763887b16778d2875cae98f5cc9e80a3de22d64ced04f9b15e103506d52eef3"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/offscreen-B7E3YjKz.js",
+          "sha256": "86ab9ffce3362034d96819eff118aafc22deba70d8da2ca530506789ef4a4824"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/options.html-Byq56lzo.js",
+          "sha256": "83e0c67fa6c8aba6932181f256d4fd6b92dc3319d26c00f49c872e28ad0f9229"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/pako-DsVpkFdO.js",
+          "sha256": "8a7ed2da8eb6d958c1bd0ae446f201e6c1d27f5e658bdc1e79f04a37aae48ad3"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/popup-DYtZmczk.css",
+          "sha256": "8ab6d061b7c5233d43bca6e90e19e332ce42623323e7636067e126924304e838"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/popup.html-Cklcc15y.js",
+          "sha256": "5680947eee1bdbb9856a9723605027088dad505bf1a15a7cfbbcdd7a0edd0e1f"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/popupClipboardActions-DcAYFlqt.js",
+          "sha256": "9eeba7ccbf8a05066fc7ee26d9cf804e54c49923acd706db1148aad21c596d1a"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/assets/v2-BVD4g2Gw.js",
+          "sha256": "38da69934178bd4006f3f860271cadb80fb92b7055a3e17d88fd9c4e2194ce00"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icon-128.png",
+          "sha256": "e763b76a80b3070c320a2031cf18af9ed9e504a0c03bb2be1ec34c86d03b037a"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icon-16-old.png",
+          "sha256": "ea9f947dffd45fb713b5e98db27d2fb3f29a9d2d877b7bf6b6626983be69e697"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icon-16.png",
+          "sha256": "28bcedf70751c38f3f1c8dbdadbe5660ee5e9ccf3ceabfa9cf96e55c2398cc2e"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icon-32-old.png",
+          "sha256": "d545deb044aed99f6b93d5df216e5b75477847566235f1fb56c1b78cf48872bf"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icon-32.png",
+          "sha256": "f73483a84a597c95ab4fd01e8aabcf041db2f031ed9088000ba42881b40ddf0a"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icon-48.png",
+          "sha256": "1cf3abcb284f1b0433d1fa1884ad2ffa4823c340d983cc99eef6560f949e10d0"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-128.png",
+          "sha256": "3f26c4d5f94c7fd82ebfa22abe4203d618ad8ad808ef15c339647880c3a23530"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-16.png",
+          "sha256": "21b8863db19a88e5311261bea5d206ba066b1d3400289b8d45ca750be6e883b1"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-256.png",
+          "sha256": "7d30c21e80495d92054cb784500d9c8332cf7b0b8ab3d66bab33bb7802bbaba8"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-32.png",
+          "sha256": "f63ad098f137d41672af1701f1e6d14e24293c89b6f937636067289185b7fb9a"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-48.png",
+          "sha256": "f5520dbbe29dc9569d9af5c33d22de8028fbd89d9c3126b2d66bb11d31614ef5"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-512.png",
+          "sha256": "566a60ad5b45dcfd39ab61928f12967f8dcee95898d2b668c8178579c0f35423"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-appicon-64.png",
+          "sha256": "9bc80fe96c076d45550c9eef7c5e3238e47e72f1444d6ed820402a7f890ae7f6"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-trayTemplate-16.png",
+          "sha256": "f8a194c3b631bc4aee40ce9cad77cd4339f4f56cec6eb6de275411394e3584e9"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-trayTemplate-32.png",
+          "sha256": "190b268a4196b07a90245fb10407293e4547d24242e2c5919075098df679fd74"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/icons/clipp-trayTemplate-64.png",
+          "sha256": "8249bb0e52ee83d03a9765b3b4964fd5cfd35efd66a2290b9f490119c8c455c5"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/manifest.json",
+          "sha256": "9361792c4017cf97b7a2bdc9922535bc99e8312d133538161845829379981677"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/offscreen.html",
+          "sha256": "88bec247545783c38066768590d57950b05b297870d9588bb55b805b80916cef"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/options.html",
+          "sha256": "5cbd6e63d27e4e33feaf5c92c7e87fffa6c9c3acf6e4cf82d9026396253792c3"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/popup.html",
+          "sha256": "24ec4a5f1c033a8f5cd0402fd3031498f143ec2f18c2e357418cd9d4105ad150"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/service-worker-loader.js",
+          "sha256": "1149210e9ff30dd7030dc5b34790c5185ce4075efd847edbf0e48b06821ae95b"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/src/options.html",
+          "sha256": "3ddaf7f5e70738fc54e0bd64d551a303683e42ce6a8ecee3620b5bb4dda00ee3"
+        },
+        {
+          "path": "apps/extension/.local/relay-acceptance/wss/src/popup.html",
+          "sha256": "0553ec1a2782a9fa02ef503cdf7ffcc85d0fc51c2fa10e8aba4eedd71dadb5ba"
+        }
+      ]
+    }
+  ],
+  "instrumentation": {
+    "nativeInput": "CUA",
+    "appResponseFixtures": false,
+    "clipboard": "memory boundary in both hosts",
+    "chrome": "real popup-target offline/cache controls; service-worker stop and offscreen close APIs",
+    "electron": "native window events and public state; unmodified production bundles"
+  },
+  "productionSourceChangedByStudy": false,
+  "allOwnedHostsClosed": true
+}
