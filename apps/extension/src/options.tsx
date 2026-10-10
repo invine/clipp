@@ -203,7 +203,11 @@ const Options = () => {
               ref={(input) => {
                 if (input) input.indeterminate = settings.snapshot === null;
               }}
-              disabled={!settings.snapshot || settings.pending}
+              disabled={
+                !settings.snapshot ||
+                settings.pending ||
+                settings.recoveryRequired
+              }
               onChange={(e) => {
                 void settings.save({ autoSync: e.target.checked });
               }}
@@ -216,7 +220,11 @@ const Options = () => {
             <select
               className="border rounded px-1"
               value={settings.snapshot?.state.logLevel ?? ""}
-              disabled={!settings.snapshot || settings.pending}
+              disabled={
+                !settings.snapshot ||
+                settings.pending ||
+                settings.recoveryRequired
+              }
               onChange={(e) => {
                 void settings.save({
                   logLevel: e.target.value as

@@ -9,6 +9,7 @@ export type SettingsClientState = {
   loading: boolean;
   refreshing: boolean;
   refreshError: string | null;
+  recoveryRequired: boolean;
   pending: boolean;
   feedback: {
     status: "applied" | "partial" | "rejected" | "unconfirmed";
@@ -28,6 +29,7 @@ export function createSettingsClient(port: {
     loading: true,
     refreshing: false,
     refreshError: null,
+    recoveryRequired: false,
     pending: false,
     feedback: null,
   };
@@ -88,9 +90,18 @@ export function createSettingsClient(port: {
         state.snapshot &&
         response.snapshot.sessionId !== state.snapshot.sessionId &&
         acceptedVersion !== versionAtRequest
-      )
+      ) {
+        state = { ...state, recoveryRequired: false };
         return;
+      }
       apply(response.snapshot, true);
+      if (
+        state.snapshot &&
+        state.snapshot.sessionId === response.snapshot.sessionId &&
+        state.snapshot.revision >= response.snapshot.revision
+      ) {
+        state = { ...state, recoveryRequired: false };
+      }
     } catch (error) {
       if (requestId !== refreshId) return;
       state = {
@@ -125,8 +136,24 @@ export function createSettingsClient(port: {
     },
     refresh,
     save: async (patch: Partial<ExtensionSettings>) => {
+      if (state.pending || state.recoveryRequired || !state.snapshot)
+        return {
+          status: "unconfirmed" as const,
+          error: "settings_reconciliation_required",
+        };
       state = { ...state, pending: true, feedback: null };
       notify();
+      const reconcileUnconfirmed = async (error: string) => {
+        state = {
+          ...state,
+          recoveryRequired: true,
+          feedback: { status: "unconfirmed" as const, error },
+        };
+        notify();
+        await refresh();
+        state = { ...state, pending: false };
+        notify();
+      };
       try {
         const response = (await port.send({
           type: "setSettings",
@@ -135,6 +162,10 @@ export function createSettingsClient(port: {
         if (!response?.status || !response.snapshot)
           throw new Error("settings_reply_missing");
         apply(response.snapshot);
+        if (response.status === "unconfirmed") {
+          await reconcileUnconfirmed(response.error);
+          return response;
+        }
         state = {
           ...state,
           pending: false,
@@ -145,16 +176,9 @@ export function createSettingsClient(port: {
           },
         };
         notify();
-        if (response.status === "unconfirmed") await refresh();
         return response;
       } catch (error) {
-        state = {
-          ...state,
-          pending: false,
-          feedback: { status: "unconfirmed", error: (error as Error).message },
-        };
-        notify();
-        await refresh();
+        await reconcileUnconfirmed((error as Error).message);
         return {
           status: "unconfirmed" as const,
           error: (error as Error).message,
