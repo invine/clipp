@@ -1,3 +1,5 @@
+import { createAutoSyncPreference } from "../../../packages/core/runtime/autoSyncPreference";
+
 export type ExtensionSettings = {
   autoSync: boolean;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -30,24 +32,25 @@ export function createSettingsHandler(options: {
   sessionId?: string;
 }) {
   const sessionId = options.sessionId ?? crypto.randomUUID();
+  const autoSyncPreference = createAutoSyncPreference({
+    storage: options.storage,
+  });
   let revision = 0;
-  let state: ExtensionSettings = { autoSync: true, logLevel: "info" };
-  let initialized = false;
+  let state: ExtensionSettings | null = null;
   let queue = Promise.resolve();
 
-  const snapshot = (): SettingsSnapshot => ({
-    sessionId,
-    revision,
-    state: { ...state },
-  });
+  const snapshot = (): SettingsSnapshot => {
+    if (!state) throw new Error("settings_not_loaded");
+    return { sessionId, revision, state: { ...state } };
+  };
 
   async function reconcile(): Promise<SettingsSnapshot> {
     const [autoSync, logLevel] = await Promise.all([
-      options.storage.get<boolean>("autoSync"),
+      autoSyncPreference.load(),
       options.storage.get<ExtensionSettings["logLevel"]>("logLevel"),
     ]);
     const next: ExtensionSettings = {
-      autoSync: autoSync !== false,
+      autoSync,
       logLevel: logLevels.includes(logLevel as ExtensionSettings["logLevel"])
         ? logLevel!
         : "info",
@@ -55,14 +58,13 @@ export function createSettingsHandler(options: {
     options.applyAutoSync(next.autoSync);
     options.applyLogLevel(next.logLevel);
     if (
-      !initialized ||
+      !state ||
       next.autoSync !== state.autoSync ||
       next.logLevel !== state.logLevel
     ) {
       revision += 1;
     }
     state = next;
-    initialized = true;
     return snapshot();
   }
 
@@ -106,7 +108,11 @@ export function createSettingsHandler(options: {
         }
         const before = current.state;
         try {
-          for (const key of keys) await options.storage.set(key, patch[key]);
+          for (const key of keys) {
+            if (key === "autoSync")
+              await autoSyncPreference.set(patch.autoSync as boolean);
+            else await options.storage.set(key, patch[key]);
+          }
         } catch (error) {
           try {
             current = await reconcile();

@@ -7,6 +7,7 @@ import "./styles/tailwind-built.css";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { ManagedRelaySettings } from "../../../packages/ui/src/ManagedRelaySettings";
+import { PreferenceSaveFeedback } from "../../../packages/ui/src/PreferenceSaveFeedback";
 import type {
   RelayConfiguration,
   RelayState,
@@ -222,29 +223,11 @@ const Options = () => {
             </select>
           </label>
           {settings.pending && <p role="status">Saving settings…</p>}
-          {settings.feedback?.status === "applied" && (
-            <p role="status">
-              Settings saved.
-              {settings.feedback.error &&
-                ` Other views may need refresh: ${settings.feedback.error}`}
-            </p>
-          )}
-          {settings.feedback?.status === "rejected" && (
-            <p role="alert">
-              Settings were not saved: {settings.feedback.error}
-            </p>
-          )}
-          {settings.feedback?.status === "partial" && (
-            <p role="alert">
-              Settings were only partly saved: {settings.feedback.error}
-            </p>
-          )}
-          {settings.feedback?.status === "unconfirmed" && (
-            <p role="alert">
-              Save could not be confirmed. Current settings were refreshed.{" "}
-              {settings.feedback.error}
-            </p>
-          )}
+          <PreferenceSaveFeedback
+            feedback={settings.feedback}
+            subject="Settings"
+            plural
+          />
         </div>
       </section>
       <button
