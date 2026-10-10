@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from "react";
+import { createPairingSubmission } from "../../../packages/ui/src/pairingSubmission";
+import { pairingSubmissionMessage } from "../../../packages/core/pairing/results";
+import { submitExtensionPairing } from "./pairingActions";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import ReactDOM from "react-dom/client";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
 import "./styles/tailwind-built.css";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
-import { decodePairingTarget } from "../../../packages/core/pairing/v2";
 import { ManagedRelaySettings } from "../../../packages/ui/src/ManagedRelaySettings";
 import {
   PreferenceRefreshNotice,
@@ -19,7 +21,12 @@ import { useSettings } from "./useSettings";
 
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
-  const [qrResult, setQRResult] = useState<string | null>(null);
+  const [pairingTask] = useState(createPairingSubmission);
+  const pairing = useSyncExternalStore(
+    pairingTask.subscribe,
+    pairingTask.getSnapshot,
+    pairingTask.getSnapshot
+  );
   const [showMyQR, setShowMyQR] = useState(false);
   const [myQRImage, setMyQRImage] = useState<string | null>(null);
   const [myQRText, setMyQRText] = useState<string | null>(null);
@@ -78,16 +85,11 @@ const Options = () => {
   }, []);
 
   async function handleScan(payload: string) {
-    setQRResult(payload);
-    if (decodePairingTarget(payload)) {
-      // @ts-ignore
-      chrome.runtime.sendMessage(
-        { type: "pairDevice", pairingText: payload },
-        (resp) => {
-          // Optionally show success/failure
-        }
-      );
-    }
+    if (pairing.pending) return;
+    pairingTask.change(payload);
+    await pairingTask.submit((text) =>
+      submitExtensionPairing(chrome.runtime, text)
+    );
   }
 
   async function generateMyQR() {
@@ -119,11 +121,34 @@ const Options = () => {
             {showQR ? "Hide QR Scanner" : "Add Device (QR)"}
           </button>
         </div>
-        {showQR && <QRScanner onScan={handleScan} />}
-        {qrResult && (
-          <div className="text-xs text-green-600 mt-2">
-            QR scanned: {qrResult.slice(0, 32)}...
-          </div>
+        {showQR && (
+          <>
+            <QRScanner onScan={handleScan} disabled={pairing.pending} />
+            <label className="block mt-2">
+              Pairing text
+              <textarea
+                aria-label="Pairing text"
+                className="block w-full"
+                value={pairing.raw}
+                onChange={(event) => pairingTask.change(event.target.value)}
+              />
+            </label>
+            <button
+              disabled={pairing.pending}
+              onClick={() =>
+                void pairingTask.submit((text) =>
+                  submitExtensionPairing(chrome.runtime, text)
+                )
+              }
+            >
+              {pairing.pending ? "Submitting…" : "Submit pairing text"}
+            </button>
+            {pairing.result && (
+              <p role="status" style={{ overflowWrap: "anywhere" }}>
+                {pairingSubmissionMessage(pairing.result)}
+              </p>
+            )}
+          </>
         )}
         <div className="mt-2 flex flex-col space-y-2">
           <button

@@ -458,7 +458,11 @@ history.onNew((item) => {
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
 });
-let pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
+let pendingRequests: Array<{
+  deviceId: string;
+  deviceName: string;
+  requestVersion: string;
+}> = [];
 const pairingSessions = createPairingRuntimeSessions({
   identity: async () => {
     const current = await identitySvc.get();
@@ -780,6 +784,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
     pendingRequests = requests.map((request) => ({
       deviceId: request.initiatorPeerId,
       deviceName: request.deviceName,
+      requestVersion: request.requestVersion,
     }));
     await runtimeAdapter.publicState.publish(
       await runtimeAdapter.publicState.read()
@@ -1063,14 +1068,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "respondTrust") {
     void pairingPending
-      .decide(msg.id, msg.accept ? "accepted" : "rejected")
-      .then((handled) => {
-        if (!handled) log.warn("No valid pairing request to decide");
-        sendResponse({ ok: handled });
-      })
+      .decide(
+        msg.id,
+        msg.accept ? "accepted" : "rejected",
+        msg.device?.requestVersion
+      )
+      .then((result) => sendResponse(result))
       .catch((error) => {
         log.warn("Pairing response failed", error);
-        sendResponse({ ok: false, error: "pairing_decision_failed" });
+        sendResponse({
+          ok: false,
+          error: "outcome_unconfirmed",
+          admitted: null,
+        });
       });
     return true;
   }

@@ -436,7 +436,7 @@ export class AndroidClient {
       this.backgroundContinuity.recordLiveClipboardApplication(clip, result),
   });
 
-  private pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
+  private pendingRequests: PendingRequest[] = [];
   private localRetentionMs = RETENTION_MS;
   private autoSync = true;
   private clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
@@ -640,6 +640,7 @@ export class AndroidClient {
       this.pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,
         deviceName: request.deviceName,
+        requestVersion: request.requestVersion,
       }));
       await this.emitState();
     },
@@ -1073,13 +1074,41 @@ export class AndroidClient {
   }
 
   async acceptRequest(dev: PendingRequest) {
-    await this.pairingPending.decide(dev.deviceId, "accepted");
-    await this.emitState();
+    const result = await this.pairingPending.decide(
+      dev.deviceId,
+      "accepted",
+      dev.requestVersion
+    );
+    try {
+      await this.emitState();
+    } catch {
+      if (result.ok)
+        return {
+          ok: false as const,
+          error: "cleanup_failed" as const,
+          admitted: result.admitted,
+        };
+    }
+    return result;
   }
 
   async rejectRequest(dev: PendingRequest) {
-    await this.pairingPending.decide(dev.deviceId, "rejected");
-    await this.emitState();
+    const result = await this.pairingPending.decide(
+      dev.deviceId,
+      "rejected",
+      dev.requestVersion
+    );
+    try {
+      await this.emitState();
+    } catch {
+      if (result.ok)
+        return {
+          ok: false as const,
+          error: "cleanup_failed" as const,
+          admitted: result.admitted,
+        };
+    }
+    return result;
   }
 
   async setPinned(id: string, pinned: boolean) {
