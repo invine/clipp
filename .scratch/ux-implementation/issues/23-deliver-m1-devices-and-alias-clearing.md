@@ -4,7 +4,7 @@ Type: implementation
 Status: open
 Assignee: none
 Priority band: 2
-Blocked by: 04, 05, 07, 10, 11, 17, 18, 19, 21, 22
+Blocked by: 04, 05, 07, 33, 11, 17, 18, 19, 21, 22
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -25,7 +25,7 @@ The [approved package contract](../../ux-implementation-plan/workspace-delivery-
 - [Retain Device Name and alias edits](04-retain-name-and-alias-edits.md) — consume its completed, scoped output.
 - [Report immediate Pairing and approval results](05-report-immediate-pairing-results.md) — consume its completed, scoped output.
 - [Preserve session tasks and editor recovery](07-preserve-session-tasks-and-editor-recovery.md) — consume its completed, scoped output.
-- [Project authoritative Pairing outcomes](10-project-authoritative-pairing-outcomes.md) — consume its completed, scoped output.
+- [Deliver the compatible Pairing outcome interface and Electron journey](33-deliver-pairing-outcome-interface-and-electron-journey.md) — consume its completed, scoped output.
 - [Deliver complete Chrome management and secure handoff](11-deliver-complete-chrome-management.md) — consume its completed, scoped output.
 - [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
 - [Implement persisted System, Light and Dark](18-implement-persisted-themes.md) — consume its completed, scoped output.
@@ -58,3 +58,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Pairing scope refinement — 2026-10-12
+
+Consume ticket 33's completed common interface and scoped Electron evidence. Residual ticket 10 retains required Android/Chrome native journeys. This consumer retains every affected host/native/cutover qualification; Electron G01 is not a cross-runtime pass.

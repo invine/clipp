@@ -1,20 +1,20 @@
-# Project authoritative Pairing outcomes
+# Qualify Android and Chrome authoritative Pairing outcomes
 
 Type: implementation
 Status: claimed
 Assignee: ux-outcomes-10
 Priority band: 1
-Blocked by: 02, 05, 07
+Blocked by: 33
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
 
-Pairing tasks explain actual response, waiting and membership-recovery outcomes.
+Qualify the integrated authoritative Pairing outcome interface through complete Android and Chrome native journeys on normally permitted routes.
 
 ## Work and boundaries
 
-Add bounded per-target current-identity/session projection to the existing coordinator, ordered through each runtime. Show validated accepted/rejected response, local waiting end without response and persistent Admission recovery; clear terminal information only when appropriate.
+The compatible common interface and actual Electron journey are delivered by ticket 33. Retain all required Android and Chrome native qualification: request/wait, rejection then later valid acceptance, resulting authoritative and durable Membership, retained drafts/dismissal, and subsequent synthetic exchange on permitted routes. Any discovered source repair updates every affected bridge and requalifies its changed portion.
 
 Membership remains authoritative; disappearing waiting is not acceptance. Signed request dismissal is not cancellation, and later valid acceptance may follow rejection. No durable outgoing authorization/replay model.
 
@@ -22,9 +22,7 @@ The [approved package contract](../../ux-implementation-plan/correctness-deliver
 
 ## Dependencies and integration
 
-- [Reconcile authoritative History and queries](02-reconcile-authoritative-history.md) — consume its completed, scoped output.
-- [Report immediate Pairing and approval results](05-report-immediate-pairing-results.md) — consume its completed, scoped output.
-- [Preserve session tasks and editor recovery](07-preserve-session-tasks-and-editor-recovery.md) — consume its completed, scoped output.
+- [Deliver the compatible Pairing outcome interface and Electron journey](33-deliver-pairing-outcome-interface-and-electron-journey.md) — consume the resolved common interface and scoped Electron evidence; it does not qualify this residual native work.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 
@@ -63,3 +61,7 @@ Use owning session/coordinator and actual shared/runtime consumers with TDD. Com
 Source `dec1f13e3a1da17e777fe3fc83d6850cb7787173` is integrated by the required merger at `ee759cab612586f1aaad18ad14573fc39a9b3415`, tree `c8c5752e4ed2353813e18bad98be0edf1e174803`, exactly equal to the reviewed candidate. Both Standards and Spec axes pass. Two earlier P2 reviews remain preserved: unseen old-session authority adoption, then silent bootstrap/Refresh authority mismatch without recovery. The final shared consumer uses explicit current-adapter authority, one bounded fresh read after mismatch, and unavailable/Retry recovery without replaying the mutation.
 
 Integrated `npm run verify` passes 112 suites/836 tests and all three builds, zero lint errors; all 60 runtime assets equal the source candidate, with only the virtual Vite manifest metadata exception recorded. Receipts `ticket-10-final-merge.json/.md`, integrated/focused verification logs and distinct review reports are retained in the ignored run evidence directory. Native complete app-to-app G01 remains UNRUN and required; this issue remains claimed. No protocol-peer substitute, route-policy/TLS weakening, actual account/sign-in, host clipboard operation, push or deployment is implied by source integration.
+
+## Scope-preserving delivery refinement — 2026-10-12
+
+The approved spec permits separate numbered host outputs. Ticket 33 owns the already compatible common outcome interface and completed Electron G01 at current candidate `b722826ceba8680460ae34e92b73260445863850`. This residual retains every required Android/Chrome native G01 case and stays claimed. Chrome management ticket 11 and Devices ticket 23 consume the completed interface through 33 and retain their own affected native/cutover gates; neither may cite Electron as a Chrome/Android native pass. C07 remains open with this residual as collector. Broader G31, OS clipboard, managed-route/auth, account and hardware/assistive dispositions are unchanged.
