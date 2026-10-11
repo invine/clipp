@@ -6,6 +6,7 @@ import {
 } from "../../../packages/core/runtime/uiRecovery";
 import {
   readExtensionRecoveryState,
+  readExtensionRuntimeAuthority,
   probeExtensionInitialization,
   retryExtensionInitialization,
   type ExtensionRecoveryState,
@@ -22,7 +23,11 @@ import { PairingCodeContent } from "../../../packages/ui/src/PairingCodeContent"
 import { usePairingCodeTask } from "../../../packages/ui/src/usePairingCodeTask";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import { pairingSubmissionMessage } from "../../../packages/ui/src/pairingFeedback";
-import { submitExtensionPairing } from "./pairingActions";
+import { PairingStatus } from "../../../packages/ui/src/PairingStatus";
+import {
+  submitExtensionPairing,
+  dismissExtensionPairingOutcome,
+} from "./pairingActions";
 import React, {
   useEffect,
   useMemo,
@@ -97,6 +102,8 @@ const Options = () => {
         load: () => readExtensionRecoveryState(chrome.runtime),
         initializationError: () => probeExtensionInitialization(chrome.runtime),
         onRecovery: setRecovery,
+        version: (state) => state.pairingState,
+        authority: () => readExtensionRuntimeAuthority(chrome.runtime),
         onState: (state: ExtensionRecoveryState) => {
           setRuntimeState(state);
           setManagedRelayConfigurations(state.managedRelayConfigurations ?? []);
@@ -106,7 +113,6 @@ const Options = () => {
     []
   );
   useEffect(() => {
-    void consumer.load();
     const onRuntimeState = (message: {
       type?: string;
       state?: ExtensionRecoveryState;
@@ -115,6 +121,7 @@ const Options = () => {
         consumer.live(message.state);
     };
     chrome.runtime.onMessage.addListener(onRuntimeState);
+    void consumer.load();
     return () => {
       consumer.cancel();
       chrome.runtime.onMessage.removeListener(onRuntimeState);
@@ -240,6 +247,21 @@ const Options = () => {
           Trusted Devices
         </h2>
         <DeviceList disabled={!identityReady} />
+        <PairingStatus
+          outcomes={runtimeState?.pairingState?.outcomes}
+          waiting={runtimeState?.waiting}
+          errors={runtimeState?.pairingErrors}
+          devices={runtimeState?.devices ?? []}
+          onDismiss={(target) =>
+            runtimeState?.pairingState
+              ? dismissExtensionPairingOutcome(
+                  chrome.runtime,
+                  target,
+                  runtimeState.pairingState
+                )
+              : Promise.resolve(false)
+          }
+        />
         <div className="mt-2 flex flex-col space-y-2">
           <button
             className="px-3 py-1 bg-blue-600 text-white rounded"

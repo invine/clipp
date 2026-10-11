@@ -79,6 +79,7 @@ import type {
   IdentityRotationNoticeReason,
   PairingCode,
   PairingError,
+  PairingOutcomeSnapshot,
   PeerConnectionInfo,
   PendingRequest,
   RelayConnectionInfo,
@@ -112,6 +113,7 @@ export type AndroidAppState = {
   pending: PendingRequest[];
   waiting?: Array<{ targetPeerId: string; expiresAtUnixMs: number }>;
   pairingErrors?: PairingError[];
+  pairingState?: PairingOutcomeSnapshot;
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -974,7 +976,19 @@ export class AndroidClient {
     };
   }
 
+  async getRuntimeAuthority(): Promise<string> {
+    return this.pairingSessions.snapshot().sessionId;
+  }
+
+  async dismissPairingOutcome(
+    targetPeerId: string,
+    expected: { sessionId: string; revision: number }
+  ): Promise<boolean> {
+    return this.pairingSessions.dismissOutcome(targetPeerId, expected);
+  }
+
   async getState(): Promise<AndroidAppState> {
+    const pairingState = this.pairingSessions.snapshot();
     const historyProjection = await this.historyState.read();
     const devices = await this.identitySvc.trustedDevices();
     const identity = this.identityRotationRecovery
@@ -1010,8 +1024,9 @@ export class AndroidClient {
       clips: historyProjection.clips,
       devices,
       pending: this.pendingRequests,
-      waiting: this.pairingSessions.waiting(),
-      pairingErrors: this.pairingSessions.errors(),
+      waiting: pairingState.waiting,
+      pairingErrors: pairingState.errors,
+      pairingState,
       peers,
       peerConnections,
       relayConnections,

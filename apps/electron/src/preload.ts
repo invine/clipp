@@ -19,6 +19,7 @@ import type {
   Identity,
   PairingCode,
   PairingError,
+  PairingOutcomeSnapshot,
   PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
@@ -38,6 +39,7 @@ type AppState = {
   pending: PendingRequest[];
   waiting: PairingWaiting[];
   pairingErrors: PairingError[];
+  pairingState?: PairingOutcomeSnapshot;
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -57,6 +59,8 @@ type AppState = {
 };
 
 const api = {
+  getRuntimeAuthority: () =>
+    ipcRenderer.invoke("clipp:get-runtime-authority") as Promise<string>,
   getState: () => ipcRenderer.invoke("clipp:get-state") as Promise<AppState>,
   getIdentity: () =>
     ipcRenderer.invoke("clipp:get-identity") as Promise<Identity | null>,
@@ -88,6 +92,14 @@ const api = {
       "clipp:pair-text",
       txt
     ) as Promise<PairingSubmissionResult>,
+  dismissPairingOutcome: (
+    targetPeerId: string,
+    expected: { sessionId: string; revision: number }
+  ) =>
+    ipcRenderer.invoke("clipp:dismiss-pairing-outcome", {
+      targetPeerId,
+      expected,
+    }) as Promise<boolean>,
   copyPairingText: (text: string): Promise<PayloadCopyResult> =>
     confirmPayloadCopy(() =>
       ipcRenderer.invoke("clipp:copy-pairing-text", text)

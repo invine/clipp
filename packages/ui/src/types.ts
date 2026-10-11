@@ -68,3 +68,8 @@ export type BackgroundContinuityDiagnosticStatus = {
   supportState: "unqualified" | "limited";
   batteryOptimizationGuidance: boolean;
 };
+
+export type {
+  PairingOutcome,
+  PairingOutcomeSnapshot,
+} from "../../core/pairing/runtimeCoordinator";

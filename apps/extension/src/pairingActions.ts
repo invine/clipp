@@ -59,3 +59,18 @@ export async function decideExtensionPairing(
     return result;
   return { ok: false, error: "outcome_unconfirmed", admitted: null };
 }
+
+export async function dismissExtensionPairingOutcome(
+  runtime: Runtime,
+  targetPeerId: string,
+  expected: { sessionId: string; revision: number }
+): Promise<boolean> {
+  const reply = await request(runtime, {
+    type: "dismissPairingOutcome",
+    targetPeerId,
+    expected,
+  });
+  if (typeof reply?.dismissed !== "boolean")
+    throw new Error("outcome_unconfirmed");
+  return reply.dismissed;
+}
