@@ -1,3 +1,5 @@
+import { PairingStatus } from "./PairingStatus";
+import type { PairingOutcome, PairingOutcomeSnapshot } from "./types";
 import { useTaskRecoveryIssues } from "./useTaskRecoveryIssues";
 import {
   composeRecoveryIssues,
@@ -300,6 +302,9 @@ export type ClipboardAppProps = {
   pending: PendingRequest[];
   waiting?: PairingWaiting[];
   pairingErrors?: PairingError[];
+  pairingOutcomes?: PairingOutcome[];
+  pairingState?: PairingOutcomeSnapshot;
+  onDismissPairingOutcome?(targetPeerId: string): Promise<boolean>;
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -384,6 +389,8 @@ export function ClipboardApp({
   pending,
   waiting = [],
   pairingErrors = [],
+  pairingOutcomes = [],
+  onDismissPairingOutcome,
   peers,
   peerConnections = [],
   relayConnections = [],
@@ -1497,6 +1504,7 @@ export function ClipboardApp({
         {(pending.length > 0 ||
           waiting.length > 0 ||
           pairingErrors.length > 0 ||
+          pairingOutcomes.length > 0 ||
           Object.keys(approvalFeedback).length > 0) && (
           <>
             <div className="section-divider"></div>
@@ -1504,24 +1512,13 @@ export function ClipboardApp({
               <div className="nav-section-label" style={{ marginTop: 14 }}>
                 Pending requests
               </div>
-              {waiting.map((entry) => (
-                <div key={entry.targetPeerId} className="pending-card">
-                  <div className="peer-meta">
-                    <span className="peer-name">Waiting for approval</span>
-                    <span className="peer-sub">{entry.targetPeerId}</span>
-                  </div>
-                </div>
-              ))}
-              {pairingErrors.map((entry) => (
-                <div key={entry.targetPeerId} className="pending-card">
-                  <div className="peer-meta">
-                    <span className="peer-name">
-                      Pairing storage error; retrying
-                    </span>
-                    <span className="peer-sub">{entry.targetPeerId}</span>
-                  </div>
-                </div>
-              ))}
+              <PairingStatus
+                outcomes={pairingOutcomes}
+                waiting={waiting}
+                errors={pairingErrors}
+                devices={devices}
+                onDismiss={onDismissPairingOutcome}
+              />
               {Object.entries(approvalFeedback).map(([id, message]) => (
                 <p key={id} role="status" style={{ overflowWrap: "anywhere" }}>
                   {message}

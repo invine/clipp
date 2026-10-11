@@ -13,6 +13,7 @@ export function createRuntimeUiRecovery<State>(options: {
   load(): Promise<State>;
   initializationError(): Promise<{ code: string } | null>;
   confirmed?(state: State): boolean;
+  version?(state: State): { sessionId: string; revision: number } | undefined;
   onState(state: State): void;
   onRecovery(state: RuntimeUiRecoveryState): void;
 }) {
@@ -20,7 +21,21 @@ export function createRuntimeUiRecovery<State>(options: {
     cancelled = false,
     pending = false,
     confirmed = false;
+  let currentVersion: { sessionId: string; revision: number } | undefined;
+  const retired = new Set<string>();
   const ready = (state: State) => {
+    const version = options.version?.(state);
+    if (version) {
+      if (
+        retired.has(version.sessionId) ||
+        (currentVersion?.sessionId === version.sessionId &&
+          currentVersion.revision > version.revision)
+      )
+        return;
+      if (currentVersion && currentVersion.sessionId !== version.sessionId)
+        retired.add(currentVersion.sessionId);
+      currentVersion = version;
+    } else if (currentVersion) return;
     confirmed = options.confirmed?.(state) ?? true;
     options.onState(state);
     options.onRecovery({

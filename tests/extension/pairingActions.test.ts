@@ -1,6 +1,7 @@
 import {
   submitExtensionPairing,
   decideExtensionPairing,
+  dismissExtensionPairingOutcome,
 } from "../../apps/extension/src/pairingActions";
 
 it("awaits the Chrome callback and retains explicit false instead of claiming submission", async () => {
@@ -52,3 +53,33 @@ it("an absent Chrome callback cannot leave submission pending forever", async ()
     jest.useRealTimers();
   }
 }, 1000);
+
+it("terminal dismissal reaches the owning runtime with the observed authority and a missing reply is unconfirmed", async () => {
+  const messages: unknown[] = [];
+  const runtime = {
+    sendMessage: (message: unknown, callback: (reply: unknown) => void) => {
+      messages.push(message);
+      callback({ dismissed: false });
+    },
+  };
+  expect(
+    await dismissExtensionPairingOutcome(runtime, "phone", {
+      sessionId: "current",
+      revision: 4,
+    })
+  ).toBe(false);
+  expect(messages).toEqual([
+    {
+      type: "dismissPairingOutcome",
+      targetPeerId: "phone",
+      expected: { sessionId: "current", revision: 4 },
+    },
+  ]);
+  await expect(
+    dismissExtensionPairingOutcome(
+      { sendMessage: (_message, callback) => callback(undefined) },
+      "phone",
+      { sessionId: "current", revision: 4 }
+    )
+  ).rejects.toThrow("outcome_unconfirmed");
+});

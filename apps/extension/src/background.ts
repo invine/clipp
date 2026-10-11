@@ -358,9 +358,7 @@ function createExtensionClipboardService() {
     },
     onHistoryErrorChanged: (error) => {
       clipboardHistoryError = error;
-      void runtimeAdapter.publicState
-        .read()
-        .then((state) => runtimeAdapter.publicState.publish(state));
+      void sharedRuntime.publishState();
     },
   });
 }
@@ -502,10 +500,7 @@ const pairingSessions = createPairingRuntimeSessions({
             );
         });
   },
-  onChanged: () =>
-    runtimeAdapter.publicState
-      .read()
-      .then((current) => runtimeAdapter.publicState.publish(current)),
+  onChanged: () => sharedRuntime.publishState(),
 });
 
 const runtimeProtocolHandlers = new Map<
@@ -644,10 +639,7 @@ membershipReconciler = createMembershipReconciler({
     identity: identitySvc,
   }),
   onLocalRevoked: () => identityRotationLifecycle.rotateRevoked(),
-  onChanged: () =>
-    runtimeAdapter.publicState
-      .read()
-      .then((state) => runtimeAdapter.publicState.publish(state)),
+  onChanged: () => sharedRuntime.publishState(),
 });
 
 const runtimeAdapter = createChromeExtensionRuntimeAdapter({
@@ -694,6 +686,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   clock: systemRuntimeClock,
   publicState: {
     async read() {
+      const pairingState = pairingSessions.snapshot();
       const [clips, pinnedIds, devices, identity, peerState, rotationNotice] =
         await Promise.all([
           historyPolicyReady.then(() => history.exportAll()),
@@ -716,8 +709,9 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         clips,
         devices,
         pending: pendingRequests,
-        waiting: pairingSessions.waiting(),
-        pairingErrors: pairingSessions.errors(),
+        waiting: pairingState.waiting,
+        pairingErrors: pairingState.errors,
+        pairingState,
         peers: peerState.peers ?? [],
         peerConnections: peerState.peerConnections ?? [],
         identity: identity ? toPublicDeviceIdentity(identity) : null,
@@ -786,9 +780,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
       deviceName: request.deviceName,
       requestVersion: request.requestVersion,
     }));
-    await runtimeAdapter.publicState.publish(
-      await runtimeAdapter.publicState.read()
-    );
+    await sharedRuntime.publishState();
   },
 });
 identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
@@ -796,10 +788,7 @@ identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
   loadIdentity: () => identitySvc.get(),
   restart: () => chrome.runtime.reload(),
   startLocalRecovery: () => clipboardSync.startLocalOnly(),
-  publishState: () =>
-    runtimeAdapter.publicState
-      .read()
-      .then((state) => runtimeAdapter.publicState.publish(state)),
+  publishState: () => sharedRuntime.publishState(),
   onRecoveryChanged: (recovering) => {
     identityRotationRecovery = recovering;
   },
@@ -843,9 +832,7 @@ const sharedRuntime = createRuntimeOrchestrator({
           undefined,
           (error) => {
             historyPolicyError = error ? "history_cleanup_failed" : null;
-            void runtimeAdapter.publicState
-              .read()
-              .then((state) => runtimeAdapter.publicState.publish(state));
+            void sharedRuntime.publishState();
           }
         );
         if (identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
@@ -888,9 +875,7 @@ async function publishedRenameResult<Value>(
     const value = await action();
     if (!value) return { ok: false, error: "device_unavailable" };
     try {
-      await runtimeAdapter.publicState.publish(
-        await runtimeAdapter.publicState.read()
-      );
+      await sharedRuntime.publishState();
     } catch {
       return { ok: false, error: "rename_state_unconfirmed" };
     }
@@ -913,9 +898,7 @@ const relayMutationOwner = createChromeRelayMutationOwner({
     await sendOffscreen({ action: "setManagedRelays", configurations: next });
   },
   reconcile: async () => {
-    await runtimeAdapter.publicState.publish(
-      await runtimeAdapter.publicState.read()
-    );
+    await sharedRuntime.publishState();
   },
 });
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -986,9 +969,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           },
           async () => {
-            await runtimeAdapter.publicState.publish(
-              await runtimeAdapter.publicState.read()
-            );
+            await sharedRuntime.publishState();
           }
         );
         return { ok: true, result };
@@ -1096,6 +1077,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "getPendingRequests") {
     sendResponse(pendingRequests);
+    return true;
+  }
+  if (msg.type === "dismissPairingOutcome") {
+    if (
+      !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL) ||
+      typeof msg.targetPeerId !== "string" ||
+      typeof msg.expected?.sessionId !== "string" ||
+      typeof msg.expected?.revision !== "number"
+    ) {
+      sendResponse({ error: "pairing_outcome_unauthorized" });
+      return false;
+    }
+    sendResponse({
+      dismissed: pairingSessions.dismissOutcome(msg.targetPeerId, msg.expected),
+    });
     return true;
   }
   if (msg.type === "respondTrust") {
@@ -1279,9 +1275,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     identityRotation
       .acknowledgeNotice()
       .then(async () => {
-        await runtimeAdapter.publicState.publish(
-          await runtimeAdapter.publicState.read()
-        );
+        await sharedRuntime.publishState();
         sendResponse({ ok: true });
       })
       .catch((error) =>
@@ -1370,9 +1364,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     )
       return;
     managedStates = msg.states;
-    void runtimeAdapter.publicState
-      .read()
-      .then((state) => runtimeAdapter.publicState.publish(state));
+    void sharedRuntime.publishState();
     return;
   }
   if (isExtensionStreamMessage(msg)) {

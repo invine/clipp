@@ -519,6 +519,7 @@ async function bootstrap() {
   const historyState = createHistoryStateReader(history);
 
   async function getState() {
+    const pairingState = pairingSessions.snapshot();
     const historyProjection = await historyState.read();
     const devices = await identitySvc.trustedDevices();
     const peers = transport.getConnectedPeers();
@@ -531,8 +532,9 @@ async function bootstrap() {
       clips: historyProjection.clips,
       devices,
       pending: pendingRequests,
-      waiting: pairingSessions.waiting(),
-      pairingErrors: pairingSessions.errors(),
+      waiting: pairingState.waiting,
+      pairingErrors: pairingState.errors,
+      pairingState,
       peers,
       peerConnections,
       relayConnections,
@@ -1149,6 +1151,19 @@ async function bootstrap() {
   ipcMain.handle("clipp:get-state", async () => {
     return await getState();
   });
+
+  ipcMain.handle(
+    "clipp:dismiss-pairing-outcome",
+    (_event, { targetPeerId, expected }) => {
+      if (
+        typeof targetPeerId !== "string" ||
+        typeof expected?.sessionId !== "string" ||
+        typeof expected?.revision !== "number"
+      )
+        return false;
+      return pairingSessions.dismissOutcome(targetPeerId, expected);
+    }
+  );
 
   ipcMain.handle("clipp:get-identity", async () => {
     const id = await identitySvc.get();

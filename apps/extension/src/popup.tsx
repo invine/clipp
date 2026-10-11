@@ -17,6 +17,7 @@ import type { RelayActionResult } from "../../../packages/core/network/relayActi
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import {
   submitExtensionPairing,
+  dismissExtensionPairingOutcome,
   decideExtensionPairing,
 } from "./pairingActions";
 /* global chrome */
@@ -62,6 +63,8 @@ const Popup = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [pending, setPending] = useState<PendingRequest[]>([]);
   const [waiting, setWaiting] = useState<PairingWaiting[]>([]);
+  const [pairingState, setPairingState] =
+    useState<ExtensionRecoveryState["pairingState"]>();
   const [pairingErrors, setPairingErrors] = useState<PairingError[]>([]);
   const [peers, setPeers] = useState<string[]>([]);
   const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>(
@@ -98,11 +101,13 @@ const Popup = () => {
         load: () => readExtensionRecoveryState(chrome.runtime),
         initializationError: () => probeExtensionInitialization(chrome.runtime),
         onRecovery: setRecovery,
+        version: (state) => state.pairingState,
         onState: (state) => {
           nameState.publish(state);
           setPending(state.pending ?? []);
           setWaiting(state.waiting ?? []);
           setPairingErrors(state.pairingErrors ?? []);
+          setPairingState(state.pairingState);
           setPeers(state.peers ?? []);
           setPeerConnections(state.peerConnections ?? []);
           setClipboardHistoryError(state.clipboardHistoryError ?? null);
@@ -306,6 +311,16 @@ const Popup = () => {
         pending={pending}
         waiting={waiting}
         pairingErrors={pairingErrors}
+        pairingOutcomes={pairingState?.outcomes}
+        onDismissPairingOutcome={(target) =>
+          pairingState
+            ? dismissExtensionPairingOutcome(
+                chrome.runtime,
+                target,
+                pairingState
+              )
+            : Promise.resolve(false)
+        }
         peers={peers}
         peerConnections={peerConnections}
         identity={identity}

@@ -16,6 +16,7 @@ import type {
   Identity,
   IdentityRotationNoticeReason,
   PairingError,
+  PairingOutcomeSnapshot,
   PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
@@ -32,6 +33,7 @@ type AppState = {
   pending: PendingRequest[];
   waiting: PairingWaiting[];
   pairingErrors: PairingError[];
+  pairingState?: PairingOutcomeSnapshot;
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -76,6 +78,7 @@ const App = () => {
         },
         initializationError: async () =>
           (await window.clipp?.getInitializationError?.()) ?? null,
+        version: (state) => state.pairingState,
         confirmed: (state) =>
           !state.historyUnavailable && !state.historyRefreshError,
         onState: setState,
@@ -116,6 +119,12 @@ const App = () => {
         pending={state.pending}
         waiting={state.waiting}
         pairingErrors={state.pairingErrors}
+        pairingOutcomes={state.pairingState?.outcomes}
+        onDismissPairingOutcome={(target) =>
+          state.pairingState
+            ? window.clipp.dismissPairingOutcome(target, state.pairingState)
+            : Promise.resolve(false)
+        }
         peers={state.peers}
         peerConnections={state.peerConnections || []}
         relayConnections={state.relayConnections || []}

@@ -230,3 +230,42 @@ it("keeps independent suspended alias and relay failures visible when B becomes 
   await session.alias.save(async () => ({ deviceId: "alias-a" }));
   expect(render(views)).toContain("1 issue needs attention");
 });
+it("the real Pairing task distinguishes response, current Membership and recovery without losing its draft", () => {
+  const session = createUiSession();
+  session.pairing.change("newer draft");
+  session.open({ kind: "pairing", origin: "pairing-paste" });
+  const html = render({
+    session,
+    identity: { deviceId: "local", deviceName: "Desktop" },
+    devices: [{ deviceId: "peer-a", deviceName: "Mobile" }],
+    pairingOutcomes: [
+      {
+        targetPeerId: "peer-a",
+        response: "rejected",
+        waitingEnded: false,
+        recovering: false,
+      },
+      {
+        targetPeerId: "peer-b",
+        response: "accepted",
+        waitingEnded: false,
+        recovering: true,
+      },
+      {
+        targetPeerId: "peer-c",
+        response: null,
+        waitingEnded: true,
+        recovering: false,
+      },
+    ],
+    onDismissPairingOutcome: async () => true,
+  });
+  expect(html).toContain("Rejection response received");
+  expect(html).toContain("Currently paired");
+  expect(html).toContain("Acceptance response received");
+  expect(html).toContain("Retrying local membership storage automatically");
+  expect(html).toContain("Waiting ended without observing a response");
+  expect(html).toContain("Dismiss notice for peer-a");
+  expect(html).not.toContain("Dismiss notice for peer-b");
+  expect(session.pairing.getSnapshot().raw).toBe("newer draft");
+});

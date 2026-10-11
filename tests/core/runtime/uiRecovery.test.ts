@@ -77,3 +77,42 @@ it("late bootstrap or initialization probe cannot retire newer live authority or
   owner.live({ identity: { deviceId: "retired" } });
   expect(states).toHaveLength(1);
 });
+it("orders Pairing publications and retires previous runtime sessions at the actual document consumer", async () => {
+  type State = {
+    pairingState: { sessionId: string; revision: number };
+    response: string;
+  };
+  const states: State[] = [];
+  const owner = createRuntimeUiRecovery<State>({
+    load: async () => ({
+      pairingState: { sessionId: "old", revision: 1 },
+      response: "waiting",
+    }),
+    initializationError: async () => null,
+    version: (state) => state.pairingState,
+    onState: (state) => states.push(state),
+    onRecovery: () => {},
+  });
+  await owner.load();
+  owner.live({
+    pairingState: { sessionId: "old", revision: 3 },
+    response: "accepted",
+  });
+  owner.live({
+    pairingState: { sessionId: "old", revision: 2 },
+    response: "rejected",
+  });
+  owner.live({
+    pairingState: { sessionId: "new", revision: 0 },
+    response: "fresh identity",
+  });
+  owner.live({
+    pairingState: { sessionId: "old", revision: 4 },
+    response: "accepted old identity",
+  });
+  expect(states.map((state) => state.response)).toEqual([
+    "waiting",
+    "accepted",
+    "fresh identity",
+  ]);
+});

@@ -19,6 +19,7 @@ import type {
   Identity,
   PairingCode,
   PairingError,
+  PairingOutcomeSnapshot,
   PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
@@ -38,6 +39,7 @@ type AppState = {
   pending: PendingRequest[];
   waiting: PairingWaiting[];
   pairingErrors: PairingError[];
+  pairingState?: PairingOutcomeSnapshot;
   peers: string[];
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
@@ -88,6 +90,14 @@ const api = {
       "clipp:pair-text",
       txt
     ) as Promise<PairingSubmissionResult>,
+  dismissPairingOutcome: (
+    targetPeerId: string,
+    expected: { sessionId: string; revision: number }
+  ) =>
+    ipcRenderer.invoke("clipp:dismiss-pairing-outcome", {
+      targetPeerId,
+      expected,
+    }) as Promise<boolean>,
   copyPairingText: (text: string): Promise<PayloadCopyResult> =>
     confirmPayloadCopy(() =>
       ipcRenderer.invoke("clipp:copy-pairing-text", text)
