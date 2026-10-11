@@ -4,7 +4,7 @@ Type: implementation
 Status: open
 Assignee: none
 Priority band: 1
-Blocked by: 01, 17
+Blocked by: 01, 32
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -23,7 +23,9 @@ The [approved package contract](../../ux-implementation-plan/workspace-delivery-
 ## Dependencies and integration
 
 - [Repair Chrome preference integrity](01-repair-chrome-preference-integrity.md) — consume its completed, scoped output.
-- [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
+- [Deliver local assets and Android shared controls](32-deliver-local-assets-and-android-shared-controls.md) — consume its completed compatible asset/control interface and Android control contribution.
+
+The refined prerequisite supplies compatible source and its qualified Android scope. [Residual desktop controls](17-unify-local-assets-and-shared-controls.md) keep their missing G13/G14 qualification. This consumer still requires every affected desktop/native presentation gate in its own accepted scope; source compatibility is not desktop qualification.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 

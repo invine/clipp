@@ -178,7 +178,7 @@
       "dependencies": [
         "07",
         "12",
-        "17",
+        "32",
         "19"
       ],
       "findings": [
@@ -232,9 +232,11 @@
     {
       "id": "17",
       "path": "issues/17-unify-local-assets-and-shared-controls.md",
-      "title": "Unify local assets and shared controls",
+      "title": "Qualify desktop shared controls and collect cross-surface styling",
       "band": 1,
-      "dependencies": [],
+      "dependencies": [
+        "32"
+      ],
       "findings": [
         "E01",
         "C03",
@@ -251,7 +253,7 @@
       "band": 1,
       "dependencies": [
         "01",
-        "17"
+        "32"
       ],
       "findings": [
         "E13",
@@ -267,7 +269,7 @@
       "dependencies": [
         "07",
         "12",
-        "17"
+        "32"
       ],
       "findings": [
         "E03",
@@ -461,6 +463,15 @@
       ],
       "findings": [],
       "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#failure-and-restart-acceptance-matrix"
+    },
+    {
+      "id": "32",
+      "path": "issues/32-deliver-local-assets-and-android-shared-controls.md",
+      "title": "Deliver local assets and Android shared controls",
+      "band": 1,
+      "dependencies": [],
+      "findings": [],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#local-assets-shared-controls-and-host-stylesheet-integration"
     }
   ]
 }

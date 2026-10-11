@@ -1,16 +1,24 @@
-# Unify local assets and shared controls
+# Qualify desktop shared controls and collect cross-surface styling
 
 Type: implementation
 Status: claimed
 Assignee: ux-controls-17
 Priority band: 1
-Blocked by: none
+Blocked by: 32
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
 
-Every host has coherent readable controls and local offline icons.
+Desktop controls complete their required host qualification, and the original shared-assets package collects its cross-surface finding contributions. The compatible local-asset interface and Android control output are delivered by [Deliver local assets and Android shared controls](32-deliver-local-assets-and-android-shared-controls.md).
+
+## Scope allocation — 2026-10-11
+
+The coordinator refines the original package under the [approved cross-runtime blocker rule](../spec.md#delivery-order-and-completion). [Ticket 32](32-deliver-local-assets-and-android-shared-controls.md) owns the compatible bundled asset/shared-control interface and the existing Android control qualification. This residual keeps all remaining desktop work and required gates. Its existing claim and owner are retained; neither issue is resolved by recording this split.
+
+Ticket 17 retains cold offline Electron/options/actual-toolbar controls, named actions and visible focus, long fields and full values, 40px pointer intent, default/intermediate/200% text, short-popup scrolling and final-control reachability. The corrected intrinsic popup sizing needs actual cold-host acceptance. G13 requires independent enlargement in the actual toolbar popup; G14 requires desktop OS text-only scaling. Both remain required candidate qualification, with the same native/coordinated procedures. Source compatibility and a passing rendered fixture do not qualify these desktop claims.
+
+The original package requirements below apply to the combined 32/17 allocation. Android controls and their native measurements must complete in 32; remaining desktop requirements must complete here. E01/C03/A04/A11/C15 retain this issue as their collector, with 32 supplying its bounded contribution. Later consumer evidence remains separate from this residual's own completion.
 
 ## Work and boundaries
 
@@ -22,7 +30,9 @@ The [approved package contract](../../ux-implementation-plan/workspace-delivery-
 
 ## Dependencies and integration
 
-No technical predecessor. The approved phase admission rule still applies.
+- [Deliver local assets and Android shared controls](32-deliver-local-assets-and-android-shared-controls.md) — consume its completed compatible interface and Android control output.
+
+The approved phase admission rule still applies. All required residual desktop qualification remains with this issue.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 
