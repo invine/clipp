@@ -1878,3 +1878,26 @@ html[data-host-geometry="android"] .android-host {
   min-width: 0;
   flex: 1 1 12rem;
 }
+
+/* Peer actions get their own row so enlarged labels cannot squeeze draft/error text. */
+.peer-item {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.peer-item > .peer-actions {
+  flex: 1 1 100%;
+  margin-left: 0;
+  justify-content: flex-end;
+}
+.peer-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.peer-full-value {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}

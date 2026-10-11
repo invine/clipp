@@ -1593,8 +1593,8 @@ export function ClipboardApp({
               display: "flex",
               flexDirection: "column",
               gap: 8,
-              maxHeight: 200,
-              overflow: "auto",
+              maxHeight: aliasEdit.active ? undefined : 200,
+              overflow: aliasEdit.active ? "visible" : "auto",
             }}
           >
             {devices.length === 0 && (
@@ -1630,7 +1630,7 @@ export function ClipboardApp({
               return (
                 <div
                   key={dev.deviceId}
-                  className="peer-item"
+                  className={`peer-item ${editingThisDevice ? "peer-item-editing" : ""}`}
                   title={connectionStatus.title}
                   style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                 >
@@ -1666,7 +1666,7 @@ export function ClipboardApp({
                       />
                     )}
                     {editingThisDevice && (
-                      <div>
+                      <div className="peer-editor-actions">
                         <button
                           type="button"
                           onClick={() => {
@@ -1688,11 +1688,18 @@ export function ClipboardApp({
                         </button>
                       </div>
                     )}
-                    <MiddleEllipsisText
-                      className="peer-sub"
-                      text={dev.deviceId}
-                      max={isNarrow ? 22 : 32}
-                    />
+                    {editingThisDevice ? (
+                      <div className="peer-full-value">
+                        <span>Device Name: {dev.deviceName}</span>
+                        <span>Peer ID: {dev.deviceId}</span>
+                      </div>
+                    ) : (
+                      <MiddleEllipsisText
+                        className="peer-sub"
+                        text={dev.deviceId}
+                        max={isNarrow ? 22 : 32}
+                      />
+                    )}
                     {editingThisDevice && aliasEdit.error && (
                       <div className="content-subtitle" role="alert">
                         {nameSaveErrorMessage(aliasEdit.error, true)}
@@ -1710,7 +1717,11 @@ export function ClipboardApp({
                     </div>
                     {onRenameDevice && (
                       <button
-                        className="icon-button"
+                        className={
+                          editingThisDevice
+                            ? "text-button labelled-control"
+                            : "icon-button"
+                        }
                         data-session-focus={`rename:${dev.deviceId}`}
                         aria-label={
                           editingThisDevice
@@ -1732,7 +1743,11 @@ export function ClipboardApp({
                           }
                         }}
                       >
-                        <Icon name={editingThisDevice ? "check" : "edit"} />
+                        {editingThisDevice ? (
+                          "Save alias"
+                        ) : (
+                          <Icon name="edit" />
+                        )}
                       </button>
                     )}
                     <button
