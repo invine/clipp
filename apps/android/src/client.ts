@@ -1170,6 +1170,9 @@ export class AndroidClient {
     },
     reconcile: () => this.emitState(),
   });
+  async refreshManagedRelays() {
+    return this.relayMutationOwner.refresh();
+  }
   async mutateManagedRelay(mutation: RelayMutation) {
     return this.relayMutationOwner.mutate(mutation);
   }

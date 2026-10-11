@@ -15,6 +15,7 @@ export type ManagedRelaySettingsProps = {
   configurations: RelayConfiguration[];
   states: RelayState[];
   session?: UiSession;
+  onRefresh?(): Promise<RelayConfiguration[]>;
   onMutate(mutation: RelayMutation): Promise<RelayMutationResult>;
   onLogin?(key: string): Promise<RelayActionResult>;
   onManageAccount?(key: string): Promise<RelayActionResult>;
@@ -35,6 +36,7 @@ export function ManagedRelaySettings({
   configurations,
   states,
   session: providedSession,
+  onRefresh,
   onMutate,
   onLogin,
   onManageAccount,
@@ -62,6 +64,21 @@ export function ManagedRelaySettings({
   useEffect(() => {
     session.relay.reconcile(configurations);
   }, [session, configurations]);
+  useEffect(() => {
+    const task = session.getSnapshot().tasks.at(-1);
+    if (
+      draft &&
+      task?.kind === "relay" &&
+      task.entity === "new" &&
+      draft.key !== "new"
+    )
+      session.update({
+        tasks: [
+          ...session.getSnapshot().tasks.slice(0, -1),
+          { ...task, entity: draft.key },
+        ],
+      });
+  }, [session, draft?.key]);
   const edit = (config?: RelayConfiguration) => {
     session.open({
       kind: "relay",
@@ -315,6 +332,7 @@ export function ManagedRelaySettings({
               disabled={
                 busy ||
                 draft?.unavailable ||
+                draft?.recoveryRequired ||
                 (editing ? context.relayActions[editing]?.pending : false)
               }
             >
@@ -333,6 +351,15 @@ export function ManagedRelaySettings({
             </button>
           </div>
         </div>
+      )}
+      {draft?.recoveryRequired && onRefresh && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void session.relay.refresh(onRefresh)}
+        >
+          Refresh relay configuration
+        </button>
       )}
       {draft?.error && (
         <div className="relay-error" role="alert">

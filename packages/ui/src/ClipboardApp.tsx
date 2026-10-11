@@ -377,6 +377,7 @@ export type ClipboardAppProps = {
     addrs: string[]
   ): Promise<string[] | void> | string[] | void;
   session?: UiSession;
+  onRefreshManagedRelays?(): Promise<RelayConfiguration[]>;
   onMutateManagedRelay?(mutation: RelayMutation): Promise<RelayMutationResult>;
   onManagedRelayLogin?(key: string): Promise<RelayActionResult>;
   onManagedRelayAccount?(key: string): Promise<RelayActionResult>;
@@ -442,6 +443,7 @@ export function ClipboardApp({
   onRenameDevice,
   onSetRelayAddresses,
   session: providedSession,
+  onRefreshManagedRelays,
   onMutateManagedRelay,
   onManagedRelayLogin,
   onManagedRelayAccount,
@@ -1260,6 +1262,7 @@ export function ClipboardApp({
           states={managedRelayStates}
           session={session}
           onMutate={onMutateManagedRelay}
+          onRefresh={onRefreshManagedRelays}
           onLogin={onManagedRelayLogin}
           onManageAccount={onManagedRelayAccount}
           onRetry={onManagedRelayRetry}

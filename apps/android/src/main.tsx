@@ -157,6 +157,7 @@ function App() {
         relayAddresses={state.relayAddresses || []}
         managedRelayConfigurations={state.managedRelayConfigurations || []}
         managedRelayStates={state.managedRelayStates || []}
+        onRefreshManagedRelays={() => client.refreshManagedRelays()}
         onMutateManagedRelay={(mutation) => client.mutateManagedRelay(mutation)}
         onManagedRelayLogin={(key) => client.loginManagedRelay(key)}
         onManagedRelayAccount={(key) => client.openManagedRelayAccount(key)}

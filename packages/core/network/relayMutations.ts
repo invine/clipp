@@ -81,6 +81,30 @@ export type RelayMutationOperations = {
 export function createRelayMutationOwner(operations: RelayMutationOperations) {
   let writes: Promise<void> = Promise.resolve();
   return {
+    async refresh(): Promise<RelayConfiguration[]> {
+      const refresh = writes.then(async () => {
+        const current = operations.load
+          ? normalizeRelayConfigurations(await operations.load())
+          : operations.read();
+        operations.accept(current);
+        const application = Promise.resolve()
+          .then(() => operations.apply(current))
+          .then(
+            () => null,
+            (cause: unknown) => cause
+          );
+        return { application };
+      });
+      writes = refresh.then(
+        () => undefined,
+        () => undefined
+      );
+      const result = await refresh;
+      const error = await result.application;
+      await operations.reconcile();
+      if (error) throw error;
+      return operations.read();
+    },
     async mutate(mutation: RelayMutation): Promise<RelayMutationResult> {
       const committed = writes.then(async () => {
         const credentialsRemoved: string[] = [];
