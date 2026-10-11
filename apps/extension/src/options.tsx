@@ -6,6 +6,7 @@ import {
 } from "../../../packages/core/runtime/uiRecovery";
 import {
   readExtensionRecoveryState,
+  readExtensionRuntimeAuthority,
   probeExtensionInitialization,
   retryExtensionInitialization,
   type ExtensionRecoveryState,
@@ -102,6 +103,7 @@ const Options = () => {
         initializationError: () => probeExtensionInitialization(chrome.runtime),
         onRecovery: setRecovery,
         version: (state) => state.pairingState,
+        authority: () => readExtensionRuntimeAuthority(chrome.runtime),
         onState: (state: ExtensionRecoveryState) => {
           setRuntimeState(state);
           setManagedRelayConfigurations(state.managedRelayConfigurations ?? []);
@@ -111,7 +113,6 @@ const Options = () => {
     []
   );
   useEffect(() => {
-    void consumer.load();
     const onRuntimeState = (message: {
       type?: string;
       state?: ExtensionRecoveryState;
@@ -120,6 +121,7 @@ const Options = () => {
         consumer.live(message.state);
     };
     chrome.runtime.onMessage.addListener(onRuntimeState);
+    void consumer.load();
     return () => {
       consumer.cancel();
       chrome.runtime.onMessage.removeListener(onRuntimeState);

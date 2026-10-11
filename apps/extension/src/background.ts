@@ -982,6 +982,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       );
     return true;
   }
+  if (msg.type === "getRuntimeAuthority") {
+    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
+      sendResponse({ error: "runtime_authority_unauthorized" });
+      return false;
+    }
+    sendResponse({ sessionId: pairingSessions.snapshot().sessionId });
+    return true;
+  }
   if (msg.type === "getRuntimeState") {
     runtimeAdapter.publicState
       .read()

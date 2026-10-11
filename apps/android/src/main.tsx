@@ -51,6 +51,7 @@ function App() {
         initializationError: async () =>
           (await client.getInitializationError()) ?? null,
         version: (state) => state.pairingState,
+        authority: () => client.getRuntimeAuthority(),
         confirmed: (state) =>
           !state.historyUnavailable && !state.historyRefreshError,
         onState: setState,
@@ -59,8 +60,10 @@ function App() {
     [client]
   );
   useEffect(() => {
+    const unsubscribe = client.onUpdate((state) => {
+      void consumer.live(state);
+    });
     void consumer.load();
-    const unsubscribe = client.onUpdate((state) => consumer.live(state));
     return () => {
       consumer.cancel();
       unsubscribe();

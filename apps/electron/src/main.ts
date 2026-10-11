@@ -219,6 +219,11 @@ async function bootstrap() {
       error: (error as Error).message,
     });
     await app.whenReady();
+    ipcMain.handle(
+      "clipp:get-runtime-authority",
+      () => pairingSessions.snapshot().sessionId
+    );
+
     ipcMain.handle("clipp:get-state", async () => {
       throw error;
     });
@@ -1147,6 +1152,11 @@ async function bootstrap() {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     showWindow();
   });
+
+  ipcMain.handle(
+    "clipp:get-runtime-authority",
+    () => pairingSessions.snapshot().sessionId
+  );
 
   ipcMain.handle("clipp:get-state", async () => {
     return await getState();

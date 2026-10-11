@@ -66,3 +66,13 @@ export async function retryExtensionInitialization(
   if (reply.ok !== true)
     throw new Error(reply.error ?? "initialization_retry_unconfirmed");
 }
+
+/** Fresh handshake through the current background worker, independent of a publication. */
+export async function readExtensionRuntimeAuthority(
+  runtime: Runtime
+): Promise<string> {
+  const reply = await request(runtime, "getRuntimeAuthority");
+  if (typeof reply.sessionId !== "string" || !reply.sessionId)
+    throw new Error(reply.error ?? "runtime_authority_unavailable");
+  return reply.sessionId;
+}

@@ -79,6 +79,7 @@ const App = () => {
         initializationError: async () =>
           (await window.clipp?.getInitializationError?.()) ?? null,
         version: (state) => state.pairingState,
+        authority: () => window.clipp.getRuntimeAuthority(),
         confirmed: (state) =>
           !state.historyUnavailable && !state.historyRefreshError,
         onState: setState,
@@ -87,7 +88,6 @@ const App = () => {
     []
   );
   useEffect(() => {
-    void consumer.load();
     const api = window.clipp;
     const unsubscribe = api?.onUpdate((state) => consumer.live(state));
     const unlog = api?.onLog?.((payload) => {
@@ -100,6 +100,7 @@ const App = () => {
             : console.info;
       fn(`[clipp:${level || "info"}] ${message || ""}`, data || "");
     });
+    void consumer.load();
     return () => {
       consumer.cancel();
       if (unsubscribe) unsubscribe();

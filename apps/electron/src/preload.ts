@@ -59,6 +59,8 @@ type AppState = {
 };
 
 const api = {
+  getRuntimeAuthority: () =>
+    ipcRenderer.invoke("clipp:get-runtime-authority") as Promise<string>,
   getState: () => ipcRenderer.invoke("clipp:get-state") as Promise<AppState>,
   getIdentity: () =>
     ipcRenderer.invoke("clipp:get-identity") as Promise<Identity | null>,

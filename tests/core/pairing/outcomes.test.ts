@@ -335,6 +335,7 @@ it("real response invalidations discard delayed runtime reads before the documen
     load: async () => f.runtime.snapshot(),
     initializationError: async () => null,
     version: (state) => state,
+    authority: async () => f.runtime.snapshot().sessionId,
     onState: (state) => {
       observed.push(state);
     },

@@ -4,6 +4,7 @@ import {
 } from "../../../packages/core/runtime/uiRecovery";
 import {
   readExtensionRecoveryState,
+  readExtensionRuntimeAuthority,
   probeExtensionInitialization,
   retryExtensionInitialization,
   type ExtensionRecoveryState,
@@ -102,6 +103,7 @@ const Popup = () => {
         initializationError: () => probeExtensionInitialization(chrome.runtime),
         onRecovery: setRecovery,
         version: (state) => state.pairingState,
+        authority: () => readExtensionRuntimeAuthority(chrome.runtime),
         onState: (state) => {
           nameState.publish(state);
           setPending(state.pending ?? []);
@@ -123,7 +125,6 @@ const Popup = () => {
     [nameState]
   );
   useEffect(() => {
-    void consumer.load();
     chrome.runtime.sendMessage({ type: "getSettings" }, (res) => {
       if (typeof res?.localRetentionMs === "number")
         setLocalRetentionMs(res.localRetentionMs);
@@ -141,6 +142,7 @@ const Popup = () => {
       }
     };
     chrome.runtime.onMessage.addListener(handler);
+    void consumer.load();
     const peerTimer = setInterval(refreshPeers, 5000);
     return () => {
       chrome.runtime.onMessage.removeListener(handler);

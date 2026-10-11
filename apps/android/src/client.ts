@@ -976,6 +976,10 @@ export class AndroidClient {
     };
   }
 
+  async getRuntimeAuthority(): Promise<string> {
+    return this.pairingSessions.snapshot().sessionId;
+  }
+
   async dismissPairingOutcome(
     targetPeerId: string,
     expected: { sessionId: string; revision: number }
