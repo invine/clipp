@@ -1,11 +1,11 @@
 # Deliver local assets and Android shared controls
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-foundation-32
 Priority band: 1
 Blocked by: none
-Dispatch: scope refinement recorded; awaiting coordinator claim and qualified output
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -56,3 +56,10 @@ This issue contributes local assets/current Android controls to G38 and Android 
 ## Handoff
 
 Coordinator records the decision assessment, claim, isolated worktree, integrated revision, checks, exact native/source mapping and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve evidence outside disposable worktrees and unrelated existing changes. This scope record creates no qualified result, claim, native authorization or finding closure.
+
+
+## Dispatch assessment — 2026-10-11
+
+The scope-preserving allocation and both documentation review axes passed at `da0e947f7ea8c898582284506d4cad9a2baebdfb`. Existing source from the original ticket 17 claim is integrated and reviewed; no extra source change is required solely for this deliverable. This claim completes the actual bounded Android control evidence identified in `ticket-32-da0e-required-evidence-review.md` in the ignored run directory. Current c015 OS2 session/Alias/scanner measurements are scoped contributions, not a cold/offline/full control-matrix pass.
+
+Coordinator claim `ux-foundation-32`: client branch `codex/ux-32-local-assets-android`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-32`, based on this claim commit. Preserve accepted shared interfaces, ADR-0012, all live bridge compatibility and the original gates/deferrals. Prepare a bounded current-APK native control interval for cold assets, representative default/intermediate/200% text, narrow/short/landscape, text spacing, long words/values, Start/export label presentation, targets and applicable focus. Do not activate export, camera/provider, real account or claim native Back/assistive operation. No host/native operation is authorized until fresh coordinator assignment; source fixes discovered through qualification return to the coordinator before implementation.

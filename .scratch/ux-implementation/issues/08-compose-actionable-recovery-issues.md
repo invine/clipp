@@ -1,11 +1,11 @@
 # Compose actionable recovery issues
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-issues-08
 Priority band: 1
 Blocked by: 05, 07
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -49,3 +49,10 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Dispatch assessment — 2026-10-11
+
+Predecessors 05 and 07 are resolved. The requested compact scoped issue summary, task-local failures and real cold-initialization/capture recovery preserve runtime authority, one live UI session, truthful partial/unconfirmed action results and ADR-0012. Empty relays/disconnected trusted devices are not failures; dismissal does not hide active recovery. No accepted product invariant changes.
+
+Coordinator claim `ux-issues-08`: client branch `codex/ux-08-recovery-issues`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-08`, based on this claim commit. Preparation is `/private/tmp/clipp-ux-implementation-20261010/ticket-08-10-prep.md`. Implement through the actual shared shell/task and all affected runtime/wrapper consumers, using owning-interface test-first slices. All required short actual-toolbar/enlarged Android/initialization gates remain required; no fixture-only replacement. Native/clipboard/global-settings intervals require fresh coordinator assignment; no interval is granted by this claim. Real sign-in and external/hardware/assistive deferrals remain unchanged. At most two source implementers; ticket 32 qualification is coordinated separately.
