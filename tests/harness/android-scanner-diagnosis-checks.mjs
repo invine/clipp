@@ -173,6 +173,99 @@ results.push({
   name: "explicit failed decode stays verification-failed through offline public CLI",
   result: "passed",
 });
+const finalFailures = [
+  "assignment-revoked",
+  "verification-failed",
+  "native-process-terminated",
+  "prerequisite-process-terminated",
+  "native-fatal-exception",
+  "javascript-error",
+  "stage-timeout",
+  "stage-incomplete",
+  "incomplete",
+  "future-declared-failure",
+];
+for (const declared of finalFailures) {
+  const input = join(out, `ticket-14-inert-terminal-${declared}.json`);
+  const output = join(out, `ticket-14-inert-terminal-${declared}-replay.json`);
+  await writeFile(
+    input,
+    JSON.stringify({
+      trial: "detect",
+      result: declared,
+      triggerInvokedAt: new Date().toISOString(),
+      pidBefore: "100",
+      pidAfter: "100",
+      fatal: [],
+      events: [{ stage: "detect-after", decodedExpected: true }],
+      ...(declared === "assignment-revoked"
+        ? { authorizationError: "inert root revoked during post-terminal wait" }
+        : {}),
+    })
+  );
+  assert.equal(invoke(["--replay", input, output]).exit, 0);
+  assert.equal(
+    JSON.parse(await readFile(output, "utf8")).result,
+    declared,
+    `final ${declared} cannot become completed from stale positive facts`
+  );
+  results.push({
+    name: `declared ${declared} remains authoritative despite terminal and PID presence`,
+    result: "passed",
+  });
+}
+for (const authorizationError of ["inert revocation", "", null]) {
+  const input = join(out, `ticket-14-inert-auth-error-${results.length}.json`);
+  const output = input.replace(".json", "-replay.json");
+  await writeFile(
+    input,
+    JSON.stringify({
+      trial: "detect",
+      result: "completed",
+      authorizationError,
+      triggerInvokedAt: new Date().toISOString(),
+      pidBefore: "100",
+      pidAfter: "100",
+      fatal: [],
+      events: [{ stage: "detect-after", decodedExpected: true }],
+    })
+  );
+  assert.equal(invoke(["--replay", input, output]).exit, 0);
+  assert.equal(
+    JSON.parse(await readFile(output, "utf8")).result,
+    "assignment-revoked"
+  );
+  results.push({
+    name: "any authorizationError blocks completion",
+    result: "passed",
+  });
+}
+for (const field of ["error", "observationError", "cleanupError"]) {
+  const input = join(out, `ticket-14-inert-${field}.json`);
+  const output = input.replace(".json", "-replay.json");
+  await writeFile(
+    input,
+    JSON.stringify({
+      trial: "detect",
+      result: "completed",
+      [field]: "inert recorded failure",
+      triggerInvokedAt: new Date().toISOString(),
+      pidBefore: "100",
+      pidAfter: "100",
+      fatal: [],
+      events: [{ stage: "detect-after", decodedExpected: true }],
+    })
+  );
+  assert.equal(invoke(["--replay", input, output]).exit, 0);
+  assert.equal(
+    JSON.parse(await readFile(output, "utf8")).result,
+    "verification-failed"
+  );
+  results.push({
+    name: `recorded ${field} prevents completion`,
+    result: "passed",
+  });
+}
 await writeFile(
   join(out, "ticket-14-public-cli-checks.json"),
   JSON.stringify(results, null, 2)

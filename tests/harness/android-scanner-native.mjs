@@ -19,7 +19,7 @@ function stagesForTrial(trial) {
     "scanner-before-media": ["scanner-rejected", "scanner-returned"],
   }[trial];
 }
-function classifyReceipt(value) {
+function classifyReceipt(value, { deriveObservedOutcome = false } = {}) {
   const stages = stagesForTrial(value.trial);
   assert.ok(stages, "known diagnostic trial");
   const terminal = value.events.some((event) => stages.includes(event.stage));
@@ -37,26 +37,46 @@ function classifyReceipt(value) {
     (value.stageWaitExpired === true || value.result === "stage-timeout");
   const verificationFailed =
     value.result === "verification-failed" ||
-    (value.result === "completed" && Boolean(value.error));
-  const result = !samePidPresent
-    ? value.triggerInvokedAt
-      ? "native-process-terminated"
-      : "prerequisite-process-terminated"
-    : fatalExceptionObserved
-      ? "native-fatal-exception"
-      : javascriptError
-        ? "javascript-error"
-        : verificationFailed
-          ? "verification-failed"
-          : terminal
-            ? "completed"
-            : stageTimedOut
-              ? "stage-timeout"
-              : "stage-incomplete";
+    ["error", "observationError", "cleanupError"].some((field) =>
+      Object.hasOwn(value, field)
+    );
+  const reportedResult =
+    typeof value.result === "string" && value.result
+      ? value.result
+      : "incomplete";
+  const authorizationFailed =
+    Object.hasOwn(value, "authorizationError") ||
+    reportedResult === "assignment-revoked";
+  // Replay respects the final declared outcome. Live observation alone may
+  // finish the producer's initial "incomplete" state after guarded sampling.
+  // Positive events/PID facts cannot overrule any declared failure or revocation.
+  const preserveDeclared =
+    reportedResult !== "completed" &&
+    !(deriveObservedOutcome && reportedResult === "incomplete");
+  const result = authorizationFailed
+    ? "assignment-revoked"
+    : preserveDeclared
+      ? reportedResult
+      : !samePidPresent
+        ? value.triggerInvokedAt
+          ? "native-process-terminated"
+          : "prerequisite-process-terminated"
+        : fatalExceptionObserved
+          ? "native-fatal-exception"
+          : javascriptError
+            ? "javascript-error"
+            : verificationFailed
+              ? "verification-failed"
+              : terminal
+                ? "completed"
+                : stageTimedOut
+                  ? "stage-timeout"
+                  : "stage-incomplete";
   return {
     result,
     samePidPresent,
     fatalExceptionObserved,
+    authorizationFailed,
     stageUnfinished,
     stageTimedOut,
   };
@@ -445,7 +465,10 @@ try {
   evidence.pidAfter = pid();
   evidence.fatal = readFatalProviderStack(evidence.pidBefore);
   evidence.processSurvived = evidence.pidAfter === evidence.pidBefore;
-  Object.assign(evidence, classifyReceipt(evidence));
+  Object.assign(
+    evidence,
+    classifyReceipt(evidence, { deriveObservedOutcome: true })
+  );
   assert.equal(
     evidence.processSurvived,
     true,

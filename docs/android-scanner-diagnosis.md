@@ -112,6 +112,14 @@ accept a successful stage label when the child exited unsuccessfully or recorded
 an error. Missing stages remain harness failures rather than provider evidence.
 Replay preserves explicit `verification-failed` receipts, including a returned
 `detect-after` with a false decoded result and an assertion error.
+All declared non-success outcomes remain authoritative in replay, including
+revocation, timeout, unfinished and pending records. Terminal events and a
+last-known PID cannot upgrade them to completion. Any `authorizationError`
+prevents completion even if the result label says completed. Live observation
+can finalize its initial pending state only after guarded sampling; replay does
+not supply that missing final observation.
+Recorded observation, validation and teardown errors likewise prevent replay
+completion; their positive stage facts remain separately inspectable.
 Native fatal exception, same PID presence, unfinished stage and actual wait
 expiry are recorded separately. A present PID after a fatal stack is not healthy
 provider support. Offline replay exercises this same live classification without
