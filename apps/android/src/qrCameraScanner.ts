@@ -7,13 +7,19 @@ function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
-function appendStyles(element: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+function appendStyles(
+  element: HTMLElement,
+  styles: Partial<CSSStyleDeclaration>
+) {
   Object.assign(element.style, styles);
 }
 
 function cameraErrorMessage(err: unknown): Error {
   if (err instanceof DOMException) {
-    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+    if (
+      err.name === "NotAllowedError" ||
+      err.name === "PermissionDeniedError"
+    ) {
       return new Error("camera_permission_denied");
     }
     if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
@@ -37,6 +43,141 @@ function createBarcodeDetector(): QrBarcodeDetector | null {
   }
 }
 
+/** Geometry-only scanner surface. Construction never touches a decoder, camera or permission. */
+export function createPairingScannerOverlay() {
+  const overlay = document.createElement("div");
+  overlay.id = SCANNER_ID;
+  appendStyles(overlay, {
+    position: "fixed",
+    left: "var(--clipp-content-left, 0px)",
+    top: "var(--clipp-content-top, 0px)",
+    width: "var(--clipp-content-width, 100%)",
+    height: "var(--clipp-content-height, 100%)",
+    zIndex: "9999",
+    display: "flex",
+    flexDirection: "column",
+    background: "#050509",
+    color: "#ffffff",
+  });
+
+  const videoWrap = document.createElement("div");
+  appendStyles(videoWrap, {
+    position: "relative",
+    flex: "1",
+    minHeight: "0",
+    overflow: "hidden",
+    background: "#000000",
+  });
+
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "true");
+  appendStyles(video, {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+  });
+
+  const frame = document.createElement("div");
+  appendStyles(frame, {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: "min(72%, 320px)",
+    aspectRatio: "1 / 1",
+    transform: "translate(-50%, -50%)",
+    border: "2px solid rgba(255,255,255,0.9)",
+    borderRadius: "18px",
+    boxShadow: "0 0 0 999px rgba(0,0,0,0.34)",
+    pointerEvents: "none",
+  });
+
+  const toolbar = document.createElement("div");
+  appendStyles(toolbar, {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: "12px",
+    padding: "14px 16px",
+    flexShrink: "0",
+    maxHeight: "100%",
+    overflowY: "auto",
+    background: "#101114",
+    borderTop: "1px solid rgba(255,255,255,0.08)",
+    fontFamily: "Roboto, system-ui, sans-serif",
+  });
+
+  const status = document.createElement("div");
+  status.textContent = "Opening camera";
+  appendStyles(status, {
+    fontSize: "14px",
+    fontWeight: "500",
+    color: "#e2e2e7",
+  });
+
+  const actionRow = document.createElement("div");
+  appendStyles(actionRow, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+  });
+
+  const scanNow = document.createElement("button");
+  scanNow.type = "button";
+  scanNow.textContent = "Scan now";
+  scanNow.disabled = true;
+  appendStyles(scanNow, {
+    flex: "1",
+    border: "0",
+    borderRadius: "999px",
+    padding: "11px 16px",
+    background: "#7c3aed",
+    color: "#ffffff",
+    font: "inherit",
+    fontWeight: "600",
+  });
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  appendStyles(cancel, {
+    border: "0",
+    borderRadius: "999px",
+    padding: "11px 16px",
+    background: "rgba(255,255,255,0.12)",
+    color: "#ffffff",
+    font: "inherit",
+  });
+
+  actionRow.append(scanNow, cancel);
+  toolbar.append(status, actionRow);
+  videoWrap.append(video, frame);
+  overlay.append(videoWrap, toolbar);
+  document.body.append(overlay);
+
+  const fitFrame = () => {
+    const rect = videoWrap.getBoundingClientRect();
+    frame.style.width = `${Math.max(0, Math.min(rect.width, rect.height) * 0.72)}px`;
+  };
+  const observer = new ResizeObserver(fitFrame);
+  observer.observe(videoWrap);
+  fitFrame();
+  return {
+    overlay,
+    video,
+    status,
+    scanNow,
+    cancel,
+    dispose() {
+      observer.disconnect();
+      overlay.remove();
+    },
+  };
+}
+
 export async function scanPairingQrWithCamera(): Promise<string | null> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error("camera_unavailable");
@@ -49,112 +190,8 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
   let settled = false;
 
   return new Promise<string | null>((resolve, reject) => {
-    const overlay = document.createElement("div");
-    overlay.id = SCANNER_ID;
-    appendStyles(overlay, {
-      position: "fixed",
-      inset: "0",
-      zIndex: "9999",
-      display: "flex",
-      flexDirection: "column",
-      background: "#050509",
-      color: "#ffffff",
-    });
-
-    const videoWrap = document.createElement("div");
-    appendStyles(videoWrap, {
-      position: "relative",
-      flex: "1",
-      minHeight: "0",
-      overflow: "hidden",
-      background: "#000000",
-    });
-
-    const video = document.createElement("video");
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-    video.setAttribute("playsinline", "true");
-    appendStyles(video, {
-      width: "100%",
-      height: "100%",
-      objectFit: "cover",
-    });
-
-    const frame = document.createElement("div");
-    appendStyles(frame, {
-      position: "absolute",
-      left: "50%",
-      top: "50%",
-      width: "min(72vw, 320px)",
-      aspectRatio: "1 / 1",
-      transform: "translate(-50%, -50%)",
-      border: "2px solid rgba(255,255,255,0.9)",
-      borderRadius: "18px",
-      boxShadow: "0 0 0 999px rgba(0,0,0,0.34)",
-      pointerEvents: "none",
-    });
-
-    const toolbar = document.createElement("div");
-    appendStyles(toolbar, {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "stretch",
-      gap: "12px",
-      padding: "14px 16px calc(14px + env(safe-area-inset-bottom))",
-      background: "#101114",
-      borderTop: "1px solid rgba(255,255,255,0.08)",
-      fontFamily: "Roboto, system-ui, sans-serif",
-    });
-
-    const status = document.createElement("div");
-    status.textContent = "Opening camera";
-    appendStyles(status, {
-      fontSize: "14px",
-      fontWeight: "500",
-      color: "#e2e2e7",
-    });
-
-    const actionRow = document.createElement("div");
-    appendStyles(actionRow, {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: "10px",
-    });
-
-    const scanNow = document.createElement("button");
-    scanNow.type = "button";
-    scanNow.textContent = "Scan now";
-    scanNow.disabled = true;
-    appendStyles(scanNow, {
-      flex: "1",
-      border: "0",
-      borderRadius: "999px",
-      padding: "11px 16px",
-      background: "#7c3aed",
-      color: "#ffffff",
-      font: "inherit",
-      fontWeight: "600",
-    });
-
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.textContent = "Cancel";
-    appendStyles(cancel, {
-      border: "0",
-      borderRadius: "999px",
-      padding: "11px 16px",
-      background: "rgba(255,255,255,0.12)",
-      color: "#ffffff",
-      font: "inherit",
-    });
-
-    actionRow.append(scanNow, cancel);
-    toolbar.append(status, actionRow);
-    videoWrap.append(video, frame);
-    overlay.append(videoWrap, toolbar);
-    document.body.append(overlay);
+    const { video, status, scanNow, cancel, dispose } =
+      createPairingScannerOverlay();
 
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -170,7 +207,7 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
     function cleanup() {
       if (frameId) cancelAnimationFrame(frameId);
       stopStream(stream);
-      overlay.remove();
+      dispose();
     }
 
     function finish(value: string | null) {
@@ -193,7 +230,11 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
         return false;
       }
 
-      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+      if (
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !video.videoWidth ||
+        !video.videoHeight
+      ) {
         return false;
       }
 
@@ -213,7 +254,9 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
     function readQrFromImageData(imageData: ImageData): string | null {
       const attempts = ["attemptBoth", "invertFirst", "dontInvert"] as const;
       for (const inversionAttempts of attempts) {
-        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts });
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts,
+        });
         if (code?.data) return code.data;
       }
       return null;
@@ -229,7 +272,12 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
       const cropSize = Math.floor(Math.min(canvas.width, canvas.height) * 0.78);
       const cropX = Math.floor((canvas.width - cropSize) / 2);
       const cropY = Math.floor((canvas.height - cropSize) / 2);
-      const centerFrame = context.getImageData(cropX, cropY, cropSize, cropSize);
+      const centerFrame = context.getImageData(
+        cropX,
+        cropY,
+        cropSize,
+        cropSize
+      );
       return readQrFromImageData(centerFrame);
     }
 
@@ -283,7 +331,8 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
           finish(result);
           return;
         }
-        status.textContent = "No QR found. Hold it inside the square and try again.";
+        status.textContent =
+          "No QR found. Hold it inside the square and try again.";
       } finally {
         if (!settled) setScanNowEnabled(true);
       }

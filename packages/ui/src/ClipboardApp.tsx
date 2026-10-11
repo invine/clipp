@@ -1,4 +1,5 @@
 import { Icon, IconButton } from "./controls";
+import { HOST_GEOMETRY_EVENT, hostContentSize } from "./hostGeometry";
 import { TaskDialog } from "./TaskDialog";
 import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
 import { createUiSession, type UiSession } from "./uiSession";
@@ -610,7 +611,7 @@ export function ClipboardApp({
 
   useEffect(() => {
     function handleResize() {
-      const narrow = window.innerWidth < 1100;
+      const narrow = hostContentSize(window, document).width < 1100;
       setIsNarrow(narrow);
       if (!narrow) setShowNav(false);
       else if (session.getSnapshot().tasks.some((task) => task.kind !== "qr"))
@@ -618,19 +619,27 @@ export function ClipboardApp({
     }
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener(HOST_GEOMETRY_EVENT, handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, handleResize);
+    };
   }, [session]);
 
   useEffect(() => {
     function handleHeight() {
-      const shouldCollapse = window.innerHeight < 760;
+      const shouldCollapse = hostContentSize(window, document).height < 760;
       if (!userToggledFilters) {
         setFiltersCollapsed(shouldCollapse);
       }
     }
     handleHeight();
     window.addEventListener("resize", handleHeight);
-    return () => window.removeEventListener("resize", handleHeight);
+    window.addEventListener(HOST_GEOMETRY_EVENT, handleHeight);
+    return () => {
+      window.removeEventListener("resize", handleHeight);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, handleHeight);
+    };
   }, [userToggledFilters]);
 
   const deviceNameMap = useMemo(() => {
@@ -2054,98 +2063,110 @@ export function ClipboardApp({
         </div>
       </header>
 
-      {initializationError && (
-        <div className="initialization-error" role="alert">
-          <span>
-            Device identity could not be initialized. Clipboard capture and
-            networking are paused.
-          </span>
-          {onRetryInitialization && (
-            <button type="button" onClick={() => void onRetryInitialization()}>
-              Retry
-            </button>
-          )}
-        </div>
-      )}
-
-      {identityRotationRecovery && (
-        <div className="initialization-error" role="alert">
-          <span>
-            Identity rotation is recovering. Clipboard History and local capture
-            remain available; networking will stay disabled and retry
-            automatically.
-          </span>
-        </div>
-      )}
-
-      {identityRotationNotice && !identityRotationRecovery && (
-        <div className="initialization-error" role="status">
-          <span>{identityRotationNoticeMessage(identityRotationNotice)}</span>
-          {onAcknowledgeIdentityRotationNotice && (
-            <button
-              type="button"
-              onClick={() => void onAcknowledgeIdentityRotationNotice()}
-            >
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
-
-      {historyError && (
-        <div className="initialization-error" role="alert">
-          <span>{historyError}</span>
-          {retryHistoryOperation && (
-            <button
-              type="button"
-              onClick={() => {
-                const retry = retryHistoryOperation;
-                setHistoryError(null);
-                setRetryHistoryOperation(null);
-                retry();
-              }}
-            >
-              Retry
-            </button>
-          )}
-          {!retryHistoryOperation && (
-            <button type="button" onClick={() => setHistoryError(null)}>
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
-
-      {clipboardHistoryError && (
-        <div className="initialization-error" role="alert">
-          <span>{clipboardHistoryErrorMessage(clipboardHistoryError)}</span>
-          {clipboardHistoryError !== "pending_capture_failed" &&
-            onDismissClipboardHistoryError && (
+      <div className="app-notices">
+        {initializationError && (
+          <div className="initialization-error" role="alert">
+            <span>
+              Device identity could not be initialized. Clipboard capture and
+              networking are paused.
+            </span>
+            {onRetryInitialization && (
               <button
                 type="button"
-                onClick={() => void onDismissClipboardHistoryError()}
+                onClick={() => void onRetryInitialization()}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+
+        {identityRotationRecovery && (
+          <div className="initialization-error" role="alert">
+            <span>
+              Identity rotation is recovering. Clipboard History and local
+              capture remain available; networking will stay disabled and retry
+              automatically.
+            </span>
+          </div>
+        )}
+
+        {identityRotationNotice && !identityRotationRecovery && (
+          <div className="initialization-error" role="status">
+            <span>{identityRotationNoticeMessage(identityRotationNotice)}</span>
+            {onAcknowledgeIdentityRotationNotice && (
+              <button
+                type="button"
+                onClick={() => void onAcknowledgeIdentityRotationNotice()}
               >
                 Dismiss
               </button>
             )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {historyPolicyError && (
-        <div className="initialization-error" role="alert">
-          <span>
-            Clipboard History cleanup could not finish. Existing Clips remain
-            available.
-          </span>
-          {onRetryHistoryCleanup && (
-            <button type="button" onClick={() => void onRetryHistoryCleanup()}>
-              Retry
-            </button>
-          )}
-        </div>
-      )}
+        {historyError && (
+          <div className="initialization-error" role="alert">
+            <span>{historyError}</span>
+            {retryHistoryOperation && (
+              <button
+                type="button"
+                onClick={() => {
+                  const retry = retryHistoryOperation;
+                  setHistoryError(null);
+                  setRetryHistoryOperation(null);
+                  retry();
+                }}
+              >
+                Retry
+              </button>
+            )}
+            {!retryHistoryOperation && (
+              <button type="button" onClick={() => setHistoryError(null)}>
+                Dismiss
+              </button>
+            )}
+          </div>
+        )}
 
-      <main className="app-main" tabIndex={-1} data-session-focus="workspace">
+        {clipboardHistoryError && (
+          <div className="initialization-error" role="alert">
+            <span>{clipboardHistoryErrorMessage(clipboardHistoryError)}</span>
+            {clipboardHistoryError !== "pending_capture_failed" &&
+              onDismissClipboardHistoryError && (
+                <button
+                  type="button"
+                  onClick={() => void onDismissClipboardHistoryError()}
+                >
+                  Dismiss
+                </button>
+              )}
+          </div>
+        )}
+
+        {historyPolicyError && (
+          <div className="initialization-error" role="alert">
+            <span>
+              Clipboard History cleanup could not finish. Existing Clips remain
+              available.
+            </span>
+            {onRetryHistoryCleanup && (
+              <button
+                type="button"
+                onClick={() => void onRetryHistoryCleanup()}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <main
+        className="app-main"
+        tabIndex={-1}
+        data-session-focus="workspace"
+        style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
+      >
         <aside
           className="surface nav-pane"
           data-session-scroll="navigation"

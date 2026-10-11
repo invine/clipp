@@ -11,6 +11,7 @@ import {
   createAndroidClient,
   type AndroidAppState,
 } from "./client";
+import { bindAndroidHostGeometry } from "./hostGeometryNative";
 import { scanPairingQrWithCamera } from "./qrCameraScanner";
 
 const initialState: AndroidAppState = {
@@ -33,6 +34,7 @@ const initialState: AndroidAppState = {
 };
 
 function App() {
+  useEffect(() => bindAndroidHostGeometry(), []);
   const client = useMemo<AndroidClient>(() => createAndroidClient(), []);
   const [state, setState] = useState<AndroidAppState>(initialState);
   const [error, setError] = useState<string | null>(null);
