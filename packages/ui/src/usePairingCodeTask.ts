@@ -1,8 +1,11 @@
 import { useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { createPairingCodeTask } from "./pairingCodeTask";
 
-export function usePairingCodeTask(context: string | null) {
-  const [task] = useState(createPairingCodeTask);
+export function usePairingCodeTask(
+  context: string | null,
+  owner?: ReturnType<typeof createPairingCodeTask>
+) {
+  const [task] = useState(() => owner ?? createPairingCodeTask());
   const state = useSyncExternalStore(
     task.subscribe,
     task.getState,
@@ -11,6 +14,11 @@ export function usePairingCodeTask(context: string | null) {
   useLayoutEffect(() => {
     task.setContext(context);
   }, [task, context]);
-  useLayoutEffect(() => () => task.close(), [task]);
+  useLayoutEffect(
+    () => () => {
+      if (!owner) task.close();
+    },
+    [task, owner]
+  );
   return { task, state };
 }

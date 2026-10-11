@@ -1,3 +1,9 @@
+import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction.js";
+import {
+  createRelayMutationOwner,
+  type RelayMutation,
+} from "../../../packages/core/network/relayMutations.js";
+import { performRelayAction } from "../../../packages/core/network/relayActions.js";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy.js";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { multiaddr } from "@multiformats/multiaddr";
@@ -69,7 +75,6 @@ import { createLibp2pMessagingTransport } from "../../../packages/core/network/e
 import {
   ManagedRelayController,
   loadManagedRelayConfigurations,
-  normalizeRelayConfigurations,
 } from "../../../packages/core/network/managedRelays.js";
 import {
   electronRelayAcceptance,
@@ -1169,28 +1174,44 @@ async function bootstrap() {
     }
   );
 
-  ipcMain.handle("clipp:set-managed-relays", async (_evt, values: unknown) => {
-    const normalized = normalizeRelayConfigurations(values);
-    await kvStore.set("managedRelayConfigurations", normalized);
-    managedConfigurations = normalized;
-    if (messagingStarted) await managedController.setConfigurations(normalized);
-    await emitState();
-    return normalized;
+  const relayMutationOwner = createRelayMutationOwner({
+    read: () => managedConfigurations,
+    load: async () => (await kvStore.get("managedRelayConfigurations")) ?? [],
+    erase: (url) => managedAuth.erase(url),
+    write: (next) => kvStore.set("managedRelayConfigurations", next),
+    accept: (next) => {
+      managedConfigurations = next;
+    },
+    apply: async (next) => {
+      if (messagingStarted) await managedController.setConfigurations(next);
+    },
+    reconcile: emitState,
   });
-  ipcMain.handle("clipp:managed-relay-login", async (_evt, key: string) => {
-    try {
-      await managedController.requestLogin(key);
-    } finally {
-      await emitState();
-    }
-  });
-  ipcMain.handle("clipp:managed-relay-account", async (_evt, key: string) => {
-    await managedController.manageAccount(key);
-  });
-  ipcMain.handle("clipp:managed-relay-retry", async (_evt, key: string) => {
-    await managedController.retry(key);
-    await emitState();
-  });
+  ipcMain.handle(
+    "clipp:mutate-managed-relay",
+    async (_evt, mutation: RelayMutation) => relayMutationOwner.mutate(mutation)
+  );
+  ipcMain.handle("clipp:managed-relay-login", async (_evt, key: string) =>
+    performRelayAction(
+      "authenticated",
+      () => managedController.requestLogin(key),
+      emitState
+    )
+  );
+  ipcMain.handle("clipp:managed-relay-account", async (_evt, key: string) =>
+    performRelayAction(
+      "portal-opened",
+      () => managedController.manageAccount(key),
+      emitState
+    )
+  );
+  ipcMain.handle("clipp:managed-relay-retry", async (_evt, key: string) =>
+    performRelayAction(
+      "retry-requested",
+      () => managedController.retry(key),
+      emitState
+    )
+  );
 
   ipcMain.handle(
     "clipp:set-local-retention",
@@ -1202,11 +1223,26 @@ async function bootstrap() {
     }
   );
 
-  ipcMain.handle("clipp:set-auto-sync", async (_evt, enabled: boolean) => {
-    autoSync = await autoSyncPreference.set(enabled);
+  ipcMain.handle("clipp:set-auto-sync", async (_evt, enabled: boolean) =>
+    performAutoSyncAction(enabled, {
+      set: async (value) => {
+        autoSync = await autoSyncPreference.set(value);
+        clipboardSync.setAutoSync(autoSync);
+        return autoSync;
+      },
+      recover: async () => {
+        autoSync = await autoSyncPreference.load();
+        clipboardSync.setAutoSync(autoSync);
+      },
+      current: () => autoSync,
+      reconcile: emitState,
+    })
+  );
+  ipcMain.handle("clipp:refresh-auto-sync", async () => {
+    autoSync = await autoSyncPreference.load();
     clipboardSync.setAutoSync(autoSync);
     await emitState();
-    return { autoSync };
+    return true;
   });
 
   ipcMain.handle("clipp:reuse-clip", async (_evt, id: string) => {

@@ -1,3 +1,9 @@
+import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction";
+import {
+  createRelayMutationOwner,
+  type RelayMutation,
+} from "../../../packages/core/network/relayMutations";
+import { performRelayAction } from "../../../packages/core/network/relayActions";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
@@ -26,7 +32,6 @@ import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import {
   ManagedRelayController,
   loadManagedRelayConfigurations,
-  normalizeRelayConfigurations,
   saveManagedRelayConfigurations,
   type RelayConfiguration,
   type RelayState,
@@ -1139,41 +1144,67 @@ export class AndroidClient {
     return this.localRetentionMs;
   }
 
-  async setManagedRelays(configurations: RelayConfiguration[]): Promise<void> {
-    const ordered = configurations.map((config) =>
-      config.kind === "explicit"
-        ? { ...config, addresses: androidRelayAddressOrder(config.addresses) }
-        : config
-    );
-    const normalized = normalizeRelayConfigurations(ordered);
-    await this.managedRelays?.setConfigurations(normalized);
-    try {
+  private relayMutationOwner = createRelayMutationOwner({
+    read: () => this.managedRelayConfigurations,
+    load: async () =>
+      (await this.relayConfigurationStore().readNewModel()) ?? [],
+    erase: (url) => this.relayAuth.erase(url),
+    write: async (next) => {
       await saveManagedRelayConfigurations(
         this.relayConfigurationStore(),
-        normalized
+        next
       );
-    } catch (error) {
-      await this.managedRelays?.setConfigurations(
-        this.managedRelayConfigurations
+    },
+    accept: (next) => {
+      this.managedRelayConfigurations = next;
+    },
+    apply: async (next) => {
+      const ordered = next.map((config) =>
+        config.kind === "explicit"
+          ? { ...config, addresses: androidRelayAddressOrder(config.addresses) }
+          : config
       );
-      throw error;
-    }
-    this.managedRelayConfigurations = normalized;
-    await this.emitState();
+      if (!this.managedRelays)
+        throw new Error("managed_relay_host_unavailable");
+      await this.managedRelays.setConfigurations(ordered);
+    },
+    reconcile: () => this.emitState(),
+  });
+  async mutateManagedRelay(mutation: RelayMutation) {
+    return this.relayMutationOwner.mutate(mutation);
   }
-
-  async loginManagedRelay(key: string): Promise<void> {
-    await this.managedRelays?.requestLogin(key);
-    await this.emitState();
+  async loginManagedRelay(key: string) {
+    return performRelayAction(
+      "authenticated",
+      async () => {
+        if (!this.managedRelays)
+          throw new Error("managed_relay_host_unavailable");
+        return this.managedRelays.requestLogin(key);
+      },
+      () => this.emitState()
+    );
   }
-
-  async openManagedRelayAccount(key: string): Promise<void> {
-    await this.managedRelays?.manageAccount(key);
+  async openManagedRelayAccount(key: string) {
+    return performRelayAction(
+      "portal-opened",
+      async () => {
+        if (!this.managedRelays)
+          throw new Error("managed_relay_host_unavailable");
+        await this.managedRelays.manageAccount(key);
+      },
+      () => this.emitState()
+    );
   }
-
-  async retryManagedRelay(key: string): Promise<void> {
-    await this.managedRelays?.retry(key);
-    await this.emitState();
+  async retryManagedRelay(key: string) {
+    return performRelayAction(
+      "retry-requested",
+      async () => {
+        if (!this.managedRelays)
+          throw new Error("managed_relay_host_unavailable");
+        await this.managedRelays.retry(key);
+      },
+      () => this.emitState()
+    );
   }
 
   private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
@@ -1183,9 +1214,24 @@ export class AndroidClient {
   }
 
   async setAutoSync(enabled: boolean) {
-    await this.backgroundContinuity.setAutoSync(enabled);
+    return performAutoSyncAction(enabled, {
+      set: async (value) => {
+        await this.backgroundContinuity.setAutoSync(value);
+        return this.autoSync;
+      },
+      recover: async () => {
+        this.autoSync = await this.autoSyncPreference.load();
+        this.clipboardSync.setAutoSync(this.autoSync);
+      },
+      current: () => this.autoSync,
+      reconcile: () => this.emitState(),
+    });
+  }
+  async refreshAutoSync() {
+    this.autoSync = await this.autoSyncPreference.load();
+    this.clipboardSync.setAutoSync(this.autoSync);
     await this.emitState();
-    return this.autoSync;
+    return true;
   }
 
   async setBackgroundContinuity(enabled: boolean) {

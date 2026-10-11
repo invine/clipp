@@ -1,5 +1,11 @@
-import React, { useState } from "react";
-import { runManagedRelayAction } from "./managedRelayAction";
+import React, { useState, useEffect, useSyncExternalStore } from "react";
+import { createUiSession, type UiSession } from "./uiSession";
+import { relayMutationMessage } from "./relayEditSession";
+import type {
+  RelayMutation,
+  RelayMutationResult,
+} from "../../core/network/relayMutations";
+import type { RelayActionResult } from "../../core/network/relayActions";
 import type {
   RelayConfiguration,
   RelayState,
@@ -8,12 +14,11 @@ import type {
 export type ManagedRelaySettingsProps = {
   configurations: RelayConfiguration[];
   states: RelayState[];
-  onSetConfigurations(
-    configurations: RelayConfiguration[]
-  ): Promise<void> | void;
-  onLogin?(key: string): Promise<void> | void;
-  onManageAccount?(key: string): Promise<void> | void;
-  onRetry?(key: string): Promise<void> | void;
+  session?: UiSession;
+  onMutate(mutation: RelayMutation): Promise<RelayMutationResult>;
+  onLogin?(key: string): Promise<RelayActionResult>;
+  onManageAccount?(key: string): Promise<RelayActionResult>;
+  onRetry?(key: string): Promise<RelayActionResult>;
 };
 
 const statusText: Record<RelayState["status"], string> = {
@@ -29,84 +34,69 @@ const statusText: Record<RelayState["status"], string> = {
 export function ManagedRelaySettings({
   configurations,
   states,
-  onSetConfigurations,
+  session: providedSession,
+  onMutate,
   onLogin,
   onManageAccount,
   onRetry,
 }: ManagedRelaySettingsProps) {
-  const [editing, setEditing] = useState<string | null>(null);
-  const [kind, setKind] = useState<RelayConfiguration["kind"]>("managed");
-  const [name, setName] = useState("");
-  const [endpoint, setEndpoint] = useState("");
-  const [peerId, setPeerId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const runAction = (action: () => Promise<void> | void) => {
-    setError(null);
-    void runManagedRelayAction(action, setError);
-  };
+  const [session] = useState(() => providedSession ?? createUiSession());
+  const draft = useSyncExternalStore(
+    session.relay.subscribe,
+    session.relay.getSnapshot,
+    session.relay.getSnapshot
+  );
+  const context = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot
+  );
+  const editing = draft?.active ? draft.key : null;
+  const {
+    kind = "managed",
+    name = "",
+    endpoint = "",
+    peerId = "",
+  } = draft?.raw ?? {};
+  const busy = Boolean(draft?.pending);
+  useEffect(() => {
+    session.relay.reconcile(configurations);
+  }, [session, configurations]);
   const edit = (config?: RelayConfiguration) => {
-    setEditing(config?.key ?? "new");
-    setKind(config?.kind ?? "managed");
-    setName(config?.name ?? "");
-    setEndpoint(
-      config?.kind === "managed"
-        ? config.discoveryUrl
-        : (config?.addresses.join("\n") ?? "")
-    );
-    setPeerId(config?.kind === "explicit" ? config.peerId : "");
-    setError(null);
+    session.open({
+      kind: "relay",
+      entity: config?.key ?? "new",
+      origin: `relay:${config?.key ?? "add"}`,
+    });
+    session.relay.begin(config);
   };
   const save = async () => {
-    if (!editing || busy) return;
-    const key =
-      editing === "new"
-        ? (globalThis.crypto?.randomUUID?.() ?? `relay-${Date.now()}`)
-        : editing;
-    const config: RelayConfiguration =
-      kind === "managed"
-        ? { key, name: name.trim(), kind, discoveryUrl: endpoint.trim() }
-        : {
-            key,
-            name: name.trim(),
-            kind,
-            peerId: peerId.trim(),
-            addresses: endpoint
-              .split(/\r?\n/)
-              .map((value) => value.trim())
-              .filter(Boolean),
-          };
-    setBusy(true);
-    setError(null);
-    try {
-      await onSetConfigurations(
-        editing === "new"
-          ? [...configurations, config]
-          : configurations.map((value) =>
-              value.key === editing ? config : value
-            )
-      );
-      setEditing(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save relay");
-    } finally {
-      setBusy(false);
-    }
+    const key = draft?.key;
+    await session.relay.save(onMutate);
+    if (!session.relay.getSnapshot()) session.complete("relay", key);
   };
   const remove = async (key: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await onSetConfigurations(
-        configurations.filter((config) => config.key !== key)
-      );
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not remove relay"
-      );
-    } finally {
-      setBusy(false);
-    }
+    await session.relayAction(key, async () => {
+      let result: RelayMutationResult;
+      try {
+        result = await onMutate({ type: "remove", key });
+      } catch {
+        return {
+          status: "unconfirmed",
+          error:
+            "Remove could not be confirmed. Check the current relay list before retrying.",
+        };
+      }
+      session.update({
+        relayMutationFeedback: {
+          ...session.getSnapshot().relayMutationFeedback,
+          [key]: relayMutationMessage(result),
+        },
+      });
+      return result.status === "applied"
+        ? { status: "removed-local" }
+        : { status: "unconfirmed", error: relayMutationMessage(result) };
+    });
   };
   return (
     <div className="relay-settings" aria-label="Relay settings">
@@ -140,23 +130,61 @@ export function ManagedRelaySettings({
                 <div className="relay-error">{state.warning}</div>
               )}
             </div>
+            {context.relayActions[config.key]?.pending && (
+              <p role="status">Relay action pending…</p>
+            )}
+            {context.relayActions[config.key]?.result && (
+              <p
+                role={
+                  context.relayActions[config.key]?.result?.error
+                    ? "alert"
+                    : "status"
+                }
+              >
+                {context.relayActions[config.key]?.result?.error ??
+                  (context.relayActions[config.key]?.result?.status ===
+                  "portal-opened"
+                    ? "Relay portal opened. Its browser account may differ from Clipp's account."
+                    : context.relayActions[config.key]?.result?.status ===
+                        "authenticated"
+                      ? "Relay authentication completed. Current connection status is shown above."
+                      : context.relayActions[config.key]?.result?.status ===
+                          "removed-local"
+                        ? "Local relay configuration removed."
+                        : "Retry requested. Current connection status is shown above.")}
+              </p>
+            )}
             <div className="peer-actions">
-              {config.kind === "managed" &&
-                onLogin &&
-                state?.status === "login_needed" && (
-                  <button
-                    className="primary-button compact-button"
-                    type="button"
-                    onClick={() => runAction(() => onLogin(config.key))}
-                  >
-                    Log in
-                  </button>
-                )}
+              {config.kind === "managed" && onLogin && (
+                <button
+                  className="primary-button compact-button"
+                  type="button"
+                  onClick={() =>
+                    void session.relayAction(config.key, () =>
+                      onLogin(config.key)
+                    )
+                  }
+                  disabled={
+                    context.relayActions[config.key]?.pending ||
+                    (draft?.key === config.key && draft.pending)
+                  }
+                >
+                  Log in
+                </button>
+              )}
               {config.kind === "managed" && onManageAccount && (
                 <button
                   className="text-button"
                   type="button"
-                  onClick={() => runAction(() => onManageAccount(config.key))}
+                  onClick={() =>
+                    void session.relayAction(config.key, () =>
+                      onManageAccount(config.key)
+                    )
+                  }
+                  disabled={
+                    context.relayActions[config.key]?.pending ||
+                    (draft?.key === config.key && draft.pending)
+                  }
                   title="Open the relay portal"
                 >
                   Manage account
@@ -169,7 +197,15 @@ export function ManagedRelaySettings({
                   <button
                     className="text-button"
                     type="button"
-                    onClick={() => runAction(() => onRetry(config.key))}
+                    onClick={() =>
+                      void session.relayAction(config.key, () =>
+                        onRetry(config.key)
+                      )
+                    }
+                    disabled={
+                      context.relayActions[config.key]?.pending ||
+                      (draft?.key === config.key && draft.pending)
+                    }
                   >
                     Retry
                   </button>
@@ -177,8 +213,12 @@ export function ManagedRelaySettings({
               <button
                 className="text-button"
                 type="button"
+                data-session-focus={`relay:${config.key}`}
                 onClick={() => edit(config)}
-                disabled={busy}
+                disabled={
+                  context.relayActions[config.key]?.pending ||
+                  (draft?.key === config.key && draft.pending)
+                }
               >
                 Edit
               </button>
@@ -186,7 +226,10 @@ export function ManagedRelaySettings({
                 className="text-button"
                 type="button"
                 onClick={() => void remove(config.key)}
-                disabled={busy}
+                disabled={
+                  context.relayActions[config.key]?.pending ||
+                  (draft?.key === config.key && draft.pending)
+                }
               >
                 Remove
               </button>
@@ -195,21 +238,45 @@ export function ManagedRelaySettings({
         );
       })}
       {editing && (
-        <div className="relay-card relay-card-editing managed-relay-editor">
+        <div
+          className="relay-card relay-card-editing managed-relay-editor"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              session.relay.dismiss();
+              session.back();
+            }
+          }}
+        >
+          <h3>Relay editor</h3>
+          <button
+            type="button"
+            onClick={() => {
+              session.relay.dismiss();
+              session.back();
+            }}
+          >
+            Close relay editor
+          </button>
           <label>
             Name{" "}
             <input
+              data-session-focus="relay:name"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) =>
+                session.relay.change("name", event.target.value)
+              }
             />
           </label>
           <label>
             Type{" "}
             <select
+              data-session-focus="relay:kind"
               value={kind}
               onChange={(event) => {
-                setKind(event.target.value as RelayConfiguration["kind"]);
-                setEndpoint("");
+                session.relay.change("kind", event.target.value);
+                session.relay.change("endpoint", "");
               }}
             >
               <option value="managed">Authenticated discovery</option>
@@ -220,8 +287,11 @@ export function ManagedRelaySettings({
             <label>
               Peer ID{" "}
               <input
+                data-session-focus="relay:peer-id"
                 value={peerId}
-                onChange={(event) => setPeerId(event.target.value)}
+                onChange={(event) =>
+                  session.relay.change("peerId", event.target.value)
+                }
               />
             </label>
           )}
@@ -230,8 +300,11 @@ export function ManagedRelaySettings({
               ? "HTTPS discovery URL"
               : "Complete multiaddrs, one per line"}
             <textarea
+              data-session-focus="relay:endpoint"
               value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
+              onChange={(event) =>
+                session.relay.change("endpoint", event.target.value)
+              }
             />
           </label>
           <div className="managed-relay-editor-actions">
@@ -239,14 +312,21 @@ export function ManagedRelaySettings({
               className="primary-button compact-button"
               type="button"
               onClick={() => void save()}
-              disabled={busy}
+              disabled={
+                busy ||
+                draft?.unavailable ||
+                (editing ? context.relayActions[editing]?.pending : false)
+              }
             >
               Save
             </button>
             <button
               className="text-button"
               type="button"
-              onClick={() => setEditing(null)}
+              onClick={() => {
+                session.relay.discard();
+                session.back();
+              }}
               disabled={busy}
             >
               Cancel
@@ -254,13 +334,26 @@ export function ManagedRelaySettings({
           </div>
         </div>
       )}
-      {error && (
+      {draft?.error && (
         <div className="relay-error" role="alert">
-          {error}
+          {draft.error}
         </div>
       )}
+      {Object.entries(context.relayMutationFeedback).map(([key, message]) => (
+        <p role="status" key={key}>
+          {message}
+        </p>
+      ))}
+      <p>
+        Remove deletes this local configuration, its resources and local
+        credential. It does not revoke the relay account or remove other routes.
+      </p>
       {!editing && (
-        <button type="button" onClick={() => edit()} disabled={busy}>
+        <button
+          type="button"
+          data-session-focus="relay:add"
+          onClick={() => edit()}
+        >
           Add relay
         </button>
       )}

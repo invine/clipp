@@ -11,15 +11,24 @@ export function createAutoSyncPreference(options: {
   storage: Pick<KVStorageBackend, "get" | "set">;
   key?: string;
 }): AutoSyncPreference {
+  let writes: Promise<void> = Promise.resolve();
   const key = options.key ?? AUTO_SYNC_PREFERENCE_KEY;
   return {
     async load(): Promise<boolean> {
+      await writes;
       return (await options.storage.get<boolean>(key)) !== false;
     },
-    async set(enabled: boolean): Promise<boolean> {
-      const persisted = enabled !== false;
-      await options.storage.set(key, persisted);
-      return persisted;
+    set(enabled: boolean): Promise<boolean> {
+      const result = writes.then(async () => {
+        const persisted = enabled !== false;
+        await options.storage.set(key, persisted);
+        return persisted;
+      });
+      writes = result.then(
+        () => undefined,
+        () => undefined
+      );
+      return result;
     },
   };
 }

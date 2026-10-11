@@ -1,3 +1,4 @@
+import { performRelayAction } from "../../../packages/core/network/relayActions";
 // MV3 background (service worker) lacks window; some deps expect it.
 if (typeof globalThis.window === "undefined") {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -61,7 +62,7 @@ import {
 } from "../../../packages/core/network/managedRelays";
 import {
   isConfiguredManagedEndpoint,
-  replaceManagedRelayConfigurations,
+  createChromeRelayMutationOwner,
 } from "./managedRelayConfiguration";
 import { MANAGED_RELAY_CONFIGURATION_KEY } from "./managedRelayConstants";
 import { createChromeManagedRelayCredentials } from "./managedRelayChrome";
@@ -126,7 +127,6 @@ const managedConfigurationsReady = loadManagedRelayConfigurations(
 ).then((values) => {
   managedConfigurations = values;
 });
-let managedConfigurationUpdate: Promise<void> = Promise.resolve();
 let autoSync = true;
 let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
@@ -900,6 +900,24 @@ async function publishedRenameResult<Value>(
   }
 }
 
+const relayMutationOwner = createChromeRelayMutationOwner({
+  read: () => managedConfigurations,
+  load: () => managedConfigurationStore.readNewModel(),
+  erase: (url) => managedCredentials.eraseCredentials(url),
+  write: (next) => managedConfigurationStore.writeNewModel(next),
+  accept: (next) => {
+    managedConfigurations = next;
+  },
+  apply: async (next) => {
+    await offscreenReady;
+    await sendOffscreen({ action: "setManagedRelays", configurations: next });
+  },
+  reconcile: async () => {
+    await runtimeAdapter.publicState.publish(
+      await runtimeAdapter.publicState.read()
+    );
+  },
+});
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (typeof msg?.type === "string" && msg.type.startsWith("managedRelay")) {
     if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
@@ -915,51 +933,63 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           states: managedStates,
         };
       }
-      if (msg.type === "managedRelaySet") {
-        const update = managedConfigurationUpdate.then(async () => {
-          const next = await replaceManagedRelayConfigurations(
-            managedConfigurations,
-            msg.configurations,
-            {
-              erase: (url) => managedCredentials.eraseCredentials(url),
-              write: (configurations) =>
-                managedConfigurationStore.writeNewModel(configurations),
-            }
-          );
-          managedConfigurations = next;
-          await offscreenReady;
-          await sendOffscreen({
-            action: "setManagedRelays",
-            configurations: next,
-          });
-        });
-        managedConfigurationUpdate = update.catch(() => undefined);
-        await update;
-        return { ok: true, configurations: managedConfigurations };
+      if (msg.type === "managedRelayMutate") {
+        const result = await relayMutationOwner.mutate(msg.mutation);
+        return { ok: true, result };
       }
       if (typeof msg.key !== "string") throw new Error("invalid_relay_key");
       const config = managedConfigurations.find(
         (entry) => entry.key === msg.key
       );
       if (!config) throw new Error("relay_not_found");
-      if (msg.type === "managedRelayLogin") {
-        if (config.kind !== "managed")
-          throw new Error("relay_login_not_supported");
-        await managedCredentials.interactiveLogin(config.discoveryUrl);
-        await offscreenReady;
-        await sendOffscreen({ action: "retryManagedRelay", key: config.key });
-        return { ok: true };
-      }
-      if (msg.type === "managedRelayAccount") {
-        if (config.kind !== "managed")
-          throw new Error("relay_account_not_supported");
-        await managedCredentials.openAccount(config.discoveryUrl);
-        return { ok: true };
-      }
-      if (msg.type === "managedRelayRetry") {
-        await offscreenReady;
-        await sendOffscreen({ action: "retryManagedRelay", key: config.key });
-        return { ok: true };
+      if (
+        msg.type === "managedRelayLogin" ||
+        msg.type === "managedRelayAccount" ||
+        msg.type === "managedRelayRetry"
+      ) {
+        const result = await performRelayAction(
+          msg.type === "managedRelayAccount"
+            ? "portal-opened"
+            : msg.type === "managedRelayLogin"
+              ? "authenticated"
+              : "retry-requested",
+          async () => {
+            if (msg.type === "managedRelayAccount") {
+              if (config.kind !== "managed")
+                throw new Error("relay_account_not_supported");
+              await managedCredentials.openAccount(config.discoveryUrl);
+            } else {
+              if (msg.type === "managedRelayLogin") {
+                if (config.kind !== "managed")
+                  throw new Error("relay_login_not_supported");
+                await managedCredentials.interactiveLogin(config.discoveryUrl);
+              }
+              // The configuration may have been removed while the auth browser was open.
+              if (
+                !managedConfigurations.some(
+                  (current) =>
+                    current.key === config.key &&
+                    current.kind === config.kind &&
+                    (current.kind !== "managed" ||
+                      config.kind !== "managed" ||
+                      current.discoveryUrl === config.discoveryUrl)
+                )
+              )
+                throw new Error("relay_not_found");
+              await offscreenReady;
+              await sendOffscreen({
+                action: "retryManagedRelay",
+                key: config.key,
+              });
+            }
+          },
+          async () => {
+            await runtimeAdapter.publicState.publish(
+              await runtimeAdapter.publicState.read()
+            );
+          }
+        );
+        return { ok: true, result };
       }
       throw new Error("unknown_relay_action");
     })()

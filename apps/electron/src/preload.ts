@@ -1,3 +1,9 @@
+import type { AutoSyncActionResult } from "../../../packages/core/runtime/autoSyncAction.js";
+import type {
+  RelayMutation,
+  RelayMutationResult,
+} from "../../../packages/core/network/relayMutations.js";
+import type { RelayActionResult } from "../../../packages/core/network/relayActions.js";
 import {
   confirmPayloadCopy,
   type PayloadCopyResult,
@@ -97,19 +103,31 @@ const api = {
     ipcRenderer.invoke("clipp:acknowledge-identity-rotation-notice"),
   renameIdentity: (name: string, expectedDeviceId: string) =>
     ipcRenderer.invoke("clipp:rename-identity", { name, expectedDeviceId }),
-  setManagedRelays: (configurations: RelayConfiguration[]) =>
-    ipcRenderer.invoke("clipp:set-managed-relays", configurations) as Promise<
-      RelayConfiguration[]
-    >,
-  managedRelayLogin: (key: string) =>
-    ipcRenderer.invoke("clipp:managed-relay-login", key) as Promise<void>,
-  managedRelayAccount: (key: string) =>
-    ipcRenderer.invoke("clipp:managed-relay-account", key) as Promise<void>,
-  managedRelayRetry: (key: string) =>
-    ipcRenderer.invoke("clipp:managed-relay-retry", key) as Promise<void>,
+  mutateManagedRelay: (mutation: RelayMutation): Promise<RelayMutationResult> =>
+    ipcRenderer.invoke(
+      "clipp:mutate-managed-relay",
+      mutation
+    ) as Promise<RelayMutationResult>,
+  managedRelayLogin: (key: string): Promise<RelayActionResult> =>
+    ipcRenderer.invoke(
+      "clipp:managed-relay-login",
+      key
+    ) as Promise<RelayActionResult>,
+  managedRelayAccount: (key: string): Promise<RelayActionResult> =>
+    ipcRenderer.invoke(
+      "clipp:managed-relay-account",
+      key
+    ) as Promise<RelayActionResult>,
+  managedRelayRetry: (key: string): Promise<RelayActionResult> =>
+    ipcRenderer.invoke(
+      "clipp:managed-relay-retry",
+      key
+    ) as Promise<RelayActionResult>,
   setLocalRetention: (retentionMs: number) =>
     ipcRenderer.invoke("clipp:set-local-retention", retentionMs),
-  setAutoSync: (enabled: boolean) =>
+  refreshAutoSync: (): Promise<boolean> =>
+    ipcRenderer.invoke("clipp:refresh-auto-sync"),
+  setAutoSync: (enabled: boolean): Promise<AutoSyncActionResult> =>
     ipcRenderer.invoke("clipp:set-auto-sync", enabled),
   onUpdate: (cb: (state: AppState) => void) => {
     const listener = (_event: any, state: AppState) => cb(state);

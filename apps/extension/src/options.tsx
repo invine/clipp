@@ -1,8 +1,10 @@
+import { createUiSession } from "../../../packages/ui/src/uiSession";
+import type { RelayMutationResult } from "../../../packages/core/network/relayMutations";
+import type { RelayActionResult } from "../../../packages/core/network/relayActions";
 import { subscribePairingCodeIdentity } from "./pairingCodeIdentity";
 import { PairingCodeContent } from "../../../packages/ui/src/PairingCodeContent";
 import { usePairingCodeTask } from "../../../packages/ui/src/usePairingCodeTask";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
-import { createPairingSubmission } from "../../../packages/ui/src/pairingSubmission";
 import { pairingSubmissionMessage } from "../../../packages/ui/src/pairingFeedback";
 import { submitExtensionPairing } from "./pairingActions";
 import React, { useEffect, useState, useSyncExternalStore } from "react";
@@ -26,8 +28,12 @@ import { useSettings } from "./useSettings";
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
   const [qrIdentity, setQrIdentity] = useState<string | null>(null);
-  const { task: qrTask, state: qrState } = usePairingCodeTask(qrIdentity);
-  const [pairingTask] = useState(createPairingSubmission);
+  const [session] = useState(createUiSession);
+  const { task: qrTask, state: qrState } = usePairingCodeTask(
+    qrIdentity,
+    session.qr
+  );
+  const pairingTask = session.pairing;
   const pairing = useSyncExternalStore(
     pairingTask.subscribe,
     pairingTask.getSnapshot,
@@ -62,14 +68,7 @@ const Options = () => {
   }
 
   useEffect(() => {
-    void relayAction<{
-      ok: true;
-      configurations: RelayConfiguration[];
-      states: RelayState[];
-    }>({ type: "managedRelayGet" }).then((response) => {
-      setManagedRelayConfigurations(response.configurations);
-      setManagedRelayStates(response.states);
-    });
+    let liveStateReceived = false;
     const onRuntimeState = (message: {
       type?: string;
       state?: {
@@ -78,12 +77,30 @@ const Options = () => {
       };
     }) => {
       if (message.type !== "runtimeState") return;
+      liveStateReceived = true;
       if (message.state?.managedRelayConfigurations)
         setManagedRelayConfigurations(message.state.managedRelayConfigurations);
       if (message.state?.managedRelayStates)
         setManagedRelayStates(message.state.managedRelayStates);
     };
     chrome.runtime.onMessage.addListener(onRuntimeState);
+    void relayAction<{
+      ok: true;
+      configurations: RelayConfiguration[];
+      states: RelayState[];
+    }>({ type: "managedRelayGet" })
+      .then((response) => {
+        if (liveStateReceived) return;
+        setManagedRelayConfigurations(response.configurations);
+        setManagedRelayStates(response.states);
+      })
+      .catch(() =>
+        session.update({
+          taskNotice:
+            "Relay settings could not be loaded. Check connection state before editing.",
+        })
+      );
+
     return () => chrome.runtime.onMessage.removeListener(onRuntimeState);
   }, []);
 
@@ -206,27 +223,37 @@ const Options = () => {
         <ManagedRelaySettings
           configurations={managedRelayConfigurations}
           states={managedRelayStates}
-          onSetConfigurations={async (configurations) => {
+          session={session}
+          onMutate={async (mutation) => {
             const response = await relayAction<{
               ok: true;
-              configurations: RelayConfiguration[];
-            }>({ type: "managedRelaySet", configurations });
-            setManagedRelayConfigurations(response.configurations);
+              result: RelayMutationResult;
+            }>({ type: "managedRelayMutate", mutation });
+            return response.result;
           }}
-          onLogin={(key) =>
-            relayAction({ type: "managedRelayLogin", key })
-              .then(() => undefined)
-              .catch((error) => alert((error as Error).message))
+          onLogin={async (key) =>
+            (
+              await relayAction<{ ok: true; result: RelayActionResult }>({
+                type: "managedRelayLogin",
+                key,
+              })
+            ).result
           }
-          onManageAccount={(key) =>
-            relayAction({ type: "managedRelayAccount", key })
-              .then(() => undefined)
-              .catch((error) => alert((error as Error).message))
+          onManageAccount={async (key) =>
+            (
+              await relayAction<{ ok: true; result: RelayActionResult }>({
+                type: "managedRelayAccount",
+                key,
+              })
+            ).result
           }
-          onRetry={(key) =>
-            relayAction({ type: "managedRelayRetry", key })
-              .then(() => undefined)
-              .catch((error) => alert((error as Error).message))
+          onRetry={async (key) =>
+            (
+              await relayAction<{ ok: true; result: RelayActionResult }>({
+                type: "managedRelayRetry",
+                key,
+              })
+            ).result
           }
         />
       </section>

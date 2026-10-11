@@ -8,6 +8,9 @@ export type TaskDialogProps = {
   cancelLabel?: string;
   role?: "dialog" | "alertdialog";
   onCancel(): void;
+  onDismiss?(): void;
+  originKey?: string;
+  className?: string;
 };
 
 export function TaskDialog({
@@ -18,6 +21,9 @@ export function TaskDialog({
   cancelLabel = "Cancel",
   role = "dialog",
   onCancel,
+  onDismiss,
+  originKey,
+  className,
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -30,9 +36,24 @@ export function TaskDialog({
         : null;
     cancelRef.current?.focus();
     return () => {
-      if (origin?.isConnected) origin.focus();
+      const logicalOrigin = originKey
+        ? [
+            ...document.querySelectorAll<HTMLElement>("[data-session-focus]"),
+          ].find(
+            (element) =>
+              element.dataset.sessionFocus === originKey &&
+              element.getClientRects().length
+          )
+        : null;
+      if (logicalOrigin) logicalOrigin.focus();
+      else if (origin?.isConnected && origin.getClientRects().length)
+        origin.focus();
+      else
+        document
+          .querySelector<HTMLElement>("[data-session-focus=workspace]")
+          ?.focus();
     };
-  }, []);
+  }, [originKey]);
 
   useEffect(() => {
     if (pending) dialogRef.current?.focus();
@@ -42,13 +63,14 @@ export function TaskDialog({
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      if (!pending) onCancel();
+      if (onDismiss) onDismiss();
+      else if (!pending) onCancel();
       return;
     }
     if (event.key !== "Tab") return;
     const controls = Array.from(
       dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
       ) ?? []
     );
     if (controls.length === 0) {
@@ -69,7 +91,7 @@ export function TaskDialog({
   return (
     <div className="task-dialog-backdrop" role="presentation">
       <div
-        className="task-dialog"
+        className={`task-dialog ${className ?? ""}`}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}

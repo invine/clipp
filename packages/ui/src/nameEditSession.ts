@@ -1,4 +1,5 @@
 export type NameEditSnapshot = Readonly<{
+  active: boolean;
   targetId: string | null;
   raw: string;
   pending: boolean;
@@ -25,29 +26,29 @@ export function nameSaveErrorMessage(error: string, alias: boolean): string {
 }
 
 export function createNameEditSession() {
-  let snapshot: NameEditSnapshot = {
+  type Draft = { state: NameEditSnapshot; base: string; version: number };
+  const drafts = new Map<string, Draft>();
+  const empty: NameEditSnapshot = {
+    active: false,
     targetId: null,
     raw: "",
     pending: false,
     error: null,
   };
-  let base = "";
-  let version = 0;
-  let session = 0;
+  let snapshot = empty;
   const listeners = new Set<() => void>();
-
   function publish(next: NameEditSnapshot) {
     snapshot = next;
     listeners.forEach((listener) => listener());
   }
-
-  function cancel() {
-    version += 1;
-    session += 1;
-    base = "";
-    publish({ targetId: null, raw: "", pending: false, error: null });
+  function update(draft: Draft, next: NameEditSnapshot) {
+    draft.state = next;
+    if (snapshot.targetId === next.targetId) publish(next);
   }
-
+  function cancel() {
+    if (snapshot.targetId) drafts.delete(snapshot.targetId);
+    publish(empty);
+  }
   return {
     getSnapshot: () => snapshot,
     subscribe: (listener: () => void) => {
@@ -55,53 +56,83 @@ export function createNameEditSession() {
       return () => listeners.delete(listener);
     },
     begin(targetId: string, value: string) {
-      version += 1;
-      session += 1;
-      base = value;
-      publish({ targetId, raw: value, pending: false, error: null });
+      let draft = drafts.get(targetId);
+      if (!draft) {
+        draft = {
+          base: value,
+          version: 0,
+          state: {
+            active: true,
+            targetId,
+            raw: value,
+            pending: false,
+            error: null,
+          },
+        };
+        drafts.set(targetId, draft);
+      } else {
+        if (draft.state.raw === draft.base && !draft.state.pending)
+          draft.state = { ...draft.state, raw: value };
+        draft.base = value;
+      }
+      draft.state = { ...draft.state, active: true };
+      publish(draft.state);
     },
     change(raw: string) {
-      if (!snapshot.targetId) return;
-      version += 1;
-      publish({ ...snapshot, raw, error: null });
+      const draft = snapshot.targetId ? drafts.get(snapshot.targetId) : null;
+      if (!draft) return;
+      draft.version += 1;
+      update(draft, { ...draft.state, raw, error: null });
     },
     authoritativeValue(targetId: string, value: string) {
-      if (snapshot.targetId !== targetId) return;
-      if (snapshot.raw === base && !snapshot.pending) {
-        publish({ ...snapshot, raw: value });
-      }
-      base = value;
+      const draft = drafts.get(targetId);
+      if (!draft) return;
+      if (draft.state.raw === draft.base && !draft.state.pending)
+        update(draft, { ...draft.state, raw: value });
+      draft.base = value;
+    },
+    dismiss() {
+      const draft = snapshot.targetId ? drafts.get(snapshot.targetId) : null;
+      if (draft) update(draft, { ...draft.state, active: false });
     },
     cancel,
+    clear() {
+      drafts.clear();
+      publish(empty);
+    },
     removeTarget(targetId: string) {
-      if (snapshot.targetId === targetId) cancel();
+      drafts.delete(targetId);
+      if (snapshot.targetId === targetId) publish(empty);
+    },
+    retainTargets(targetIds: string[]) {
+      for (const id of drafts.keys())
+        if (!targetIds.includes(id)) this.removeTarget(id);
     },
     async save<Result extends { deviceId: string }>(
       action: (targetId: string, raw: string) => Promise<Result | null>
     ): Promise<void> {
-      if (!snapshot.targetId || snapshot.pending) return;
       const targetId = snapshot.targetId;
-      const raw = snapshot.raw;
-      const submittedVersion = version;
-      const submittedSession = session;
-      publish({ ...snapshot, pending: true, error: null });
+      const draft = targetId ? drafts.get(targetId) : null;
+      if (!targetId || !draft || draft.state.pending) return;
+      const raw = draft.state.raw;
+      const version = draft.version;
+      update(draft, { ...draft.state, pending: true, error: null });
       try {
         const result = await action(targetId, raw);
-        if (session !== submittedSession || snapshot.targetId !== targetId)
-          return;
-        if (!result || result.deviceId !== targetId) {
+        if (drafts.get(targetId) !== draft) return;
+        if (!result || result.deviceId !== targetId)
           throw new Error("device_unavailable");
-        }
-        if (version === submittedVersion) {
-          cancel();
+        if (draft.version === version) {
+          drafts.delete(targetId);
+          if (snapshot.targetId === targetId) publish(empty);
         } else {
-          publish({ ...snapshot, pending: false });
+          draft.base = raw;
+          update(draft, { ...draft.state, pending: false });
         }
       } catch (error) {
-        if (session !== submittedSession || snapshot.targetId !== targetId)
-          return;
-        publish({
-          ...snapshot,
+        if (drafts.get(targetId) !== draft) return;
+        update(draft, {
+          ...draft.state,
           pending: false,
           error: error instanceof Error ? error.message : "name_save_failed",
         });

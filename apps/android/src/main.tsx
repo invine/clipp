@@ -155,9 +155,7 @@ function App() {
         relayAddresses={state.relayAddresses || []}
         managedRelayConfigurations={state.managedRelayConfigurations || []}
         managedRelayStates={state.managedRelayStates || []}
-        onSetManagedRelays={(configurations) =>
-          client.setManagedRelays(configurations)
-        }
+        onMutateManagedRelay={(mutation) => client.mutateManagedRelay(mutation)}
         onManagedRelayLogin={(key) => client.loginManagedRelay(key)}
         onManagedRelayAccount={(key) => client.openManagedRelayAccount(key)}
         onManagedRelayRetry={(key) => client.retryManagedRelay(key)}
@@ -198,9 +196,8 @@ function App() {
         onSetLocalRetention={async (retentionMs) => {
           await client.setLocalRetention(retentionMs);
         }}
-        onSetAutoSync={async (enabled) => {
-          await client.setAutoSync(enabled);
-        }}
+        onSetAutoSync={(enabled) => client.setAutoSync(enabled)}
+        onRetryAutoSync={() => client.refreshAutoSync()}
         onSetBackgroundContinuity={async (enabled) => {
           await client.setBackgroundContinuity(enabled);
         }}

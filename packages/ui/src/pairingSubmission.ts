@@ -7,6 +7,8 @@ export function createPairingSubmission() {
     pending: boolean;
     result: PairingSubmissionResult | null;
   } = { raw: "", pending: false, result: null };
+  let version = 0;
+  let generation = 0;
   const listeners = new Set<() => void>();
   const update = (next: typeof state) => {
     state = next;
@@ -20,12 +22,20 @@ export function createPairingSubmission() {
         listeners.delete(listener);
       };
     },
+    discard() {
+      generation++;
+      version++;
+      update({ raw: "", pending: false, result: null });
+    },
     change(raw: string) {
+      version++;
       update({ ...state, raw, result: null });
     },
     async submit(action: (text: string) => Promise<PairingSubmissionResult>) {
       if (state.pending) return;
       const raw = state.raw;
+      const submittedVersion = version;
+      const submittedGeneration = generation;
       if (!raw.trim()) {
         update({ ...state, result: { ok: false, error: "invalid" } });
         return;
@@ -39,8 +49,9 @@ export function createPairingSubmission() {
       }
       if (!result || typeof result.ok !== "boolean")
         result = { ok: false, error: "outcome_unconfirmed" };
+      if (submittedGeneration !== generation) return;
       update({
-        raw: result.ok && state.raw === raw ? "" : state.raw,
+        raw: result.ok && version === submittedVersion ? "" : state.raw,
         pending: false,
         result,
       });

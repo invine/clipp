@@ -1,7 +1,14 @@
+import { TaskDialog } from "./TaskDialog";
+import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
+import { createUiSession, type UiSession } from "./uiSession";
+import type {
+  RelayMutation,
+  RelayMutationResult,
+} from "../../core/network/relayMutations";
+import type { RelayActionResult } from "../../core/network/relayActions";
 import { PairingCodeContent } from "./PairingCodeContent";
 import { usePairingCodeTask } from "./usePairingCodeTask";
 import type { PayloadCopyResult } from "../../core/clipboard/payloadCopy";
-import { createPairingSubmission } from "./pairingSubmission";
 import {
   pairingSubmissionMessage,
   pairingApprovalMessage,
@@ -54,11 +61,7 @@ import {
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
-import {
-  createNameEditSession,
-  nameSaveErrorMessage,
-  saveNonEmptyAlias,
-} from "./nameEditSession";
+import { nameSaveErrorMessage, saveNonEmptyAlias } from "./nameEditSession";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -360,8 +363,8 @@ export type ClipboardAppProps = {
   onDismissClipboardHistoryError?(): void | Promise<void>;
   onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
-  onSetAutoSync?(enabled: boolean): void | Promise<void>;
-  onRetryAutoSync?(): void | Promise<void>;
+  onSetAutoSync?(enabled: boolean): void | Promise<void | AutoSyncActionResult>;
+  onRetryAutoSync?(): boolean | void | Promise<boolean | void>;
   onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
   onRenameIdentity?(
@@ -372,12 +375,11 @@ export type ClipboardAppProps = {
   onSetRelayAddresses?(
     addrs: string[]
   ): Promise<string[] | void> | string[] | void;
-  onSetManagedRelays?(
-    configurations: RelayConfiguration[]
-  ): Promise<void> | void;
-  onManagedRelayLogin?(key: string): Promise<void> | void;
-  onManagedRelayAccount?(key: string): Promise<void> | void;
-  onManagedRelayRetry?(key: string): Promise<void> | void;
+  session?: UiSession;
+  onMutateManagedRelay?(mutation: RelayMutation): Promise<RelayMutationResult>;
+  onManagedRelayLogin?(key: string): Promise<RelayActionResult>;
+  onManagedRelayAccount?(key: string): Promise<RelayActionResult>;
+  onManagedRelayRetry?(key: string): Promise<RelayActionResult>;
   onRetryInitialization?(): void | Promise<void>;
   onAcknowledgeIdentityRotationNotice?(): void | Promise<void>;
 };
@@ -438,7 +440,8 @@ export function ClipboardApp({
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
-  onSetManagedRelays,
+  session: providedSession,
+  onMutateManagedRelay,
   onManagedRelayLogin,
   onManagedRelayAccount,
   onManagedRelayRetry,
@@ -448,11 +451,29 @@ export function ClipboardApp({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
-  const [search, setSearch] = useState("");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [filterMode, setFilterMode] = useState<"all" | "pinned">("all");
-  const [pairingTask] = useState(createPairingSubmission);
+  const [session] = useState(() => providedSession ?? createUiSession());
+  const sessionState = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot
+  );
+  const { search, timeFilter, sourceFilter, filterMode, showNav } =
+    sessionState;
+  const setSearch = (search: string) => session.update({ search });
+  const setTimeFilter = (timeFilter: TimeFilter) =>
+    session.update({ timeFilter });
+  const setSourceFilter = (sourceFilter: string) =>
+    session.update({ sourceFilter });
+  const setFilterMode = (filterMode: "all" | "pinned") =>
+    session.update({ filterMode });
+  const setShowNav = (value: boolean | ((current: boolean) => boolean)) =>
+    session.update({
+      showNav:
+        typeof value === "function"
+          ? value(session.getSnapshot().showNav)
+          : value,
+    });
+  const pairingTask = session.pairing;
   const pair = useSyncExternalStore(
     pairingTask.subscribe,
     pairingTask.getSnapshot,
@@ -484,20 +505,20 @@ export function ClipboardApp({
   }
   const [isScanningPairing, setIsScanningPairing] = useState(false);
   const { task: qrTask, state: qrState } = usePairingCodeTask(
-    identity ? `${identity.deviceId}:${identity.deviceName}` : null
+    identity ? `${identity.deviceId}:${identity.deviceName}` : null,
+    session.qr
   );
-  const [showNav, setShowNav] = useState(false);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [userToggledFilters, setUserToggledFilters] = useState(false);
-  const [localNameSession] = useState(createNameEditSession);
+  const localNameSession = session.name;
   const localNameEdit = useSyncExternalStore(
     localNameSession.subscribe,
     localNameSession.getSnapshot
   );
-  const [aliasSession] = useState(createNameEditSession);
+  const aliasSession = session.alias;
   const aliasEdit = useSyncExternalStore(
     aliasSession.subscribe,
     aliasSession.getSnapshot
@@ -522,6 +543,39 @@ export function ClipboardApp({
   const [retryHistoryOperation, setRetryHistoryOperation] = useState<
     (() => void) | null
   >(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const previousIdentity = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      identity?.deviceId &&
+      previousIdentity.current &&
+      identity.deviceId !== previousIdentity.current
+    )
+      session.rotateIdentity();
+    if (identity?.deviceId) previousIdentity.current = identity.deviceId;
+  }, [identity?.deviceId, session]);
+  useEffect(() => {
+    const context = session.getSnapshot();
+    const root = rootRef.current;
+    if (!root) return;
+    for (const element of root.querySelectorAll<HTMLElement>(
+      "[data-session-scroll]"
+    )) {
+      const key = element.dataset.sessionScroll;
+      if (key && element.getClientRects().length)
+        element.scrollTop = context.scroll[key] ?? 0;
+    }
+    const focus = [
+      ...root.querySelectorAll<HTMLElement>("[data-session-focus]"),
+    ].find(
+      (element) =>
+        element.dataset.sessionFocus === context.focusKey &&
+        element.getClientRects().length
+    );
+    (
+      focus ?? root.querySelector<HTMLElement>("[data-session-focus=workspace]")
+    )?.focus({ preventScroll: true });
+  }, [session, isNarrow, showNav, sessionState.tasks.length]);
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -556,11 +610,13 @@ export function ClipboardApp({
       const narrow = window.innerWidth < 1100;
       setIsNarrow(narrow);
       if (!narrow) setShowNav(false);
+      else if (session.getSnapshot().tasks.some((task) => task.kind !== "qr"))
+        setShowNav(true);
     }
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     function handleHeight() {
@@ -744,6 +800,11 @@ export function ClipboardApp({
 
   function beginEditLocalName() {
     if (!identity) return;
+    session.open({
+      kind: "device-name",
+      entity: identity.deviceId,
+      origin: "rename-local",
+    });
     localNameSession.begin(identity.deviceId, identity.deviceName || "");
   }
 
@@ -760,13 +821,20 @@ export function ClipboardApp({
     const targetId = aliasSession.getSnapshot().targetId;
     if (!targetId) return;
     const device = devices.find((candidate) => candidate.deviceId === targetId);
-    if (!device) aliasSession.removeTarget(targetId);
-    else
+    if (!device) {
+      aliasSession.removeTarget(targetId);
+      session.update({
+        taskNotice:
+          "This device was removed. Its alias edit cannot be saved. Return to the device list.",
+      });
+      session.complete("alias", targetId);
+    } else
       aliasSession.authoritativeValue(
         targetId,
         device.localAlias || device.deviceName || ""
       );
-  }, [devices, aliasSession]);
+    aliasSession.retainTargets(devices.map((device) => device.deviceId));
+  }, [devices, aliasSession, session]);
 
   useEffect(() => {
     if (
@@ -784,15 +852,26 @@ export function ClipboardApp({
   }, [relayAddresses, addingRelay, editingRelayIndex]);
 
   function saveLocalName() {
-    void localNameSession.save(async (targetId, raw) => {
-      if (!identity || identity.deviceId !== targetId || !onRenameIdentity) {
-        throw new Error("device_unavailable");
-      }
-      return onRenameIdentity(raw, targetId);
-    });
+    const submittedTarget = localNameSession.getSnapshot().targetId;
+    void localNameSession
+      .save(async (targetId, raw) => {
+        if (!identity || identity.deviceId !== targetId || !onRenameIdentity) {
+          throw new Error("device_unavailable");
+        }
+        return onRenameIdentity(raw, targetId);
+      })
+      .then(() => {
+        if (!localNameSession.getSnapshot().targetId)
+          session.complete("device-name", submittedTarget ?? undefined);
+      });
   }
 
   function beginEditDeviceName(device: Device) {
+    session.open({
+      kind: "alias",
+      entity: device.deviceId,
+      origin: `rename:${device.deviceId}`,
+    });
     aliasSession.begin(
       device.deviceId,
       device.localAlias || device.deviceName || ""
@@ -800,6 +879,7 @@ export function ClipboardApp({
   }
 
   function saveDeviceName() {
+    const submittedTarget = aliasSession.getSnapshot().targetId;
     void saveNonEmptyAlias(aliasSession, async (targetId, raw) => {
       if (
         !onRenameDevice ||
@@ -808,6 +888,9 @@ export function ClipboardApp({
         throw new Error("device_unavailable");
       }
       return onRenameDevice(targetId, raw);
+    }).then(() => {
+      if (!aliasSession.getSnapshot().targetId)
+        session.complete("alias", submittedTarget ?? undefined);
     });
   }
 
@@ -954,12 +1037,20 @@ export function ClipboardApp({
   }
 
   function handleShowQr() {
+    session.open({ kind: "pairing", origin: "pairing-qr" });
+    session.open({ kind: "qr", origin: "pairing-qr" });
     setShowNav(false);
     void qrTask.generate(onRequestPairingCode);
   }
 
   function closeQr() {
     qrTask.close();
+    session.complete("qr");
+    if (isNarrow) setShowNav(true);
+  }
+  function dismissNav() {
+    session.close();
+    setShowNav(false);
   }
 
   async function submitPairText() {
@@ -1153,12 +1244,13 @@ export function ClipboardApp({
   }
 
   function renderRelaysSection() {
-    if (onSetManagedRelays)
+    if (onMutateManagedRelay)
       return (
         <ManagedRelaySettings
           configurations={managedRelayConfigurations}
           states={managedRelayStates}
-          onSetConfigurations={onSetManagedRelays}
+          session={session}
+          onMutate={onMutateManagedRelay}
           onLogin={onManagedRelayLogin}
           onManageAccount={onManagedRelayAccount}
           onRetry={onManagedRelayRetry}
@@ -1220,7 +1312,11 @@ export function ClipboardApp({
         <div className="nav-header">
           <div className="nav-title">Peers</div>
           {isDrawer ? (
-            <button className="icon-button" onClick={() => setShowNav(false)}>
+            <button
+              className="icon-button"
+              aria-label="Close management"
+              onClick={dismissNav}
+            >
               <span className="icon">close</span>
             </button>
           ) : (
@@ -1228,6 +1324,17 @@ export function ClipboardApp({
           )}
         </div>
 
+        {sessionState.taskNotice && (
+          <p role="alert">
+            {sessionState.taskNotice}
+            <button
+              type="button"
+              onClick={() => session.update({ taskNotice: null })}
+            >
+              Dismiss
+            </button>
+          </p>
+        )}
         <div className="peer-list">
           {identity && (
             <>
@@ -1237,10 +1344,12 @@ export function ClipboardApp({
                 </div>
                 <div className="peer-meta">
                   <div className="peer-name-row">
-                    {localNameEdit.targetId === identity.deviceId ? (
+                    {localNameEdit.active &&
+                    localNameEdit.targetId === identity.deviceId ? (
                       <input
                         className="peer-name-input"
                         aria-label="Device Name"
+                        data-session-focus="device-name"
                         aria-busy={localNameEdit.pending}
                         value={localNameEdit.raw}
                         onChange={(e) =>
@@ -1248,7 +1357,12 @@ export function ClipboardApp({
                         }
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveLocalName();
-                          if (e.key === "Escape") localNameSession.cancel();
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            localNameSession.dismiss();
+                            session.back();
+                          }
                         }}
                         autoFocus
                       />
@@ -1261,14 +1375,15 @@ export function ClipboardApp({
                     <button
                       className="icon-button"
                       style={{ width: 18, height: 18 }}
+                      data-session-focus="rename-local"
                       title={
-                        localNameEdit.targetId
+                        localNameEdit.active
                           ? "Save Device Name"
                           : "Rename this device"
                       }
                       disabled={localNameEdit.pending}
                       onClick={
-                        localNameEdit.targetId
+                        localNameEdit.active
                           ? saveLocalName
                           : beginEditLocalName
                       }
@@ -1277,22 +1392,47 @@ export function ClipboardApp({
                         className="icon"
                         style={{ fontSize: 12, lineHeight: 1 }}
                       >
-                        {localNameEdit.targetId ? "check" : "edit"}
+                        {localNameEdit.active ? "check" : "edit"}
                       </span>
                     </button>
                   </div>
-                  {localNameEdit.targetId === identity.deviceId &&
+                  {localNameEdit.active &&
+                    localNameEdit.targetId === identity.deviceId &&
                     localNameEdit.error && (
                       <div className="content-subtitle" role="alert">
                         {nameSaveErrorMessage(localNameEdit.error, false)}
                       </div>
                     )}
-                  {localNameEdit.targetId === identity.deviceId &&
+                  {localNameEdit.active &&
+                    localNameEdit.targetId === identity.deviceId &&
                     localNameEdit.pending && (
                       <div className="content-subtitle" role="status">
                         Saving Device Name…
                       </div>
                     )}
+                  {localNameEdit.active && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localNameSession.dismiss();
+                          session.back();
+                        }}
+                      >
+                        Close name editor
+                      </button>
+                      <button
+                        type="button"
+                        disabled={localNameEdit.pending}
+                        onClick={() => {
+                          localNameSession.cancel();
+                          session.back();
+                        }}
+                      >
+                        Cancel name edit
+                      </button>
+                    </div>
+                  )}
                   <MiddleEllipsisText
                     className="peer-sub"
                     text={identity.deviceId}
@@ -1310,6 +1450,7 @@ export function ClipboardApp({
               <button
                 className="text-button"
                 style={{ marginTop: 4, marginLeft: 6, alignSelf: "flex-start" }}
+                data-session-focus="pairing-qr"
                 onClick={handleShowQr}
               >
                 <span className="icon">qr_code</span>Show my QR
@@ -1401,7 +1542,11 @@ export function ClipboardApp({
             <input
               className="search-field"
               style={{ flex: 1, minWidth: 0, borderRadius: 12 }}
+              onFocus={() =>
+                session.open({ kind: "pairing", origin: "pairing-paste" })
+              }
               placeholder="Paste pairing text (base64)…"
+              data-session-focus="pairing-paste"
               value={pair.raw}
               onChange={(e) => pairingTask.change(e.target.value)}
             />
@@ -1413,6 +1558,13 @@ export function ClipboardApp({
               {pair.pending ? "Submitting…" : "Add"}
             </button>
           </div>
+          <button
+            type="button"
+            disabled={pair.pending}
+            onClick={() => pairingTask.discard()}
+          >
+            Discard pairing input
+          </button>
           {pairingDiagnostics}
           {pair.result && (
             <p role="status" style={{ overflowWrap: "anywhere" }}>
@@ -1467,7 +1619,8 @@ export function ClipboardApp({
               </div>
             )}
             {devices.map((dev) => {
-              const editingThisDevice = aliasEdit.targetId === dev.deviceId;
+              const editingThisDevice =
+                aliasEdit.active && aliasEdit.targetId === dev.deviceId;
               const connectionInfo = peerConnectionMap.get(dev.deviceId);
               const isOnline =
                 connectedPeerSet.has(dev.deviceId) || Boolean(connectionInfo);
@@ -1492,12 +1645,18 @@ export function ClipboardApp({
                       <input
                         className="peer-name-input"
                         aria-label={`Local Device Alias for ${dev.deviceName}`}
+                        data-session-focus={`alias:${dev.deviceId}`}
                         aria-busy={aliasEdit.pending}
                         value={aliasEdit.raw}
                         onChange={(e) => aliasSession.change(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveDeviceName();
-                          if (e.key === "Escape") aliasSession.cancel();
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            aliasSession.dismiss();
+                            session.back();
+                          }
                         }}
                         autoFocus
                       />
@@ -1506,6 +1665,29 @@ export function ClipboardApp({
                         className="peer-name"
                         text={dev.displayName || dev.deviceName}
                       />
+                    )}
+                    {editingThisDevice && (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            aliasSession.dismiss();
+                            session.back();
+                          }}
+                        >
+                          Close alias editor
+                        </button>
+                        <button
+                          type="button"
+                          disabled={aliasEdit.pending}
+                          onClick={() => {
+                            aliasSession.cancel();
+                            session.back();
+                          }}
+                        >
+                          Cancel alias edit
+                        </button>
+                      </div>
                     )}
                     <MiddleEllipsisText
                       className="peer-sub"
@@ -1532,6 +1714,7 @@ export function ClipboardApp({
                     {onRenameDevice && (
                       <button
                         className="icon-button"
+                        data-session-focus={`rename:${dev.deviceId}`}
                         title={
                           editingThisDevice
                             ? "Save Local Device Alias"
@@ -1599,10 +1782,16 @@ export function ClipboardApp({
               id="auto-sync"
               value={autoSyncKnown ? (autoSync ? "enabled" : "disabled") : ""}
               disabled={
-                !autoSyncKnown || autoSyncPending || autoSyncRecoveryRequired
+                !autoSyncKnown ||
+                autoSyncPending ||
+                autoSyncRecoveryRequired ||
+                sessionState.autoSync.pending ||
+                sessionState.autoSync.recoveryRequired
               }
               onChange={(event) =>
-                void onSetAutoSync(event.target.value === "enabled")
+                void session.saveAutoSync(() =>
+                  onSetAutoSync(event.target.value === "enabled")
+                )
               }
             >
               {!autoSyncKnown && <option value="">Unknown</option>}
@@ -1610,12 +1799,53 @@ export function ClipboardApp({
               <option value="disabled">Disabled — keep Clips local</option>
             </select>
             {autoSyncLoading && <p role="status">Loading Auto Sync…</p>}
-            {autoSyncPending && <p role="status">Saving Auto Sync…</p>}
+            {(autoSyncPending || sessionState.autoSync.pending) && (
+              <p role="status">Saving Auto Sync…</p>
+            )}
             <PreferenceRefreshNotice
               subject="Auto Sync"
               error={autoSyncRefreshError}
-              onRetry={onRetryAutoSync}
+              onRetry={
+                onRetryAutoSync
+                  ? async () => {
+                      await onRetryAutoSync();
+                    }
+                  : undefined
+              }
             />
+            {sessionState.autoSync.feedback && (
+              <p
+                role={
+                  sessionState.autoSync.feedback.status === "applied"
+                    ? "status"
+                    : "alert"
+                }
+              >
+                {sessionState.autoSync.feedback.status === "applied"
+                  ? "Auto Sync saved."
+                  : sessionState.autoSync.feedback.status === "rejected"
+                    ? "Auto Sync was not saved."
+                    : sessionState.autoSync.feedback.status === "partial"
+                      ? "Auto Sync was applied, but current state refresh was not confirmed."
+                      : "Auto Sync Save could not be confirmed."}
+                {sessionState.autoSync.feedback.error &&
+                  ` ${sessionState.autoSync.feedback.error}`}
+                {sessionState.autoSync.refreshed
+                  ? " Current setting refreshed."
+                  : sessionState.autoSync.recoveryRequired
+                    ? " Refresh the current setting before trying again."
+                    : ""}
+              </p>
+            )}
+            {sessionState.autoSync.recoveryRequired && onRetryAutoSync && (
+              <button
+                type="button"
+                disabled={sessionState.autoSync.pending}
+                onClick={() => void session.refreshAutoSync(onRetryAutoSync)}
+              >
+                Refresh Auto Sync
+              </button>
+            )}
             <PreferenceSaveFeedback
               feedback={autoSyncFeedback}
               subject="Auto Sync"
@@ -1751,6 +1981,34 @@ export function ClipboardApp({
 
   return (
     <div
+      ref={rootRef}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        event.preventDefault();
+        if (openMenuId || timeMenuOpen || sourceMenuOpen) {
+          setOpenMenuId(null);
+          setTimeMenuOpen(false);
+          setSourceMenuOpen(false);
+          return;
+        }
+        if (session.getSnapshot().tasks.length) session.back();
+        else if (showNav) dismissNav();
+      }}
+      onFocusCapture={(event) => {
+        const key = (event.target as HTMLElement).dataset.sessionFocus;
+        if (key) session.update({ focusKey: key });
+      }}
+      onScrollCapture={(event) => {
+        const target = event.target as HTMLElement;
+        const key = target.dataset.sessionScroll;
+        if (key)
+          session.update({
+            scroll: {
+              ...session.getSnapshot().scroll,
+              [key]: target.scrollTop,
+            },
+          });
+      }}
       className={
         initializationError
           ? "app-shell app-shell-with-initialization-error"
@@ -1785,6 +2043,7 @@ export function ClipboardApp({
           <div className="search-field">
             <span className="icon">search</span>
             <input
+              data-session-focus="history-query"
               placeholder="Search history: text, URL, device…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -1888,15 +2147,16 @@ export function ClipboardApp({
         </div>
       )}
 
-      <main className="app-main">
+      <main className="app-main" tabIndex={-1} data-session-focus="workspace">
         <aside
           className="surface nav-pane"
+          data-session-scroll="navigation"
           style={{ display: navHidden ? "none" : undefined }}
         >
           {renderNavContent(false)}
         </aside>
 
-        <section className="surface content-pane">
+        <section className="surface content-pane" data-session-scroll="history">
           <header className="content-header">
             <div className="content-title-block">
               <div className="content-title">History</div>
@@ -2042,7 +2302,7 @@ export function ClipboardApp({
               )}
             </div>
           )}
-          <div className="history-grid">
+          <div className="history-grid" data-session-scroll="history-clips">
             {!historyLoading &&
               !historyUnavailable &&
               filteredClips.length === 0 && (
@@ -2168,12 +2428,15 @@ export function ClipboardApp({
       </main>
 
       {showNav && isNarrow && (
-        <div className="nav-overlay" onClick={() => setShowNav(false)}>
+        <div className="nav-overlay" onClick={dismissNav}>
           <div
             className="nav-drawer nav-drawer-open"
             onClick={(e) => e.stopPropagation()}
           >
-            <aside className="surface nav-pane drawer-pane">
+            <aside
+              className="surface nav-pane drawer-pane"
+              data-session-scroll="navigation"
+            >
               {renderNavContent(true)}
             </aside>
           </div>
@@ -2182,36 +2445,25 @@ export function ClipboardApp({
 
       {qrState.open &&
         createPortal(
-          <div className="qr-modal-backdrop" role="presentation">
-            <div
-              className="qr-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="qr-modal-title"
-            >
-              <div className="qr-modal-header">
-                <div id="qr-modal-title" className="qr-modal-title">
-                  Pair this device
-                </div>
-                <button
-                  className="icon-button"
-                  onClick={closeQr}
-                  aria-label="Close QR dialog"
-                >
-                  <span className="icon">close</span>
-                </button>
-              </div>
-              <PairingCodeContent
-                state={qrState}
-                onRetry={() => {
-                  void qrTask.generate(onRequestPairingCode);
-                }}
-                onCopy={() => {
-                  void qrTask.copy(onCopyPairingText);
-                }}
-              />
-            </div>
-          </div>,
+          <TaskDialog
+            title="Pair this device"
+            pending={false}
+            cancelLabel="Close QR dialog"
+            onCancel={closeQr}
+            onDismiss={closeQr}
+            originKey="pairing-qr"
+            className="qr-modal"
+          >
+            <PairingCodeContent
+              state={qrState}
+              onRetry={() => {
+                void qrTask.generate(onRequestPairingCode);
+              }}
+              onCopy={() => {
+                void qrTask.copy(onCopyPairingText);
+              }}
+            />
+          </TaskDialog>,
           document.body
         )}
 

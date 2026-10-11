@@ -15,6 +15,26 @@ function deferred<Value>() {
 }
 
 describe("Device Name and Local Device Alias draft session", () => {
+  it("retains failed input on Close and reopens it over a newer applied name", async () => {
+    const edit = createNameEditSession();
+    edit.begin("peer-a", "Old alias");
+    edit.change("My alias");
+    await edit.save(async () => {
+      throw new Error("storage_unavailable");
+    });
+    edit.dismiss();
+    expect(edit.getSnapshot().active).toBe(false);
+    edit.begin("peer-a", "Externally updated alias");
+    expect(edit.getSnapshot()).toMatchObject({
+      active: true,
+      raw: "My alias",
+      error: "storage_unavailable",
+    });
+    edit.cancel();
+    edit.begin("peer-a", "Externally updated alias");
+    expect(edit.getSnapshot().raw).toBe("Externally updated alias");
+  });
+
   it("shows validation recovery for Electron IPC-wrapped name and alias failures", () => {
     expect(
       nameSaveErrorMessage(

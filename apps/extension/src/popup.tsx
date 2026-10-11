@@ -1,3 +1,5 @@
+import type { RelayMutationResult } from "../../../packages/core/network/relayMutations";
+import type { RelayActionResult } from "../../../packages/core/network/relayActions";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import {
   submitExtensionPairing,
@@ -337,27 +339,36 @@ const Popup = () => {
         identityRotationNotice={identityRotationNotice}
         managedRelayConfigurations={managedRelayConfigurations}
         managedRelayStates={managedRelayStates}
-        onSetManagedRelays={async (configurations) => {
+        onMutateManagedRelay={async (mutation) => {
           const response = await relayAction<{
             ok: true;
-            configurations: RelayConfiguration[];
-          }>({ type: "managedRelaySet", configurations });
-          setManagedRelayConfigurations(response.configurations);
+            result: RelayMutationResult;
+          }>({ type: "managedRelayMutate", mutation });
+          return response.result;
         }}
-        onManagedRelayLogin={(key) =>
-          relayAction({ type: "managedRelayLogin", key })
-            .then(() => undefined)
-            .catch((error) => alert((error as Error).message))
+        onManagedRelayLogin={async (key) =>
+          (
+            await relayAction<{ ok: true; result: RelayActionResult }>({
+              type: "managedRelayLogin",
+              key,
+            })
+          ).result
         }
-        onManagedRelayAccount={(key) =>
-          relayAction({ type: "managedRelayAccount", key })
-            .then(() => undefined)
-            .catch((error) => alert((error as Error).message))
+        onManagedRelayAccount={async (key) =>
+          (
+            await relayAction<{ ok: true; result: RelayActionResult }>({
+              type: "managedRelayAccount",
+              key,
+            })
+          ).result
         }
-        onManagedRelayRetry={(key) =>
-          relayAction({ type: "managedRelayRetry", key })
-            .then(() => undefined)
-            .catch((error) => alert((error as Error).message))
+        onManagedRelayRetry={async (key) =>
+          (
+            await relayAction<{ ok: true; result: RelayActionResult }>({
+              type: "managedRelayRetry",
+              key,
+            })
+          ).result
         }
         onDeleteClip={handleDeleteClip}
         onUnpair={handleUnpair}
