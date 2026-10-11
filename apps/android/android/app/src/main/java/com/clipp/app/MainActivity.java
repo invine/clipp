@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BackgroundContinuityPlugin.class);
         registerPlugin(ManagedRelayPlugin.class);
+        registerPlugin(HostGeometryPlugin.class);
         super.onCreate(savedInstanceState);
         activityOwnedRuntimeAvailable = true;
     }

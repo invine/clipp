@@ -1,3 +1,4 @@
+import { HOST_GEOMETRY_EVENT, hostContentSize } from "./hostGeometry";
 import { TaskDialog } from "./TaskDialog";
 import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
 import { createUiSession, type UiSession } from "./uiSession";
@@ -607,7 +608,7 @@ export function ClipboardApp({
 
   useEffect(() => {
     function handleResize() {
-      const narrow = window.innerWidth < 1100;
+      const narrow = hostContentSize(window, document).width < 1100;
       setIsNarrow(narrow);
       if (!narrow) setShowNav(false);
       else if (session.getSnapshot().tasks.some((task) => task.kind !== "qr"))
@@ -615,19 +616,27 @@ export function ClipboardApp({
     }
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener(HOST_GEOMETRY_EVENT, handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, handleResize);
+    };
   }, [session]);
 
   useEffect(() => {
     function handleHeight() {
-      const shouldCollapse = window.innerHeight < 760;
+      const shouldCollapse = hostContentSize(window, document).height < 760;
       if (!userToggledFilters) {
         setFiltersCollapsed(shouldCollapse);
       }
     }
     handleHeight();
     window.addEventListener("resize", handleHeight);
-    return () => window.removeEventListener("resize", handleHeight);
+    window.addEventListener(HOST_GEOMETRY_EVENT, handleHeight);
+    return () => {
+      window.removeEventListener("resize", handleHeight);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, handleHeight);
+    };
   }, [userToggledFilters]);
 
   const deviceNameMap = useMemo(() => {
