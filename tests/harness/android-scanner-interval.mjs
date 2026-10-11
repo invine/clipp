@@ -371,7 +371,13 @@ try {
       "one owned acceptance process before driver"
     );
     ownedRemotes.add("localabstract:webview_devtools_remote_" + expectedPid);
-    const trialAssignment = { ...assignment, expectedPid, trials: [trial] };
+    const trialAssignment = {
+      ...assignment,
+      expectedPid,
+      trials: [trial],
+      authoritativeAssignmentPath: resolve(assignmentPath),
+      authoritativeAssignmentSha256: hash(readFileSync(assignmentPath)),
+    };
     const assigned = join(out, "ticket-14-" + trial + "-assignment.json");
     await writeFile(assigned, JSON.stringify(trialAssignment, null, 2));
     const result = join(out, "ticket-14-" + trial + ".json");

@@ -3,6 +3,7 @@
 // never boots, installs, clears data, launches an app, grants permission or opens media.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
@@ -35,7 +36,8 @@ function classifyReceipt(value) {
     stageUnfinished &&
     (value.stageWaitExpired === true || value.result === "stage-timeout");
   const verificationFailed =
-    value.result === "completed" && Boolean(value.error);
+    value.result === "verification-failed" ||
+    (value.result === "completed" && Boolean(value.error));
   const result = !samePidPresent
     ? value.triggerInvokedAt
       ? "native-process-terminated"
@@ -83,32 +85,129 @@ if (process.argv[2] === "--replay") {
   process.exit(0);
 }
 
+function readTrialAssignment(assignmentPath, trial) {
+  const assignment = JSON.parse(readFileSync(assignmentPath, "utf8"));
+  const assertCurrent = (value) => {
+    assert.equal(value.status, "ACTIVE");
+    assert.equal(value.assignedBy, "root");
+    assert.equal(value.ticket, 14);
+    assert.equal(value.packageId, "com.clipp.app.acceptance");
+    assert.equal(value.exclusive, true);
+    assert.equal(value.camera, false);
+    const start = Date.parse(value.validFrom),
+      end = Date.parse(value.expiresAt);
+    assert.ok(Number.isFinite(start) && Number.isFinite(end));
+    assert.ok(
+      Date.now() >= start && Date.now() < end,
+      "current root assignment required"
+    );
+    assert.ok(
+      end > start && end - start <= 30 * 60 * 1000,
+      "bounded root assignment required"
+    );
+    assert.ok(
+      value.trials.includes(trial),
+      "trial must be assigned explicitly"
+    );
+    assert.match(value.sourceRevision, /^[0-9a-f]{40}$/);
+    assert.match(value.dirtyStateSha256, /^[0-9a-f]{64}$/);
+    assert.match(value.apkSha256, /^[0-9a-f]{64}$/);
+    assert.match(value.expectedProvider, /\d+\.\d+\.\d+\.\d+/);
+    assert.match(value.serial, /^emulator-\d+$/);
+  };
+  assertCurrent(assignment);
+  assert.equal(
+    typeof assignment.authoritativeAssignmentPath,
+    "string",
+    "authoritative root path required"
+  );
+  const rootPath = resolve(assignment.authoritativeAssignmentPath);
+  const rootText = readFileSync(rootPath, "utf8");
+  const root = JSON.parse(rootText);
+  const snapshot = resolve(assignmentPath) !== rootPath;
+  function guard() {
+    try {
+      const currentText = readFileSync(rootPath, "utf8");
+      const current = JSON.parse(currentText);
+      assertCurrent(current);
+      assert.equal(
+        currentText,
+        rootText,
+        "authoritative root assignment changed or revoked"
+      );
+      if (snapshot) {
+        assert.deepEqual(
+          assignment,
+          {
+            ...current,
+            trials: [trial],
+            expectedPid: assignment.expectedPid,
+            authoritativeAssignmentPath: rootPath,
+            authoritativeAssignmentSha256: createHash("sha256")
+              .update(currentText)
+              .digest("hex"),
+          },
+          "trial snapshot must preserve authoritative scope"
+        );
+      } else assert.deepEqual(assignment, current);
+    } catch (error) {
+      error.code = "scanner_assignment_rejected";
+      throw error;
+    }
+  }
+  guard();
+  return { assignment, guard };
+}
+if (process.argv[2] === "--preflight") {
+  assert.ok(
+    process.argv.length === 5 || process.argv.length === 7,
+    "--preflight assignment.json trial [--watch-ms N]"
+  );
+  const { guard } = readTrialAssignment(process.argv[3], process.argv[4]);
+  console.log(JSON.stringify({ mode: "preflight", valid: true }));
+  if (process.argv.length === 7) {
+    assert.equal(process.argv[5], "--watch-ms");
+    const duration = Number(process.argv[6]);
+    assert.ok(Number.isInteger(duration) && duration > 0 && duration <= 3000);
+    const deadline = Date.now() + duration;
+    while (Date.now() < deadline) {
+      await new Promise((done) => setTimeout(done, 25));
+      guard();
+    }
+  }
+  process.exit(0);
+}
+
 const [assignmentPath, trial, bundlePath, outputPath] = process.argv.slice(2);
 if (!outputPath)
   throw new Error("usage: assignment.json trial probes.js output.json");
-const assignment = JSON.parse(await readFile(assignmentPath, "utf8"));
-assert.equal(assignment.ticket, 14);
-assert.equal(assignment.packageId, "com.clipp.app.acceptance");
-assert.equal(assignment.exclusive, true);
-assert.equal(assignment.camera, false);
-assert.match(assignment.sourceRevision, /^[0-9a-f]{40}$/);
-assert.match(assignment.dirtyStateSha256, /^[0-9a-f]{64}$/);
-assert.match(assignment.apkSha256, /^[0-9a-f]{64}$/);
-assert.match(assignment.expectedProvider, /\d+\.\d+\.\d+\.\d+/);
-assert.ok(
-  Date.now() < Date.parse(assignment.expiresAt),
-  "fresh assignment required"
-);
-assert.ok(
-  assignment.trials.includes(trial),
-  "trial must be assigned explicitly"
-);
-assert.match(assignment.serial, /^emulator-\d+$/);
-const adb = (...args) =>
+const { assignment, guard } = readTrialAssignment(assignmentPath, trial);
+const adbCleanup = (...args) =>
   execFileSync(assignment.adb, ["-s", assignment.serial, ...args], {
     encoding: "utf8",
     timeout: 10000,
   });
+const adb = (...args) => {
+  guard();
+  return adbCleanup(...args);
+};
+function readFatalProviderStack(pid) {
+  return adb(
+    "logcat",
+    "-d",
+    "--pid=" + pid,
+    "-v",
+    "threadtime",
+    "AndroidRuntime:E",
+    "*:S"
+  )
+    .split("\n")
+    .filter((line) =>
+      /FATAL EXCEPTION|Process: com.clipp.app.acceptance|UncaughtExceptionException|GooglePlayServicesMissingManifestValueException|InterfaceRegistrar.bindBarcodeDetectionProvider|at WV\.|JniAndroid.handleException/.test(
+        line
+      )
+    );
+}
 const packageId = assignment.packageId;
 const output = resolve(outputPath);
 const code = await readFile(bundlePath, "utf8");
@@ -140,9 +239,11 @@ const save = () => {
   return writes;
 };
 const pid = () => {
+  guard();
   try {
     return adb("shell", "pidof", packageId).trim();
-  } catch {
+  } catch (error) {
+    if (error.code === "scanner_assignment_rejected") throw error;
     return "";
   }
 };
@@ -153,6 +254,7 @@ const pending = new Map();
 let port;
 let triggered = false;
 function cdp(method, params = {}) {
+  guard();
   const id = ++requestId;
   return new Promise((resolveRequest, reject) => {
     const timer = setTimeout(() => {
@@ -161,6 +263,12 @@ function cdp(method, params = {}) {
     }, 5000);
     pending.set(id, (message) => {
       clearTimeout(timer);
+      try {
+        guard();
+      } catch (error) {
+        reject(error);
+        return;
+      }
       message.error
         ? reject(new Error(JSON.stringify(message.error)))
         : resolveRequest(message.result);
@@ -226,6 +334,7 @@ try {
       evidence.pidBefore,
       "process live before provider trigger"
     );
+    guard();
     try {
       const targets = await (
         await fetch(`http://127.0.0.1:${port}/json/list`, {
@@ -241,6 +350,7 @@ try {
   }
   assert.ok(target, "correct live Capacitor document");
   evidence.document = { url: target.url, id: target.id };
+  guard();
   socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolveSocket, reject) => {
     const timer = setTimeout(
@@ -333,22 +443,7 @@ try {
   // Allow asynchronous provider termination after a JavaScript return to surface.
   await new Promise((done) => setTimeout(done, 500));
   evidence.pidAfter = pid();
-  const log = adb(
-    "logcat",
-    "-d",
-    "--pid=" + evidence.pidBefore,
-    "-v",
-    "threadtime",
-    "AndroidRuntime:E",
-    "*:S"
-  );
-  evidence.fatal = log
-    .split("\n")
-    .filter((line) =>
-      /FATAL EXCEPTION|Process: com.clipp.app.acceptance|UncaughtExceptionException|GooglePlayServicesMissingManifestValueException|InterfaceRegistrar.bindBarcodeDetectionProvider|at WV\.|JniAndroid.handleException/.test(
-        line
-      )
-    );
+  evidence.fatal = readFatalProviderStack(evidence.pidBefore);
   evidence.processSurvived = evidence.pidAfter === evidence.pidBefore;
   Object.assign(evidence, classifyReceipt(evidence));
   assert.equal(
@@ -382,36 +477,30 @@ try {
     evidence.stageResult = evidence.result;
     evidence.result = "verification-failed";
   }
-  evidence.pidAfter ??= pid();
-  evidence.processSurvived = evidence.pidAfter === evidence.pidBefore;
-  if (!evidence.processSurvived && evidence.pidBefore) {
-    evidence.result = triggered
-      ? "native-process-terminated"
-      : "prerequisite-process-terminated";
-    try {
-      evidence.fatal = adb(
-        "logcat",
-        "-d",
-        "--pid=" + evidence.pidBefore,
-        "-v",
-        "threadtime",
-        "AndroidRuntime:E",
-        "*:S"
-      )
-        .split("\n")
-        .filter((line) =>
-          /FATAL EXCEPTION|Process: com.clipp.app.acceptance|UncaughtExceptionException|GooglePlayServicesMissingManifestValueException|InterfaceRegistrar.bindBarcodeDetectionProvider|at WV\.|JniAndroid.handleException/.test(
-            line
-          )
-        );
-    } catch {}
+  try {
+    guard();
+    evidence.pidAfter ??= pid();
+    evidence.processSurvived = evidence.pidAfter === evidence.pidBefore;
+    if (!evidence.processSurvived && evidence.pidBefore) {
+      evidence.result = triggered
+        ? "native-process-terminated"
+        : "prerequisite-process-terminated";
+      evidence.fatal = readFatalProviderStack(evidence.pidBefore);
+    }
+  } catch (observationError) {
+    if (observationError.code === "scanner_assignment_rejected") {
+      evidence.result = "assignment-revoked";
+      evidence.authorizationError = String(observationError);
+    } else evidence.observationError = String(observationError);
   }
   process.exitCode = 1;
 } finally {
   socket?.close();
   if (forwarded) {
     try {
-      adb("forward", "--remove", "tcp:" + port);
+      // Teardown only the port this validated interval created, even after
+      // revocation. No new provider/CDP observation is authorized by cleanup.
+      adbCleanup("forward", "--remove", "tcp:" + port);
       evidence.forwardRemoved = true;
     } catch (error) {
       evidence.cleanupError = String(error);

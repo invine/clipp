@@ -48,15 +48,25 @@ pauses 30 seconds before split probes. Inspect the actual result and publish
 ranked falsifiable hypotheses at this checkpoint. A failure before the trigger
 ends the interval as a prerequisite failure; an absent candidate crash is
 recorded honestly rather than inferred from the historical exception.
+The wrapper is the supported native entry. Each generated driver snapshot
+carries the authoritative root assignment path and its exact hash. The driver
+requires root ownership, ACTIVE status, current start/deadline and matching
+scope, then rereads that authoritative file before ADB/CDP operations, including
+provider injection/trigger. A copied ACTIVE snapshot cannot outlive root
+revocation. Owned-forward teardown remains permitted after revocation; it
+authorizes no new provider/CDP observation.
 
 The assignment JSON contains these fields (values below are placeholders):
 
 ```json
 {
   "ticket": 14,
+  "status": "ACTIVE",
+  "assignedBy": "root",
   "interval": "coordinator-owned-interval-id",
   "exclusive": true,
   "camera": false,
+  "validFrom": "fresh-coordinator-start-in-ISO-8601",
   "expiresAt": "fresh-coordinator-deadline-in-ISO-8601",
   "packageId": "com.clipp.app.acceptance",
   "serial": "emulator-5554",
@@ -72,13 +82,21 @@ The assignment JSON contains these fields (values below are placeholders):
 }
 ```
 
-Run a single assigned trial:
+Run the supported guarded wrapper with the root-issued complete assignment
+(including its exact SDK/AVD, APK/bundle/driver/wrapper paths and hashes):
 
 ```sh
-node tests/harness/android-scanner-native.mjs \
-  /absolute/retained/assignment.json scanner-before-media \
-  /absolute/retained/ticket-14-prepared/ticket-14-probes.js \
-  /absolute/retained/ticket-14-scanner-before-media.json
+node tests/harness/android-scanner-interval.mjs /absolute/retained/root-assignment.json
+```
+
+The native driver is an internal wrapper child. Its metadata-only `--preflight`
+mode validates the same authoritative gate and exits before native operations;
+`--watch-ms` additionally checks revocation for at most three seconds. A direct
+root file used for preflight must contain its own `authoritativeAssignmentPath`.
+Public regression checks use only inert metadata and failure receipts:
+
+```sh
+node tests/harness/android-scanner-diagnosis-checks.mjs /absolute/retained/inert-cli-checks
 ```
 
 The command is red when the native process terminates, the stage times out, or
@@ -92,6 +110,8 @@ Each trial has its own terminal stage: `construct-after` cannot finish `detect`.
 A failed decode assertion records `verification-failed`; the wrapper cannot
 accept a successful stage label when the child exited unsuccessfully or recorded
 an error. Missing stages remain harness failures rather than provider evidence.
+Replay preserves explicit `verification-failed` receipts, including a returned
+`detect-after` with a false decoded result and an assertion error.
 Native fatal exception, same PID presence, unfinished stage and actual wait
 expiry are recorded separately. A present PID after a fatal stack is not healthy
 provider support. Offline replay exercises this same live classification without

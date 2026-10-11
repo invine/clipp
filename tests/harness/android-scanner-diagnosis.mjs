@@ -99,6 +99,7 @@ await build({
 const paths = [
   "docs/android-scanner-diagnosis.md",
   "tests/harness/android-scanner-diagnosis.mjs",
+  "tests/harness/android-scanner-diagnosis-checks.mjs",
   "tests/harness/android-scanner-native.mjs",
   "tests/harness/android-scanner-interval.mjs",
   "tests/core/pairing/fixtures/signed-qr-target.json",
