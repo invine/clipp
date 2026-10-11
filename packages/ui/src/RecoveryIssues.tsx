@@ -42,6 +42,7 @@ export function RecoveryIssues({
   retry,
   dismiss,
   route,
+  routeLabel,
 }: {
   issues: RecoveryIssue[];
   session: UiSession;
@@ -50,6 +51,7 @@ export function RecoveryIssues({
   ): (() => Promise<boolean | void> | boolean | void) | undefined;
   dismiss(issue: RecoveryIssue): (() => void | Promise<void>) | undefined;
   route(issue: RecoveryIssue): void;
+  routeLabel?(issue: RecoveryIssue): string | undefined;
 }) {
   const attempts = session.getSnapshot().recoveryAttempts;
   return (
@@ -98,22 +100,28 @@ export function RecoveryIssues({
             issue.scope === "history" ||
             issue.scope === "task") && (
             <button type="button" onClick={() => route(issue)}>
-              Open{" "}
-              {issue.scope === "task"
-                ? ({
-                    "device-name": "Device Name",
-                    alias: "alias editor",
-                    pairing: "Pairing",
-                    relay: "relay settings",
-                    "relay-edit": "relay settings",
-                    "relay-action": "relay settings",
-                    "auto-sync": "Auto Sync",
-                  }[issue.code] ?? "task")
-                : issue.scope === "pairing"
-                  ? "Requests"
-                  : issue.scope === "relay"
-                    ? "relay settings"
-                    : "History"}
+              {routeLabel?.(issue) ?? (
+                <>
+                  {" "}
+                  Open{" "}
+                  {issue.scope === "task"
+                    ? ({
+                        "device-name": "Device Name",
+                        alias: "alias editor",
+                        pairing: "Pairing",
+                        relay: "relay settings",
+                        "relay-edit": "relay settings",
+                        "relay-action": "relay settings",
+                        "auto-sync": "Auto Sync",
+                        settings: "Settings",
+                      }[issue.code] ?? "task")
+                    : issue.scope === "pairing"
+                      ? "Requests"
+                      : issue.scope === "relay"
+                        ? "relay settings"
+                        : "History"}
+                </>
+              )}
             </button>
           )}
           {!issue.recovering && dismiss(issue) && (

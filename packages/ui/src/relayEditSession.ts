@@ -48,13 +48,31 @@ export function createRelayEditSession() {
   const drafts = new Map<string, Draft>();
   let state: RelayDraft | null = null;
   const listeners = new Set<() => void>();
+  let errors: readonly { key: string; error: string }[] = [];
+  function notify() {
+    const next = [...drafts.values()].flatMap((draft) =>
+      draft.state.error
+        ? [{ key: draft.state.key, error: draft.state.error }]
+        : []
+    );
+    if (
+      next.length !== errors.length ||
+      next.some(
+        (value, index) =>
+          value.key !== errors[index].key || value.error !== errors[index].error
+      )
+    )
+      errors = next;
+    listeners.forEach((listener) => listener());
+  }
   const publish = (next: RelayDraft | null) => {
     state = next;
-    listeners.forEach((listener) => listener());
+    notify();
   };
   function update(draft: Draft, next: RelayDraft) {
     draft.state = next;
-    if (state?.key === next.key) publish(next);
+    if (state?.key === next.key) state = next;
+    notify();
   }
   function adoptKey(draft: Draft, key: string) {
     const previous = draft.state.key;
@@ -66,6 +84,7 @@ export function createRelayEditSession() {
   }
   return {
     getSnapshot: () => state,
+    getErrors: () => errors,
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -274,6 +293,7 @@ export function createRelayEditSession() {
         if (result.status === "applied" && draft.version === version) {
           drafts.delete(draft.state.key);
           if (state?.key === draft.state.key) publish(null);
+          else notify();
         } else {
           update(draft, {
             ...draft.state,

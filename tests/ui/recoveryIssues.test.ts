@@ -160,3 +160,73 @@ it("does not revive an old identity's late action failure after Identity Rotatio
   expect(render({ session })).not.toContain("Old Copy failed");
   expect(session.getSnapshot().historyActions).toEqual({});
 });
+it("keeps independent suspended alias and relay failures visible when B becomes selected and A completes late", async () => {
+  const session = createUiSession();
+  const a = {
+    key: "a",
+    name: "A",
+    kind: "managed" as const,
+    discoveryUrl: "https://a.example/v1/relay",
+  };
+  const b = { ...a, key: "b", name: "B" };
+  session.open({ kind: "alias", entity: "alias-a", origin: "rename:alias-a" });
+  session.alias.begin("alias-a", "Alias A");
+  session.alias.change("Retained A");
+  let failAlias!: (error: Error) => void;
+  const seenAliasErrors: unknown[] = [];
+  session.alias.subscribe(() =>
+    seenAliasErrors.push(session.alias.getErrors())
+  );
+  const pendingAlias = session.alias.save(
+    () =>
+      new Promise((_, reject) => {
+        failAlias = reject;
+      })
+  );
+  session.open({ kind: "alias", entity: "alias-b", origin: "rename:alias-b" });
+  session.alias.begin("alias-b", "Alias B");
+  session.open({ kind: "relay", entity: "a", origin: "relay:a" });
+  session.relay.begin(a);
+  session.relay.change("name", "Retained relay A");
+  let failRelay!: (error: Error) => void;
+  const seenRelayErrors: unknown[] = [];
+  session.relay.subscribe(() =>
+    seenRelayErrors.push(session.relay.getErrors())
+  );
+  const pendingRelay = session.relay.save(
+    () =>
+      new Promise((_, reject) => {
+        failRelay = reject;
+      })
+  );
+  session.open({ kind: "relay", entity: "b", origin: "relay:b" });
+  session.relay.begin(b);
+  session.open({ kind: "issues", origin: "issues-summary" });
+  failAlias(new Error("rename_outcome_unconfirmed"));
+  failRelay(new Error("offline"));
+  await Promise.all([pendingAlias, pendingRelay]);
+  expect(seenAliasErrors.at(-1)).toEqual([
+    { targetId: "alias-a", error: "rename_outcome_unconfirmed" },
+  ]);
+  expect(session.alias.getSnapshot().targetId).toBe("alias-b");
+  expect(session.relay.getSnapshot()?.key).toBe("b");
+  expect(seenRelayErrors.at(-1)).toEqual([
+    expect.objectContaining({ key: "a" }),
+  ]);
+  const views = {
+    session,
+    managedRelayConfigurations: [a, b],
+    devices: [
+      { deviceId: "alias-a", deviceName: "Alias A" },
+      { deviceId: "alias-b", deviceName: "Alias B" },
+    ],
+  };
+  const html = render(views);
+  expect(html).toContain('data-issue-id="task:alias-a:alias"');
+  expect(html).toContain('data-issue-id="task:a:relay-edit"');
+  expect(html).toContain("2 issues need attention");
+  session.alias.begin("alias-a", "Alias A");
+  expect(session.alias.getSnapshot().raw).toBe("Retained A");
+  await session.alias.save(async () => ({ deviceId: "alias-a" }));
+  expect(render(views)).toContain("1 issue needs attention");
+});

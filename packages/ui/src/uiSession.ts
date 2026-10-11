@@ -14,7 +14,8 @@ export type SessionTask = {
     | "paste"
     | "qr"
     | "clear"
-    | "issues";
+    | "issues"
+    | "pairing-recovery";
   entity?: string;
   origin: string;
 };
@@ -108,8 +109,9 @@ export function createUiSession() {
       const current = state.tasks.at(-1);
       if (current?.kind === task.kind && current.entity === task.entity) return;
       const subtask =
-        current?.kind === "pairing" &&
-        (task.kind === "paste" || task.kind === "qr");
+        (current?.kind === "pairing" &&
+          (task.kind === "paste" || task.kind === "qr")) ||
+        (current?.kind === "issues" && task.kind === "pairing-recovery");
       if (!subtask) state.tasks.forEach(dismissTask);
       update({
         tasks: subtask ? [...state.tasks, task] : [task],

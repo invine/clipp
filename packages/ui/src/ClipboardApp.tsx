@@ -1,3 +1,4 @@
+import { useTaskRecoveryIssues } from "./useTaskRecoveryIssues";
 import {
   composeRecoveryIssues,
   type RecoveryIssue,
@@ -521,11 +522,6 @@ export function ClipboardApp({
     aliasSession.getSnapshot,
     aliasSession.getSnapshot
   );
-  const relayEdit = useSyncExternalStore(
-    session.relay.subscribe,
-    session.relay.getSnapshot,
-    session.relay.getSnapshot
-  );
   const [revocationError, setRevocationError] = useState<{
     deviceId: string;
   } | null>(null);
@@ -606,69 +602,11 @@ export function ClipboardApp({
         diagnostics: action.feedback.message,
       });
   }
-  const taskIssue = (
-    target: string,
-    code: string,
-    message: string,
-    diagnostics?: string
-  ) =>
-    issues.push({
-      id: `task:${target}:${code}`,
-      scope: "task",
-      target,
-      code,
-      recovering: true,
-      message,
-      diagnostics,
-    });
-  if (localNameEdit.error && localNameEdit.targetId)
-    taskIssue(
-      localNameEdit.targetId,
-      "device-name",
-      nameSaveErrorMessage(localNameEdit.error, false),
-      localNameEdit.error
-    );
-  if (aliasEdit.error && aliasEdit.targetId)
-    taskIssue(
-      aliasEdit.targetId,
-      "alias",
-      nameSaveErrorMessage(aliasEdit.error, true),
-      aliasEdit.error
-    );
-  if (pair.result && !pair.result.ok)
-    taskIssue(
-      "input",
-      "pairing",
-      pairingSubmissionMessage(pair.result),
-      pair.result.error
-    );
-  if (relayEdit?.error)
-    taskIssue(
-      relayEdit.key,
-      "relay-edit",
-      "Relay Save could not be confirmed. Your edit is retained.",
-      relayEdit.error
-    );
-  for (const [key, action] of Object.entries(sessionState.relayActions)) {
-    if (action.result?.error)
-      taskIssue(
-        key,
-        "relay-action",
-        "A relay action could not be confirmed. Check its current state.",
-        action.result.error
-      );
-  }
-  const autoSyncProblem =
-    autoSyncRefreshError ||
-    sessionState.autoSync.feedback?.error ||
-    autoSyncFeedback?.error;
-  if (autoSyncProblem)
-    taskIssue(
-      "preference",
-      "auto-sync",
-      "Auto Sync needs attention. Check its applied value before saving again.",
-      autoSyncProblem
-    );
+  const taskIssues = useTaskRecoveryIssues(
+    session,
+    autoSyncRefreshError || autoSyncFeedback?.error
+  );
+  issues.push(...taskIssues);
   function issueRetry(issue: RecoveryIssue) {
     if (issue.code === "initialization_failed") return onRetryInitialization;
     if (issue.scope === "runtime" && issue.code === "unavailable")

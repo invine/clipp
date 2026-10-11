@@ -37,13 +37,32 @@ export function createNameEditSession() {
   };
   let snapshot = empty;
   const listeners = new Set<() => void>();
+  let errors: readonly { targetId: string; error: string }[] = [];
+  function notify() {
+    const next = [...drafts.values()].flatMap((draft) =>
+      draft.state.error && draft.state.targetId
+        ? [{ targetId: draft.state.targetId, error: draft.state.error }]
+        : []
+    );
+    if (
+      next.length !== errors.length ||
+      next.some(
+        (value, index) =>
+          value.targetId !== errors[index].targetId ||
+          value.error !== errors[index].error
+      )
+    )
+      errors = next;
+    listeners.forEach((listener) => listener());
+  }
   function publish(next: NameEditSnapshot) {
     snapshot = next;
-    listeners.forEach((listener) => listener());
+    notify();
   }
   function update(draft: Draft, next: NameEditSnapshot) {
     draft.state = next;
-    if (snapshot.targetId === next.targetId) publish(next);
+    if (snapshot.targetId === next.targetId) snapshot = next;
+    notify();
   }
   function cancel() {
     if (snapshot.targetId) drafts.delete(snapshot.targetId);
@@ -51,6 +70,7 @@ export function createNameEditSession() {
   }
   return {
     getSnapshot: () => snapshot,
+    getErrors: () => errors,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -103,6 +123,7 @@ export function createNameEditSession() {
     removeTarget(targetId: string) {
       drafts.delete(targetId);
       if (snapshot.targetId === targetId) publish(empty);
+      else notify();
     },
     retainTargets(targetIds: string[]) {
       for (const id of drafts.keys())
@@ -125,6 +146,7 @@ export function createNameEditSession() {
         if (draft.version === version) {
           drafts.delete(targetId);
           if (snapshot.targetId === targetId) publish(empty);
+          else notify();
         } else {
           draft.base = raw;
           update(draft, { ...draft.state, pending: false });

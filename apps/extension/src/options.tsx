@@ -1,5 +1,5 @@
-import { composeRecoveryIssues } from "../../../packages/core/runtime/recoveryIssues";
-import { RecoveryIssues } from "../../../packages/ui/src/RecoveryIssues";
+import type { RecoveryIssue } from "../../../packages/core/runtime/recoveryIssues";
+import { OptionsRecovery } from "../../../packages/ui/src/OptionsRecovery";
 import {
   createRuntimeUiRecovery,
   initialRuntimeUiRecovery,
@@ -47,6 +47,7 @@ import { useSettings } from "./useSettings";
 
 const Options = () => {
   const [showQR, setShowQR] = useState(false);
+  const [pairingEditorOpen, setPairingEditorOpen] = useState(false);
   const [qrIdentity, setQrIdentity] = useState<string | null>(null);
   const [session] = useState(createUiSession);
   const { task: qrTask, state: qrState } = usePairingCodeTask(
@@ -87,11 +88,6 @@ const Options = () => {
     });
   }
 
-  const context = useSyncExternalStore(
-    session.subscribe,
-    session.getSnapshot,
-    session.getSnapshot
-  );
   const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
   const [runtimeState, setRuntimeState] =
     useState<ExtensionRecoveryState | null>(null);
@@ -128,14 +124,41 @@ const Options = () => {
     Boolean(runtimeState?.identity) &&
     !recovery.unavailable &&
     !runtimeState?.identityRotationRecovery;
-  const issues = composeRecoveryIssues({
-    ...runtimeState,
-    initializationError: recovery.initializationError,
-    runtimeError:
-      recovery.unavailable && !recovery.initializationError
-        ? "The extension runtime could not be loaded."
-        : null,
-  });
+  function openRecoveryTask(issue: RecoveryIssue) {
+    if (issue.scope === "task" && issue.code === "pairing") {
+      setShowQR(false);
+      setPairingEditorOpen(true);
+      session.open({ kind: "pairing", origin: "issues-summary" });
+      requestAnimationFrame(() =>
+        document.getElementById("pairing-input")?.focus()
+      );
+      return;
+    }
+    if (issue.scope === "task" && issue.code === "relay-edit") {
+      const configuration = managedRelayConfigurations.find(
+        (value) => value.key === issue.target
+      );
+      if (configuration || issue.target === "new") {
+        session.open({
+          kind: "relay",
+          entity: issue.target,
+          origin: "issues-summary",
+        });
+        session.relay.begin(configuration);
+      }
+    }
+    document
+      .getElementById(
+        issue.scope === "history"
+          ? "clipboard-history"
+          : issue.scope === "relay" || issue.code.startsWith("relay-")
+            ? "relay-settings"
+            : issue.code === "settings"
+              ? "options-settings"
+              : "trusted-devices"
+      )
+      ?.focus();
+  }
 
   useEffect(
     () =>
@@ -182,47 +205,36 @@ const Options = () => {
   return (
     <div className="options-host p-4 max-w-2xl mx-auto">
       <h1 className="text-xl font-bold mb-4">Clipboard Share – Settings</h1>
-      {issues.length > 0 && (
-        <div role="status" className="app-notices">
-          <button
-            type="button"
-            data-session-focus="issues-summary"
-            className="issue-summary"
-            onClick={() =>
-              session.open({ kind: "issues", origin: "issues-summary" })
-            }
-          >
-            {issues.length}{" "}
-            {issues.length === 1 ? "issue needs" : "issues need"} attention
-          </button>
-        </div>
-      )}
-      {context.tasks.at(-1)?.kind === "issues" && (
-        <RecoveryIssues
-          issues={issues}
-          session={session}
-          retry={(issue) =>
-            issue.code === "initialization_failed"
-              ? () =>
-                  consumer.load(() =>
-                    retryExtensionInitialization(chrome.runtime)
-                  )
-              : issue.scope === "runtime"
-                ? () => consumer.load()
-                : undefined
-          }
-          dismiss={() => undefined}
-          route={(issue) => {
-            session.close();
-            if (issue.scope === "pairing") setShowQR(true);
-            document
-              .getElementById(
-                issue.scope === "relay" ? "relay-settings" : "trusted-devices"
-              )
-              ?.focus();
-          }}
-        />
-      )}
+      <OptionsRecovery
+        session={session}
+        faults={{
+          ...runtimeState,
+          initializationError: recovery.initializationError,
+          runtimeError:
+            recovery.unavailable && !recovery.initializationError
+              ? "The extension runtime could not be loaded."
+              : null,
+        }}
+        waiting={runtimeState?.waiting}
+        preferenceError={
+          settings.refreshError ||
+          settings.feedback?.error ||
+          (settings.feedback && settings.feedback.status !== "applied"
+            ? "The settings action could not be confirmed."
+            : null)
+        }
+        onRetry={(issue) =>
+          issue.code === "initialization_failed"
+            ? () =>
+                consumer.load(() =>
+                  retryExtensionInitialization(chrome.runtime)
+                )
+            : issue.scope === "runtime"
+              ? () => consumer.load()
+              : undefined
+        }
+        onOpenTask={openRecoveryTask}
+      />
       <section className="mb-6">
         <h2 id="trusted-devices" tabIndex={-1} className="font-semibold mb-2">
           Trusted Devices
@@ -238,14 +250,17 @@ const Options = () => {
           </button>
         </div>
         {showQR && (
+          <QRScanner
+            onScan={handleScan}
+            disabled={!identityReady || pairing.pending}
+          />
+        )}
+        {(showQR || pairingEditorOpen) && (
           <>
-            <QRScanner
-              onScan={handleScan}
-              disabled={!identityReady || pairing.pending}
-            />
             <label className="block mt-2">
               Pairing text
               <textarea
+                id="pairing-input"
                 aria-label="Pairing text"
                 className="block w-full"
                 value={pairing.raw}
@@ -262,6 +277,17 @@ const Options = () => {
             >
               {pairing.pending ? "Submitting…" : "Submit pairing text"}
             </button>
+            {pairingEditorOpen && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPairingEditorOpen(false);
+                  session.complete("pairing");
+                }}
+              >
+                Close Pairing input
+              </button>
+            )}
             {pairing.result && (
               <p role="status" style={{ overflowWrap: "anywhere" }}>
                 {pairingSubmissionMessage(pairing.result)}
@@ -347,11 +373,15 @@ const Options = () => {
         />
       </section>
       <section className="mb-6">
-        <h2 className="font-semibold mb-2">Clipboard History</h2>
+        <h2 id="clipboard-history" tabIndex={-1} className="font-semibold mb-2">
+          Clipboard History
+        </h2>
         <ClipHistoryList />
       </section>
       <section className="mb-6">
-        <h2 className="font-semibold mb-2">Settings</h2>
+        <h2 id="options-settings" tabIndex={-1} className="font-semibold mb-2">
+          Settings
+        </h2>
         <div className="flex flex-col gap-2">
           <label className="flex items-center gap-2">
             <input
