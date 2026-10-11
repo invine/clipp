@@ -56,8 +56,8 @@ export function createPairingScannerOverlay() {
     zIndex: "9999",
     display: "flex",
     flexDirection: "column",
-    background: "#050509",
-    color: "#ffffff",
+    background: "var(--clipp-surface)",
+    color: "var(--clipp-text)",
   });
 
   const videoWrap = document.createElement("div");
@@ -95,7 +95,15 @@ export function createPairingScannerOverlay() {
   });
 
   const toolbar = document.createElement("div");
+  // Scanner actions are a shared task surface outside ClipboardApp. Reuse its
+  // semantic controls/focus/target token; the overlay still owns native bounds.
+  toolbar.className = "task-dialog";
   appendStyles(toolbar, {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "0",
+    borderRadius: "0",
+    boxShadow: "none",
     display: "flex",
     flexDirection: "column",
     alignItems: "stretch",
@@ -104,17 +112,16 @@ export function createPairingScannerOverlay() {
     flexShrink: "0",
     maxHeight: "100%",
     overflowY: "auto",
-    background: "#101114",
-    borderTop: "1px solid rgba(255,255,255,0.08)",
-    fontFamily: "Roboto, system-ui, sans-serif",
+    background: "var(--clipp-surface)",
+    borderTop: "1px solid var(--clipp-border)",
   });
 
   const status = document.createElement("div");
   status.textContent = "Opening camera";
   appendStyles(status, {
-    fontSize: "14px",
+    fontSize: "0.875rem",
     fontWeight: "500",
-    color: "#e2e2e7",
+    color: "var(--clipp-text)",
   });
 
   const actionRow = document.createElement("div");
@@ -122,33 +129,29 @@ export function createPairingScannerOverlay() {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
+    flexWrap: "wrap",
     gap: "10px",
   });
 
   const scanNow = document.createElement("button");
   scanNow.type = "button";
+  scanNow.className = "primary-button labelled-control";
   scanNow.textContent = "Scan now";
   scanNow.disabled = true;
   appendStyles(scanNow, {
     flex: "1",
-    border: "0",
-    borderRadius: "999px",
     padding: "11px 16px",
-    background: "#7c3aed",
-    color: "#ffffff",
     font: "inherit",
     fontWeight: "600",
   });
 
   const cancel = document.createElement("button");
   cancel.type = "button";
+  cancel.className = "text-button labelled-control";
   cancel.textContent = "Cancel";
   appendStyles(cancel, {
-    border: "0",
-    borderRadius: "999px",
     padding: "11px 16px",
-    background: "rgba(255,255,255,0.12)",
-    color: "#ffffff",
+    background: "var(--clipp-surface-raised)",
     font: "inherit",
   });
 
