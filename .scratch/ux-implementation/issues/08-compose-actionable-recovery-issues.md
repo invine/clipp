@@ -50,9 +50,14 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
 
-
 ## Dispatch assessment — 2026-10-11
 
 Predecessors 05 and 07 are resolved. The requested compact scoped issue summary, task-local failures and real cold-initialization/capture recovery preserve runtime authority, one live UI session, truthful partial/unconfirmed action results and ADR-0012. Empty relays/disconnected trusted devices are not failures; dismissal does not hide active recovery. No accepted product invariant changes.
 
 Coordinator claim `ux-issues-08`: client branch `codex/ux-08-recovery-issues`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-08`, based on this claim commit. Preparation is `/private/tmp/clipp-ux-implementation-20261010/ticket-08-10-prep.md`. Implement through the actual shared shell/task and all affected runtime/wrapper consumers, using owning-interface test-first slices. All required short actual-toolbar/enlarged Android/initialization gates remain required; no fixture-only replacement. Native/clipboard/global-settings intervals require fresh coordinator assignment; no interval is granted by this claim. Real sign-in and external/hardware/assistive deferrals remain unchanged. At most two source implementers; ticket 32 qualification is coordinated separately.
+
+## Native candidate refresh — 2026-10-11
+
+Reviewed recovery source `ea83`, integrated at `52624599` and its111 suite / 807 test routine gate remain preserved. The initial actual fault-popup attempt `ticket-08-toolbar-faults-20261011-81e503cf` stopped before popup scripts resumed on an unexpected paused `about:blank` target; no font change or host clipboard access occurred. Its owned browser/profile/helper and assignment are CLOSED, with exact failure/closure receipts retained. This is not a native fault-presentation pass.
+
+Ticket 10's reviewed authority integration `ee759cab` and the bounded17 clipping repair supersede frozen `52624599` native preparation/APK `0cbb948b` for changed presentation. Regenerate exact reviewed source/build/packaged-asset mappings, authority-compatible early memory ports, native readiness and root assignment after the layout repair is integrated. Old packages/receipts remain historical; no unrun old candidate qualifies the new consumer. Actual short-popup, enlarged Android task and owning initialization failure/Retry gates remain required. The generation-producer fault plan establishes its scoped initialization path, not strict all-store durability (ticket 28).

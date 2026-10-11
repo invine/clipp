@@ -2,7 +2,7 @@
 
 Type: implementation
 Status: claimed
-Assignee: ux-controls-17
+Assignee: ux-issues-08
 Priority band: 1
 Blocked by: 32
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
@@ -69,7 +69,16 @@ Coordinator-owned claim: `ux-controls-17`, client branch `codex/ux-17-local-cont
 
 Native ownership remains serialized with ticket 12, then ticket 07 remaining acceptance. No host clipboard, global display or permission interval is open. Actual toolbar focus, independent toolbar enlargement and desktop OS text-only scaling need their recorded fresh coordinated procedures. Required candidate gates remain required; physical/assistive/external limitations and real sign-in deferral remain unchanged. All evidence must be preserved outside the disposable worktree.
 
+## Earlier toolbar participation decision — 2026-10-11
 
-## Current toolbar participation decision — 2026-10-11
+The user requested skipping the current default/32px/restored corrected-toolbar check while away from the PC. The [accepted bounded omission](../decisions/20261011-current-toolbar-check-omission.md) permits continued implementation without another marker request. That submitted Ready failed the initial marker equality guard before any host launch. That earlier check is recorded as user-authorized omission/not run, not a measured pass. G14 and later consumers' own changed-presentation gates remain required; no product invariant or other qualification is waived.
 
-The user requested skipping the current default/32px/restored corrected-toolbar check while away from the PC. The [accepted bounded omission](../decisions/20261011-current-toolbar-check-omission.md) permits continued implementation without another marker request. The latest submitted Ready failed the initial marker equality guard before any host launch. Record this current check as user-authorized omission/not run, not a measured pass. G14 and later consumers' own changed-presentation gates remain required; no product invariant or other qualification is waived.
+## Fresh actual popup and bounded review repair — 2026-10-11
+
+The user subsequently renewed the exact popup marker authorization. The genuine interval `ticket-17-refreshed-popup-20261011-5b9a27c0` consumed clean integration `21b4c4f1` / frozen `52624599` production assets. Actual default/32px/restored popup phases measured 480×600 CSSpx at DPR 2; matched text increased 18→36px and 12→32px, then returned to baseline. Real synthetic marker capture, isolated font restoration, profile/helper removal and unchanged final marker are supported. The interval is CLOSED and normal copying was released. Earlier omission/failed attempts remain historical evidence.
+
+Independent screenshot/evidence review found a P2 missed by the driver: at 32px the nested History viewport collapses to roughly 16 CSSpx, clipping the marker preview and part of Copy. Nonzero button bounds/focus do not establish full visibility or action association. Preserve the measured sizing/enlargement/restoration/capture/closure contributions; required G13 control reachability remains unqualified. G14 remains independently unqualified, and no finding is closed by this partial observation.
+
+Coordinator delegates this bounded source repair to existing implementer `ux-issues-08` in the existing `codex/ux-17-local-controls` worktree; ticket 08 source stays intact. Incorporate current reviewed integration before handoff. Use owning rendered regression, production layout repair and ancestor clipping/hit/control-association checks, then both source review axes, mandatory integration and fresh actual affected-consumer qualification. At most two implementers remain active. Source/rendered checks do not replace the actual host gate.
+
+Evidence remains outside disposable worktrees in the ignored run directory: `ticket-17-refreshed-popup-20261011-5b9a27c0/summary.json` and its hashed native phase JSON/PNG/source/CLOSED files, `ticket-17-5b9a-final-popup-evidence-review.md`, and `ticket-17-5b9a-clipping-repair-dispatch.json`. No host clipboard writes, macOS setting changes or real sign-in occurred in this interval.
