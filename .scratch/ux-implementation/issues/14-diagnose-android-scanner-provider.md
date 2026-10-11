@@ -1,11 +1,11 @@
 # Diagnose the Android scanner provider
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-scanner-diagnosis-14
 Priority band: 1
 Blocked by: none
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -46,3 +46,13 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-11
+
+The first six repairs and ticket12 bounds are resolved. This independent band1 diagnosis is the earliest currently unclaimed eligible output; it has no hard predecessor. Ticket17 owns the active peer/editor layout repair; the two implementation slots are17 and14. Ticket07 acceptance is separately coordinated and changes no product source.
+
+Coordinator-owned claim: `ux-scanner-diagnosis-14`, client branch `codex/ux-14-scanner-diagnosis`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-14`, from this claim commit. Read-only preparation `/private/tmp/clipp-ux-implementation-20261010/ticket-14-prep.md` is dated and must be reconciled with current source. Historical primary evidence `/Users/invine/src/js/clipp/.scratch/ux-study/android-evidence/camera-crash-log.txt` is read-only input, not candidate proof.
+
+This preserves accepted scanner diagnosis/remedy separation, public Pairing Target semantics, one native geometry/session owner, empty relay defaults and ADR-0012. No product decision changes or production scanner enablement are authorized here. Approved diagnostic seams are the unchanged scanner public entry/BarcodeDetector capability-probe/construction boundary, native process/provider liveness, separate camera acquisition/permission and existing decoder on public synthetic pixels. Follow the diagnosis skill's tight red loop and ranked falsifiable hypotheses before probes; record exact stage/environment and isolated controlled overrides separately. A reproducible supported conclusion or exact environmental blocker can resolve this diagnosis; it cannot qualify the later remedy or A08.
+
+Source/harness preparation and packaging may proceed. Actual native/provider/camera trials require a fresh explicit coordinator assignment of the exclusive owned acceptance guest; do not launch or borrow a device now. No operator profile, host clipboard, real account, host webcam/global permissions or broad provider upgrades. Physical/provider/API36/assistive/OEM and sign-in limits remain unchanged. Any virtual-camera trial must declare its exact synthetic source and acquire separate scoped coordinator authorization. Preserve every failure/receipt outside disposable worktree; coordinator alone integrates/reviews/resolves claims.
