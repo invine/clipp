@@ -560,9 +560,10 @@ export function ClipboardApp({
     const context = session.getSnapshot();
     const root = rootRef.current;
     if (!root) return;
-    for (const element of root.querySelectorAll<HTMLElement>(
-      "[data-session-scroll]"
-    )) {
+    for (const element of [
+      root,
+      ...root.querySelectorAll<HTMLElement>("[data-session-scroll]"),
+    ]) {
       const key = element.dataset.sessionScroll;
       if (key && element.getClientRects().length)
         element.scrollTop = context.scroll[key] ?? 0;
@@ -2066,6 +2067,7 @@ export function ClipboardApp({
             },
           });
       }}
+      data-session-scroll="workspace"
       className={
         initializationError
           ? "app-shell app-shell-with-initialization-error"
