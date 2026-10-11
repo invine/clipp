@@ -1,7 +1,7 @@
 # Deliver local assets and Android shared controls
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-foundation-32
 Priority band: 1
 Blocked by: none
@@ -65,3 +65,18 @@ Coordinator records the decision assessment, claim, isolated worktree, integrate
 The scope-preserving allocation and both documentation review axes passed at `da0e947f7ea8c898582284506d4cad9a2baebdfb`. Existing source from the original ticket 17 claim is integrated and reviewed; no extra source change is required solely for this deliverable. This claim completes the actual bounded Android control evidence identified in `ticket-32-da0e-required-evidence-review.md` in the ignored run directory. Current c015 OS2 session/Alias/scanner measurements are scoped contributions, not a cold/offline/full control-matrix pass.
 
 Coordinator claim `ux-foundation-32`: client branch `codex/ux-32-local-assets-android`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-32`, based on this claim commit. Preserve accepted shared interfaces, ADR-0012, all live bridge compatibility and the original gates/deferrals. Prepare a bounded current-APK native control interval for cold assets, representative default/intermediate/200% text, narrow/short/landscape, text spacing, long words/values, Start/export label presentation, targets and applicable focus. Do not activate export, camera/provider, real account or claim native Back/assistive operation. No host/native operation is authorized until fresh coordinator assignment; source fixes discovered through qualification return to the coordinator before implementation.
+
+
+## Answer
+
+Resolved 2026-10-11 by the coordinator at clean integration `06c5704c1635ab91df486be6a722d4b5ef503c91`, containing reviewed source `ba7956cc1b8e8dc112de00a5f17a3d77bcdf19b1`. Existing original17 source delivers bundled essential SVG/system typography, explicit compatible host style entries, named semantic controls and content-sized Android actions. No new product source change was needed for this refined deliverable. Source check/integrated verify passed107 suites/796 tests/all three builds; source and allocation Standards/Spec reviews and final bounded required-evidence review passed.
+
+The exact Android APK SHA-256 `39c9868d6a5d0039983e97a04e8bbd77de45f9c2e3ce379c24647b49f391a68f` passed all three current native profiles in `ticket-32-native-controls-20261011-b977da93`: ordinary OS1, narrow320 OS1.5 and short landscape OS2. Actual relay fonts12/18/24, Start/export14/21/28 and Alias/scanner16/24/32 demonstrate delivered text response. Twenty-four named targets per profile met48dp intent with native rounding (minimum47.994dp). Full field/name/PeerID/endpoint/error inspection, long Clip row/control association, scrolling, content-sized Start/export labels, supported spacing and trusted native Tab with visible focus are recorded. Source-derived direct-body scanner controls stayed provider/media0 and disposed; Scan enabling was a labelled focus-only construction, never scanner activation.
+
+Cold qualification blocked external renderer resources and disabled/cleared cache before the actual reload; the synthetic blocked challenge, local nine-asset ZIP/loaded-source hashes, decoded logo, SVGs and system fonts are recorded. This is an essential-resource/rendering boundary, not global network isolation. Public background/device projections are labelled and restored; Start/export were never activated. Immutable Alias receipts incorrectly say local validation/no callback: the explicit final correction identifies actual target-unavailable feedback on a public projected device, with no length-validation, normalization, Membership or Alias-persistence pass.
+
+Scoped c015 real IME/rotation and unchanged source12 geometry evidence supply their exact contributions. All public descriptors/listeners, scanner surfaces, CDP interceptions, forwards, native font/rotation/size/density, guest PID/serial and bounded power helper closed/restored before restoring the prior absent host-sharing setting. No host clipboard or real sign-in occurred. The failed first selector attempt and falsified focus-ancestor hypothesis remain preserved.
+
+Evidence is retained outside disposable worktrees at `/Users/invine/src/js/clipp/.local/ux-implementation/run-20261010/`: `ticket-32-final-evidence-index.md`, `ticket-32-b977-native-control-summary.json`, `ticket-32-06c5-final-evidence-review.md`, frozen source/package/verification/review mappings, exact beforelaunch helper/ACTIVE manifest and closure receipts.
+
+Residual17 desktop qualification/G14, the bounded user omission of its current toolbar check, later consumer requalification, themes, full Clip inspection/preview21, provider/camera15, native Back13, export delivery, real accounts and physical/hardware/assistive gaps remain separate. E01/C03/A04/A11/C15 remain open until all traceability contributions arrive.

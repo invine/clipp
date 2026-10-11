@@ -108,3 +108,6 @@ Ticket 32 preparation identified the current truncated Clip preview and More/Del
 
 
 The user requested omitting the current ticket17 corrected-toolbar default/32px/restored check while away from the PC. The duplicate Ready failed the initial equality guard before any profile/host/helper/font/macOS mutation; interval CLOSED and unexpected clipboard content was not logged. The linked accepted scope decision permits progress with this check recorded as user-authorized omission/not run, never a measured pass. G14 and unrelated/future consumer gates remain unchanged. No further human marker request is pending for this current check.
+
+
+Ticket 32 is resolved on sourceba795/current06c documentation integration after final bounded evidence reviewPASS. Exact APK39 b977 profiles OS1/1.5narrow320/2shortlandscape passed24targets each, delivered text ratios, cold renderer-resource interception, Start/export/long fields/errors/spacing and trusted focus; scanner provider/media0/no activation. Exact guest/Qt/scalars/process closure is recorded. Alias receipt wording is corrected explicitly to target-unavailable feedback, not normalization/persistence. Sourcefocus-scope hypothesis was falsified; no product fix or unnecessary new APK was made. Original finding collectors and desktop/later-owner gates remain open.
