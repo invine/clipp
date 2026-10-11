@@ -1,11 +1,11 @@
 # Project authoritative Pairing outcomes
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-outcomes-10
 Priority band: 1
 Blocked by: 02, 05, 07
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -49,3 +49,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Dispatch assessment — 2026-10-11
+
+Predecessors 02/05/07 are resolved. This is the earliest open eligible correctness ticket while08 completes its own native acceptance. Preserve glossary Admission/Membership/Trust Request semantics, ADR-0004 remove-wins Membership, ADR-0005 stateless signed authorization, ADR-0006 separate Admission/convergence and ADR-0012 one retained Relay Session. The bounded current-identity/runtime outcome projection is memory-owned information, not new durable outgoing authorization, cancellation or replay state. Validated response, ongoing Admission recovery and authoritative Membership remain separate facts. No accepted invariant changes.
+
+Coordinator claim `ux-outcomes-10`: client branch `codex/ux-10-pairing-outcomes`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-10`, based on this claim commit. Preparation `/private/tmp/clipp-ux-implementation-20261010/ticket-08-10-prep.md` identifies real coordinator/session events and every live adapter; refresh its older line references. Current08 code is integrated and source-reviewed/verified at52624599; its native presentation gates remain unqualified and are not consumed as a pass. At most two source implementers (08/10); native access and broad gates are coordinated.
+
+Use owning session/coordinator and actual shared/runtime consumers with TDD. Complete native app-to-app Pairing on normally permitted routes remains required; protocol-peer/state fixtures are not this gate. No route-policy/TLS weakening or real sign-in is authorized. Current marker/global-setting intervals are closed; prepare safe owned runtime/clipboard plans for fresh root assignment. The user's bounded current17 toolbar omission does not waive this ticket's journey or other recorded deferrals. No relay-repository source or external qualification ownership change.
