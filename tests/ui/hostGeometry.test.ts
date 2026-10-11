@@ -148,3 +148,97 @@ it("keeps valid bounds after malformed or stale native updates", async () => {
   expect(seen).toEqual([1, 2]);
   dispose();
 });
+
+it("lets a user keep the task's last action in view when Android repeats unchanged geometry", async () => {
+  let update: (snapshot: HostGeometrySnapshot) => void = () => undefined;
+  let viewedControl = "focused-field";
+  class Input {
+    matches() {
+      return true;
+    }
+    scrollIntoView() {
+      viewedControl = "focused-field";
+    }
+  }
+  const originalElement = globalThis.HTMLElement;
+  Object.defineProperty(globalThis, "HTMLElement", {
+    configurable: true,
+    value: Input,
+  });
+  const frames = new Map<number, FrameRequestCallback>();
+  let id = 0;
+  const flush = () => {
+    for (const [key, callback] of frames) {
+      frames.delete(key);
+      callback(0);
+    }
+  };
+  const values = new Map<string, string>();
+  const win = {
+    innerWidth: 360,
+    innerHeight: 640,
+    requestAnimationFrame(callback: FrameRequestCallback) {
+      frames.set(++id, callback);
+      return id;
+    },
+    cancelAnimationFrame(key: number) {
+      frames.delete(key);
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return true;
+    },
+  } as unknown as Window;
+  const doc = {
+    activeElement: new Input(),
+    documentElement: {
+      dataset: {},
+      getBoundingClientRect() {
+        return { width: 360 };
+      },
+      style: {
+        setProperty(key: string, value: string) {
+          values.set(key, value);
+        },
+        getPropertyValue(key: string) {
+          return values.get(key) ?? "";
+        },
+        removeProperty(key: string) {
+          values.delete(key);
+        },
+      },
+    },
+    addEventListener() {},
+    removeEventListener() {},
+  } as unknown as Document;
+  const { bindHostGeometry } =
+    await import("../../packages/ui/src/hostGeometry");
+  const dispose = bindHostGeometry(
+    {
+      getSnapshot: async () => edgeToEdge,
+      addListener: async (callback) => {
+        update = callback;
+        return { remove() {} };
+      },
+    },
+    win,
+    doc
+  );
+  try {
+    await Promise.resolve();
+    flush();
+    viewedControl = "last-action"; // The user scrolls within the task after focus reveal.
+    update({ ...edgeToEdge, sequence: 2 });
+    flush();
+    expect(viewedControl).toBe("last-action");
+  } finally {
+    dispose();
+    if (originalElement)
+      Object.defineProperty(globalThis, "HTMLElement", {
+        configurable: true,
+        value: originalElement,
+      });
+    else Reflect.deleteProperty(globalThis, "HTMLElement");
+  }
+});

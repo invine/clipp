@@ -132,6 +132,7 @@ export function bindHostGeometry(
 ): () => void {
   let snapshot: HostGeometrySnapshot | undefined;
   let frame = 0;
+  let applied: ContentBounds | undefined;
   const revealFocus = () => {
     if (frame) win.cancelAnimationFrame(frame);
     frame = win.requestAnimationFrame(() => {
@@ -153,6 +154,17 @@ export function bindHostGeometry(
       doc.documentElement.getBoundingClientRect().width || win.innerWidth
     );
     if (!bounds) return;
+    // Native layout can repeat while a user scrolls the task. Reveal focus only
+    // when usable geometry changes, so it cannot pull the last action out of view.
+    if (
+      applied &&
+      Object.entries(bounds).every(
+        ([key, value]) =>
+          Math.abs(value - applied![key as keyof ContentBounds]) < 0.01
+      )
+    )
+      return;
+    applied = bounds;
     for (const [key, value] of Object.entries(bounds))
       doc.documentElement.style.setProperty(
         `--clipp-content-${key}`,
