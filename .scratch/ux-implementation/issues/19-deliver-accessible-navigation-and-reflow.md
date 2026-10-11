@@ -1,11 +1,11 @@
 # Deliver accessible navigation and task reflow
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-navigation-19
 Priority band: 1
 Blocked by: 07, 12, 32
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run ux-implementation-20261010; coordinator claim ux-navigation-19
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -52,3 +52,11 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-12
+
+Hard predecessors07/12/32 are resolved; ticket19 is the next eligible unclaimed urgent access output. The coordinator claims `ux-navigation-19`, isolated branch `codex/ux-19-navigation` and worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-19` from this claim commit, following reviewed theme integration `4d8cb331c9ec52f36e3ea2990d5daa097da32655` (117 suites/849 tests/all three builds). Preparation/context remain outside disposable worktrees: `/private/tmp/clipp-ux-implementation-20261010/ticket-19-prep.md` and the run directory `ticket-19-dispatch-context.md`.
+
+This delivery preserves one document-lived UiSession, measured host geometry, authoritative settings/actions and pending/response versus Membership semantics, retained raw/newer/failed drafts and ADR-0012. It introduces no new router or product store and preserves Chrome11/nativeBack13/compact21/23/24 boundaries. Consume the integrated Appearance owner without moving applied settings into UiSession. Existing17/08/10 native gaps are not passes; all affected19 Candidate gates and external/retained deferrals remain required.
+
+Root owns serialized native/rendered/broad checks and both-axis review/integration/resolution. No host clipboard/global setting/native launch is implied. The user explicitly approved temporary guest-only root and IPv4/IPv6 firewall checks after automatic approval review rejected the earlier privilege escalation; fresh root ownership and actual policy/readback still precede Android UI. The earlier e276 guest closed before UI with all scalars/Qt restored.
