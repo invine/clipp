@@ -65,3 +65,6 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 | Clip Sharing Lifetime            | 20               | Open    | Collector and contributions in [traceability](traceability.md) remain to be qualified.                                                                                 |
 
 The current run does not change External or Retained qualifications in [validation coverage](validation-coverage.md). A ticket resolution never implies release readiness.
+
+
+Ticket14 contribution — 2026-10-11: integrated diagnosis `f894142c628c7e37421256ecf7ca6a7205e13772` reproduced unsafe API35/AOSP WebView124 provider initialization/probing and demonstrated accepted public native pixels through jsQR. A08 remains Open: ticket15 owns the remedy, actual camera/lifecycle and supporting qualification; unavailable physical/intended-provider and manifest claims are not inferred from this diagnosis.

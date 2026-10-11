@@ -1,7 +1,7 @@
 # Diagnose the Android scanner provider
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-scanner-diagnosis-14
 Priority band: 1
 Blocked by: none
@@ -56,3 +56,14 @@ Coordinator-owned claim: `ux-scanner-diagnosis-14`, client branch `codex/ux-14-s
 This preserves accepted scanner diagnosis/remedy separation, public Pairing Target semantics, one native geometry/session owner, empty relay defaults and ADR-0012. No product decision changes or production scanner enablement are authorized here. Approved diagnostic seams are the unchanged scanner public entry/BarcodeDetector capability-probe/construction boundary, native process/provider liveness, separate camera acquisition/permission and existing decoder on public synthetic pixels. Follow the diagnosis skill's tight red loop and ranked falsifiable hypotheses before probes; record exact stage/environment and isolated controlled overrides separately. A reproducible supported conclusion or exact environmental blocker can resolve this diagnosis; it cannot qualify the later remedy or A08.
 
 Source/harness preparation and packaging may proceed. Actual native/provider/camera trials require a fresh explicit coordinator assignment of the exclusive owned acceptance guest; do not launch or borrow a device now. No operator profile, host clipboard, real account, host webcam/global permissions or broad provider upgrades. Physical/provider/API36/assistive/OEM and sign-in limits remain unchanged. Any virtual-camera trial must declare its exact synthetic source and acquire separate scoped coordinator authorization. Preserve every failure/receipt outside disposable worktree; coordinator alone integrates/reviews/resolves claims.
+
+
+## Resolution — 2026-10-11
+
+Resolved on integrated code `f894142c628c7e37421256ecf7ca6a7205e13772`. The bounded diagnosis reproduced fatal native provider initialization/probing on API35/AOSP WebView124 and demonstrated existing jsQR decoding of an accepted public signed Pairing Target and blank native canvas pixels. The original scanner/media-sentinel baseline was non-red; constructor return was not a survival guarantee. The second attempt separates asynchronous construction fatal before detect from probe fatal with PID still present and an actual stage timeout. The first detect result remains invalid and its original bytes remain preserved.
+
+Select the existing software decoder direction for ticket15 qualification. This does not enable a production scanner, prove camera acquisition/permission or compare an unavailable physical/intended-provider environment. No universal manifest/provider remedy is claimed; ticket15 and A08 remain unqualified.
+
+Required integrated `npm run verify` passed 107 suites/794 tests and all three builds. Independent final Standards/Spec reviews passed; the public CLI regression covers 28 inert cases, including authoritative assignment/revocation guards and conservative replay of every non-success outcome. Completed native receipts are unchanged by those harness repairs. Both assigned guests/owned forwards closed and the prior clipboard-sharing setting was restored exactly.
+
+Evidence root is the run record's retained ignored directory: `ticket-14-revocation-handoff.json`, `ticket-14-revocation-merge-receipt.json`, `ticket-14-f894-standards-review.md`, `ticket-14-f894-spec-review.md`, `ux-f894-integration-final-receipt.json`, and both `ticket-14-api35-attempt*/` directories. The maintained [diagnosis](../../../docs/android-scanner-diagnosis.md) records the supported conclusion and remaining environments.
