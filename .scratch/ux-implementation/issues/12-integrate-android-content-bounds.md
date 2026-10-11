@@ -1,11 +1,11 @@
 # Integrate Android content bounds and IME
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-bounds-12
 Priority band: 1
 Blocked by: none
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -47,3 +47,11 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-11
+
+The first six scoped repairs are resolved. This independent native correctness output has no hard predecessor and occupies the second implementer slot beside ticket 07 review fixes. It preserves the accepted single host geometry owner, explicit physical/dp/CSS units, exactly-once inset reservation, live-document session and scanner-provider separation contracts; no product behavior decision changes. Relevant shared runtime/domain invariants and ADR-0012 remain unchanged.
+
+Coordinator-owned claim: `ux-bounds-12`, client branch `codex/ux-12-android-bounds`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-12`, from this claim commit. Preparation: `/private/tmp/clipp-ux-implementation-20261010/ticket-12-prep.md`. Source baseline includes integrated ticket 07 `f6301481a6ac95413bac3b9204e565e4d4981442`; its unrelated relay-editor Spec fixes remain owned by ticket 07 and must be incorporated before final handoff. Ticket 12 cannot resolve ticket 07 or waive its native/toolbar gates.
+
+The native slot is available after ticket 07's interval closed/restored. Coordinate exclusive owned read-only/no-snapshot guests, verified host clipboard-sharing isolation and exact restoration, guest-only markers and measured input with the coordinator. Modern owned API35 guest/provider and older API31/WebView91 limitations are recorded in ticket 06 receipts. Required API35/older, actual 200% IME/split-screen/cutout candidate gates stay required; all accepted external/retained limits remain. Scanner geometry uses controlled overlays without constructing the unsafe provider. Host clipboard/display intervals are closed; sign-in stays deferred.
