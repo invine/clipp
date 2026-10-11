@@ -89,15 +89,24 @@ export function createRuntimeUiRecovery<State>(
       const expected = ++generation;
       try {
         if (retry) await retry();
-        const state = await options.load();
         let applied = false;
-        if (
-          !cancelled &&
-          expected === generation &&
-          (await authorize(state, true)) &&
-          expected === generation
-        )
-          applied = ready(state);
+        // An authority change can invalidate an in-flight projection. Reconcile
+        // once through the current adapter, then leave recovery to explicit Retry.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const state = await options.load();
+          if (cancelled || expected !== generation) break;
+          if ((await authorize(state, true)) && expected === generation) {
+            applied = ready(state);
+            if (applied) break;
+          }
+          if (cancelled || expected !== generation) break;
+        }
+        if (!applied && !cancelled && expected === generation)
+          options.onRecovery({
+            loading: false,
+            unavailable: true,
+            initializationError: false,
+          });
         return !cancelled && confirmed && (applied || expected !== generation);
       } catch {
         let initializationError = false;
@@ -129,8 +138,20 @@ export function createRuntimeUiRecovery<State>(
       const expected = generation;
       return (async () => {
         try {
-          if ((await authorize(state)) && !cancelled && ready(state))
-            generation++;
+          const authorized = await authorize(state);
+          if (cancelled) return;
+          if (authorized && ready(state)) generation++;
+          else if (
+            !authorized &&
+            expected === generation &&
+            authoritySession !== undefined &&
+            authoritySession !== currentVersion?.sessionId
+          )
+            options.onRecovery({
+              loading: false,
+              unavailable: true,
+              initializationError: false,
+            });
         } catch {
           if (!cancelled && expected === generation)
             options.onRecovery({

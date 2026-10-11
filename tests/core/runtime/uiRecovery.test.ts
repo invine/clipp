@@ -267,9 +267,11 @@ it("refresh checks the current connection even when a delayed snapshot names the
     load: () =>
       ++reads === 1
         ? Promise.resolve({ sessionId: "old", revision: 1 })
-        : new Promise((resolve) => {
-            resolveRefresh = resolve;
-          }),
+        : reads === 2
+          ? new Promise((resolve) => {
+              resolveRefresh = resolve;
+            })
+          : Promise.resolve({ sessionId: "old", revision: 99 }),
     initializationError: async () => null,
     version: (state) => state,
     authority: async () => currentSession,
@@ -286,4 +288,132 @@ it("refresh checks the current connection even when a delayed snapshot names the
     { sessionId: "old", revision: 1 },
     { sessionId: "new", revision: 0 },
   ]);
+});
+it("cold bootstrap reconciles a mismatched snapshot through one fresh read without waiting for a publication", async () => {
+  type State = { sessionId: string; revision: number };
+  let reads = 0;
+  const states: State[] = [],
+    recovery: unknown[] = [];
+  const owner = createRuntimeUiRecovery<State>({
+    load: async () =>
+      ++reads === 1
+        ? { sessionId: "old", revision: 99 }
+        : { sessionId: "new", revision: 0 },
+    initializationError: async () => null,
+    version: (state) => state,
+    authority: async () => "new",
+    onState: (state) => states.push(state),
+    onRecovery: (state) => recovery.push(state),
+  });
+  expect(await owner.load()).toBe(true);
+  expect(states).toEqual([{ sessionId: "new", revision: 0 }]);
+  expect(recovery.at(-1)).toMatchObject({ loading: false, unavailable: false });
+  expect(reads).toBe(2);
+});
+it("cold bootstrap with repeated stale projections ends loading and exposes recovery after a bounded reread", async () => {
+  type State = { sessionId: string; revision: number };
+  let reads = 0;
+  const states: State[] = [],
+    recovery: unknown[] = [];
+  const owner = createRuntimeUiRecovery<State>({
+    load: async () => {
+      reads++;
+      return { sessionId: "unseen-old", revision: 99 };
+    },
+    initializationError: async () => null,
+    version: (state) => state,
+    authority: async () => "current",
+    onState: (state) => states.push(state),
+    onRecovery: (state) => recovery.push(state),
+  });
+  expect(await owner.load()).toBe(false);
+  expect(states).toEqual([]);
+  expect(recovery.at(-1)).toEqual({
+    loading: false,
+    unavailable: true,
+    initializationError: false,
+  });
+  expect(reads).toBe(2);
+});
+it("Refresh retains prior data as unavailable until explicit Retry reconciles, without repeating its action", async () => {
+  type State = { sessionId: string; revision: number };
+  let current = "old",
+    fresh = false,
+    retryActions = 0;
+  const states: State[] = [],
+    recovery: unknown[] = [];
+  const owner = createRuntimeUiRecovery<State>({
+    load: async () => ({ sessionId: fresh ? "new" : "old", revision: 0 }),
+    initializationError: async () => null,
+    version: (state) => state,
+    authority: async () => current,
+    onState: (state) => states.push(state),
+    onRecovery: (state) => recovery.push(state),
+  });
+  await owner.load();
+  current = "new";
+  expect(
+    await owner.load(async () => {
+      retryActions++;
+    })
+  ).toBe(false);
+  expect(states).toEqual([{ sessionId: "old", revision: 0 }]);
+  expect(recovery.at(-1)).toEqual({
+    loading: false,
+    unavailable: true,
+    initializationError: false,
+  });
+  expect(retryActions).toBe(1);
+  fresh = true;
+  expect(await owner.load()).toBe(true);
+  expect(states.at(-1)).toEqual({ sessionId: "new", revision: 0 });
+  expect(recovery.at(-1)).toMatchObject({ unavailable: false });
+});
+it("a newer live publication owns readiness when an obsolete reconciliation later returns another mismatched snapshot", async () => {
+  type State = { sessionId: string; revision: number };
+  let finishRead!: (state: State) => void,
+    reads = 0;
+  const states: State[] = [],
+    recovery: unknown[] = [];
+  const owner = createRuntimeUiRecovery<State>({
+    load: async () =>
+      ++reads === 1
+        ? { sessionId: "old", revision: 99 }
+        : new Promise((resolve) => {
+            finishRead = resolve;
+          }),
+    initializationError: async () => null,
+    version: (state) => state,
+    authority: async () => "current",
+    onState: (state) => states.push(state),
+    onRecovery: (state) => recovery.push(state),
+  });
+  const loading = owner.load();
+  await new Promise((resolve) => setImmediate(resolve));
+  await owner.live({ sessionId: "current", revision: 0 });
+  finishRead({ sessionId: "old", revision: 100 });
+  expect(await loading).toBe(true);
+  expect(states).toEqual([{ sessionId: "current", revision: 0 }]);
+  expect(recovery.at(-1)).toMatchObject({ unavailable: false });
+});
+it("a live mismatch that confirms a changed authority leaves prior data unavailable until that authority supplies state", async () => {
+  type State = { sessionId: string; revision: number };
+  let current = "old";
+  const states: State[] = [],
+    recovery: unknown[] = [];
+  const owner = createRuntimeUiRecovery<State>({
+    load: async () => ({ sessionId: "old", revision: 0 }),
+    initializationError: async () => null,
+    version: (state) => state,
+    authority: async () => current,
+    onState: (state) => states.push(state),
+    onRecovery: (state) => recovery.push(state),
+  });
+  await owner.load();
+  current = "new";
+  await owner.live({ sessionId: "unseen-other-old", revision: 99 });
+  expect(states).toEqual([{ sessionId: "old", revision: 0 }]);
+  expect(recovery.at(-1)).toMatchObject({ loading: false, unavailable: true });
+  await owner.live({ sessionId: "new", revision: 0 });
+  expect(recovery.at(-1)).toMatchObject({ unavailable: false });
 });
