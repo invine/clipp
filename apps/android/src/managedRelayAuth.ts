@@ -314,24 +314,29 @@ export class AndroidManagedRelayAuth {
       }
       return false;
     }
-    let url: URL;
+    // Some WebViews parse this custom scheme as an opaque pathname. Validate
+    // its pinned raw redirect before parsing only the query parameters.
+    const prefix = `${ANDROID_RELAY_REDIRECT}?`;
+    if (
+      typeof raw !== "string" ||
+      !raw.startsWith(prefix) ||
+      raw.includes("#") ||
+      /[\u0000-\u0020\u007f]/.test(raw)
+    )
+      return false;
+    let query: URLSearchParams;
     try {
-      url = new URL(raw);
+      query = new URLSearchParams(raw.slice(prefix.length));
     } catch {
       return false;
     }
     if (
-      `${url.protocol}//${url.host}${url.pathname}` !==
-        ANDROID_RELAY_REDIRECT ||
-      url.hash ||
-      url.username ||
-      url.password ||
-      url.searchParams.getAll("state").length !== 1 ||
-      url.searchParams.get("state") !== pending.state
+      query.getAll("state").length !== 1 ||
+      query.get("state") !== pending.state
     )
       return false;
-    const codes = url.searchParams.getAll("code");
-    const errors = url.searchParams.getAll("error");
+    const codes = query.getAll("code");
+    const errors = query.getAll("error");
     if (
       (codes.length !== 1 || !codes[0]) &&
       (errors.length !== 1 || !errors[0])
@@ -339,9 +344,7 @@ export class AndroidManagedRelayAuth {
       return false;
     if (codes.length && errors.length) return false;
     if (
-      [...url.searchParams.keys()].some(
-        (key) => !["code", "state", "error"].includes(key)
-      )
+      [...query.keys()].some((key) => !["code", "state", "error"].includes(key))
     )
       return false;
     this.pending = null;

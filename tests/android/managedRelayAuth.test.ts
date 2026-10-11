@@ -8,6 +8,8 @@ import {
   AndroidManagedRelayAuth,
   ANDROID_RELAY_REDIRECT,
 } from "../../apps/android/src/managedRelayAuth";
+import { performRelayAction } from "../../packages/core/network/relayActions";
+import { createUiSession } from "../../packages/ui/src/uiSession";
 
 const endpoint = "https://relay.example/v1/relay";
 
@@ -39,6 +41,56 @@ function tokens(access = "access-new", refresh = "refresh-new") {
 }
 
 describe("Android managed relay authorization", () => {
+  it("settles denial through the owning action when the WebView reports an opaque callback path", async () => {
+    const native = bridge();
+    const fetcher = jest.fn(async (_input: RequestInfo | URL) => tokens());
+    const auth = new AndroidManagedRelayAuth(native, fetcher);
+    const session = createUiSession();
+    const action = session.relayAction("relay", () =>
+      performRelayAction(
+        "authenticated",
+        () => auth.login(endpoint),
+        async () => {}
+      )
+    );
+    while (native.openBrowser.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const platformUrl = globalThis.URL;
+    const state = new platformUrl(
+      native.openBrowser.mock.calls[0][0]
+    ).searchParams.get("state")!;
+    const callback = `${ANDROID_RELAY_REDIRECT}?error=access_denied&state=${state}`;
+    // Controlled platform replay of c813's actual WebView fields for these
+    // unchanged URI bytes: host="", pathname="//oauth/callback".
+    class RecordedWebViewUrl extends platformUrl {
+      get host() {
+        return this.protocol === "clipp-relay:" ? "" : super.host;
+      }
+      get pathname() {
+        return this.protocol === "clipp-relay:"
+          ? `//${super.host}${super.pathname}`
+          : super.pathname;
+      }
+    }
+    globalThis.URL = RecordedWebViewUrl;
+    try {
+      expect(session.getSnapshot().relayActions.relay.pending).toBe(true);
+      expect(await auth.acceptCallback(callback)).toBe(true);
+      await action;
+      expect(session.getSnapshot().relayActions.relay).toEqual({
+        pending: false,
+        result: { status: "rejected", error: "authorization_denied" },
+      });
+      expect(await auth.acceptCallback(callback)).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(native.writeCredential).not.toHaveBeenCalled();
+    } finally {
+      globalThis.URL = platformUrl;
+      await auth.erase(endpoint);
+      await action;
+    }
+  });
+
   it("rejects wrong state, redirect, duplicate and late callbacks without exchanging a code", async () => {
     const native = bridge();
     const fetcher = jest.fn(async (_input: RequestInfo | URL) => tokens());
@@ -75,6 +127,58 @@ describe("Android managed relay authorization", () => {
         `${ANDROID_RELAY_REDIRECT}?code=abc&state=${state}`
       )
     ).toBe(false);
+  });
+
+  it("rejects noncanonical redirects and malformed callback queries without consuming the pending login", async () => {
+    const native = bridge();
+    const fetcher = jest.fn(async (_input: RequestInfo | URL) => tokens());
+    const auth = new AndroidManagedRelayAuth(native, fetcher);
+    const login = auth.login(endpoint);
+    const outcome = login.catch((error: Error) => error.message);
+    while (native.openBrowser.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = new URL(native.openBrowser.mock.calls[0][0]).searchParams.get(
+      "state"
+    )!;
+    const query = `?error=access_denied&state=${state}`;
+    const invalid = [
+      `clipp-relay://else/callback${query}`,
+      `clipp-relay://oauth/other${query}`,
+      `clipp-relay://user@oauth/callback${query}`,
+      `clipp-relay://oauth:123/callback${query}`,
+      `clipp-relay://oauth/callback/extra${query}`,
+      `clipp-relay://oauth/other/../callback${query}`,
+      `clipp-relay-acceptance://oauth/callback${query}`,
+      `CLIPP-RELAY://oauth/callback${query}`,
+      ` ${ANDROID_RELAY_REDIRECT}${query}`,
+      `clipp-relay://oa\tuth/callback${query}`,
+      `${ANDROID_RELAY_REDIRECT}${query}\n`,
+      `${ANDROID_RELAY_REDIRECT}${query}#`,
+      `${ANDROID_RELAY_REDIRECT}${query}#fragment`,
+      `${ANDROID_RELAY_REDIRECT}?error=access_denied`,
+      `${ANDROID_RELAY_REDIRECT}?error=access_denied&state=wrong`,
+      `${ANDROID_RELAY_REDIRECT}${query}&state=${state}`,
+      `${ANDROID_RELAY_REDIRECT}${query}&%73tate=${state}`,
+      `${ANDROID_RELAY_REDIRECT}${query}&error=access_denied`,
+      `${ANDROID_RELAY_REDIRECT}${query}&code=abc`,
+      `${ANDROID_RELAY_REDIRECT}?code=abc&code=def&state=${state}`,
+      `${ANDROID_RELAY_REDIRECT}?code=&state=${state}`,
+      `${ANDROID_RELAY_REDIRECT}?error=&state=${state}`,
+      `${ANDROID_RELAY_REDIRECT}${query}&extra=1`,
+    ];
+    try {
+      for (const callback of invalid)
+        expect(await auth.acceptCallback(callback)).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(native.writeCredential).not.toHaveBeenCalled();
+      expect(
+        await auth.acceptCallback(`${ANDROID_RELAY_REDIRECT}${query}`)
+      ).toBe(true);
+      expect(await outcome).toBe("authorization_denied");
+    } finally {
+      await auth.erase(endpoint);
+      await outcome;
+    }
   });
 
   it("uses endpoint-scoped refresh and erases the old credential before rotation", async () => {
