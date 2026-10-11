@@ -135,6 +135,9 @@ const App = () => {
         clips={state.clips}
         devices={state.devices}
         pending={state.pending}
+        requestsLoading={recovery.loading}
+        requestsUnavailable={recovery.unavailable || !state.pairingState}
+        onRetryRequests={() => consumer.load()}
         waiting={state.waiting}
         pairingErrors={state.pairingErrors}
         pairingOutcomes={state.pairingState?.outcomes}
@@ -164,6 +167,8 @@ const App = () => {
         onRetryRuntime={() => consumer.load()}
         localRetentionMs={state.localRetentionMs}
         autoSync={state.autoSync}
+        autoSyncKnown={!recovery.loading && !recovery.unavailable}
+        autoSyncLoading={recovery.loading}
         clipboardHistoryError={state.clipboardHistoryError}
         historyPolicyError={state.historyPolicyError}
         relayAddresses={state.relayAddresses || []}

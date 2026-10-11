@@ -1988,3 +1988,181 @@ html[data-host-geometry="android"] .android-host {
 .fade-bottom {
   background: linear-gradient(to top, var(--clipp-surface-raised), transparent);
 }
+
+/* One workspace surface. Host geometry remains the source of the usable rectangle. */
+.app-shell {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
+.app-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace-controls,
+.workspace-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  min-width: 0;
+}
+.workspace-controls {
+  align-items: center;
+}
+.workspace-controls .search-field {
+  flex: 1 1 14rem;
+  width: auto;
+}
+.workspace-controls .send-control {
+  flex: 0 1 auto;
+}
+.workspace-navigation button {
+  flex: 1 1 auto;
+  padding: 0.5rem;
+  border: 1px solid var(--clipp-border);
+  border-radius: 0.5rem;
+  background: var(--clipp-surface);
+  color: var(--clipp-text);
+  overflow-wrap: anywhere;
+}
+.workspace-navigation button[aria-current="page"] {
+  background: var(--clipp-action);
+  color: var(--clipp-on-action);
+}
+.destination-pane {
+  overflow: auto;
+  padding: 1rem;
+  min-width: 0;
+}
+.destination-pane h1 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+.content-pane[hidden] {
+  display: none;
+}
+.workspace-controls .search-field input {
+  width: 100%;
+  min-width: 0;
+}
+.app-shell.workspace-wide,
+.app-shell.workspace-narrow:not(.workspace-cramped) {
+  display: grid;
+  overflow: hidden;
+}
+.app-shell .app-bar {
+  position: static;
+}
+.app-shell:not(.workspace-cramped) .app-main {
+  overflow: hidden;
+  min-height: 0;
+  height: auto;
+}
+.app-shell:not(.workspace-cramped) .content-pane {
+  overflow: auto;
+  min-height: 0;
+}
+.app-shell:not(.workspace-cramped) .history-grid {
+  height: auto;
+  overflow: visible;
+}
+.workspace-wide .workspace-navigation {
+  grid-row: 2;
+}
+.workspace-wide .workspace-controls {
+  grid-row: 3;
+}
+.workspace-narrow:not(.workspace-cramped) {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+.workspace-narrow:not(.workspace-cramped) .workspace-navigation {
+  grid-row: 5;
+}
+.workspace-narrow:not(.workspace-cramped) .workspace-controls {
+  grid-row: 2;
+}
+.workspace-narrow:not(.workspace-cramped) .app-notices {
+  grid-row: 3;
+}
+.workspace-narrow:not(.workspace-cramped) .app-main {
+  grid-row: 4;
+}
+.app-shell.workspace-cramped {
+  display: block;
+  overflow: auto;
+}
+.workspace-cramped .app-main,
+.workspace-cramped .destination-pane,
+.workspace-cramped .content-pane,
+.workspace-cramped .history-grid {
+  height: auto;
+  overflow: visible;
+}
+.workspace-navigation {
+  font-size: 0.875rem;
+}
+.workspace-controls .send-control {
+  flex-wrap: wrap;
+}
+.workspace-controls .control-hint {
+  max-width: 14rem;
+}
+.task-dialog-backdrop {
+  container-type: inline-size;
+}
+.task-dialog[role="dialog"] {
+  width: min(40rem, 100%);
+}
+.task-dialog-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.task-dialog-header h2 {
+  margin: 0;
+}
+.task-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.task-dialog input,
+.task-dialog textarea,
+.task-dialog select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.task-dialog p,
+.task-dialog pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.task-dialog-backdrop.task-dialog-full {
+  padding: 0;
+}
+.task-dialog-full .task-dialog {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+}
+.task-dialog-backdrop,
+.task-dialog {
+  box-sizing: border-box;
+}
+/* The first access pass gives wide cards a shared content budget; final density is separate. */
+.history-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(16.25rem, 100%), 1fr));
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+}
+.history-card {
+  height: auto;
+  align-self: stretch;
+}
+.history-empty .history-text {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}

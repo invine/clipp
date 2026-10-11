@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+import { TaskDialog } from "./TaskDialog";
 import { createUiSession, type UiSession } from "./uiSession";
 import { relayMutationMessage } from "./relayEditSession";
 import type {
@@ -15,6 +17,7 @@ export type ManagedRelaySettingsProps = {
   configurations: RelayConfiguration[];
   states: RelayState[];
   session?: UiSession;
+  taskPresentation?: boolean;
   onRefresh?(): Promise<RelayConfiguration[]>;
   onMutate(mutation: RelayMutation): Promise<RelayMutationResult>;
   onLogin?(key: string): Promise<RelayActionResult>;
@@ -36,6 +39,7 @@ export function ManagedRelaySettings({
   configurations,
   states,
   session: providedSession,
+  taskPresentation = false,
   onRefresh,
   onMutate,
   onLogin,
@@ -115,6 +119,143 @@ export function ManagedRelaySettings({
         : { status: "unconfirmed", error: relayMutationMessage(result) };
     });
   };
+  const dismiss = () => {
+    session.relay.dismiss();
+    session.back();
+  };
+  function renderEditor() {
+    return (
+      <div
+        className="relay-card relay-card-editing managed-relay-editor"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            session.relay.dismiss();
+            session.back();
+          }
+        }}
+      >
+        {!taskPresentation && <h3>Relay editor</h3>}
+        {!taskPresentation && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                session.relay.dismiss();
+                session.back();
+              }}
+            >
+              Close relay editor
+            </button>
+          </>
+        )}
+        <label>
+          Name{" "}
+          <input
+            data-session-focus="relay:name"
+            value={name}
+            onChange={(event) =>
+              session.relay.change("name", event.target.value)
+            }
+          />
+        </label>
+        <label>
+          Type{" "}
+          <select
+            data-session-focus="relay:kind"
+            value={kind}
+            onChange={(event) => {
+              session.relay.change("kind", event.target.value);
+              session.relay.change("endpoint", "");
+            }}
+          >
+            <option value="managed">Authenticated discovery</option>
+            <option value="explicit">Unauthenticated Peer ID</option>
+          </select>
+        </label>
+        {kind === "explicit" && (
+          <label>
+            Peer ID{" "}
+            <input
+              data-session-focus="relay:peer-id"
+              value={peerId}
+              onChange={(event) =>
+                session.relay.change("peerId", event.target.value)
+              }
+            />
+          </label>
+        )}
+        <label>
+          {kind === "managed"
+            ? "HTTPS discovery URL"
+            : "Complete multiaddrs, one per line"}
+          <textarea
+            data-session-focus="relay:endpoint"
+            value={endpoint}
+            onChange={(event) =>
+              session.relay.change("endpoint", event.target.value)
+            }
+          />
+        </label>
+        <div className="managed-relay-editor-actions">
+          <button
+            className="primary-button compact-button"
+            type="button"
+            onClick={() => void save()}
+            disabled={
+              busy ||
+              draft?.unavailable ||
+              draft?.recoveryRequired ||
+              (editing ? context.relayActions[editing]?.pending : false)
+            }
+          >
+            Save
+          </button>
+          {!taskPresentation && (
+            <>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => {
+                  session.relay.discard();
+                  session.back();
+                }}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+  function renderFeedback() {
+    return (
+      <>
+        {draft?.recoveryRequired && onRefresh && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void session.relay.refresh(onRefresh)}
+          >
+            Refresh relay configuration
+          </button>
+        )}
+        {draft?.error && (
+          <div className="relay-error" role="alert">
+            {draft.error}
+          </div>
+        )}
+        {Object.entries(context.relayMutationFeedback).map(([key, message]) => (
+          <p role="status" key={key}>
+            {message}
+          </p>
+        ))}
+      </>
+    );
+  }
   return (
     <div className="relay-settings" aria-label="Relay settings">
       <div className="nav-section-label">Relays</div>
@@ -254,123 +395,29 @@ export function ManagedRelaySettings({
           </div>
         );
       })}
-      {editing && (
-        <div
-          className="relay-card relay-card-editing managed-relay-editor"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              session.relay.dismiss();
-              session.back();
-            }
-          }}
-        >
-          <h3>Relay editor</h3>
-          <button
-            type="button"
-            onClick={() => {
-              session.relay.dismiss();
-              session.back();
-            }}
-          >
-            Close relay editor
-          </button>
-          <label>
-            Name{" "}
-            <input
-              data-session-focus="relay:name"
-              value={name}
-              onChange={(event) =>
-                session.relay.change("name", event.target.value)
-              }
-            />
-          </label>
-          <label>
-            Type{" "}
-            <select
-              data-session-focus="relay:kind"
-              value={kind}
-              onChange={(event) => {
-                session.relay.change("kind", event.target.value);
-                session.relay.change("endpoint", "");
-              }}
-            >
-              <option value="managed">Authenticated discovery</option>
-              <option value="explicit">Unauthenticated Peer ID</option>
-            </select>
-          </label>
-          {kind === "explicit" && (
-            <label>
-              Peer ID{" "}
-              <input
-                data-session-focus="relay:peer-id"
-                value={peerId}
-                onChange={(event) =>
-                  session.relay.change("peerId", event.target.value)
-                }
-              />
-            </label>
-          )}
-          <label>
-            {kind === "managed"
-              ? "HTTPS discovery URL"
-              : "Complete multiaddrs, one per line"}
-            <textarea
-              data-session-focus="relay:endpoint"
-              value={endpoint}
-              onChange={(event) =>
-                session.relay.change("endpoint", event.target.value)
-              }
-            />
-          </label>
-          <div className="managed-relay-editor-actions">
-            <button
-              className="primary-button compact-button"
-              type="button"
-              onClick={() => void save()}
-              disabled={
-                busy ||
-                draft?.unavailable ||
-                draft?.recoveryRequired ||
-                (editing ? context.relayActions[editing]?.pending : false)
-              }
-            >
-              Save
-            </button>
-            <button
-              className="text-button"
-              type="button"
-              onClick={() => {
-                session.relay.discard();
-                session.back();
-              }}
-              disabled={busy}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-      {draft?.recoveryRequired && onRefresh && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void session.relay.refresh(onRefresh)}
-        >
-          Refresh relay configuration
-        </button>
-      )}
-      {draft?.error && (
-        <div className="relay-error" role="alert">
-          {draft.error}
-        </div>
-      )}
-      {Object.entries(context.relayMutationFeedback).map(([key, message]) => (
-        <p role="status" key={key}>
-          {message}
-        </p>
-      ))}
+      {editing &&
+        (taskPresentation
+          ? createPortal(
+              <TaskDialog
+                title="Relay configuration"
+                pending={busy}
+                initialFocusKey="relay:name"
+                originKey={context.tasks.at(-1)?.origin}
+                returnLabel="Close relay editor"
+                onDismiss={dismiss}
+                cancelLabel="Cancel relay edit"
+                onCancel={() => {
+                  session.relay.discard();
+                  session.back();
+                }}
+              >
+                {renderEditor()}
+                {renderFeedback()}
+              </TaskDialog>,
+              document.body
+            )
+          : renderEditor())}
+      {(!taskPresentation || !editing) && renderFeedback()}
       <p>
         Remove deletes this local configuration, its resources and local
         credential. It does not revoke the relay account or remove other routes.
