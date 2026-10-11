@@ -131,21 +131,14 @@ export function ManagedRelaySettings({
           if (event.key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
-            session.relay.dismiss();
-            session.back();
+            dismiss();
           }
         }}
       >
         {!taskPresentation && <h3>Relay editor</h3>}
         {!taskPresentation && (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                session.relay.dismiss();
-                session.back();
-              }}
-            >
+            <button type="button" onClick={dismiss}>
               Close relay editor
             </button>
           </>

@@ -1,3 +1,4 @@
+import { findSessionFocus } from "./sessionFocus";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { hostContentSize, HOST_GEOMETRY_EVENT } from "./hostGeometry";
 import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
@@ -59,13 +60,10 @@ export function TaskDialog({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    const initial = initialFocusKey
-      ? [
-          ...(dialogRef.current?.querySelectorAll<HTMLElement>(
-            "[data-session-focus]"
-          ) ?? []),
-        ].find((element) => element.dataset.sessionFocus === initialFocusKey)
-      : null;
+    const initial = findSessionFocus(dialogRef.current, initialFocusKey, {
+      visible: false,
+      enabled: false,
+    });
     (initial ?? returnRef.current ?? cancelRef.current)?.focus();
     const backgrounds: HTMLElement[] = [];
     let branch = dialogRef.current?.parentElement;
@@ -84,15 +82,10 @@ export function TaskDialog({
       backgrounds.forEach((element, index) => {
         element.inert = inert[index];
       });
-      const logicalOrigin = originKey
-        ? [
-            ...document.querySelectorAll<HTMLElement>("[data-session-focus]"),
-          ].find(
-            (element) =>
-              element.dataset.sessionFocus === originKey &&
-              element.getClientRects().length
-          )
-        : null;
+      const logicalOrigin = findSessionFocus(document, originKey, {
+        visible: true,
+        enabled: false,
+      });
       if (logicalOrigin) logicalOrigin.focus();
       else if (origin?.isConnected && origin.getClientRects().length)
         origin.focus();

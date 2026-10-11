@@ -29,7 +29,7 @@ await build({
   stdin: {
     resolveDir: repo,
     loader: "tsx",
-    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',storage:{get:async key=>values.get(key),set:async(key,value)=>{values.set(key,value)}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],clips:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={[]} pinnedIds={[]} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return 'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'})}} onSetPinned={()=>{}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={settings.refresh} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
+    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],clips:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={[]} pinnedIds={[]} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return 'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'})}} onSetPinned={()=>{}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
   },
   bundle: true,
   platform: "browser",
@@ -53,6 +53,10 @@ const report = {
       [
         "packages/ui/src/ClipboardApp.tsx",
         "packages/ui/src/TaskDialog.tsx",
+        "packages/ui/src/sessionFocus.ts",
+        "packages/ui/src/RecoveryIssues.tsx",
+        "packages/ui/src/useTaskRecoveryIssues.ts",
+        "packages/ui/src/PreferenceSaveFeedback.tsx",
         "packages/ui/src/ManagedRelaySettings.tsx",
         "packages/ui/src/styles.css",
         "packages/ui/src/uiSession.ts",
@@ -133,7 +137,161 @@ try {
     label: `${host} initial Requests navigation and actual approval callback`,
     passed: true,
   });
+  if (process.argv.includes("--auto-sync-recovery")) {
+    const query = page.getByLabel("Search history", { exact: true });
+    await query.fill("  recovery query  ");
+    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Rename this device", exact: true })
+      .click();
+    const nameTask = page.getByRole("dialog", {
+      name: "Device Name",
+      exact: true,
+    });
+    await nameTask
+      .getByLabel("Device Name", { exact: true })
+      .fill("  recovery draft  ");
+    await nameTask
+      .getByRole("button", { name: "Close name editor", exact: true })
+      .click();
+    for (const outcome of ["rejected", "unconfirmed"]) {
+      await nav.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.evaluate((value) => {
+        window.rejectAutoSync = value === "rejected";
+        window.failAutoSyncReadback = value === "unconfirmed";
+      }, outcome);
+      const autoSync = page.getByLabel("Auto Sync", { exact: true });
+      await autoSync.selectOption("disabled");
+      const feedback =
+        outcome === "rejected"
+          ? "Auto Sync was not saved."
+          : "Auto Sync Save could not be confirmed.";
+      await page.getByRole("alert").filter({ hasText: feedback }).waitFor();
+      await nav.getByRole("button", { name: "History", exact: true }).click();
+      await page
+        .getByRole("button", { name: /issues? needs? attention/ })
+        .click();
+      const issues = page.getByRole("dialog", {
+        name: "Issues and recovery",
+        exact: true,
+      });
+      await issues
+        .getByRole("button", { name: "Open Auto Sync", exact: true })
+        .click();
+      await page
+        .getByRole("heading", { name: "Settings", exact: true })
+        .waitFor();
+      assert.equal(
+        await issues.count(),
+        0,
+        "the Issues task returns to the applied Auto Sync consumer"
+      );
+      assert.equal(
+        await page.getByRole("alert").filter({ hasText: feedback }).isVisible(),
+        true
+      );
+      assert.equal(await query.inputValue(), "  recovery query  ");
+      assert.equal(await autoSync.isDisabled(), outcome === "unconfirmed");
+      if (outcome === "rejected") {
+        // Current refresh failure is a runtime-owned public prop; its Retry invokes the real settings port.
+        await page.evaluate(() => {
+          window.settingsReadFault = true;
+          window.publishFixture({
+            autoSyncRefreshError: "controlled-settings-read-failure",
+          });
+        });
+      }
+      const refresh = page.getByRole("button", {
+        name: outcome === "rejected" ? "Retry auto sync" : "Refresh Auto Sync",
+        exact: true,
+      });
+      await refresh.click();
+      await page
+        .getByText(
+          "Auto Sync could not be refreshed: controlled-settings-read-failure.",
+          { exact: false }
+        )
+        .waitFor();
+      await nav.getByRole("button", { name: "Requests", exact: true }).click();
+      await page
+        .getByRole("button", { name: /issues? needs? attention/ })
+        .click();
+      await issues
+        .getByRole("button", { name: "Open Auto Sync", exact: true })
+        .click();
+      await page
+        .getByRole("heading", { name: "Settings", exact: true })
+        .waitFor();
+      assert.equal(
+        await page
+          .getByRole("button", { name: "Retry auto sync", exact: true })
+          .isVisible(),
+        true,
+        "failed refresh remains reachable after recovery navigation"
+      );
+      if (outcome === "unconfirmed")
+        assert.equal(await autoSync.isDisabled(), true);
+      await page.evaluate(() => {
+        window.settingsReadFault = false;
+        window.rejectAutoSync = false;
+        window.failAutoSyncReadback = false;
+      });
+      await refresh.click();
+      await page.waitForFunction(
+        () => !window.fixtureSession.getSnapshot().autoSync.pending
+      );
+      await page
+        .getByRole("button", { name: "Retry auto sync", exact: true })
+        .waitFor({ state: "detached" });
+      assert.equal(await autoSync.isDisabled(), false);
+      assert.equal(
+        await autoSync.inputValue(),
+        outcome === "rejected" ? "enabled" : "disabled",
+        "the current read, not the failed feedback, supplies the applied value"
+      );
+      await nav.getByRole("button", { name: "Devices", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Rename this device", exact: true })
+        .click();
+      assert.equal(
+        await nameTask.getByLabel("Device Name", { exact: true }).inputValue(),
+        "  recovery draft  "
+      );
+      await nameTask
+        .getByRole("button", { name: "Close name editor", exact: true })
+        .click();
+      report.cases.push({
+        label: `${outcome} Auto Sync Save and failed refresh → real Issues action → Settings with retained query/draft and working refresh`,
+        passed: true,
+      });
+    }
+    const actions = await page.evaluate(() =>
+      window.fixtureActions.filter((value) =>
+        value.action.startsWith("auto-sync")
+      )
+    );
+    assert.deepEqual(
+      actions.filter((value) => value.action === "auto-sync-save"),
+      [
+        { action: "auto-sync-save", enabled: false },
+        { action: "auto-sync-save", enabled: false },
+      ]
+    );
+    assert.equal(
+      actions.filter((value) => value.action === "auto-sync-refresh").length,
+      4
+    );
+    await query.fill("");
+    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Rename this device", exact: true })
+      .click();
+    await nameTask
+      .getByRole("button", { name: "Cancel name edit", exact: true })
+      .click();
+  }
   if (process.argv.includes("--requests-state")) {
+    await nav.getByRole("button", { name: /^Requests/ }).click();
     await page.evaluate(() => window.publishFixture({ requestsLoading: true }));
     await page
       .getByText("Loading Requests…", { exact: true })
@@ -333,12 +491,27 @@ try {
       await relay.getByLabel("Name", { exact: true }).inputValue(),
       " retained relay "
     );
+    await relay.getByLabel("Name", { exact: true }).focus();
+    await page.keyboard.press("Escape");
+    await relay.waitFor({ state: "detached" });
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Add relay", exact: true })
+        .evaluate((element) => document.activeElement === element),
+      true,
+      "relay Escape returns to its logical origin"
+    );
+    await page.getByRole("button", { name: "Add relay", exact: true }).click();
+    assert.equal(
+      await relay.getByLabel("Name", { exact: true }).inputValue(),
+      " retained relay "
+    );
     await relay
       .getByRole("button", { name: "Cancel relay edit", exact: true })
       .click();
     report.cases.push({
       label:
-        "real managed Relay task retains failed raw fields across narrow reflow and Close",
+        "real managed Relay task retains failed raw fields across narrow reflow, Close and Escape with logical origin restoration",
       passed: true,
     });
   }

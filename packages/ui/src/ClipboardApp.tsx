@@ -1,3 +1,4 @@
+import { findSessionFocus } from "./sessionFocus";
 import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
 import { Appearance, type AppearanceSettings } from "./Appearance";
 import { PairingStatus } from "./PairingStatus";
@@ -606,13 +607,10 @@ export function ClipboardApp({
           context.historyAnchor.offset;
     }
     if (context.tasks.length) return;
-    const focus = [
-      ...root.querySelectorAll<HTMLElement>("[data-session-focus]"),
-    ].find(
-      (element) =>
-        element.dataset.sessionFocus === context.focusKey &&
-        element.getClientRects().length
-    );
+    const focus = findSessionFocus(root, context.focusKey, {
+      visible: true,
+      enabled: false,
+    });
     (
       focus ?? root.querySelector<HTMLElement>("[data-session-focus=workspace]")
     )?.focus({ preventScroll: true });
@@ -629,13 +627,11 @@ export function ClipboardApp({
   useEffect(() => {
     if (sessionState.tasks.length || document.activeElement !== document.body)
       return;
-    const focus = [
-      ...(rootRef.current?.querySelectorAll<HTMLElement>(
-        "[data-session-focus]"
-      ) ?? []),
-    ].find((element) => element.dataset.sessionFocus === sessionState.focusKey);
-    if (focus && !focus.matches(":disabled"))
-      focus.focus({ preventScroll: true });
+    const focus = findSessionFocus(rootRef.current, sessionState.focusKey, {
+      visible: false,
+      enabled: true,
+    });
+    focus?.focus({ preventScroll: true });
   }, [
     sessionState.historyActions,
     sessionState.focusKey,
@@ -2198,9 +2194,12 @@ export function ClipboardApp({
                   ? "requests"
                   : issue.scope === "relay" ||
                       (issue.scope === "task" &&
-                        ["relay-edit", "relay-action", "relay"].includes(
-                          issue.code
-                        ))
+                        [
+                          "relay-edit",
+                          "relay-action",
+                          "relay",
+                          "auto-sync",
+                        ].includes(issue.code))
                     ? "settings"
                     : issue.scope === "task" &&
                         ["alias", "device-name", "pairing"].includes(issue.code)
