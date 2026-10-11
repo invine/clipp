@@ -69,14 +69,19 @@ const initialState: AppState = {
 
 const App = () => {
   const appearanceSettings = useRuntimeSettings({
-    send: (message) =>
-      message.type === "getSettings"
+    send: (message) => {
+      if (!window.clipp) throw new Error("bridge_unavailable");
+      return message.type === "getSettings"
         ? window.clipp.getSettings()
-        : window.clipp.setTheme(message.settings?.theme),
-    subscribe: (listener) =>
-      window.clipp.onSettingsUpdate((snapshot) =>
+        : window.clipp.setTheme(message.settings?.theme);
+    },
+    subscribe: (listener) => {
+      if (!window.clipp?.onSettingsUpdate)
+        throw new Error("bridge_unavailable");
+      return window.clipp.onSettingsUpdate((snapshot) =>
         listener({ type: "settingsState", snapshot })
-      ),
+      );
+    },
   });
   const [state, setState] = useState<AppState>(initialState);
   const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);

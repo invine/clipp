@@ -155,7 +155,7 @@ const context = await chromium.launchPersistentContext(profile, {
   colorScheme: "light",
 });
 await context.route("**/*", (route) => route.abort());
-async function open(name, historyUnavailable = false) {
+async function open(name, historyUnavailable = false, missingBridge = false) {
   const page = await context.newPage();
   pages.add(page);
   await page.exposeBinding("fixtureRequest", (_, message) => request(message));
@@ -170,11 +170,17 @@ async function open(name, historyUnavailable = false) {
     window.fixtureHistoryUnavailable = value;
   }, historyUnavailable);
   await page.addStyleTag({ path: join(out, name + ".css") });
+  if (missingBridge)
+    await page.evaluate(() => {
+      window.fixtureSavedBridge = window.clipp;
+      delete window.clipp;
+    });
   await page.addScriptTag({ path: join(out, name + ".js") });
   await page.getByLabel("Appearance", { exact: true }).waitFor();
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Appearance"]').disabled
-  );
+  if (!missingBridge)
+    await page.waitForFunction(
+      () => !document.querySelector('[aria-label="Appearance"]').disabled
+    );
   return page;
 }
 const luminance = (rgb) => {
@@ -304,6 +310,67 @@ try {
   assert.equal(recoveryPalette.outline, "3px");
   pages.delete(recoveryPage);
   await recoveryPage.close();
+  const missingBridge = await open("electron", false, true);
+  await missingBridge
+    .getByRole("alert")
+    .filter({
+      hasText: "Appearance could not be refreshed: bridge_unavailable",
+    })
+    .waitFor();
+  assert.equal(
+    await missingBridge
+      .getByText("Loading appearance…", { exact: true })
+      .count(),
+    0,
+    "missing bridge must end pending load"
+  );
+  assert.equal(
+    await missingBridge.getByLabel("Appearance", { exact: true }).isDisabled(),
+    true
+  );
+  await missingBridge.screenshot({
+    path: join(out, "electron-missing-bridge.png"),
+    fullPage: true,
+  });
+  await missingBridge.evaluate(() => {
+    window.clipp = window.fixtureSavedBridge;
+  });
+  await missingBridge
+    .getByRole("button", { name: "Retry appearance", exact: true })
+    .click();
+  await missingBridge.waitForFunction(
+    () => !document.querySelector('[aria-label="Appearance"]').disabled
+  );
+  await missingBridge
+    .getByRole("button", { name: /issue needs attention/ })
+    .click();
+  const recoveryDialog = missingBridge.getByRole("dialog", {
+    name: "Issues and recovery",
+  });
+  await recoveryDialog
+    .getByRole("button", { name: "Retry", exact: true })
+    .click();
+  await missingBridge.waitForFunction(
+    () => !document.querySelector(".issue-summary")
+  );
+  await recoveryDialog
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await owner.write({ theme: "dark" });
+  await missingBridge.waitForFunction(
+    () => document.querySelector('[aria-label="Appearance"]').value === "dark"
+  );
+  await inspect(missingBridge, "electron", "recovered-bridge-live-dark");
+  report.missingBridgeRecoveredWithLiveSubscription = true;
+  report.runtimeRecoveryStillReachable = true;
+  pages.delete(missingBridge);
+  await missingBridge.close();
+  await owner.write({ theme: "system" });
+  for (const page of Object.values(opened))
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[aria-label="Appearance"]').value === "system"
+    );
 
   const before = writes.length;
   await Promise.all(

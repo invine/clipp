@@ -13,7 +13,6 @@ import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import {
   createAndroidRuntimeAdapter,
-  createAutoSyncPreference,
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
@@ -74,6 +73,7 @@ import {
   toPublicDeviceIdentity,
   createIdentityRotationCommitter,
   IDENTITY_KEY,
+  type KVStorageBackend,
 } from "@core/trust";
 import type { Clip } from "@core/models/Clip";
 import type {
@@ -229,7 +229,6 @@ function logPairing(
 }
 
 export class AndroidClient {
-  private readonly storage = new LocalStorageBackend();
   private readonly settingsListeners = new Set<
     (snapshot: SettingsSnapshot) => void
   >();
@@ -261,9 +260,6 @@ export class AndroidClient {
   private managedRelays: ManagedRelayController | null = null;
   private managedRelayConfigurations: RelayConfiguration[] = [];
   private removeRelayCallback: (() => void) | null = null;
-  private readonly autoSyncPreference = createAutoSyncPreference({
-    storage: this.storage,
-  });
   private readonly historyBackend = createHistoryBackend();
   private readonly history = new MemoryHistoryStore(this.historyBackend);
   private readonly historyState = createHistoryStateReader(this.history);
@@ -332,7 +328,9 @@ export class AndroidClient {
     typeof createMembershipReconciler
   > | null = null;
 
-  constructor() {
+  constructor(
+    private readonly storage: KVStorageBackend = new LocalStorageBackend()
+  ) {
     // messaging is initialised lazily in `start()`
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
@@ -874,7 +872,7 @@ export class AndroidClient {
         } else if (backgroundState.backgroundEnabled) {
           await this.backgroundContinuity.setEnabledFromUser(true);
         }
-        this.autoSync = await this.autoSyncPreference.load();
+        await this.settingsHandler.read();
         this.managedRelayConfigurations = await loadManagedRelayConfigurations(
           this.relayConfigurationStore()
         );
@@ -1256,9 +1254,9 @@ export class AndroidClient {
   }
 
   private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
-    this.autoSync = await this.autoSyncPreference.set(enabled);
-    this.clipboardSync.setAutoSync(this.autoSync);
-    return this.autoSync;
+    const result = await this.settingsHandler.write({ autoSync: enabled });
+    if (result.status !== "applied") throw new Error(result.error);
+    return result.snapshot.state.autoSync;
   }
 
   async setAutoSync(enabled: boolean) {
@@ -1268,16 +1266,14 @@ export class AndroidClient {
         return this.autoSync;
       },
       recover: async () => {
-        this.autoSync = await this.autoSyncPreference.load();
-        this.clipboardSync.setAutoSync(this.autoSync);
+        await this.settingsHandler.read();
       },
       current: () => this.autoSync,
       reconcile: () => this.emitState(),
     });
   }
   async refreshAutoSync() {
-    this.autoSync = await this.autoSyncPreference.load();
-    this.clipboardSync.setAutoSync(this.autoSync);
+    await this.settingsHandler.read();
     await this.emitState();
     return true;
   }

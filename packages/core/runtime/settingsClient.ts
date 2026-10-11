@@ -70,6 +70,15 @@ export function createSettingsClient(port: {
     notify();
   };
 
+  function ensureSubscription() {
+    if (unsubscribe) return;
+    unsubscribe = port.subscribe((message) => {
+      const event = message as { type?: string; snapshot?: SettingsSnapshot };
+      if (event?.type === "settingsState" && event.snapshot)
+        apply(event.snapshot);
+    });
+  }
+
   async function refresh(): Promise<void> {
     const requestId = ++refreshId;
     const versionAtRequest = acceptedVersion;
@@ -81,6 +90,7 @@ export function createSettingsClient(port: {
     };
     notify();
     try {
+      ensureSubscription();
       const response = (await port.send({ type: "getSettings" })) as
         | { ok?: boolean; snapshot?: SettingsSnapshot; error?: string }
         | undefined;
@@ -123,11 +133,6 @@ export function createSettingsClient(port: {
     getState: () => state,
     start: async (onChange?: (state: SettingsClientState) => void) => {
       listener = onChange;
-      unsubscribe = port.subscribe((message) => {
-        const event = message as { type?: string; snapshot?: SettingsSnapshot };
-        if (event?.type === "settingsState" && event.snapshot)
-          apply(event.snapshot);
-      });
       await refresh();
     },
     stop: () => {
