@@ -22,6 +22,8 @@ Android qualification includes content-sized Start/export and task actions, 48dp
 
 Source compatibility and explicit asset entries across hosts are part of this deliverable. Remaining desktop control qualification, corrected actual cold popup sizing/scrolling, G13 independent actual-toolbar enlargement and G14 desktop OS text-only scaling remain required in [residual ticket 17](17-unify-local-assets-and-shared-controls.md). This issue supplies no desktop enlargement or complete desktop control pass. Later consumers requalify every presentation they change.
 
+Full-value control checks here inspect current editable field values, Device Name/Peer ID, relay endpoints and errors. Long Clip rows must retain readable control layout and association with the actual Clip. Full Clip inspection before Copy and replacement preview integrity remain [ticket 21](21-deliver-compact-history-and-details.md); the current truncated preview is not a full-content pass. This allocation introduces no details route and preserves that later requirement.
+
 ## Dependencies and integration
 
 No technical predecessor. The approved phase admission rule and at most two implementers still apply. Coordinator claim, isolated worktree and inspected integration baseline are required before new implementation. Existing integrated source can contribute when its exact source and evidence satisfy this scope; a new source change is not required solely to create a new ticket.
