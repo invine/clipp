@@ -105,3 +105,6 @@ Ticket 08 is now claimed for `ux-issues-08`, the earliest eligible urgent correc
 
 
 Ticket 32 preparation identified the current truncated Clip preview and More/Delete route. Its control qualification covers long row reflow and action association; complete pre-Copy Clip inspection and replacement preview integrity retain ticket 21. Full-value checks in 32 concern current fields/names/Peer IDs/endpoints/errors. This clarification preserves the original17/21 allocation and adds no source repair or full-content pass.
+
+
+The user requested omitting the current ticket17 corrected-toolbar default/32px/restored check while away from the PC. The duplicate Ready failed the initial equality guard before any profile/host/helper/font/macOS mutation; interval CLOSED and unexpected clipboard content was not logged. The linked accepted scope decision permits progress with this check recorded as user-authorized omission/not run, never a measured pass. G14 and unrelated/future consumer gates remain unchanged. No further human marker request is pending for this current check.
