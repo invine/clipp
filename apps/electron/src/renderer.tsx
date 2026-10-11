@@ -189,6 +189,7 @@ const App = () => {
           window.clipp.renameIdentity(name, expectedDeviceId)
         }
         onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
+        onRefreshManagedRelays={() => window.clipp.refreshManagedRelays()}
         onMutateManagedRelay={(mutation) =>
           window.clipp.mutateManagedRelay(mutation)
         }

@@ -1187,6 +1187,9 @@ async function bootstrap() {
     },
     reconcile: emitState,
   });
+  ipcMain.handle("clipp:refresh-managed-relays", () =>
+    relayMutationOwner.refresh()
+  );
   ipcMain.handle(
     "clipp:mutate-managed-relay",
     async (_evt, mutation: RelayMutation) => relayMutationOwner.mutate(mutation)

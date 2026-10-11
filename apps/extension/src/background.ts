@@ -933,6 +933,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           states: managedStates,
         };
       }
+      if (msg.type === "managedRelayRefresh")
+        return { ok: true, configurations: await relayMutationOwner.refresh() };
       if (msg.type === "managedRelayMutate") {
         const result = await relayMutationOwner.mutate(msg.mutation);
         return { ok: true, result };

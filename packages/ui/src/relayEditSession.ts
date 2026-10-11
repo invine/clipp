@@ -17,6 +17,7 @@ export type RelayDraft = {
   pending: boolean;
   error: string | null;
   unavailable: boolean;
+  recoveryRequired: boolean;
 };
 function rawFields(config?: RelayConfiguration): RelayDraft["raw"] {
   return {
@@ -42,6 +43,7 @@ export function createRelayEditSession() {
     state: RelayDraft;
     version: number;
     fieldVersions: Record<string, number>;
+    newKey?: string;
   };
   const drafts = new Map<string, Draft>();
   let state: RelayDraft | null = null;
@@ -53,6 +55,14 @@ export function createRelayEditSession() {
   function update(draft: Draft, next: RelayDraft) {
     draft.state = next;
     if (state?.key === next.key) publish(next);
+  }
+  function adoptKey(draft: Draft, key: string) {
+    const previous = draft.state.key;
+    if (previous === key) return;
+    drafts.delete(previous);
+    drafts.set(key, draft);
+    draft.state = { ...draft.state, key };
+    if (state?.key === previous) state = { ...state, key };
   }
   return {
     getSnapshot: () => state,
@@ -77,6 +87,7 @@ export function createRelayEditSession() {
             pending: false,
             error: null,
             unavailable: false,
+            recoveryRequired: false,
           },
         };
         drafts.set(key, draft);
@@ -93,7 +104,7 @@ export function createRelayEditSession() {
         ...draft.state,
         raw: { ...draft.state.raw, [field]: value },
         dirty: [...new Set([...draft.state.dirty, field])],
-        error: null,
+        error: draft.state.recoveryRequired ? draft.state.error : null,
       });
     },
     dismiss() {
@@ -128,17 +139,57 @@ export function createRelayEditSession() {
         update(draft, { ...draft.state, raw });
       }
     },
+    async refresh(action: () => Promise<RelayConfiguration[]>) {
+      const draft = state ? drafts.get(state.key) : null;
+      if (!draft || draft.state.pending) return;
+      update(draft, { ...draft.state, pending: true });
+      try {
+        const configurations = await action();
+        if (drafts.get(draft.state.key) !== draft) return;
+        if (
+          draft.state.key === "new" &&
+          draft.newKey &&
+          configurations.some((config) => config.key === draft.newKey)
+        )
+          adoptKey(draft, draft.newKey);
+        this.reconcile(configurations);
+        update(draft, {
+          ...draft.state,
+          pending: false,
+          recoveryRequired: false,
+          error: draft.state.unavailable
+            ? draft.state.error
+            : "Current relay configuration refreshed. Review its current status before saving again.",
+        });
+      } catch {
+        if (drafts.get(draft.state.key) === draft)
+          update(draft, {
+            ...draft.state,
+            pending: false,
+            recoveryRequired: true,
+            error:
+              "The relay configuration could not be refreshed. Your draft is retained; refresh before saving again.",
+          });
+      }
+    },
     async save(
       action: (mutation: RelayMutation) => Promise<RelayMutationResult>
     ) {
       const draft = state ? drafts.get(state.key) : null;
-      if (!draft || draft.state.pending || draft.state.unavailable) return;
+      if (
+        !draft ||
+        draft.state.pending ||
+        draft.state.unavailable ||
+        draft.state.recoveryRequired
+      )
+        return;
       const { key, raw, dirty } = draft.state;
       const version = draft.version;
       const submittedVersions = { ...draft.fieldVersions };
       const newKey =
         key === "new"
-          ? (globalThis.crypto?.randomUUID?.() ?? `relay-${Date.now()}`)
+          ? (draft.newKey ??=
+              globalThis.crypto?.randomUUID?.() ?? `relay-${Date.now()}`)
           : key;
       const config: RelayConfiguration =
         raw.kind === "managed"
@@ -160,8 +211,15 @@ export function createRelayEditSession() {
             };
       const fields: RelayFields = {};
       if (dirty.includes("name")) fields.name = config.name;
-      if (dirty.includes("kind")) Object.assign(fields, config);
-      else {
+      if (dirty.includes("kind")) {
+        fields.kind = config.kind;
+        Object.assign(
+          fields,
+          config.kind === "managed"
+            ? { discoveryUrl: config.discoveryUrl }
+            : { peerId: config.peerId, addresses: config.addresses }
+        );
+      } else {
         if (dirty.includes("endpoint"))
           Object.assign(
             fields,
@@ -177,8 +235,6 @@ export function createRelayEditSession() {
         if (dirty.includes("peerId") && config.kind === "explicit")
           fields.peerId = config.peerId;
       }
-      // The entity key is authority, never an editable field.
-      delete (fields as Record<string, unknown>).key;
       update(draft, { ...draft.state, pending: true, error: null });
       let result: RelayMutationResult;
       try {
@@ -202,7 +258,8 @@ export function createRelayEditSession() {
           result.status
         ) ||
         typeof result.configurationApplied !== "boolean" ||
-        !Array.isArray(result.credentialsRemoved)
+        !Array.isArray(result.credentialsRemoved) ||
+        !Array.isArray(result.configurations)
       )
         result = {
           status: "unconfirmed",
@@ -212,29 +269,29 @@ export function createRelayEditSession() {
           error: "Outcome unconfirmed; check the relay list before retrying.",
         };
       if (drafts.get(key) !== draft) return;
-      if (result.status === "applied" && result.configurationApplied) {
-        if (draft.version === version) {
-          drafts.delete(key);
-          if (state?.key === key) publish(null);
+      if (result.configurationApplied) {
+        if (key === "new") adoptKey(draft, newKey);
+        if (result.status === "applied" && draft.version === version) {
+          drafts.delete(draft.state.key);
+          if (state?.key === draft.state.key) publish(null);
         } else {
-          if (key === "new") {
-            drafts.delete(key);
-            drafts.set(newKey, draft);
-            if (state?.key === key) state = { ...state, key: newKey };
-          }
           update(draft, {
             ...draft.state,
-            key: newKey,
             pending: false,
+            recoveryRequired: false,
             dirty: draft.state.dirty.filter(
               (field) => draft.fieldVersions[field] !== submittedVersions[field]
             ),
+            error:
+              result.status === "applied" ? null : relayMutationMessage(result),
           });
+          this.reconcile(result.configurations);
         }
       } else
         update(draft, {
           ...draft.state,
           pending: false,
+          recoveryRequired: result.status === "unconfirmed",
           error: relayMutationMessage(result),
         });
     },

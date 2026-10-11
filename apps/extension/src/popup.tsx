@@ -339,6 +339,14 @@ const Popup = () => {
         identityRotationNotice={identityRotationNotice}
         managedRelayConfigurations={managedRelayConfigurations}
         managedRelayStates={managedRelayStates}
+        onRefreshManagedRelays={async () =>
+          (
+            await relayAction<{
+              ok: true;
+              configurations: RelayConfiguration[];
+            }>({ type: "managedRelayRefresh" })
+          ).configurations
+        }
         onMutateManagedRelay={async (mutation) => {
           const response = await relayAction<{
             ok: true;

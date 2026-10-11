@@ -139,3 +139,30 @@ it("reconciles a durable configuration effect when the persistence acknowledgeme
   });
   expect(applied).toEqual([[b]]);
 });
+it("owning Refresh reconciles an unknown Add after persisted configuration readback becomes available", async () => {
+  let persisted: RelayConfiguration[] = [],
+    current: RelayConfiguration[] = [];
+  let unavailable = true;
+  const owner = createRelayMutationOwner({
+    read: () => current,
+    load: async () => {
+      if (unavailable) throw new Error("read_unavailable");
+      return persisted;
+    },
+    write: async (next) => {
+      persisted = next;
+      throw new Error("acknowledgement_lost");
+    },
+    accept: (next) => {
+      current = next;
+    },
+    apply: async () => {},
+    reconcile: async () => {},
+  });
+  expect(await owner.mutate({ type: "add", configuration: a })).toMatchObject({
+    status: "unconfirmed",
+    configurationApplied: false,
+  });
+  unavailable = false;
+  expect(await owner.refresh()).toEqual([a]);
+});

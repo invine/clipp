@@ -103,6 +103,8 @@ const api = {
     ipcRenderer.invoke("clipp:acknowledge-identity-rotation-notice"),
   renameIdentity: (name: string, expectedDeviceId: string) =>
     ipcRenderer.invoke("clipp:rename-identity", { name, expectedDeviceId }),
+  refreshManagedRelays: (): Promise<RelayConfiguration[]> =>
+    ipcRenderer.invoke("clipp:refresh-managed-relays"),
   mutateManagedRelay: (mutation: RelayMutation): Promise<RelayMutationResult> =>
     ipcRenderer.invoke(
       "clipp:mutate-managed-relay",

@@ -224,6 +224,14 @@ const Options = () => {
           configurations={managedRelayConfigurations}
           states={managedRelayStates}
           session={session}
+          onRefresh={async () =>
+            (
+              await relayAction<{
+                ok: true;
+                configurations: RelayConfiguration[];
+              }>({ type: "managedRelayRefresh" })
+            ).configurations
+          }
           onMutate={async (mutation) => {
             const response = await relayAction<{
               ok: true;
