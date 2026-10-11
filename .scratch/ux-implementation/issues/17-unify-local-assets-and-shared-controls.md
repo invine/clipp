@@ -1,11 +1,11 @@
 # Unify local assets and shared controls
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-controls-17
 Priority band: 1
 Blocked by: none
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -50,3 +50,11 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-11
+
+The first six scoped repairs are resolved. This independent band 1 control/access output has no hard predecessor. Ticket 07 source and review fixes are complete; its remaining acceptance is coordinated separately. The two source implementers are tickets 12 and 17. The work preserves the accepted actions, one live UI session, runtime authority, truthful partial/unconfirmed feedback, local SVG control treatment and ADR-0012. It changes no accepted product decision and does not perform later theme/navigation/compact-screen cutovers.
+
+Coordinator-owned claim: `ux-controls-17`, client branch `codex/ux-17-local-controls`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-17`, based on this claim commit. Preparation: `/private/tmp/clipp-ux-implementation-20261010/ticket-17-prep.md`. Public test seams are the approved rendered named controls and existing action consumers, explicit host stylesheet entry, native host geometry/target measurement and cold offline surfaces. These are the accepted package/coverage seams; do not invent private helper assertions. Ticket 12's single measured geometry interface is currently unintegrated at `2acbb22db879c1224b26fac491ec63854089046c`; consume it after coordinator integration rather than creating a second geometry owner.
+
+Native ownership remains serialized with ticket 12, then ticket 07 remaining acceptance. No host clipboard, global display or permission interval is open. Actual toolbar focus, independent toolbar enlargement and desktop OS text-only scaling need their recorded fresh coordinated procedures. Required candidate gates remain required; physical/assistive/external limitations and real sign-in deferral remain unchanged. All evidence must be preserved outside the disposable worktree.
