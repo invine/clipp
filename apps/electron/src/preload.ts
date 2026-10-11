@@ -1,3 +1,7 @@
+import type {
+  SettingsSnapshot,
+  SettingsWriteResult,
+} from "../../../packages/core/runtime/settingsAuthority.js";
 import type { AutoSyncActionResult } from "../../../packages/core/runtime/autoSyncAction.js";
 import type {
   RelayMutation,
@@ -59,6 +63,22 @@ type AppState = {
 };
 
 const api = {
+  getSettings: () =>
+    ipcRenderer.invoke("clipp:get-settings") as Promise<{
+      ok: true;
+      snapshot: SettingsSnapshot;
+    }>,
+  setTheme: (theme: unknown) =>
+    ipcRenderer.invoke(
+      "clipp:set-theme",
+      theme
+    ) as Promise<SettingsWriteResult>,
+  onSettingsUpdate: (listener: (snapshot: SettingsSnapshot) => void) => {
+    const handler = (_event: unknown, snapshot: SettingsSnapshot) =>
+      listener(snapshot);
+    ipcRenderer.on("clipp:settings-update", handler);
+    return () => ipcRenderer.removeListener("clipp:settings-update", handler);
+  },
   getRuntimeAuthority: () =>
     ipcRenderer.invoke("clipp:get-runtime-authority") as Promise<string>,
   getState: () => ipcRenderer.invoke("clipp:get-state") as Promise<AppState>,

@@ -1,3 +1,4 @@
+import { useRuntimeSettings } from "../../../packages/ui/src/useRuntimeSettings";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
 import "./android-host.css";
@@ -39,6 +40,16 @@ const initialState: AndroidAppState = {
 function App() {
   useEffect(() => bindAndroidHostGeometry(), []);
   const client = useMemo<AndroidClient>(() => createAndroidClient(), []);
+  const appearanceSettings = useRuntimeSettings({
+    send: (message) =>
+      message.type === "getSettings"
+        ? client.getSettings()
+        : client.setTheme(message.settings?.theme),
+    subscribe: (listener) =>
+      client.onSettingsUpdate((snapshot) =>
+        listener({ type: "settingsState", snapshot })
+      ),
+  });
   const [state, setState] = useState<AndroidAppState>(initialState);
   const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
   const consumer = useMemo(
@@ -93,6 +104,7 @@ function App() {
   return (
     <div className="android-host">
       <ClipboardApp
+        appearanceSettings={appearanceSettings}
         pairingDiagnostics={
           <PairingDiagnosticsPanel
             attempt={state.diagnostics?.lastPairingAttempt || null}

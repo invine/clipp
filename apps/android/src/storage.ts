@@ -16,7 +16,10 @@ const hasLocalStorage = () => {
   }
 };
 
-async function readItem(key: string, preferences: CapacitorPreferencesStore): Promise<string | null> {
+async function readItem(
+  key: string,
+  preferences: CapacitorPreferencesStore
+): Promise<string | null> {
   try {
     const res = await preferences.get({ key });
     if (res.value !== null && res.value !== undefined) return res.value;
@@ -38,6 +41,7 @@ async function writeItem(
   key: string,
   value: string,
   preferences: CapacitorPreferencesStore,
+  requirePersistence = false
 ): Promise<void> {
   try {
     await preferences.set({ key, value });
@@ -54,10 +58,14 @@ async function writeItem(
       // fall through to memory
     }
   }
+  if (requirePersistence) throw new Error("theme_persistence_unavailable");
   memory.set(key, value);
 }
 
-async function removeItem(key: string, preferences: CapacitorPreferencesStore): Promise<void> {
+async function removeItem(
+  key: string,
+  preferences: CapacitorPreferencesStore
+): Promise<void> {
   try {
     await preferences.remove({ key });
   } catch {
@@ -80,7 +88,7 @@ async function removeItem(key: string, preferences: CapacitorPreferencesStore): 
 export class LocalStorageBackend implements KVStorageBackend {
   constructor(
     private prefix = "clipp-android:",
-    private readonly preferences: CapacitorPreferencesStore = Preferences,
+    private readonly preferences: CapacitorPreferencesStore = Preferences
   ) {}
 
   async get<T = any>(key: string): Promise<T | undefined> {
@@ -94,7 +102,12 @@ export class LocalStorageBackend implements KVStorageBackend {
   }
 
   async set<T = any>(key: string, value: T): Promise<void> {
-    await writeItem(this.prefix + key, JSON.stringify(value), this.preferences);
+    await writeItem(
+      this.prefix + key,
+      JSON.stringify(value),
+      this.preferences,
+      key === "theme"
+    );
   }
 
   async remove(key: string): Promise<void> {

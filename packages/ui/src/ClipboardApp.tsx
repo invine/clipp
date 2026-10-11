@@ -1,3 +1,4 @@
+import { Appearance, type AppearanceSettings } from "./Appearance";
 import { PairingStatus } from "./PairingStatus";
 import type { PairingOutcome, PairingOutcomeSnapshot } from "./types";
 import { useTaskRecoveryIssues } from "./useTaskRecoveryIssues";
@@ -315,6 +316,7 @@ export type ClipboardAppProps = {
   historyRefreshError?: string | null;
   onRetryHistoryRefresh?(): boolean | Promise<boolean>;
   localRetentionMs?: number;
+  appearanceSettings?: AppearanceSettings;
   autoSync?: boolean;
   autoSyncKnown?: boolean;
   autoSyncLoading?: boolean;
@@ -401,6 +403,7 @@ export function ClipboardApp({
   historyRefreshError = null,
   onRetryHistoryRefresh,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
+  appearanceSettings,
   autoSync = true,
   autoSyncKnown = true,
   autoSyncLoading = false,
@@ -2114,13 +2117,7 @@ export function ClipboardApp({
             />
           </div>
 
-          <button
-            className="icon-button"
-            aria-label="Toggle theme"
-            title="Toggle theme"
-          >
-            <Icon name="moon" />
-          </button>
+          {appearanceSettings && <Appearance settings={appearanceSettings} />}
         </div>
       </header>
 

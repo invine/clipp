@@ -1,3 +1,7 @@
+import {
+  createSettingsHandler,
+  type SettingsSnapshot,
+} from "../../../packages/core/runtime/settingsAuthority";
 import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction";
 import {
   createRelayMutationOwner,
@@ -226,6 +230,32 @@ function logPairing(
 
 export class AndroidClient {
   private readonly storage = new LocalStorageBackend();
+  private readonly settingsListeners = new Set<
+    (snapshot: SettingsSnapshot) => void
+  >();
+  private readonly settingsHandler = createSettingsHandler({
+    storage: this.storage,
+    applyAutoSync: (enabled) => {
+      this.autoSync = enabled;
+      this.clipboardSync.setAutoSync(enabled);
+    },
+    applyLogLevel: () => {},
+    publish: async (snapshot) => {
+      for (const listener of this.settingsListeners) listener(snapshot);
+    },
+  });
+  async getSettings() {
+    return { ok: true as const, snapshot: await this.settingsHandler.read() };
+  }
+  setTheme(theme: unknown) {
+    return this.settingsHandler.write({ theme });
+  }
+  onSettingsUpdate(listener: (snapshot: SettingsSnapshot) => void) {
+    this.settingsListeners.add(listener);
+    return () => {
+      this.settingsListeners.delete(listener);
+    };
+  }
   private readonly relaySecrets = createAndroidRelaySecretBridge();
   private readonly relayAuth = new AndroidManagedRelayAuth(this.relaySecrets);
   private managedRelays: ManagedRelayController | null = null;
