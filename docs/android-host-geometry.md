@@ -54,3 +54,14 @@ Draft retention applies only to a surviving live Activity/WebView document.
 Destroyed Activity/WebView, reload and restart do not gain persistence promises.
 Native font scale is recorded separately from measured WebView text effect;
 explicit CSS text enlargement is labelled as a fixture in acceptance evidence.
+
+## Rendered regression
+
+`node tests/harness/host-geometry.mjs [output-directory]` bundles the actual shared
+shell, relay task, QR and scanner surface into an isolated headless browser. It
+checks nonzero bar/cutout/IME geometry, a 1200px viewport narrowed to1060px usable
+width, short/narrow scrollers, last-action reachability and repeated unchanged
+geometry after manual task scrolling. The optional output directory preserves
+the fixture bundle and JSON measurements. An installed Playwright Chromium is
+required. This controlled geometry fixture supplements real native acceptance;
+it does not acquire media or read/write the clipboard.

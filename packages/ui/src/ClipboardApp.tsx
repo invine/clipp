@@ -2159,7 +2159,12 @@ export function ClipboardApp({
         </div>
       )}
 
-      <main className="app-main" tabIndex={-1} data-session-focus="workspace">
+      <main
+        className="app-main"
+        tabIndex={-1}
+        data-session-focus="workspace"
+        style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
+      >
         <aside
           className="surface nav-pane"
           data-session-scroll="navigation"
