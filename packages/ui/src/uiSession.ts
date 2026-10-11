@@ -29,6 +29,7 @@ export type SessionContext = {
   tasks: SessionTask[];
   focusKey: string | null;
   scroll: Record<string, number>;
+  historyAnchor: { clipId: string; offset: number } | null;
   autoSync: {
     pending: boolean;
     recoveryRequired: boolean;
@@ -64,6 +65,7 @@ export function createUiSession() {
     tasks: [],
     focusKey: null,
     scroll: {},
+    historyAnchor: null,
     autoSync: {
       pending: false,
       recoveryRequired: false,

@@ -86,9 +86,11 @@ it("composes independent source faults once through the shared shell and retains
   );
 });
 it("keeps ordinary offline devices and empty relays out of the fault count and blocks cold identity actions", () => {
-  const html = render({ initializationError: true });
+  const session = createUiSession();
+  session.update({ destination: "devices" });
+  const html = render({ initializationError: true, session });
   expect(html).toContain("1 issue needs attention");
-  expect(html).toMatch(/disabled=""[^>]*>Add/);
+  expect(html).toMatch(/disabled=""[^>]*>Pair this device/);
   expect(html).toMatch(
     /disabled=""[^>]*aria-label="Share current clipboard now"|aria-label="Share current clipboard now"[^>]*disabled=""/
   );
@@ -230,10 +232,10 @@ it("keeps independent suspended alias and relay failures visible when B becomes 
   await session.alias.save(async () => ({ deviceId: "alias-a" }));
   expect(render(views)).toContain("1 issue needs attention");
 });
-it("the real Pairing task distinguishes response, current Membership and recovery without losing its draft", () => {
+it("the real Requests destination distinguishes response, current Membership and recovery without losing the Pairing draft", () => {
   const session = createUiSession();
   session.pairing.change("newer draft");
-  session.open({ kind: "pairing", origin: "pairing-paste" });
+  session.update({ destination: "requests" });
   const html = render({
     session,
     identity: { deviceId: "local", deviceName: "Desktop" },

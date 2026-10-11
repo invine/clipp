@@ -127,6 +127,9 @@ function App() {
         onRetryRuntime={() => consumer.load()}
         devices={state.devices as Device[]}
         pending={state.pending as PendingRequest[]}
+        requestsLoading={recovery.loading}
+        requestsUnavailable={recovery.unavailable || !state.pairingState}
+        onRetryRequests={() => consumer.load()}
         waiting={state.waiting || []}
         pairingErrors={state.pairingErrors || []}
         pairingOutcomes={state.pairingState?.outcomes}
@@ -142,6 +145,8 @@ function App() {
         pinnedIds={state.pinnedIds || []}
         localRetentionMs={state.localRetentionMs}
         autoSync={state.autoSync}
+        autoSyncKnown={!recovery.loading && !recovery.unavailable}
+        autoSyncLoading={recovery.loading}
         backgroundContinuity={state.backgroundContinuity}
         clipboardHistoryError={state.clipboardHistoryError}
         historyPolicyError={state.historyPolicyError}

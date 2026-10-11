@@ -1,4 +1,7 @@
-import React, { useEffect, useId, useRef } from "react";
+import { findSessionFocus } from "./sessionFocus";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { hostContentSize, HOST_GEOMETRY_EVENT } from "./hostGeometry";
+import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
 
 export type TaskDialogProps = {
   title: string;
@@ -11,6 +14,8 @@ export type TaskDialogProps = {
   onDismiss?(): void;
   originKey?: string;
   className?: string;
+  initialFocusKey?: string;
+  returnLabel?: string;
 };
 
 export function TaskDialog({
@@ -24,27 +29,63 @@ export function TaskDialog({
   onDismiss,
   originKey,
   className,
+  initialFocusKey,
+  returnLabel = "Close",
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const returnRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  const [narrow, setNarrow] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      hostContentSize(window, document).width <= NARROW_CONTENT_WIDTH
+  );
+  useEffect(() => {
+    const resize = () =>
+      setNarrow(
+        hostContentSize(window, document).width <= NARROW_CONTENT_WIDTH
+      );
+    window.addEventListener("resize", resize);
+    window.addEventListener(HOST_GEOMETRY_EVENT, resize);
+    resize();
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, resize);
+    };
+  }, []);
 
   useEffect(() => {
     const origin =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    cancelRef.current?.focus();
+    const initial = findSessionFocus(dialogRef.current, initialFocusKey, {
+      visible: false,
+      enabled: false,
+    });
+    (initial ?? returnRef.current ?? cancelRef.current)?.focus();
+    const backgrounds: HTMLElement[] = [];
+    let branch = dialogRef.current?.parentElement;
+    while (branch?.parentElement) {
+      for (const sibling of branch.parentElement.children)
+        if (sibling instanceof HTMLElement && sibling !== branch)
+          backgrounds.push(sibling);
+      branch = branch.parentElement;
+      if (branch === document.body) break;
+    }
+    const inert = backgrounds.map((element) => element.inert);
+    backgrounds.forEach((element) => {
+      element.inert = true;
+    });
     return () => {
-      const logicalOrigin = originKey
-        ? [
-            ...document.querySelectorAll<HTMLElement>("[data-session-focus]"),
-          ].find(
-            (element) =>
-              element.dataset.sessionFocus === originKey &&
-              element.getClientRects().length
-          )
-        : null;
+      backgrounds.forEach((element, index) => {
+        element.inert = inert[index];
+      });
+      const logicalOrigin = findSessionFocus(document, originKey, {
+        visible: true,
+        enabled: false,
+      });
       if (logicalOrigin) logicalOrigin.focus();
       else if (origin?.isConnected && origin.getClientRects().length)
         origin.focus();
@@ -53,10 +94,16 @@ export function TaskDialog({
           .querySelector<HTMLElement>("[data-session-focus=workspace]")
           ?.focus();
     };
-  }, [originKey]);
+  }, [originKey, initialFocusKey]);
 
   useEffect(() => {
-    if (pending) dialogRef.current?.focus();
+    if (
+      pending &&
+      (document.activeElement === document.body ||
+        (document.activeElement instanceof HTMLButtonElement &&
+          document.activeElement.disabled))
+    )
+      dialogRef.current?.focus();
   }, [pending]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -89,7 +136,10 @@ export function TaskDialog({
   }
 
   return (
-    <div className="task-dialog-backdrop" role="presentation">
+    <div
+      className={`task-dialog-backdrop ${narrow && role === "dialog" ? "task-dialog-full" : ""}`}
+      role="presentation"
+    >
       <div
         className={`task-dialog ${className ?? ""}`}
         role={role}
@@ -100,7 +150,14 @@ export function TaskDialog({
         ref={dialogRef}
         onKeyDown={handleKeyDown}
       >
-        <h2 id={titleId}>{title}</h2>
+        <header className="task-dialog-header">
+          {onDismiss && (
+            <button ref={returnRef} type="button" onClick={onDismiss}>
+              {returnLabel}
+            </button>
+          )}
+          <h2 id={titleId}>{title}</h2>
+        </header>
         {children}
         <button
           ref={cancelRef}

@@ -308,6 +308,9 @@ const Popup = () => {
         clips={history.snapshot?.clips ?? []}
         devices={devices}
         pending={pending}
+        requestsLoading={recovery.loading}
+        requestsUnavailable={recovery.unavailable || !pairingState}
+        onRetryRequests={() => consumer.load()}
         waiting={waiting}
         pairingErrors={pairingErrors}
         pairingOutcomes={pairingState?.outcomes}
