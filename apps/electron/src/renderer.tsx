@@ -1,10 +1,13 @@
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
 import "./electron-host.css";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import { createHistoryInitialLoadGate } from "../../../packages/core/history/bootstrap.js";
+import {
+  createRuntimeUiRecovery,
+  initialRuntimeUiRecovery,
+} from "../../../packages/core/runtime/uiRecovery.js";
 import type {
   Clip,
   ClipboardHistoryError,
@@ -63,43 +66,28 @@ const initialState: AppState = {
 
 const App = () => {
   const [state, setState] = useState<AppState>(initialState);
-  const [, setError] = useState<string | null>(null);
-  const [initializationError, setInitializationError] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
-
+  const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
+  const consumer = useMemo(
+    () =>
+      createRuntimeUiRecovery<AppState>({
+        load: async () => {
+          if (!window.clipp) throw new Error("bridge_unavailable");
+          return window.clipp.getState();
+        },
+        initializationError: async () =>
+          (await window.clipp?.getInitializationError?.()) ?? null,
+        confirmed: (state) =>
+          !state.historyUnavailable && !state.historyRefreshError,
+        onState: setState,
+        onRecovery: setRecovery,
+      }),
+    []
+  );
   useEffect(() => {
-    let cancelled = false;
-    const initialLoad = createHistoryInitialLoadGate<AppState>({
-      onState: setState,
-      onLoading: setHistoryLoading,
-      onFailed: setHistoryLoadFailed,
-    });
+    void consumer.load();
     const api = window.clipp;
-    if (!api) {
-      setError("Bridge unavailable (preload not loaded)");
-      return;
-    }
-    async function load() {
-      try {
-        const s = await api.getState();
-        initialLoad.resolved(s);
-      } catch (err) {
-        if (!initialLoad.rejected()) return;
-        setError("Failed to load state");
-        const initialization = await api
-          .getInitializationError?.()
-          .catch(() => null);
-        if (!cancelled)
-          setInitializationError(
-            initialization?.code === "identity_initialization_failed"
-          );
-        console.error("Failed to load state", err);
-      }
-    }
-    load();
-    const unsubscribe = api.onUpdate((s) => initialLoad.live(s));
-    const unlog = api.onLog?.((payload) => {
+    const unsubscribe = api?.onUpdate((state) => consumer.live(state));
+    const unlog = api?.onLog?.((payload) => {
       const { level, message, data } = payload || {};
       const fn =
         level === "warn"
@@ -110,12 +98,11 @@ const App = () => {
       fn(`[clipp:${level || "info"}] ${message || ""}`, data || "");
     });
     return () => {
-      cancelled = true;
-      initialLoad.cancel();
+      consumer.cancel();
       if (unsubscribe) unsubscribe();
       if (unlog) unlog();
     };
-  }, []);
+  }, [consumer]);
 
   async function handlePairText(txt: string) {
     return await window.clipp.pairFromText(txt);
@@ -134,20 +121,20 @@ const App = () => {
         relayConnections={state.relayConnections || []}
         identity={state.identity}
         pinnedIds={state.pinnedIds || []}
-        historyLoading={historyLoading}
+        historyLoading={recovery.loading}
         historyUnavailable={
-          !historyLoading &&
-          (historyLoadFailed || state.historyUnavailable || false)
+          !recovery.loading && (state.historyUnavailable || false)
         }
         historyRefreshError={
           state.historyRefreshError ? "history_unavailable" : null
         }
-        onRetryHistoryRefresh={async () => {
-          const next = await window.clipp.getState();
-          setState(next);
-          setHistoryLoadFailed(false);
-          return !next.historyUnavailable && !next.historyRefreshError;
-        }}
+        onRetryHistoryRefresh={() => consumer.load()}
+        runtimeError={
+          recovery.unavailable && !recovery.initializationError
+            ? "Runtime state could not be loaded."
+            : null
+        }
+        onRetryRuntime={() => consumer.load()}
         localRetentionMs={state.localRetentionMs}
         autoSync={state.autoSync}
         clipboardHistoryError={state.clipboardHistoryError}
@@ -155,7 +142,7 @@ const App = () => {
         relayAddresses={state.relayAddresses || []}
         managedRelayConfigurations={state.managedRelayConfigurations || []}
         managedRelayStates={state.managedRelayStates || []}
-        initializationError={initializationError}
+        initializationError={recovery.initializationError}
         identityRotationRecovery={state.identityRotationRecovery}
         identityRotationNotice={state.identityRotationNotice}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
@@ -171,9 +158,7 @@ const App = () => {
         onSetPinned={(id, pinned) => window.clipp.setPinned(id, pinned)}
         onClearAll={async () => {
           await window.clipp.clearHistory();
-          const next = await window.clipp.getState();
-          setState(next);
-          if (next.historyUnavailable || next.historyRefreshError)
+          if (!(await consumer.load()))
             throw new Error("history_refresh_failed");
         }}
         onDismissClipboardHistoryError={() =>
@@ -191,7 +176,9 @@ const App = () => {
         onRenameIdentity={(name, expectedDeviceId) =>
           window.clipp.renameIdentity(name, expectedDeviceId)
         }
-        onRetryInitialization={() => window.clipp.retryIdentityInitialization()}
+        onRetryInitialization={() =>
+          consumer.load(() => window.clipp.retryIdentityInitialization())
+        }
         onRefreshManagedRelays={() => window.clipp.refreshManagedRelays()}
         onMutateManagedRelay={(mutation) =>
           window.clipp.mutateManagedRelay(mutation)

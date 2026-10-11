@@ -1,3 +1,4 @@
+import type { ClipboardActionFeedback } from "./clipboardActionFeedback";
 import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
 import { createNameEditSession } from "./nameEditSession";
 import { createPairingSubmission } from "./pairingSubmission";
@@ -6,7 +7,14 @@ import { createRelayEditSession } from "./relayEditSession";
 import type { RelayActionResult } from "../../core/network/relayActions";
 export type SessionTask = {
   kind:
-    "device-name" | "alias" | "relay" | "pairing" | "paste" | "qr" | "clear";
+    | "device-name"
+    | "alias"
+    | "relay"
+    | "pairing"
+    | "paste"
+    | "qr"
+    | "clear"
+    | "issues";
   entity?: string;
   origin: string;
 };
@@ -27,6 +35,11 @@ export type SessionContext = {
     feedback: AutoSyncActionResult | null;
   };
   taskNotice: string | null;
+  historyActions: Record<
+    string,
+    { pending: boolean; feedback: ClipboardActionFeedback | null }
+  >;
+  recoveryAttempts: Record<string, { pending: boolean; error: boolean }>;
   relayMutationFeedback: Record<string, string>;
   relayActions: Record<
     string,
@@ -56,10 +69,17 @@ export function createUiSession() {
       refreshed: false,
       feedback: null,
     },
+    historyActions: {},
+    recoveryAttempts: {},
     taskNotice: null,
     relayMutationFeedback: {},
     relayActions: {},
   };
+  let historyGeneration = 0;
+  const historyRetries = new Map<
+    string,
+    () => Promise<ClipboardActionFeedback | null>
+  >();
   const listeners = new Set<() => void>();
   const update = (fields: Partial<SessionContext>) => {
     state = { ...state, ...fields };
@@ -123,11 +143,88 @@ export function createUiSession() {
       this.back();
     },
     rotateIdentity() {
+      historyGeneration++;
+      historyRetries.clear();
       name.clear();
       alias.clear();
       pairing.discard();
       qr.close();
-      update({ tasks: state.tasks.filter((task) => task.kind === "relay") });
+      update({
+        tasks: state.tasks.filter((task) => task.kind === "relay"),
+        historyActions: {},
+      });
+    },
+    async runHistoryAction(
+      id: string,
+      action: () => Promise<ClipboardActionFeedback | null>
+    ) {
+      if (state.historyActions[id]?.pending) return;
+      const generation = historyGeneration;
+      update({
+        historyActions: {
+          ...state.historyActions,
+          [id]: {
+            pending: true,
+            feedback: state.historyActions[id]?.feedback ?? null,
+          },
+        },
+      });
+      let feedback: ClipboardActionFeedback | null;
+      try {
+        feedback = await action();
+      } catch {
+        feedback = {
+          message:
+            "The action result could not be confirmed. Check History before retrying.",
+          action: "dismiss",
+        };
+      }
+      if (generation !== historyGeneration) return;
+      if (feedback?.action === "retry") historyRetries.set(id, action);
+      else historyRetries.delete(id);
+      const historyActions = { ...state.historyActions };
+      if (feedback) historyActions[id] = { pending: false, feedback };
+      else delete historyActions[id];
+      update({ historyActions });
+    },
+    async retryHistoryAction(id: string) {
+      const action = historyRetries.get(id);
+      if (action) await this.runHistoryAction(id, action);
+    },
+    dismissHistoryAction(id: string) {
+      if (
+        state.historyActions[id]?.pending ||
+        state.historyActions[id]?.feedback?.action !== "dismiss"
+      )
+        return;
+      historyRetries.delete(id);
+      const historyActions = { ...state.historyActions };
+      delete historyActions[id];
+      update({ historyActions });
+    },
+    async retryRecovery(
+      id: string,
+      action: () => boolean | void | Promise<boolean | void>
+    ) {
+      if (state.recoveryAttempts[id]?.pending) return;
+      update({
+        recoveryAttempts: {
+          ...state.recoveryAttempts,
+          [id]: { pending: true, error: false },
+        },
+      });
+      let error = false;
+      try {
+        error = (await action()) === false;
+      } catch {
+        error = true;
+      }
+      update({
+        recoveryAttempts: {
+          ...state.recoveryAttempts,
+          [id]: { pending: false, error },
+        },
+      });
     },
     async saveAutoSync(
       action: () => Promise<AutoSyncActionResult | void> | void

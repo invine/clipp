@@ -4,7 +4,10 @@ import "./android-host.css";
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
-import { createHistoryInitialLoadGate } from "@core/history/bootstrap";
+import {
+  createRuntimeUiRecovery,
+  initialRuntimeUiRecovery,
+} from "@core/runtime/uiRecovery";
 import type { Clip, Device, Identity, PendingRequest } from "@clipp/ui";
 import {
   AndroidClient,
@@ -37,48 +40,32 @@ function App() {
   useEffect(() => bindAndroidHostGeometry(), []);
   const client = useMemo<AndroidClient>(() => createAndroidClient(), []);
   const [state, setState] = useState<AndroidAppState>(initialState);
-  const [error, setError] = useState<string | null>(null);
-  const [initializationError, setInitializationError] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
-
+  const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
+  const consumer = useMemo(
+    () =>
+      createRuntimeUiRecovery<AndroidAppState>({
+        load: async () => {
+          await client.start();
+          return client.getState();
+        },
+        initializationError: async () =>
+          (await client.getInitializationError()) ?? null,
+        confirmed: (state) =>
+          !state.historyUnavailable && !state.historyRefreshError,
+        onState: setState,
+        onRecovery: setRecovery,
+      }),
+    [client]
+  );
   useEffect(() => {
-    let cancelled = false;
-    const initialLoad = createHistoryInitialLoadGate<AndroidAppState>({
-      onState: setState,
-      onLoading: setHistoryLoading,
-      onFailed: setHistoryLoadFailed,
-    });
-
-    client
-      .start()
-      .then(() => client.getState())
-      .then((next) => initialLoad.resolved(next))
-      .catch((err) => {
-        console.error("Failed to start Android client", err);
-        if (!initialLoad.rejected()) return;
-        void client.getInitializationError().then((initialization) => {
-          if (cancelled) return;
-          if (initialization) {
-            setInitializationError(true);
-            setError(null);
-          } else {
-            setError(
-              "Unable to start background services. Check clipboard permissions."
-            );
-          }
-        });
-      });
-
-    const unsubscribe = client.onUpdate((next) => initialLoad.live(next));
-
+    void consumer.load();
+    const unsubscribe = client.onUpdate((state) => consumer.live(state));
     return () => {
-      cancelled = true;
-      initialLoad.cancel();
+      consumer.cancel();
       unsubscribe();
       client.stop();
     };
-  }, [client]);
+  }, [client, consumer]);
 
   async function handlePairText(txt: string) {
     return await client.pairFromText(txt);
@@ -101,21 +88,6 @@ function App() {
 
   return (
     <div className="android-host">
-      {error && (
-        <div
-          style={{
-            background: "var(--clipp-surface-raised)",
-            border: "1px solid var(--clipp-danger)",
-            color: "var(--clipp-danger)",
-            padding: 12,
-            margin: 12,
-            borderRadius: 12,
-            fontSize: ".875rem",
-          }}
-        >
-          {error}
-        </div>
-      )}
       <ClipboardApp
         pairingDiagnostics={
           <PairingDiagnosticsPanel
@@ -123,20 +95,20 @@ function App() {
           />
         }
         clips={state.clips as Clip[]}
-        historyLoading={historyLoading}
+        historyLoading={recovery.loading}
         historyUnavailable={
-          !historyLoading &&
-          (historyLoadFailed || state.historyUnavailable || false)
+          !recovery.loading && (state.historyUnavailable || false)
         }
         historyRefreshError={
           state.historyRefreshError ? "history_unavailable" : null
         }
-        onRetryHistoryRefresh={async () => {
-          const next = await client.getState();
-          setState(next);
-          setHistoryLoadFailed(false);
-          return !next.historyUnavailable && !next.historyRefreshError;
-        }}
+        onRetryHistoryRefresh={() => consumer.load()}
+        runtimeError={
+          recovery.unavailable && !recovery.initializationError
+            ? "Android services could not be started or loaded."
+            : null
+        }
+        onRetryRuntime={() => consumer.load()}
         devices={state.devices as Device[]}
         pending={state.pending as PendingRequest[]}
         waiting={state.waiting || []}
@@ -159,7 +131,7 @@ function App() {
         onManagedRelayLogin={(key) => client.loginManagedRelay(key)}
         onManagedRelayAccount={(key) => client.openManagedRelayAccount(key)}
         onManagedRelayRetry={(key) => client.retryManagedRelay(key)}
-        initializationError={initializationError}
+        initializationError={recovery.initializationError}
         identityRotationRecovery={state.identityRotationRecovery}
         identityRotationNotice={state.identityRotationNotice}
         onDeleteClip={(id) => client.deleteClip(id)}
@@ -181,9 +153,7 @@ function App() {
         }}
         onClearAll={async () => {
           await client.clearHistory();
-          const next = await client.getState();
-          setState(next);
-          if (next.historyUnavailable || next.historyRefreshError)
+          if (!(await consumer.load()))
             throw new Error("history_refresh_failed");
         }}
         onDismissClipboardHistoryError={() =>
@@ -204,14 +174,11 @@ function App() {
         onExportBackgroundContinuityDiagnostics={() =>
           client.exportBackgroundContinuityDiagnostics()
         }
-        onRetryInitialization={async () => {
-          try {
-            setState(await client.retryIdentityInitialization());
-            setInitializationError(false);
-          } catch {
-            setInitializationError(true);
-          }
-        }}
+        onRetryInitialization={() =>
+          consumer.load(async () => {
+            await client.retryIdentityInitialization();
+          })
+        }
       />
     </div>
   );
@@ -225,7 +192,7 @@ function PairingDiagnosticsPanel({
   if (!attempt) return null;
 
   return (
-    <details
+    <div
       style={{
         maxWidth: "100%",
         maxHeight: "25dvh",
@@ -243,9 +210,9 @@ function PairingDiagnosticsPanel({
         fontSize: ".875rem",
       }}
     >
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+      <p style={{ fontWeight: 700 }}>
         Pairing diagnostics: {attempt.status} ({attempt.attemptId})
-      </summary>
+      </p>
       <pre
         style={{
           marginTop: 10,
@@ -258,7 +225,7 @@ function PairingDiagnosticsPanel({
       >
         {JSON.stringify(attempt, null, 2)}
       </pre>
-    </details>
+    </div>
   );
 }
 

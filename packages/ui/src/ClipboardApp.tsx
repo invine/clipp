@@ -1,3 +1,8 @@
+import {
+  composeRecoveryIssues,
+  type RecoveryIssue,
+} from "../../core/runtime/recoveryIssues";
+import { RecoveryIssues } from "./RecoveryIssues";
 import { Icon, IconButton } from "./controls";
 import { HOST_GEOMETRY_EVENT, hostContentSize } from "./hostGeometry";
 import { TaskDialog } from "./TaskDialog";
@@ -51,15 +56,11 @@ import {
   RelayConnectionInfo,
   type BackgroundContinuityDiagnosticStatus,
 } from "./types";
-import {
-  identityRotationNoticeMessage,
-  type IdentityRotationNoticeReason,
-} from "./identityRotationNotice";
+import { type IdentityRotationNoticeReason } from "./identityRotationNotice";
 import {
   normalizeShareNowFailureCode,
   reuseClipFeedback,
   shareNowFailureFeedback,
-  type ClipboardActionFeedback,
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
@@ -103,19 +104,6 @@ function truncateMiddle(text: string, max = 28): string {
   const lead = Math.ceil(available / 2);
   const tail = Math.floor(available / 2);
   return `${text.slice(0, lead)}...${text.slice(text.length - tail)}`;
-}
-
-function clipboardHistoryErrorMessage(error: ClipboardHistoryError): string {
-  if (error === "clip_too_large") {
-    return "A clipboard value was too large to save in Clipboard History.";
-  }
-  if (error === "pending_capture_too_large") {
-    return "A pending clipboard item was too large to keep for a later storage retry.";
-  }
-  if (error === "pending_capture_dropped") {
-    return "Clipboard History storage is unavailable. One or more pending Clips could not be saved.";
-  }
-  return "Clipboard History storage is unavailable. Clipp will retry pending Clips automatically.";
 }
 
 function connectionStatusFor(
@@ -338,6 +326,8 @@ export type ClipboardAppProps = {
   managedRelayConfigurations?: RelayConfiguration[];
   managedRelayStates?: RelayState[];
   initializationError?: boolean;
+  runtimeError?: string | null;
+  onRetryRuntime?(): boolean | void | Promise<boolean | void>;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
   backgroundContinuity?: BackgroundContinuityDiagnosticStatus & {
@@ -383,7 +373,7 @@ export type ClipboardAppProps = {
   onManagedRelayLogin?(key: string): Promise<RelayActionResult>;
   onManagedRelayAccount?(key: string): Promise<RelayActionResult>;
   onManagedRelayRetry?(key: string): Promise<RelayActionResult>;
-  onRetryInitialization?(): void | Promise<void>;
+  onRetryInitialization?(): boolean | void | Promise<boolean | void>;
   onAcknowledgeIdentityRotationNotice?(): void | Promise<void>;
 };
 
@@ -399,7 +389,7 @@ export function ClipboardApp({
   identity,
   pinnedIds,
   historyLoading = false,
-  historyUnavailable = false,
+  historyUnavailable: sourceHistoryUnavailable = false,
   historyRefreshError = null,
   onRetryHistoryRefresh,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
@@ -417,6 +407,8 @@ export function ClipboardApp({
   managedRelayConfigurations = [],
   managedRelayStates = [],
   initializationError = false,
+  runtimeError = null,
+  onRetryRuntime,
   identityRotationRecovery = false,
   identityRotationNotice = null,
   backgroundContinuity,
@@ -489,7 +481,7 @@ export function ClipboardApp({
     Record<string, string>
   >({});
   async function decideRequest(request: PendingRequest, accepted: boolean) {
-    if (approvalBusy.current.has(request.deviceId)) return;
+    if (!identityReady || approvalBusy.current.has(request.deviceId)) return;
     approvalBusy.current.add(request.deviceId);
     setApprovalsPending([...approvalBusy.current]);
     let result: PairingApprovalResult;
@@ -520,12 +512,19 @@ export function ClipboardApp({
   const localNameSession = session.name;
   const localNameEdit = useSyncExternalStore(
     localNameSession.subscribe,
+    localNameSession.getSnapshot,
     localNameSession.getSnapshot
   );
   const aliasSession = session.alias;
   const aliasEdit = useSyncExternalStore(
     aliasSession.subscribe,
+    aliasSession.getSnapshot,
     aliasSession.getSnapshot
+  );
+  const relayEdit = useSyncExternalStore(
+    session.relay.subscribe,
+    session.relay.getSnapshot,
+    session.relay.getSnapshot
   );
   const [revocationError, setRevocationError] = useState<{
     deviceId: string;
@@ -538,15 +537,11 @@ export function ClipboardApp({
   const [relayDraft, setRelayDraft] = useState("");
   const [relaySaving, setRelaySaving] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
   const [clearReviewOpen, setClearReviewOpen] = useState(false);
   const [clearPending, setClearPending] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
   const [clearNeedsRefresh, setClearNeedsRefresh] = useState(false);
   const [clearRefreshPending, setClearRefreshPending] = useState(false);
-  const [retryHistoryOperation, setRetryHistoryOperation] = useState<
-    (() => void) | null
-  >(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const previousIdentity = useRef<string | null>(null);
   useEffect(() => {
@@ -580,6 +575,121 @@ export function ClipboardApp({
       focus ?? root.querySelector<HTMLElement>("[data-session-focus=workspace]")
     )?.focus({ preventScroll: true });
   }, [session, isNarrow, showNav, sessionState.tasks.length]);
+  const historyUnavailable =
+    sourceHistoryUnavailable ||
+    (clips.length === 0 && (initializationError || Boolean(runtimeError)));
+  const identityReady =
+    Boolean(identity) &&
+    !initializationError &&
+    !identityRotationRecovery &&
+    !runtimeError;
+  const issues = composeRecoveryIssues({
+    initializationError,
+    runtimeError,
+    identityRotationRecovery,
+    identityRotationNotice,
+    historyUnavailable: sourceHistoryUnavailable,
+    historyRefreshError,
+    clipboardHistoryError,
+    historyPolicyError,
+    pairingErrors,
+    managedRelayStates,
+  });
+  for (const [target, action] of Object.entries(sessionState.historyActions)) {
+    if (action.feedback)
+      issues.push({
+        id: `history:${target}:action_failed`,
+        scope: "history",
+        code: "action_failed",
+        target,
+        recovering: action.feedback.action === "retry",
+        diagnostics: action.feedback.message,
+      });
+  }
+  const taskIssue = (
+    target: string,
+    code: string,
+    message: string,
+    diagnostics?: string
+  ) =>
+    issues.push({
+      id: `task:${target}:${code}`,
+      scope: "task",
+      target,
+      code,
+      recovering: true,
+      message,
+      diagnostics,
+    });
+  if (localNameEdit.error && localNameEdit.targetId)
+    taskIssue(
+      localNameEdit.targetId,
+      "device-name",
+      nameSaveErrorMessage(localNameEdit.error, false),
+      localNameEdit.error
+    );
+  if (aliasEdit.error && aliasEdit.targetId)
+    taskIssue(
+      aliasEdit.targetId,
+      "alias",
+      nameSaveErrorMessage(aliasEdit.error, true),
+      aliasEdit.error
+    );
+  if (pair.result && !pair.result.ok)
+    taskIssue(
+      "input",
+      "pairing",
+      pairingSubmissionMessage(pair.result),
+      pair.result.error
+    );
+  if (relayEdit?.error)
+    taskIssue(
+      relayEdit.key,
+      "relay-edit",
+      "Relay Save could not be confirmed. Your edit is retained.",
+      relayEdit.error
+    );
+  for (const [key, action] of Object.entries(sessionState.relayActions)) {
+    if (action.result?.error)
+      taskIssue(
+        key,
+        "relay-action",
+        "A relay action could not be confirmed. Check its current state.",
+        action.result.error
+      );
+  }
+  const autoSyncProblem =
+    autoSyncRefreshError ||
+    sessionState.autoSync.feedback?.error ||
+    autoSyncFeedback?.error;
+  if (autoSyncProblem)
+    taskIssue(
+      "preference",
+      "auto-sync",
+      "Auto Sync needs attention. Check its applied value before saving again.",
+      autoSyncProblem
+    );
+  function issueRetry(issue: RecoveryIssue) {
+    if (issue.code === "initialization_failed") return onRetryInitialization;
+    if (issue.scope === "runtime" && issue.code === "unavailable")
+      return onRetryRuntime;
+    if (issue.id === "history:read:unavailable") return onRetryHistoryRefresh;
+    if (issue.code === "history_cleanup_failed") return onRetryHistoryCleanup;
+    if (
+      identityReady &&
+      issue.code === "action_failed" &&
+      sessionState.historyActions[issue.target!]?.feedback?.action === "retry"
+    )
+      return () => session.retryHistoryAction(issue.target!);
+    return undefined;
+  }
+  function issueDismiss(issue: RecoveryIssue) {
+    if (issue.scope === "clipboard") return onDismissClipboardHistoryError;
+    if (issue.code === "action_failed")
+      return () => session.dismissHistoryAction(issue.target!);
+    if (issue.scope === "runtime") return onAcknowledgeIdentityRotationNotice;
+    return undefined;
+  }
   const peerCount = peers.length;
   const navHidden = isNarrow;
 
@@ -717,46 +827,39 @@ export function ClipboardApp({
 
   function setPinned(id: string, pinned: boolean) {
     setOpenMenuId(null);
-    void Promise.resolve()
-      .then(() => onSetPinned(id, pinned))
-      .then(() => {
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
-      })
-      .catch(() => {
-        setHistoryError(
-          "Could not confirm this Clip's pin state. Retry to apply it again."
-        );
-        setRetryHistoryOperation(() => () => setPinned(id, pinned));
-      });
+    void session.runHistoryAction(`pin:${id}`, async () => {
+      try {
+        await onSetPinned(id, pinned);
+        return null;
+      } catch {
+        return {
+          message:
+            "Could not confirm this Clip's pin state. Retry to apply it again.",
+          action: "retry",
+        };
+      }
+    });
   }
 
   function handleDelete(id: string) {
-    setRemovingIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
+    void session.runHistoryAction(`delete:${id}`, async () => {
+      setRemovingIds((previous) => new Set(previous).add(id));
+      try {
+        await onDeleteClip(id);
+        return null;
+      } catch {
+        return {
+          message: "Could not delete this Clip. It is still in your history.",
+          action: "retry",
+        };
+      } finally {
+        setRemovingIds((previous) => {
+          const next = new Set(previous);
+          next.delete(id);
+          return next;
+        });
+      }
     });
-    setTimeout(() => {
-      Promise.resolve(onDeleteClip(id))
-        .then(() => {
-          setHistoryError(null);
-          setRetryHistoryOperation(null);
-        })
-        .catch(() => {
-          setHistoryError(
-            "Could not delete this Clip. It is still in your history."
-          );
-          setRetryHistoryOperation(() => () => handleDelete(id));
-        })
-        .finally(() =>
-          setRemovingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-          })
-        );
-    }, 180);
   }
 
   function clearAllHistory() {
@@ -775,8 +878,6 @@ export function ClipboardApp({
       .then(() => onClearAll())
       .then(() => {
         setClearNeedsRefresh(false);
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
         setClearReviewOpen(false);
       })
       .catch(() => {
@@ -811,7 +912,7 @@ export function ClipboardApp({
   }
 
   function beginEditLocalName() {
-    if (!identity) return;
+    if (!identityReady || !identity) return;
     session.open({
       kind: "device-name",
       entity: identity.deviceId,
@@ -891,6 +992,7 @@ export function ClipboardApp({
   }
 
   function saveDeviceName() {
+    if (!identityReady) return;
     const submittedTarget = aliasSession.getSnapshot().targetId;
     void saveNonEmptyAlias(aliasSession, async (targetId, raw) => {
       if (
@@ -907,6 +1009,7 @@ export function ClipboardApp({
   }
 
   async function revokeDevice(device: Device): Promise<void> {
+    if (!identityReady) return;
     const confirmed = globalThis.confirm(
       `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`
     );
@@ -920,41 +1023,26 @@ export function ClipboardApp({
   }
 
   function reuseClip(id: string) {
-    void Promise.resolve()
-      .then(() => onReuseClip(id))
-      .then((outcome) => {
-        applyHistoryFeedback(reuseClipFeedback(outcome));
-      })
-      .catch(() => {
-        applyHistoryFeedback(reuseClipFeedback("write-failed"), () =>
-          reuseClip(id)
-        );
-      });
+    if (!identityReady) return;
+    void session.runHistoryAction(`copy:${id}`, async () => {
+      try {
+        return reuseClipFeedback(await onReuseClip(id));
+      } catch {
+        return reuseClipFeedback("write-failed");
+      }
+    });
   }
 
   function shareNow() {
-    void Promise.resolve()
-      .then(() => onShareNow())
-      .then(() => {
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
-      })
-      .catch((error) => {
-        applyHistoryFeedback(
-          shareNowFailureFeedback(normalizeShareNowFailureCode(error)),
-          shareNow
-        );
-      });
-  }
-
-  function applyHistoryFeedback(
-    feedback: ClipboardActionFeedback | null,
-    retry?: () => void
-  ) {
-    setHistoryError(feedback?.message ?? null);
-    setRetryHistoryOperation(
-      feedback?.action === "retry" && retry ? () => retry : null
-    );
+    if (!identityReady) return;
+    void session.runHistoryAction("send:current", async () => {
+      try {
+        await onShareNow();
+        return null;
+      } catch (error) {
+        return shareNowFailureFeedback(normalizeShareNowFailureCode(error));
+      }
+    });
   }
 
   function beginAddRelay() {
@@ -1023,15 +1111,17 @@ export function ClipboardApp({
 
   async function updateLocalRetention(retentionMs: number) {
     if (!onSetLocalRetention) return;
-    try {
-      await onSetLocalRetention(retentionMs);
-      setHistoryError(null);
-    } catch {
-      setHistoryError("Could not save the history retention setting.");
-      setRetryHistoryOperation(
-        () => () => void updateLocalRetention(retentionMs)
-      );
-    }
+    await session.runHistoryAction("retention:local", async () => {
+      try {
+        await onSetLocalRetention(retentionMs);
+        return null;
+      } catch {
+        return {
+          message: "Could not save the history retention setting.",
+          action: "retry",
+        };
+      }
+    });
   }
 
   function sourceOptionLabel(src: string): string {
@@ -1049,6 +1139,7 @@ export function ClipboardApp({
   }
 
   function handleShowQr() {
+    if (!identityReady) return;
     session.open({ kind: "pairing", origin: "pairing-qr" });
     session.open({ kind: "qr", origin: "pairing-qr" });
     setShowNav(false);
@@ -1066,11 +1157,18 @@ export function ClipboardApp({
   }
 
   async function submitPairText() {
+    if (!identityReady) return;
     await pairingTask.submit(onPairText);
   }
 
   async function scanPairingCode() {
-    if (!onScanPairingCode || isScanningPairing || pair.pending) return;
+    if (
+      !identityReady ||
+      !onScanPairingCode ||
+      isScanningPairing ||
+      pair.pending
+    )
+      return;
     setIsScanningPairing(true);
     try {
       const scanned = await onScanPairingCode();
@@ -1512,14 +1610,20 @@ export function ClipboardApp({
                       <div className="pending-actions">
                         <button
                           className="primary-button compact-button"
-                          disabled={approvalsPending.includes(req.deviceId)}
+                          disabled={
+                            !identityReady ||
+                            approvalsPending.includes(req.deviceId)
+                          }
                           onClick={() => void decideRequest(req, true)}
                         >
                           Accept
                         </button>
                         <button
                           className="text-button"
-                          disabled={approvalsPending.includes(req.deviceId)}
+                          disabled={
+                            !identityReady ||
+                            approvalsPending.includes(req.deviceId)
+                          }
                           onClick={() => void decideRequest(req, false)}
                         >
                           Reject
@@ -1551,7 +1655,7 @@ export function ClipboardApp({
             />
             <button
               className="primary-button"
-              disabled={pair.pending || isScanningPairing}
+              disabled={!identityReady || pair.pending || isScanningPairing}
               onClick={() => void submitPairText()}
             >
               {pair.pending ? "Submitting…" : "Add"}
@@ -1564,7 +1668,12 @@ export function ClipboardApp({
           >
             Discard pairing input
           </button>
-          {pairingDiagnostics}
+          {pairingDiagnostics && (
+            <details className="pairing-diagnostics">
+              <summary>Pairing diagnostics</summary>
+              {pairingDiagnostics}
+            </details>
+          )}
           {pair.result && (
             <p role="status" style={{ overflowWrap: "anywhere" }}>
               {pairingSubmissionMessage(pair.result)}
@@ -1575,7 +1684,7 @@ export function ClipboardApp({
               className="text-button"
               style={{ marginTop: 8, alignSelf: "flex-start" }}
               onClick={scanPairingCode}
-              disabled={isScanningPairing || pair.pending}
+              disabled={!identityReady || isScanningPairing || pair.pending}
             >
               <Icon name="qr" />
               {isScanningPairing ? "Scanning" : "Scan QR"}
@@ -2078,104 +2187,70 @@ export function ClipboardApp({
         </div>
       </header>
 
-      <div className="app-notices">
-        {initializationError && (
-          <div className="initialization-error" role="alert">
-            <span>
-              Device identity could not be initialized. Clipboard capture and
-              networking are paused.
-            </span>
-            {onRetryInitialization && (
-              <button
-                type="button"
-                onClick={() => void onRetryInitialization()}
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        )}
-
-        {identityRotationRecovery && (
-          <div className="initialization-error" role="alert">
-            <span>
-              Identity rotation is recovering. Clipboard History and local
-              capture remain available; networking will stay disabled and retry
-              automatically.
-            </span>
-          </div>
-        )}
-
-        {identityRotationNotice && !identityRotationRecovery && (
-          <div className="initialization-error" role="status">
-            <span>{identityRotationNoticeMessage(identityRotationNotice)}</span>
-            {onAcknowledgeIdentityRotationNotice && (
-              <button
-                type="button"
-                onClick={() => void onAcknowledgeIdentityRotationNotice()}
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-        )}
-
-        {historyError && (
-          <div className="initialization-error" role="alert">
-            <span>{historyError}</span>
-            {retryHistoryOperation && (
-              <button
-                type="button"
-                onClick={() => {
-                  const retry = retryHistoryOperation;
-                  setHistoryError(null);
-                  setRetryHistoryOperation(null);
-                  retry();
-                }}
-              >
-                Retry
-              </button>
-            )}
-            {!retryHistoryOperation && (
-              <button type="button" onClick={() => setHistoryError(null)}>
-                Dismiss
-              </button>
-            )}
-          </div>
-        )}
-
-        {clipboardHistoryError && (
-          <div className="initialization-error" role="alert">
-            <span>{clipboardHistoryErrorMessage(clipboardHistoryError)}</span>
-            {clipboardHistoryError !== "pending_capture_failed" &&
-              onDismissClipboardHistoryError && (
-                <button
-                  type="button"
-                  onClick={() => void onDismissClipboardHistoryError()}
-                >
-                  Dismiss
-                </button>
-              )}
-          </div>
-        )}
-
-        {historyPolicyError && (
-          <div className="initialization-error" role="alert">
-            <span>
-              Clipboard History cleanup could not finish. Existing Clips remain
-              available.
-            </span>
-            {onRetryHistoryCleanup && (
-              <button
-                type="button"
-                onClick={() => void onRetryHistoryCleanup()}
-              >
-                Retry
-              </button>
-            )}
-          </div>
+      <div className="app-notices" role="status">
+        {issues.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="issue-summary"
+              data-session-focus="issues-summary"
+              onClick={() =>
+                session.open({ kind: "issues", origin: "issues-summary" })
+              }
+            >
+              {issues.length}{" "}
+              {issues.length === 1 ? "issue needs" : "issues need"} attention
+            </button>
+          </>
         )}
       </div>
+      {sessionState.tasks.at(-1)?.kind === "issues" && (
+        <RecoveryIssues
+          issues={issues}
+          session={session}
+          retry={issueRetry}
+          dismiss={issueDismiss}
+          route={(issue) => {
+            session.close();
+            if (issue.scope === "task") {
+              if (issue.code === "device-name") beginEditLocalName();
+              if (issue.code === "alias") {
+                const device = devices.find(
+                  (device) => device.deviceId === issue.target
+                );
+                if (device) beginEditDeviceName(device);
+              }
+              if (issue.code === "pairing")
+                session.open({ kind: "pairing", origin: "pairing-paste" });
+              if (
+                issue.code === "relay-edit" ||
+                issue.code === "relay-action"
+              ) {
+                const config = managedRelayConfigurations.find(
+                  (config) => config.key === issue.target
+                );
+                if (config || issue.target === "new") {
+                  session.open({
+                    kind: "relay",
+                    entity: issue.target,
+                    origin: `relay:${issue.target}`,
+                  });
+                  session.relay.begin(config);
+                }
+              }
+            }
+            session.update({
+              destination:
+                issue.scope === "pairing"
+                  ? "requests"
+                  : issue.scope === "relay"
+                    ? "settings"
+                    : "history",
+              showNav: issue.scope !== "history",
+            });
+          }}
+        />
+      )}
       <main
         className="app-main"
         tabIndex={-1}
@@ -2202,6 +2277,10 @@ export function ClipboardApp({
                   icon="send"
                   label="Share current clipboard now"
                   onClick={shareNow}
+                  disabled={
+                    !identityReady ||
+                    sessionState.historyActions["send:current"]?.pending
+                  }
                   aria-describedby="send-clipboard-hint"
                 />
                 <span id="send-clipboard-hint" className="control-hint">
@@ -2324,12 +2403,47 @@ export function ClipboardApp({
               {onRetryHistoryRefresh && (
                 <button
                   type="button"
-                  onClick={() => void onRetryHistoryRefresh()}
+                  onClick={() =>
+                    void session.retryRecovery(
+                      "history:read:unavailable",
+                      onRetryHistoryRefresh
+                    )
+                  }
                 >
                   Retry
                 </button>
               )}
             </div>
+          )}
+          {Object.entries(sessionState.historyActions).map(
+            ([target, action]) =>
+              action.feedback && (
+                <div
+                  key={target}
+                  className="history-action-error"
+                  role="status"
+                >
+                  <span>{action.feedback.message}</span>
+                  <button
+                    type="button"
+                    disabled={
+                      action.pending ||
+                      (!identityReady && action.feedback.action === "retry")
+                    }
+                    onClick={() =>
+                      action.feedback?.action === "retry"
+                        ? void session.retryHistoryAction(target)
+                        : session.dismissHistoryAction(target)
+                    }
+                  >
+                    {action.pending
+                      ? "Retrying…"
+                      : action.feedback.action === "retry"
+                        ? "Retry"
+                        : "Dismiss"}
+                  </button>
+                </div>
+              )
           )}
           <div className="history-grid" data-session-scroll="history-clips">
             {!historyLoading &&
@@ -2433,6 +2547,11 @@ export function ClipboardApp({
                       <IconButton
                         icon="copy"
                         label="Copy Clip"
+                        disabled={
+                          !identityReady ||
+                          sessionState.historyActions[`copy:${clip.id}`]
+                            ?.pending
+                        }
                         onClick={() => reuseClip(clip.id)}
                       />
                     </div>

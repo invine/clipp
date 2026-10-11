@@ -1,3 +1,13 @@
+import {
+  createRuntimeUiRecovery,
+  initialRuntimeUiRecovery,
+} from "../../../packages/core/runtime/uiRecovery";
+import {
+  readExtensionRecoveryState,
+  probeExtensionInitialization,
+  retryExtensionInitialization,
+  type ExtensionRecoveryState,
+} from "./runtimeRecovery";
 import "./styles/tailwind-built.css";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
@@ -10,7 +20,7 @@ import {
   decideExtensionPairing,
 } from "./pairingActions";
 /* global chrome */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import {
@@ -66,7 +76,7 @@ const Popup = () => {
     useState<ClipboardHistoryError | null>(null);
   const [historyPolicyError, setHistoryPolicyError] =
     useState<HistoryPolicyError | null>(null);
-  const [initializationError, setInitializationError] = useState(false);
+  const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
   const [identityRotationRecovery, setIdentityRotationRecovery] =
     useState(false);
   const [identityRotationNotice, setIdentityRotationNotice] =
@@ -82,43 +92,36 @@ const Popup = () => {
     createPopupNameState(setIdentity, setDevices)
   ).current;
 
+  const consumer = useMemo(
+    () =>
+      createRuntimeUiRecovery<ExtensionRecoveryState>({
+        load: () => readExtensionRecoveryState(chrome.runtime),
+        initializationError: () => probeExtensionInitialization(chrome.runtime),
+        onRecovery: setRecovery,
+        onState: (state) => {
+          nameState.publish(state);
+          setPending(state.pending ?? []);
+          setWaiting(state.waiting ?? []);
+          setPairingErrors(state.pairingErrors ?? []);
+          setPeers(state.peers ?? []);
+          setPeerConnections(state.peerConnections ?? []);
+          setClipboardHistoryError(state.clipboardHistoryError ?? null);
+          setHistoryPolicyError(state.historyPolicyError ?? null);
+          setIdentityRotationRecovery(state.identityRotationRecovery === true);
+          setIdentityRotationNotice(
+            identityRotationNoticeReason(state.identityRotationNotice)
+          );
+          setManagedRelayConfigurations(state.managedRelayConfigurations ?? []);
+          setManagedRelayStates(state.managedRelayStates ?? []);
+        },
+      }),
+    [nameState]
+  );
   useEffect(() => {
-    refreshDevices();
-    refreshPending();
-    refreshPeers();
-    const stateReadRevision = nameState.revision();
-    chrome.runtime.sendMessage({ type: "getRuntimeState" }, (res) => {
-      if (res?.state) nameState.readPublished(stateReadRevision, res.state);
-      if (res?.state?.waiting) setWaiting(res.state.waiting);
-      if (res?.state?.pairingErrors) setPairingErrors(res.state.pairingErrors);
-      setClipboardHistoryError(res?.state?.clipboardHistoryError || null);
-      setHistoryPolicyError(res?.state?.historyPolicyError || null);
-      setIdentityRotationRecovery(
-        res?.state?.identityRotationRecovery === true
-      );
-      setIdentityRotationNotice(
-        identityRotationNoticeReason(res?.state?.identityRotationNotice)
-      );
-    });
-    const identityReadRevision = nameState.revision();
-    chrome.runtime.sendMessage({ type: "getLocalIdentity" }, (res) => {
-      if (res?.identity)
-        nameState.readIdentity(identityReadRevision, res.identity);
-    });
-    chrome.runtime.sendMessage({ type: "getInitializationError" }, (res) => {
-      setInitializationError(
-        res?.error?.code === "identity_initialization_failed"
-      );
-    });
+    void consumer.load();
     chrome.runtime.sendMessage({ type: "getSettings" }, (res) => {
       if (typeof res?.localRetentionMs === "number")
         setLocalRetentionMs(res.localRetentionMs);
-    });
-    chrome.runtime.sendMessage({ type: "managedRelayGet" }, (res) => {
-      if (res?.ok) {
-        setManagedRelayConfigurations(res.configurations ?? []);
-        setManagedRelayStates(res.states ?? []);
-      }
     });
 
     const handler = (msg: any) => {
@@ -129,22 +132,7 @@ const Popup = () => {
         });
       }
       if (msg.type === "runtimeState" && msg.state) {
-        nameState.publish(msg.state);
-        setPending(msg.state.pending || []);
-        setWaiting(msg.state.waiting || []);
-        setPairingErrors(msg.state.pairingErrors || []);
-        setClipboardHistoryError(msg.state.clipboardHistoryError || null);
-        setHistoryPolicyError(msg.state.historyPolicyError || null);
-        setIdentityRotationRecovery(
-          msg.state.identityRotationRecovery === true
-        );
-        setIdentityRotationNotice(
-          identityRotationNoticeReason(msg.state.identityRotationNotice)
-        );
-        if (Array.isArray(msg.state.managedRelayConfigurations))
-          setManagedRelayConfigurations(msg.state.managedRelayConfigurations);
-        if (Array.isArray(msg.state.managedRelayStates))
-          setManagedRelayStates(msg.state.managedRelayStates);
+        consumer.live(msg.state);
       }
     };
     chrome.runtime.onMessage.addListener(handler);
@@ -152,8 +140,9 @@ const Popup = () => {
     return () => {
       chrome.runtime.onMessage.removeListener(handler);
       clearInterval(peerTimer);
+      consumer.cancel();
     };
-  }, []);
+  }, [consumer]);
 
   useEffect(() => {
     async function checkClipboard() {
@@ -337,7 +326,13 @@ const Popup = () => {
         onRetryAutoSync={settings.refresh}
         clipboardHistoryError={clipboardHistoryError}
         historyPolicyError={historyPolicyError}
-        initializationError={initializationError}
+        initializationError={recovery.initializationError}
+        runtimeError={
+          recovery.unavailable && !recovery.initializationError
+            ? "The extension runtime could not be loaded."
+            : null
+        }
+        onRetryRuntime={() => consumer.load()}
         identityRotationRecovery={identityRotationRecovery}
         identityRotationNotice={identityRotationNotice}
         managedRelayConfigurations={managedRelayConfigurations}
@@ -443,7 +438,7 @@ const Popup = () => {
         }}
         onDismissClipboardHistoryError={async () => {
           await runHistoryOperation({ type: "dismissClipboardHistoryError" });
-          setClipboardHistoryError(null);
+          await consumer.load();
         }}
         onRetryHistoryCleanup={async () => {
           await runHistoryOperation({ type: "retryHistoryCleanup" });
@@ -452,11 +447,11 @@ const Popup = () => {
           await runHistoryOperation({
             type: "acknowledgeIdentityRotationNotice",
           });
-          setIdentityRotationNotice(null);
+          await consumer.load();
         }}
         onRenameIdentity={handleRenameIdentity}
         onRetryInitialization={() =>
-          chrome.runtime.sendMessage({ type: "retryIdentityInitialization" })
+          consumer.load(() => retryExtensionInitialization(chrome.runtime))
         }
       />
     </div>

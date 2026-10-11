@@ -1,3 +1,15 @@
+import { composeRecoveryIssues } from "../../../packages/core/runtime/recoveryIssues";
+import { RecoveryIssues } from "../../../packages/ui/src/RecoveryIssues";
+import {
+  createRuntimeUiRecovery,
+  initialRuntimeUiRecovery,
+} from "../../../packages/core/runtime/uiRecovery";
+import {
+  readExtensionRecoveryState,
+  probeExtensionInitialization,
+  retryExtensionInitialization,
+  type ExtensionRecoveryState,
+} from "./runtimeRecovery";
 import "./styles/tailwind-built.css";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
@@ -11,7 +23,12 @@ import { usePairingCodeTask } from "../../../packages/ui/src/usePairingCodeTask"
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import { pairingSubmissionMessage } from "../../../packages/ui/src/pairingFeedback";
 import { submitExtensionPairing } from "./pairingActions";
-import React, { useEffect, useState, useSyncExternalStore } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import ReactDOM from "react-dom/client";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
@@ -70,42 +87,55 @@ const Options = () => {
     });
   }
 
+  const context = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot
+  );
+  const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
+  const [runtimeState, setRuntimeState] =
+    useState<ExtensionRecoveryState | null>(null);
+  const consumer = useMemo(
+    () =>
+      createRuntimeUiRecovery({
+        load: () => readExtensionRecoveryState(chrome.runtime),
+        initializationError: () => probeExtensionInitialization(chrome.runtime),
+        onRecovery: setRecovery,
+        onState: (state: ExtensionRecoveryState) => {
+          setRuntimeState(state);
+          setManagedRelayConfigurations(state.managedRelayConfigurations ?? []);
+          setManagedRelayStates(state.managedRelayStates ?? []);
+        },
+      }),
+    []
+  );
   useEffect(() => {
-    let liveStateReceived = false;
+    void consumer.load();
     const onRuntimeState = (message: {
       type?: string;
-      state?: {
-        managedRelayConfigurations?: RelayConfiguration[];
-        managedRelayStates?: RelayState[];
-      };
+      state?: ExtensionRecoveryState;
     }) => {
-      if (message.type !== "runtimeState") return;
-      liveStateReceived = true;
-      if (message.state?.managedRelayConfigurations)
-        setManagedRelayConfigurations(message.state.managedRelayConfigurations);
-      if (message.state?.managedRelayStates)
-        setManagedRelayStates(message.state.managedRelayStates);
+      if (message.type === "runtimeState" && message.state)
+        consumer.live(message.state);
     };
     chrome.runtime.onMessage.addListener(onRuntimeState);
-    void relayAction<{
-      ok: true;
-      configurations: RelayConfiguration[];
-      states: RelayState[];
-    }>({ type: "managedRelayGet" })
-      .then((response) => {
-        if (liveStateReceived) return;
-        setManagedRelayConfigurations(response.configurations);
-        setManagedRelayStates(response.states);
-      })
-      .catch(() =>
-        session.update({
-          taskNotice:
-            "Relay settings could not be loaded. Check connection state before editing.",
-        })
-      );
-
-    return () => chrome.runtime.onMessage.removeListener(onRuntimeState);
-  }, []);
+    return () => {
+      consumer.cancel();
+      chrome.runtime.onMessage.removeListener(onRuntimeState);
+    };
+  }, [consumer]);
+  const identityReady =
+    Boolean(runtimeState?.identity) &&
+    !recovery.unavailable &&
+    !runtimeState?.identityRotationRecovery;
+  const issues = composeRecoveryIssues({
+    ...runtimeState,
+    initializationError: recovery.initializationError,
+    runtimeError:
+      recovery.unavailable && !recovery.initializationError
+        ? "The extension runtime could not be loaded."
+        : null,
+  });
 
   useEffect(
     () =>
@@ -129,7 +159,7 @@ const Options = () => {
   );
 
   async function handleScan(payload: string) {
-    if (pairing.pending) return;
+    if (!identityReady || pairing.pending) return;
     pairingTask.change(payload);
     await pairingTask.submit((text) =>
       submitExtensionPairing(chrome.runtime, text)
@@ -152,12 +182,56 @@ const Options = () => {
   return (
     <div className="options-host p-4 max-w-2xl mx-auto">
       <h1 className="text-xl font-bold mb-4">Clipboard Share – Settings</h1>
+      {issues.length > 0 && (
+        <div role="status" className="app-notices">
+          <button
+            type="button"
+            data-session-focus="issues-summary"
+            className="issue-summary"
+            onClick={() =>
+              session.open({ kind: "issues", origin: "issues-summary" })
+            }
+          >
+            {issues.length}{" "}
+            {issues.length === 1 ? "issue needs" : "issues need"} attention
+          </button>
+        </div>
+      )}
+      {context.tasks.at(-1)?.kind === "issues" && (
+        <RecoveryIssues
+          issues={issues}
+          session={session}
+          retry={(issue) =>
+            issue.code === "initialization_failed"
+              ? () =>
+                  consumer.load(() =>
+                    retryExtensionInitialization(chrome.runtime)
+                  )
+              : issue.scope === "runtime"
+                ? () => consumer.load()
+                : undefined
+          }
+          dismiss={() => undefined}
+          route={(issue) => {
+            session.close();
+            if (issue.scope === "pairing") setShowQR(true);
+            document
+              .getElementById(
+                issue.scope === "relay" ? "relay-settings" : "trusted-devices"
+              )
+              ?.focus();
+          }}
+        />
+      )}
       <section className="mb-6">
-        <h2 className="font-semibold mb-2">Trusted Devices</h2>
-        <DeviceList />
+        <h2 id="trusted-devices" tabIndex={-1} className="font-semibold mb-2">
+          Trusted Devices
+        </h2>
+        <DeviceList disabled={!identityReady} />
         <div className="mt-2 flex flex-col space-y-2">
           <button
             className="px-3 py-1 bg-blue-600 text-white rounded"
+            disabled={!identityReady}
             onClick={() => setShowQR((v) => !v)}
           >
             {showQR ? "Hide QR Scanner" : "Add Device (QR)"}
@@ -165,7 +239,10 @@ const Options = () => {
         </div>
         {showQR && (
           <>
-            <QRScanner onScan={handleScan} disabled={pairing.pending} />
+            <QRScanner
+              onScan={handleScan}
+              disabled={!identityReady || pairing.pending}
+            />
             <label className="block mt-2">
               Pairing text
               <textarea
@@ -176,7 +253,7 @@ const Options = () => {
               />
             </label>
             <button
-              disabled={pairing.pending}
+              disabled={!identityReady || pairing.pending}
               onClick={() =>
                 void pairingTask.submit((text) =>
                   submitExtensionPairing(chrome.runtime, text)
@@ -195,6 +272,7 @@ const Options = () => {
         <div className="mt-2 flex flex-col space-y-2">
           <button
             className="px-3 py-1 bg-blue-600 text-white rounded"
+            disabled={!identityReady}
             onClick={() => {
               if (qrState.open) qrTask.close();
               else void qrTask.generate(requestMyQR);
@@ -222,7 +300,7 @@ const Options = () => {
           </div>
         )}
       </section>
-      <section className="mb-6">
+      <section id="relay-settings" tabIndex={-1} className="mb-6">
         <ManagedRelaySettings
           configurations={managedRelayConfigurations}
           states={managedRelayStates}

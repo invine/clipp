@@ -1901,3 +1901,35 @@ html[data-host-geometry="android"] .android-host {
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
+
+.issue-summary {
+  width: 100%;
+  padding: 0.35rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+.recovery-issue {
+  border-bottom: 1px solid var(--clipp-border);
+  padding: 0.75rem 0;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.recovery-issue p {
+  margin: 0.35rem 0;
+}
+.recovery-issue button {
+  margin: 0.25rem 0.4rem 0.25rem 0;
+}
+.recovery-issue pre,
+.pairing-diagnostics pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.recovery-task,
+.pairing-diagnostics {
+  min-height: 0;
+  overflow: auto;
+}
+.pairing-diagnostics {
+  max-height: 25dvh;
+}

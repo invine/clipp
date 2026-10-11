@@ -6,7 +6,7 @@ export type Device = {
   displayName?: string;
 };
 
-export const DeviceList = () => {
+export const DeviceList = ({ disabled = false }: { disabled?: boolean }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [revocationError, setRevocationError] = useState<string | null>(null);
 
@@ -18,7 +18,13 @@ export const DeviceList = () => {
   }, []);
 
   function revoke(id: string) {
-    if (!globalThis.confirm("Permanently revoke this device? This cannot be undone.")) return;
+    if (disabled) return;
+    if (
+      !globalThis.confirm(
+        "Permanently revoke this device? This cannot be undone."
+      )
+    )
+      return;
     // @ts-ignore
     chrome.runtime.sendMessage({ type: "revokeDevice", id }, (response) => {
       if (!response?.ok) {
@@ -32,18 +38,34 @@ export const DeviceList = () => {
 
   return (
     <div className="space-y-2">
-      {devices.length === 0 && <div className="text-gray-400">(No devices)</div>}
+      {devices.length === 0 && (
+        <div className="text-gray-400">(No devices)</div>
+      )}
       {revocationError && (
-        <button className="text-xs text-red-600 hover:underline" onClick={() => revoke(revocationError)}>
+        <button
+          disabled={disabled}
+          className="text-xs text-red-600 hover:underline"
+          onClick={() => revoke(revocationError)}
+        >
           Could not revoke device. Retry
         </button>
       )}
       {devices.map((d) => (
-        <div key={d.deviceId} className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded p-2">
-          <span className="truncate max-w-[140px]" title={d.displayName || d.deviceName}>
+        <div
+          key={d.deviceId}
+          className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded p-2"
+        >
+          <span
+            className="truncate max-w-[140px]"
+            title={d.displayName || d.deviceName}
+          >
             {d.displayName || d.deviceName}
           </span>
-          <button className="text-xs text-red-600 hover:underline" onClick={() => revoke(d.deviceId)}>
+          <button
+            disabled={disabled}
+            className="text-xs text-red-600 hover:underline"
+            onClick={() => revoke(d.deviceId)}
+          >
             Revoke
           </button>
         </div>
