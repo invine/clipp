@@ -1,3 +1,7 @@
+import "./styles/tailwind-built.css";
+import "../../../packages/ui/src/styles.css";
+import "../../../packages/ui/src/host.css";
+import "./options-host.css";
 import { createUiSession } from "../../../packages/ui/src/uiSession";
 import type { RelayMutationResult } from "../../../packages/core/network/relayMutations";
 import type { RelayActionResult } from "../../../packages/core/network/relayActions";
@@ -12,7 +16,6 @@ import ReactDOM from "react-dom/client";
 import { DeviceList } from "./components/DeviceList";
 import { ClipHistoryList } from "./components/ClipHistoryList";
 import { QRScanner } from "./components/QRScanner";
-import "./styles/tailwind-built.css";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import { ManagedRelaySettings } from "../../../packages/ui/src/ManagedRelaySettings";
 import {
@@ -147,7 +150,7 @@ const Options = () => {
   }
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
+    <div className="options-host p-4 max-w-2xl mx-auto">
       <h1 className="text-xl font-bold mb-4">Clipboard Share – Settings</h1>
       <section className="mb-6">
         <h2 className="font-semibold mb-2">Trusted Devices</h2>

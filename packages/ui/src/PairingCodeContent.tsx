@@ -1,4 +1,5 @@
 import React from "react";
+import { Icon } from "./controls";
 import type { PairingCodeTaskState } from "./pairingCodeTask";
 
 export function PairingCodeContent({
@@ -52,6 +53,7 @@ export function PairingCodeContent({
         disabled={state.copy === "pending"}
         onClick={onCopy}
       >
+        <Icon name="copy" />
         {state.copy === "pending"
           ? "Copying..."
           : state.copy === "unconfirmed"

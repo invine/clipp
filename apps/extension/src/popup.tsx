@@ -1,3 +1,7 @@
+import "./styles/tailwind-built.css";
+import "../../../packages/ui/src/styles.css";
+import "../../../packages/ui/src/host.css";
+import "./popup-host.css";
 import type { RelayMutationResult } from "../../../packages/core/network/relayMutations";
 import type { RelayActionResult } from "../../../packages/core/network/relayActions";
 import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
@@ -9,7 +13,6 @@ import {
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
-import "./styles/tailwind-built.css";
 import {
   ClipboardHistoryError,
   Device,
@@ -24,7 +27,7 @@ import {
   ReuseClipOutcome,
 } from "../../../packages/ui";
 import { ClipboardApp } from "../../../packages/ui/src/ClipboardApp";
-import "../../../packages/ui/src/styles.css";
+
 import { shareCurrentPopupClipboard } from "./popupClipboardActions";
 import type {
   RelayConfiguration,

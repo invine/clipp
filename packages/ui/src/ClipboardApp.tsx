@@ -1,3 +1,4 @@
+import { Icon, IconButton } from "./controls";
 import { TaskDialog } from "./TaskDialog";
 import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
 import { createUiSession, type UiSession } from "./uiSession";
@@ -1090,13 +1091,12 @@ export function ClipboardApp({
     return (
       <div className="relay-card relay-card-editing">
         <div className="peer-avatar relay-avatar unknown">
-          <span className="icon" style={{ fontSize: 16 }}>
-            add_link
-          </span>
+          <Icon name="network" />
         </div>
         <div className="peer-meta">
           <input
             className="relay-address-input"
+            aria-label="New relay address"
             value={relayDraft}
             onChange={(e) => setRelayDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -1112,26 +1112,23 @@ export function ClipboardApp({
         </div>
         <div className="peer-actions">
           <button
-            className="icon-button"
+            className="text-button"
             title="Add relay"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => void saveNewRelay()}
             disabled={relaySaving}
           >
-            <span className="icon" style={{ fontSize: 16 }}>
-              check
-            </span>
+            Add relay
           </button>
           <button
             className="icon-button"
+            aria-label="Cancel"
             title="Cancel"
             onMouseDown={(e) => e.preventDefault()}
             onClick={cancelRelayEdit}
             disabled={relaySaving}
           >
-            <span className="icon" style={{ fontSize: 16 }}>
-              close
-            </span>
+            <Icon name="close" />
           </button>
         </div>
       </div>
@@ -1150,15 +1147,14 @@ export function ClipboardApp({
         title={`${address}\n${status.title}`}
       >
         <div className={`peer-avatar relay-avatar ${status.kind}`}>
-          <span className="icon" style={{ fontSize: 16 }}>
-            hub
-          </span>
+          <Icon name="network" />
         </div>
         <div className="peer-meta">
           {editingThisRelay ? (
             <>
               <input
                 className="relay-address-input"
+                aria-label="Relay address"
                 value={relayDraft}
                 onChange={(e) => setRelayDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -1194,49 +1190,43 @@ export function ClipboardApp({
           {editingThisRelay ? (
             <>
               <button
-                className="icon-button"
+                className="text-button"
                 title="Save relay address"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void saveRelayRename(index)}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  check
-                </span>
+                Save
               </button>
               <button
                 className="icon-button"
+                aria-label="Cancel"
                 title="Cancel"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={cancelRelayEdit}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  close
-                </span>
+                <Icon name="close" />
               </button>
             </>
           ) : (
             <>
               <button
                 className="icon-button"
+                aria-label="Rename relay"
                 title="Rename relay"
                 onClick={() => beginRenameRelay(index, address)}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  edit
-                </span>
+                <Icon name="edit" />
               </button>
               <button
-                className="icon-button"
+                className="text-button"
                 title="Remove relay"
                 onClick={() => void removeRelay(index)}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  delete
-                </span>
+                Remove relay
               </button>
             </>
           )}
@@ -1271,21 +1261,20 @@ export function ClipboardApp({
               onClick={() => setRelaysOpen((open) => !open)}
               aria-expanded={relaysOpen}
             >
-              <span className="icon" style={{ fontSize: 16 }}>
-                {relaysOpen ? "expand_less" : "expand_more"}
-              </span>
+              <Icon
+                name="chevron"
+                style={{ transform: relaysOpen ? "rotate(180deg)" : undefined }}
+              />
               <span className="relay-accordion-title">Relays</span>
               <span className="relay-summary-text">{relaySummaryLabel()}</span>
             </button>
             <button
-              className="icon-button"
+              className="text-button"
               title="Add relay"
               onClick={beginAddRelay}
               disabled={relaySaving}
             >
-              <span className="icon" style={{ fontSize: 16 }}>
-                add
-              </span>
+              Add relay
             </button>
           </div>
           {relaysOpen && (
@@ -1320,7 +1309,7 @@ export function ClipboardApp({
               aria-label="Close management"
               onClick={dismissNav}
             >
-              <span className="icon">close</span>
+              <Icon name="close" />
             </button>
           ) : (
             <div className="nav-chip">{peerCount} online</div>
@@ -1377,8 +1366,12 @@ export function ClipboardApp({
                     )}
                     <button
                       className="icon-button"
-                      style={{ width: 18, height: 18 }}
                       data-session-focus="rename-local"
+                      aria-label={
+                        localNameEdit.active
+                          ? "Save Device Name"
+                          : "Rename this device"
+                      }
                       title={
                         localNameEdit.active
                           ? "Save Device Name"
@@ -1391,12 +1384,7 @@ export function ClipboardApp({
                           : beginEditLocalName
                       }
                     >
-                      <span
-                        className="icon"
-                        style={{ fontSize: 12, lineHeight: 1 }}
-                      >
-                        {localNameEdit.active ? "check" : "edit"}
-                      </span>
+                      <Icon name={localNameEdit.active ? "check" : "edit"} />
                     </button>
                   </div>
                   {localNameEdit.active &&
@@ -1444,9 +1432,7 @@ export function ClipboardApp({
                 </div>
                 <div className="peer-actions">
                   <div className="peer-indicator">
-                    <span className="icon" style={{ fontSize: 14 }}>
-                      laptop_mac
-                    </span>
+                    <Icon name="computer" />
                   </div>
                 </div>
               </div>
@@ -1456,7 +1442,8 @@ export function ClipboardApp({
                 data-session-focus="pairing-qr"
                 onClick={handleShowQr}
               >
-                <span className="icon">qr_code</span>Show my QR
+                <Icon name="qr" />
+                Show my QR
               </button>
             </>
           )}
@@ -1581,7 +1568,7 @@ export function ClipboardApp({
               onClick={scanPairingCode}
               disabled={isScanningPairing || pair.pending}
             >
-              <span className="icon">qr_code_scanner</span>
+              <Icon name="qr" />
               {isScanningPairing ? "Scanning" : "Scan QR"}
             </button>
           )}
@@ -1710,14 +1697,17 @@ export function ClipboardApp({
                   </div>
                   <div className="peer-actions">
                     <div className="peer-indicator">
-                      <span className="icon" style={{ fontSize: 14 }}>
-                        smartphone
-                      </span>
+                      <Icon name="device" />
                     </div>
                     {onRenameDevice && (
                       <button
                         className="icon-button"
                         data-session-focus={`rename:${dev.deviceId}`}
+                        aria-label={
+                          editingThisDevice
+                            ? "Save Local Device Alias"
+                            : "Edit Local Device Alias"
+                        }
                         title={
                           editingThisDevice
                             ? "Save Local Device Alias"
@@ -1733,19 +1723,15 @@ export function ClipboardApp({
                           }
                         }}
                       >
-                        <span className="icon" style={{ fontSize: 16 }}>
-                          {editingThisDevice ? "check" : "edit"}
-                        </span>
+                        <Icon name={editingThisDevice ? "check" : "edit"} />
                       </button>
                     )}
                     <button
-                      className="icon-button"
+                      className="text-button"
                       title="Revoke this device"
                       onClick={() => void revokeDevice(dev)}
                     >
-                      <span className="icon" style={{ fontSize: 16 }}>
-                        link_off
-                      </span>
+                      Revoke device
                     </button>
                   </div>
                 </div>
@@ -1929,7 +1915,7 @@ export function ClipboardApp({
               backgroundContinuity.backgroundEnabled &&
               backgroundContinuity.service === "stopped" && (
                 <button
-                  className="icon-button"
+                  className="text-button labelled-control"
                   type="button"
                   onClick={() => void onSetBackgroundContinuity(true)}
                 >
@@ -1961,7 +1947,7 @@ export function ClipboardApp({
             {backgroundContinuity.available &&
               onExportBackgroundContinuityDiagnostics && (
                 <button
-                  className="icon-button"
+                  className="text-button labelled-control"
                   type="button"
                   onClick={() => {
                     void Promise.resolve(
@@ -2020,14 +2006,18 @@ export function ClipboardApp({
     >
       <header className="app-bar">
         <div className="app-bar-left">
-          <div
+          <button
             className="app-logo"
+            type="button"
+            aria-label="Open management"
+            disabled={!isNarrow}
+            data-session-focus="open-management"
             onClick={() => {
               if (isNarrow) setShowNav(true);
             }}
           >
-            <img src={clippPurpleIcon} alt="Clipp" draggable={false} />
-          </div>
+            <img src={clippPurpleIcon} alt="" draggable={false} />
+          </button>
           <div className="app-title-block">
             <div className="app-title">
               Clipp
@@ -2044,8 +2034,9 @@ export function ClipboardApp({
 
         <div className="app-bar-right">
           <div className="search-field">
-            <span className="icon">search</span>
+            <Icon name="search" />
             <input
+              aria-label="Search history"
               data-session-focus="history-query"
               placeholder="Search history: text, URL, device…"
               value={search}
@@ -2053,8 +2044,12 @@ export function ClipboardApp({
             />
           </div>
 
-          <button className="icon-button" title="Toggle theme">
-            <span className="icon">dark_mode</span>
+          <button
+            className="icon-button"
+            aria-label="Toggle theme"
+            title="Toggle theme"
+          >
+            <Icon name="moon" />
           </button>
         </div>
       </header>
@@ -2166,10 +2161,17 @@ export function ClipboardApp({
             </div>
 
             <div className="content-header-actions">
-              <button className="text-button" onClick={shareNow}>
-                <span className="icon">send</span>
-                Share Now
-              </button>
+              <div className="send-control">
+                <IconButton
+                  icon="send"
+                  label="Share current clipboard now"
+                  onClick={shareNow}
+                  aria-describedby="send-clipboard-hint"
+                />
+                <span id="send-clipboard-hint" className="control-hint">
+                  Sends your current system clipboard
+                </span>
+              </div>
               <div className="segmented">
                 <button
                   className={filterMode === "all" ? "active" : ""}
@@ -2187,9 +2189,7 @@ export function ClipboardApp({
 
               <div className="content-filter-toggle">
                 <button className="text-button" onClick={toggleFilters}>
-                  <span className="icon">
-                    {filtersCollapsed ? "unfold_more" : "unfold_less"}
-                  </span>
+                  <Icon name="filters" />
                   {filtersCollapsed ? "More" : "Less"}
                 </button>
               </div>
@@ -2203,17 +2203,12 @@ export function ClipboardApp({
                   className="text-button"
                   onClick={() => setTimeMenuOpen((v) => !v)}
                 >
-                  <span className="icon">schedule</span>
+                  <Icon name="clock" />
                   <span className="filter-button-label">
                     {timeOptions.find((t) => t.value === timeFilter)?.label ||
                       "All time"}
                   </span>
-                  <span
-                    className="icon"
-                    style={{ fontSize: 16, marginLeft: 4 }}
-                  >
-                    expand_more
-                  </span>
+                  <Icon name="chevron" />
                 </button>
                 {timeMenuOpen && (
                   <div className="time-menu">
@@ -2238,16 +2233,11 @@ export function ClipboardApp({
                   className="text-button"
                   onClick={() => setSourceMenuOpen((v) => !v)}
                 >
-                  <span className="icon">filter_alt</span>
+                  <Icon name="filters" />
                   <span className="filter-button-label">
                     {sourceFilterLabel(sourceFilter)}
                   </span>
-                  <span
-                    className="icon"
-                    style={{ fontSize: 16, marginLeft: 4 }}
-                  >
-                    expand_more
-                  </span>
+                  <Icon name="chevron" />
                 </button>
                 {sourceMenuOpen && (
                   <div className="time-menu source-menu">
@@ -2281,7 +2271,7 @@ export function ClipboardApp({
                   Boolean(historyRefreshError)
                 }
               >
-                <span className="icon">delete_sweep</span>
+                <Icon name="delete" />
                 Clear
               </button>
             </div>
@@ -2328,7 +2318,6 @@ export function ClipboardApp({
               const timeLabel = formatTime(clip.capturedAt);
               const isLocal = clip.originPeerId === identity?.deviceId;
               const pinned = pinnedSet.has(clip.id);
-              const pinIconName = pinned ? "keep" : "push_pin";
               return (
                 <article
                   className={`history-card ${removingIds.has(clip.id) ? "leaving" : ""}`}
@@ -2345,23 +2334,17 @@ export function ClipboardApp({
                       />
                     </div>
                     <div className="history-actions">
-                      <button
-                        className="icon-button"
-                        title={pinned ? "Unpin" : "Pin"}
+                      <IconButton
+                        icon="pin"
+                        label="Pin Clip"
+                        aria-pressed={pinned}
+                        hint={pinned ? "Unpin Clip" : "Pin Clip"}
                         onClick={() => setPinned(clip.id, !pinned)}
-                        style={{
-                          transform: pinned ? "rotate(18deg)" : "none",
-                        }}
-                      >
-                        <span
-                          className={`icon pin-icon ${pinned ? "filled" : "outlined"}`}
-                        >
-                          {pinIconName}
-                        </span>
-                      </button>
+                      />
                       <div className="history-menu">
                         <button
                           className="icon-button"
+                          aria-label="More Clip actions"
                           title="More"
                           onClick={() =>
                             setOpenMenuId(
@@ -2369,7 +2352,7 @@ export function ClipboardApp({
                             )
                           }
                         >
-                          <span className="icon">more_vert</span>
+                          <Icon name="more" />
                         </button>
                         {openMenuId === clip.id && (
                           <div className="history-menu-dropdown">
@@ -2384,7 +2367,8 @@ export function ClipboardApp({
                                 handleDelete(clip.id);
                               }}
                             >
-                              <span className="icon">delete</span>Delete
+                              <Icon name="delete" />
+                              Delete
                             </button>
                           </div>
                         )}
@@ -2400,9 +2384,7 @@ export function ClipboardApp({
                     <div className="meta-left">
                       <div className="meta-top-line">
                         <span className="pill-source">
-                          <span className="icon" style={{ fontSize: 12 }}>
-                            {isLocal ? "computer" : "devices"}
-                          </span>
+                          <Icon name={isLocal ? "computer" : "device"} />
                           {isLocal ? "Local" : "Remote"}
                         </span>
                         <span className="meta-time">{timeLabel}</span>
@@ -2412,15 +2394,11 @@ export function ClipboardApp({
                       </div>
                     </div>
                     <div className="meta-actions">
-                      <button
-                        className="mini-button"
+                      <IconButton
+                        icon="copy"
+                        label="Copy Clip"
                         onClick={() => reuseClip(clip.id)}
-                      >
-                        <span className="icon" style={{ fontSize: 14 }}>
-                          content_copy
-                        </span>
-                        Copy
-                      </button>
+                      />
                     </div>
                   </div>
                 </article>

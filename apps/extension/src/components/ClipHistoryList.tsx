@@ -13,6 +13,7 @@ export const ClipHistoryList = () => {
     <div>
       <input
         className="w-full mb-2 px-2 py-1 border rounded"
+        aria-label="Search history"
         placeholder="Search history..."
         value={query}
         onChange={(event) => setQuery(event.target.value)}

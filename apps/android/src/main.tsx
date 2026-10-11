@@ -1,3 +1,6 @@
+import "../../../packages/ui/src/styles.css";
+import "../../../packages/ui/src/host.css";
+import "./android-host.css";
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
@@ -27,12 +30,6 @@ const initialState: AndroidAppState = {
   diagnostics: {
     lastPairingAttempt: null,
   },
-};
-
-const bgStyle = {
-  minHeight: "100vh",
-  background: "radial-gradient(circle at top, #202333 0, #101114 60%)",
-  color: "white",
 };
 
 function App() {
@@ -101,17 +98,17 @@ function App() {
   }
 
   return (
-    <div style={bgStyle}>
+    <div className="android-host">
       {error && (
         <div
           style={{
-            background: "rgba(248, 113, 113, 0.1)",
-            border: "1px solid rgba(248, 113, 113, 0.3)",
-            color: "#fecdd3",
+            background: "var(--clipp-surface-raised)",
+            border: "1px solid var(--clipp-danger)",
+            color: "var(--clipp-danger)",
             padding: 12,
             margin: 12,
             borderRadius: 12,
-            fontSize: 13,
+            fontSize: ".875rem",
           }}
         >
           {error}
@@ -237,11 +234,11 @@ function PairingDiagnosticsPanel({
         borderRadius: 12,
         border:
           attempt.status === "failed"
-            ? "1px solid rgba(248, 113, 113, 0.35)"
-            : "1px solid rgba(94, 234, 212, 0.25)",
-        background: "rgba(15, 23, 42, 0.72)",
-        color: "#e5e7eb",
-        fontSize: 12,
+            ? "1px solid var(--clipp-danger)"
+            : "1px solid var(--clipp-border)",
+        background: "var(--clipp-surface-raised)",
+        color: "var(--clipp-text)",
+        fontSize: ".875rem",
       }}
     >
       <summary style={{ cursor: "pointer", fontWeight: 700 }}>
@@ -254,7 +251,7 @@ function PairingDiagnosticsPanel({
           overflow: "auto",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
-          color: "#cbd5e1",
+          color: "var(--clipp-text-muted)",
         }}
       >
         {JSON.stringify(attempt, null, 2)}

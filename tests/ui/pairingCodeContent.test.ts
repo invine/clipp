@@ -38,6 +38,6 @@ it("keeps text fallback available and distinguishes Copy uncertainty from reject
   expect(render({ ...ready, copy: "rejected" })).toContain("Could not copy");
   expect(render({ ...ready, copy: "copied" })).toContain("Pairing text copied");
   expect(render({ ...ready, copy: "pending" })).toMatch(
-    /disabled=""[^>]*>Copying/
+    /disabled=""[^>]*>(?:<svg[^>]*>[\s\S]*?<\/svg>)?Copying/
   );
 });

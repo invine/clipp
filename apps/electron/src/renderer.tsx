@@ -1,3 +1,6 @@
+import "../../../packages/ui/src/styles.css";
+import "../../../packages/ui/src/host.css";
+import "./electron-host.css";
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
@@ -119,7 +122,7 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-black text-white">
+    <div className="electron-host">
       <ClipboardApp
         clips={state.clips}
         devices={state.devices}

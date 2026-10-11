@@ -1,0 +1,38 @@
+body,
+#root {
+  min-height: 100%;
+  overflow: visible;
+}
+.options-host {
+  max-width: 48rem;
+  padding: 1rem;
+  margin-inline: auto;
+}
+.options-host section {
+  min-width: 0;
+}
+.options-host button {
+  font-size: 0.875rem;
+}
+.options-host a {
+  color: var(--clipp-focus);
+  overflow-wrap: anywhere;
+}
+.options-host .truncate {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.options-host .bg-gray-100,
+.options-host .bg-gray-800 {
+  background: var(--clipp-surface-raised);
+  color: var(--clipp-text);
+}
+.options-host .text-gray-400 {
+  color: var(--clipp-text-muted);
+}
+.options-host button[class] {
+  background: var(--clipp-surface-raised);
+  color: var(--clipp-text);
+  border: 1px solid var(--clipp-border);
+  padding: 0.5rem 0.75rem;
+}
