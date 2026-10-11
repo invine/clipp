@@ -1,11 +1,11 @@
 # Implement persisted System, Light and Dark
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-themes-18
 Priority band: 1
 Blocked by: 01, 32
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; isolated claim below
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -53,3 +53,13 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-11
+
+Predecessors 01 and 32 are resolved; this is the next eligible band 1 feature while 08/10 and residual 17 complete their native gates. Preserve the approved installation-local preference, existing settings authority and ordered current-session feed. System is unset/default, explicit modes stay explicit, host appearance changes are presentation updates rather than preference writes, and failed/unconfirmed writes remain truthful. No device synchronization, credential/key storage migration, additional product store, account action, or ADR-0012 transport/default-relay change is assigned. No accepted invariant changes.
+
+Coordinator claim `ux-themes-18`: client branch `codex/ux-18-themes`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-18`, based on this doc-only claim commit atop reviewed integration `15dbb96f9eb0cb02bb560cc895ef73c55282adeb`. Use the normative workspace theme package and shared interface, core authority/shared UI, and every affected live runtime bridge/background. Use TDD through owning preference and real consumers; no tests tied only to class names or stored JSON.
+
+The completed source 17 repair at `15dbb96f` / `d11c811c` restores narrow/short outer scrolling and the public workspace scroll owner; both code axes and integrated 112 suite / 836 test / all three build gate pass. Actual changed-consumer G13 and G14 remain unqualified and are not consumed as passes. Source 10 is integrated/source-reviewed; actual complete app-to-app G01 remains required and unrun. Their frozen native candidate is this claim tip, with unchanged `15dbb96f` production assets. Implement only in the isolated theme worktree; do not integrate theme changes or mutate frozen acceptance assets until the coordinator releases that boundary.
+
+At most two active implementers: existing 08 acceptance preparation and themes 18. Root serializes native/renderer and broad timer-sensitive gates. No host clipboard or global setting interval is open. Prepare actual native appearance, concurrent views, cold offline and affected text/control evidence for later fresh assignment; any global appearance/text change requires its applicable authorization. Real sign-in, external-owner, hardware/assistive and all other recorded deferrals remain unchanged.
