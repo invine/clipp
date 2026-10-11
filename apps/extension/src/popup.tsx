@@ -303,10 +303,7 @@ const Popup = () => {
   }
 
   return (
-    <div
-      style={{ width: "100%", height: "100%" }}
-      className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-black"
-    >
+    <div style={{ width: "100%", height: "100%" }} className="popup-host">
       <ClipboardApp
         clips={history.snapshot?.clips ?? []}
         devices={devices}
@@ -332,6 +329,7 @@ const Popup = () => {
         historyRefreshError={history.refreshError}
         onRetryHistoryRefresh={history.refresh}
         localRetentionMs={localRetentionMs}
+        appearanceSettings={settings}
         autoSync={settings.snapshot?.state.autoSync}
         autoSyncKnown={settings.snapshot !== null}
         autoSyncLoading={settings.loading}
@@ -339,7 +337,11 @@ const Popup = () => {
         autoSyncPending={settings.pending}
         autoSyncRecoveryRequired={settings.recoveryRequired}
         autoSyncRefreshError={settings.refreshError}
-        autoSyncFeedback={settings.feedback}
+        autoSyncFeedback={
+          settings.feedback?.fields?.includes("autoSync")
+            ? settings.feedback
+            : null
+        }
         onRetryAutoSync={settings.refresh}
         clipboardHistoryError={clipboardHistoryError}
         historyPolicyError={historyPolicyError}

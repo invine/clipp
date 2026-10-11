@@ -1,34 +1,17 @@
-import { useEffect, useState } from "react";
-import { createSettingsClient } from "./settingsClient";
-
-function createChromeSettingsClient() {
-  return createSettingsClient({
+import { useRuntimeSettings } from "../../../packages/ui/src/useRuntimeSettings";
+export function useSettings() {
+  return useRuntimeSettings({
     send: (message) =>
       new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(message, (response) => {
-          if (chrome.runtime.lastError) {
+          if (chrome.runtime.lastError)
             reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          resolve(response);
+          else resolve(response);
         });
       }),
     subscribe: (listener) => {
-      const onMessage = (message: unknown) => {
-        listener(message);
-      };
-      chrome.runtime.onMessage.addListener(onMessage);
-      return () => chrome.runtime.onMessage.removeListener(onMessage);
+      chrome.runtime.onMessage.addListener(listener);
+      return () => chrome.runtime.onMessage.removeListener(listener);
     },
   });
-}
-
-export function useSettings() {
-  const [client] = useState(createChromeSettingsClient);
-  const [state, setState] = useState(client.getState);
-  useEffect(() => {
-    void client.start(setState);
-    return () => client.stop();
-  }, [client]);
-  return { ...state, save: client.save, refresh: client.refresh };
 }

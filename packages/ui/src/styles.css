@@ -1,16 +1,17 @@
 :root {
-  --clipp-text: #f2f1f7;
-  --clipp-text-muted: #b8b6c7;
-  --clipp-surface: #14141b;
-  --clipp-surface-raised: #202029;
-  --clipp-field: #17171f;
-  --clipp-border: #858294;
-  --clipp-focus: #d5c3ff;
-  --clipp-action: #7350b5;
+  color-scheme: light;
+  --clipp-text: #211d2b;
+  --clipp-text-muted: #595365;
+  --clipp-surface: #faf9fc;
+  --clipp-surface-raised: #f0edf5;
+  --clipp-field: #ffffff;
+  --clipp-border: #746b80;
+  --clipp-focus: #583493;
+  --clipp-action: #6944a5;
   --clipp-on-action: #ffffff;
-  --clipp-warning: #f5d78e;
-  --clipp-danger: #ffb4b4;
-  --clipp-success: #a3e7bb;
+  --clipp-warning: #735008;
+  --clipp-danger: #a92233;
+  --clipp-success: #24663d;
   --clipp-target-min: 40px;
   --clipp-font:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -551,7 +552,7 @@
   min-height: 40px;
   padding: 6px 8px;
   color: var(--clipp-text);
-  background: #fff;
+  background: var(--clipp-field);
   border-radius: var(--md-radius-sm);
 }
 
@@ -1933,4 +1934,57 @@ html[data-host-geometry="android"] .android-host {
 }
 .pairing-diagnostics {
   max-height: 25dvh;
+}
+
+:root[data-clipp-theme="dark"] {
+  color-scheme: dark;
+  --clipp-text: #f2f1f7;
+  --clipp-text-muted: #b8b6c7;
+  --clipp-surface: #14141b;
+  --clipp-surface-raised: #202029;
+  --clipp-field: #17171f;
+  --clipp-border: #858294;
+  --clipp-focus: #d5c3ff;
+  --clipp-action: #7350b5;
+  --clipp-on-action: #ffffff;
+  --clipp-warning: #f5d78e;
+  --clipp-danger: #ffb4b4;
+  --clipp-success: #a3e7bb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-clipp-theme="light"]):not([data-clipp-theme="dark"]) {
+    color-scheme: dark;
+    --clipp-text: #f2f1f7;
+    --clipp-text-muted: #b8b6c7;
+    --clipp-surface: #14141b;
+    --clipp-surface-raised: #202029;
+    --clipp-field: #17171f;
+    --clipp-border: #858294;
+    --clipp-focus: #d5c3ff;
+    --clipp-action: #7350b5;
+    --clipp-on-action: #ffffff;
+    --clipp-warning: #f5d78e;
+    --clipp-danger: #ffb4b4;
+    --clipp-success: #a3e7bb;
+  }
+}
+.appearance-settings {
+  max-width: 100%;
+  min-width: 0;
+}
+.appearance-settings label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.appearance-settings p {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+}
+.appearance-settings [role="alert"] {
+  color: var(--clipp-danger);
+}
+.fade-bottom {
+  background: linear-gradient(to top, var(--clipp-surface-raised), transparent);
 }

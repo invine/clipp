@@ -1,3 +1,5 @@
+import { createSettingsHandler } from "../../../packages/core/runtime/settingsAuthority.js";
+import { normalizeThemePreference } from "../../../packages/core/runtime/themePreference.js";
 import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction.js";
 import {
   createRelayMutationOwner,
@@ -14,6 +16,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   Notification,
   safeStorage,
   shell,
@@ -140,6 +143,14 @@ async function bootstrap() {
     protection: safeStorage,
     openExternal: (url) => shell.openExternal(url),
   });
+  const initialTheme = normalizeThemePreference(await kvStore.get("theme"));
+  nativeTheme.themeSource = initialTheme;
+  const windowBackground = () =>
+    nativeTheme.shouldUseDarkColors ? "#14141b" : "#faf9fc";
+  nativeTheme.on("updated", () => {
+    for (const window of BrowserWindow.getAllWindows())
+      window.setBackgroundColor(windowBackground());
+  });
   const autoSyncPreference = createAutoSyncPreference({ storage: kvStore });
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({
     storage: kvStore,
@@ -147,6 +158,28 @@ async function bootstrap() {
   let localRetentionMs =
     (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
   let autoSync = await autoSyncPreference.load();
+  const settingsHandler = createSettingsHandler({
+    storage: kvStore,
+    applyAutoSync: (enabled) => {
+      autoSync = enabled;
+    },
+    applyLogLevel: () => {},
+    applyTheme: (theme) => {
+      nativeTheme.themeSource = theme;
+    },
+    publish: async (snapshot) => {
+      for (const window of BrowserWindow.getAllWindows())
+        window.webContents.send("clipp:settings-update", snapshot);
+    },
+  });
+  ipcMain.handle("clipp:get-settings", async () => ({
+    ok: true,
+    snapshot: await settingsHandler.read(),
+  }));
+  ipcMain.handle("clipp:set-theme", async (_event, theme: unknown) =>
+    settingsHandler.write({ theme })
+  );
+
   const historyBackend = new SQLiteHistoryBackend(db);
   const history = new MemoryHistoryStore(historyBackend, {
     retentionMs: localRetentionMs,
@@ -237,6 +270,7 @@ async function bootstrap() {
       app.exit(0);
     });
     const window = new BrowserWindow({
+      backgroundColor: windowBackground(),
       width: 1080,
       height: 760,
       webPreferences: { preload: preloadPath, contextIsolation: true },
@@ -713,7 +747,7 @@ async function bootstrap() {
       minWidth: 480,
       minHeight: 640,
       show: false,
-      backgroundColor: "#0b0f1b",
+      backgroundColor: windowBackground(),
       autoHideMenuBar: true,
       icon: appIconPath,
       webPreferences: {
@@ -861,7 +895,7 @@ async function bootstrap() {
       minWidth: 420,
       minHeight: 360,
       show: false,
-      backgroundColor: "#0f1119",
+      backgroundColor: windowBackground(),
       autoHideMenuBar: true,
       title: "Relay addresses",
       webPreferences: {

@@ -1,3 +1,4 @@
+import { Appearance } from "../../../packages/ui/src/Appearance";
 import type { RecoveryIssue } from "../../../packages/core/runtime/recoveryIssues";
 import { OptionsRecovery } from "../../../packages/ui/src/OptionsRecovery";
 import {
@@ -405,6 +406,7 @@ const Options = () => {
           Settings
         </h2>
         <div className="flex flex-col gap-2">
+          <Appearance settings={settings} />
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -466,14 +468,6 @@ const Options = () => {
           />
         </div>
       </section>
-      <button
-        className="mt-2 px-3 py-1 bg-gray-700 text-white rounded"
-        onClick={() => {
-          document.documentElement.classList.toggle("dark");
-        }}
-      >
-        Toggle Dark Mode
-      </button>
     </div>
   );
 };

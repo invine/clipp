@@ -208,7 +208,7 @@ it("two open views converge after an external save and a lost reply", async () =
   loseReply = true;
   await options.save({ logLevel: "warn" });
 
-  expect(popup.getState().snapshot?.state).toEqual({
+  expect(popup.getState().snapshot?.state).toMatchObject({
     autoSync: false,
     logLevel: "warn",
   });

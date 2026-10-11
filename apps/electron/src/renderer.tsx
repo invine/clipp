@@ -1,3 +1,4 @@
+import { useRuntimeSettings } from "../../../packages/ui/src/useRuntimeSettings";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
 import "./electron-host.css";
@@ -67,6 +68,21 @@ const initialState: AppState = {
 };
 
 const App = () => {
+  const appearanceSettings = useRuntimeSettings({
+    send: (message) => {
+      if (!window.clipp) throw new Error("bridge_unavailable");
+      return message.type === "getSettings"
+        ? window.clipp.getSettings()
+        : window.clipp.setTheme(message.settings?.theme);
+    },
+    subscribe: (listener) => {
+      if (!window.clipp?.onSettingsUpdate)
+        throw new Error("bridge_unavailable");
+      return window.clipp.onSettingsUpdate((snapshot) =>
+        listener({ type: "settingsState", snapshot })
+      );
+    },
+  });
   const [state, setState] = useState<AppState>(initialState);
   const [recovery, setRecovery] = useState(initialRuntimeUiRecovery);
   const consumer = useMemo(
@@ -115,6 +131,7 @@ const App = () => {
   return (
     <div className="electron-host">
       <ClipboardApp
+        appearanceSettings={appearanceSettings}
         clips={state.clips}
         devices={state.devices}
         pending={state.pending}
