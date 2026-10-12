@@ -1872,6 +1872,8 @@ html[data-host-geometry="android"] .android-host {
 
 .app-notices {
   min-width: 0;
+  /* Keep notice controls inside the usable paint area of the outer scrollsurface. */
+  padding-inline: 0.5rem;
 }
 .initialization-error {
   flex-wrap: wrap;
