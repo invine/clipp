@@ -13,6 +13,7 @@ export type LocalRetentionState = {
 export type LocalRetentionResult = LocalRetentionState & {
   status: "applied" | "partial" | "rejected";
   error?: string;
+  failureOrigin?: "localRetention";
 };
 export function normalizeSavedRetention(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -58,7 +59,12 @@ export function createLocalRetentionPreference(options: {
     } catch (error) {
       state = { ...state, cleanupError: (error as Error).message };
       await publish();
-      return { ...state, status: "rejected", error: state.cleanupError! };
+      return {
+        ...state,
+        status: "rejected",
+        error: state.cleanupError!,
+        failureOrigin: "localRetention",
+      };
     }
     pendingStartup = null;
     if (persist) {
@@ -77,7 +83,12 @@ export function createLocalRetentionPreference(options: {
     return {
       ...state,
       status: state.persistenceError ? "partial" : "applied",
-      ...(state.persistenceError ? { error: state.persistenceError } : {}),
+      ...(state.persistenceError
+        ? {
+            error: state.persistenceError,
+            failureOrigin: "localRetention" as const,
+          }
+        : {}),
     };
   }
   async function load(): Promise<LocalRetentionState> {
