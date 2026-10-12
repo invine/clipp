@@ -925,15 +925,12 @@ export class AndroidClient {
         this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
-              const state = await this.retentionPreference.read();
-              if (state.cleanupError || state.persistenceError) {
-                const result = await this.retentionPreference.retry();
-                if (result.status !== "applied")
-                  throw new Error(result.error ?? "history_cleanup_failed");
+              const maintenance = await this.retentionPreference.maintain();
+              if (maintenance.recovered) {
                 const snapshot = await this.settingsHandler.read();
                 for (const listener of this.settingsListeners)
                   listener(snapshot);
-              } else await this.history.pruneExpired();
+              }
             },
           },
           undefined,

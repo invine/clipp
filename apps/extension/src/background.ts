@@ -819,18 +819,15 @@ const sharedRuntime = createRuntimeOrchestrator({
         historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
-              const state = await retentionPreference.read();
-              if (state.cleanupError || state.persistenceError) {
-                const result = await retentionPreference.retry();
-                if (result.status !== "applied")
-                  throw new Error(result.error ?? "history_cleanup_failed");
+              const maintenance = await retentionPreference.maintain();
+              if (maintenance.recovered) {
                 await settingsHandler.read().then((snapshot) =>
                   chrome.runtime.sendMessage({
                     type: "settingsState",
                     snapshot,
                   })
                 );
-              } else await history.pruneExpired();
+              }
             },
           },
           undefined,

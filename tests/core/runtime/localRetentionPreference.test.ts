@@ -202,3 +202,38 @@ it("retains history and prior policy when atomic cleanup fails, then exposes a r
   });
   expect(await history.exportAll()).toEqual([]);
 });
+
+it("maintains ordinary retention and recovers the applied policy after a partial save through one owner operation", async () => {
+  const values = new Map<string, unknown>();
+  let writable = false;
+  const storage = {
+    get: async <T>(key: string) => values.get(key) as T | undefined,
+    set: async <T>(key: string, value: T) => {
+      if (!writable) throw new Error("save_failed");
+      values.set(key, value);
+    },
+  };
+  let now = 1000;
+  const history = new MemoryHistoryStore(undefined, { now: () => now });
+  const owner = createLocalRetentionPreference({
+    storage,
+    history,
+    publish: async () => {},
+  });
+  await owner.load();
+  const clip: Clip = {
+    id: "00000000-0000-4000-8000-000000000923",
+    type: "text",
+    content: "ordinary",
+    originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+    capturedAt: 1000,
+    shareExpiresAt: 86401000,
+  };
+  await history.accept(clip);
+  await owner.set(5001);
+  writable = true;
+  expect(await owner.maintain()).toMatchObject({ recovered: true });
+  now = 6002;
+  expect(await owner.maintain()).toMatchObject({ recovered: false });
+  expect(await history.exportAll()).toEqual([]);
+});

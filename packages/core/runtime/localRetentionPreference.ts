@@ -22,7 +22,7 @@ export function normalizeSavedRetention(value: unknown): number {
 /** Owns the full policy/cleanup/persistence operation; applied policy survives a later save failure. */
 export function createLocalRetentionPreference(options: {
   storage: Pick<KVStorageBackend, "get" | "set">;
-  history: Pick<ClipHistoryStore, "setRetention">;
+  history: Pick<ClipHistoryStore, "setRetention" | "pruneExpired">;
   // eslint-disable-next-line no-unused-vars
   publish(state: LocalRetentionState): Promise<void>;
 }) {
@@ -91,6 +91,27 @@ export function createLocalRetentionPreference(options: {
     return { ...state };
   }
   return {
+    maintain: () =>
+      enqueue(async () => {
+        await load();
+        if (state.cleanupError || state.persistenceError) {
+          const result = await apply(
+            pendingStartup ?? state.value,
+            pendingStartup !== null || state.persistenceError !== null
+          );
+          if (result.status !== "applied")
+            throw new Error(result.error ?? "history_cleanup_failed");
+          return { recovered: true };
+        }
+        try {
+          await options.history.pruneExpired();
+        } catch (error) {
+          state = { ...state, cleanupError: (error as Error).message };
+          await publish();
+          throw error;
+        }
+        return { recovered: false };
+      }),
     load: () => enqueue(load),
     read: () => enqueue(load),
     set: (value: number) =>

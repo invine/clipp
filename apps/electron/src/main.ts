@@ -664,15 +664,12 @@ async function bootstrap() {
     historyRetentionCleanup ??= startHistoryRetentionCleanup(
       {
         pruneExpired: async () => {
-          const state = await retentionPreference.read();
-          if (state.cleanupError || state.persistenceError) {
-            const result = await retentionPreference.retry();
-            if (result.status !== "applied")
-              throw new Error(result.error ?? "history_cleanup_failed");
+          const maintenance = await retentionPreference.maintain();
+          if (maintenance.recovered) {
             const snapshot = await settingsHandler.read();
             for (const window of BrowserWindow.getAllWindows())
               window.webContents.send("clipp:settings-update", snapshot);
-          } else await history.pruneExpired();
+          }
         },
       },
       undefined,
@@ -769,8 +766,8 @@ async function bootstrap() {
     mainWindow = new BrowserWindow({
       width: 520,
       height: 760,
-      minWidth: 480,
-      minHeight: 640,
+      minWidth: 320,
+      minHeight: 350,
       show: false,
       backgroundColor: windowBackground(),
       autoHideMenuBar: true,
