@@ -311,3 +311,60 @@ it("keeps an applied-but-unsaved history policy reachable from History and expla
   expect(issues).toContain("completed cleanup remains in effect");
   client.stop();
 });
+
+it("removes both the global Issue and partial-save message after acknowledged retention recovery", async () => {
+  const { createSettingsClient } =
+    await import("../../packages/core/runtime/settingsClient");
+  const snapshot = (revision: number, retentionError: string | null) => ({
+    sessionId: "authority",
+    revision,
+    state: {
+      theme: "system" as const,
+      autoSync: true,
+      logLevel: "info" as const,
+      sharingLifetimeMs: 86400000,
+      localRetentionMs: 0,
+      retentionError,
+    },
+  });
+  let current = snapshot(1, null),
+    // eslint-disable-next-line no-unused-vars
+    publish!: (message: unknown) => void;
+  const client = createSettingsClient({
+    send: async (message) => {
+      if (message.type === "getSettings")
+        return { ok: true, snapshot: current };
+      current = snapshot(2, "retention_persistence_failed");
+      return {
+        status: "partial",
+        error: "retention_persistence_failed",
+        snapshot: current,
+      };
+    },
+    subscribe: (listener) => {
+      publish = listener;
+      return () => {};
+    },
+  });
+  await client.start();
+  await client.save({ localRetentionMs: 0 });
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const renderCurrent = () =>
+    render({
+      session,
+      appearanceSettings: {
+        ...client.getState(),
+        save: client.save,
+        refresh: client.refresh,
+      },
+    });
+  expect(renderCurrent()).toContain("1 issue needs attention");
+  expect(renderCurrent()).toContain("only partly saved");
+  current = snapshot(3, null);
+  publish({ type: "settingsState", snapshot: current });
+  expect(renderCurrent()).not.toContain("1 issue needs attention");
+  expect(renderCurrent()).not.toContain("only partly saved");
+  expect(renderCurrent()).not.toContain("retention_persistence_failed");
+  client.stop();
+});

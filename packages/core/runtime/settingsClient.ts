@@ -41,6 +41,21 @@ export function createSettingsClient(port: {
   let refreshId = 0;
   let acceptedVersion = 0;
   const retiredSessions = new Set<string>();
+  let retentionFailure: SettingsSnapshot | null = null;
+
+  const reconcileRetentionFeedback = () => {
+    const current = state.snapshot;
+    if (
+      retentionFailure &&
+      current &&
+      current.sessionId === retentionFailure.sessionId &&
+      current.revision > retentionFailure.revision &&
+      current.state.retentionError === null
+    ) {
+      state = { ...state, feedback: null };
+      retentionFailure = null;
+    }
+  };
 
   const notify = () => listener?.({ ...state });
   const apply = (snapshot: SettingsSnapshot, allowSessionChange = false) => {
@@ -68,6 +83,7 @@ export function createSettingsClient(port: {
     if (prior && prior.sessionId !== snapshot.sessionId)
       retiredSessions.add(prior.sessionId);
     state = { ...state, snapshot, loading: false, refreshError: null };
+    reconcileRetentionFeedback();
     acceptedVersion += 1;
     notify();
   };
@@ -149,6 +165,7 @@ export function createSettingsClient(port: {
           status: "unconfirmed" as const,
           error: "settings_reconciliation_required",
         };
+      retentionFailure = null;
       state = {
         ...state,
         pending: true,
@@ -201,6 +218,15 @@ export function createSettingsClient(port: {
               response.status === "applied" ? response.warning : response.error,
           },
         };
+        if (
+          (response.status === "partial" || response.status === "rejected") &&
+          Object.keys(patch).length === 1 &&
+          "localRetentionMs" in patch &&
+          response.error &&
+          response.error === response.snapshot.state.retentionError
+        )
+          retentionFailure = response.snapshot;
+        reconcileRetentionFeedback();
         notify();
         return response;
       } catch (error) {
