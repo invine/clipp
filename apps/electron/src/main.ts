@@ -744,8 +744,8 @@ async function bootstrap() {
     mainWindow = new BrowserWindow({
       width: 520,
       height: 760,
-      minWidth: 480,
-      minHeight: 640,
+      minWidth: 320,
+      minHeight: 350,
       show: false,
       backgroundColor: windowBackground(),
       autoHideMenuBar: true,
