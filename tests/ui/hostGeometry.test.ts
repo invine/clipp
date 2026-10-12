@@ -15,6 +15,7 @@ const edgeToEdge: HostGeometrySnapshot = {
   imePx: { left: 0, top: 0, right: 0, bottom: 0 },
   density: 2.625,
   fontScale: 1,
+  textZoomPercent: 100,
   imeVisible: false,
 };
 

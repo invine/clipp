@@ -85,6 +85,7 @@ public final class HostGeometryPlugin extends Plugin {
         snapshot.put("imePx", inset(ime));
         snapshot.put("density", getActivity().getResources().getDisplayMetrics().density);
         snapshot.put("fontScale", getActivity().getResources().getConfiguration().fontScale);
+        snapshot.put("textZoomPercent", getBridge().getWebView().getSettings().getTextZoom());
         snapshot.put("imeVisible", insets.isVisible(WindowInsetsCompat.Type.ime()));
         return snapshot;
     }

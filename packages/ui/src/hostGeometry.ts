@@ -23,6 +23,8 @@ export type HostGeometrySnapshot = {
   imePx: PhysicalInsets;
   density: number;
   fontScale: number;
+  /** Measured WebView text setting; the native activity alone applies it. */
+  textZoomPercent: number;
   imeVisible: boolean;
 };
 export type NativeGeometrySource = {
