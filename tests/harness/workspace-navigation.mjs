@@ -13,6 +13,22 @@ import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+const measureNativeControl = (element, profile) => {
+  const rect = element.getBoundingClientRect();
+  const cssWidth = document.documentElement.getBoundingClientRect().width;
+  const pxPerCss = profile.nativeWidth / cssWidth;
+  return {
+    rect: rect.toJSON(),
+    cssWidth,
+    minimum: parseFloat(
+      document.documentElement.style.getPropertyValue("--clipp-target-min")
+    ),
+    nativeDp: {
+      width: (rect.width * pxPerCss) / profile.density,
+      height: (rect.height * pxPerCss) / profile.density,
+    },
+  };
+};
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const out = resolve(process.argv[2]);
 const host =
@@ -1084,24 +1100,7 @@ try {
         name: /issues? needs? attention/,
       });
       await summary.scrollIntoViewIfNeeded();
-      const measured = await summary.evaluate((element, profile) => {
-        const rect = element.getBoundingClientRect();
-        const cssWidth = document.documentElement.getBoundingClientRect().width;
-        const pxPerCss = profile.nativeWidth / cssWidth;
-        return {
-          rect: rect.toJSON(),
-          cssWidth,
-          minimum: parseFloat(
-            document.documentElement.style.getPropertyValue(
-              "--clipp-target-min"
-            )
-          ),
-          nativeDp: {
-            width: (rect.width * pxPerCss) / profile.density,
-            height: (rect.height * pxPerCss) / profile.density,
-          },
-        };
-      }, profile);
+      const measured = await summary.evaluate(measureNativeControl, profile);
       report.cases.push({
         label: `actual ClipboardApp issue action with public HostGeometry ${profile.nativeWidth}/${profile.density} at CSS ${profile.width}x${profile.height}`,
         native: false,
@@ -1136,23 +1135,13 @@ try {
         .getByRole("button", { name: "Close", exact: true })
         .first();
       await close.scrollIntoViewIfNeeded();
-      const closeMeasurement = await close.evaluate((element, profile) => {
-        const r = element.getBoundingClientRect(),
-          cssWidth = document.documentElement.getBoundingClientRect().width;
-        return {
-          cssHeight: r.height,
-          minimum: parseFloat(
-            document.documentElement.style.getPropertyValue(
-              "--clipp-target-min"
-            )
-          ),
-          heightDp:
-            (r.height * profile.nativeWidth) / cssWidth / profile.density,
-        };
-      }, profile);
+      const closeMeasurement = await close.evaluate(
+        measureNativeControl,
+        profile
+      );
       assert.ok(
-        closeMeasurement.cssHeight >= closeMeasurement.minimum &&
-          closeMeasurement.heightDp >= 48,
+        closeMeasurement.rect.height >= closeMeasurement.minimum &&
+          closeMeasurement.nativeDp.height >= 48,
         "portal task uses the same strict native target budget"
       );
       await close.click();
