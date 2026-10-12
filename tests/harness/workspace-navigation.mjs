@@ -13,6 +13,22 @@ import { fileURLToPath } from "node:url";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+const measureNativeControl = (element, profile) => {
+  const rect = element.getBoundingClientRect();
+  const cssWidth = document.documentElement.getBoundingClientRect().width;
+  const pxPerCss = profile.nativeWidth / cssWidth;
+  return {
+    rect: rect.toJSON(),
+    cssWidth,
+    minimum: parseFloat(
+      document.documentElement.style.getPropertyValue("--clipp-target-min")
+    ),
+    nativeDp: {
+      width: (rect.width * pxPerCss) / profile.density,
+      height: (rect.height * pxPerCss) / profile.density,
+    },
+  };
+};
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const out = resolve(process.argv[2]);
 const host =
@@ -1009,6 +1025,130 @@ try {
         "compact Clear review keeps pending focus and rejects Escape cancellation after operation starts",
       passed: true,
     });
+  }
+  if (process.argv.includes("--fractional-target")) {
+    assert.equal(host, "android");
+    const profiles = [
+      {
+        width: 412,
+        height: 732,
+        nativeWidth: 1080,
+        nativeHeight: 1920,
+        density: 2.625,
+      },
+      {
+        width: 340,
+        height: 350,
+        nativeWidth: 1080,
+        nativeHeight: 1111,
+        density: 3.5,
+      },
+      {
+        width: 640,
+        height: 360,
+        nativeWidth: 1920,
+        nativeHeight: 1080,
+        density: 3.5,
+      },
+    ];
+    for (const [index, profile] of profiles.entries()) {
+      await page.setViewportSize({
+        width: profile.width,
+        height: profile.height,
+      });
+      await page.evaluate(
+        (profile) => {
+          document.documentElement.style.fontSize = "100%";
+          window.stopFixtureGeometry?.();
+          window.publishFixture({
+            initializationError: "controlled-initialization-failure",
+          });
+          window.startFixtureGeometry({
+            sequence: profile.index + 10,
+            windowPx: {
+              left: 0,
+              top: 0,
+              width: profile.nativeWidth,
+              height: profile.nativeHeight,
+            },
+            webViewPx: {
+              left: 0,
+              top: 0,
+              width: profile.nativeWidth,
+              height: profile.nativeHeight,
+            },
+            safeAreaPx: {
+              left: 0,
+              top: 0,
+              width: profile.nativeWidth,
+              height: profile.nativeHeight,
+            },
+            systemBarsPx: { left: 0, top: 0, right: 0, bottom: 0 },
+            cutoutPx: { left: 0, top: 0, right: 0, bottom: 0 },
+            imePx: { left: 0, top: 0, right: 0, bottom: 0 },
+            density: profile.density,
+            fontScale: 1,
+            imeVisible: false,
+          });
+        },
+        { ...profile, index }
+      );
+      await page.waitForFunction(
+        () => document.documentElement.dataset.hostGeometry === "android"
+      );
+      const summary = page.getByRole("button", {
+        name: /issues? needs? attention/,
+      });
+      await summary.scrollIntoViewIfNeeded();
+      const measured = await summary.evaluate(measureNativeControl, profile);
+      report.cases.push({
+        label: `actual ClipboardApp issue action with public HostGeometry ${profile.nativeWidth}/${profile.density} at CSS ${profile.width}x${profile.height}`,
+        native: false,
+        sourceProfile:
+          "recorded b507 physical width/density at 412x732; other cases are bounded synthetic geometry, zero insets",
+        measured,
+      });
+      assert.ok(
+        measured.rect.height >= measured.minimum,
+        `actual rendered action ${measured.rect.height} must meet strict converted minimum ${measured.minimum}`
+      );
+      assert.ok(
+        measured.nativeDp.width >= 48 && measured.nativeDp.height >= 48,
+        "actual control must preserve 48dp using measured WebView/CSS ratio, independently of DPR"
+      );
+      assert.equal(
+        await summary.evaluate((element) => {
+          const r = element.getBoundingClientRect();
+          return element.contains(
+            document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+          );
+        }),
+        true
+      );
+      await summary.click();
+      const recovery = page.getByRole("dialog", {
+        name: "Issues and recovery",
+        exact: true,
+      });
+      await recovery.waitFor();
+      const close = recovery
+        .getByRole("button", { name: "Close", exact: true })
+        .first();
+      await close.scrollIntoViewIfNeeded();
+      const closeMeasurement = await close.evaluate(
+        measureNativeControl,
+        profile
+      );
+      assert.ok(
+        closeMeasurement.rect.height >= closeMeasurement.minimum &&
+          closeMeasurement.nativeDp.height >= 48,
+        "portal task uses the same strict native target budget"
+      );
+      await close.click();
+      report.cases.at(-1).passed = true;
+      report.cases.at(-1).taskClose = closeMeasurement;
+      await page.evaluate(() => window.stopFixtureGeometry());
+    }
   }
   report.fonts = await page.evaluate(() => ({
     status: document.fonts.status,
