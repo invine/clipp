@@ -2,7 +2,13 @@ import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import type { KVStorageBackend } from "../../../packages/core/trust";
 
-type PreferenceAuthority = { isNative(): boolean; acceptNative(): void };
+type PreferenceAuthority = {
+  isNative(): boolean;
+  // eslint-disable-next-line no-unused-vars
+  hasNativeValue(key: string): boolean;
+  // eslint-disable-next-line no-unused-vars
+  acceptNative(key?: string): void;
+};
 const durablePreferences = new Set([
   "theme",
   "sharingLifetimeMs",
@@ -32,8 +38,17 @@ async function readItem(
   try {
     const res = await preferences.get({ key });
     if (authority) {
-      authority.acceptNative();
-      return res.value ?? null;
+      authority.acceptNative(
+        res.value !== null && res.value !== undefined ? key : undefined
+      );
+      if (
+        (res.value !== null && res.value !== undefined) ||
+        authority.hasNativeValue(key)
+      )
+        return res.value ?? null;
+      // Only a genuinely absent native value may reuse a previously durable web preference.
+      // A successful new native write/read binds this key, so stale web data cannot regain authority.
+      return hasLocalStorage() ? localStorage.getItem(key) : null;
     }
     if (res.value !== null && res.value !== undefined) return res.value;
   } catch {
@@ -59,7 +74,7 @@ async function writeItem(
 ): Promise<void> {
   try {
     await preferences.set({ key, value });
-    authority?.acceptNative();
+    authority?.acceptNative(key);
     return;
   } catch {
     if (authority?.isNative())
@@ -68,8 +83,12 @@ async function writeItem(
     if (authority) {
       let readable = false;
       try {
-        await preferences.get({ key });
-        authority.acceptNative();
+        const current = await preferences.get({ key });
+        authority.acceptNative(
+          current.value !== null && current.value !== undefined
+            ? key
+            : undefined
+        );
         readable = true;
       } catch {
         /* Native unavailable in web preview. */
@@ -117,10 +136,13 @@ async function removeItem(
  */
 export class LocalStorageBackend implements KVStorageBackend {
   private nativePreferenceAuthority = Capacitor.getPlatform() === "android";
+  private readonly nativePreferenceKeys = new Set<string>();
   private readonly preferenceAuthority: PreferenceAuthority = {
     isNative: () => this.nativePreferenceAuthority,
-    acceptNative: () => {
+    hasNativeValue: (key) => this.nativePreferenceKeys.has(key),
+    acceptNative: (key) => {
       this.nativePreferenceAuthority = true;
+      if (key !== undefined) this.nativePreferenceKeys.add(key);
     },
   };
   constructor(
