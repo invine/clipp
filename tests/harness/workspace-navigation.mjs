@@ -40,12 +40,15 @@ const hostFile =
     ? "apps/extension/src/popup-host.css"
     : `apps/${host}/src/${host}-host.css`;
 const hostClass = host === "chrome" ? "popup-host" : `${host}-host`;
+// popup.tsx owns an inline full-size wrapper; other hosts supply it in host CSS.
+const hostSizing =
+  host === "chrome" ? 'style={{width:"100%",height:"100%"}}' : "";
 await mkdir(out, { recursive: true });
 await build({
   stdin: {
     resolveDir: repo,
     loader: "tsx",
-    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],clips:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={[]} pinnedIds={[]} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return 'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'})}} onSetPinned={()=>{}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
+    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],clips:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={[]} pinnedIds={[]} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return 'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'})}} onSetPinned={()=>{}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
   },
   bundle: true,
   platform: "browser",
@@ -107,6 +110,10 @@ let context, page;
 try {
   context = await chromium.launchPersistentContext(profile, {
     headless: true,
+    // Use the browser's own scrollsurface for the edge probe; no foreign overlay.
+    ...(process.argv.includes("--summary-edge")
+      ? { ignoreDefaultArgs: ["--hide-scrollbars"] }
+      : {}),
     viewport:
       host === "chrome"
         ? { width: 480, height: 600 }
@@ -1148,6 +1155,164 @@ try {
       report.cases.at(-1).passed = true;
       report.cases.at(-1).taskClose = closeMeasurement;
       await page.evaluate(() => window.stopFixtureGeometry());
+    }
+  }
+  if (process.argv.includes("--summary-edge")) {
+    for (const scale of [100, 200]) {
+      await page.setViewportSize({ width: 732, height: 412 });
+      await page.evaluate((scale) => {
+        document.documentElement.style.fontSize = scale + "%";
+        window.stopFixtureGeometry?.();
+        window.publishFixture({
+          initializationError: "controlled-summary-edge",
+          clips: Array.from({ length: 24 }, (_, index) => ({
+            id: "edge-" + index,
+            type: "text",
+            content: "Known native edge profile Clip " + index,
+            originPeerId: "local",
+            capturedAt: 1,
+            shareExpiresAt: 2,
+          })),
+        });
+        if (document.querySelector(".android-host"))
+          window.startFixtureGeometry({
+            sequence: 42,
+            windowPx: { left: 0, top: 0, width: 1920, height: 1080 },
+            webViewPx: { left: 0, top: 0, width: 1920, height: 1080 },
+            safeAreaPx: { left: 0, top: 63, width: 1794, height: 1017 },
+            systemBarsPx: { left: 0, top: 63, right: 126, bottom: 0 },
+            cutoutPx: { left: 0, top: 0, right: 0, bottom: 0 },
+            imePx: { left: 0, top: 0, right: 0, bottom: 0 },
+            density: 2.625,
+            fontScale: scale / 100,
+            imeVisible: false,
+          });
+      }, scale);
+      await nav.getByRole("button", { name: "History", exact: true }).click();
+      const summary = page.getByRole("button", {
+        name: /issues? needs? attention/,
+      });
+      await summary.scrollIntoViewIfNeeded();
+      const shell = page.locator(".app-shell");
+      const shellRect = await shell.boundingBox();
+      await page.mouse.move(
+        shellRect.x + shellRect.width - 1,
+        shellRect.y + Math.min(180, shellRect.height / 2)
+      );
+      await page.mouse.wheel(0, 1);
+      const measured = await summary.evaluate(async (element) => {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const rect = element.getBoundingClientRect(),
+          shell = element.closest(".app-shell"),
+          scroll = shell.getBoundingClientRect(),
+          style = getComputedStyle(element);
+        const radii = [
+          "borderTopLeftRadius",
+          "borderTopRightRadius",
+          "borderBottomRightRadius",
+          "borderBottomLeftRadius",
+        ].map((key) => style[key]);
+        const guard = 1,
+          inset = 8;
+        const points = [
+          ["center", rect.left + rect.width / 2, rect.top + rect.height / 2],
+          ["top-left-painted", rect.left + inset, rect.top + inset],
+          ["top-right-painted", rect.right - inset, rect.top + inset],
+          ["bottom-right-painted", rect.right - inset, rect.bottom - inset],
+          ["bottom-left-painted", rect.left + inset, rect.bottom - inset],
+          ["top-edge", rect.left + rect.width / 2, rect.top + guard],
+          ["right-edge", rect.right - guard, rect.top + rect.height / 2],
+          ["bottom-edge", rect.left + rect.width / 2, rect.bottom - guard],
+          ["left-edge", rect.left + guard, rect.top + rect.height / 2],
+        ];
+        return {
+          rect: rect.toJSON(),
+          scrollport: scroll.toJSON(),
+          radii,
+          overflow: getComputedStyle(shell).overflow,
+          clientWidth: shell.clientWidth,
+          scrollHeight: shell.scrollHeight,
+          clientHeight: shell.clientHeight,
+          clearance: {
+            left: rect.left - scroll.left,
+            right: scroll.right - rect.right,
+          },
+          hits: points.map(([name, x, y]) => {
+            const hit = document.elementFromPoint(x, y);
+            return {
+              name,
+              x,
+              y,
+              owned: element.contains(hit),
+              hit: hit
+                ? { tag: hit.tagName, className: String(hit.className) }
+                : null,
+            };
+          }),
+        };
+      });
+      const target =
+        host === "android"
+          ? await summary.evaluate(measureNativeControl, {
+              nativeWidth: 1920,
+              density: 2.625,
+            })
+          : null;
+      report.cases.push({
+        label: `${host} actual scrollsurface summary painted probes and bounded clearance at ${scale}% renderer text`,
+        native: false,
+        measured,
+        target,
+        mechanism:
+          "Native78 is actual occlusion RED. Desktop scrollsurface may not reproduce the Android overlay mechanism; no foreign overlay is inserted.",
+      });
+      assert.equal(measured.overflow, "auto");
+      assert.ok(
+        measured.scrollHeight > measured.clientHeight,
+        "real outer scrollsurface required"
+      );
+      assert.ok(
+        measured.clearance.left >= 8 && measured.clearance.right >= 8,
+        "summary paint must be inset from both outer scrollsurface edges"
+      );
+      assert.ok(
+        measured.hits.every((hit) => hit.owned),
+        "all nine original square painted probes must belong to the summary"
+      );
+      if (target) {
+        assert.ok(
+          target.rect.height >= target.minimum &&
+            target.nativeDp.width >= 48 &&
+            target.nativeDp.height >= 48,
+          "inset summary retains the strict measured native target budget"
+        );
+      }
+      await summary.click();
+      const issues = page.getByRole("dialog", {
+        name: "Issues and recovery",
+        exact: true,
+      });
+      await issues.waitFor();
+      const close = issues
+        .getByRole("button", { name: "Close", exact: true })
+        .first();
+      if (target) {
+        const closeTarget = await close.evaluate(measureNativeControl, {
+          nativeWidth: 1920,
+          density: 2.625,
+        });
+        report.cases.at(-1).taskClose = closeTarget;
+        assert.ok(
+          closeTarget.rect.height >= closeTarget.minimum &&
+            closeTarget.nativeDp.width >= 48 &&
+            closeTarget.nativeDp.height >= 48,
+          "Close retains the same strict native target budget"
+        );
+      }
+      await close.click();
+      report.cases.at(-1).passed = true;
+      await page.evaluate(() => window.stopFixtureGeometry?.());
     }
   }
   report.fonts = await page.evaluate(() => ({
