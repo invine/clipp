@@ -1,5 +1,6 @@
 import {
   clipsHaveEqualImmutableFields,
+  DEFAULT_CLIP_SHARING_LIFETIME_MS,
   type Clip,
 } from "@core/models/Clip";
 import type { BackgroundContinuityDiagnosticStatus } from "@clipp/ui";
@@ -10,15 +11,13 @@ import type { BackgroundContinuityDiagnosticStatus } from "@clipp/ui";
  * Android callbacks: callers translate those boundaries into these events.
  */
 export type BackgroundConnectionState =
-  | "connected"
-  | "waiting"
-  | "reconnecting"
-  | "paused"
-  | "disconnected";
+  "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
 
 export type BackgroundServiceState = "running" | "stopped";
-export type BackgroundNotificationAvailability = "available" | "blocked" | "unknown";
-export type AndroidBackgroundDiagnosticStatus = BackgroundContinuityDiagnosticStatus;
+export type BackgroundNotificationAvailability =
+  "available" | "blocked" | "unknown";
+export type AndroidBackgroundDiagnosticStatus =
+  BackgroundContinuityDiagnosticStatus;
 
 export type AndroidExplicitTextAction = {
   id: string;
@@ -27,6 +26,7 @@ export type AndroidExplicitTextAction = {
   event?: {
     clipId: string;
     capturedAt: number;
+    sharingLifetimeMs?: number;
   };
   /** Assigned by the coordinator, never trusted from an Android intent. */
   shareNow?: true;
@@ -37,20 +37,23 @@ export type AndroidRetainedLiveClip = {
   liveHandled: boolean;
 };
 
-export type AndroidBackgroundContinuitySnapshot = AndroidBackgroundDiagnosticStatus & {
-  available: boolean;
-  backgroundEnabled: boolean;
-  captureEligible: boolean;
-  service: BackgroundServiceState;
-  connection: BackgroundConnectionState;
-  connectedTrustedDeviceCount: number;
-  runtimeHealthy: boolean;
-  notificationAvailability: BackgroundNotificationAvailability;
-};
+export type AndroidBackgroundContinuitySnapshot =
+  AndroidBackgroundDiagnosticStatus & {
+    available: boolean;
+    backgroundEnabled: boolean;
+    captureEligible: boolean;
+    service: BackgroundServiceState;
+    connection: BackgroundConnectionState;
+    connectedTrustedDeviceCount: number;
+    runtimeHealthy: boolean;
+    notificationAvailability: BackgroundNotificationAvailability;
+  };
 
 export type AndroidBackgroundContinuityPlatform = {
   androidApiLevel(): number | undefined;
-  notificationAvailability(): Promise<Exclude<BackgroundNotificationAvailability, "unknown">>;
+  notificationAvailability(): Promise<
+    Exclude<BackgroundNotificationAvailability, "unknown">
+  >;
   readEnabled(): Promise<boolean>;
   writeEnabled(enabled: boolean): Promise<void>;
   setClipboardCaptureEligible(eligible: boolean): Promise<void>;
@@ -59,23 +62,32 @@ export type AndroidBackgroundContinuityPlatform = {
   startService(): Promise<void>;
   stopService(): Promise<void>;
   sendHeartbeat(): Promise<void>;
-  updateService(state: BackgroundConnectionState, connectedTrustedDeviceCount: number): Promise<void>;
+  updateService(
+    state: BackgroundConnectionState,
+    connectedTrustedDeviceCount: number
+  ): Promise<void>;
   showReconnectNotification(): Promise<void>;
   readDiagnosticStatus?(): Promise<AndroidBackgroundDiagnosticStatus>;
   listExplicitTextActions(): Promise<AndroidExplicitTextAction[]>;
   prepareExplicitTextAction(
     actionId: string,
-    event: { clipId: string; capturedAt: number },
+    event: NonNullable<AndroidExplicitTextAction["event"]>
   ): Promise<void>;
   completeExplicitTextAction(actionId: string): Promise<void>;
-  readAcceptedExplicitTextAction(action: AndroidExplicitTextAction & {
-    event: NonNullable<AndroidExplicitTextAction["event"]>;
-  }): Promise<Clip | null>;
-  captureExplicitText(action: AndroidExplicitTextAction & {
-    event: NonNullable<AndroidExplicitTextAction["event"]>;
-    shareNow: true;
-  }): Promise<Clip | null>;
-  showExplicitTextFeedback(state: "accepted" | "queued" | "failed"): Promise<void>;
+  readAcceptedExplicitTextAction(
+    action: AndroidExplicitTextAction & {
+      event: NonNullable<AndroidExplicitTextAction["event"]>;
+    }
+  ): Promise<Clip | null>;
+  captureExplicitText(
+    action: AndroidExplicitTextAction & {
+      event: NonNullable<AndroidExplicitTextAction["event"]>;
+      shareNow: true;
+    }
+  ): Promise<Clip | null>;
+  showExplicitTextFeedback(
+    state: "accepted" | "queued" | "failed"
+  ): Promise<void>;
   readPendingClipboardApplication(): Promise<string | null>;
   writePendingClipboardApplication(clipId: string): Promise<void>;
   clearPendingClipboardApplication(): Promise<void>;
@@ -84,7 +96,7 @@ export type AndroidBackgroundContinuityPlatform = {
   readRetainedLiveClip(clipId: string): Promise<AndroidRetainedLiveClip | null>;
   retryRemoteClipboardApplication(
     clip: Clip,
-    isEligible: () => Promise<boolean>,
+    isEligible: () => Promise<boolean>
   ): Promise<boolean>;
 };
 
@@ -96,20 +108,27 @@ export function createAndroidBackgroundContinuityCoordinator(
   platform: AndroidBackgroundContinuityPlatform,
   options: {
     now?: () => number;
+    sharingLifetimeMs?: () => number;
     heartbeatTimeoutMs?: number;
     heartbeatIntervalMs?: number;
     makeClipId?: () => string;
-    schedulePeriodicHeartbeat?: (tick: () => Promise<void>, everyMs: number) => () => void;
-  } = {},
+    schedulePeriodicHeartbeat?: (
+      tick: () => Promise<void>,
+      everyMs: number
+    ) => () => void;
+  } = {}
 ) {
   const now = options.now ?? Date.now;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 60_000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 20_000;
-  const makeClipId = options.makeClipId ?? (() => globalThis.crypto.randomUUID());
-  const schedulePeriodicHeartbeat = options.schedulePeriodicHeartbeat ?? ((tick, everyMs) => {
-    const interval = setInterval(() => void tick(), everyMs);
-    return () => clearInterval(interval);
-  });
+  const makeClipId =
+    options.makeClipId ?? (() => globalThis.crypto.randomUUID());
+  const schedulePeriodicHeartbeat =
+    options.schedulePeriodicHeartbeat ??
+    ((tick, everyMs) => {
+      const interval = setInterval(() => void tick(), everyMs);
+      return () => clearInterval(interval);
+    });
   let backgroundEnabled = false;
   let resumed = false;
   let windowFocused = false;
@@ -131,7 +150,8 @@ export function createAndroidBackgroundContinuityCoordinator(
   let activityStateGeneration = 0;
   let clipContinuityQueue = Promise.resolve();
 
-  const available = (): boolean => (platform.androidApiLevel() ?? 0) >= ANDROID_12_API_LEVEL;
+  const available = (): boolean =>
+    (platform.androidApiLevel() ?? 0) >= ANDROID_12_API_LEVEL;
   const captureEligible = (): boolean => resumed && windowFocused;
 
   const snapshot = (): AndroidBackgroundContinuitySnapshot => ({
@@ -160,7 +180,9 @@ export function createAndroidBackgroundContinuityCoordinator(
     await platform.updateService(connection, connectedTrustedDeviceCount);
   }
 
-  function connectionForHealthyRuntime(connectedCount: number): BackgroundConnectionState {
+  function connectionForHealthyRuntime(
+    connectedCount: number
+  ): BackgroundConnectionState {
     if (!autoSync) return "paused";
     if (connectedCount > 0) return "connected";
     return wasConnected ? "reconnecting" : "waiting";
@@ -175,11 +197,16 @@ export function createAndroidBackgroundContinuityCoordinator(
 
   function serializeClipContinuity<T>(operation: () => Promise<T>): Promise<T> {
     const next = clipContinuityQueue.then(operation, operation);
-    clipContinuityQueue = next.then(() => undefined, () => undefined);
+    clipContinuityQueue = next.then(
+      () => undefined,
+      () => undefined
+    );
     return next;
   }
 
-  async function clearPendingClipboardApplication(expectedClipId?: string): Promise<void> {
+  async function clearPendingClipboardApplication(
+    expectedClipId?: string
+  ): Promise<void> {
     if (expectedClipId !== undefined) {
       const pendingClipId = await platform.readPendingClipboardApplication();
       if (pendingClipId !== expectedClipId) return;
@@ -197,13 +224,26 @@ export function createAndroidBackgroundContinuityCoordinator(
     }
 
     for (const queued of actions) {
-      if (!queued.id || !queued.text || (queued.source !== "process-text" && queued.source !== "send")) {
+      if (
+        !queued.id ||
+        !queued.text ||
+        (queued.source !== "process-text" && queued.source !== "send")
+      ) {
         await platform.showExplicitTextFeedback("failed");
         continue;
       }
       let event = queued.event;
-      if (!event) {
-        event = { clipId: makeClipId(), capturedAt: now() };
+      let accepted = event
+        ? await platform.readAcceptedExplicitTextAction({ ...queued, event })
+        : null;
+      if (!event || (event.sharingLifetimeMs === undefined && !accepted)) {
+        event = {
+          ...(event ?? { clipId: makeClipId(), capturedAt: now() }),
+          sharingLifetimeMs: event
+            ? DEFAULT_CLIP_SHARING_LIFETIME_MS
+            : (options.sharingLifetimeMs?.() ??
+              DEFAULT_CLIP_SHARING_LIFETIME_MS),
+        };
         try {
           await platform.prepareExplicitTextAction(queued.id, event);
         } catch {
@@ -213,10 +253,13 @@ export function createAndroidBackgroundContinuityCoordinator(
       }
 
       const prepared = { ...queued, event };
-      let accepted = await platform.readAcceptedExplicitTextAction(prepared);
+      accepted ??= await platform.readAcceptedExplicitTextAction(prepared);
       if (!accepted) {
         try {
-          accepted = await platform.captureExplicitText({ ...prepared, shareNow: true });
+          accepted = await platform.captureExplicitText({
+            ...prepared,
+            shareNow: true,
+          });
         } catch {
           await platform.showExplicitTextFeedback("failed");
           continue;
@@ -250,14 +293,17 @@ export function createAndroidBackgroundContinuityCoordinator(
     // Clearing first is the durable at-most-once boundary for the resume side effect.
     await platform.clearPendingClipboardApplication();
     try {
-      await platform.retryRemoteClipboardApplication(retained.clip, async () => {
-        if (!autoSync) return false;
-        const current = await platform.readRetainedLiveClip(pendingClipId);
-        return Boolean(
-          current?.liveHandled
-          && clipsHaveEqualImmutableFields(current.clip, retained.clip)
-        );
-      });
+      await platform.retryRemoteClipboardApplication(
+        retained.clip,
+        async () => {
+          if (!autoSync) return false;
+          const current = await platform.readRetainedLiveClip(pendingClipId);
+          return Boolean(
+            current?.liveHandled &&
+            clipsHaveEqualImmutableFields(current.clip, retained.clip)
+          );
+        }
+      );
     } catch {
       // One failed resume retry is terminal and deliberately never re-queued.
     }
@@ -271,7 +317,8 @@ export function createAndroidBackgroundContinuityCoordinator(
   async function reflectAutoSyncState(enabled: boolean): Promise<void> {
     autoSync = enabled;
     if (!enabled) await clearPendingClipboardApplication();
-    if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
+    if (runtimeHealthy)
+      connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
     await publishServiceState();
   }
 
@@ -282,7 +329,11 @@ export function createAndroidBackgroundContinuityCoordinator(
       if (cancelHeartbeatSchedule) return;
       const generation = ++heartbeatScheduleGeneration;
       cancelHeartbeatSchedule = schedulePeriodicHeartbeat(async () => {
-        if (!cancelHeartbeatSchedule || generation !== heartbeatScheduleGeneration) return;
+        if (
+          !cancelHeartbeatSchedule ||
+          generation !== heartbeatScheduleGeneration
+        )
+          return;
         await heartbeat();
       }, heartbeatIntervalMs);
     },
@@ -296,7 +347,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async initialize(): Promise<AndroidBackgroundContinuitySnapshot> {
-      backgroundEnabled = available() && await platform.readEnabled();
+      backgroundEnabled = available() && (await platform.readEnabled());
       if (available()) {
         await Promise.all([
           refreshNotificationAvailability(),
@@ -306,9 +357,12 @@ export function createAndroidBackgroundContinuityCoordinator(
       return snapshot();
     },
 
-    async setEnabledFromUser(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
+    async setEnabledFromUser(
+      enabled: boolean
+    ): Promise<AndroidBackgroundContinuitySnapshot> {
       if (enabled && !available()) return snapshot();
-      if (!enabled && !backgroundEnabled && service === "stopped") return snapshot();
+      if (!enabled && !backgroundEnabled && service === "stopped")
+        return snapshot();
       if (enabled) await refreshNotificationAvailability();
       const serviceWasRunning = service === "running";
       backgroundEnabled = enabled;
@@ -321,7 +375,7 @@ export function createAndroidBackgroundContinuityCoordinator(
 
       const started = await platform.startService().then(
         () => true,
-        () => false,
+        () => false
       );
       if (!started) {
         service = "stopped";
@@ -336,7 +390,10 @@ export function createAndroidBackgroundContinuityCoordinator(
       return snapshot();
     },
 
-    async setActivityState(next: { resumed: boolean; windowFocused: boolean }): Promise<AndroidBackgroundContinuitySnapshot> {
+    async setActivityState(next: {
+      resumed: boolean;
+      windowFocused: boolean;
+    }): Promise<AndroidBackgroundContinuitySnapshot> {
       const generation = ++activityStateGeneration;
       const wasEligible = captureEligible();
       const wasResumed = resumed;
@@ -354,15 +411,20 @@ export function createAndroidBackgroundContinuityCoordinator(
       return snapshot();
     },
 
-    async setConnection(connectedCount: number): Promise<AndroidBackgroundContinuitySnapshot> {
+    async setConnection(
+      connectedCount: number
+    ): Promise<AndroidBackgroundContinuitySnapshot> {
       connectedTrustedDeviceCount = Math.max(0, Math.floor(connectedCount));
       if (connectedTrustedDeviceCount > 0) wasConnected = true;
-      if (runtimeHealthy) connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
+      if (runtimeHealthy)
+        connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
       await publishServiceState();
       return snapshot();
     },
 
-    async setAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
+    async setAutoSync(
+      enabled: boolean
+    ): Promise<AndroidBackgroundContinuitySnapshot> {
       await serializeClipContinuity(async () => {
         await platform.setAutoSync(enabled);
         await reflectAutoSyncState(enabled);
@@ -370,7 +432,9 @@ export function createAndroidBackgroundContinuityCoordinator(
       return snapshot();
     },
 
-    async reflectAutoSync(enabled: boolean): Promise<AndroidBackgroundContinuitySnapshot> {
+    async reflectAutoSync(
+      enabled: boolean
+    ): Promise<AndroidBackgroundContinuitySnapshot> {
       await serializeClipContinuity(() => reflectAutoSyncState(enabled));
       return snapshot();
     },
@@ -381,9 +445,9 @@ export function createAndroidBackgroundContinuityCoordinator(
 
     async checkHeartbeatExpiry(): Promise<AndroidBackgroundContinuitySnapshot> {
       if (
-        service === "running"
-        && lastHeartbeatAt !== null
-        && now() - lastHeartbeatAt >= heartbeatTimeoutMs
+        service === "running" &&
+        lastHeartbeatAt !== null &&
+        now() - lastHeartbeatAt >= heartbeatTimeoutMs
       ) {
         return await this.reportRuntimeLost();
       }
@@ -405,7 +469,9 @@ export function createAndroidBackgroundContinuityCoordinator(
       return snapshot();
     },
 
-    async handleNotificationAction(action: AndroidBackgroundNotificationAction): Promise<AndroidBackgroundContinuitySnapshot> {
+    async handleNotificationAction(
+      action: AndroidBackgroundNotificationAction
+    ): Promise<AndroidBackgroundContinuitySnapshot> {
       if (action === "stop") return await this.setEnabledFromUser(false);
       if (!backgroundEnabled || service !== "running") return snapshot();
       return await this.setAutoSync(action === "resume");
@@ -419,7 +485,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async handleBoot(): Promise<AndroidBackgroundContinuitySnapshot> {
-      backgroundEnabled = available() && await platform.readEnabled();
+      backgroundEnabled = available() && (await platform.readEnabled());
       if (backgroundEnabled) {
         await refreshNotificationAvailability();
         if (notificationAvailability === "available") {
@@ -433,18 +499,26 @@ export function createAndroidBackgroundContinuityCoordinator(
       await serializeClipContinuity(drainExplicitTextActions);
     },
 
-    async recordLiveClipboardApplication(clip: Clip, result: "applied" | "failed"): Promise<void> {
+    async recordLiveClipboardApplication(
+      clip: Clip,
+      result: "applied" | "failed"
+    ): Promise<void> {
       await serializeClipContinuity(async () => {
         if (result === "failed") {
-          if (autoSync) await platform.writePendingClipboardApplication(clip.id);
+          if (autoSync)
+            await platform.writePendingClipboardApplication(clip.id);
           return;
         }
         await clearPendingClipboardApplication();
       });
     },
 
-    async clearPendingClipboardApplication(expectedClipId?: string): Promise<void> {
-      await serializeClipContinuity(() => clearPendingClipboardApplication(expectedClipId));
+    async clearPendingClipboardApplication(
+      expectedClipId?: string
+    ): Promise<void> {
+      await serializeClipContinuity(() =>
+        clearPendingClipboardApplication(expectedClipId)
+      );
     },
 
     async removeClip(clipId: string): Promise<void> {
@@ -461,7 +535,9 @@ export function createAndroidBackgroundContinuityCoordinator(
       });
     },
 
-    async prepareIdentityRotationCleanup(): Promise<{ rollback(): Promise<void> }> {
+    async prepareIdentityRotationCleanup(): Promise<{
+      rollback(): Promise<void>;
+    }> {
       return await serializeClipContinuity(async () => {
         const checkpoint = await platform.readPendingClipboardApplication();
         if (checkpoint) await platform.clearPendingClipboardApplication();
@@ -470,7 +546,9 @@ export function createAndroidBackgroundContinuityCoordinator(
           rollback: async () => {
             if (restored || !checkpoint) return;
             restored = true;
-            await serializeClipContinuity(() => platform.writePendingClipboardApplication(checkpoint));
+            await serializeClipContinuity(() =>
+              platform.writePendingClipboardApplication(checkpoint)
+            );
           },
         };
       });

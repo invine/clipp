@@ -72,9 +72,6 @@ const Popup = () => {
     []
   );
   const [identity, setIdentity] = useState<Identity | null>(null);
-  const [localRetentionMs, setLocalRetentionMs] = useState(
-    30 * 24 * 60 * 60 * 1000
-  );
   const settings = useSettings();
   const [clipboardHistoryError, setClipboardHistoryError] =
     useState<ClipboardHistoryError | null>(null);
@@ -125,11 +122,6 @@ const Popup = () => {
     [nameState]
   );
   useEffect(() => {
-    chrome.runtime.sendMessage({ type: "getSettings" }, (res) => {
-      if (typeof res?.localRetentionMs === "number")
-        setLocalRetentionMs(res.localRetentionMs);
-    });
-
     const handler = (msg: any) => {
       if (msg.type === "trustRequest" && msg.device) {
         setPending((p) => {
@@ -331,7 +323,7 @@ const Popup = () => {
         historyUnavailable={history.snapshot === null && !history.loading}
         historyRefreshError={history.refreshError}
         onRetryHistoryRefresh={history.refresh}
-        localRetentionMs={localRetentionMs}
+        localRetentionMs={settings.snapshot?.state.localRetentionMs}
         appearanceSettings={settings}
         autoSync={settings.snapshot?.state.autoSync}
         autoSyncKnown={settings.snapshot !== null}
@@ -446,14 +438,7 @@ const Popup = () => {
           if (!refreshed) throw new Error("history_refresh_failed");
         }}
         onSetLocalRetention={async (retentionMs) => {
-          const response = await runHistoryOperation<{
-            ok: true;
-            localRetentionMs: number;
-          }>({
-            type: "setLocalRetention",
-            retentionMs,
-          });
-          setLocalRetentionMs(response.localRetentionMs);
+          await settings.save({ localRetentionMs: retentionMs });
         }}
         onSetAutoSync={async (enabled) => {
           await settings.save({ autoSync: enabled });

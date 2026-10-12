@@ -1,3 +1,4 @@
+import { ClipSettings } from "../../../packages/ui/src/ClipSettings";
 import { Appearance } from "../../../packages/ui/src/Appearance";
 import type { RecoveryIssue } from "../../../packages/core/runtime/recoveryIssues";
 import { OptionsRecovery } from "../../../packages/ui/src/OptionsRecovery";
@@ -225,6 +226,7 @@ const Options = () => {
         }}
         waiting={runtimeState?.waiting}
         preferenceError={
+          settings.snapshot?.state.retentionError ||
           settings.refreshError ||
           settings.feedback?.error ||
           (settings.feedback && settings.feedback.status !== "applied"
@@ -407,6 +409,12 @@ const Options = () => {
         </h2>
         <div className="flex flex-col gap-2">
           <Appearance settings={settings} />
+          <ClipSettings
+            settings={settings}
+            onRetryRetention={async () => {
+              await relayAction({ type: "retryHistoryCleanup" });
+            }}
+          />
           <label className="flex items-center gap-2">
             <input
               type="checkbox"

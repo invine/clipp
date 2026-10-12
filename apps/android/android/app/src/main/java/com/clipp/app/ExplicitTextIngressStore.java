@@ -92,15 +92,24 @@ final class ExplicitTextIngressStore {
     }
 
     boolean prepare(String actionId, String clipId, long capturedAt) {
+        return prepare(actionId, clipId, capturedAt, null);
+    }
+
+    boolean prepare(String actionId, String clipId, long capturedAt, Long sharingLifetimeMs) {
+        if (sharingLifetimeMs != null && (sharingLifetimeMs <= 0 || sharingLifetimeMs > 2592000000L)) return false;
         synchronized (ACTION_QUEUE_LOCK) {
             JSONArray actions = readActions();
             try {
                 for (int index = 0; index < actions.length(); index += 1) {
                     JSONObject action = actions.getJSONObject(index);
                     if (!actionId.equals(action.optString("id"))) continue;
+                    JSONObject existing = action.optJSONObject("event");
+                    if (existing != null && (!clipId.equals(existing.optString("clipId")) || capturedAt != existing.optLong("capturedAt") ||
+                        (existing.has("sharingLifetimeMs") && (sharingLifetimeMs == null || existing.getLong("sharingLifetimeMs") != sharingLifetimeMs)))) return false;
                     JSONObject event = new JSONObject();
                     event.put("clipId", clipId);
                     event.put("capturedAt", capturedAt);
+                    if (sharingLifetimeMs != null) event.put("sharingLifetimeMs", sharingLifetimeMs);
                     action.put("event", event);
                     return persistence.putString(ACTIONS, actions.toString());
                 }

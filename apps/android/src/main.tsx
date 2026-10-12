@@ -44,7 +44,7 @@ function App() {
     send: (message) =>
       message.type === "getSettings"
         ? client.getSettings()
-        : client.setTheme(message.settings?.theme),
+        : client.setSettings(message.settings),
     subscribe: (listener) =>
       client.onSettingsUpdate((snapshot) =>
         listener({ type: "settingsState", snapshot })

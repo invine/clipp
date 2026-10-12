@@ -271,3 +271,43 @@ it("the real Requests destination distinguishes response, current Membership and
   expect(html).not.toContain("Dismiss notice for peer-b");
   expect(session.pairing.getSnapshot().raw).toBe("newer draft");
 });
+
+it("keeps an applied-but-unsaved history policy reachable from History and explains completed cleanup", async () => {
+  const { createSettingsClient } =
+    await import("../../packages/core/runtime/settingsClient");
+  const client = createSettingsClient({
+    send: async () => ({
+      ok: true,
+      snapshot: {
+        sessionId: "current",
+        revision: 1,
+        state: {
+          theme: "system",
+          autoSync: true,
+          logLevel: "info",
+          sharingLifetimeMs: 86400000,
+          localRetentionMs: 0,
+          retentionError: "persistence_unavailable",
+        },
+      },
+    }),
+    subscribe: () => () => {},
+  });
+  await client.start();
+  const appearanceSettings = {
+    ...client.getState(),
+    save: client.save,
+    refresh: client.refresh,
+  };
+  const session = createUiSession();
+  const history = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, appearanceSettings, session })
+  );
+  expect(history).toContain("1 issue needs attention");
+  session.open({ kind: "issues", origin: "issues-summary" });
+  const issues = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, appearanceSettings, session })
+  );
+  expect(issues).toContain("completed cleanup remains in effect");
+  client.stop();
+});

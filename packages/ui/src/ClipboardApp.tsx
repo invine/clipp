@@ -1,3 +1,4 @@
+import { ClipSettings } from "./ClipSettings";
 import { findSessionFocus } from "./sessionFocus";
 import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
 import { Appearance, type AppearanceSettings } from "./Appearance";
@@ -668,12 +669,34 @@ export function ClipboardApp({
         diagnostics: action.feedback.message,
       });
   }
+  const clipPreferenceError =
+    appearanceSettings?.snapshot?.state.retentionError ||
+    (appearanceSettings?.feedback?.fields?.some(
+      (field) => field === "localRetentionMs" || field === "sharingLifetimeMs"
+    )
+      ? appearanceSettings.feedback.error
+      : null);
+  if (clipPreferenceError)
+    issues.push({
+      id: "task:preference:clip-settings",
+      scope: "task",
+      target: "preference",
+      code: "clip-settings",
+      recovering: true,
+      message:
+        "Clip settings need recovery. Check the currently applied values in Settings. Any completed cleanup remains in effect.",
+      diagnostics: clipPreferenceError,
+    });
   const taskIssues = useTaskRecoveryIssues(
     session,
     autoSyncRefreshError || autoSyncFeedback?.error
   );
   issues.push(...taskIssues);
   function issueRetry(issue: RecoveryIssue) {
+    if (issue.code === "clip-settings")
+      return appearanceSettings?.snapshot?.state.retentionError
+        ? onRetryHistoryCleanup
+        : appearanceSettings?.refresh;
     if (issue.code === "initialization_failed") return onRetryInitialization;
     if (issue.scope === "runtime" && issue.code === "unavailable")
       return onRetryRuntime;
@@ -1718,10 +1741,24 @@ export function ClipboardApp({
         )}
         {sessionState.destination === "settings" && (
           <>
-            {appearanceSettings && <Appearance settings={appearanceSettings} />}
+            {appearanceSettings && (
+              <>
+                <Appearance settings={appearanceSettings} />
+                <ClipSettings
+                  settings={appearanceSettings}
+                  onRetryRetention={
+                    onRetryHistoryCleanup
+                      ? async () => {
+                          await onRetryHistoryCleanup();
+                        }
+                      : undefined
+                  }
+                />
+              </>
+            )}
             {renderRelaysSection()}
 
-            {onSetLocalRetention && (
+            {!appearanceSettings && onSetLocalRetention && (
               <div className="relay-settings">
                 <label className="peer-sub" htmlFor="history-retention">
                   Keep unpinned history
@@ -1733,6 +1770,14 @@ export function ClipboardApp({
                     void updateLocalRetention(Number(event.target.value))
                   }
                 >
+                  {![0, 7, 30, 90, 365]
+                    .map((days) => days * 86400000)
+                    .includes(localRetentionMs) && (
+                    <option value={localRetentionMs}>
+                      Custom ({localRetentionMs} ms)
+                    </option>
+                  )}
+                  <option value={0}>Remove unpinned history immediately</option>
                   <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
                   <option value={30 * 24 * 60 * 60 * 1000}>30 days</option>
                   <option value={90 * 24 * 60 * 60 * 1000}>90 days</option>
@@ -2199,6 +2244,7 @@ export function ClipboardApp({
                           "relay-action",
                           "relay",
                           "auto-sync",
+                          "clip-settings",
                         ].includes(issue.code))
                     ? "settings"
                     : issue.scope === "task" &&

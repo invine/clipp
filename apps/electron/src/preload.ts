@@ -157,6 +157,10 @@ const api = {
       "clipp:managed-relay-retry",
       key
     ) as Promise<RelayActionResult>,
+  setSettings: (patch: unknown): Promise<SettingsWriteResult> =>
+    ipcRenderer.invoke("clipp:set-settings", patch),
+  setSharingLifetime: (value: number): Promise<SettingsWriteResult> =>
+    ipcRenderer.invoke("clipp:set-sharing-lifetime", value),
   setLocalRetention: (retentionMs: number) =>
     ipcRenderer.invoke("clipp:set-local-retention", retentionMs),
   refreshAutoSync: (): Promise<boolean> =>

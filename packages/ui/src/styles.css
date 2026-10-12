@@ -2168,3 +2168,19 @@ html[data-host-geometry="android"] .android-host {
   overflow: visible;
   -webkit-line-clamp: unset;
 }
+
+.clip-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.clip-settings select {
+  width: 100%;
+}
+.clip-settings p {
+  margin: 0.25rem 0;
+}
+.clip-settings [role="alert"] {
+  color: var(--clipp-danger);
+}

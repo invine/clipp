@@ -1,5 +1,8 @@
+import { createAndroidClipboardService as composeAndroidClipboard } from "./clipboardFactory";
+import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference";
 import {
   createSettingsHandler,
+  normalizeSharingLifetime,
   type SettingsSnapshot,
 } from "../../../packages/core/runtime/settingsAuthority";
 import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction";
@@ -16,7 +19,6 @@ import {
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
-  createRuntimeClipboardService,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
@@ -75,7 +77,7 @@ import {
   IDENTITY_KEY,
   type KVStorageBackend,
 } from "@core/trust";
-import type { Clip } from "@core/models/Clip";
+import { DEFAULT_CLIP_SHARING_LIFETIME_MS, type Clip } from "@core/models/Clip";
 import type {
   Device,
   HistoryPolicyError,
@@ -229,22 +231,36 @@ function logPairing(
 }
 
 export class AndroidClient {
+  private sharingLifetimeMs = DEFAULT_CLIP_SHARING_LIFETIME_MS;
   private readonly settingsListeners = new Set<
     (snapshot: SettingsSnapshot) => void
   >();
   private readonly settingsHandler = createSettingsHandler({
     storage: this.storage,
+    retention: {
+      read: () => this.retentionPreference.read(),
+      set: (value) => this.retentionPreference.set(value),
+    },
     applyAutoSync: (enabled) => {
       this.autoSync = enabled;
       this.clipboardSync.setAutoSync(enabled);
     },
     applyLogLevel: () => {},
+    applySharingLifetime: (value) => {
+      this.sharingLifetimeMs = value;
+    },
     publish: async (snapshot) => {
       for (const listener of this.settingsListeners) listener(snapshot);
     },
   });
   async getSettings() {
     return { ok: true as const, snapshot: await this.settingsHandler.read() };
+  }
+  setSharingLifetime(value: unknown) {
+    return this.settingsHandler.write({ sharingLifetimeMs: value });
+  }
+  setSettings(patch: unknown) {
+    return this.settingsHandler.write(patch);
   }
   setTheme(theme: unknown) {
     return this.settingsHandler.write({ theme });
@@ -262,6 +278,17 @@ export class AndroidClient {
   private removeRelayCallback: (() => void) | null = null;
   private readonly historyBackend = createHistoryBackend();
   private readonly history = new MemoryHistoryStore(this.historyBackend);
+  private readonly retentionPreference = createLocalRetentionPreference({
+    storage: this.storage,
+    history: this.history,
+    publish: async (state) => {
+      this.localRetentionMs = state.value;
+      this.historyPolicyError = state.cleanupError
+        ? "history_cleanup_failed"
+        : null;
+      await this.emitState();
+    },
+  });
   private readonly historyState = createHistoryStateReader(this.history);
   private readonly identityRepo = createKVIdentityRepository({
     storage: this.storage,
@@ -430,11 +457,9 @@ export class AndroidClient {
     });
   }
   private createAndroidClipboardService() {
-    return createRuntimeClipboardService({
-      capabilities: RUNTIME_CAPABILITIES.android,
+    return composeAndroidClipboard({
       history: this.history,
-      pollIntervalMs: 1500,
-      initiallyPollingEnabled: false,
+      appliedSharingLifetime: () => this.sharingLifetimeMs,
       getSenderId: async () => {
         const id = await this.identitySvc.get();
         return id.deviceId;
@@ -485,82 +510,89 @@ export class AndroidClient {
   private pairingAttemptSeq = 0;
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
   private historyRetentionCleanup: HistoryRetentionCleanup | null = null;
-  private pendingRetentionMs: number | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
   private readonly backgroundNative = createAndroidBackgroundNative();
   private androidApiLevel: number | undefined;
   private backgroundEventsBound = false;
   private readonly backgroundContinuity =
-    createAndroidBackgroundContinuityCoordinator({
-      androidApiLevel: () => this.androidApiLevel,
-      notificationAvailability: () =>
-        this.backgroundNative.notificationAvailability(),
-      readEnabled: async () =>
-        (await this.storage.get<boolean>("backgroundContinuityEnabled")) ===
-        true,
-      writeEnabled: async (enabled) => {
-        await this.storage.set("backgroundContinuityEnabled", enabled);
-        await this.backgroundNative.setEnabled(enabled);
+    createAndroidBackgroundContinuityCoordinator(
+      {
+        androidApiLevel: () => this.androidApiLevel,
+        notificationAvailability: () =>
+          this.backgroundNative.notificationAvailability(),
+        readEnabled: async () =>
+          (await this.storage.get<boolean>("backgroundContinuityEnabled")) ===
+          true,
+        writeEnabled: async (enabled) => {
+          await this.storage.set("backgroundContinuityEnabled", enabled);
+          await this.backgroundNative.setEnabled(enabled);
+        },
+        setClipboardCaptureEligible: async (eligible) => {
+          this.clipboard.setPollingEnabled?.(eligible);
+        },
+        resetClipboardBaseline: async () => {
+          await this.clipboard.resetObservationBaseline?.();
+        },
+        setAutoSync: async (enabled) => {
+          await this.setAutoSyncPreference(enabled);
+        },
+        startService: () => this.backgroundNative.start(),
+        stopService: () => this.backgroundNative.stop(),
+        sendHeartbeat: () => this.backgroundNative.heartbeat(),
+        updateService: (state, connectedTrustedDeviceCount) =>
+          this.backgroundNative.update(state, connectedTrustedDeviceCount),
+        showReconnectNotification: () =>
+          this.backgroundNative.showReconnectNotification(),
+        readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
+        listExplicitTextActions: () =>
+          this.backgroundNative.explicitTextActions(),
+        prepareExplicitTextAction: (actionId, event) =>
+          this.backgroundNative.prepareExplicitTextAction(actionId, event),
+        completeExplicitTextAction: (actionId) =>
+          this.backgroundNative.completeExplicitTextAction(actionId),
+        readAcceptedExplicitTextAction: async (action) => {
+          const [item, identity] = await Promise.all([
+            this.history.getById(action.event.clipId),
+            this.identitySvc.get(),
+          ]);
+          const clip = item?.clip;
+          return clip &&
+            clip.originPeerId === identity.deviceId &&
+            clip.content === action.text &&
+            clip.capturedAt === action.event.capturedAt &&
+            (action.event.sharingLifetimeMs === undefined ||
+              clip.shareExpiresAt - clip.capturedAt ===
+                action.event.sharingLifetimeMs)
+            ? clip
+            : null;
+        },
+        captureExplicitText: (action) =>
+          this.clipboard.processLocalText(action.text, {
+            shareNow: true,
+            event: action.event,
+          }),
+        showExplicitTextFeedback: (state) =>
+          this.backgroundNative.showExplicitTextFeedback(state),
+        readPendingClipboardApplication: () =>
+          this.backgroundNative.pendingClipboardApplication(),
+        writePendingClipboardApplication: (clipId) =>
+          this.backgroundNative.setPendingClipboardApplication(clipId),
+        clearPendingClipboardApplication: () =>
+          this.backgroundNative.clearPendingClipboardApplication(),
+        removeClip: (clipId) => this.history.remove(clipId),
+        clearHistory: () =>
+          this.clipboard.clearHistory(() => this.history.clearAll()),
+        readRetainedLiveClip: async (clipId) => {
+          const item = await this.history.getById(clipId);
+          return item
+            ? { clip: item.clip, liveHandled: item.liveHandled }
+            : null;
+        },
+        retryRemoteClipboardApplication: async (clip, isEligible) =>
+          await this.clipboard.writeRemoteClip(clip, isEligible),
       },
-      setClipboardCaptureEligible: async (eligible) => {
-        this.clipboard.setPollingEnabled?.(eligible);
-      },
-      resetClipboardBaseline: async () => {
-        await this.clipboard.resetObservationBaseline?.();
-      },
-      setAutoSync: async (enabled) => {
-        await this.setAutoSyncPreference(enabled);
-      },
-      startService: () => this.backgroundNative.start(),
-      stopService: () => this.backgroundNative.stop(),
-      sendHeartbeat: () => this.backgroundNative.heartbeat(),
-      updateService: (state, connectedTrustedDeviceCount) =>
-        this.backgroundNative.update(state, connectedTrustedDeviceCount),
-      showReconnectNotification: () =>
-        this.backgroundNative.showReconnectNotification(),
-      readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
-      listExplicitTextActions: () =>
-        this.backgroundNative.explicitTextActions(),
-      prepareExplicitTextAction: (actionId, event) =>
-        this.backgroundNative.prepareExplicitTextAction(actionId, event),
-      completeExplicitTextAction: (actionId) =>
-        this.backgroundNative.completeExplicitTextAction(actionId),
-      readAcceptedExplicitTextAction: async (action) => {
-        const [item, identity] = await Promise.all([
-          this.history.getById(action.event.clipId),
-          this.identitySvc.get(),
-        ]);
-        const clip = item?.clip;
-        return clip &&
-          clip.originPeerId === identity.deviceId &&
-          clip.content === action.text &&
-          clip.capturedAt === action.event.capturedAt
-          ? clip
-          : null;
-      },
-      captureExplicitText: (action) =>
-        this.clipboard.processLocalText(action.text, {
-          shareNow: true,
-          event: action.event,
-        }),
-      showExplicitTextFeedback: (state) =>
-        this.backgroundNative.showExplicitTextFeedback(state),
-      readPendingClipboardApplication: () =>
-        this.backgroundNative.pendingClipboardApplication(),
-      writePendingClipboardApplication: (clipId) =>
-        this.backgroundNative.setPendingClipboardApplication(clipId),
-      clearPendingClipboardApplication: () =>
-        this.backgroundNative.clearPendingClipboardApplication(),
-      removeClip: (clipId) => this.history.remove(clipId),
-      clearHistory: () =>
-        this.clipboard.clearHistory(() => this.history.clearAll()),
-      readRetainedLiveClip: async (clipId) => {
-        const item = await this.history.getById(clipId);
-        return item ? { clip: item.clip, liveHandled: item.liveHandled } : null;
-      },
-      retryRemoteClipboardApplication: async (clip, isEligible) =>
-        await this.clipboard.writeRemoteClip(clip, isEligible),
-    });
+      { sharingLifetimeMs: () => this.sharingLifetimeMs }
+    );
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
     identityKey: IDENTITY_KEY,
@@ -860,6 +892,9 @@ export class AndroidClient {
 
   private async startServices() {
     if (this.started) return;
+    this.sharingLifetimeMs = normalizeSharingLifetime(
+      await this.storage.get<unknown>("sharingLifetimeMs")
+    );
     await startIdentityBoundRuntimeServices({
       initializeIdentity: () => this.identityRotationLifecycle.initialize(),
       startLocalServices: async () => {
@@ -887,32 +922,15 @@ export class AndroidClient {
         }
         this.clipboardSync.setAutoSync(this.autoSync);
         await this.backgroundContinuity.reflectAutoSync(this.autoSync);
-        const storedRetentionMs =
-          (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
-        const applyStoredRetention = async (): Promise<void> => {
-          this.localRetentionMs =
-            await this.history.setRetention(storedRetentionMs);
-          this.pendingRetentionMs = null;
-          if (this.localRetentionMs !== storedRetentionMs) {
-            await this.storage.set("localRetentionMs", this.localRetentionMs);
-          }
-        };
-        try {
-          await applyStoredRetention();
-        } catch (error) {
-          this.pendingRetentionMs = storedRetentionMs;
-          this.historyPolicyError = "history_cleanup_failed";
-          log.warn(
-            "Initial local history cleanup failed; runtime will retry",
-            error
-          );
-        }
         this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
-              if (this.pendingRetentionMs !== null)
-                await applyStoredRetention();
-              else await this.history.pruneExpired();
+              const maintenance = await this.retentionPreference.maintain();
+              if (maintenance.recovered) {
+                const snapshot = await this.settingsHandler.read();
+                for (const listener of this.settingsListeners)
+                  listener(snapshot);
+              }
             },
           },
           undefined,
@@ -1180,11 +1198,7 @@ export class AndroidClient {
   }
 
   async setLocalRetention(retentionMs: number) {
-    this.localRetentionMs = await this.history.setRetention(retentionMs);
-    this.pendingRetentionMs = null;
-    await this.storage.set("localRetentionMs", this.localRetentionMs);
-    await this.emitState();
-    return this.localRetentionMs;
+    return this.settingsHandler.write({ localRetentionMs: retentionMs });
   }
 
   private relayMutationOwner = createRelayMutationOwner({

@@ -98,3 +98,72 @@ it("treats an old-session save reply as unconfirmed after the current authority 
     pending: false,
   });
 });
+
+it("concurrent views share applied custom retention and lifetime across a lost reply and stale bootstrap", async () => {
+  const { MemoryHistoryStore } =
+    await import("../../../packages/core/history/store");
+  const { createLocalRetentionPreference } =
+    await import("../../../packages/core/runtime/localRetentionPreference");
+  const values = new Map<string, unknown>();
+  const storage = {
+    get: async <T>(key: string) => values.get(key) as T | undefined,
+    set: async <T>(key: string, value: T) => {
+      values.set(key, value);
+    },
+  };
+  const retention = createLocalRetentionPreference({
+    storage,
+    history: new MemoryHistoryStore(),
+    publish: async () => {},
+  });
+  // eslint-disable-next-line no-unused-vars
+  const listeners = new Set<(message: unknown) => void>();
+  const handler = createSettingsHandler({
+    storage,
+    retention,
+    applyAutoSync: () => {},
+    applyLogLevel: () => {},
+    publish: async (snapshot) => {
+      for (const listener of listeners)
+        listener({ type: "settingsState", snapshot });
+    },
+  });
+  let loseReply = false;
+  const port = {
+    send: async (message: { type: string; settings?: unknown }) => {
+      if (message.type === "getSettings")
+        return { ok: true, snapshot: await handler.read() };
+      const result = await handler.write(message.settings);
+      if (loseReply) throw new Error("reply_lost");
+      return result;
+    },
+    // eslint-disable-next-line no-unused-vars
+    subscribe: (listener: (message: unknown) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+  const popup = createSettingsClient(port),
+    options = createSettingsClient(port);
+  await Promise.all([popup.start(), options.start()]);
+  const old = popup.getState().snapshot;
+  await Promise.all([
+    popup.save({ localRetentionMs: 1250.5 }),
+    options.save({ sharingLifetimeMs: 5001 }),
+  ]);
+  loseReply = true;
+  await options.save({ sharingLifetimeMs: 7003 });
+  for (const listener of listeners)
+    listener({ type: "settingsState", snapshot: old });
+  for (const client of [popup, options])
+    expect(client.getState().snapshot?.state).toMatchObject({
+      localRetentionMs: 1250.5,
+      sharingLifetimeMs: 7003,
+      autoSync: true,
+    });
+  expect(options.getState().feedback).toMatchObject({ status: "unconfirmed" });
+  popup.stop();
+  options.stop();
+});
