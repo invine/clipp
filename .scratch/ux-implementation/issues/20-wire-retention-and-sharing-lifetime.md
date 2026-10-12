@@ -1,11 +1,11 @@
 # Wire local retention and Clip Sharing Lifetime
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-retention-20
 Priority band: 1
-Blocked by: 01, 02, 17
-Dispatch: plan approved; awaiting an authorized execution run
+Blocked by: 01, 02, 32
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -24,7 +24,7 @@ The [approved package contract](../../ux-implementation-plan/workspace-delivery-
 
 - [Repair Chrome preference integrity](01-repair-chrome-preference-integrity.md) — consume its completed, scoped output.
 - [Reconcile authoritative History and queries](02-reconcile-authoritative-history.md) — consume its completed, scoped output.
-- [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
+- [Deliver local assets and Android shared controls](32-deliver-local-assets-and-android-shared-controls.md) — consume its completed compatible asset/control interface.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 
@@ -52,3 +52,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Dispatch assessment — 2026-10-12
+
+Consume the genuinely resolved compatible asset/control foundation in32 instead of residual desktop qualification17. This follows the approved numbered refinement already used by13/18/19; it changes no output or required gate. Residual17 retains all desktop control/G13/G14 and styling collection. Ticket20 retains every affected current presentation, emitted Clip, cleanup/pin/suppression, persistence, restart and simultaneous-view G35/G36 check. A prior host result is not a pass for changed consumers.
+
+Predecessors01/02/32 are resolved. Requested retention and Clip Sharing Lifetime preserve the accepted Clip/History distinction, immutable imported/previous metadata, event-fixed pending lifetime, truthful partial effects, runtime authority and ADR-0012. Default/zero/max/custom semantics remain the accepted package contract; no capacity/forever setting or migration from obsolete expiryDays is introduced.
+
+Coordinator claim `ux-retention-20`: client branch `codex/ux-20-retention-lifetime`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-20`, based on this claim commit. Read current preparation `/private/tmp/clipp-ux-implementation-20261010/ticket-20-current-prep.md`; use owning-interface TDD and update every live bridge with each shared action-surface change. Root serializes broad/native/rendered checks, review and integration. No host clipboard, native SDK/OS changes, real sign-in, external relay work, push or publication is assigned. At most two source implementers. Required native/persistence/current-view gates remain incomplete until measured and reviewed.

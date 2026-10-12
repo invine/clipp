@@ -134,3 +134,6 @@ Names below match the [inventory](../ux-study/flow-control-inventory.md#scenario
 ## Pairing host-scope allocation
 
 [Deliver the compatible Pairing outcome interface and Electron journey](issues/33-deliver-pairing-outcome-interface-and-electron-journey.md) supplies the common live-adapter contract and actual Electron G01 contribution. Residual ticket 10 retains Android/Chrome G01 and C07 collection. All required contributing outputs, acceptance criteria and existing finding statuses remain unchanged; no additional finding closes.
+
+
+Ticket20 consumes the completed compatible asset/control foundation through32. Residual17 keeps all desktop/native qualification and its collectors;20 requalifies its affected presentation and retains every G35/G36 policy, emitted-Clip, persistence and simultaneous-view requirement. No finding or addition closes through this prerequisite correction.
