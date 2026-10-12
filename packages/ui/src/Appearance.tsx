@@ -30,7 +30,9 @@ export function Appearance({ settings }: { settings: AppearanceSettings }) {
         </select>
       </label>
       {settings.loading && <p role="status">Loading appearance…</p>}
-      {settings.pending && <p role="status">Saving appearance…</p>}
+      {settings.pending && settings.pendingFields?.includes("theme") && (
+        <p role="status">Saving appearance…</p>
+      )}
       <PreferenceRefreshNotice
         subject="Appearance"
         error={settings.refreshError}

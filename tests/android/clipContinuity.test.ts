@@ -22,13 +22,18 @@ function createPlatform() {
   let actions: AndroidExplicitTextAction[] = [];
   let pendingApplicationClipId: string | null = null;
   let autoSync = true;
-  const prepared: Array<{ actionId: string; clipId: string; capturedAt: number }> = [];
+  const prepared: Array<{
+    actionId: string;
+    clipId: string;
+    capturedAt: number;
+  }> = [];
   const completed: string[] = [];
   const captures: AndroidExplicitTextAction[] = [];
   const feedback: string[] = [];
   const retained = new Map<string, { clip: Clip; liveHandled: boolean }>();
   const writes: string[] = [];
-  let nextCapture: ((action: AndroidExplicitTextAction) => Promise<Clip | null>) | undefined;
+  let nextCapture:
+    ((action: AndroidExplicitTextAction) => Promise<Clip | null>) | undefined;
   let completeFailureCount = 0;
   let writeFailureCount = 0;
   let beforeRetryEligibility: (() => void | Promise<void>) | undefined;
@@ -39,7 +44,9 @@ function createPlatform() {
     writeEnabled: async () => undefined,
     setClipboardCaptureEligible: async () => undefined,
     resetClipboardBaseline: async () => undefined,
-    setAutoSync: async (enabled) => { autoSync = enabled; },
+    setAutoSync: async (enabled) => {
+      autoSync = enabled;
+    },
     startService: async () => undefined,
     stopService: async () => undefined,
     sendHeartbeat: async () => undefined,
@@ -48,7 +55,9 @@ function createPlatform() {
     listExplicitTextActions: async () => structuredClone(actions),
     prepareExplicitTextAction: async (actionId, event) => {
       prepared.push({ actionId, ...event });
-      actions = actions.map((action) => action.id === actionId ? { ...action, event } : action);
+      actions = actions.map((action) =>
+        action.id === actionId ? { ...action, event } : action
+      );
     },
     completeExplicitTextAction: async (actionId) => {
       if (completeFailureCount > 0) {
@@ -60,9 +69,9 @@ function createPlatform() {
     },
     readAcceptedExplicitTextAction: async (action) => {
       const existing = retained.get(action.event!.clipId)?.clip;
-      return existing
-        && existing.content === action.text
-        && existing.capturedAt === action.event!.capturedAt
+      return existing &&
+        existing.content === action.text &&
+        existing.capturedAt === action.event!.capturedAt
         ? existing
         : null;
     },
@@ -71,15 +80,26 @@ function createPlatform() {
       const accepted = nextCapture
         ? await nextCapture(action)
         : clip(action.event!.clipId, action.text, action.event!.capturedAt);
-      if (accepted) retained.set(accepted.id, { clip: accepted, liveHandled: true });
+      if (accepted)
+        retained.set(accepted.id, { clip: accepted, liveHandled: true });
       return accepted;
     },
-    showExplicitTextFeedback: async (state) => { feedback.push(state); },
+    showExplicitTextFeedback: async (state) => {
+      feedback.push(state);
+    },
     readPendingClipboardApplication: async () => pendingApplicationClipId,
-    writePendingClipboardApplication: async (clipId) => { pendingApplicationClipId = clipId; },
-    clearPendingClipboardApplication: async () => { pendingApplicationClipId = null; },
-    removeClip: async (clipId) => { retained.delete(clipId); },
-    clearHistory: async () => { retained.clear(); },
+    writePendingClipboardApplication: async (clipId) => {
+      pendingApplicationClipId = clipId;
+    },
+    clearPendingClipboardApplication: async () => {
+      pendingApplicationClipId = null;
+    },
+    removeClip: async (clipId) => {
+      retained.delete(clipId);
+    },
+    clearHistory: async () => {
+      retained.clear();
+    },
     readRetainedLiveClip: async (clipId) => retained.get(clipId) ?? null,
     retryRemoteClipboardApplication: async (value, isEligible) => {
       await beforeRetryEligibility?.();
@@ -94,20 +114,36 @@ function createPlatform() {
   };
   return {
     platform,
-    enqueue(...next: AndroidExplicitTextAction[]) { actions.push(...structuredClone(next)); },
+    enqueue(...next: AndroidExplicitTextAction[]) {
+      actions.push(...structuredClone(next));
+    },
     actions: () => structuredClone(actions),
     prepared,
     completed,
     captures,
     feedback,
-    setCapture(handler: (action: AndroidExplicitTextAction) => Promise<Clip | null>) { nextCapture = handler; },
-    failCompletion(times = 1) { completeFailureCount = times; },
+    setCapture(
+      handler: (action: AndroidExplicitTextAction) => Promise<Clip | null>
+    ) {
+      nextCapture = handler;
+    },
+    failCompletion(times = 1) {
+      completeFailureCount = times;
+    },
     pendingApplication: () => pendingApplicationClipId,
-    retain(value: Clip, liveHandled = true) { retained.set(value.id, { clip: value, liveHandled }); },
-    remove(clipId: string) { retained.delete(clipId); },
+    retain(value: Clip, liveHandled = true) {
+      retained.set(value.id, { clip: value, liveHandled });
+    },
+    remove(clipId: string) {
+      retained.delete(clipId);
+    },
     writes,
-    failWrite(times = 1) { writeFailureCount = times; },
-    beforeRetryCheck(operation: () => void | Promise<void>) { beforeRetryEligibility = operation; },
+    failWrite(times = 1) {
+      writeFailureCount = times;
+    },
+    beforeRetryCheck(operation: () => void | Promise<void>) {
+      beforeRetryEligibility = operation;
+    },
     autoSync: () => autoSync,
   };
 }
@@ -116,25 +152,46 @@ test("drains cold and warm selected-text and Sharesheet actions through Share No
   const fake = createPlatform();
   fake.enqueue(
     { id: "selection", text: "same text", source: "process-text" },
-    { id: "share", text: "same text", source: "send" },
+    { id: "share", text: "same text", source: "send" }
   );
   const ids = [
     "00000000-0000-4000-8000-000000000801",
     "00000000-0000-4000-8000-000000000802",
     "00000000-0000-4000-8000-000000000803",
   ];
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform, {
-    now: () => 1,
-    makeClipId: () => ids.shift()!,
-  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    {
+      now: () => 1,
+      makeClipId: () => ids.shift()!,
+    }
+  );
 
   await coordinator.handleExplicitTextActionsAvailable();
   fake.enqueue({ id: "warm-share", text: "warm", source: "send" });
   await coordinator.handleExplicitTextActionsAvailable();
 
   expect(fake.captures).toEqual([
-    expect.objectContaining({ id: "selection", text: "same text", source: "process-text", event: { clipId: "00000000-0000-4000-8000-000000000801", capturedAt: 1 } }),
-    expect.objectContaining({ id: "share", text: "same text", source: "send", event: { clipId: "00000000-0000-4000-8000-000000000802", capturedAt: 1 } }),
+    expect.objectContaining({
+      id: "selection",
+      text: "same text",
+      source: "process-text",
+      event: {
+        clipId: "00000000-0000-4000-8000-000000000801",
+        capturedAt: 1,
+        sharingLifetimeMs: 86400000,
+      },
+    }),
+    expect.objectContaining({
+      id: "share",
+      text: "same text",
+      source: "send",
+      event: {
+        clipId: "00000000-0000-4000-8000-000000000802",
+        capturedAt: 1,
+        sharingLifetimeMs: 86400000,
+      },
+    }),
     expect.objectContaining({ id: "warm-share", text: "warm", source: "send" }),
   ]);
   expect(fake.captures.every((action) => action.shareNow === true)).toBe(true);
@@ -153,19 +210,29 @@ test("preserves one prepared Clip identity across restart and completion-persist
   });
 
   await first.handleExplicitTextActionsAvailable();
-  const restarted = createAndroidBackgroundContinuityCoordinator(fake.platform, {
-    now: () => 20,
-    makeClipId: () => "00000000-0000-4000-8000-000000000811",
-  });
+  const restarted = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    {
+      now: () => 20,
+      makeClipId: () => "00000000-0000-4000-8000-000000000811",
+    }
+  );
   await restarted.handleExplicitTextActionsAvailable();
 
-  expect(fake.prepared).toEqual([{
-    actionId: "persisted-action",
-    clipId: "00000000-0000-4000-8000-000000000810",
-    capturedAt: 10,
-  }]);
+  expect(fake.prepared).toEqual([
+    {
+      actionId: "persisted-action",
+      clipId: "00000000-0000-4000-8000-000000000810",
+      capturedAt: 10,
+      sharingLifetimeMs: 86400000,
+    },
+  ]);
   expect(fake.captures.map((action) => action.event)).toEqual([
-    { clipId: "00000000-0000-4000-8000-000000000810", capturedAt: 10 },
+    {
+      clipId: "00000000-0000-4000-8000-000000000810",
+      capturedAt: 10,
+      sharingLifetimeMs: 86400000,
+    },
   ]);
   expect(fake.completed).toEqual(["persisted-action"]);
   expect(fake.actions()).toEqual([]);
@@ -179,9 +246,12 @@ test("keeps a durably queued action until local Clip acceptance succeeds, includ
     accepts += 1;
     return accepts === 1 ? null : clip(action.event!.clipId, action.text);
   });
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform, {
-    makeClipId: () => "00000000-0000-4000-8000-000000000820",
-  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    {
+      makeClipId: () => "00000000-0000-4000-8000-000000000820",
+    }
+  );
   await coordinator.reflectAutoSync(false);
 
   await coordinator.handleExplicitTextActionsAvailable();
@@ -198,7 +268,9 @@ test("stores only the newest failed live Remote Clip and retries it once on resu
   const newer = clip("00000000-0000-4000-8000-000000000831", "newer");
   fake.retain(older);
   fake.retain(newer);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.recordLiveClipboardApplication(older, "failed");
   await coordinator.recordLiveClipboardApplication(newer, "failed");
@@ -215,7 +287,9 @@ test("clears one failed resume retry instead of recreating pending application w
   const remote = clip("00000000-0000-4000-8000-000000000840", "remote");
   fake.retain(remote);
   fake.failWrite();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.recordLiveClipboardApplication(remote, "failed");
 
   await coordinator.setActivityState({ resumed: true, windowFocused: false });
@@ -228,9 +302,14 @@ test("clears one failed resume retry instead of recreating pending application w
 
 test("rechecks pending application eligibility immediately before the resume write", async () => {
   const fake = createPlatform();
-  const remote = clip("00000000-0000-4000-8000-000000000841", "removed during resume");
+  const remote = clip(
+    "00000000-0000-4000-8000-000000000841",
+    "removed during resume"
+  );
   fake.retain(remote);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.recordLiveClipboardApplication(remote, "failed");
   fake.beforeRetryCheck(() => fake.remove(remote.id));
 
@@ -246,7 +325,9 @@ test("cancels pending application for Auto Sync, local removal, history clearing
   const historical = clip("00000000-0000-4000-8000-000000000851", "historical");
   fake.retain(live);
   fake.retain(historical, false);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.recordLiveClipboardApplication(live, "failed");
   await coordinator.reflectAutoSync(false);
@@ -279,10 +360,65 @@ test("a newer successful live application clears an older failed marker", async 
   const fake = createPlatform();
   const older = clip("00000000-0000-4000-8000-000000000860", "older");
   const newer = clip("00000000-0000-4000-8000-000000000861", "newer");
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.recordLiveClipboardApplication(older, "failed");
   await coordinator.recordLiveClipboardApplication(newer, "applied");
 
   expect(fake.pendingApplication()).toBeNull();
+});
+
+test("freezes a queued native capture lifetime across restart before durable acceptance", async () => {
+  const fake = createPlatform();
+  fake.enqueue({ id: "lifetime-retry", text: "same event", source: "send" });
+  fake.setCapture(async () => null);
+  const first = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    Object.assign(
+      {
+        now: () => 1000,
+        makeClipId: () => "00000000-0000-4000-8000-000000000899",
+      },
+      { sharingLifetimeMs: () => 5001 }
+    )
+  );
+  await first.handleExplicitTextActionsAvailable();
+  const second = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    Object.assign({ now: () => 2000 }, { sharingLifetimeMs: () => 7003 })
+  );
+  await second.handleExplicitTextActionsAvailable();
+  expect(fake.captures.map((action) => action.event)).toEqual([
+    {
+      clipId: "00000000-0000-4000-8000-000000000899",
+      capturedAt: 1000,
+      sharingLifetimeMs: 5001,
+    },
+    {
+      clipId: "00000000-0000-4000-8000-000000000899",
+      capturedAt: 1000,
+      sharingLifetimeMs: 5001,
+    },
+  ]);
+});
+
+test("upgrades a legacy prepared event with its original production lifetime, not the new preference", async () => {
+  const fake = createPlatform();
+  fake.enqueue({
+    id: "legacy",
+    text: "legacy pending",
+    source: "send",
+    event: { clipId: "00000000-0000-4000-8000-000000000898", capturedAt: 1000 },
+  });
+  fake.setCapture(async () => null);
+  await createAndroidBackgroundContinuityCoordinator(fake.platform, {
+    sharingLifetimeMs: () => 5001,
+  }).handleExplicitTextActionsAvailable();
+  expect(fake.captures[0].event).toEqual({
+    clipId: "00000000-0000-4000-8000-000000000898",
+    capturedAt: 1000,
+    sharingLifetimeMs: 86400000,
+  });
 });

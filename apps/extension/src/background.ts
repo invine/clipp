@@ -1,3 +1,6 @@
+import { createExtensionClipboardService as composeExtensionClipboard } from "./clipboardFactory";
+import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference";
+import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip";
 import { performRelayAction } from "../../../packages/core/network/relayActions";
 // MV3 background (service worker) lacks window; some deps expect it.
 if (typeof globalThis.window === "undefined") {
@@ -38,7 +41,6 @@ import {
   createRuntimeIdentityManager,
   createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
-  createRuntimeClipboardService,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
@@ -110,8 +112,17 @@ let localRetentionMs = RETENTION_MS;
 let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
 let historyPolicyError: "history_cleanup_failed" | null = null;
 let historyRetentionCleanup: HistoryRetentionCleanup | undefined;
-let pendingRetentionMs: number | null = null;
 const storage = new ChromeStorageBackend();
+let historyPolicySettled = false;
+const retentionPreference = createLocalRetentionPreference({
+  storage,
+  history,
+  publish: async (state) => {
+    localRetentionMs = state.value;
+    historyPolicyError = state.cleanupError ? "history_cleanup_failed" : null;
+    if (historyPolicySettled) await sharedRuntime.publishState();
+  },
+});
 const managedCredentials = createChromeManagedRelayCredentials(
   import.meta.env.VITE_CLIPP_REGISTERED_EXTENSION_ID ?? ""
 );
@@ -127,6 +138,7 @@ const managedConfigurationsReady = loadManagedRelayConfigurations(
 ).then((values) => {
   managedConfigurations = values;
 });
+let sharingLifetimeMs = DEFAULT_CLIP_SHARING_LIFETIME_MS;
 let autoSync = true;
 let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
@@ -346,9 +358,9 @@ const offscreenReady = (async () => {
 // Background state
 
 function createExtensionClipboardService() {
-  return createRuntimeClipboardService({
-    capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  return composeExtensionClipboard({
     history,
+    appliedSharingLifetime: () => sharingLifetimeMs,
     getSenderId: async () => {
       const id = await identitySvc.get();
       return id.deviceId;
@@ -393,11 +405,15 @@ const clipboardSync = createClipboardSyncManager({
 });
 const settingsHandler = createSettingsHandler({
   storage,
+  retention: retentionPreference,
   applyAutoSync: (enabled) => {
     autoSync = enabled;
     clipboardSync.setAutoSync(enabled);
   },
   applyLogLevel: (level) => log.setLogLevel(level),
+  applySharingLifetime: (value) => {
+    sharingLifetimeMs = value;
+  },
   publish: async (snapshot) => {
     await chrome.runtime.sendMessage({ type: "settingsState", snapshot });
   },
@@ -406,35 +422,17 @@ const autoSyncReady = settingsHandler.read().then((snapshot) => {
   autoSync = snapshot.state.autoSync;
   log.info("Background script initialized");
 });
-chrome.storage.local.get(["localRetentionMs"], (res) => {
-  const storedRetentionMs = res.localRetentionMs;
-  const retentionMs =
-    typeof storedRetentionMs === "number" &&
-    Number.isFinite(storedRetentionMs) &&
-    storedRetentionMs >= 0
-      ? storedRetentionMs
-      : RETENTION_MS;
-  void history
-    .setRetention(retentionMs)
-    .then(async (appliedRetentionMs) => {
-      localRetentionMs = appliedRetentionMs;
-      if (appliedRetentionMs !== storedRetentionMs) {
-        await storage.set("localRetentionMs", appliedRetentionMs);
-      }
-    })
-    .catch((error) => {
-      pendingRetentionMs = retentionMs;
-      historyPolicyError = "history_cleanup_failed";
-      log.warn(
-        "Initial local history cleanup failed; runtime will retry",
-        error
-      );
-    })
-    .finally(() => {
-      resolveHistoryPolicyReady?.();
-      resolveHistoryPolicyReady = undefined;
-    });
-});
+void retentionPreference
+  .load()
+  .catch((error) => {
+    historyPolicyError = "history_cleanup_failed";
+    log.warn("Initial history policy unavailable", error);
+  })
+  .finally(() => {
+    historyPolicySettled = true;
+    resolveHistoryPolicyReady?.();
+    resolveHistoryPolicyReady = undefined;
+  });
 const historySessionId = crypto.randomUUID();
 history.onChanged((revision) => {
   chrome.runtime.sendMessage({
@@ -810,7 +808,10 @@ const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
   start: () =>
     startIdentityBoundRuntimeServices({
-      initializeIdentity: () => identityRotationLifecycle.initialize(),
+      initializeIdentity: async () => {
+        await autoSyncReady;
+        return identityRotationLifecycle.initialize();
+      },
       startLocalServices: async () => {
         await autoSyncReady;
         clipboardSync.setAutoSync(autoSync);
@@ -818,15 +819,18 @@ const sharedRuntime = createRuntimeOrchestrator({
         historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
-              if (pendingRetentionMs === null) {
-                await history.pruneExpired();
-                return;
-              }
-              const appliedRetentionMs =
-                await history.setRetention(pendingRetentionMs);
-              localRetentionMs = appliedRetentionMs;
-              pendingRetentionMs = null;
-              await storage.set("localRetentionMs", appliedRetentionMs);
+              const state = await retentionPreference.read();
+              if (state.cleanupError || state.persistenceError) {
+                const result = await retentionPreference.retry();
+                if (result.status !== "applied")
+                  throw new Error(result.error ?? "history_cleanup_failed");
+                await settingsHandler.read().then((snapshot) =>
+                  chrome.runtime.sendMessage({
+                    type: "settingsState",
+                    snapshot,
+                  })
+                );
+              } else await history.pruneExpired();
             },
           },
           undefined,
@@ -1025,7 +1029,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Handle shareClip from popup
   if (msg.type === "shareClip" && msg.clip) {
-    historyPolicyReady
+    Promise.all([historyPolicyReady, autoSyncReady])
       .then(() => clipboard.processLocalText(msg.clip.content))
       .then(async () => {
         sendResponse({ ok: true });
@@ -1064,7 +1068,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "clearHistory") {
-    historyPolicyReady
+    Promise.all([historyPolicyReady, autoSyncReady])
       .then(() => clipboard.clearHistory(() => history.clearAll()))
       .then(() => {
         sendResponse({ ok: true });
@@ -1121,7 +1125,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "clipboardUpdate" && msg.text) {
-    void historyPolicyReady
+    void Promise.all([historyPolicyReady, autoSyncReady])
       .then(() => clipboard.processLocalText(msg.text))
       .then(() => {
         sendResponse({ ok: true });
@@ -1136,7 +1140,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: false, error: "share_now_unauthorized" });
       return false;
     }
-    historyPolicyReady
+    Promise.all([historyPolicyReady, autoSyncReady])
       .then(() => clipboard.processLocalText(msg.text, { shareNow: true }))
       .then(() => sendResponse({ ok: true }))
       .catch((error) =>
@@ -1145,7 +1149,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "reuseClip" && msg.id) {
-    historyPolicyReady
+    Promise.all([historyPolicyReady, autoSyncReady])
       .then(() => reuseRetainedClip(msg.id, { history, clipboard }))
       .then((outcome) => sendResponse({ ok: true, outcome: outcome.status }))
       .catch((error) =>
@@ -1301,16 +1305,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "setLocalRetention" && typeof msg.retentionMs === "number") {
-    historyPolicyReady
-      .then(() => history.setRetention(msg.retentionMs))
-      .then(async (appliedRetentionMs) => {
-        localRetentionMs = appliedRetentionMs;
-        pendingRetentionMs = null;
-        await storage.set("localRetentionMs", appliedRetentionMs);
-        sendResponse({ ok: true, localRetentionMs: appliedRetentionMs });
-      })
+    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
+      sendResponse({ status: "rejected", error: "settings_unauthorized" });
+      return false;
+    }
+    void settingsHandler
+      .write({ localRetentionMs: msg.retentionMs })
+      .then(sendResponse)
       .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
+        sendResponse({ status: "unconfirmed", error: (error as Error).message })
       );
     return true;
   }

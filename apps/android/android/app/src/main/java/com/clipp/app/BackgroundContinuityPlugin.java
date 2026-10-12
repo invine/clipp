@@ -238,11 +238,12 @@ public final class BackgroundContinuityPlugin extends Plugin {
         String actionId = call.getString("actionId");
         String clipId = call.getString("clipId");
         Long capturedAt = call.getLong("capturedAt");
-        if (actionId == null || clipId == null || capturedAt == null) {
+        Long sharingLifetimeMs = call.getLong("sharingLifetimeMs");
+        if (actionId == null || clipId == null || capturedAt == null || sharingLifetimeMs == null || sharingLifetimeMs <= 0 || sharingLifetimeMs > 2592000000L) {
             call.reject("invalid_explicit_text_action");
             return;
         }
-        if (!new ExplicitTextIngressStore(getContext()).prepare(actionId, clipId, capturedAt)) {
+        if (!new ExplicitTextIngressStore(getContext()).prepare(actionId, clipId, capturedAt, sharingLifetimeMs)) {
             call.reject("explicit_text_action_persistence_failed");
             return;
         }

@@ -140,3 +140,101 @@ it("reopens Android theme through the existing web fallback when native Preferen
     else Reflect.deleteProperty(globalThis, "localStorage");
   }
 });
+
+describe.each(Object.entries(adapters))(
+  "%s Clip Sharing Lifetime installation persistence",
+  (_name, adapter) => {
+    it("reopens custom lifetime and rejects unsupported durations through the actual adapter", async () => {
+      const fixture = adapter();
+      try {
+        const first = owner(fixture.make());
+        expect((await first.read()).state.sharingLifetimeMs).toBe(86400000);
+        expect(await first.write({ sharingLifetimeMs: 5001 })).toMatchObject({
+          status: "applied",
+        });
+        expect(
+          (await owner(fixture.make()).read()).state.sharingLifetimeMs
+        ).toBe(5001);
+        expect(
+          await first.write({ sharingLifetimeMs: 2592000000 })
+        ).toMatchObject({ status: "applied" });
+        for (const value of [0, -1, 1.5, 2592000001]) {
+          expect(await first.write({ sharingLifetimeMs: value })).toMatchObject(
+            { status: "rejected" }
+          );
+          expect((await first.read()).state.sharingLifetimeMs).toBe(2592000000);
+        }
+        await fixture.make().set("sharingLifetimeMs", "forever");
+        expect(
+          (await owner(fixture.make()).read()).state.sharingLifetimeMs
+        ).toBe(86400000);
+      } finally {
+        fixture.close();
+      }
+    });
+  }
+);
+
+it("does not confirm Android Clip Sharing Lifetime in volatile fallback storage", async () => {
+  const preferences: CapacitorPreferencesStore = {
+    get: async () => ({ value: null }),
+    set: async () => {
+      throw new Error("native_store_denied");
+    },
+    remove: async () => {},
+  };
+  const settings = owner(
+    new LocalStorageBackend("sharing-failure:", preferences)
+  );
+  expect(await settings.write({ sharingLifetimeMs: 5001 })).toMatchObject({
+    status: "rejected",
+    snapshot: { state: { sharingLifetimeMs: 86400000 } },
+  });
+});
+
+it("shows Android applied retention and committed cleanup when durable preference saving is unavailable", async () => {
+  const { createLocalRetentionPreference } =
+    await import("../../../packages/core/runtime/localRetentionPreference");
+  const { MemoryHistoryStore } =
+    await import("../../../packages/core/history/store");
+  const preferences: CapacitorPreferencesStore = {
+    get: async () => ({ value: null }),
+    set: async () => {
+      throw new Error("native_store_denied");
+    },
+    remove: async () => {},
+  };
+  const storage = new LocalStorageBackend("retention-failure:", preferences);
+  const history = new MemoryHistoryStore(undefined, { now: () => 1000 });
+  const retention = createLocalRetentionPreference({
+    storage,
+    history,
+    publish: async () => {},
+  });
+  const settings = createSettingsHandler({
+    storage,
+    retention,
+    applyAutoSync: () => {},
+    applyLogLevel: () => {},
+    publish: async () => {},
+  });
+  await settings.read();
+  await history.accept({
+    id: "00000000-0000-4000-8000-000000000951",
+    type: "text",
+    content: "local",
+    originPeerId: "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+    capturedAt: 1000,
+    shareExpiresAt: 86401000,
+  });
+  expect(await settings.write({ localRetentionMs: 0 })).toMatchObject({
+    status: "partial",
+    snapshot: {
+      state: {
+        localRetentionMs: 0,
+        retentionError: "preference_persistence_unavailable",
+      },
+    },
+  });
+  expect(await history.exportAll()).toEqual([]);
+});

@@ -11,6 +11,7 @@ export type SettingsClientState = {
   refreshError: string | null;
   recoveryRequired: boolean;
   pending: boolean;
+  pendingFields?: (keyof RuntimeSettings)[];
   feedback: {
     status: "applied" | "partial" | "rejected" | "unconfirmed";
     error?: string;
@@ -32,6 +33,7 @@ export function createSettingsClient(port: {
     refreshError: null,
     recoveryRequired: false,
     pending: false,
+    pendingFields: undefined,
     feedback: null,
   };
   let listener: ((state: SettingsClientState) => void) | undefined;
@@ -147,7 +149,12 @@ export function createSettingsClient(port: {
           status: "unconfirmed" as const,
           error: "settings_reconciliation_required",
         };
-      state = { ...state, pending: true, feedback: null };
+      state = {
+        ...state,
+        pending: true,
+        pendingFields: Object.keys(patch) as (keyof RuntimeSettings)[],
+        feedback: null,
+      };
       notify();
       const reconcileUnconfirmed = async (error: string) => {
         state = {
@@ -161,7 +168,7 @@ export function createSettingsClient(port: {
         };
         notify();
         await refresh();
-        state = { ...state, pending: false };
+        state = { ...state, pending: false, pendingFields: undefined };
         notify();
       };
       try {
@@ -186,6 +193,7 @@ export function createSettingsClient(port: {
         state = {
           ...state,
           pending: false,
+          pendingFields: undefined,
           feedback: {
             status: response.status,
             fields: Object.keys(patch) as (keyof RuntimeSettings)[],

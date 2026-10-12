@@ -73,7 +73,7 @@ const App = () => {
       if (!window.clipp) throw new Error("bridge_unavailable");
       return message.type === "getSettings"
         ? window.clipp.getSettings()
-        : window.clipp.setTheme(message.settings?.theme);
+        : window.clipp.setSettings(message.settings);
     },
     subscribe: (listener) => {
       if (!window.clipp?.onSettingsUpdate)

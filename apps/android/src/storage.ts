@@ -58,7 +58,7 @@ async function writeItem(
       // fall through to memory
     }
   }
-  if (requirePersistence) throw new Error("theme_persistence_unavailable");
+  if (requirePersistence) throw new Error("preference_persistence_unavailable");
   memory.set(key, value);
 }
 
@@ -106,7 +106,7 @@ export class LocalStorageBackend implements KVStorageBackend {
       this.prefix + key,
       JSON.stringify(value),
       this.preferences,
-      key === "theme"
+      ["theme", "sharingLifetimeMs", "localRetentionMs"].includes(key)
     );
   }
 

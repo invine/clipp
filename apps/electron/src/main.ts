@@ -1,3 +1,6 @@
+import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
+import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
+import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
 import { createSettingsHandler } from "../../../packages/core/runtime/settingsAuthority.js";
 import { normalizeThemePreference } from "../../../packages/core/runtime/themePreference.js";
 import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction.js";
@@ -59,7 +62,6 @@ import {
   createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
-  createRuntimeClipboardService,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
@@ -155,15 +157,30 @@ async function bootstrap() {
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({
     storage: kvStore,
   });
-  let localRetentionMs =
-    (await kvStore.get<number>("localRetentionMs")) ?? RETENTION_MS;
+  let localRetentionMs = RETENTION_MS;
+  const historyBackend = new SQLiteHistoryBackend(db);
+  const history = new MemoryHistoryStore(historyBackend);
+  let publishRetention: (() => Promise<void>) | undefined;
+  const retentionPreference = createLocalRetentionPreference({
+    storage: kvStore,
+    history,
+    publish: async (state) => {
+      localRetentionMs = state.value;
+      await publishRetention?.();
+    },
+  });
+  let sharingLifetimeMs = DEFAULT_CLIP_SHARING_LIFETIME_MS;
   let autoSync = await autoSyncPreference.load();
   const settingsHandler = createSettingsHandler({
     storage: kvStore,
+    retention: retentionPreference,
     applyAutoSync: (enabled) => {
       autoSync = enabled;
     },
     applyLogLevel: () => {},
+    applySharingLifetime: (value) => {
+      sharingLifetimeMs = value;
+    },
     applyTheme: (theme) => {
       nativeTheme.themeSource = theme;
     },
@@ -172,6 +189,13 @@ async function bootstrap() {
         window.webContents.send("clipp:settings-update", snapshot);
     },
   });
+  await settingsHandler.read();
+  ipcMain.handle("clipp:set-settings", (_event, patch: unknown) =>
+    settingsHandler.write(patch)
+  );
+  ipcMain.handle("clipp:set-sharing-lifetime", (_event, value: unknown) =>
+    settingsHandler.write({ sharingLifetimeMs: value })
+  );
   ipcMain.handle("clipp:get-settings", async () => ({
     ok: true,
     snapshot: await settingsHandler.read(),
@@ -180,22 +204,9 @@ async function bootstrap() {
     settingsHandler.write({ theme })
   );
 
-  const historyBackend = new SQLiteHistoryBackend(db);
-  const history = new MemoryHistoryStore(historyBackend, {
-    retentionMs: localRetentionMs,
-  });
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
   let historyRetentionCleanup: HistoryRetentionCleanup | null = null;
-  try {
-    localRetentionMs = await history.setRetention(localRetentionMs);
-  } catch (error) {
-    historyPolicyError = "history_cleanup_failed";
-    (log as any).warn?.(
-      "Initial local history cleanup failed; runtime will retry",
-      error
-    );
-  }
   const identityRepo = createKVIdentityRepository({
     storage: kvStore,
     key: IDENTITY_KEY,
@@ -460,10 +471,9 @@ async function bootstrap() {
   }
 
   function createElectronClipboardService() {
-    return createRuntimeClipboardService({
-      capabilities: RUNTIME_CAPABILITIES.electron,
+    return composeElectronClipboard({
       history,
-      pollIntervalMs: 1200,
+      appliedSharingLifetime: () => sharingLifetimeMs,
       getSenderId: async () => {
         const id = await identitySvc.get();
         return id.deviceId;
@@ -605,6 +615,9 @@ async function bootstrap() {
     };
   }
 
+  publishRetention = async () => {
+    await emitState();
+  };
   async function emitState() {
     await sharedRuntime.publishState();
   }
@@ -649,7 +662,19 @@ async function bootstrap() {
 
   async function startLocalServices() {
     historyRetentionCleanup ??= startHistoryRetentionCleanup(
-      history,
+      {
+        pruneExpired: async () => {
+          const state = await retentionPreference.read();
+          if (state.cleanupError || state.persistenceError) {
+            const result = await retentionPreference.retry();
+            if (result.status !== "applied")
+              throw new Error(result.error ?? "history_cleanup_failed");
+            const snapshot = await settingsHandler.read();
+            for (const window of BrowserWindow.getAllWindows())
+              window.webContents.send("clipp:settings-update", snapshot);
+          } else await history.pruneExpired();
+        },
+      },
       undefined,
       (error) => {
         historyPolicyError = error ? "history_cleanup_failed" : null;
@@ -1278,10 +1303,7 @@ async function bootstrap() {
   ipcMain.handle(
     "clipp:set-local-retention",
     async (_evt, retentionMs: number) => {
-      localRetentionMs = await history.setRetention(retentionMs);
-      await kvStore.set("localRetentionMs", localRetentionMs);
-      await emitState();
-      return { localRetentionMs };
+      return settingsHandler.write({ localRetentionMs: retentionMs });
     }
   );
 

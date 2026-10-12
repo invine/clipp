@@ -67,7 +67,9 @@ function revokedIdentity(): DeviceIdentity {
       admittedPeerIds: [oldPeerId, "remote-peer"],
       revokedPeerIds: [oldPeerId],
     },
-    remoteDeviceNames: { "remote-peer": { deviceName: "Remote", nameRevision: "3" } },
+    remoteDeviceNames: {
+      "remote-peer": { deviceName: "Remote", nameRevision: "3" },
+    },
     localDeviceAliases: { "remote-peer": "Laptop" },
   };
 }
@@ -98,7 +100,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       shutdown,
       generateKeyMaterial,
@@ -126,7 +132,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       now: () => 42,
       shutdown,
@@ -147,7 +157,9 @@ describe("Identity Rotation", () => {
     expect(await repository.get()).toEqual(replacementIdentity());
     expect(await history.getAll()).toEqual([]);
     expect(await storage.get("trustedDevices")).toBeUndefined();
-    expect(await storage.get("relayAddresses")).toEqual(["/dns4/relay.example/tcp/443/wss"]);
+    expect(await storage.get("relayAddresses")).toEqual([
+      "/dns4/relay.example/tcp/443/wss",
+    ]);
     expect(await coordinator.notice()).toEqual({
       reason: "identity-loss",
       historyDeleted: true,
@@ -168,7 +180,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       stateKey: "identity-rotation",
       initialDeviceName: "Desktop",
       shutdown: async () => undefined,
@@ -198,7 +214,10 @@ describe("Identity Rotation", () => {
       deviceId: "wrong-peer-id",
       publicKey: "wrong-public-key",
       privateKey: "valid-private-key",
-      membershipView: { admittedPeerIds: ["wrong-peer-id", "remote-peer"], revokedPeerIds: [] },
+      membershipView: {
+        admittedPeerIds: ["wrong-peer-id", "remote-peer"],
+        revokedPeerIds: [],
+      },
     });
     await storage.set("trustedDevices", [{ deviceId: "remote-peer" }]);
     await history.set(historyItem.clip.id, historyItem);
@@ -206,7 +225,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       shutdown,
       retry: false,
@@ -227,7 +250,9 @@ describe("Identity Rotation", () => {
       privateKey: "valid-private-key",
     });
     expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
-    expect(await storage.get("trustedDevices")).toEqual([{ deviceId: "remote-peer" }]);
+    expect(await storage.get("trustedDevices")).toEqual([
+      { deviceId: "remote-peer" },
+    ]);
     expect(shutdown).not.toHaveBeenCalled();
   });
 
@@ -237,16 +262,25 @@ describe("Identity Rotation", () => {
     const repository = createKVIdentityRepository({ storage, key: "identity" });
     await repository.upsert({
       ...revokedIdentity(),
-      membershipView: { admittedPeerIds: [oldPeerId, "remote-peer"], revokedPeerIds: [] },
+      membershipView: {
+        admittedPeerIds: [oldPeerId, "remote-peer"],
+        revokedPeerIds: [],
+      },
     });
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       shutdown: async () => undefined,
       retry: false,
-      deriveKeyMaterial: async () => { throw new Error("private_key_unreadable"); },
+      deriveKeyMaterial: async () => {
+        throw new Error("private_key_unreadable");
+      },
       generateKeyMaterial: async () => ({
         peerId: replacementPeerId,
         privateKey: "replacement-private",
@@ -274,7 +308,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       shutdown,
       retry: false,
@@ -301,7 +339,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       stateKey: "identity-rotation",
       initialDeviceName: "Desktop",
       generateKeyMaterial,
@@ -356,23 +398,30 @@ describe("Identity Rotation", () => {
         formerNetworkMetadata: { "remote-peer": "Remote" },
       },
     };
-    for (const [key, value] of Object.entries(identityScopedState)) await storage.set(key, value);
+    for (const [key, value] of Object.entries(identityScopedState))
+      await storage.set(key, value);
     const installationPreferences = {
       theme: "dark",
       relayAddresses: ["/dns4/relay.example/tcp/443/wss"],
       pollingIntervalMs: 1_500,
       autoSync: false,
       clipSharingLifetimeMs: 60_000,
+      sharingLifetimeMs: 5_001,
       localRetentionMs: 86_400_000,
       maxUnpinnedClips: 250,
       maxUnpinnedBytes: 1_000_000,
       maximumFrameBytes: 262_144,
     };
-    for (const [key, value] of Object.entries(installationPreferences)) await storage.set(key, value);
+    for (const [key, value] of Object.entries(installationPreferences))
+      await storage.set(key, value);
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       now: () => 42,
       generateKeyMaterial: async () => ({
@@ -391,7 +440,8 @@ describe("Identity Rotation", () => {
     });
 
     expect(await history.getAll()).toEqual([]);
-    for (const key of Object.keys(identityScopedState)) expect(await storage.get(key)).toBeUndefined();
+    for (const key of Object.keys(identityScopedState))
+      expect(await storage.get(key)).toBeUndefined();
     for (const [key, value] of Object.entries(installationPreferences)) {
       expect(await storage.get(key)).toEqual(value);
     }
@@ -407,7 +457,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       now: () => 42,
       generateKeyMaterial: async () => ({
@@ -437,7 +491,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       stateKey: "identity-rotation",
       initialDeviceName: "Desktop",
       now: () => 42,
@@ -457,17 +515,23 @@ describe("Identity Rotation", () => {
       identity: { deviceId: replacementPeerId },
     });
     expect(await repository.get()).toEqual(replacementIdentity());
-    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+    expect(
+      await storage.get<IdentityRotationState>("identity-rotation")
+    ).toMatchObject({
       phase: "committed",
       candidateDeviceId: replacementPeerId,
     });
-    expect(JSON.stringify(await storage.get("identity-rotation"))).not.toContain("old-private");
+    expect(
+      JSON.stringify(await storage.get("identity-rotation"))
+    ).not.toContain("old-private");
 
     await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
       rotated: false,
       identity: { deviceId: replacementPeerId },
     });
-    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+    expect(
+      await storage.get<IdentityRotationState>("identity-rotation")
+    ).toMatchObject({
       phase: "committed",
       candidateDeviceId: replacementPeerId,
     });
@@ -481,7 +545,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       initialDeviceName: "Desktop",
       shutdown: async () => undefined,
       retry: false,
@@ -493,7 +561,9 @@ describe("Identity Rotation", () => {
     });
 
     await coordinator.recoverOrRotate();
-    await expect(coordinator.notice()).resolves.toMatchObject({ reason: "revoked" });
+    await expect(coordinator.notice()).resolves.toMatchObject({
+      reason: "revoked",
+    });
     await coordinator.acknowledgeNotice();
     await expect(coordinator.notice()).resolves.toBeUndefined();
   });
@@ -514,7 +584,11 @@ describe("Identity Rotation", () => {
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
-      committer: createIdentityRotationCommitter({ repository, storage, history }),
+      committer: createIdentityRotationCommitter({
+        repository,
+        storage,
+        history,
+      }),
       stateKey: "identity-rotation",
       initialDeviceName: "Desktop",
       now: () => 42,
@@ -524,7 +598,11 @@ describe("Identity Rotation", () => {
         prepare: async () => {
           const checkpoint = [...pendingCaptures];
           pendingCaptures = [];
-          return { rollback: async () => { pendingCaptures = checkpoint; } };
+          return {
+            rollback: async () => {
+              pendingCaptures = checkpoint;
+            },
+          };
         },
       },
       retry: false,
@@ -537,10 +615,14 @@ describe("Identity Rotation", () => {
     });
     expect(await repository.get()).toEqual(revokedIdentity());
     expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
-    expect(await storage.get("trustedDevices")).toEqual([{ deviceId: "remote-peer" }]);
+    expect(await storage.get("trustedDevices")).toEqual([
+      { deviceId: "remote-peer" },
+    ]);
     expect(await storage.get("identityRotationNotice")).toBeUndefined();
     expect(pendingCaptures).toEqual(["captured during recovery"]);
-    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+    expect(
+      await storage.get<IdentityRotationState>("identity-rotation")
+    ).toMatchObject({
       reason: "revoked",
       phase: "prepared",
       candidate: { deviceId: replacementPeerId },
@@ -571,7 +653,11 @@ describe("Identity Rotation", () => {
     const repository = createKVIdentityRepository({ storage, key: "identity" });
     await repository.upsert(revokedIdentity());
     await history.set(historyItem.clip.id, historyItem);
-    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const baseCommitter = createIdentityRotationCommitter({
+      repository,
+      storage,
+      history,
+    });
     const generateKeyMaterial = jest.fn(async () => ({
       peerId: replacementPeerId,
       privateKey: "replacement-private",
@@ -606,7 +692,9 @@ describe("Identity Rotation", () => {
     });
     expect(await repository.get()).toEqual(revokedIdentity());
     expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
-    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+    expect(
+      await storage.get<IdentityRotationState>("identity-rotation")
+    ).toMatchObject({
       phase: "prepared",
       candidate: { deviceId: replacementPeerId },
     });
@@ -631,7 +719,11 @@ describe("Identity Rotation", () => {
       clip: { ...historyItem.clip, content: "x".repeat(256 * 1024) },
     };
     await history.set(largeHistoryItem.clip.id, largeHistoryItem);
-    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const baseCommitter = createIdentityRotationCommitter({
+      repository,
+      storage,
+      history,
+    });
     let markerBytes = 0;
     const coordinator = createIdentityRotationCoordinator({
       repository,
@@ -639,7 +731,8 @@ describe("Identity Rotation", () => {
       committer: {
         ...baseCommitter,
         async commit(candidate, notice, backup) {
-          const marker = await storage.get<IdentityRotationState>("identity-rotation");
+          const marker =
+            await storage.get<IdentityRotationState>("identity-rotation");
           const encodedMarker = JSON.stringify(marker);
           markerBytes = encodedMarker.length;
           expect(encodedMarker).not.toContain(largeHistoryItem.clip.content);
@@ -658,7 +751,9 @@ describe("Identity Rotation", () => {
       retry: false,
     });
 
-    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({ rotated: true });
+    await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
+      rotated: true,
+    });
     expect(markerBytes).toBeLessThan(10_000);
     expect(await history.getAll()).toEqual([]);
   });
@@ -671,13 +766,19 @@ describe("Identity Rotation", () => {
     const repository = createKVIdentityRepository({ storage, key: "identity" });
     await repository.upsert(revokedIdentity());
     await history.set(historyItem.clip.id, historyItem);
-    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const baseCommitter = createIdentityRotationCommitter({
+      repository,
+      storage,
+      history,
+    });
     const coordinator = createIdentityRotationCoordinator({
       repository,
       storage,
       committer: {
         ...baseCommitter,
-        finalize: async () => { throw new Error("indexeddb_generation_cleanup_failed"); },
+        finalize: async () => {
+          throw new Error("indexeddb_generation_cleanup_failed");
+        },
       },
       initialDeviceName: "Desktop",
       generateKeyMaterial: async () => ({
@@ -704,7 +805,11 @@ describe("Identity Rotation", () => {
     const repository = createKVIdentityRepository({ storage, key: "identity" });
     await repository.upsert(revokedIdentity());
     await history.set(historyItem.clip.id, historyItem);
-    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const baseCommitter = createIdentityRotationCommitter({
+      repository,
+      storage,
+      history,
+    });
     let rollbackFails = true;
     const generateKeyMaterial = jest.fn(async () => ({
       peerId: replacementPeerId,
@@ -737,9 +842,14 @@ describe("Identity Rotation", () => {
       rotated: false,
       recovery: { code: "identity_rotation_recovery" },
     });
-    expect(await storage.get<IdentityRotationState>("identity-rotation")).toMatchObject({
+    expect(
+      await storage.get<IdentityRotationState>("identity-rotation")
+    ).toMatchObject({
       phase: "committing",
-      backup: { backupId: replacementPeerId, identity: { deviceId: oldPeerId } },
+      backup: {
+        backupId: replacementPeerId,
+        identity: { deviceId: oldPeerId },
+      },
     });
 
     await expect(coordinator.recoverOrRotate()).resolves.toMatchObject({
@@ -756,7 +866,11 @@ describe("Identity Rotation", () => {
     const repository = createKVIdentityRepository({ storage, key: "identity" });
     await repository.upsert(revokedIdentity());
     await history.set(historyItem.clip.id, historyItem);
-    const baseCommitter = createIdentityRotationCommitter({ repository, storage, history });
+    const baseCommitter = createIdentityRotationCommitter({
+      repository,
+      storage,
+      history,
+    });
     let failMarkerAfterRollback = true;
     const coordinator = createIdentityRotationCoordinator({
       repository,
@@ -788,9 +902,11 @@ describe("Identity Rotation", () => {
       rotated: false,
       recovery: { code: "identity_rotation_recovery" },
     });
-    const marker = await storage.get<IdentityRotationState>("identity-rotation");
+    const marker =
+      await storage.get<IdentityRotationState>("identity-rotation");
     expect(marker).toMatchObject({ phase: "committing" });
-    if (marker?.phase !== "committing") throw new Error("missing_committing_marker");
+    if (marker?.phase !== "committing")
+      throw new Error("missing_committing_marker");
 
     await baseCommitter.rollback(marker.backup!);
     expect(await history.get(historyItem.clip.id)).toEqual(historyItem);
@@ -827,7 +943,9 @@ describe("Identity Rotation", () => {
       committer,
       stateKey: "identity-rotation",
       initialDeviceName: "Desktop",
-      generateKeyMaterial: jest.fn(async () => { throw new Error("must_not_generate"); }),
+      generateKeyMaterial: jest.fn(async () => {
+        throw new Error("must_not_generate");
+      }),
       shutdown: async () => undefined,
       retry: false,
     });

@@ -1,12 +1,24 @@
+import { RETENTION_MS } from "../history/store";
+import type {
+  LocalRetentionState,
+  LocalRetentionResult,
+} from "./localRetentionPreference";
 import {
   normalizeThemePreference,
   isThemePreference,
   type ThemePreference,
 } from "./themePreference";
+import {
+  DEFAULT_CLIP_SHARING_LIFETIME_MS,
+  MAX_CLIP_SHARING_LIFETIME_MS,
+} from "../models/Clip";
 import { createAutoSyncPreference } from "./autoSyncPreference";
 
 export type RuntimeSettings = {
   theme: ThemePreference;
+  sharingLifetimeMs: number;
+  localRetentionMs: number;
+  retentionError?: string | null;
   autoSync: boolean;
   logLevel: "debug" | "info" | "warn" | "error";
 };
@@ -25,6 +37,19 @@ export type SettingsWriteResult =
       error: string;
     };
 
+export function isSharingLifetime(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    value <= MAX_CLIP_SHARING_LIFETIME_MS
+  );
+}
+
+export function normalizeSharingLifetime(value: unknown): number {
+  return isSharingLifetime(value) ? value : DEFAULT_CLIP_SHARING_LIFETIME_MS;
+}
+
 const logLevels = ["debug", "info", "warn", "error"] as const;
 
 export function createSettingsHandler(options: {
@@ -32,7 +57,14 @@ export function createSettingsHandler(options: {
     get<T>(key: string): Promise<T | undefined>;
     set<T>(key: string, value: T): Promise<void>;
   };
+  retention?: {
+    read(): Promise<LocalRetentionState>;
+    // eslint-disable-next-line no-unused-vars
+    set(value: number): Promise<LocalRetentionResult>;
+  };
   applyTheme?(value: ThemePreference): void;
+  // eslint-disable-next-line no-unused-vars
+  applySharingLifetime?(value: number): void;
   applyAutoSync(value: boolean): void;
   applyLogLevel(value: RuntimeSettings["logLevel"]): void;
   publish(snapshot: SettingsSnapshot): Promise<void>;
@@ -52,23 +84,34 @@ export function createSettingsHandler(options: {
   };
 
   async function reconcile(): Promise<SettingsSnapshot> {
-    const [autoSync, logLevel, rawTheme] = await Promise.all([
-      autoSyncPreference.load(),
-      options.storage.get<RuntimeSettings["logLevel"]>("logLevel"),
-      options.storage.get<unknown>("theme"),
-    ]);
+    const [autoSync, logLevel, rawTheme, rawLifetime, retention] =
+      await Promise.all([
+        autoSyncPreference.load(),
+        options.storage.get<RuntimeSettings["logLevel"]>("logLevel"),
+        options.storage.get<unknown>("theme"),
+        options.storage.get<unknown>("sharingLifetimeMs"),
+        options.retention?.read(),
+      ]);
     const next: RuntimeSettings = {
       theme: normalizeThemePreference(rawTheme),
+      localRetentionMs: retention?.value ?? RETENTION_MS,
+      retentionError:
+        retention?.persistenceError ?? retention?.cleanupError ?? null,
+      sharingLifetimeMs: normalizeSharingLifetime(rawLifetime),
       autoSync,
       logLevel: logLevels.includes(logLevel as RuntimeSettings["logLevel"])
         ? logLevel!
         : "info",
     };
     options.applyTheme?.(next.theme);
+    options.applySharingLifetime?.(next.sharingLifetimeMs);
     options.applyAutoSync(next.autoSync);
     options.applyLogLevel(next.logLevel);
     if (
       !state ||
+      next.localRetentionMs !== state.localRetentionMs ||
+      next.retentionError !== state.retentionError ||
+      next.sharingLifetimeMs !== state.sharingLifetimeMs ||
       next.theme !== state.theme ||
       next.autoSync !== state.autoSync ||
       next.logLevel !== state.logLevel
@@ -100,13 +143,27 @@ export function createSettingsHandler(options: {
             error: "invalid_settings",
           };
         }
-        const patch = raw as Record<string, unknown>;
+        const patch = { ...raw } as Record<string, unknown>;
         const keys = Object.keys(patch);
         if (
           keys.length === 0 ||
           keys.some(
-            (key) => !["autoSync", "logLevel", "theme"].includes(key)
+            (key) =>
+              ![
+                "autoSync",
+                "logLevel",
+                "theme",
+                "sharingLifetimeMs",
+                "localRetentionMs",
+              ].includes(key)
           ) ||
+          ("localRetentionMs" in patch &&
+            (!options.retention ||
+              typeof patch.localRetentionMs !== "number" ||
+              !Number.isFinite(patch.localRetentionMs) ||
+              patch.localRetentionMs < 0)) ||
+          ("sharingLifetimeMs" in patch &&
+            !isSharingLifetime(patch.sharingLifetimeMs)) ||
           ("theme" in patch && !isThemePreference(patch.theme)) ||
           ("autoSync" in patch && typeof patch.autoSync !== "boolean") ||
           ("logLevel" in patch &&
@@ -119,9 +176,18 @@ export function createSettingsHandler(options: {
           };
         }
         const before = current.state;
+        let partialRetention = false;
         try {
           for (const key of keys) {
-            if (key === "autoSync")
+            if (key === "localRetentionMs") {
+              const result = await options.retention!.set(
+                patch.localRetentionMs as number
+              );
+              partialRetention = result.status === "partial";
+              if (result.status !== "applied")
+                throw new Error(result.error ?? "retention_save_failed");
+              patch.localRetentionMs = result.value;
+            } else if (key === "autoSync")
               await autoSyncPreference.set(patch.autoSync as boolean);
             else await options.storage.set(key, patch[key]);
           }
@@ -130,6 +196,9 @@ export function createSettingsHandler(options: {
             current = await reconcile();
             await options.publish(current);
             const changed =
+              partialRetention ||
+              current.state.localRetentionMs !== before.localRetentionMs ||
+              current.state.sharingLifetimeMs !== before.sharingLifetimeMs ||
               current.state.theme !== before.theme ||
               current.state.autoSync !== before.autoSync ||
               current.state.logLevel !== before.logLevel;
