@@ -150,7 +150,7 @@ export function bindHostGeometry(
   };
   const apply = () => {
     if (!snapshot) return;
-    // clientWidth retains subpixel CSS viewport precision; innerWidth rounds on WebView.
+    // Floating root bounds retain subpixel CSS viewport precision; innerWidth rounds on WebView.
     const cssWidth =
       doc.documentElement.getBoundingClientRect().width || win.innerWidth;
     const bounds = contentBoundsInCssPixels(snapshot, cssWidth);
@@ -158,9 +158,11 @@ export function bindHostGeometry(
     // One native measurement owns both content and target units. dp is physical px /
     // density; CSS uses the measured WebView ratio, never DPR or an assumed 1:1 dp.
     const pxPerCssPixel = snapshot.webViewPx.width / cssWidth;
+    // Round the converted lower bound upward: browser layout can truncate
+    // fractional CSS lengths, which must not shrink the 48dp target intent.
     const target =
       Number.isFinite(snapshot.density) && snapshot.density > 0
-        ? Math.max(40, (48 * snapshot.density) / pxPerCssPixel)
+        ? Math.ceil(Math.max(40, (48 * snapshot.density) / pxPerCssPixel))
         : 40;
     doc.documentElement.style.setProperty("--clipp-target-min", `${target}px`);
     // Native layout can repeat while a user scrolls the task. Reveal focus only
