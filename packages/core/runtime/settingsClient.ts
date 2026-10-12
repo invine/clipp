@@ -222,8 +222,7 @@ export function createSettingsClient(port: {
           (response.status === "partial" || response.status === "rejected") &&
           Object.keys(patch).length === 1 &&
           "localRetentionMs" in patch &&
-          response.error &&
-          response.error === response.snapshot.state.retentionError
+          response.failureOrigin === "localRetention"
         )
           retentionFailure = response.snapshot;
         reconcileRetentionFeedback();

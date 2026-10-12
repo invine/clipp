@@ -337,6 +337,7 @@ it("removes both the global Issue and partial-save message after acknowledged re
       current = snapshot(2, "retention_persistence_failed");
       return {
         status: "partial",
+        failureOrigin: "localRetention",
         error: "retention_persistence_failed",
         snapshot: current,
       };
@@ -366,5 +367,101 @@ it("removes both the global Issue and partial-save message after acknowledged re
   expect(renderCurrent()).not.toContain("1 issue needs attention");
   expect(renderCurrent()).not.toContain("only partly saved");
   expect(renderCurrent()).not.toContain("retention_persistence_failed");
+  client.stop();
+});
+
+it("retires the latest cleanup failure after real retention recovery even while an older persistence cause was projected", async () => {
+  const { MemoryHistoryStore } =
+    await import("../../packages/core/history/store");
+  const { InMemoryHistoryBackend } =
+    await import("../../packages/core/history/types");
+  const { createLocalRetentionPreference } =
+    await import("../../packages/core/runtime/localRetentionPreference");
+  const { createSettingsHandler } =
+    await import("../../packages/core/runtime/settingsAuthority");
+  const { createSettingsClient } =
+    await import("../../packages/core/runtime/settingsClient");
+  const values = new Map<string, unknown>();
+  let writable = false;
+  const storage = {
+    get: async <T>(key: string) => values.get(key) as T | undefined,
+    set: async <T>(key: string, value: T) => {
+      if (key === "localRetentionMs" && !writable) throw Error("persistence_A");
+      values.set(key, value);
+    },
+  };
+  const backend = new InMemoryHistoryBackend(),
+    history = new MemoryHistoryStore(backend);
+  const retention = createLocalRetentionPreference({
+    storage,
+    history,
+    publish: async () => {},
+  });
+  // eslint-disable-next-line no-unused-vars
+  const listeners = new Set<(message: unknown) => void>();
+  const publish = async (snapshot: unknown) => {
+    for (const listener of listeners)
+      listener({ type: "settingsState", snapshot });
+  };
+  const authority = createSettingsHandler({
+    storage,
+    retention,
+    applyAutoSync: () => {},
+    applyLogLevel: () => {},
+    publish,
+    sessionId: "owner",
+  });
+  const client = createSettingsClient({
+    send: async (message) =>
+      message.type === "getSettings"
+        ? { ok: true, snapshot: await authority.read() }
+        : authority.write(message.settings),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  });
+  await client.start();
+  await client.save({ localRetentionMs: 0 });
+  expect(client.getState().feedback?.error).toBe("persistence_A");
+  const originalMutation = backend.applyHistoryMutation.bind(backend);
+  backend.applyHistoryMutation = async () => {
+    throw Error("cleanup_B");
+  };
+  const failed = await client.save({ localRetentionMs: 5001 });
+  expect(failed).toMatchObject({
+    status: "rejected",
+    error: "cleanup_B",
+    snapshot: { state: { retentionError: "persistence_A" } },
+  });
+  const invalid = await authority.write({ localRetentionMs: -1 });
+  expect(invalid).toMatchObject({
+    status: "rejected",
+    error: "invalid_settings",
+  });
+  expect("failureOrigin" in invalid).toBe(false);
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const renderCurrent = () =>
+    render({
+      session,
+      appearanceSettings: {
+        ...client.getState(),
+        save: client.save,
+        refresh: client.refresh,
+      },
+    });
+  expect(renderCurrent()).toContain("1 issue needs attention");
+  expect(renderCurrent()).toContain("cleanup_B");
+  writable = true;
+  backend.applyHistoryMutation = originalMutation;
+  await retention.retry();
+  await publish(await authority.read());
+  expect(client.getState().snapshot?.state.retentionError).toBeNull();
+  expect(client.getState().feedback).toBeNull();
+  expect(renderCurrent()).not.toContain("1 issue needs attention");
+  expect(renderCurrent()).not.toContain("cleanup_B");
   client.stop();
 });

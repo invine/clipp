@@ -35,6 +35,7 @@ export type SettingsWriteResult =
       status: "partial" | "rejected" | "unconfirmed";
       snapshot: SettingsSnapshot;
       error: string;
+      failureOrigin?: "localRetention";
     };
 
 export function isSharingLifetime(value: unknown): value is number {
@@ -177,6 +178,7 @@ export function createSettingsHandler(options: {
         }
         const before = current.state;
         let partialRetention = false;
+        let retentionFailure = false;
         try {
           for (const key of keys) {
             if (key === "localRetentionMs") {
@@ -184,6 +186,7 @@ export function createSettingsHandler(options: {
                 patch.localRetentionMs as number
               );
               partialRetention = result.status === "partial";
+              retentionFailure = result.failureOrigin === "localRetention";
               if (result.status !== "applied")
                 throw new Error(result.error ?? "retention_save_failed");
               patch.localRetentionMs = result.value;
@@ -206,6 +209,9 @@ export function createSettingsHandler(options: {
               status: changed ? "partial" : "rejected",
               snapshot: current,
               error: (error as Error).message,
+              ...(retentionFailure
+                ? { failureOrigin: "localRetention" as const }
+                : {}),
             };
           } catch {
             return {

@@ -30,6 +30,7 @@ it("removes a confirmed retention failure from every live client when its author
         listener({ type: "settingsState", snapshot: current });
       return {
         status: "partial",
+        failureOrigin: "localRetention",
         snapshot: current,
         error: "retention_persistence_failed",
       };
@@ -85,6 +86,7 @@ it("does not revive a recovered retention failure from a delayed write reply or 
   publish({ type: "settingsState", snapshot: current });
   answer({
     status: "partial",
+    failureOrigin: "localRetention",
     snapshot: failed,
     error: "retention_persistence_failed",
   });
@@ -107,6 +109,7 @@ it("preserves unrelated, mixed-field and validation failures when retention alon
       "retention_persistence_failed",
     ],
     [{ localRetentionMs: -1 }, "rejected", "invalid_settings"],
+    [{ localRetentionMs: 0 }, "unconfirmed", "retention_persistence_failed"],
   ] as const) {
     // eslint-disable-next-line no-unused-vars
     let publish!: (message: unknown) => void;
@@ -117,6 +120,9 @@ it("preserves unrelated, mixed-field and validation failures when retention alon
           : {
               status,
               error,
+              ...(error === "retention_persistence_failed"
+                ? { failureOrigin: "localRetention" }
+                : {}),
               snapshot: snapshot(2, "retention_persistence_failed"),
             },
       subscribe: (listener) => {
@@ -148,6 +154,7 @@ it("refresh can acknowledge retention recovery while a newer pending write keeps
       current = snapshot(2, "retention_persistence_failed");
       return {
         status: "partial",
+        failureOrigin: "localRetention",
         error: "retention_persistence_failed",
         snapshot: current,
       };
