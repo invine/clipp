@@ -1,3 +1,4 @@
+import { observeExtensionClipboard } from "./clipboardObservation";
 import { createExtensionClipboardService as composeExtensionClipboard } from "./clipboardFactory";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip";
@@ -1121,12 +1122,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     return true;
   }
-  if (msg.type === "clipboardUpdate" && msg.text) {
-    void Promise.all([historyPolicyReady, autoSyncReady])
-      .then(() => clipboard.processLocalText(msg.text))
-      .then(() => {
-        sendResponse({ ok: true });
-      });
+  if (msg.type === "clipboardUpdate") {
+    void observeExtensionClipboard(
+      msg.text,
+      clipboard,
+      Promise.all([historyPolicyReady, autoSyncReady])
+    ).then(sendResponse);
     return true;
   }
   if (msg.type === "shareNow") {

@@ -1,3 +1,4 @@
+import { createPopupCapture, type PopupCaptureState } from "./popupCapture";
 import {
   createRuntimeUiRecovery,
   initialRuntimeUiRecovery,
@@ -88,7 +89,11 @@ const Popup = () => {
   const [managedRelayStates, setManagedRelayStates] = useState<RelayState[]>(
     []
   );
-  const lastClipboardRef = useRef("");
+  const [popupCapture, setPopupCapture] = useState<PopupCaptureState>({
+    pending: false,
+    error: null,
+  });
+  const captureRef = useRef<ReturnType<typeof createPopupCapture> | null>(null);
   const nameState = useRef(
     createPopupNameState(setIdentity, setDevices)
   ).current;
@@ -144,23 +149,22 @@ const Popup = () => {
   }, [consumer]);
 
   useEffect(() => {
-    async function checkClipboard() {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text && text !== lastClipboardRef.current) {
-          lastClipboardRef.current = text;
-          chrome.runtime.sendMessage({ type: "clipboardUpdate", text });
-        }
-      } catch {
-        // ignore
-      }
-    }
-    const onFocus = () => {
-      void checkClipboard();
+    const capture = createPopupCapture({
+      hasFocus: () => document.hasFocus(),
+      subscribeFocus: (listener) => {
+        window.addEventListener("focus", listener);
+        return () => window.removeEventListener("focus", listener);
+      },
+      readText: () => navigator.clipboard.readText(),
+      runtime: chrome.runtime,
+      onState: setPopupCapture,
+    });
+    captureRef.current = capture;
+    capture.start();
+    return () => {
+      capture.dispose();
+      captureRef.current = null;
     };
-    if (document.hasFocus()) onFocus();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   function refreshDevices() {
@@ -338,6 +342,10 @@ const Popup = () => {
             : null
         }
         onRetryAutoSync={settings.refresh}
+        popupCapture={popupCapture}
+        onRetryPopupCapture={() =>
+          captureRef.current?.retry() ?? Promise.resolve(false)
+        }
         clipboardHistoryError={clipboardHistoryError}
         historyPolicyError={historyPolicyError}
         initializationError={recovery.initializationError}

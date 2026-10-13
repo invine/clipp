@@ -465,3 +465,25 @@ it("retires the latest cleanup failure after real retention recovery even while 
   expect(renderCurrent()).not.toContain("cleanup_B");
   client.stop();
 });
+
+it("keeps popup read health independent from Copy/Send and exposes ordinary capture Retry", async () => {
+  const session = createUiSession();
+  await session.runHistoryAction("copy:clip-a", async () => null);
+  session.open({ kind: "issues", origin: "issues-summary" });
+  const html = render({
+    session,
+    popupCapture: { pending: false, error: "read_failed" },
+    onRetryPopupCapture: async () => false,
+  });
+  expect(html).toContain('data-issue-id="clipboard:focus:observation"');
+  expect(html).toContain("Could not read the clipboard in this popup.");
+  expect(html).toContain(">Retry</button>");
+  expect(html).not.toContain(">Dismiss</button>");
+  expect(
+    render({
+      session,
+      popupCapture: { pending: false, error: "handoff_unconfirmed" },
+      onRetryPopupCapture: async () => false,
+    })
+  ).toContain("Clipboard observation could not be confirmed");
+});

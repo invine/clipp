@@ -9,7 +9,12 @@ export type RecoveryIssue = {
   diagnostics?: string;
   message?: string;
 };
+export type PopupCaptureState = {
+  pending: boolean;
+  error: "read_failed" | "handoff_failed" | "handoff_unconfirmed" | null;
+};
 export type RecoveryFaults = {
+  popupCapture?: PopupCaptureState;
   initializationError?: boolean;
   runtimeError?: string | null;
   identityRotationRecovery?: boolean;
@@ -50,6 +55,22 @@ export function composeRecoveryIssues(faults: RecoveryFaults): RecoveryIssue[] {
       true,
       faults.historyRefreshError ?? undefined
     );
+  if (faults.popupCapture?.error) {
+    const error = faults.popupCapture.error;
+    issues.set("clipboard:focus:observation", {
+      id: "clipboard:focus:observation",
+      scope: "clipboard",
+      target: "focus",
+      code: "observation",
+      recovering: true,
+      message:
+        error === "read_failed"
+          ? "Could not read the clipboard in this popup. Keep the popup focused and Retry to check the current clipboard."
+          : error === "handoff_failed"
+            ? "Clipp could not process this clipboard observation. Retry to check the current clipboard again."
+            : "Clipboard observation could not be confirmed by Clipp. Retry checks the current clipboard; it does not force a new Clip or Send.",
+    });
+  }
   if (faults.clipboardHistoryError)
     add(
       "clipboard",

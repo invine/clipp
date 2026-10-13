@@ -8,6 +8,7 @@ import { useTaskRecoveryIssues } from "./useTaskRecoveryIssues";
 import {
   composeRecoveryIssues,
   type RecoveryIssue,
+  type PopupCaptureState,
 } from "../../core/runtime/recoveryIssues";
 import { RecoveryIssues } from "./RecoveryIssues";
 import { Icon, IconButton } from "./controls";
@@ -334,6 +335,8 @@ export type ClipboardAppProps = {
     status: "applied" | "partial" | "rejected" | "unconfirmed";
     error?: string;
   } | null;
+  popupCapture?: PopupCaptureState;
+  onRetryPopupCapture?(): Promise<boolean>;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
@@ -421,6 +424,8 @@ export function ClipboardApp({
   autoSyncRecoveryRequired = false,
   autoSyncRefreshError = null,
   autoSyncFeedback = null,
+  popupCapture,
+  onRetryPopupCapture,
   clipboardHistoryError = null,
   historyPolicyError = null,
   relayAddresses = [],
@@ -653,6 +658,7 @@ export function ClipboardApp({
     identityRotationNotice,
     historyUnavailable: sourceHistoryUnavailable,
     historyRefreshError,
+    popupCapture,
     clipboardHistoryError,
     historyPolicyError,
     pairingErrors,
@@ -693,6 +699,7 @@ export function ClipboardApp({
   );
   issues.push(...taskIssues);
   function issueRetry(issue: RecoveryIssue) {
+    if (issue.id === "clipboard:focus:observation") return onRetryPopupCapture;
     if (issue.code === "clip-settings")
       return appearanceSettings?.snapshot?.state.retentionError
         ? onRetryHistoryCleanup
@@ -711,7 +718,8 @@ export function ClipboardApp({
     return undefined;
   }
   function issueDismiss(issue: RecoveryIssue) {
-    if (issue.scope === "clipboard") return onDismissClipboardHistoryError;
+    if (issue.scope === "clipboard" && issue.target === "capture")
+      return onDismissClipboardHistoryError;
     if (issue.code === "action_failed")
       return () => session.dismissHistoryAction(issue.target!);
     if (issue.scope === "runtime") return onAcknowledgeIdentityRotationNotice;
