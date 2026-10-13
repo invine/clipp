@@ -1909,6 +1909,11 @@ export function ClipboardApp({
                   sessionState.autoSync.recoveryRequired
                 }
                 refresh={onRefreshBackgroundContinuity}
+                refreshAutoSync={
+                  onRetryAutoSync
+                    ? () => session.refreshAutoSync(onRetryAutoSync)
+                    : undefined
+                }
                 openNotificationSettings={onOpenBackgroundNotificationSettings}
                 help={() =>
                   session.open({

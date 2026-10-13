@@ -548,13 +548,40 @@ export function createAndroidBackgroundContinuityCoordinator(
       runtimeHealthy = false;
       connection = "disconnected";
       connectedTrustedDeviceCount = 0;
-      await publishServiceState();
+      // Native loss is delivered after the companion has stopped. It cannot
+      // acknowledge another notification update; reconcile teardown directly.
       service = "stopped";
-      await platform.stopService();
-      if (notificationAvailability === "available") {
-        await platform.showReconnectNotification();
+      let unconfirmed = false;
+      try {
+        await platform.stopService();
+      } catch {
+        unconfirmed = true;
       }
-      await refreshDiagnosticStatus();
+      if (platform.readServiceState) {
+        try {
+          service = await platform.readServiceState();
+        } catch {
+          unconfirmed = true;
+        }
+      }
+      if (service === "running") unconfirmed = true;
+      if (notificationAvailability === "available") {
+        try {
+          await platform.showReconnectNotification();
+        } catch {
+          unconfirmed = true;
+        }
+      }
+      try {
+        await refreshDiagnosticStatus();
+      } catch {
+        unconfirmed = true;
+      }
+      if (unconfirmed) {
+        controlStateKnown = false;
+        controlError =
+          "Background runtime was lost; its stopped state or recovery feedback could not be confirmed. Refresh before trying again.";
+      }
       return snapshot();
     },
 

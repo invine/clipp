@@ -534,7 +534,7 @@ test("Home and screen-off suspend capture without stopping background continuity
   });
 });
 
-test("publishes Waiting, Connected, Reconnecting, Paused, and Disconnected notification states", async () => {
+test("publishes healthy notification states and records Disconnected after the service stops", async () => {
   const fake = createPlatform();
   const coordinator = createAndroidBackgroundContinuityCoordinator(
     fake.platform
@@ -547,14 +547,19 @@ test("publishes Waiting, Connected, Reconnecting, Paused, and Disconnected notif
 
   await coordinator.reportRuntimeLost();
 
-  expect(fake.states).toEqual([
-    { state: "waiting", count: 0 },
-    { state: "connected", count: 2 },
-    { state: "reconnecting", count: 0 },
-    { state: "paused", count: 0 },
-    { state: "reconnecting", count: 0 },
-    { state: "disconnected", count: 0 },
-  ]);
+  expect({
+    notifications: fake.states,
+    connection: coordinator.snapshot().connection,
+  }).toEqual({
+    notifications: [
+      { state: "waiting", count: 0 },
+      { state: "connected", count: 2 },
+      { state: "reconnecting", count: 0 },
+      { state: "paused", count: 0 },
+      { state: "reconnecting", count: 0 },
+    ],
+    connection: "disconnected",
+  });
 });
 
 test("rejected opt-in retains the persisted disabled mode", async () => {

@@ -17,6 +17,8 @@ let enabled = false,
 let rejectUpdate = false;
 let rejectPreferences = false;
 let rejectPreferencesRead = false;
+let rejectStop = false;
+const nativeEvents = new Map();
 globalThis.continuityFixture = {
   getPlatformInfo: async () => {
     if (rejectInfo) throw new Error("native_info_unavailable");
@@ -40,13 +42,19 @@ globalThis.continuityFixture = {
     nativeSync = autoSync;
   },
   stop: async () => {
+    if (rejectStop) throw new Error("native_stop_unconfirmed");
     running = false;
   },
   update: async ({ autoSync }) => {
-    if (rejectUpdate) throw new Error("native_update_unconfirmed");
+    if (rejectUpdate || !running)
+      throw new Error("background_continuity_not_running");
     nativeSync = autoSync;
   },
-  addListener: async () => ({ remove: async () => {} }),
+  addListener: async (event, handler) => {
+    nativeEvents.set(event, handler);
+    return { remove: async () => nativeEvents.delete(event) };
+  },
+  showReconnectNotification: async () => {},
   clearPendingClipboardApplication: async () => {},
   getPendingClipboardApplication: async () => ({}),
 };
@@ -105,6 +113,35 @@ try {
   };
   const storage = new LocalStorageBackend("fixture:", preferences);
   const client = new AndroidClient(storage);
+  await client.refreshBackgroundContinuity();
+  await client.setBackgroundContinuity(true);
+  // The native watchdog sets isRunning=false before delivering runtimeLost.
+  const runtimeLost = nativeEvents.get("runtimeLost");
+  assert.equal(
+    typeof runtimeLost,
+    "function",
+    "the actual AndroidClient owns the native loss callback"
+  );
+  running = false;
+  await runtimeLost({});
+  let lostState = await client.getState();
+  assert.equal(lostState.backgroundContinuity.service, "stopped");
+  assert.equal(lostState.backgroundContinuity.runtimeHealthy, false);
+  assert.equal(lostState.backgroundContinuity.connection, "disconnected");
+  await client.setBackgroundContinuity(true);
+  rejectStop = true;
+  rejectInfo = true;
+  await runtimeLost({});
+  lostState = await client.getState();
+  assert.equal(lostState.backgroundContinuity.controlStateKnown, false);
+  assert.equal(lostState.backgroundContinuity.runtimeHealthy, false);
+  assert.ok(lostState.backgroundContinuity.controlError);
+  const removeFailedConsumer = client.onUpdate(() => {
+    throw new Error("fixture_publication_unavailable");
+  });
+  await runtimeLost({});
+  removeFailedConsumer();
+  rejectStop = rejectInfo = false;
   await client.refreshBackgroundContinuity();
   await client.setBackgroundContinuity(true);
   let state = await client.getState();

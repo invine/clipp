@@ -6,6 +6,7 @@ export function BackgroundContinuityControls({
   setEnabled,
   setAutoSync,
   refresh,
+  refreshAutoSync,
   help,
   openNotificationSettings,
   autoSyncPending = false,
@@ -15,6 +16,7 @@ export function BackgroundContinuityControls({
   setEnabled(enabled: boolean): Promise<void>;
   setAutoSync(enabled: boolean): Promise<unknown>;
   refresh?(): Promise<unknown>;
+  refreshAutoSync?(): Promise<unknown>;
   help(): void;
   openNotificationSettings?(): Promise<void>;
   autoSyncPending?: boolean;
@@ -87,7 +89,7 @@ export function BackgroundContinuityControls({
               <button
                 type="button"
                 className="text-button labelled-control"
-                disabled={busy}
+                disabled={busy || autoSyncRecoveryRequired}
                 onClick={() => void act(() => setAutoSync(!state.autoSync))}
               >
                 {state.autoSync ? "Pause Auto Sync" : "Resume Auto Sync"}
@@ -106,6 +108,23 @@ export function BackgroundContinuityControls({
             Stop background mode
           </button>
         )}
+      {autoSyncRecoveryRequired && (
+        <>
+          <p role="status" className="peer-sub">
+            Auto Sync needs a confirmed refresh before Pause or Resume.
+          </p>
+          {refreshAutoSync && (
+            <button
+              type="button"
+              className="text-button labelled-control"
+              disabled={busy}
+              onClick={() => void act(refreshAutoSync)}
+            >
+              Refresh Auto Sync
+            </button>
+          )}
+        </>
+      )}
       {busy && (
         <p role="status" className="peer-sub">
           Updating background controls…

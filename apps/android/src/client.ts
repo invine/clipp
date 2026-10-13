@@ -365,6 +365,17 @@ export class AndroidClient {
   constructor(
     private readonly storage: KVStorageBackend = new LocalStorageBackend()
   ) {
+    // The companion can report loss before networking or the focused Activity starts.
+    void this.backgroundNative.on("runtimeLost", () =>
+      this.settleBackgroundLifecycleEvent(() =>
+        this.backgroundContinuity.reportRuntimeLost()
+      )
+    );
+    void this.backgroundNative.on("taskRemoved", () =>
+      this.settleBackgroundLifecycleEvent(() =>
+        this.backgroundContinuity.handleTaskRemoved()
+      )
+    );
     // messaging is initialised lazily in `start()`
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
@@ -829,6 +840,21 @@ export class AndroidClient {
     });
   }
 
+  private async settleBackgroundLifecycleEvent(
+    operation: () => Promise<unknown>
+  ): Promise<void> {
+    try {
+      await operation();
+    } catch {
+      this.backgroundContinuity.markControlStateUnknown();
+    }
+    try {
+      await this.emitState();
+    } catch (error) {
+      log.warn("Background lifecycle state could not be published", error);
+    }
+  }
+
   private bindBackgroundContinuityEvents(): void {
     if (this.backgroundEventsBound) return;
     this.backgroundEventsBound = true;
@@ -851,16 +877,6 @@ export class AndroidClient {
           else await this.emitState();
         })
         .catch(() => this.emitState());
-    });
-    void this.backgroundNative.on("runtimeLost", () => {
-      void this.backgroundContinuity
-        .reportRuntimeLost()
-        .then(() => this.emitState());
-    });
-    void this.backgroundNative.on("taskRemoved", () => {
-      void this.backgroundContinuity
-        .handleTaskRemoved()
-        .then(() => this.emitState());
     });
     void this.backgroundNative.on("action", (event) => {
       const action = event.action;
