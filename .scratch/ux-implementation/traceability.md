@@ -141,3 +141,7 @@ Ticket20 consumes the completed compatible asset/control foundation through32. R
 ## Recovery foundation evidence — 2026-10-13
 
 Ticket08 is resolved for integrated fault composition and qualified scoped Chrome/Android recovery/geometry. Current149c1e1c Android and historical8673/v10 Chrome evidence retain their exact limits; source/merge/125903 verification and both completion audits pass. E02/C04/A13/A17 remain open collectors pending other required contributions. Ticket09 owns its still-unrun actual focused read/Retry gate. G14, current themes/navigation, native Pairing and prior external/retained deferrals remain unchanged.
+
+## Android continuity prerequisite allocation — 2026-10-13
+
+Ticket25 consumes resolved32's common interface and qualified Android controls; residual17 retains all desktop G13/G14 and collectors.25 keeps actual Pause/Resume/Stop, applied/rejected/unknown/stale-state, denial/reopen and queue/export requirements. A06 and every other finding remain open. This allocation and claim waive no qualification.

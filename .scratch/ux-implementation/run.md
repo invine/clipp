@@ -196,3 +196,17 @@ Chrome v4 c19ac08f starts and connects to CDP/version/ServiceWorker, retaining t
 ## Scoped recovery resolution and next frontier — 2026-10-13
 
 Both current149c1e1c evidence/completion audits PASS. Coordinator resolves08 for its integrated reviewed foundation and claims09, the next eligible urgent correctness output, for `ux-focus-capture-09`. Later owners and finding statuses remain unchanged. Product source remains ea09 at this metadata-only checkpoint; no native interval is open. At most two implementers, including the separate bounded Chrome test-runner author.
+# Prepared coordinator progress — pending next native boundary
+
+Ticket09 reviewed source272b83e9b81feabe0efe07951c73a100be81abe2 is mandatory-FF integrated on codex/ux-implementation-integration, tree7fcd75c285fe7f7dc009928eebfee5bfa2404b46. All9 source modes/blobs match and both worktrees are clean. Fresh integrated verify passes127 suites/913 tests/all3builds/zero lint errors775warnings, pinned Node24.16.0/npm11.13.0;61 build assets are recorded. Actual focused toolbar read/Retry remains required/unrun; ticket09/C16 remain incomplete. Root-only safe fresh-marker/native harness preparation is underway.
+
+Native19 a463e20c at historical4746 observed narrow320x650 and zoom200 content1100x760, wholeworkarea containment, exact40CSS control contracts, retained drafts/query and8 actual native key events/12 fresh acknowledgements. Both owned apps exit0 gracefully, profiles/helpers removed, pointersclosed and rootPIDs45840/45886 absent. Actual root CUA native JPEGimages showcompleteframe/title/Name/field/Save/Cancel at640x1364 (2x320x682) and2200x1584 (2x1100x792), includingaftermeasurements. The first header was incorrectly treated asPNG; exactJFIF/SOFdimensions correctedbeforeack. Originalrenderer croppedimages remainunchanged. Independent reviewer could notaccess actualimages in inheritedcontext, so independentvisual qualification remainsunavailable; textual rootindex is not a substitute. No whole19/G14/failedSave/scroll/QR/otherhost gatepromoted.
+
+Chrome b7d84d2e diagnostic at4746 safelytimesout firstmetadataread within30s, preservesinitialcandidate/thunkworker URLs, closesbrowser0/profileremoved/disconnectconfirmed andrunnerfinishes. This is a diagnostic failure, noG36/workertrust exemption. All precedingfailures/privateprofiles remainpreserved. Source09's actualtoolbar harness uses supportedpublicCDP instead of the hung Playwrightworker evaluation and needsits ownreviews.
+
+Allnative/clipboardintervals closed. RequireddesktopOStextG14 andChromeG01publicendpoint unavailable, no waiver; sign-in/provider/physical/assistive/externalowner/push/deploy deferrals unchanged. Originalprimarytwofiles hashidentical andall preexistingwork retained. Atmost2 implementationauthors:09nativeprep and19Saveprep. Read-only25sourcepreparation concluded: compatible32 isactualAndroidcontrolpredecessor, residual17desktopgates retained; coordinatorclaim/edgechange notyetmade.
+
+
+## Two-ticket progress — 2026-10-13
+
+User requested concurrent work on two tickets. Ticket09 source272b83e is integrated/reviewed and fresh verify127/913/all3builds passes; its actual toolbar gate stays open. Coordinator claims25 for `ux-continuity-25` with the approved32 predecessor allocation. Its band2 early native-state/feedback corrections proceed alongside09. Save-only19 harness preparation is parked with all drafts/findings preserved. Native validation stays root-owned and serialized; at most two implementers. All deferrals and required missing gates remain unchanged.

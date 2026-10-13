@@ -1,11 +1,11 @@
 # Repair Android continuity controls
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-continuity-25
 Priority band: 2
-Blocked by: 08, 17
-Dispatch: plan approved; awaiting an authorized execution run
+Blocked by: 08, 32
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -23,7 +23,7 @@ The [approved package contract](../../ux-implementation-plan/native-host-deliver
 ## Dependencies and integration
 
 - [Compose actionable recovery issues](08-compose-actionable-recovery-issues.md) — consume its completed, scoped output.
-- [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
+- [Deliver local assets and Android shared controls](32-deliver-local-assets-and-android-shared-controls.md) — consume its completed shared interface and qualified Android control output.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 
@@ -51,3 +51,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Dispatch assessment — 2026-10-13
+
+Coordinator applies the approved scope-preserving predecessor allocation already used by20/18/19/13:25 consumes resolved32's shared interface and qualified Android controls. Residual17 retains all desktop G13/G14 and collection;25 retains all its own candidate/native action, stale/rejected/unknown state, notification denial/reopen, queue/ingress and export-boundary requirements. No gate is waived or finding closed.
+
+Predecessors08/32 are resolved. Correct applied Auto Sync, one Pause/Resume and separate Stop preserve user preferences, best-effort continuity, durable ingress/intentional-repeat semantics and ADR-0012. Source preparation is `ticket-25-current-prep.md` in the local handoff mapping. Coordinator claim `ux-continuity-25`, client isolated `codex/ux-25-continuity-controls`, begins from this claim commit. Owning-interface TDD, current-tip incorporation, both reviews, mandatory merger and applicable verification remain required. Native/SDK/OS/clipboard/account/push operations stay root-owned or deferred.
+
+Priority band2 remains. Approved early usable native-state/feedback fixes proceed alongside ticket09's correctness qualification; unresolved urgent work is not displaced. User explicitly requested two-ticket progress. Root serializes native validation; at most two ticket implementers operate.

@@ -385,7 +385,7 @@
       "band": 2,
       "dependencies": [
         "08",
-        "17"
+        "32"
       ],
       "findings": [
         "A06"
