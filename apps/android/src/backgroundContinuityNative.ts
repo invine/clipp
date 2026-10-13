@@ -14,6 +14,10 @@ import type {
 type NativePlatformInfo = AndroidBackgroundDiagnosticStatus & {
   apiLevel: number;
   userStopped: boolean;
+  enabled: boolean;
+  enabledPersistenceKnown: boolean;
+  serviceRunning: boolean;
+  actionToken: string | null;
   notificationAvailability: Exclude<
     BackgroundNotificationAvailability,
     "unknown"
@@ -23,14 +27,17 @@ type NativePlatformInfo = AndroidBackgroundDiagnosticStatus & {
 type NativeBackgroundContinuityPlugin = {
   getPlatformInfo(): Promise<NativePlatformInfo>;
   setEnabled(options: { enabled: boolean }): Promise<void>;
-  start(): Promise<void>;
+  start(options: { autoSync: boolean | null }): Promise<void>;
   stop(): Promise<void>;
   heartbeat(): Promise<void>;
   update(options: {
     state: BackgroundConnectionState;
     connectedTrustedDeviceCount: number;
+    autoSync: boolean | null;
   }): Promise<void>;
   showReconnectNotification(): Promise<void>;
+  openNotificationSettings(): Promise<void>;
+  showControlFeedback(options: { message: string }): Promise<void>;
   exportDiagnostics(): Promise<void>;
   getExplicitTextActions(): Promise<{ actions: string }>;
   prepareExplicitTextAction(options: {
@@ -63,19 +70,28 @@ const NativeBackgroundContinuity =
 export type AndroidBackgroundNative = {
   apiLevel(): Promise<number | undefined>;
   userStopped(): Promise<boolean>;
+  enabled(): Promise<boolean>;
+  isActionCurrent(
+    token: unknown,
+    action: "pause" | "resume" | "stop"
+  ): Promise<boolean>;
+  serviceState(): Promise<"running" | "stopped">;
   notificationAvailability(): Promise<
     Exclude<BackgroundNotificationAvailability, "unknown">
   >;
   setEnabled(enabled: boolean): Promise<void>;
-  start(): Promise<void>;
+  start(autoSync: boolean | null): Promise<void>;
   stop(): Promise<void>;
   heartbeat(): Promise<void>;
   update(
     state: BackgroundConnectionState,
-    connectedTrustedDeviceCount: number
+    connectedTrustedDeviceCount: number,
+    autoSync: boolean | null
   ): Promise<void>;
   showReconnectNotification(): Promise<void>;
   diagnosticStatus(): Promise<AndroidBackgroundDiagnosticStatus>;
+  openNotificationSettings(): Promise<void>;
+  showControlFeedback(message: string): Promise<void>;
   exportDiagnostics(): Promise<void>;
   explicitTextActions(): Promise<AndroidExplicitTextAction[]>;
   prepareExplicitTextAction(
@@ -131,11 +147,7 @@ function parseExplicitTextActions(raw: string): AndroidExplicitTextAction[] {
 export function createAndroidBackgroundNative(): AndroidBackgroundNative {
   const info = async (): Promise<NativePlatformInfo | null> => {
     if (!isNativeAndroid()) return null;
-    try {
-      return await NativeBackgroundContinuity.getPlatformInfo();
-    } catch {
-      return null;
-    }
+    return await NativeBackgroundContinuity.getPlatformInfo();
   };
   const invoke = async (operation: () => Promise<void>): Promise<void> => {
     if (!isNativeAndroid()) return;
@@ -153,6 +165,25 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     async userStopped() {
       return (await info())?.userStopped ?? false;
     },
+    async enabled() {
+      const current = await info();
+      if (current?.enabledPersistenceKnown === false)
+        throw new Error("background_persistence_unknown");
+      return current?.enabled === true;
+    },
+    async isActionCurrent(token, action) {
+      if (typeof token !== "string") return false;
+      const current = await info();
+      if (!current || current.enabledPersistenceKnown === false) return false;
+      return action === "stop"
+        ? current.userStopped && !current.enabled && !current.serviceRunning
+        : current.enabled &&
+            current.serviceRunning &&
+            token === current.actionToken;
+    },
+    async serviceState() {
+      return (await info())?.serviceRunning ? "running" : "stopped";
+    },
     async notificationAvailability() {
       return (await info())?.notificationAvailability ?? "blocked";
     },
@@ -169,22 +200,40 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
           platform?.batteryOptimizationGuidance === true,
       };
     },
-    setEnabled: async (enabled) =>
-      await invoke(() => NativeBackgroundContinuity.setEnabled({ enabled })),
-    async start() {
+    async setEnabled(enabled) {
       if (!isNativeAndroid())
         throw new Error("background_continuity_unavailable");
-      await NativeBackgroundContinuity.start();
+      await NativeBackgroundContinuity.setEnabled({ enabled });
     },
-    stop: async () => await invoke(() => NativeBackgroundContinuity.stop()),
+    async start(autoSync) {
+      if (!isNativeAndroid())
+        throw new Error("background_continuity_unavailable");
+      await NativeBackgroundContinuity.start({ autoSync });
+    },
+    async stop() {
+      if (!isNativeAndroid())
+        throw new Error("background_continuity_unavailable");
+      await NativeBackgroundContinuity.stop();
+    },
     heartbeat: async () =>
       await invoke(() => NativeBackgroundContinuity.heartbeat()),
-    update: async (state, connectedTrustedDeviceCount) =>
+    async update(state, connectedTrustedDeviceCount, autoSync) {
+      if (!isNativeAndroid())
+        throw new Error("background_continuity_unavailable");
+      await NativeBackgroundContinuity.update({
+        state,
+        connectedTrustedDeviceCount,
+        autoSync,
+      });
+    },
+    async openNotificationSettings() {
+      if (!isNativeAndroid())
+        throw new Error("background_continuity_unavailable");
+      await NativeBackgroundContinuity.openNotificationSettings();
+    },
+    showControlFeedback: async (message) =>
       await invoke(() =>
-        NativeBackgroundContinuity.update({
-          state,
-          connectedTrustedDeviceCount,
-        })
+        NativeBackgroundContinuity.showControlFeedback({ message })
       ),
     showReconnectNotification: async () =>
       await invoke(() =>

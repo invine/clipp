@@ -41,11 +41,13 @@ function createPlatform() {
     androidApiLevel: () => 36,
     notificationAvailability: async () => "available",
     readEnabled: async () => false,
+    readAutoSync: async () => autoSync,
     writeEnabled: async () => undefined,
     setClipboardCaptureEligible: async () => undefined,
     resetClipboardBaseline: async () => undefined,
     setAutoSync: async (enabled) => {
       autoSync = enabled;
+      return enabled;
     },
     startService: async () => undefined,
     stopService: async () => undefined,

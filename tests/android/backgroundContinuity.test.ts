@@ -6,12 +6,13 @@ import {
 
 function createPlatform(
   androidApiLevel = 36,
-  notificationAvailability: "available" | "blocked" = "available",
+  notificationAvailability: "available" | "blocked" = "available"
 ) {
   const commands: string[] = [];
   const captureEligibility: boolean[] = [];
   let baselines = 0;
   const autoSync: boolean[] = [];
+  let savedAutoSync = true;
   const states: Array<{ state: string; count: number }> = [];
   let reconnectAlerts = 0;
   let enabled = false;
@@ -24,15 +25,36 @@ function createPlatform(
     androidApiLevel: () => androidApiLevel,
     notificationAvailability: async () => notificationAvailability,
     readEnabled: async () => enabled,
-    writeEnabled: async (next) => { enabled = next; },
-    setClipboardCaptureEligible: async (next) => { captureEligibility.push(next); },
-    resetClipboardBaseline: async () => { baselines += 1; },
-    setAutoSync: async (next) => { autoSync.push(next); },
-    startService: async () => { commands.push("start"); },
-    stopService: async () => { commands.push("stop"); },
-    sendHeartbeat: async () => { commands.push("heartbeat"); },
-    updateService: async (state, count) => { states.push({ state, count }); },
-    showReconnectNotification: async () => { reconnectAlerts += 1; },
+    readAutoSync: async () => savedAutoSync,
+    writeEnabled: async (next) => {
+      enabled = next;
+    },
+    setClipboardCaptureEligible: async (next) => {
+      captureEligibility.push(next);
+    },
+    resetClipboardBaseline: async () => {
+      baselines += 1;
+    },
+    setAutoSync: async (next) => {
+      autoSync.push(next);
+      savedAutoSync = next;
+      return next;
+    },
+    startService: async () => {
+      commands.push("start");
+    },
+    stopService: async () => {
+      commands.push("stop");
+    },
+    sendHeartbeat: async () => {
+      commands.push("heartbeat");
+    },
+    updateService: async (state, count) => {
+      states.push({ state, count });
+    },
+    showReconnectNotification: async () => {
+      reconnectAlerts += 1;
+    },
     readDiagnosticStatus: async () => diagnosticStatus,
     listExplicitTextActions: async () => [],
     prepareExplicitTextAction: async () => undefined,
@@ -70,53 +92,87 @@ test("qualifies repeatedly failing background configurations as limited before o
     supportState: "limited",
     batteryOptimizationGuidance: true,
   });
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.initialize();
 
-  expect(coordinator.snapshot()).toEqual(expect.objectContaining({
-    observedBackgroundFailureCount: 3,
-    supportState: "limited",
-    batteryOptimizationGuidance: true,
-  }));
+  expect(coordinator.snapshot()).toEqual(
+    expect.objectContaining({
+      observedBackgroundFailureCount: 3,
+      supportState: "limited",
+      batteryOptimizationGuidance: true,
+    })
+  );
 });
 
 test("only lets Android 12-or-later users opt into background continuity", async () => {
   const unsupported = createPlatform(30);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(unsupported.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    unsupported.platform
+  );
 
   await coordinator.setEnabledFromUser(true);
 
-  expect({ enabled: unsupported.enabled(), commands: unsupported.commands, state: coordinator.snapshot() }).toEqual({
+  expect({
+    enabled: unsupported.enabled(),
+    commands: unsupported.commands,
+    state: coordinator.snapshot(),
+  }).toEqual({
     enabled: false,
     commands: [],
-    state: expect.objectContaining({ available: false, backgroundEnabled: false, service: "stopped" }),
+    state: expect.objectContaining({
+      available: false,
+      backgroundEnabled: false,
+      service: "stopped",
+    }),
   });
 });
 
 test("allows Android 12 users to opt into background continuity", async () => {
   const supported = createPlatform(31);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(supported.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    supported.platform
+  );
 
   await coordinator.setEnabledFromUser(true);
 
-  expect({ enabled: supported.enabled(), commands: supported.commands, state: coordinator.snapshot() }).toEqual({
+  expect({
+    enabled: supported.enabled(),
+    commands: supported.commands,
+    state: coordinator.snapshot(),
+  }).toEqual({
     enabled: true,
     commands: ["start"],
-    state: expect.objectContaining({ available: true, backgroundEnabled: true, service: "running" }),
+    state: expect.objectContaining({
+      available: true,
+      backgroundEnabled: true,
+      service: "running",
+    }),
   });
 });
 
 test("starts the companion service only after supported explicit opt-in", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.setEnabledFromUser(true);
 
-  expect({ enabled: fake.enabled(), commands: fake.commands, state: coordinator.snapshot() }).toEqual({
+  expect({
+    enabled: fake.enabled(),
+    commands: fake.commands,
+    state: coordinator.snapshot(),
+  }).toEqual({
     enabled: true,
     commands: ["start"],
-    state: expect.objectContaining({ backgroundEnabled: true, service: "running", connection: "waiting" }),
+    state: expect.objectContaining({
+      backgroundEnabled: true,
+      service: "running",
+      connection: "waiting",
+    }),
   });
 });
 
@@ -127,21 +183,24 @@ test("does not report the service as running before native startup is acknowledg
   const startRequested = new Promise<void>((resolve) => {
     observeStartRequest = resolve;
   });
-  fake.platform.startService = () => new Promise<void>((resolve) => {
-    acknowledgeStart = resolve;
-    observeStartRequest();
-  });
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  fake.platform.startService = () =>
+    new Promise<void>((resolve) => {
+      acknowledgeStart = resolve;
+      observeStartRequest();
+    });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   const enabling = coordinator.setEnabledFromUser(true);
   await startRequested;
   expect(coordinator.snapshot()).toEqual(
-    expect.objectContaining({ backgroundEnabled: true, service: "stopped" }),
+    expect.objectContaining({ backgroundEnabled: true, service: "stopped" })
   );
 
   acknowledgeStart();
   await expect(enabling).resolves.toEqual(
-    expect.objectContaining({ backgroundEnabled: true, service: "running" }),
+    expect.objectContaining({ backgroundEnabled: true, service: "running" })
   );
 });
 
@@ -150,36 +209,48 @@ test("keeps service state stopped when native startup fails", async () => {
   fake.platform.startService = async () => {
     throw new Error("service_start_failed");
   };
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await expect(coordinator.setEnabledFromUser(true)).resolves.toEqual(
-    expect.objectContaining({ backgroundEnabled: true, service: "stopped" }),
+    expect.objectContaining({ backgroundEnabled: true, service: "stopped" })
   );
 });
 
 test("retries a persisted opt-in from a later visible application start", async () => {
   const fake = createPlatform(31);
   await fake.platform.writeEnabled(true);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   const initialized = await coordinator.initialize();
   await coordinator.setEnabledFromUser(initialized.backgroundEnabled);
 
   expect({ commands: fake.commands, state: coordinator.snapshot() }).toEqual({
     commands: ["start"],
-    state: expect.objectContaining({ backgroundEnabled: true, service: "running" }),
+    state: expect.objectContaining({
+      backgroundEnabled: true,
+      service: "running",
+    }),
   });
 });
 
 test("allows clipboard observation only while resumed and focused, with a fresh baseline", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.setActivityState({ resumed: true, windowFocused: false });
   await coordinator.setActivityState({ resumed: true, windowFocused: true });
   await coordinator.setActivityState({ resumed: true, windowFocused: false });
 
-  expect({ captureEligibility: fake.captureEligibility, baselines: fake.baselines() }).toEqual({
+  expect({
+    captureEligibility: fake.captureEligibility,
+    baselines: fake.baselines(),
+  }).toEqual({
     captureEligibility: [true, false],
     baselines: 1,
   });
@@ -188,18 +259,30 @@ test("allows clipboard observation only while resumed and focused, with a fresh 
 test("does not let a stale focus transition re-enable clipboard polling", async () => {
   const fake = createPlatform();
   let finishBaselineReset!: () => void;
-  fake.platform.resetClipboardBaseline = () => new Promise<void>((resolve) => {
-    finishBaselineReset = resolve;
-  });
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  fake.platform.resetClipboardBaseline = () =>
+    new Promise<void>((resolve) => {
+      finishBaselineReset = resolve;
+    });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
-  const focusGained = coordinator.setActivityState({ resumed: true, windowFocused: true });
-  const focusLost = coordinator.setActivityState({ resumed: true, windowFocused: false });
+  const focusGained = coordinator.setActivityState({
+    resumed: true,
+    windowFocused: true,
+  });
+  const focusLost = coordinator.setActivityState({
+    resumed: true,
+    windowFocused: false,
+  });
   await focusLost;
   finishBaselineReset();
   await focusGained;
 
-  expect({ captureEligibility: fake.captureEligibility, state: coordinator.snapshot() }).toEqual({
+  expect({
+    captureEligibility: fake.captureEligibility,
+    state: coordinator.snapshot(),
+  }).toEqual({
     captureEligibility: [false],
     state: expect.objectContaining({ captureEligible: false }),
   });
@@ -207,78 +290,125 @@ test("does not let a stale focus transition re-enable clipboard polling", async 
 
 test("reports a usable trusted-device connection and maps notification pause and resume to Auto Sync", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.setEnabledFromUser(true);
   await coordinator.setConnection(2);
   await coordinator.handleNotificationAction("pause");
   await coordinator.handleNotificationAction("resume");
 
-  expect({ autoSync: fake.autoSync, state: coordinator.snapshot(), latestService: fake.states.at(-1) }).toEqual({
+  expect({
+    autoSync: fake.autoSync,
+    state: coordinator.snapshot(),
+    latestService: fake.states.at(-1),
+  }).toEqual({
     autoSync: [false, true],
-    state: expect.objectContaining({ connection: "connected", connectedTrustedDeviceCount: 2 }),
+    state: expect.objectContaining({
+      connection: "connected",
+      connectedTrustedDeviceCount: 2,
+    }),
     latestService: { state: "connected", count: 2 },
   });
 });
 
 test("stops the empty service and posts a content-free reconnect alert when the runtime is lost", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.setEnabledFromUser(true);
 
   await coordinator.reportRuntimeLost();
 
-  expect({ commands: fake.commands, reconnectAlerts: fake.reconnectAlerts(), state: coordinator.snapshot() }).toEqual({
+  expect({
+    commands: fake.commands,
+    reconnectAlerts: fake.reconnectAlerts(),
+    state: coordinator.snapshot(),
+  }).toEqual({
     commands: ["start", "stop"],
     reconnectAlerts: 1,
-    state: expect.objectContaining({ service: "stopped", connection: "disconnected", runtimeHealthy: false }),
+    state: expect.objectContaining({
+      service: "stopped",
+      connection: "disconnected",
+      runtimeHealthy: false,
+    }),
   });
 });
 
 test("persists Stop before ending the service and treats task removal as a non-restarting boundary", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.setEnabledFromUser(true);
   await coordinator.handleTaskRemoved();
   await coordinator.handleNotificationAction("stop");
 
-  expect({ enabled: fake.enabled(), commands: fake.commands, state: coordinator.snapshot() }).toEqual({
+  expect({
+    enabled: fake.enabled(),
+    commands: fake.commands,
+    state: coordinator.snapshot(),
+  }).toEqual({
     enabled: false,
     commands: ["start", "stop"],
-    state: expect.objectContaining({ backgroundEnabled: false, service: "stopped" }),
+    state: expect.objectContaining({
+      backgroundEnabled: false,
+      service: "stopped",
+    }),
   });
 });
 
 test("reboot offers an explicit reconnect instead of creating an empty foreground service", async () => {
   const fake = createPlatform();
   await fake.platform.writeEnabled(true);
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
 
   await coordinator.handleBoot();
 
-  expect({ commands: fake.commands, reconnectAlerts: fake.reconnectAlerts(), state: coordinator.snapshot() }).toEqual({
+  expect({
+    commands: fake.commands,
+    reconnectAlerts: fake.reconnectAlerts(),
+    state: coordinator.snapshot(),
+  }).toEqual({
     commands: [],
     reconnectAlerts: 1,
-    state: expect.objectContaining({ backgroundEnabled: true, service: "stopped" }),
+    state: expect.objectContaining({
+      backgroundEnabled: true,
+      service: "stopped",
+    }),
   });
 });
 
 test("expires a missed Activity-runtime heartbeat through the coordinator's injectable clock", async () => {
   const fake = createPlatform();
   let now = 0;
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform, {
-    now: () => now,
-    heartbeatTimeoutMs: 60_000,
-  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    {
+      now: () => now,
+      heartbeatTimeoutMs: 60_000,
+    }
+  );
   await coordinator.setEnabledFromUser(true);
   await coordinator.heartbeat();
   now = 60_000;
 
   await coordinator.checkHeartbeatExpiry();
 
-  expect({ commands: fake.commands, reconnectAlerts: fake.reconnectAlerts(), state: coordinator.snapshot() }).toEqual({
+  expect({
+    commands: fake.commands,
+    reconnectAlerts: fake.reconnectAlerts(),
+    state: coordinator.snapshot(),
+  }).toEqual({
     commands: ["start", "heartbeat", "stop"],
     reconnectAlerts: 1,
-    state: expect.objectContaining({ connection: "disconnected", runtimeHealthy: false }),
+    state: expect.objectContaining({
+      connection: "disconnected",
+      runtimeHealthy: false,
+    }),
   });
 });
 
@@ -286,13 +416,18 @@ test("schedules runtime heartbeats through an injectable coordinator clock and c
   const fake = createPlatform();
   const scheduled: Array<{ everyMs: number; tick: () => Promise<void> }> = [];
   let cancellations = 0;
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform, {
-    schedulePeriodicHeartbeat: (tick, everyMs) => {
-      scheduled.push({ tick, everyMs });
-      return () => { cancellations += 1; };
-    },
-    heartbeatIntervalMs: 20_000,
-  });
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    {
+      schedulePeriodicHeartbeat: (tick, everyMs) => {
+        scheduled.push({ tick, everyMs });
+        return () => {
+          cancellations += 1;
+        };
+      },
+      heartbeatIntervalMs: 20_000,
+    }
+  );
   await coordinator.setEnabledFromUser(true);
 
   coordinator.startRuntimeHeartbeat();
@@ -302,7 +437,11 @@ test("schedules runtime heartbeats through an injectable coordinator clock and c
   coordinator.stopRuntimeHeartbeat();
   await scheduled[0].tick();
 
-  expect({ scheduled: scheduled.map(({ everyMs }) => everyMs), cancellations, commands: fake.commands }).toEqual({
+  expect({
+    scheduled: scheduled.map(({ everyMs }) => everyMs),
+    cancellations,
+    commands: fake.commands,
+  }).toEqual({
     scheduled: [20_000],
     cancellations: 1,
     commands: ["start", "heartbeat"],
@@ -311,13 +450,18 @@ test("schedules runtime heartbeats through an injectable coordinator clock and c
 
 test("keeps background continuity available when notifications are blocked without claiming a reconnect alert", async () => {
   const fake = createPlatform(31, "blocked");
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.initialize();
   await coordinator.setEnabledFromUser(true);
 
   await coordinator.reportRuntimeLost();
 
-  expect({ reconnectAlerts: fake.reconnectAlerts(), state: coordinator.snapshot() }).toEqual({
+  expect({
+    reconnectAlerts: fake.reconnectAlerts(),
+    state: coordinator.snapshot(),
+  }).toEqual({
     reconnectAlerts: 0,
     state: expect.objectContaining({
       available: true,
@@ -330,7 +474,9 @@ test("keeps background continuity available when notifications are blocked witho
 
 test("ignores repeated Stop and late Pause, Resume, runtime-loss, and task-removal events", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.setEnabledFromUser(true);
   await coordinator.handleNotificationAction("stop");
 
@@ -361,7 +507,9 @@ test("ignores repeated Stop and late Pause, Resume, runtime-loss, and task-remov
 
 test("Home and screen-off suspend capture without stopping background continuity", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.setEnabledFromUser(true);
   await coordinator.setActivityState({ resumed: true, windowFocused: true });
 
@@ -378,13 +526,19 @@ test("Home and screen-off suspend capture without stopping background continuity
     captureEligibility: [true, false, true, false],
     baselines: 2,
     commands: ["start"],
-    state: expect.objectContaining({ captureEligible: false, service: "running", runtimeHealthy: true }),
+    state: expect.objectContaining({
+      captureEligible: false,
+      service: "running",
+      runtimeHealthy: true,
+    }),
   });
 });
 
 test("publishes Waiting, Connected, Reconnecting, Paused, and Disconnected notification states", async () => {
   const fake = createPlatform();
-  const coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform);
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
   await coordinator.setEnabledFromUser(true);
   await coordinator.setConnection(2);
   await coordinator.setConnection(0);
@@ -401,4 +555,130 @@ test("publishes Waiting, Connected, Reconnecting, Paused, and Disconnected notif
     { state: "reconnecting", count: 0 },
     { state: "disconnected", count: 0 },
   ]);
+});
+
+test("rejected opt-in retains the persisted disabled mode", async () => {
+  const fake = createPlatform();
+  fake.platform.writeEnabled = async () => {
+    throw new Error("write_rejected");
+  };
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.initialize();
+  await coordinator.setEnabledFromUser(true).catch(() => undefined);
+  expect(coordinator.snapshot()).toEqual(
+    expect.objectContaining({ backgroundEnabled: false, service: "stopped" })
+  );
+});
+
+test("Stop wins over an overlapping acknowledged enable and preserves Auto Sync", async () => {
+  const fake = createPlatform();
+  let acknowledge!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    acknowledge = resolve;
+  });
+  let starting!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    starting = resolve;
+  });
+  fake.platform.startService = async () => {
+    starting();
+    await gate;
+  };
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  const enabling = coordinator.setEnabledFromUser(true);
+  await entered;
+  const stopping = coordinator.setEnabledFromUser(false);
+  acknowledge();
+  await Promise.all([enabling, stopping]);
+  expect({
+    enabled: fake.enabled(),
+    state: coordinator.snapshot(),
+    autoSync: fake.autoSync,
+  }).toEqual({
+    enabled: false,
+    state: expect.objectContaining({
+      backgroundEnabled: false,
+      service: "stopped",
+    }),
+    autoSync: [],
+  });
+});
+
+test("disconnected service updates still carry the applied Auto Sync preference", async () => {
+  const fake = createPlatform();
+  let applied: boolean | null | undefined;
+  fake.platform.updateService = async (_state, _count, autoSync) => {
+    applied = autoSync;
+  };
+  fake.platform.readAutoSync = async () => false;
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.setEnabledFromUser(true);
+  await coordinator.reportRuntimeLost();
+  expect(applied).toBe(false);
+});
+
+test("unknown persistence blocks stale notification actions until refresh succeeds", async () => {
+  const fake = createPlatform();
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.setEnabledFromUser(true);
+  fake.platform.setAutoSync = async () => {
+    throw new Error("auto_sync_rejected");
+  };
+  fake.platform.readAutoSync = async () => {
+    throw new Error("read_unavailable");
+  };
+  await coordinator.setAutoSync(false).catch(() => undefined);
+  expect(coordinator.snapshot()).toEqual(
+    expect.objectContaining({ controlStateKnown: false, autoSync: true })
+  );
+  await coordinator.handleNotificationAction("resume");
+  expect(fake.autoSync).toEqual([]);
+  fake.platform.readAutoSync = async () => false;
+  await coordinator.initialize();
+  expect(coordinator.snapshot()).toEqual(
+    expect.objectContaining({ controlStateKnown: true, autoSync: false })
+  );
+});
+
+test("repeated stale taps never make unknown continuity state look confirmed", async () => {
+  const fake = createPlatform();
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.setEnabledFromUser(true);
+  fake.platform.setAutoSync = async () => {
+    throw new Error("rejected");
+  };
+  fake.platform.readAutoSync = async () => {
+    throw new Error("unknown");
+  };
+  await coordinator.setAutoSync(false).catch(() => undefined);
+  await coordinator.handleNotificationAction("resume");
+  expect(coordinator.snapshot().controlStateKnown).toBe(false);
+});
+
+test("a native action that became stale while queued cannot change Auto Sync or stop a newer session", async () => {
+  const fake = createPlatform();
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.setEnabledFromUser(true);
+  await coordinator.handleNotificationAction("pause", async () => false);
+  await coordinator.handleNotificationAction("stop", async () => false);
+  expect(coordinator.snapshot()).toEqual(
+    expect.objectContaining({
+      autoSync: true,
+      backgroundEnabled: true,
+      service: "running",
+    })
+  );
+  expect(fake.autoSync).toEqual([]);
 });

@@ -3,7 +3,10 @@ import {
   DEFAULT_CLIP_SHARING_LIFETIME_MS,
   type Clip,
 } from "@core/models/Clip";
-import type { BackgroundContinuityDiagnosticStatus } from "@clipp/ui";
+import type {
+  BackgroundContinuityDiagnosticStatus,
+  BackgroundContinuityState,
+} from "@clipp/ui";
 
 /**
  * The public orchestration seam for the optional Android foreground-service
@@ -37,17 +40,10 @@ export type AndroidRetainedLiveClip = {
   liveHandled: boolean;
 };
 
-export type AndroidBackgroundContinuitySnapshot =
-  AndroidBackgroundDiagnosticStatus & {
-    available: boolean;
-    backgroundEnabled: boolean;
-    captureEligible: boolean;
-    service: BackgroundServiceState;
-    connection: BackgroundConnectionState;
-    connectedTrustedDeviceCount: number;
-    runtimeHealthy: boolean;
-    notificationAvailability: BackgroundNotificationAvailability;
-  };
+export type AndroidBackgroundContinuitySnapshot = BackgroundContinuityState & {
+  captureEligible: boolean;
+  runtimeHealthy: boolean;
+};
 
 export type AndroidBackgroundContinuityPlatform = {
   androidApiLevel(): number | undefined;
@@ -55,16 +51,19 @@ export type AndroidBackgroundContinuityPlatform = {
     Exclude<BackgroundNotificationAvailability, "unknown">
   >;
   readEnabled(): Promise<boolean>;
+  readAutoSync(): Promise<boolean>;
+  readServiceState?(): Promise<BackgroundServiceState>;
   writeEnabled(enabled: boolean): Promise<void>;
   setClipboardCaptureEligible(eligible: boolean): Promise<void>;
   resetClipboardBaseline(): Promise<void>;
-  setAutoSync(enabled: boolean): Promise<void>;
-  startService(): Promise<void>;
+  setAutoSync(enabled: boolean): Promise<boolean>;
+  startService(autoSync: boolean | null): Promise<void>;
   stopService(): Promise<void>;
   sendHeartbeat(): Promise<void>;
   updateService(
     state: BackgroundConnectionState,
-    connectedTrustedDeviceCount: number
+    connectedTrustedDeviceCount: number,
+    autoSync: boolean | null
   ): Promise<void>;
   showReconnectNotification(): Promise<void>;
   readDiagnosticStatus?(): Promise<AndroidBackgroundDiagnosticStatus>;
@@ -137,6 +136,11 @@ export function createAndroidBackgroundContinuityCoordinator(
   let connectedTrustedDeviceCount = 0;
   let runtimeHealthy = true;
   let autoSync = true;
+  let autoSyncKnown = false;
+  let controlStateKnown = false;
+  let pendingControls = 0;
+  let controlError: string | null = null;
+  let controlQueue = Promise.resolve();
   let wasConnected = false;
   let lastHeartbeatAt: number | null = null;
   let notificationAvailability: BackgroundNotificationAvailability = "unknown";
@@ -155,6 +159,10 @@ export function createAndroidBackgroundContinuityCoordinator(
   const captureEligible = (): boolean => resumed && windowFocused;
 
   const snapshot = (): AndroidBackgroundContinuitySnapshot => ({
+    autoSync: autoSyncKnown ? autoSync : null,
+    controlPending: pendingControls > 0,
+    controlStateKnown,
+    controlError,
     available: available(),
     backgroundEnabled,
     captureEligible: captureEligible(),
@@ -177,13 +185,17 @@ export function createAndroidBackgroundContinuityCoordinator(
 
   async function publishServiceState(): Promise<void> {
     if (service !== "running") return;
-    await platform.updateService(connection, connectedTrustedDeviceCount);
+    await platform.updateService(
+      connection,
+      connectedTrustedDeviceCount,
+      autoSyncKnown ? autoSync : null
+    );
   }
 
   function connectionForHealthyRuntime(
     connectedCount: number
   ): BackgroundConnectionState {
-    if (!autoSync) return "paused";
+    if (autoSync === false) return "paused";
     if (connectedCount > 0) return "connected";
     return wasConnected ? "reconnecting" : "waiting";
   }
@@ -316,10 +328,106 @@ export function createAndroidBackgroundContinuityCoordinator(
 
   async function reflectAutoSyncState(enabled: boolean): Promise<void> {
     autoSync = enabled;
+    autoSyncKnown = true;
     if (!enabled) await clearPendingClipboardApplication();
     if (runtimeHealthy)
       connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
     await publishServiceState();
+  }
+
+  async function setEnabledFromUser(
+    enabled: boolean
+  ): Promise<AndroidBackgroundContinuitySnapshot> {
+    if (enabled && !available()) return snapshot();
+    if (
+      !enabled &&
+      controlStateKnown &&
+      !backgroundEnabled &&
+      service === "stopped"
+    )
+      return snapshot();
+    if (enabled) {
+      await refreshNotificationAvailability();
+      autoSync = await platform.readAutoSync();
+      autoSyncKnown = true;
+    }
+    const serviceWasRunning = service === "running";
+    await platform.writeEnabled(enabled);
+    backgroundEnabled = enabled;
+    if (!enabled) {
+      if (serviceWasRunning) await platform.stopService();
+      service = "stopped";
+      controlStateKnown = true;
+      return snapshot();
+    }
+
+    const started = await platform.startService(autoSync).then(
+      () => true,
+      () => false
+    );
+    if (!started) {
+      backgroundEnabled = await platform.readEnabled();
+      controlError = backgroundEnabled
+        ? "Background mode could not start. Try Start again."
+        : null;
+      service = "stopped";
+      controlStateKnown = true;
+      return snapshot();
+    }
+
+    runtimeHealthy = true;
+    lastHeartbeatAt = now();
+    connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
+    service = "running";
+    await publishServiceState();
+    controlStateKnown = true;
+    return snapshot();
+  }
+
+  async function refreshControlState(): Promise<void> {
+    backgroundEnabled = available() && (await platform.readEnabled());
+    autoSync = await platform.readAutoSync();
+    autoSyncKnown = true;
+    if (platform.readServiceState) service = await platform.readServiceState();
+    if (!backgroundEnabled && !platform.readServiceState) service = "stopped";
+    if (runtimeHealthy)
+      connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
+    if (available())
+      await Promise.all([
+        refreshNotificationAvailability(),
+        refreshDiagnosticStatus(),
+      ]);
+    controlStateKnown = true;
+  }
+
+  function runControl<T>(operation: () => Promise<T>): Promise<T> {
+    pendingControls += 1;
+    const next = controlQueue.then(async () => {
+      controlError = null;
+      try {
+        const result = await operation();
+        return result;
+      } catch (error) {
+        try {
+          await refreshControlState();
+          await publishServiceState();
+          controlError =
+            "The action could not be completed. Current saved state is shown.";
+        } catch {
+          controlStateKnown = false;
+          controlError =
+            "Current background state could not be confirmed. Refresh before trying again.";
+        }
+        throw error;
+      } finally {
+        pendingControls -= 1;
+      }
+    });
+    controlQueue = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
   }
 
   return {
@@ -346,48 +454,22 @@ export function createAndroidBackgroundContinuityCoordinator(
       cancel();
     },
 
-    async initialize(): Promise<AndroidBackgroundContinuitySnapshot> {
-      backgroundEnabled = available() && (await platform.readEnabled());
-      if (available()) {
-        await Promise.all([
-          refreshNotificationAvailability(),
-          refreshDiagnosticStatus(),
-        ]);
-      }
-      return snapshot();
+    markControlStateUnknown(): void {
+      controlStateKnown = false;
+      notificationAvailability = "unknown";
+      controlError =
+        "Current background state could not be confirmed. Refresh before trying again.";
     },
 
-    async setEnabledFromUser(
-      enabled: boolean
-    ): Promise<AndroidBackgroundContinuitySnapshot> {
-      if (enabled && !available()) return snapshot();
-      if (!enabled && !backgroundEnabled && service === "stopped")
-        return snapshot();
-      if (enabled) await refreshNotificationAvailability();
-      const serviceWasRunning = service === "running";
-      backgroundEnabled = enabled;
-      await platform.writeEnabled(enabled);
-      if (!enabled) {
-        service = "stopped";
-        if (serviceWasRunning) await platform.stopService();
-        return snapshot();
-      }
+    async initialize(): Promise<AndroidBackgroundContinuitySnapshot> {
+      return runControl(async () => {
+        await refreshControlState();
+        await publishServiceState();
+      }).then(snapshot);
+    },
 
-      const started = await platform.startService().then(
-        () => true,
-        () => false
-      );
-      if (!started) {
-        service = "stopped";
-        return snapshot();
-      }
-
-      runtimeHealthy = true;
-      lastHeartbeatAt = now();
-      connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
-      service = "running";
-      await publishServiceState();
-      return snapshot();
+    setEnabledFromUser(enabled: boolean) {
+      return runControl(() => setEnabledFromUser(enabled)).then(snapshot);
     },
 
     async setActivityState(next: {
@@ -418,18 +500,25 @@ export function createAndroidBackgroundContinuityCoordinator(
       if (connectedTrustedDeviceCount > 0) wasConnected = true;
       if (runtimeHealthy)
         connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
-      await publishServiceState();
+      try {
+        await publishServiceState();
+      } catch {
+        controlStateKnown = false;
+        controlError =
+          "Background notification state could not be confirmed. Refresh before trying again.";
+      }
       return snapshot();
     },
 
-    async setAutoSync(
+    setAutoSync(
       enabled: boolean
     ): Promise<AndroidBackgroundContinuitySnapshot> {
-      await serializeClipContinuity(async () => {
-        await platform.setAutoSync(enabled);
-        await reflectAutoSyncState(enabled);
-      });
-      return snapshot();
+      return runControl(async () => {
+        await serializeClipContinuity(async () => {
+          const applied = await platform.setAutoSync(enabled);
+          await reflectAutoSyncState(applied);
+        });
+      }).then(snapshot);
     },
 
     async reflectAutoSync(
@@ -470,11 +559,29 @@ export function createAndroidBackgroundContinuityCoordinator(
     },
 
     async handleNotificationAction(
-      action: AndroidBackgroundNotificationAction
+      action: AndroidBackgroundNotificationAction,
+      isCurrent: () => Promise<boolean> = async () => true
     ): Promise<AndroidBackgroundContinuitySnapshot> {
-      if (action === "stop") return await this.setEnabledFromUser(false);
-      if (!backgroundEnabled || service !== "running") return snapshot();
-      return await this.setAutoSync(action === "resume");
+      return runControl(async () => {
+        if (!(await isCurrent())) return;
+        if (action === "stop") {
+          await setEnabledFromUser(false);
+          return;
+        }
+        if (
+          !backgroundEnabled ||
+          service !== "running" ||
+          !controlStateKnown ||
+          !autoSyncKnown
+        )
+          return snapshot();
+        const desired = action === "resume";
+        if (autoSync === desired) return snapshot();
+        await serializeClipContinuity(async () => {
+          const applied = await platform.setAutoSync(desired);
+          await reflectAutoSyncState(applied);
+        });
+      }).then(snapshot);
     },
 
     async handleTaskRemoved(): Promise<AndroidBackgroundContinuitySnapshot> {

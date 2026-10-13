@@ -1,3 +1,8 @@
+import {
+  BackgroundContinuityControls,
+  BackgroundContinuityHelp,
+} from "./BackgroundContinuityControls";
+import type { BackgroundContinuityState } from "./types";
 import { ClipSettings } from "./ClipSettings";
 import { findSessionFocus } from "./sessionFocus";
 import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
@@ -62,7 +67,6 @@ import {
   PeerConnectionInfo,
   PendingRequest,
   RelayConnectionInfo,
-  type BackgroundContinuityDiagnosticStatus,
 } from "./types";
 import { type IdentityRotationNoticeReason } from "./identityRotationNotice";
 import {
@@ -347,15 +351,7 @@ export type ClipboardAppProps = {
   onRetryRuntime?(): boolean | void | Promise<boolean | void>;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
-  backgroundContinuity?: BackgroundContinuityDiagnosticStatus & {
-    available: boolean;
-    backgroundEnabled: boolean;
-    service: "running" | "stopped";
-    connection:
-      "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
-    connectedTrustedDeviceCount: number;
-    notificationAvailability: "available" | "blocked" | "unknown";
-  };
+  backgroundContinuity?: BackgroundContinuityState;
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
   onAccept(dev: PendingRequest): Promise<PairingApprovalResult>;
@@ -374,7 +370,9 @@ export type ClipboardAppProps = {
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
   onSetAutoSync?(enabled: boolean): void | Promise<void | AutoSyncActionResult>;
   onRetryAutoSync?(): boolean | void | Promise<boolean | void>;
-  onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
+  onSetBackgroundContinuity?(enabled: boolean): Promise<void>;
+  onRefreshBackgroundContinuity?(): Promise<unknown>;
+  onOpenBackgroundNotificationSettings?(): Promise<void>;
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
   onRenameIdentity?(
     name: string,
@@ -456,6 +454,8 @@ export function ClipboardApp({
   onSetAutoSync,
   onRetryAutoSync,
   onSetBackgroundContinuity,
+  onRefreshBackgroundContinuity,
+  onOpenBackgroundNotificationSettings,
   onExportBackgroundContinuityDiagnostics,
   onRenameIdentity,
   onRenameDevice,
@@ -693,12 +693,27 @@ export function ClipboardApp({
         "Clip settings need recovery. Check the currently applied values in Settings. Any completed cleanup remains in effect.",
       diagnostics: clipPreferenceError,
     });
+  if (backgroundContinuity?.controlError)
+    issues.push({
+      id: "task:continuity:control",
+      scope: "task",
+      target: "continuity",
+      code: "continuity",
+      recovering: true,
+      message: backgroundContinuity.controlError,
+    });
   const taskIssues = useTaskRecoveryIssues(
     session,
     autoSyncRefreshError || autoSyncFeedback?.error
   );
   issues.push(...taskIssues);
   function issueRetry(issue: RecoveryIssue) {
+    if (issue.code === "continuity")
+      return onRefreshBackgroundContinuity
+        ? async () => {
+            await onRefreshBackgroundContinuity();
+          }
+        : undefined;
     if (issue.id === "clipboard:focus:observation") return onRetryPopupCapture;
     if (issue.code === "clip-settings")
       return appearanceSettings?.snapshot?.state.retentionError
@@ -1881,127 +1896,28 @@ export function ClipboardApp({
             )}
 
             {backgroundContinuity && onSetBackgroundContinuity && (
-              <div className="relay-settings">
-                <label className="peer-sub" htmlFor="background-continuity">
-                  Experimental background continuity
-                </label>
-                <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-                  Best effort on Android 12+. While enabled, Clipp shows a
-                  visible notification and holds a partial CPU wake lock while
-                  it tries to retain the current app runtime after screen-off.
-                  This can increase battery use. It does not read your clipboard
-                  without an active, focused Clipp window.
-                </p>
-                <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-                  Android may interrupt the Activity-owned WebView and network
-                  during Doze, OEM process management, process pressure, task
-                  removal, Task Manager stop, force-stop, or reboot. Reopen
-                  Clipp after an explicit stop or reconnect alert.
-                </p>
-                <select
-                  id="background-continuity"
-                  disabled={!backgroundContinuity.available}
-                  value={
-                    backgroundContinuity.backgroundEnabled
-                      ? "enabled"
-                      : "disabled"
-                  }
-                  onChange={(event) => {
-                    const enabled = event.target.value === "enabled";
-                    if (
-                      enabled &&
-                      !window.confirm(
-                        "Keep Clipp connected in the background? This experimental mode shows an ongoing notification and holds a partial CPU wake lock, which can increase battery and network use. It still works only while Android keeps Clipp's current app runtime alive. Clipboard capture requires a focused Clipp window."
-                      )
-                    )
-                      return;
-                    void onSetBackgroundContinuity(enabled);
-                  }}
-                >
-                  <option value="disabled">Disabled</option>
-                  <option value="enabled">
-                    Experimental best-effort background continuity
-                  </option>
-                </select>
-                {!backgroundContinuity.available && (
-                  <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                    Available experimentally on Android 12 and later.
-                  </p>
-                )}
-                {backgroundContinuity.available &&
-                  backgroundContinuity.notificationAvailability ===
-                    "blocked" && (
-                    <p
-                      className="peer-sub"
-                      role="status"
-                      style={{ margin: "6px 0 0" }}
-                    >
-                      Notifications are blocked. Background mode remains
-                      available, but ordinary reconnect alerts may not appear.
-                    </p>
-                  )}
-                {backgroundContinuity.available &&
-                  backgroundContinuity.backgroundEnabled && (
-                    <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                      {backgroundContinuity.service === "running"
-                        ? backgroundContinuity.connection === "connected"
-                          ? `Connected to ${backgroundContinuity.connectedTrustedDeviceCount} Trusted Device${backgroundContinuity.connectedTrustedDeviceCount === 1 ? "" : "s"}.`
-                          : `Background mode is ${backgroundContinuity.connection}.`
-                        : "Background mode is stopped. Start it from this visible control when you are ready."}
-                    </p>
-                  )}
-                {backgroundContinuity.available &&
-                  backgroundContinuity.backgroundEnabled &&
-                  backgroundContinuity.service === "stopped" && (
-                    <button
-                      className="text-button labelled-control"
-                      type="button"
-                      onClick={() => void onSetBackgroundContinuity(true)}
-                    >
-                      Start background mode
-                    </button>
-                  )}
-                {backgroundContinuity.available &&
-                  backgroundContinuity.supportState === "limited" && (
-                    <p
-                      className="peer-sub"
-                      role="status"
-                      style={{ margin: "6px 0 0" }}
-                    >
-                      This configuration is limited: Clipp observed{" "}
-                      {backgroundContinuity.observedBackgroundFailureCount}{" "}
-                      background runtime interruptions. Background connectivity
-                      is not reliable on this configuration.
-                    </p>
-                  )}
-                {backgroundContinuity.available &&
-                  backgroundContinuity.batteryOptimizationGuidance && (
-                    <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                      Troubleshooting: check Android Settings → Apps → Clipp →
-                      Battery and allow background use, then collect another
-                      diagnostic run. Clipp does not request a battery exemption
-                      during onboarding.
-                    </p>
-                  )}
-                {backgroundContinuity.available &&
-                  onExportBackgroundContinuityDiagnostics && (
-                    <button
-                      className="text-button labelled-control"
-                      type="button"
-                      onClick={() => {
-                        void Promise.resolve(
-                          onExportBackgroundContinuityDiagnostics()
-                        ).catch(() => {
-                          window.alert(
-                            "Clipp could not export background diagnostics."
-                          );
-                        });
-                      }}
-                    >
-                      Export privacy-safe diagnostics
-                    </button>
-                  )}
-              </div>
+              <BackgroundContinuityControls
+                state={backgroundContinuity}
+                setEnabled={onSetBackgroundContinuity}
+                setAutoSync={(enabled) =>
+                  session.saveAutoSync(() => onSetAutoSync?.(enabled))
+                }
+                autoSyncPending={
+                  autoSyncPending || sessionState.autoSync.pending
+                }
+                autoSyncRecoveryRequired={
+                  sessionState.autoSync.recoveryRequired
+                }
+                refresh={onRefreshBackgroundContinuity}
+                openNotificationSettings={onOpenBackgroundNotificationSettings}
+                help={() =>
+                  session.open({
+                    kind: "issues",
+                    entity: "continuity",
+                    origin: "continuity-help",
+                  })
+                }
+              />
             )}
           </>
         )}
@@ -2210,6 +2126,20 @@ export function ClipboardApp({
         <RecoveryIssues
           issues={issues}
           session={session}
+          title={
+            sessionState.tasks.at(-1)?.entity === "continuity"
+              ? "Background help and recovery"
+              : undefined
+          }
+          details={
+            sessionState.tasks.at(-1)?.entity === "continuity" &&
+            backgroundContinuity ? (
+              <BackgroundContinuityHelp
+                state={backgroundContinuity}
+                exportDiagnostics={onExportBackgroundContinuityDiagnostics}
+              />
+            ) : undefined
+          }
           retry={issueRetry}
           dismiss={issueDismiss}
           route={(issue) => {
@@ -2253,6 +2183,7 @@ export function ClipboardApp({
                           "relay",
                           "auto-sync",
                           "clip-settings",
+                          "continuity",
                         ].includes(issue.code))
                     ? "settings"
                     : issue.scope === "task" &&

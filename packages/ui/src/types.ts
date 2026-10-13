@@ -73,3 +73,18 @@ export type {
   PairingOutcome,
   PairingOutcomeSnapshot,
 } from "../../core/pairing/runtimeCoordinator";
+
+/** Applied Android continuity authority; connection labels do not imply Auto Sync. */
+export type BackgroundContinuityState = BackgroundContinuityDiagnosticStatus & {
+  available: boolean;
+  backgroundEnabled: boolean;
+  service: "running" | "stopped";
+  connection:
+    "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
+  connectedTrustedDeviceCount: number;
+  notificationAvailability: "available" | "blocked" | "unknown";
+  autoSync: boolean | null;
+  controlPending: boolean;
+  controlStateKnown: boolean;
+  controlError: string | null;
+};

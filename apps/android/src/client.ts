@@ -259,8 +259,15 @@ export class AndroidClient {
   setSharingLifetime(value: unknown) {
     return this.settingsHandler.write({ sharingLifetimeMs: value });
   }
-  setSettings(patch: unknown) {
-    return this.settingsHandler.write(patch);
+  async setSettings(patch: unknown) {
+    const result = await this.settingsHandler.write(patch);
+    try {
+      await this.backgroundContinuity.reflectAutoSync(this.autoSync);
+    } catch {
+      this.backgroundContinuity.markControlStateUnknown();
+    }
+    await this.emitState();
+    return result;
   }
   setTheme(theme: unknown) {
     return this.settingsHandler.write({ theme });
@@ -520,13 +527,13 @@ export class AndroidClient {
         androidApiLevel: () => this.androidApiLevel,
         notificationAvailability: () =>
           this.backgroundNative.notificationAvailability(),
-        readEnabled: async () =>
-          (await this.storage.get<boolean>("backgroundContinuityEnabled")) ===
-          true,
-        writeEnabled: async (enabled) => {
-          await this.storage.set("backgroundContinuityEnabled", enabled);
-          await this.backgroundNative.setEnabled(enabled);
+        readEnabled: () => this.backgroundNative.enabled(),
+        readServiceState: () => this.backgroundNative.serviceState(),
+        readAutoSync: async () => {
+          await this.settingsHandler.read();
+          return this.autoSync;
         },
+        writeEnabled: (enabled) => this.backgroundNative.setEnabled(enabled),
         setClipboardCaptureEligible: async (eligible) => {
           this.clipboard.setPollingEnabled?.(eligible);
         },
@@ -534,13 +541,17 @@ export class AndroidClient {
           await this.clipboard.resetObservationBaseline?.();
         },
         setAutoSync: async (enabled) => {
-          await this.setAutoSyncPreference(enabled);
+          return await this.setAutoSyncPreference(enabled);
         },
-        startService: () => this.backgroundNative.start(),
+        startService: (autoSync) => this.backgroundNative.start(autoSync),
         stopService: () => this.backgroundNative.stop(),
         sendHeartbeat: () => this.backgroundNative.heartbeat(),
-        updateService: (state, connectedTrustedDeviceCount) =>
-          this.backgroundNative.update(state, connectedTrustedDeviceCount),
+        updateService: (state, connectedTrustedDeviceCount, autoSync) =>
+          this.backgroundNative.update(
+            state,
+            connectedTrustedDeviceCount,
+            autoSync
+          ),
         showReconnectNotification: () =>
           this.backgroundNative.showReconnectNotification(),
         readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
@@ -823,7 +834,9 @@ export class AndroidClient {
     this.backgroundEventsBound = true;
 
     const updateActivity = () =>
-      void this.setBackgroundActivityState().then(() => this.emitState());
+      void this.setBackgroundActivityState()
+        .then(() => this.emitState())
+        .catch(() => this.emitState());
     window.addEventListener("focus", updateActivity);
     window.addEventListener("blur", updateActivity);
     document.addEventListener("visibilitychange", updateActivity);
@@ -833,7 +846,11 @@ export class AndroidClient {
       const windowFocused = event.windowFocused === true;
       void this.backgroundContinuity
         .setActivityState({ resumed, windowFocused })
-        .then(() => this.emitState());
+        .then(async () => {
+          if (resumed) await this.refreshBackgroundContinuity();
+          else await this.emitState();
+        })
+        .catch(() => this.emitState());
     });
     void this.backgroundNative.on("runtimeLost", () => {
       void this.backgroundContinuity
@@ -850,8 +867,20 @@ export class AndroidClient {
       if (action !== "pause" && action !== "resume" && action !== "stop")
         return;
       void this.backgroundContinuity
-        .handleNotificationAction(action as AndroidBackgroundNotificationAction)
-        .then(() => this.emitState());
+        .handleNotificationAction(
+          action as AndroidBackgroundNotificationAction,
+          () => this.backgroundNative.isActionCurrent(event.actionToken, action)
+        )
+        .then(
+          () => this.emitState(),
+          async () => {
+            await this.emitState();
+            await this.backgroundNative.showControlFeedback(
+              this.backgroundContinuity.snapshot().controlError ??
+                "The action could not be confirmed."
+            );
+          }
+        );
     });
     void this.backgroundNative.on("explicitText", () => {
       void this.backgroundContinuity.handleExplicitTextActionsAvailable();
@@ -1280,22 +1309,48 @@ export class AndroidClient {
         return this.autoSync;
       },
       recover: async () => {
-        await this.settingsHandler.read();
+        const settings = await this.settingsHandler.read();
+        await this.backgroundContinuity.reflectAutoSync(
+          settings.state.autoSync
+        );
       },
       current: () => this.autoSync,
       reconcile: () => this.emitState(),
     });
   }
   async refreshAutoSync() {
-    await this.settingsHandler.read();
+    const settings = await this.settingsHandler.read();
+    await this.backgroundContinuity.reflectAutoSync(settings.state.autoSync);
     await this.emitState();
     return true;
   }
 
   async setBackgroundContinuity(enabled: boolean) {
-    const state = await this.backgroundContinuity.setEnabledFromUser(enabled);
+    const results = await Promise.allSettled([
+      this.backgroundContinuity.setEnabledFromUser(enabled),
+      this.emitState(),
+    ]);
     await this.emitState();
-    return state;
+    for (const result of results)
+      if (result.status === "rejected") throw result.reason;
+    return this.backgroundContinuity.snapshot();
+  }
+
+  async refreshBackgroundContinuity() {
+    try {
+      this.androidApiLevel = await this.backgroundNative.apiLevel();
+      await this.backgroundContinuity.initialize();
+      return true;
+    } catch (error) {
+      this.backgroundContinuity.markControlStateUnknown();
+      throw error;
+    } finally {
+      await this.emitState();
+    }
+  }
+
+  async openBackgroundNotificationSettings() {
+    await this.backgroundNative.openNotificationSettings();
   }
 
   async exportBackgroundContinuityDiagnostics(): Promise<void> {

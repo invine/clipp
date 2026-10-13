@@ -198,6 +198,12 @@ function App() {
         onSetBackgroundContinuity={async (enabled) => {
           await client.setBackgroundContinuity(enabled);
         }}
+        onRefreshBackgroundContinuity={() =>
+          client.refreshBackgroundContinuity()
+        }
+        onOpenBackgroundNotificationSettings={() =>
+          client.openBackgroundNotificationSettings()
+        }
         onExportBackgroundContinuityDiagnostics={() =>
           client.exportBackgroundContinuityDiagnostics()
         }

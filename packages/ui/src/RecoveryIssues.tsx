@@ -43,7 +43,11 @@ export function RecoveryIssues({
   dismiss,
   route,
   routeLabel,
+  title,
+  details,
 }: {
+  title?: string;
+  details?: React.ReactNode;
   issues: RecoveryIssue[];
   session: UiSession;
   retry(
@@ -56,14 +60,15 @@ export function RecoveryIssues({
   const attempts = session.getSnapshot().recoveryAttempts;
   return (
     <TaskDialog
-      title="Issues and recovery"
+      title={title ?? "Issues and recovery"}
       pending={false}
       cancelLabel="Close"
       onCancel={() => session.close()}
       onDismiss={() => session.close()}
-      originKey="issues-summary"
+      originKey={session.getSnapshot().tasks.at(-1)?.origin ?? "issues-summary"}
       className="recovery-task"
     >
+      {details}
       {issues.length === 0 && <p>No issues need attention.</p>}
       {issues.map((issue) => (
         <section
@@ -114,6 +119,7 @@ export function RecoveryIssues({
                         "relay-action": "relay settings",
                         "auto-sync": "Auto Sync",
                         settings: "Settings",
+                        continuity: "background settings",
                       }[issue.code] ?? "task")
                     : issue.scope === "pairing"
                       ? "Requests"

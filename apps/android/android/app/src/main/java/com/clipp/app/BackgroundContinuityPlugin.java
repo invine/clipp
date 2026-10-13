@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Uri;
+import android.provider.Settings;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -21,6 +22,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import org.json.JSONObject;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +33,10 @@ import java.nio.charset.StandardCharsets;
 public final class BackgroundContinuityPlugin extends Plugin {
     private static final long SERVICE_START_TIMEOUT_MS = 10_000L;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private PluginCall pendingStartCall;
+    private volatile PluginCall pendingStartCall;
+    private final Map<PluginCall, Runnable> pendingStops = new ConcurrentHashMap<>();
+    private final Map<String, PluginCall> pendingUpdates = new ConcurrentHashMap<>();
+    private final Map<String, Runnable> updateTimeouts = new ConcurrentHashMap<>();
     private final Runnable serviceStartTimeout = () -> {
         PluginCall call = takePendingStartCall();
         if (call != null) call.reject("background_continuity_start_timeout");
@@ -38,22 +45,43 @@ public final class BackgroundContinuityPlugin extends Plugin {
     private final BroadcastReceiver eventReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (BackgroundContinuityService.ACTION_SERVICE_STOPPED.equals(intent.getAction())) {
+                for (PluginCall call : new java.util.ArrayList<>(pendingStops.keySet())) {
+                    handler.removeCallbacks(pendingStops.remove(call));
+                    call.resolve();
+                }
+                return;
+            }
+            if (BackgroundContinuityService.ACTION_SERVICE_UPDATED.equals(intent.getAction())) {
+                String id = intent.getStringExtra(BackgroundContinuityService.EXTRA_UPDATE_ID);
+                PluginCall call = takePendingUpdate(id);
+                if (call != null) call.resolve();
+                return;
+            }
             if (BackgroundContinuityService.ACTION_SERVICE_STARTED.equals(intent.getAction())) {
                 PluginCall call = takePendingStartCall();
                 if (call != null) call.resolve();
                 return;
             }
             if (BackgroundContinuityService.ACTION_RUNTIME_LOST.equals(intent.getAction())) {
+                rejectPendingUpdates("background_continuity_runtime_lost");
                 notifyListeners("runtimeLost", new JSObject());
                 return;
             }
             if (BackgroundContinuityService.ACTION_TASK_REMOVED.equals(intent.getAction())) {
+                rejectPendingUpdates("background_continuity_task_removed");
                 notifyListeners("taskRemoved", new JSObject());
                 return;
             }
             if (BackgroundContinuityService.ACTION_NOTIFICATION_ACTION.equals(intent.getAction())) {
+                if ("stop".equals(intent.getStringExtra(BackgroundContinuityService.EXTRA_ACTION))) {
+                    rejectPendingUpdates("background_continuity_stopped");
+                    PluginCall startCall = takePendingStartCall();
+                    if (startCall != null) startCall.reject("background_continuity_stopped");
+                }
                 JSObject event = new JSObject();
                 event.put("action", intent.getStringExtra(BackgroundContinuityService.EXTRA_ACTION));
+                event.put("actionToken", intent.getStringExtra(BackgroundContinuityService.EXTRA_ACTION_TOKEN));
                 notifyListeners("action", event, true);
                 return;
             }
@@ -70,6 +98,8 @@ public final class BackgroundContinuityPlugin extends Plugin {
         filter.addAction(BackgroundContinuityService.ACTION_TASK_REMOVED);
         filter.addAction(BackgroundContinuityService.ACTION_NOTIFICATION_ACTION);
         filter.addAction(BackgroundContinuityService.ACTION_SERVICE_STARTED);
+        filter.addAction(BackgroundContinuityService.ACTION_SERVICE_UPDATED);
+        filter.addAction(BackgroundContinuityService.ACTION_SERVICE_STOPPED);
         filter.addAction(ExplicitTextIngressStore.ACTION_EXPLICIT_TEXT_QUEUED);
         ContextCompat.registerReceiver(getContext(), eventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
@@ -88,6 +118,11 @@ public final class BackgroundContinuityPlugin extends Plugin {
     protected void handleOnDestroy() {
         PluginCall startCall = takePendingStartCall();
         if (startCall != null) startCall.reject("background_continuity_plugin_destroyed");
+        rejectPendingUpdates("background_continuity_plugin_destroyed");
+        for (PluginCall call : new java.util.ArrayList<>(pendingStops.keySet())) {
+            handler.removeCallbacks(pendingStops.remove(call));
+            call.reject("background_continuity_plugin_destroyed");
+        }
         try {
             getContext().unregisterReceiver(eventReceiver);
         } catch (IllegalArgumentException ignored) {
@@ -102,6 +137,10 @@ public final class BackgroundContinuityPlugin extends Plugin {
         diagnostics.recordNotificationAvailability(notificationsAvailable);
         JSObject result = new JSObject();
         result.put("apiLevel", Build.VERSION.SDK_INT);
+        result.put("enabledPersistenceKnown", BackgroundContinuityService.enabledPersistenceKnown());
+        result.put("enabled", BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.ENABLED, false));
+        result.put("serviceRunning", BackgroundContinuityService.isRunning());
+        result.put("actionToken", BackgroundContinuityService.currentActionToken());
         result.put("userStopped", BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.USER_STOPPED, false));
         result.put(
             "notificationAvailability",
@@ -117,15 +156,20 @@ public final class BackgroundContinuityPlugin extends Plugin {
     @PluginMethod
     public void setEnabled(PluginCall call) {
         boolean enabled = call.getBoolean("enabled", false);
-        BackgroundContinuityService.preferences(getContext()).edit()
-            .putBoolean(BackgroundContinuityService.ENABLED, enabled)
-            .putBoolean(BackgroundContinuityService.USER_STOPPED, !enabled)
-            .apply();
+        boolean saved = BackgroundContinuityService.persistEnabled(getContext(), enabled);
+        if (!saved) { call.reject("background_continuity_persistence_failed"); return; }
+        if (!enabled) {
+            rejectPendingUpdates("background_continuity_stopped");
+            PluginCall startCall = takePendingStartCall();
+            if (startCall != null) startCall.reject("background_continuity_stopped");
+            stopAndResolve(call);
+            return;
+        }
         call.resolve();
     }
 
     @PluginMethod
-    public void start(PluginCall call) {
+    public synchronized void start(PluginCall call) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             call.reject("background_continuity_unavailable");
             return;
@@ -145,6 +189,8 @@ public final class BackgroundContinuityPlugin extends Plugin {
         handler.postDelayed(serviceStartTimeout, SERVICE_START_TIMEOUT_MS);
         try {
             Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
+            Boolean autoSync = call.getBoolean("autoSync");
+            if (autoSync != null) intent.putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync);
             ContextCompat.startForegroundService(getContext(), intent);
         } catch (RuntimeException error) {
             PluginCall startCall = takePendingStartCall();
@@ -157,8 +203,10 @@ public final class BackgroundContinuityPlugin extends Plugin {
         new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition(
             BackgroundContinuityDiagnostics.ServiceTransition.STOP_REQUESTED
         );
-        getContext().stopService(new Intent(getContext(), BackgroundContinuityService.class));
-        call.resolve();
+        PluginCall startCall = takePendingStartCall();
+        if (startCall != null) startCall.reject("background_continuity_stopped");
+        rejectPendingUpdates("background_continuity_stopped");
+        stopAndResolve(call);
     }
 
     @PluginMethod
@@ -169,10 +217,43 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void update(PluginCall call) {
+        if (!BackgroundContinuityService.isRunning()) { call.reject("background_continuity_not_running"); return; }
+        String id = UUID.randomUUID().toString();
+        Runnable timeout = () -> {
+            PluginCall pending = takePendingUpdate(id);
+            if (pending != null) pending.reject("background_continuity_update_timeout");
+        };
+        pendingUpdates.put(id, call);
+        updateTimeouts.put(id, timeout);
+        handler.postDelayed(timeout, SERVICE_START_TIMEOUT_MS);
         Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_UPDATE);
         intent.putExtra(BackgroundContinuityService.EXTRA_CONNECTION_STATE, call.getString("state", "waiting"));
         intent.putExtra(BackgroundContinuityService.EXTRA_CONNECTED_DEVICE_COUNT, call.getInt("connectedTrustedDeviceCount", 0));
-        getContext().startService(intent);
+        Boolean autoSync = call.getBoolean("autoSync");
+        if (autoSync != null) intent.putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync);
+        intent.putExtra(BackgroundContinuityService.EXTRA_UPDATE_ID, id);
+        try { getContext().startService(intent); }
+        catch (RuntimeException error) {
+            PluginCall pending = takePendingUpdate(id);
+            if (pending != null) pending.reject("background_continuity_update_failed", error);
+        }
+    }
+
+    @PluginMethod
+    public void openNotificationSettings(PluginCall call) {
+        if (getActivity() == null) { call.reject("notification_settings_activity_unavailable"); return; }
+        try {
+            getActivity().startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName()));
+            call.resolve();
+        } catch (RuntimeException error) { call.reject("notification_settings_unavailable", error); }
+    }
+
+    @PluginMethod
+    public void showControlFeedback(PluginCall call) {
+        if (getActivity() == null) { call.reject("background_feedback_activity_unavailable"); return; }
+        String message = call.getString("message", "The action could not be confirmed. Reopen Clipp.");
+        getActivity().runOnUiThread(() -> Toast.makeText(getContext(), message, Toast.LENGTH_LONG).show());
         call.resolve();
     }
 
@@ -305,7 +386,38 @@ public final class BackgroundContinuityPlugin extends Plugin {
         notifyListeners("activityState", event, true);
     }
 
-    private PluginCall takePendingStartCall() {
+    private void stopAndResolve(PluginCall call) {
+        if (!BackgroundContinuityService.isRunning()) {
+            getContext().stopService(new Intent(getContext(), BackgroundContinuityService.class));
+            call.resolve();
+            return;
+        }
+        Runnable timeout = () -> {
+            if (pendingStops.remove(call) != null) call.reject("background_continuity_stop_timeout");
+        };
+        pendingStops.put(call, timeout);
+        handler.postDelayed(timeout, SERVICE_START_TIMEOUT_MS);
+        try { getContext().stopService(new Intent(getContext(), BackgroundContinuityService.class)); }
+        catch (RuntimeException error) {
+            handler.removeCallbacks(pendingStops.remove(call));
+            call.reject("background_continuity_stop_failed", error);
+        }
+    }
+
+    private PluginCall takePendingUpdate(String id) {
+        Runnable timeout = updateTimeouts.remove(id);
+        if (timeout != null) handler.removeCallbacks(timeout);
+        return pendingUpdates.remove(id);
+    }
+
+    private void rejectPendingUpdates(String reason) {
+        for (String id : new java.util.ArrayList<>(pendingUpdates.keySet())) {
+            PluginCall call = takePendingUpdate(id);
+            if (call != null) call.reject(reason);
+        }
+    }
+
+    private synchronized PluginCall takePendingStartCall() {
         handler.removeCallbacks(serviceStartTimeout);
         PluginCall call = pendingStartCall;
         pendingStartCall = null;
