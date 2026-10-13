@@ -1,11 +1,11 @@
 # Recover Chrome focus capture
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-focus-capture-09
 Priority band: 1
 Blocked by: 01, 08
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -49,3 +49,9 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-13
+
+Predecessors01/08 are resolved. Focused read health and background acknowledgement preserve runtime authority, ordinary baseline semantics, immutable Clip events and ADR-0012. Retry uses the existing ordinary processing route; no forced Clip, Auto Sync bypass, persisted baseline, popup-read/offscreen-write change or external restart/content-script ownership change.
+
+Coordinator claim `ux-focus-capture-09`: client-only isolated branch `codex/ux-09-focus-capture`, based on this claim commit. Read local preparation `ticket-09-current-prep.md`. Owning-interface TDD, current integration incorporation, mandatory merger, both source reviews/common verification and genuine focused toolbar read/recovery remain required. Root assigns a fresh synthetic-marker interval only after readiness; all old intervals are closed. At most two implementers. No native/account/push/publication authority follows from this source claim.

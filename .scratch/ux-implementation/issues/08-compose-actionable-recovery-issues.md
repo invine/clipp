@@ -1,7 +1,7 @@
 # Compose actionable recovery issues
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-issues-08
 Priority band: 1
 Blocked by: 05, 07
@@ -67,3 +67,13 @@ Ticket 10's reviewed authority integration `ee759cab` and the bounded17 clipping
 Independent evidence review passes the exact frozen `8673a9bd91f9469d73c4c34474d0a0c21bfe807f` Chrome interval `ticket-08-toolbar-faults-20261012-6a047bc9`: ordinary Clip/Copy and combined six-issue presentation at default, 24px, 32px and restored fonts; long diagnostics, Retry/Close/reopen and cold Identity recovery. Full bounds, clipping ancestors, stable geometry, painted hit ownership and negative overlay rejection/restoration are recorded. The corrected probes use measured normalized radii; earlier failed fixed-corner and entrance-animation attempts remain preserved. Root closed the profile/browser/power/assignment and restored fonts.
 
 Reports `ticket-08-17-v10-native-evidence-review.md/.json` and the versioned v10 interval remain in the ignored run evidence directory. This protected early-port presentation does not qualify real capture, actual Pairing, Android, G14 or the newly integrated theme presentation. Android boot/install passed before an approval rejection stopped UI startup; that guest closed with exact scalar/Qt restoration. The user subsequently approved guest-only root/firewall checks. A fresh current APK, assignment and effective isolation proof remain required. Ticket 08 stays claimed.
+
+## Answer — 2026-10-13
+
+Resolved scoped issue/recovery foundation on client integration `ea09b20882614656b378432a19edee8f66aceb08`, tree `2489d98ccc316b17436a385f30368bfb7803d3e6`. Mandatory integration includes independently reviewed08 compatibility940e and20 feedback2c89. Combined verification passes125 suites/903 tests/all three builds/zero lint errors. Both source/mapping and completion audits pass.
+
+Current Android rootv27/149c1e1c on APKd1ea passes genuine generation failure, failed Retry, genuine recovery and combined fault/diagnostics/control journeys at default, enlarged, rotated and restored text. Matched glyph growth, same-document continuity,36 control witnesses and all16 screenshots are independently audited. Exact raw settings, owned forwards, guest/PID/serial/CDP/log/consumer and Qt restoration pass; root independently confirms resource absence. Preserved c832/unroot and every prior failure are not promoted. Qualified historical Chrome8673/v10 supplies its earlier recorded foundation scope.
+
+Evidence outside disposable worktrees: `ticket-08-v27-149c1e1c-spec-evidence-audit.md/.json`, `ticket-08-v27-149c1e1c-standards-evidence-audit.md`, `ticket-08-completion-checklist.md`, rootv27/current-v21 interval receipts and `repairs-combined-verification.json`. Local run mapping supplies paths.
+
+No finding closes here. Later themes18/navigation19/native input13/current management/clipboard09/Pairing10/G14 and external hardware/account/assistive/transport owners retain their required gates. This scoped output no longer blocks its consumers; changed presentation remains subject to their requalification.

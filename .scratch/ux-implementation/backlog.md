@@ -50,3 +50,7 @@ Ticket [33](issues/33-deliver-pairing-outcome-interface-and-electron-journey.md)
 | Scoped output                                                                                                                                | Band | Required outputs | Findings                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---------------- | ----------------------------------------------------- |
 | [Deliver the compatible Pairing outcome interface and Electron journey](issues/33-deliver-pairing-outcome-interface-and-electron-journey.md) | 1    | 02, 05, 07       | Supporting C07 contribution; collector10 remains open |
+
+## Decisions so far — 2026-10-13
+
+[Compose actionable recovery issues](issues/08-compose-actionable-recovery-issues.md#answer--2026-10-13) is resolved after current Android recovery/text/closure, historical scoped Chrome foundation, integrated source reviews and125/903 verification. [Recover Chrome focus capture](issues/09-recover-chrome-focus-capture.md) is now claimed. The [run record](run.md) retains evidence limits and unresolved gates; no finding or later qualification closes by implication.

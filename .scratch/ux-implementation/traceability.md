@@ -137,3 +137,7 @@ Names below match the [inventory](../ux-study/flow-control-inventory.md#scenario
 
 
 Ticket20 consumes the completed compatible asset/control foundation through32. Residual17 keeps all desktop/native qualification and its collectors;20 requalifies its affected presentation and retains every G35/G36 policy, emitted-Clip, persistence and simultaneous-view requirement. No finding or addition closes through this prerequisite correction.
+
+## Recovery foundation evidence — 2026-10-13
+
+Ticket08 is resolved for integrated fault composition and qualified scoped Chrome/Android recovery/geometry. Current149c1e1c Android and historical8673/v10 Chrome evidence retain their exact limits; source/merge/125903 verification and both completion audits pass. E02/C04/A13/A17 remain open collectors pending other required contributions. Ticket09 owns its still-unrun actual focused read/Retry gate. G14, current themes/navigation, native Pairing and prior external/retained deferrals remain unchanged.
