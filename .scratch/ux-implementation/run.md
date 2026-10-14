@@ -222,3 +222,21 @@ Coordinator accepts the numbered34/35 host allocation under the approved spec cr
 Claim34 for ux-native-input-34 and35 for ux-chrome-management-35. Decision assessment: observable behavior and accepted UiSession/Back/draft/focus/signed Pairing/remove-wins/empty relay defaults/ADR0012 invariants are preserved. Shared source ownership is explicit in the external dispatch handoffs:34 Android/Electron adapters and additive host binder/TaskDialog;35 Chrome wrappers, UiSession additive destinations and ClipboardApp management. Contract collisions require coordination before edits. At most two active implementers; old native helper preparation is parked before assigning both. Release frozenfdb root-native admission to progress source; retained candidate artifacts remain historical and require explicit current-source rebinding before further execution.
 
 Required desktop OS-textG14 and Chrome nativeG01 remain unavailable (no alternate host/public owned endpoint), without waiver. All account/provider/assistive/physical/external-owner/publication deferrals persist. Primary unrelated modified files and all pre-existing work remain untouched. Native/SDK operations remain serialized/root-owned. Claims are source work, not resolution or acceptance.
+
+# Coordinator checkpoint — 2026-10-15
+
+Current isolated integration: `codex/ux-implementation-integration`, clean `c94994b53ad1efeb6c4ff221f3632f54c7edc822`, tree `68796d2579d29e928fdb54ef8fb084d0b2677133`.
+
+Reviewed source34/35 corrections are mandatory-FF integrated. Fresh routine verification passes138 suites/961 tests/all three builds/zero lint errors; exact60 build assets recorded. Current Android production644/testbfd compiled and exact public assets/Java fixture bound. Source34/35 remain claimed pending required native evidence.
+
+Chrome09 actualbf147979 qualifies scoped focused read/recovery, ordinary unchanged Retry without a new Clip, truthful unconfirmed background reply and actual held-pending target disposal2380ms before original deadline. Five case JSON/four renderer PNG; document focus and native root Tab are recorded. Both independent evidence reviews pass. Original receipt's PARTIAL status/placeholders are preserved with separate root annotations and scoped completion decision. All owned Chrome resources closed. Coordinator resolves09 and closes C16 after separate designated-contribution assessment against resolved01/08 plus09. No35 management parity/cutover or other finding promotion.
+
+User's standing instruction authorizes root to write synthetic clipboard markers and start/retry tests automatically, without readiness prompts. Each new attempt still gets a fresh isolated interval, marker equality/source/tool/owner/focus/lease guards and explicit closure. No original clipboard capture/restoration or real sign-in.
+
+Android25 v9 actual135ea37c boot/install/dual-family policy/current health prepared, then serializer rejected real Sha256 argument names before instrumentation. No native test phases ran. Failure and original receipts preserved; guestPID42422, serial/forward closed, original absent Qt sharing key restored. V10 uses the exact actual nine-key command contract,41 pure checks; both renewed reviews required before root retry. First3+1+1 only; remaining25 gates unchanged.
+
+Electron34 concrete actorv1 Spec passed; Standards found missing signal retirement/settled owned cleanup. V2 repair remains source-only/inert until renewed reviews and a fresh exclusive native assignment.
+
+Required G14 desktop OS text-size and native ChromeG01 owned public peer remain unavailable without waiver. Sign-in/provider/physical/assistive/external-owner/push/deploy deferrals persist. Primary unrelated files, branches, stashes and pre-existing worktrees remain preserved. Root serializes native tools; at most two implementers.
+
+Actual Android25 v10/c6e0ea60 first3+1+1 and owned closure pass both evidence audits. Programmatic DOM/real PendingIntent/owning bridge preferences and separate-process reopen are labelled precisely; other25 gates remain open. Root independently confirms guest47128/serial/forward absence and exact original absent Qt restoration. Next bounded on-state Stop/reopen preparation continues beside Electron34 signal repair.

@@ -67,3 +67,7 @@ The approved delivery refinement permits34 to qualify Android/Electron generic i
 | --- | --- | --- | --- |
 | [Deliver Android and Electron task input against existing tasks](issues/34-deliver-android-electron-task-input.md) | 1 | 07, 12, 32 | Supporting contribution; 13 (A03),19 (E06/C06 contributions) retained |
 | [Deliver complete Chrome management, secure handoff and task input](issues/35-deliver-chrome-management-and-task-input.md) | 1 | 02, 03, 06, 07, 08, 32, 33 | Supporting contribution; 11 (C11/C12),13 (Chrome input),10 (Chrome G01) retained |
+
+## Scoped Chrome capture decision — 2026-10-15
+
+[Recover Chrome focus capture](issues/09-recover-chrome-focus-capture.md#answer--2026-10-15) is resolved on currentc949 after genuine toolbar read/recovery/timed disposal, both independent evidence audits and138/961 verification. C16 closes only for its designated09/01/08 correction. Other claims and required/external/retained gates remain unchanged.

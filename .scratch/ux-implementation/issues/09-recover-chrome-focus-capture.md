@@ -1,7 +1,7 @@
 # Recover Chrome focus capture
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-focus-capture-09
 Priority band: 1
 Blocked by: 01, 08
@@ -55,3 +55,13 @@ Coordinator records the fresh baseline/claim, accepted decision assessment, isol
 Predecessors01/08 are resolved. Focused read health and background acknowledgement preserve runtime authority, ordinary baseline semantics, immutable Clip events and ADR-0012. Retry uses the existing ordinary processing route; no forced Clip, Auto Sync bypass, persisted baseline, popup-read/offscreen-write change or external restart/content-script ownership change.
 
 Coordinator claim `ux-focus-capture-09`: client-only isolated branch `codex/ux-09-focus-capture`, based on this claim commit. Read local preparation `ticket-09-current-prep.md`. Owning-interface TDD, current integration incorporation, mandatory merger, both source reviews/common verification and genuine focused toolbar read/recovery remain required. Root assigns a fresh synthetic-marker interval only after readiness; all old intervals are closed. At most two implementers. No native/account/push/publication authority follows from this source claim.
+
+## Answer — 2026-10-15
+
+Resolved scoped Chrome capture recovery on clean integrated candidate `c94994b53ad1efeb6c4ff221f3632f54c7edc822`, tree `68796d2579d29e928fdb54ef8fb084d0b2677133`. Reviewed source272b83e is mandatory-FF integrated; current combined verification passes138 suites/961 tests/all three builds/zero lint errors. Both source and current native evidence axes pass.
+
+Actual toolbar intervalbf147979 records genuine root native Tab focus and document focus, original synthetic-marker read, actual background acknowledgement, controlled rejection with visible recovery context, repeated focus without additional reads, a real dropped reply with truthful unconfirmed state, ordinary unchanged Retry retaining one Clip/ID, and held pending handoff disposal. Exact known popup target absence was observed2380ms before the conservative original deadline. Five case JSON and four renderer PNG witnesses are retained; disposal is JSON-only. Controlled fault injection/CDP Retry are labelled separately from actual native focus/read/background behavior.
+
+Original `PARTIAL_TICKET09_CLOSED_REQUIRES_NATIVE_EVIDENCE_REVIEW` receipt and its stale toolbar placeholder are unchanged. Separate root inventory annotations, independent closure and both evidence reviews support scoped completion. All earlier failures retain their original status. Browser exited0 gracefully; owned PID/profile/read grants closed. Standing user approval now authorizes automatic synthetic-marker writes and retries without readiness prompts; each new attempt still requires its own guarded interval and closure.
+
+Evidence outside disposable worktrees: `ticket-09-completion-decision-20261014.json`, `ticket-09-native-bf14-{standards,spec}-evidence-review.md`, `ticket-09-native-bf14-root-inventory-annotations.json`, bf147979 original receipt/root closure and `ticket-35-integrated-verification.json` under the ignored run evidence directory in [run](../run.md). C16 is assessed separately in [finding status](../finding-status.md). Other Chrome management/cutover/native Pairing/G01/G14/G36 and external restart/content-script owners retain their gates; later changed consumers must requalify affected recovery.
