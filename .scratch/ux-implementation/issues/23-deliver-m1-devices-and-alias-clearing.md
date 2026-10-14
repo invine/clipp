@@ -4,7 +4,7 @@ Type: implementation
 Status: open
 Assignee: none
 Priority band: 2
-Blocked by: 04, 05, 07, 33, 11, 17, 18, 19, 21, 22
+Blocked by: 04, 05, 07, 33, 35, 17, 18, 19, 21, 22
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -26,7 +26,7 @@ The [approved package contract](../../ux-implementation-plan/workspace-delivery-
 - [Report immediate Pairing and approval results](05-report-immediate-pairing-results.md) — consume its completed, scoped output.
 - [Preserve session tasks and editor recovery](07-preserve-session-tasks-and-editor-recovery.md) — consume its completed, scoped output.
 - [Deliver the compatible Pairing outcome interface and Electron journey](33-deliver-pairing-outcome-interface-and-electron-journey.md) — consume its completed, scoped output.
-- [Deliver complete Chrome management and secure handoff](11-deliver-complete-chrome-management.md) — consume its completed, scoped output.
+- [Deliver complete Chrome management, secure handoff and task input](35-deliver-chrome-management-and-task-input.md) — consume its completed, scoped output.
 - [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
 - [Implement persisted System, Light and Dark](18-implement-persisted-themes.md) — consume its completed, scoped output.
 - [Deliver accessible navigation and task reflow](19-deliver-accessible-navigation-and-reflow.md) — consume its completed, scoped output.
@@ -62,3 +62,7 @@ Coordinator records the fresh baseline/claim, accepted decision assessment, isol
 ## Pairing scope refinement — 2026-10-12
 
 Consume ticket 33's completed common interface and scoped Electron evidence. Residual ticket 10 retains required Android/Chrome native journeys. This consumer retains every affected host/native/cutover qualification; Electron G01 is not a cross-runtime pass.
+
+## Host delivery allocation — DRAFT 2026-10-14
+
+Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.

@@ -1,10 +1,10 @@
-# Integrate native task input and focus
+# Collect native task input and focus qualification
 
 Type: implementation
 Status: open
 Assignee: none
 Priority band: 1
-Blocked by: 07, 12, 32, 19
+Blocked by: 34, 35
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -14,20 +14,16 @@ Native Back, activation and keyboard focus reach the shared task owner exactly o
 
 ## Work and boundaries
 
-Wire Android IME-first Back, then scanner/overlay, task and root; Electron activation/readiness and real keyboard; Chrome normal popup dismissal and shared full-page task focus. Qualify adapter output on existing shared tasks now; each later migrated consumer requalifies its own host entry.
+Collect the original native task-input/focus qualification after the scoped outputs [34](34-deliver-android-electron-task-input.md) (Android/Electron existing tasks) and [35](35-deliver-chrome-management-and-task-input.md) (Chrome complete-management task input). All original A03, shared-focus/native input, scanner and later-consumer contributions remain required.15 owns real scanner cancellation/provider/camera and late-result cleanup;19 owns broader named navigation/reflow/geometry and migrated task qualification. No qualification follows from integrated source.
 
-One event cannot dismiss twice. Back/Close retains applicable drafts; scanner cancellation does not cancel submitted Pairing. Keep resumed-and-focused Android clipboard eligibility.
-
-The [approved package contract](../../ux-implementation-plan/native-host-delivery-proposal.md#native-task-input-and-focus) is normative detail for this ticket. Preserve the [shared interfaces](../../ux-implementation-plan/shared-interface-proposal.md) and [specification invariants](../spec.md#preserved-contracts). Update every affected live runtime bridge with its consumer; do not leave a successful helper behind a broken caller.
+The original approved package contract remains normative, with the dated scope-preserving allocation below. Every original required candidate/native/control/Pairing/cutover and collector contribution remains required at its named owner.
 
 ## Dependencies and integration
 
-- [Preserve session tasks and editor recovery](07-preserve-session-tasks-and-editor-recovery.md) — consume its completed, scoped output.
-- [Integrate Android content bounds and IME](12-integrate-android-content-bounds.md) — consume its completed, scoped output.
-- [Deliver local assets and Android shared controls](32-deliver-local-assets-and-android-shared-controls.md) — consume its completed compatible asset/control interface and Android control contribution.
-- [Deliver accessible navigation and task reflow](19-deliver-accessible-navigation-and-reflow.md) — consume its completed, scoped output.
+- [Deliver Android and Electron task input against existing tasks](34-deliver-android-electron-task-input.md) — consume its genuinely completed scoped output; source compatibility alone is not qualification.
+- [Deliver complete Chrome management, secure handoff and task input](35-deliver-chrome-management-and-task-input.md) — consume its genuinely completed scoped output; source compatibility alone is not qualification.
 
-The refined prerequisite supplies compatible source and its qualified Android scope. [Residual desktop controls](17-unify-local-assets-and-shared-controls.md) keep their missing G13/G14 qualification. This consumer still requires every affected desktop/native presentation gate in its own accepted scope; source compatibility is not desktop qualification.
+Original contributing descendants remain recorded in traceability/coverage instead of creating cyclic hard predecessors. All external/retained dispositions and required-if-changed candidate gates remain unchanged.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 
@@ -54,3 +50,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Host delivery allocation — DRAFT 2026-10-14
+
+Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.

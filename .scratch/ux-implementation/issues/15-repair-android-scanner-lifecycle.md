@@ -4,7 +4,7 @@ Type: implementation
 Status: open
 Assignee: none
 Priority band: 1
-Blocked by: 05, 08, 12, 13, 14
+Blocked by: 05, 08, 12, 34, 14
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -25,7 +25,7 @@ The [approved package contract](../../ux-implementation-plan/native-host-deliver
 - [Report immediate Pairing and approval results](05-report-immediate-pairing-results.md) — consume its completed, scoped output.
 - [Compose actionable recovery issues](08-compose-actionable-recovery-issues.md) — consume its completed, scoped output.
 - [Integrate Android content bounds and IME](12-integrate-android-content-bounds.md) — consume its completed, scoped output.
-- [Integrate native task input and focus](13-integrate-native-task-input.md) — consume its completed, scoped output.
+- [Deliver Android and Electron task input against existing tasks](34-deliver-android-electron-task-input.md) — consume its completed, scoped output.
 - [Diagnose the Android scanner provider](14-diagnose-android-scanner-provider.md) — consume its completed, scoped output.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
@@ -50,3 +50,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Host delivery allocation — DRAFT 2026-10-14
+
+Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.

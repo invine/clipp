@@ -1,10 +1,10 @@
-# Deliver complete Chrome management and secure handoff
+# Collect Chrome management and secure handoff qualification
 
 Type: implementation
 Status: open
 Assignee: none
 Priority band: 1
-Blocked by: 02, 03, 06, 07, 08, 33, 13, 17, 19
+Blocked by: 35
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -14,23 +14,15 @@ Canonical full-page Chrome provides complete live management before popup manage
 
 ## Work and boundaries
 
-Compose functional shared details, Requests, Pairing, editors, relay/settings and Clear consumers; co-deliver the minimum details/settings presentation needed now. Implement authenticated runtime.Port handoff plus session mailbox, exact canonical page URLs, idle reuse and new tab when occupied. Keep old entries until parity passes.
+Collect the original C11/C12 qualification after [35](35-deliver-chrome-management-and-task-input.md) supplies complete functional Chrome management, secure handoff and Chrome task input. Retain original17 desktop controls/G13/G14,19 named navigation/reflow and16 genuine notification delivery/permission/Requests-entry contributions.35 retains every scoped functional/native/Pairing/control/cutover gate. No popup retirement before complete state/action/error/draft/focus parity and secure handoff; no finding closes through source integration.
 
-No popup draft survival, content-script access or full-page current-clipboard Send/focus capture. Future density/M1/M3 polish and reset are not prerequisites. Stale entities reconcile to the correct list; no silent task replacement.
-
-The [approved package contract](../../ux-implementation-plan/correctness-delivery-proposal.md#complete-chrome-management-and-secure-destination-handoff) is normative detail for this ticket. Preserve the [shared interfaces](../../ux-implementation-plan/shared-interface-proposal.md) and [specification invariants](../spec.md#preserved-contracts). Update every affected live runtime bridge with its consumer; do not leave a successful helper behind a broken caller.
+The original approved package contract remains normative, with the dated scope-preserving allocation below. Every original required candidate/native/control/Pairing/cutover and collector contribution remains required at its named owner.
 
 ## Dependencies and integration
 
-- [Reconcile authoritative History and queries](02-reconcile-authoritative-history.md) — consume its completed, scoped output.
-- [Confirm and recover Clear all local history](03-confirm-clear-all-history.md) — consume its completed, scoped output.
-- [Report QR generation and payload Copy results](06-report-qr-and-payload-copy-results.md) — consume its completed, scoped output.
-- [Preserve session tasks and editor recovery](07-preserve-session-tasks-and-editor-recovery.md) — consume its completed, scoped output.
-- [Compose actionable recovery issues](08-compose-actionable-recovery-issues.md) — consume its completed, scoped output.
-- [Deliver the compatible Pairing outcome interface and Electron journey](33-deliver-pairing-outcome-interface-and-electron-journey.md) — consume its completed, scoped output.
-- [Integrate native task input and focus](13-integrate-native-task-input.md) — consume its completed, scoped output.
-- [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
-- [Deliver accessible navigation and task reflow](19-deliver-accessible-navigation-and-reflow.md) — consume its completed, scoped output.
+- [Deliver complete Chrome management, secure handoff and task input](35-deliver-chrome-management-and-task-input.md) — consume its genuinely completed scoped output; source compatibility alone is not qualification.
+
+Original contributing descendants remain recorded in traceability/coverage instead of creating cyclic hard predecessors. All external/retained dispositions and required-if-changed candidate gates remain unchanged.
 
 Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
 
@@ -61,3 +53,7 @@ Coordinator records the fresh baseline/claim, accepted decision assessment, isol
 ## Pairing scope refinement — 2026-10-12
 
 Consume ticket 33's completed common interface and scoped Electron evidence. Residual ticket 10 retains required Android/Chrome native journeys. This consumer retains every affected host/native/cutover qualification; Electron G01 is not a cross-runtime pass.
+
+## Host delivery allocation — DRAFT 2026-10-14
+
+Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.

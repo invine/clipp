@@ -137,18 +137,10 @@
     {
       "id": "11",
       "path": "issues/11-deliver-complete-chrome-management.md",
-      "title": "Deliver complete Chrome management and secure handoff",
+      "title": "Collect Chrome management and secure handoff qualification",
       "band": 1,
       "dependencies": [
-        "02",
-        "03",
-        "06",
-        "07",
-        "08",
-        "33",
-        "13",
-        "17",
-        "19"
+        "35"
       ],
       "findings": [
         "C11",
@@ -171,13 +163,11 @@
     {
       "id": "13",
       "path": "issues/13-integrate-native-task-input.md",
-      "title": "Integrate native task input and focus",
+      "title": "Collect native task input and focus qualification",
       "band": 1,
       "dependencies": [
-        "07",
-        "12",
-        "32",
-        "19"
+        "34",
+        "35"
       ],
       "findings": [
         "A03"
@@ -202,7 +192,7 @@
         "05",
         "08",
         "12",
-        "13",
+        "34",
         "14"
       ],
       "findings": [
@@ -219,8 +209,8 @@
       "dependencies": [
         "07",
         "08",
-        "11",
-        "13"
+        "35",
+        "34"
       ],
       "findings": [
         "A07"
@@ -306,7 +296,7 @@
         "02",
         "03",
         "07",
-        "11",
+        "35",
         "17",
         "18",
         "19"
@@ -343,7 +333,7 @@
         "05",
         "07",
         "33",
-        "11",
+        "35",
         "17",
         "18",
         "19",
@@ -363,7 +353,7 @@
       "band": 2,
       "dependencies": [
         "07",
-        "11",
+        "35",
         "17",
         "18",
         "19",
@@ -443,7 +433,7 @@
       "dependencies": [
         "07",
         "08",
-        "11",
+        "35",
         "19",
         "24",
         "29"
@@ -483,6 +473,36 @@
       ],
       "findings": [],
       "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#authoritative-pairing-outcomes"
+    },
+    {
+      "id": "34",
+      "path": "issues/34-deliver-android-electron-task-input.md",
+      "title": "Deliver Android and Electron task input against existing tasks",
+      "band": 1,
+      "dependencies": [
+        "07",
+        "12",
+        "32"
+      ],
+      "findings": [],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#native-task-input-and-focus"
+    },
+    {
+      "id": "35",
+      "path": "issues/35-deliver-chrome-management-and-task-input.md",
+      "title": "Deliver complete Chrome management, secure handoff and task input",
+      "band": 1,
+      "dependencies": [
+        "02",
+        "03",
+        "06",
+        "07",
+        "08",
+        "32",
+        "33"
+      ],
+      "findings": [],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#complete-chrome-management-and-secure-destination-handoff"
     }
   ]
 }
