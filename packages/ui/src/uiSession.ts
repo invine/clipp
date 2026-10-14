@@ -278,7 +278,11 @@ export function createUiSession() {
       id: string,
       action: () => Promise<ClipboardActionFeedback | null>
     ) {
-      if (state.historyActions[id]?.pending) return;
+      if (
+        state.historyActions[id]?.pending ||
+        state.historyActions[id]?.feedback?.requiresAcknowledgement
+      )
+        return;
       const generation = historyGeneration;
       update({
         historyActions: {

@@ -49,7 +49,11 @@ export function ClipDetails({
       <div className="task-dialog-actions">
         <button
           type="button"
-          disabled={disabled || actions[`copy:${clip.id}`]?.pending}
+          disabled={
+            disabled ||
+            actions[`copy:${clip.id}`]?.pending ||
+            actions[`copy:${clip.id}`]?.feedback?.requiresAcknowledgement
+          }
           onClick={onCopy}
         >
           Copy Clip

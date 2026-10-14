@@ -239,3 +239,26 @@ it("generic page destination never qualifies as matching a different active task
     navigationVersion: 1,
   });
 });
+it("unconfirmed Copy cannot be directly repeated or retried before explicit acknowledgement", async () => {
+  const session = createUiSession();
+  let copies = 0;
+  const action = async () => {
+    copies++;
+    return {
+      message: "Copy may already have happened.",
+      action: "dismiss" as const,
+      requiresAcknowledgement: true,
+    };
+  };
+  await session.runHistoryAction("copy:clip", action);
+  await session.retryHistoryAction("copy:clip");
+  await session.runHistoryAction("copy:clip", action);
+  expect(copies).toBe(1);
+  expect(
+    session.getSnapshot().historyActions["copy:clip"].feedback
+      ?.requiresAcknowledgement
+  ).toBe(true);
+  session.dismissHistoryAction("copy:clip");
+  await session.runHistoryAction("copy:clip", action);
+  expect(copies).toBe(2);
+});

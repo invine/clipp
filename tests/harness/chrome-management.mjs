@@ -16,24 +16,26 @@ await build({
     loader: "tsx",
     contents: `
 import React from 'react';import {createRoot} from 'react-dom/client';import {ExtensionApp} from './apps/extension/src/ExtensionApp';
-const listeners=new Set();let portListener;window.actions=[];window.clipboardReads=0;window.copyFailure=false;window.deleteFailure=false;window.renameFailure=true;
+const listeners=new Set();let portListener;window.actions=[];window.clipboardReads=0;window.copyFailure=false;window.copyReplyLost=false;window.completedCopyEffects=0;window.deleteFailure=false;window.renameFailure=true;
 Object.defineProperty(navigator,'clipboard',{value:{readText:async()=>{window.clipboardReads++;return 'fixture-only';},writeText:async()=>{}}});
 const clip={id:'clip-one',type:'text',content:'First line\\n'+('long'.repeat(500))+'\\nLast line',originPeerId:'local',capturedAt:Date.now(),shareExpiresAt:Date.now()+86400000};window.exactContent=clip.content;
 const history={sessionId:'history',revision:0,clips:[clip],pinnedIds:[]};const settings={sessionId:'settings',revision:0,state:{theme:'system',logLevel:'info',localRetentionMs:2592000000,sharingLifetimeMs:86400000,autoSync:true}};
-const state={identity:{deviceId:'local',deviceName:'Local'},devices:[{deviceId:'remote',deviceName:'Remote'}],pending:[{deviceId:'request',deviceName:'Incoming'}],waiting:[],pairingErrors:[],pairingState:{sessionId:'runtime',revision:0,outcomes:[]},peers:[],managedRelayConfigurations:[],managedRelayStates:[]};
+const state={identity:{deviceId:'local',deviceName:'Local'},devices:[{deviceId:'remote',deviceName:'Remote'},{deviceId:'revocable',deviceName:'Revocable'}],pending:[{deviceId:'request',deviceName:'Incoming'}],waiting:[],pairingErrors:[],pairingState:{sessionId:'runtime',revision:0,outcomes:[]},peers:[],managedRelayConfigurations:[],managedRelayStates:[]};
+window.rotateFixtureIdentity=id=>{state.identity={deviceId:id,deviceName:'Fixture new authority'};window.publish();};
 window.publish=()=>{state.pairingState.revision++;listeners.forEach(f=>f({type:'runtimeState',state:structuredClone(state)}));};
-let handoffCount=0;window.deliver=destination=>portListener({type:'destination',handoff:{id:'fixture-'+(++handoffCount),destination}});
+let handoffCount=0;window.deliver=destination=>{const id='fixture-'+(++handoffCount);portListener({type:'destination',handoff:{id,destination}});return id;};
 const runtime={onMessage:{addListener:f=>listeners.add(f),removeListener:f=>listeners.delete(f)},connect:()=>({name:'clipp-management-page-v1',postMessage:value=>window.actions.push({port:value}),disconnect:()=>{},onMessage:{addListener:f=>{portListener=f;}},onDisconnect:{addListener:()=>{}}}),sendMessage(message,done){window.actions.push(message);queueMicrotask(()=>{
 let response={ok:true};switch(message.type){
 case 'getRuntimeAuthority':response={sessionId:'runtime'};break;case 'getRuntimeState':response={state:structuredClone(state)};break;case 'getInitializationError':response={error:null};break;
 case 'getClipHistory':response={ok:true,snapshot:structuredClone(history)};break;case 'getSettings':response={ok:true,snapshot:structuredClone(settings)};break;
 case 'setSettings':Object.assign(settings.state,message.settings);settings.revision++;response={status:'applied',snapshot:structuredClone(settings)};break;
 case 'managementStatus':response=window.statusFailure?{ok:false,error:'fixture-status-failure'}:{ok:true,records:[]};break;case 'getConnectedPeers':response={peers:[],peerConnections:[]};break;
-case 'reuseClip':response={ok:true,outcome:window.copyFailure?'write-failed':'complete'};break;
+case 'reuseClip':if(window.copyReplyLost){window.completedCopyEffects++;history.clips.push({...clip,id:'copied-event-'+window.completedCopyEffects});history.revision++;listeners.forEach(f=>f({type:'historyChanged',sessionId:history.sessionId,revision:history.revision}));runtime.lastError={message:'lost successful Copy reply'};done(undefined);runtime.lastError=undefined;return;}response=window.copyFailure?{ok:false,error:'clipboard_operation_failed'}:{ok:true,outcome:'complete'};break;
 case 'setPin':history.pinnedIds=message.pinned?[message.id]:[];history.revision++;break;
 case 'deleteClip':if(window.deleteFailure)response={ok:false,error:'controlled-delete'};else{history.clips=[];history.revision++;}break;
 case 'clearHistory':history.clips=[];history.revision++;break;
 case 'renameLocalIdentity':response=window.renameFailure?{ok:false,error:'controlled-name'}:{ok:true,identity:{deviceId:'local',deviceName:message.name}};break;
+case 'revokeDevice':window.finishRevocation=(receipt={ok:true},publish=true)=>{if(publish){state.devices=state.devices.filter(device=>device.deviceId!==message.id);window.publish();}done(receipt);};if(window.deferRevocation)return;window.finishRevocation();return;
 case 'renameDevice':response={ok:false,error:'controlled-alias'};break;
 case 'pairDevice':response={ok:false,error:'invalid_pairing_target'};break;
 case 'getPairingTarget':response={text:'fixture-pairing-target'};break;
@@ -41,7 +43,7 @@ case 'getPendingRequests':response=state.pending;break;case 'getTrustedDevices':
 case 'respondTrust':state.pending=[];response={ok:true,admitted:message.accept};break;
 case 'managedRelayMutate':response={ok:true,result:{status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-save'}};break;
 }done(response);});}};window.chrome={runtime};
-createRoot(document.getElementById('root')).render(<ExtensionApp surface="page"/>);`,
+window.managementRoot=createRoot(document.getElementById('root'));window.managementRoot.render(<ExtensionApp surface="page"/>);`,
   },
   bundle: true,
   format: "iife",
@@ -108,6 +110,126 @@ try {
     "navigation mailbox status failure is visible and Retry recovers its current notices"
   );
 
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  await page.evaluate(() => (window.deferRevocation = true));
+  page.on("dialog", (dialog) => dialog.accept());
+  const revocation = page
+    .locator(".peer-item")
+    .filter({ hasText: "Revocable" })
+    .getByRole("button", { name: "Revoke device", exact: true });
+  await revocation.click();
+  await page.waitForFunction(
+    () => typeof window.finishRevocation === "function"
+  );
+  const revocationHandoff = await page.evaluate(() =>
+    window.deliver({ kind: "requests" })
+  );
+  await page.waitForFunction(
+    (id) =>
+      window.actions.some(
+        (action) => action.port?.type === "ack" && action.port.id === id
+      ),
+    revocationHandoff
+  );
+  assert.equal(
+    await page.evaluate(
+      (id) =>
+        window.actions.find(
+          (action) => action.port?.type === "ack" && action.port.id === id
+        ).port.status,
+      revocationHandoff
+    ),
+    "declined"
+  );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Devices", exact: true })
+      .getAttribute("aria-current"),
+    "page"
+  );
+  assert.equal(await revocation.isDisabled(), true);
+  await page.evaluate(() => window.finishRevocation());
+  await page
+    .locator(".peer-item")
+    .filter({ hasText: "Revocable" })
+    .waitFor({ state: "hidden" });
+  const settledHandoff = await page.evaluate(() =>
+    window.deliver({ kind: "requests" })
+  );
+  await page.waitForFunction(
+    (id) =>
+      window.actions.some(
+        (action) =>
+          action.port?.type === "ack" &&
+          action.port.id === id &&
+          action.port.status === "applied"
+      ),
+    settledHandoff
+  );
+  report.cases.push(
+    "actual revocation keeps session occupied, declines incoming navigation and releases after authoritative removal"
+  );
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  const remote = page.locator(".peer-item").filter({ hasText: "Remote" });
+  await remote
+    .getByRole("button", { name: "Revoke device", exact: true })
+    .click();
+  await page.waitForFunction(
+    () =>
+      window.actions.filter((action) => action.type === "revokeDevice")
+        .length === 2
+  );
+  await page.evaluate(() => window.rotateFixtureIdentity("fixture-new-local"));
+  await page
+    .locator('.peer-item.active [title="Fixture new authority"]')
+    .waitFor();
+  const foreignPending = await page.evaluate(() =>
+    window.deliver({ kind: "requests" })
+  );
+  await page.waitForFunction(
+    (id) =>
+      window.actions.some(
+        (action) =>
+          action.port?.type === "ack" &&
+          action.port.id === id &&
+          action.port.status === "declined"
+      ),
+    foreignPending
+  );
+  await page.evaluate(() => window.finishRevocation({ ok: true }, false));
+  await remote
+    .getByRole("button", { name: "Revoke device", exact: true })
+    .waitFor();
+  await page.waitForFunction(
+    () => !document.querySelector('[title="Revoke this device"]').disabled
+  );
+  assert.equal(await remote.count(), 1);
+  await remote
+    .getByRole("button", { name: "Revoke device", exact: true })
+    .click();
+  await page.waitForFunction(
+    () =>
+      window.actions.filter((action) => action.type === "revokeDevice")
+        .length === 3
+  );
+  await page.evaluate(() => {
+    window.rotateFixtureIdentity("fixture-newer-local");
+    window.finishRevocation(
+      { ok: false, error: "old identity failure" },
+      false
+    );
+  });
+  await page.waitForFunction(
+    () => !document.querySelector('[title="Revoke this device"]').disabled
+  );
+  assert.equal(
+    await page.getByText(/Device revocation could not be confirmed/).count(),
+    0
+  );
+  report.cases.push(
+    "foreign identity acknowledgements cannot remove newer authority or attach stale revocation feedback; pending work remains occupied until settlement"
+  );
+
   await page.evaluate(() =>
     window.deliver({ kind: "clip-details", entity: "clip-one" })
   );
@@ -117,14 +239,51 @@ try {
     await dialog.locator("pre").textContent(),
     await page.evaluate(() => window.exactContent)
   );
+  await page.evaluate(() => (window.copyReplyLost = true));
+  await dialog.getByRole("button", { name: "Copy Clip", exact: true }).click();
+  await dialog
+    .getByText(/Copy result is unconfirmed/)
+    .waitFor({ timeout: 3500 });
+  assert.equal(
+    await dialog.getByText(/clipboard and history were not changed/).count(),
+    0
+  );
+  assert.equal(
+    await dialog.getByRole("button", { name: "Retry", exact: true }).count(),
+    0
+  );
+  assert.equal(
+    await dialog
+      .getByRole("button", { name: "Copy Clip", exact: true })
+      .isDisabled(),
+    true
+  );
+  assert.equal(await page.evaluate(() => window.completedCopyEffects), 1);
+  await page
+    .locator('[data-clip-id="copied-event-1"]')
+    .waitFor({ state: "attached" });
+  const unknownCount = await page.evaluate(
+    () => window.actions.filter((action) => action.type === "reuseClip").length
+  );
+  await dialog.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await page.evaluate(() => (window.copyReplyLost = false));
+  await dialog.getByRole("button", { name: "Copy Clip", exact: true }).click();
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.actions.filter((action) => action.type === "reuseClip").length
+    ),
+    unknownCount + 1
+  );
+  report.cases.push(
+    "successful Copy with lost callback stays unconfirmed, blocks direct repeat and requires explicit dismissal before a deliberate new Copy"
+  );
   await page.evaluate(() => (window.copyFailure = true));
   await dialog.getByRole("button", { name: "Copy Clip", exact: true }).click();
-  await dialog.getByRole("button", { name: "Retry", exact: true }).waitFor();
+  await dialog.getByText(/Copy result is unconfirmed/).waitFor();
+  await dialog.getByRole("button", { name: "Dismiss", exact: true }).click();
   await page.evaluate(() => (window.copyFailure = false));
-  await dialog.getByRole("button", { name: "Retry", exact: true }).click();
-  await dialog
-    .getByRole("button", { name: "Retry", exact: true })
-    .waitFor({ state: "hidden" });
+  await dialog.getByRole("button", { name: "Copy Clip", exact: true }).click();
   await dialog.getByRole("button", { name: "Pin Clip", exact: true }).click();
   await dialog
     .getByRole("button", { name: "Unpin Clip", exact: true })
@@ -294,6 +453,36 @@ try {
   assert.equal(await page.evaluate(() => window.clipboardReads), 0);
   assert.deepEqual(report.errors, []);
   await page.screenshot({ path: join(out, "management.png") });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Close relay editor", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Devices", exact: true }).click();
+  await page
+    .locator(".peer-item")
+    .filter({ hasText: "Remote" })
+    .getByRole("button", { name: "Revoke device", exact: true })
+    .click();
+  await page.waitForFunction(
+    () =>
+      window.actions.filter((action) => action.type === "revokeDevice")
+        .length === 4
+  );
+  await page.evaluate(() => window.managementRoot.unmount());
+  const disposedPosts = await page.evaluate(
+    () => window.actions.filter((action) => action.port).length
+  );
+  await page.evaluate(() => window.finishRevocation({ ok: true }, false));
+  assert.equal(
+    await page.evaluate(
+      () => window.actions.filter((action) => action.port).length
+    ),
+    disposedPosts
+  );
+  assert.equal(await page.locator("#root").textContent(), "");
+  report.cases.push(
+    "disposal releases document revocation ownership and ignores late callback UI work"
+  );
 } catch (e) {
   report.errors.push(String(e));
   throw e;

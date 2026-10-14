@@ -559,8 +559,23 @@ export function ClipboardApp({
     aliasSession.getSnapshot,
     aliasSession.getSnapshot
   );
+  const revocations = useRef(new Map<string, symbol>());
+  const [revokingIds, setRevokingIds] = useState<string[]>([]);
+  const revocationOwnerAlive = useRef(true);
+  const currentIdentity = useRef(identity?.deviceId);
+  currentIdentity.current = identity?.deviceId;
+  useEffect(() => {
+    revocationOwnerAlive.current = true;
+    return () => {
+      revocationOwnerAlive.current = false;
+      for (const id of revocations.current.keys())
+        session.setActivity(`revoke:${id}`, false);
+      revocations.current.clear();
+    };
+  }, [session]);
   const [revocationError, setRevocationError] = useState<{
     deviceId: string;
+    identityId: string | undefined;
   } | null>(null);
   const [relaysOpen, setRelaysOpen] = useState(true);
   const [addingRelay, setAddingRelay] = useState(false);
@@ -1144,16 +1159,34 @@ export function ClipboardApp({
   }
 
   async function revokeDevice(device: Device): Promise<void> {
-    if (!identityReady) return;
+    if (!identityReady || revocations.current.has(device.deviceId)) return;
     const confirmed = globalThis.confirm(
       `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`
     );
     if (!confirmed) return;
+    const id = device.deviceId,
+      token = Symbol(id),
+      expectedIdentity = identity?.deviceId;
+    revocations.current.set(id, token);
+    session.setActivity(`revoke:${id}`, true);
+    setRevokingIds([...revocations.current.keys()]);
+    const ownsFeedback = () =>
+      revocationOwnerAlive.current &&
+      revocations.current.get(id) === token &&
+      currentIdentity.current === expectedIdentity;
     try {
-      await onUnpair(device.deviceId);
-      setRevocationError(null);
+      await onUnpair(id);
+      if (ownsFeedback()) setRevocationError(null);
     } catch {
-      setRevocationError({ deviceId: device.deviceId });
+      if (ownsFeedback())
+        setRevocationError({ deviceId: id, identityId: expectedIdentity });
+    } finally {
+      if (revocations.current.get(id) === token) {
+        revocations.current.delete(id);
+        session.setActivity(`revoke:${id}`, false);
+        if (revocationOwnerAlive.current)
+          setRevokingIds([...revocations.current.keys()]);
+      }
     }
   }
 
@@ -1161,9 +1194,14 @@ export function ClipboardApp({
     if (!identityReady) return;
     void session.runHistoryAction(`copy:${id}`, async () => {
       try {
-        return reuseClipFeedback(await onReuseClip(id));
+        const outcome = await onReuseClip(id);
+        return reuseClipFeedback(
+          outcome === "complete" || outcome === "copied-without-clip"
+            ? outcome
+            : "unconfirmed"
+        );
       } catch {
-        return reuseClipFeedback("write-failed");
+        return reuseClipFeedback("unconfirmed");
       }
     });
   }
@@ -1756,23 +1794,33 @@ export function ClipboardApp({
                 {devices.length === 0 && (
                   <div className="content-subtitle">No devices yet.</div>
                 )}
-                {revocationError && (
-                  <div className="content-subtitle" role="alert">
-                    Could not revoke this device. It remains trusted.
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        const device = devices.find(
-                          (candidate) =>
-                            candidate.deviceId === revocationError.deviceId
-                        );
-                        if (device) void revokeDevice(device);
-                      }}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
+                {revocationError &&
+                  revocationError.identityId === identity?.deviceId && (
+                    <div className="content-subtitle" role="alert">
+                      Device revocation could not be confirmed. Check the
+                      current device list.
+                      <button
+                        className="text-button"
+                        disabled={
+                          !identityReady ||
+                          revokingIds.includes(revocationError.deviceId) ||
+                          !devices.some(
+                            (device) =>
+                              device.deviceId === revocationError.deviceId
+                          )
+                        }
+                        onClick={() => {
+                          const device = devices.find(
+                            (candidate) =>
+                              candidate.deviceId === revocationError.deviceId
+                          );
+                          if (device) void revokeDevice(device);
+                        }}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
                 {devices.map((dev) => {
                   const connectionInfo = peerConnectionMap.get(dev.deviceId);
                   const isOnline =
@@ -1826,10 +1874,16 @@ export function ClipboardApp({
                         <button
                           className="text-button"
                           title="Revoke this device"
+                          disabled={
+                            !identityReady || revokingIds.includes(dev.deviceId)
+                          }
                           onClick={() => void revokeDevice(dev)}
                         >
                           Revoke device
                         </button>
+                        {revokingIds.includes(dev.deviceId) && (
+                          <span role="status">Revoking this device…</span>
+                        )}
                       </div>
                     </div>
                   );
@@ -2672,7 +2726,9 @@ export function ClipboardApp({
                         disabled={
                           !identityReady ||
                           sessionState.historyActions[`copy:${clip.id}`]
-                            ?.pending
+                            ?.pending ||
+                          sessionState.historyActions[`copy:${clip.id}`]
+                            ?.feedback?.requiresAcknowledgement
                         }
                         onClick={() => reuseClip(clip.id)}
                       />

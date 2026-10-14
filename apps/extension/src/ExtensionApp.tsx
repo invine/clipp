@@ -1,3 +1,4 @@
+import { reuseExtensionClip } from "./reuseActions";
 /// <reference types="chrome" />
 import { QRScanner } from "./components/QRScanner";
 import { createUiSession } from "../../../packages/ui/src/uiSession";
@@ -41,7 +42,6 @@ import {
   PairingWaiting,
   PeerConnectionInfo,
   PendingRequest,
-  ReuseClipOutcome,
 } from "../../../packages/ui";
 import { ClipboardApp } from "../../../packages/ui/src/ClipboardApp";
 
@@ -66,6 +66,13 @@ function identityRotationNoticeReason(
 
 export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
   const [session] = useState(createUiSession);
+  const ownerAlive = useRef(true);
+  useEffect(() => {
+    ownerAlive.current = true;
+    return () => {
+      ownerAlive.current = false;
+    };
+  }, []);
   const authority = useRef<ManagementAuthority>({
     ready: false,
     clipIds: [],
@@ -242,13 +249,15 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
   }
 
   async function handleUnpair(id: string) {
+    const actionRevision = nameState.revision();
     await new Promise<void>((resolve, reject) => {
       chrome.runtime.sendMessage({ type: "revokeDevice", id }, (response) => {
-        if (!response?.ok) {
-          reject(new Error(response?.error || "device_revocation_failed"));
+        if (chrome.runtime.lastError || !response?.ok) {
+          reject(new Error(response?.error || "device_revocation_unconfirmed"));
           return;
         }
-        setDevices((prev) => prev.filter((d) => d.deviceId !== id));
+        if (ownerAlive.current && actionRevision === nameState.revision())
+          setDevices((prev) => prev.filter((d) => d.deviceId !== id));
         resolve();
       });
     });
@@ -484,16 +493,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
         onCopyPairingText={(text) =>
           copyPayloadText(text, (value) => navigator.clipboard.writeText(value))
         }
-        onReuseClip={async (id) => {
-          const response = await runHistoryOperation<{
-            ok: true;
-            outcome: ReuseClipOutcome;
-          }>({
-            type: "reuseClip",
-            id,
-          });
-          return response.outcome;
-        }}
+        onReuseClip={(id) => reuseExtensionClip(chrome.runtime, id)}
         onShareNow={
           surface === "popup"
             ? async () => {
