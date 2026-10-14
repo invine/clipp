@@ -136,3 +136,51 @@ it("disposal before native listener readiness removes the late subscription with
     "pairing",
   ]);
 });
+
+it("delayed or failed listener registration leaves the live task intact and cannot acknowledge root exit", async () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.open({ kind: "paste", origin: "paste-choice" });
+  session.pairing.change("retained during native startup");
+  let event!: (event: NativeBackEvent & { owner: string }) => void;
+  let failRegistration!: (error: Error) => void;
+  const readiness: boolean[] = [];
+  const acknowledged: boolean[] = [];
+  const dispose = bindAndroidHostTaskInput(
+    createHostTaskInput(session),
+    {
+      addListener: (_name, callback) => {
+        event = callback;
+        return new Promise((_, reject) => {
+          failRegistration = reject;
+        });
+      },
+      setReady: async ({ ready }) => {
+        readiness.push(ready);
+      },
+      completeBack: async ({ handled }) => {
+        acknowledged.push(handled);
+      },
+    },
+    "document"
+  );
+  event({ owner: "document", sequence: 1, imeVisible: false });
+  await Promise.resolve();
+  failRegistration(new Error("native_listener_unavailable"));
+  await Promise.resolve();
+  await Promise.resolve();
+  event({ owner: "document", sequence: 2, imeVisible: false });
+  await Promise.resolve();
+  expect({ readiness, acknowledged }).toEqual({
+    readiness: [],
+    acknowledged: [true, true],
+  });
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "pairing",
+    "paste",
+  ]);
+  expect(session.pairing.getSnapshot().raw).toBe(
+    "retained during native startup"
+  );
+  dispose();
+});

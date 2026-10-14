@@ -25,7 +25,8 @@ public final class HostTaskInputPlugin extends Plugin {
     public void load() {
         getActivity().runOnUiThread(() -> {
             if (destroyed) return;
-            back = new OnBackPressedCallback(false) {
+            // Interception exists before async JS readiness and remains after disposal.
+            back = new OnBackPressedCallback(true) {
                 @Override public void handleOnBackPressed() {
                     if (pending != 0 || !getActivity().hasWindowFocus()) return; // Held/repeated input cannot dismiss another level.
                     View view = getBridge().getWebView();
@@ -36,6 +37,7 @@ public final class HostTaskInputPlugin extends Plugin {
                             .hide(WindowInsetsCompat.Type.ime());
                         return;
                     }
+                    if (owner == null) return; // Consume while no live listener can confirm task/root handling.
                     pending = ++sequence;
                     JSObject event = new JSObject();
                     event.put("owner", owner);
@@ -55,7 +57,7 @@ public final class HostTaskInputPlugin extends Plugin {
         getActivity().runOnUiThread(() -> {
             if (destroyed || back == null || requestedOwner == null) { call.reject("host_input_unavailable"); return; }
             if (ready) { owner = requestedOwner; pending = 0; back.setEnabled(true); }
-            else if (requestedOwner.equals(owner)) { owner = null; pending = 0; back.setEnabled(false); }
+            else if (requestedOwner.equals(owner)) { owner = null; pending = 0; }
             call.resolve();
         });
     }
@@ -73,7 +75,7 @@ public final class HostTaskInputPlugin extends Plugin {
                     // Delegate only a confirmed root event; no browser-history task routing.
                     back.setEnabled(false);
                     try { getActivity().getOnBackPressedDispatcher().onBackPressed(); }
-                    finally { if (!destroyed && owner != null) back.setEnabled(true); }
+                    finally { if (!destroyed) back.setEnabled(true); }
                 }
             }
             call.resolve();
