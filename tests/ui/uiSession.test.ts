@@ -134,3 +134,108 @@ it("opening an unrelated editor suspends its former task and retains the former 
     { kind: "relay", entity: "a", origin: "relay:a" },
   ]);
 });
+it("atomically declines destination reuse with a suspended failed draft, while matching task retains context", async () => {
+  const session = createUiSession();
+  session.open({ kind: "device-name", entity: "local", origin: "device-name" });
+  session.name.begin("local", "Original");
+  session.name.change("Retained edit");
+  await session.name.save(async () => {
+    throw new Error("disk_full");
+  });
+  session.back();
+  expect(
+    session.acceptDestination(
+      "incoming",
+      { kind: "requests" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("declined");
+  expect(session.name.getSnapshot().raw).toBe("Retained edit");
+  session.open({ kind: "device-name", entity: "local", origin: "device-name" });
+  session.update({ search: "retained" });
+  session.name.cancel();
+  session.close();
+  expect(
+    session.acceptDestination(
+      "pair",
+      { kind: "pairing" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("applied");
+  session.open({ kind: "paste", origin: "paste-choice" });
+  session.pairing.change("draft");
+  expect(
+    session.acceptDestination(
+      "pair2",
+      { kind: "pairing" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("applied");
+  expect(session.pairing.getSnapshot().raw).toBe("draft");
+  expect(session.getSnapshot().tasks).toHaveLength(2);
+});
+it("destination admission waits for authority, validates vanished Clip and is idempotent", () => {
+  const session = createUiSession();
+  const destination = { kind: "clip-details" as const, entity: "gone" };
+  expect(
+    session.acceptDestination("clip", destination, {
+      ready: false,
+      clipIds: [],
+      requestIds: [],
+    })
+  ).toBe("waiting");
+  expect(
+    session.acceptDestination("clip", destination, {
+      ready: true,
+      clipIds: [],
+      requestIds: [],
+    })
+  ).toBe("unavailable");
+  expect(session.getSnapshot()).toMatchObject({
+    destination: "history",
+    taskNotice: expect.stringContaining("no longer available"),
+  });
+  session.update({ search: "later" });
+  expect(
+    session.acceptDestination("clip", destination, {
+      ready: true,
+      clipIds: [],
+      requestIds: [],
+    })
+  ).toBe("unavailable");
+  expect(session.getSnapshot().search).toBe("later");
+});
+it("generic page destination never qualifies as matching a different active task or pending operation", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  session.open({ kind: "relay", entity: "new", origin: "relay:add" });
+  session.relay.begin();
+  expect(
+    session.acceptDestination(
+      "settings-incoming",
+      { kind: "settings" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("declined");
+  session.discard();
+  session.setActivity("settings-save", true);
+  expect(
+    session.acceptDestination(
+      "pending-incoming",
+      { kind: "settings" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("declined");
+  session.setActivity("settings-save", false);
+  expect(
+    session.acceptDestination(
+      "idle-incoming",
+      { kind: "settings", category: "general" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("applied");
+  expect(session.getSnapshot()).toMatchObject({
+    settingsCategory: "general",
+    navigationVersion: 1,
+  });
+});

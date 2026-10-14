@@ -83,6 +83,14 @@ export function createRelayEditSession() {
     if (state?.key === previous) state = { ...state, key };
   }
   return {
+    hasWork: () =>
+      [...drafts.values()].some(
+        (draft) =>
+          draft.state.pending ||
+          draft.state.error ||
+          draft.state.dirty.length ||
+          draft.state.recoveryRequired
+      ),
     getSnapshot: () => state,
     getErrors: () => errors,
     subscribe(listener: () => void) {

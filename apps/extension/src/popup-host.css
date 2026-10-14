@@ -29,3 +29,12 @@ body,
 #root {
   overflow: hidden;
 }
+
+.popup-host {
+  display: flex;
+  flex-direction: column;
+}
+.popup-host > .app-shell {
+  flex: 1;
+  min-height: 0;
+}

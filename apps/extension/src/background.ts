@@ -1,3 +1,5 @@
+import { installChromeManagement } from "./chromeManagementRuntime";
+import { MANAGEMENT_PORT } from "./chromeManagement";
 import { observeExtensionClipboard } from "./clipboardObservation";
 import { createExtensionClipboardService as composeExtensionClipboard } from "./clipboardFactory";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference";
@@ -157,7 +159,10 @@ const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 const POPUP_URL = chrome.runtime.getURL("src/popup.html");
 const OPTIONS_URL = chrome.runtime.getURL("src/options.html");
 
+const managementNavigation = installChromeManagement(chrome);
+
 chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === MANAGEMENT_PORT) return;
   if (
     !authorizedManagedRelayPort(
       port.sender,
@@ -674,11 +679,13 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
       return () => chrome.runtime.onSuspend?.removeListener(listener);
     },
     openApprovalView() {
-      if (typeof chrome.action?.openPopup === "function") {
-        void chrome.action.openPopup().catch(() => {});
-      } else {
-        void chrome.runtime.sendMessage({ type: "openPairingApproval" });
-      }
+      const id = crypto.randomUUID();
+      void managementNavigation
+        .accept({ id, destination: { kind: "requests" } })
+        .then((result) => {
+          if (result.ok) return managementNavigation.route(id);
+        })
+        .catch(() => {});
     },
   },
   network: extensionNetwork,

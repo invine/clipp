@@ -69,6 +69,13 @@ export function createNameEditSession() {
     publish(empty);
   }
   return {
+    hasWork: () =>
+      [...drafts.values()].some(
+        (draft) =>
+          draft.state.pending ||
+          draft.state.error ||
+          draft.state.raw !== draft.base
+      ),
     getSnapshot: () => snapshot,
     getErrors: () => errors,
     subscribe: (listener: () => void) => {

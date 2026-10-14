@@ -1,4 +1,5 @@
 import type { HostTaskInput } from "./hostTaskInput";
+import { ClipDetails } from "./ClipDetails";
 import {
   BackgroundContinuityControls,
   BackgroundContinuityHelp,
@@ -363,8 +364,9 @@ export type ClipboardAppProps = {
   onRequestPairingCode(): Promise<PairingCode | null>;
   onCopyPairingText(text: string): Promise<PayloadCopyResult>;
   onReuseClip(id: string): ReuseClipOutcome | Promise<ReuseClipOutcome>;
+  pairingImport?: React.ReactNode;
   taskInput?: HostTaskInput;
-  onShareNow(): void | Promise<void>;
+  onShareNow?(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
   onDismissClipboardHistoryError?(): void | Promise<void>;
@@ -443,6 +445,7 @@ export function ClipboardApp({
   onReject,
   onPairText,
   pairingDiagnostics,
+  pairingImport,
   onScanPairingCode,
   onRequestPairingCode,
   onCopyPairingText,
@@ -597,6 +600,24 @@ export function ClipboardApp({
     clearPending,
     clearReviewOpen,
   ]);
+  useEffect(() => {
+    session.setActivity(
+      "management-actions",
+      clearPending ||
+        clearRefreshPending ||
+        approvalsPending.length > 0 ||
+        isScanningPairing ||
+        Boolean(appearanceSettings?.pending)
+    );
+    return () => session.setActivity("management-actions", false);
+  }, [
+    session,
+    clearPending,
+    clearRefreshPending,
+    approvalsPending,
+    isScanningPairing,
+    appearanceSettings?.pending,
+  ]);
   const rootRef = useRef<HTMLDivElement>(null);
   const previousIdentity = useRef<string | null>(null);
   useEffect(() => {
@@ -656,6 +677,7 @@ export function ClipboardApp({
     isCramped,
     showNav,
     sessionState.destination,
+    sessionState.navigationVersion,
     sessionState.tasks.length,
   ]);
   useEffect(() => {
@@ -730,6 +752,25 @@ export function ClipboardApp({
       recovering: true,
       message: backgroundContinuity.controlError,
     });
+  const generalPreferenceError =
+    appearanceSettings?.refreshError ||
+    (appearanceSettings?.feedback?.fields?.some(
+      (field) => field === "theme" || field === "logLevel"
+    ) && appearanceSettings.feedback.status !== "applied"
+      ? appearanceSettings.feedback.error ||
+        "Settings Save could not be confirmed."
+      : null);
+  if (generalPreferenceError)
+    issues.push({
+      id: "task:preference:settings",
+      scope: "task",
+      target: "preference",
+      code: "settings",
+      recovering: true,
+      message:
+        "Settings need attention. Check the applied values before saving again.",
+      diagnostics: generalPreferenceError,
+    });
   const taskIssues = useTaskRecoveryIssues(
     session,
     autoSyncRefreshError || autoSyncFeedback?.error
@@ -743,6 +784,7 @@ export function ClipboardApp({
           }
         : undefined;
     if (issue.id === "clipboard:focus:observation") return onRetryPopupCapture;
+    if (issue.code === "settings") return appearanceSettings?.refresh;
     if (issue.code === "clip-settings")
       return appearanceSettings?.snapshot?.state.retentionError
         ? onRetryHistoryCleanup
@@ -1130,7 +1172,7 @@ export function ClipboardApp({
     if (!identityReady) return;
     void session.runHistoryAction("send:current", async () => {
       try {
-        await onShareNow();
+        await onShareNow?.();
         return null;
       } catch (error) {
         return shareNowFailureFeedback(normalizeShareNowFailureCode(error));
@@ -1629,7 +1671,12 @@ export function ClipboardApp({
               <div className="pending-list">
                 {pending.map((req) => {
                   return (
-                    <div key={req.deviceId} className="pending-card">
+                    <div
+                      key={req.deviceId}
+                      className="pending-card"
+                      tabIndex={-1}
+                      data-session-focus={`request:${req.deviceId}`}
+                    >
                       <div className="pending-card-header">
                         <div className="peer-avatar">
                           {req.deviceName?.[0] || "D"}
@@ -1795,20 +1842,29 @@ export function ClipboardApp({
           <>
             {appearanceSettings && (
               <>
-                <Appearance settings={appearanceSettings} />
-                <ClipSettings
-                  settings={appearanceSettings}
-                  onRetryRetention={
-                    onRetryHistoryCleanup
-                      ? async () => {
-                          await onRetryHistoryCleanup();
-                        }
-                      : undefined
-                  }
-                />
+                <div tabIndex={-1} data-session-focus="settings:appearance">
+                  <h3>Appearance</h3>
+                  <Appearance settings={appearanceSettings} />
+                </div>
+                <div tabIndex={-1} data-session-focus="settings:clips">
+                  <h3>Clips</h3>
+                  <ClipSettings
+                    settings={appearanceSettings}
+                    onRetryRetention={
+                      onRetryHistoryCleanup
+                        ? async () => {
+                            await onRetryHistoryCleanup();
+                          }
+                        : undefined
+                    }
+                  />
+                </div>
               </>
             )}
-            {renderRelaysSection()}
+            <div tabIndex={-1} data-session-focus="settings:relays">
+              <h3>Relays</h3>
+              {renderRelaysSection()}
+            </div>
 
             {!appearanceSettings && onSetLocalRetention && (
               <div className="relay-settings">
@@ -1840,6 +1896,9 @@ export function ClipboardApp({
 
             {onSetAutoSync && (
               <div className="relay-settings">
+                <h3 tabIndex={-1} data-session-focus="settings:general">
+                  General
+                </h3>
                 <label className="peer-sub" htmlFor="auto-sync">
                   Auto Sync
                 </label>
@@ -1921,6 +1980,63 @@ export function ClipboardApp({
                   refreshError={autoSyncRefreshError}
                   refreshing={autoSyncRefreshing}
                 />
+              </div>
+            )}
+
+            {appearanceSettings && (
+              <div className="relay-settings">
+                <label>
+                  Log level
+                  <select
+                    aria-label="Log level"
+                    value={appearanceSettings.snapshot?.state.logLevel ?? ""}
+                    disabled={
+                      !appearanceSettings.snapshot ||
+                      appearanceSettings.pending ||
+                      appearanceSettings.recoveryRequired
+                    }
+                    onChange={(event) =>
+                      void appearanceSettings.save({
+                        logLevel: event.target.value as
+                          "debug" | "info" | "warn" | "error",
+                      })
+                    }
+                  >
+                    {!appearanceSettings.snapshot && (
+                      <option value="">Unknown</option>
+                    )}
+                    {(["debug", "info", "warn", "error"] as const).map(
+                      (level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
+                <PreferenceRefreshNotice
+                  subject="General settings"
+                  error={appearanceSettings.refreshError}
+                  onRetry={appearanceSettings.refresh}
+                />
+                <PreferenceSaveFeedback
+                  subject="Log level"
+                  feedback={
+                    appearanceSettings.feedback?.fields?.includes("logLevel")
+                      ? appearanceSettings.feedback
+                      : null
+                  }
+                  refreshError={appearanceSettings.refreshError}
+                  refreshing={appearanceSettings.refreshing}
+                />
+                {appearanceSettings.recoveryRequired && (
+                  <button
+                    type="button"
+                    onClick={() => void appearanceSettings.refresh()}
+                  >
+                    Refresh General settings
+                  </button>
+                )}
               </div>
             )}
 
@@ -2121,21 +2237,23 @@ export function ClipboardApp({
           <Icon name="filters" />
           Filters
         </button>
-        <div className="send-control">
-          <IconButton
-            icon="send"
-            label="Share current clipboard now"
-            onClick={shareNow}
-            disabled={
-              !identityReady ||
-              sessionState.historyActions["send:current"]?.pending
-            }
-            aria-describedby="send-clipboard-hint"
-          />
-          <span id="send-clipboard-hint" className="control-hint">
-            Sends your current system clipboard
-          </span>
-        </div>
+        {onShareNow && (
+          <div className="send-control">
+            <IconButton
+              icon="send"
+              label="Share current clipboard now"
+              onClick={shareNow}
+              disabled={
+                !identityReady ||
+                sessionState.historyActions["send:current"]?.pending
+              }
+              aria-describedby="send-clipboard-hint"
+            />
+            <span id="send-clipboard-hint" className="control-hint">
+              Sends your current system clipboard
+            </span>
+          </div>
+        )}
       </div>
       {renderNavigation()}
 
@@ -2217,6 +2335,7 @@ export function ClipboardApp({
                           "relay",
                           "auto-sync",
                           "clip-settings",
+                          "settings",
                           "continuity",
                         ].includes(issue.code))
                     ? "settings"
@@ -2495,6 +2614,20 @@ export function ClipboardApp({
                         {openMenuId === clip.id && (
                           <div className="history-menu-dropdown">
                             <button
+                              type="button"
+                              className="text-button"
+                              onClick={() => {
+                                setOpenMenuId(null);
+                                session.open({
+                                  kind: "clip-details",
+                                  entity: clip.id,
+                                  origin: `more:${clip.id}`,
+                                });
+                              }}
+                            >
+                              View Clip details
+                            </button>
+                            <button
                               className="text-button"
                               style={{
                                 width: "100%",
@@ -2552,6 +2685,45 @@ export function ClipboardApp({
         </section>
       </main>
 
+      {sessionState.tasks.at(-1)?.kind === "clip-details" &&
+        createPortal(
+          <TaskDialog
+            title="Clip details"
+            pending={false}
+            originKey={sessionState.tasks.at(-1)?.origin}
+            returnLabel="Back to History"
+            onDismiss={() => session.back()}
+            cancelLabel="Close details"
+            onCancel={() => session.back()}
+          >
+            <ClipDetails
+              clip={clips.find(
+                (clip) => clip.id === sessionState.tasks.at(-1)?.entity
+              )}
+              pinned={pinnedSet.has(sessionState.tasks.at(-1)?.entity ?? "")}
+              disabled={
+                !identityReady ||
+                historyLoading ||
+                historyUnavailable ||
+                Boolean(historyRefreshError)
+              }
+              actions={sessionState.historyActions}
+              onCopy={() => reuseClip(sessionState.tasks.at(-1)!.entity!)}
+              onPin={() => {
+                const id = sessionState.tasks.at(-1)!.entity!;
+                setPinned(id, !pinnedSet.has(id));
+              }}
+              onDelete={() => handleDelete(sessionState.tasks.at(-1)!.entity!)}
+              onRetry={(id) => void session.retryHistoryAction(id)}
+              onDismiss={(id) => session.dismissHistoryAction(id)}
+              onHistory={() => {
+                session.back();
+                session.update({ destination: "history" });
+              }}
+            />
+          </TaskDialog>,
+          document.body
+        )}
       {sessionState.tasks.at(-1)?.kind === "pairing" &&
         createPortal(
           <TaskDialog
@@ -2593,6 +2765,7 @@ export function ClipboardApp({
                 {isScanningPairing ? "Scanning…" : "Scan QR"}
               </button>
             )}
+            {pairingImport}
             {pair.result && (
               <p role="status">{pairingSubmissionMessage(pair.result)}</p>
             )}

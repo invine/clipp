@@ -1,0 +1,26 @@
+.management-navigation {
+  padding: 0.5rem;
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
+}
+.management-navigation:empty {
+  display: none;
+}
+.management-navigation button {
+  margin-inline-end: 0.5rem;
+}
+
+.management-navigation button {
+  min-height: var(--clipp-target-min);
+  min-width: var(--clipp-target-min);
+  color: var(--clipp-text);
+  background: var(--clipp-surface-raised);
+  border: 1px solid var(--clipp-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+}
+.management-navigation button:focus-visible {
+  outline: 2px solid var(--clipp-focus);
+  outline-offset: 2px;
+}

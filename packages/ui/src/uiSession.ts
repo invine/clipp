@@ -1,3 +1,4 @@
+import { sameUiDestination, type UiDestination } from "./uiDestination";
 import type { ClipboardActionFeedback } from "./clipboardActionFeedback";
 import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
 import { createNameEditSession } from "./nameEditSession";
@@ -7,6 +8,7 @@ import { createRelayEditSession } from "./relayEditSession";
 import type { RelayActionResult } from "../../core/network/relayActions";
 export type SessionTask = {
   kind:
+    | "clip-details"
     | "device-name"
     | "alias"
     | "relay"
@@ -36,6 +38,8 @@ export type SessionContext = {
     refreshed: boolean;
     feedback: AutoSyncActionResult | null;
   };
+  navigationVersion?: number;
+  settingsCategory?: "general" | "appearance" | "clips" | "relays";
   taskNotice: string | null;
   historyActions: Record<
     string,
@@ -78,6 +82,8 @@ export function createUiSession() {
     relayMutationFeedback: {},
     relayActions: {},
   };
+  const activity = new Set<string>();
+  const appliedDestinations = new Map<string, "applied" | "unavailable">();
   let historyGeneration = 0;
   const historyRetries = new Map<
     string,
@@ -94,7 +100,116 @@ export function createUiSession() {
     if (task?.kind === "relay") relay.dismiss();
     if (task?.kind === "qr") qr.close();
   }
+  const currentDestination = (): UiDestination => {
+    const task = state.tasks[0];
+    if (task?.kind === "pairing") return { kind: "pairing" };
+    if (task?.kind === "clip-details" && task.entity)
+      return { kind: "clip-details", entity: task.entity };
+    if (state.destination === "settings")
+      return { kind: "settings", category: state.settingsCategory };
+    return { kind: state.destination };
+  };
+  const occupied = () =>
+    Boolean(
+      activity.size ||
+      state.tasks.length ||
+      name.hasWork() ||
+      alias.hasWork() ||
+      relay.hasWork() ||
+      pairing.getSnapshot().raw ||
+      pairing.getSnapshot().pending ||
+      pairing.getSnapshot().result?.ok === false ||
+      state.autoSync.pending ||
+      Object.values(state.historyActions).some((a) => a.pending) ||
+      Object.values(state.relayActions).some((a) => a.pending)
+    );
   return {
+    setActivity(key: string, pending: boolean) {
+      if (activity.has(key) === pending) return;
+      if (pending) activity.add(key);
+      else activity.delete(key);
+      update({});
+    },
+    destinationAvailability: () => ({
+      idle: !occupied(),
+      current: currentDestination(),
+    }),
+    acceptDestination(
+      id: string,
+      destination: UiDestination,
+      authority: { ready: boolean; clipIds: string[]; requestIds: string[] }
+    ) {
+      const previous = appliedDestinations.get(id);
+      if (previous) return previous;
+      if (!authority.ready) return "waiting" as const;
+      const current = currentDestination();
+      // Matching current task can be focused without replacing its context or draft.
+      const matching =
+        state.tasks[0]?.kind === destination.kind &&
+        (destination.kind === "pairing" ||
+          destination.kind === "clip-details") &&
+        sameUiDestination(current, destination);
+      if (occupied() && !matching) return "declined" as const;
+      let result: "applied" | "unavailable" = "applied";
+      if (!matching) {
+        if (destination.kind === "history")
+          update({
+            destination: "history",
+            ...destination.context,
+            showNav: false,
+          });
+        else if (destination.kind === "pairing") {
+          update({ destination: "devices" });
+          this.open({ kind: "pairing", origin: "destination:devices" });
+        } else if (destination.kind === "clip-details") {
+          update({ destination: "history" });
+          if (authority.clipIds.includes(destination.entity))
+            this.open({
+              kind: "clip-details",
+              entity: destination.entity,
+              origin: `more:${destination.entity}`,
+            });
+          else {
+            result = "unavailable";
+            update({
+              taskNotice: "This Clip is no longer available. Open History.",
+            });
+          }
+        } else if (destination.kind === "requests") {
+          update({
+            destination: "requests",
+            showNav: false,
+            focusKey: destination.entity
+              ? `request:${destination.entity}`
+              : "destination:requests",
+          });
+          if (
+            destination.entity &&
+            !authority.requestIds.includes(destination.entity)
+          ) {
+            result = "unavailable";
+            update({
+              taskNotice: "This Request is no longer available. Open Requests.",
+            });
+          }
+        } else if (destination.kind === "settings")
+          update({
+            destination: "settings",
+            settingsCategory: destination.category,
+            showNav: false,
+            focusKey: destination.category
+              ? `settings:${destination.category}`
+              : "destination:settings",
+          });
+        else update({ destination: "devices", showNav: false });
+      }
+      if (!matching)
+        update({ navigationVersion: (state.navigationVersion ?? 0) + 1 });
+      appliedDestinations.set(id, result);
+      if (appliedDestinations.size > 64)
+        appliedDestinations.delete(appliedDestinations.keys().next().value!);
+      return result;
+    },
     name,
     alias,
     relay,

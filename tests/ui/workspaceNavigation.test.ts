@@ -68,3 +68,10 @@ it("no-match feedback names the active query and Pinned scope", () => {
   );
   expect(output).toContain("No Clips match “missing” in Pinned.");
 });
+it("management surface omits current clipboard Send capability when its owner is absent", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, onShareNow: undefined })
+  );
+  expect(output).not.toContain("Share current clipboard now");
+  expect(output).not.toContain("Sends your current system clipboard");
+});

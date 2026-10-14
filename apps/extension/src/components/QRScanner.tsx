@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
 export type QRScannerProps = {
@@ -27,6 +27,15 @@ function readDataUrl(file: File): Promise<string> {
 
 export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
   const active = useRef(false);
+  const mounted = useRef(true),
+    disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const retryAction = useRef<(() => Promise<string>) | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +46,11 @@ export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
     setPending(true);
     setError(null);
     try {
-      await onScan(await action());
+      const payload = await action();
+      if (!mounted.current || disabledRef.current) return;
+      await onScan(payload);
     } catch (failure) {
+      if (!mounted.current) return;
       setError(
         failure instanceof Error
           ? failure.message
@@ -46,7 +58,7 @@ export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
       );
     } finally {
       active.current = false;
-      setPending(false);
+      if (mounted.current) setPending(false);
     }
   }
   async function decodeFile(file: File): Promise<string> {
