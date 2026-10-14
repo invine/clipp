@@ -16,6 +16,12 @@ import {
   type AndroidAppState,
 } from "./client";
 import { bindAndroidHostGeometry } from "./hostGeometryNative";
+import { createUiSession } from "../../../packages/ui/src/uiSession";
+import {
+  createHostTaskInput,
+  bindHostOverlayKeyboard,
+} from "../../../packages/ui/src/hostTaskInput";
+import { bindAndroidHostTaskInput } from "./hostTaskInputNative";
 import { scanPairingQrWithCamera } from "./qrCameraScanner";
 
 const initialState: AndroidAppState = {
@@ -38,6 +44,16 @@ const initialState: AndroidAppState = {
 };
 
 function App() {
+  const session = useMemo(() => createUiSession(), []);
+  const taskInput = useMemo(() => createHostTaskInput(session), [session]);
+  useEffect(() => {
+    const unbindNative = bindAndroidHostTaskInput(taskInput);
+    const unbindKeyboard = bindHostOverlayKeyboard(taskInput, document);
+    return () => {
+      unbindKeyboard();
+      unbindNative();
+    };
+  }, [taskInput]);
   useEffect(() => bindAndroidHostGeometry(), []);
   const client = useMemo<AndroidClient>(() => createAndroidClient(), []);
   const appearanceSettings = useRuntimeSettings({
@@ -87,6 +103,9 @@ function App() {
   }
 
   async function handleScanPairingCode(): Promise<string | null> {
+    // Scanner cancellation/late decode safety is unqualified until ticket 15.
+    // Consume native Back while this existing scanner is active; never dismiss its parent.
+    const releaseOverlay = taskInput.registerOverlay({});
     try {
       return await scanPairingQrWithCamera();
     } catch (err) {
@@ -98,12 +117,16 @@ function App() {
             : "Unable to open the camera.";
       alert(message);
       return null;
+    } finally {
+      releaseOverlay();
     }
   }
 
   return (
     <div className="android-host">
       <ClipboardApp
+        taskInput={taskInput}
+        session={session}
         appearanceSettings={appearanceSettings}
         pairingDiagnostics={
           <PairingDiagnosticsPanel

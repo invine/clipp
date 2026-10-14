@@ -61,8 +61,8 @@ export function TaskDialog({
         ? document.activeElement
         : null;
     const initial = findSessionFocus(dialogRef.current, initialFocusKey, {
-      visible: false,
-      enabled: false,
+      visible: true,
+      enabled: true,
     });
     (initial ?? returnRef.current ?? cancelRef.current)?.focus();
     const backgrounds: HTMLElement[] = [];
@@ -84,10 +84,15 @@ export function TaskDialog({
       });
       const logicalOrigin = findSessionFocus(document, originKey, {
         visible: true,
-        enabled: false,
+        enabled: true,
       });
       if (logicalOrigin) logicalOrigin.focus();
-      else if (origin?.isConnected && origin.getClientRects().length)
+      else if (
+        origin?.isConnected &&
+        origin.getClientRects().length &&
+        !origin.matches(":disabled") &&
+        !origin.closest("[inert]")
+      )
         origin.focus();
       else
         document
@@ -110,6 +115,7 @@ export function TaskDialog({
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
+      if (event.repeat) return;
       if (onDismiss) onDismiss();
       else if (!pending) onCancel();
       return;
@@ -119,17 +125,31 @@ export function TaskDialog({
       dialogRef.current?.querySelectorAll<HTMLElement>(
         'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
       ) ?? []
+    ).filter(
+      (element) =>
+        element.tabIndex >= 0 &&
+        element.getClientRects().length > 0 &&
+        !element.closest("[inert], [hidden]")
     );
     if (controls.length === 0) {
       event.preventDefault();
+      dialogRef.current?.focus();
       return;
     }
     const first = controls[0];
     const last = controls[controls.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    if (
+      event.shiftKey &&
+      (document.activeElement === first ||
+        !controls.includes(document.activeElement as HTMLElement))
+    ) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (
+      !event.shiftKey &&
+      (document.activeElement === last ||
+        !controls.includes(document.activeElement as HTMLElement))
+    ) {
       event.preventDefault();
       first.focus();
     }
@@ -142,6 +162,8 @@ export function TaskDialog({
     >
       <div
         className={`task-dialog ${className ?? ""}`}
+        data-task-dialog=""
+        data-initial-focus={initialFocusKey}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
@@ -152,7 +174,12 @@ export function TaskDialog({
       >
         <header className="task-dialog-header">
           {onDismiss && (
-            <button ref={returnRef} type="button" onClick={onDismiss}>
+            <button
+              data-task-return=""
+              ref={returnRef}
+              type="button"
+              onClick={onDismiss}
+            >
               {returnLabel}
             </button>
           )}

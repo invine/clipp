@@ -1,3 +1,4 @@
+import { createElectronTaskActivation } from "./hostTaskActivation.js";
 import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
@@ -762,6 +763,28 @@ async function bootstrap() {
     await restartMessaging();
   }
 
+  const taskActivation = createElectronTaskActivation(() => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed())
+      mainWindow.webContents.send("clipp:task-activation");
+  });
+  ipcMain.handle("clipp:task-input-ready", (event, value: unknown) => {
+    if (
+      !mainWindow ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame ||
+      !value ||
+      typeof value !== "object"
+    )
+      return;
+    const { owner, ready } = value as { owner?: unknown; ready?: unknown };
+    if (
+      typeof owner === "string" &&
+      owner.length <= 128 &&
+      typeof ready === "boolean"
+    )
+      taskActivation.setReady(owner, ready);
+  });
+
   function createWindow() {
     mainWindow = new BrowserWindow({
       width: 520,
@@ -777,6 +800,20 @@ async function bootstrap() {
         contextIsolation: true,
         nodeIntegration: false,
       },
+    });
+
+    mainWindow.webContents.on(
+      "did-start-navigation",
+      (_event, _url, inPlace, isMainFrame) => {
+        if (isMainFrame && !inPlace) taskActivation.invalidate();
+      }
+    );
+    mainWindow.webContents.on("render-process-gone", () =>
+      taskActivation.invalidate()
+    );
+    mainWindow.on("closed", () => {
+      taskActivation.invalidate();
+      mainWindow = null;
     });
 
     const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -800,6 +837,7 @@ async function bootstrap() {
       mainWindow?.show();
     });
 
+    taskActivation.activate();
     return mainWindow;
   }
 
@@ -809,6 +847,7 @@ async function bootstrap() {
     } else {
       mainWindow.show();
       mainWindow.focus();
+      taskActivation.activate();
     }
   }
 
@@ -1205,7 +1244,6 @@ async function bootstrap() {
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
     showWindow();
   });
 

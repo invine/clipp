@@ -5,6 +5,8 @@ import "./electron-host.css";
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { ClipboardApp } from "@clipp/ui";
+import { createUiSession } from "../../../packages/ui/src/uiSession";
+import { bindElectronHostTaskInput } from "./hostTaskInput";
 import {
   createRuntimeUiRecovery,
   initialRuntimeUiRecovery,
@@ -68,6 +70,8 @@ const initialState: AppState = {
 };
 
 const App = () => {
+  const session = useMemo(() => createUiSession(), []);
+  useEffect(() => bindElectronHostTaskInput(window.clipp, session), [session]);
   const appearanceSettings = useRuntimeSettings({
     send: (message) => {
       if (!window.clipp) throw new Error("bridge_unavailable");
@@ -131,6 +135,7 @@ const App = () => {
   return (
     <div className="electron-host">
       <ClipboardApp
+        session={session}
         appearanceSettings={appearanceSettings}
         clips={state.clips}
         devices={state.devices}

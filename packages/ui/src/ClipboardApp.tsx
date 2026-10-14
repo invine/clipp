@@ -1,3 +1,4 @@
+import type { HostTaskInput } from "./hostTaskInput";
 import {
   BackgroundContinuityControls,
   BackgroundContinuityHelp,
@@ -362,6 +363,7 @@ export type ClipboardAppProps = {
   onRequestPairingCode(): Promise<PairingCode | null>;
   onCopyPairingText(text: string): Promise<PayloadCopyResult>;
   onReuseClip(id: string): ReuseClipOutcome | Promise<ReuseClipOutcome>;
+  taskInput?: HostTaskInput;
   onShareNow(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
@@ -446,6 +448,7 @@ export function ClipboardApp({
   onCopyPairingText,
   onReuseClip,
   onShareNow,
+  taskInput,
   onSetPinned,
   onClearAll,
   onDismissClipboardHistoryError,
@@ -569,6 +572,31 @@ export function ClipboardApp({
   const [clearError, setClearError] = useState<string | null>(null);
   const [clearNeedsRefresh, setClearNeedsRefresh] = useState(false);
   const [clearRefreshPending, setClearRefreshPending] = useState(false);
+  useEffect(() => {
+    const menu = Boolean(openMenuId || timeMenuOpen || sourceMenuOpen);
+    const drawer = showNav && sessionState.tasks.length === 0;
+    const guardedClear = clearPending && clearReviewOpen;
+    if (!taskInput || (!menu && !drawer && !guardedClear)) return;
+    if (guardedClear) return taskInput.registerOverlay({});
+    return taskInput.registerOverlay({
+      dismiss: () => {
+        if (menu) {
+          setOpenMenuId(null);
+          setTimeMenuOpen(false);
+          setSourceMenuOpen(false);
+        } else dismissNav();
+      },
+    });
+  }, [
+    taskInput,
+    openMenuId,
+    timeMenuOpen,
+    sourceMenuOpen,
+    showNav,
+    sessionState.tasks.length,
+    clearPending,
+    clearReviewOpen,
+  ]);
   const rootRef = useRef<HTMLDivElement>(null);
   const previousIdentity = useRef<string | null>(null);
   useEffect(() => {
@@ -615,7 +643,7 @@ export function ClipboardApp({
     if (context.tasks.length) return;
     const focus = findSessionFocus(root, context.focusKey, {
       visible: true,
-      enabled: false,
+      enabled: true,
     });
     (
       focus ?? root.querySelector<HTMLElement>("[data-session-focus=workspace]")
@@ -940,6 +968,7 @@ export function ClipboardApp({
       .then(() => {
         setClearNeedsRefresh(false);
         setClearReviewOpen(false);
+        session.complete("clear");
       })
       .catch(() => {
         setClearNeedsRefresh(true);
@@ -2315,9 +2344,11 @@ export function ClipboardApp({
 
               <button
                 className="text-button"
+                data-session-focus="history-clear"
                 onClick={() => {
                   setClearError(null);
                   setClearReviewOpen(true);
+                  session.open({ kind: "clear", origin: "history-clear" });
                 }}
                 disabled={
                   historyLoading ||
@@ -2684,6 +2715,7 @@ export function ClipboardApp({
         )}
 
       {qrState.open &&
+        sessionState.tasks.at(-1)?.kind === "qr" &&
         createPortal(
           <TaskDialog
             title="Pair this device"
@@ -2708,6 +2740,7 @@ export function ClipboardApp({
         )}
 
       {clearReviewOpen &&
+        sessionState.tasks.at(-1)?.kind === "clear" &&
         createPortal(
           <ClearHistoryReview
             totalCount={clips.length}
@@ -2726,6 +2759,7 @@ export function ClipboardApp({
             onCancel={() => {
               if (clearPending) return;
               setClearReviewOpen(false);
+              session.complete("clear");
               setClearError(null);
             }}
             onConfirm={clearAllHistory}

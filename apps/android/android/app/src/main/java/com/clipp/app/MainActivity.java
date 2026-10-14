@@ -21,6 +21,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackgroundContinuityPlugin.class);
         registerPlugin(ManagedRelayPlugin.class);
         registerPlugin(HostGeometryPlugin.class);
+        registerPlugin(HostTaskInputPlugin.class);
         super.onCreate(savedInstanceState);
         applyNativeTextPreference();
         activityOwnedRuntimeAvailable = true;

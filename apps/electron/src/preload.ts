@@ -63,6 +63,13 @@ type AppState = {
 };
 
 const api = {
+  setTaskInputReady: (owner: string, ready: boolean): Promise<void> =>
+    ipcRenderer.invoke("clipp:task-input-ready", { owner, ready }),
+  onTaskActivation: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("clipp:task-activation", handler);
+    return () => ipcRenderer.removeListener("clipp:task-activation", handler);
+  },
   getSettings: () =>
     ipcRenderer.invoke("clipp:get-settings") as Promise<{
       ok: true;

@@ -92,6 +92,7 @@ export function createUiSession() {
     if (task?.kind === "device-name") name.dismiss();
     if (task?.kind === "alias") alias.dismiss();
     if (task?.kind === "relay") relay.dismiss();
+    if (task?.kind === "qr") qr.close();
   }
   return {
     name,
