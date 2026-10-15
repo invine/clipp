@@ -245,3 +245,14 @@ Actual Android25 v10/c6e0ea60 first3+1+1 and owned closure pass both evidence au
 ## Closure-focused continuation — 2026-10-15
 
 User requested two implementers focused on closing tickets and carrying forward existing approvals. Resumed20 durable production composition acceptance;34 source handoff complete, actual native remains root-owned and required. Parked25 worker experiment. Claim26 ux-tray-26 under the accepted small related tray-cleanup exception; no technical predecessor and no urgent source implementation is displaced. Root continues urgent20/34 qualification. Dock change requires actual reproduction; all original26/native and other ticket gates remain. Two source implementers20/26; no third author. No ticket resolved by this dispatch.
+
+
+## Parallel source delivery and native-control blocker — 2026-10-15
+
+Two implementers delivered20 durable SQLite/production-factory acceptance82f6902 and26 duplicate tray cleanup e5f2407. Both source axes pass, mandatory merger preserves both ancestries at55870d7dae378cfef9b88aa620ae725864a79bac/treeb83ee2305f5e25700fead27a32c99e79f5934876. Fresh root npm run verify passes139 suites/962 tests, all typechecks/all three builds, lint0errors833existingwarnings. Primary unrelated changes remain preserved. No additional implementation ticket or finding closes; canonical count remains13/35.
+
+Root direct native input observed Device Name entry/Tab/Shift-Tab/Escape/retained draft/query and initial Pairing/Paste behavior, with bounded evidence only. Later native state was inconsistent: accessibility/pixels disagreed, frames unavailable, and ScreenCaptureKit -3811 failed after tool-session recovery. Native tray/Open/Dock/Quit, remaining34 and20 cross-runtime gates remain unqualified; no product defect or full native pass is inferred. Original timed actor7b65 failed120s ACK; its original guards/failure stay unchanged. All owned native jobs closed, process-local clipboard only; no host clipboard interval remains.
+
+Old CUA REPL state was explicitly archived by identifiers/hashes after all eight requests expired and all owned native jobs closed, then reset to recover contradictory control state. Original source definitions and files remain preserved, but they are no longer loaded; old actor/native manifests must not reuse a fresh CUA context without their required admission. Recovery did not resolve the native capture failure. Automatic review initially rejected a native restart; the same action was allowed after read-only facts established existing user authorization and bounded disposable-profile/memory-clipboard scope, without a repeated approval question.
+
+See ignored current-handoff-latest.md/resume-current.md and exact integration/native receipts. Required G14 still has no alternate host; Chrome native G01 still has no owned public/trusted peer. All sign-in, physical/OEM/assistive/provider and external-owner/CI/publication deferrals remain.
