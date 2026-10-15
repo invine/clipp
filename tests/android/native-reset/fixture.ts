@@ -26,6 +26,7 @@ import {
 // Bundled only into the explicitly opted-in acceptance APK. No application client is started.
 const PREFIX = "clipp-android:";
 const META = "native-webview-reset-fixture";
+const WEB_SEED_CANARY = PREFIX + "native-webview-durable-seed";
 const scoped = identityResetStorageKeys(IDENTITY_KEY);
 const preserved = {
   theme: "dark",
@@ -53,6 +54,9 @@ type FixtureMeta = {
   pausePid?: number;
   boundary?: string;
   historyCheckpoint: unknown;
+  webSeedCanary: string;
+  seedOrigin: string;
+  seedPid: number;
 };
 type Command = {
   action: "seed" | "park" | "recover";
@@ -204,6 +208,7 @@ async function pause(boundary: string): Promise<void> {
     candidatePeerId,
     validCandidate: true,
     sameCandidate: true,
+    webSeedReopened: true,
     processId: commandPid,
   };
   // Never resolve: root kills the live WebView process at this acknowledged production effect.
@@ -318,6 +323,10 @@ async function seed(caseId: string) {
   }
   for (const [key, value] of Object.entries(preserved))
     await storage.identityResetStorage.set(key, value);
+  // Written last to the same origin/area. Java waits for observed own-file bytes,
+  // then the next process must still read every original value through WebView.
+  const webSeedCanary = `native-reset-web-seed-${caseId}-${crypto.randomUUID()}`;
+  localStorage.setItem(WEB_SEED_CANARY, webSeedCanary);
   await history.set("synthetic-legacy-clip", {
     syntheticHistory: "legacy",
     pinned: true,
@@ -339,12 +348,16 @@ async function seed(caseId: string) {
     operationId: `native-owner-${caseId}`,
     formerPeerId: former.peerId,
     historyCheckpoint,
+    webSeedCanary,
+    seedOrigin: location.origin,
+    seedPid: commandPid,
   });
   const derived = await deriveIdentityKeyMaterial(identity.privateKey!);
   requireProof(derived.peerId === identity.deviceId, "former_identity_invalid");
   fixture.status = {
     state: "seeded",
     validFormerIdentity: true,
+    webSeedCanary,
     processId: commandPid,
   };
 }
@@ -353,16 +366,24 @@ async function park(caseId: string, boundary: string | undefined) {
   target = boundary;
   const meta = await raw<FixtureMeta>(META);
   requireProof(meta?.caseId === caseId, "wrong_case");
+  requireProof(meta.seedPid !== commandPid, "seed_process_not_restarted");
+  requireProof(meta.seedOrigin === location.origin, "seed_origin_changed");
+  requireProof(
+    localStorage.getItem(WEB_SEED_CANARY) === meta.webSeedCanary,
+    "seed_web_canary_missing"
+  );
+  const former = await raw<DeviceIdentity>(IDENTITY_KEY);
+  requireProof(former?.deviceId === meta.formerPeerId, "seed_identity_changed");
   for (const key of scoped) {
     requireProof((await raw(key)) !== undefined, "seed_native_scope_missing");
     requireProof(
-      localStorage.getItem(PREFIX + key) !== null,
-      "seed_web_scope_missing"
+      localStorage.getItem(PREFIX + key) ===
+        JSON.stringify(key === IDENTITY_KEY ? former : { staleWebScope: key }),
+      "seed_web_scope_changed"
     );
   }
   requireProof((await history.getAll()).length === 2, "seed_history_missing");
   // Recreate active process memory fallbacks so their deletion is observed in this actual owner run.
-  const former = await raw<DeviceIdentity>(IDENTITY_KEY);
   for (const key of scoped)
     await memoryOnly(() =>
       memoryStorage.set(
@@ -410,6 +431,11 @@ async function recover(caseId: string) {
   );
   requireProof(meta.pausePid !== commandPid, "process_not_restarted");
   await candidateProof(meta);
+  requireProof(
+    meta.seedOrigin === location.origin &&
+      localStorage.getItem(WEB_SEED_CANARY) === meta.webSeedCanary,
+    "durable_web_baseline_lost"
+  );
   const transition = owner();
   const startup = await transition.recoverOrRotate();
   if (meta.boundary !== "journal-sanitized")
