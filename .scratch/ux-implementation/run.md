@@ -282,3 +282,8 @@ Two implementers delivered Electron/Chrome source 3465c9db8d4ef66ad51b8697a3fb7c
 28 stays claimed: real browser/native file-backed and abrupt-stop storage qualification remains required. Graceful SQLite reopen, fake IndexedDB/callback stores and JVM/build checks are labelled precisely. G41/full Generate new identity addition remain open; no runtime/UI reset capability is enabled before 29/30. Canonical resolved count stays 14/35. All previous failed native gates and deferrals persist.
 
 Actual hook exposed pre-existing Git fixture environment inheritance. The owned failing run stopped; primary hashes/refs/stashes/historical worktree heads remained preserved. Only introduced core.bare and Fixture local identity settings were restored. Full unchanged tracked hook gates then passed with Git-local variables scrubbed by the owned ignored launcher; source tree unchanged across amendment. Incident/recovery receipt and local reproduction notes retained. No tracked tooling mutation, native runtime/harness, clipboard, account, publication or deployment action.
+
+
+## Whole-backlog continuation — 2026-10-16
+
+User asks implement-spec until all tickets are done. Refresh28 qualification with two implementers on isolated current integration, targeting actual durable-store process/file recovery. All existing statuses/gates preserved; required G14 environment and native ChromeG01 endpoint remain unavailable. No approval question repeats; no consumer dispatch across unresolved hard predecessors. Root will integrate and qualify each concrete output and keep progressing through newly released frontier.
