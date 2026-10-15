@@ -59,14 +59,19 @@ export function matchesResetCut(key: string, value: unknown, phase: string) {
   const journal = value as { phase?: string } | undefined;
   return (
     (key === "manualIdentityReset" &&
-      journal?.phase ===
+      journal?.phase !== undefined &&
+      journal.phase ===
         (
           {
             intent: "accepted",
+            quiescence: "cleaning",
             cleanup: "installing",
             candidate: "finalizing",
           } as Record<string, string>
         )[phase]) ||
+    (phase === "partial-deletion" &&
+      key === "trustedDevices" &&
+      value === undefined) ||
     (phase === "receipt" && key === "manualIdentityResetReceipt") ||
     (phase === "guard" && key === "manualIdentityResetCompleted") ||
     (phase === "sanitization" &&
@@ -112,6 +117,37 @@ export async function recoverResetStore(
       : journal?.candidate.deviceId === candidatePeerId,
     "accepted candidate or journal sanitization was lost"
   );
+  let recoveredBoundary;
+  if (phase === "quiescence" || phase === "partial-deletion") {
+    check(
+      journal?.phase === "cleaning",
+      "durable quiescence checkpoint was lost"
+    );
+    check(
+      (await storage.get<any>("identity"))?.deviceId === journal.formerPeerId,
+      "former identity disappeared before its deletion boundary"
+    );
+    const partial = phase === "partial-deletion";
+    for (const key of scopedKeys) {
+      check(
+        ((await storage.get(key)) === undefined) ===
+          (partial && key === "trustedDevices"),
+        "scoped deletion boundary changed after interruption"
+      );
+    }
+    const historyEmpty = (await history.getAll()).length === 0;
+    check(
+      historyEmpty === partial,
+      "History deletion crossed the durable checkpoint"
+    );
+    recoveredBoundary = {
+      journalPhase: journal.phase,
+      formerIdentityPresent: true,
+      removedScopedKeys: partial ? ["trustedDevices"] : [],
+      laterScopedKeysPresent: true,
+      historyEmpty,
+    };
+  }
   const result = await owner.resumeIdentityReset({
     operationId: "synthetic-reset",
   });
@@ -196,6 +232,7 @@ export async function recoverResetStore(
     "dismissal removed the independent replay guard"
   );
   return {
+    ...(recoveredBoundary ? { recoveredBoundary } : {}),
     outcome: result.outcome,
     candidatePeerId,
     replay: replay.outcome,

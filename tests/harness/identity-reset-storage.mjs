@@ -217,14 +217,23 @@ try {
       ["browser", "worker"].includes(interruption),
       "unknown interruption kind"
     );
-    for (const phase of [
+    const supportedPhases = [
       "intent",
+      "quiescence",
+      "partial-deletion",
       "cleanup",
       "candidate",
       "receipt",
       "guard",
       "sanitization",
-    ]) {
+    ];
+    const phases =
+      process.env.CLIPP_STORAGE_PHASES?.split(",") || supportedPhases;
+    assert(
+      phases.every((phase) => supportedPhases.includes(phase)),
+      "unknown storage phase"
+    );
+    for (const phase of phases) {
       const profile = path.join(owned, `profile-${interruption}-${phase}`);
       let instance = await launch(profile);
       const identity = await instance.worker.evaluate(
@@ -249,7 +258,7 @@ try {
         await delay(100);
       }
       assert(checkpoint, `phase ${phase} was not reached`);
-      if (phase !== "intent")
+      if (!["intent", "quiescence"].includes(phase))
         assert(
           checkpoint.strictAcknowledgements.includes("strict"),
           "native strict transaction was not acknowledged"

@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 
 it.each([
   "intent",
+  "quiescence",
   "cleanup",
   "candidate",
   "receipt",

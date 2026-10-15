@@ -103,6 +103,8 @@ scope.qualify = async (request: {
     throw new Error("requested storage boundary was not reached");
   }
   check(request.candidatePeerId, "candidate missing");
+  if (request.phase === "partial-deletion")
+    await history.verifyIdentityResetDataCleared();
   scope.stage = "recover";
   const result = await recoverResetStore(
     owner,
