@@ -1,11 +1,11 @@
 # Integrate durable reset storage adapters
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-reset-storage-28
 Priority band: 3
 Blocked by: 27
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: 2026-10-15 user-directed durable adapters with two implementers; qualification gaps retained
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -49,3 +49,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Dispatch — 2026-10-15
+
+The user explicitly requested ticket 28 implementation with two implementers, available checks and preservation of unqualified native gates. Core 27 is resolved at source4cd6fc94fc25f76f636f776712c4122eb799e9f5; current clean integration before dispatch is b86785d14dfa58a9d7f2258decf8016e0155e162 on codex/ux-implementation-integration. One claim ux-reset-storage-28 has two coordinated isolated source assignments: Electron SQLite plus Chrome storage/IndexedDB adapters; Android strict native persistence plus web fallback reconciliation. Coordinator owns all shared-file arbitration, integration and qualification.
+
+Decision assessment: preserve accepted ADR0004 automatic rotation and ADR0008 application-owned key storage. Consume the existing serialized reset owner and accepted private intent/public receipt/replay boundaries. Do not create a second transition owner, accept fallback promises as durable proof, erase installation preferences or credentials, or activate a runtime without its complete writer/native ingress fences. Runtime admission/queue/restart remains29 and actions/UI30. Adapter composition must include its owning consumer without enabling an unsafe capability.
+
+Approved test seams are the specified real SQLite store/reopen transaction, Chrome storage plus owning IndexedDB history generations, Android strict native storage commit/error interface with reconciliation of Preferences/localStorage/memory, and actual core coordinator composition. TDD at these already accepted seams requires no repeated approval. Available source, adapter, build and native unit checks run now; real browser/native abrupt-stop qualification is recorded separately and may remain unqualified. No reset of an operator profile, account/sign-in, host clipboard or global setting. Use disposable synthetic stores. All earlier failed gates/deferrals and standing approvals persist; no new harness preparation, push, PR or deployment.
