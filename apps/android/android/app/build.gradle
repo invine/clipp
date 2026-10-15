@@ -33,6 +33,17 @@ android {
         }
     }
     testBuildType project.hasProperty("clippAcceptance") ? "acceptance" : "debug"
+    if (project.hasProperty("clippIdentityResetAcceptance")) {
+        if (!project.hasProperty("clippAcceptance")) throw new GradleException("Identity reset fixtures require clippAcceptance")
+        sourceSets {
+            acceptance {
+                java.srcDir 'src/identityResetAcceptance/java'
+                manifest.srcFile 'src/identityResetAcceptance/AndroidManifest.xml'
+                assets.srcDir layout.buildDirectory.dir('generated/identityResetAcceptanceAssets')
+            }
+            androidTest.java.srcDir 'src/identityResetAcceptanceAndroidTest/java'
+        }
+    }
     testOptions {
         managedDevices {
             devices {
