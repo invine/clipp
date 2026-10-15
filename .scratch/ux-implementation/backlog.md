@@ -71,3 +71,8 @@ The approved delivery refinement permits34 to qualify Android/Electron generic i
 ## Scoped Chrome capture decision — 2026-10-15
 
 [Recover Chrome focus capture](issues/09-recover-chrome-focus-capture.md#answer--2026-10-15) is resolved on currentc949 after genuine toolbar read/recovery/timed disposal, both independent evidence audits and138/961 verification. C16 closes only for its designated09/01/08 correction. Other claims and required/external/retained gates remain unchanged.
+
+
+## Core manual reset decision — 2026-10-15
+
+[Implement the durable manual reset transition](issues/27-implement-durable-manual-reset.md#answer--2026-10-15) is resolved at integrated `4cd6fc94fc25f76f636f776712c4122eb799e9f5` after two coordinated contributions, mandatory integration, both reviews and fresh 140-suite / 999-test / three-build verification. This completes the core package only; tickets 28–31 retain actual durable-host/runtime/native/UI qualification. All earlier failed gates and deferrals remain.

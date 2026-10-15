@@ -1,7 +1,7 @@
 # Implement the durable manual reset transition
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-reset-27
 Priority band: 3
 Blocked by: none
@@ -59,3 +59,16 @@ Claim ux-reset-27, baseline37bfe9990fdbcb8bdaa7f67cc991388ee23fcf14 on codex/ux-
 Accepted public test seams are the specified beginIdentityReset/reconcile/resume/dismiss-reminder actions on the existing core transition owner, injected authoritative repository/storage/cleanup/fence ports, and the existing runtime lifecycle/service-start owner. Use owning TDD through these seams, including failure/ambiguous acceptance, one candidate, cleanup/finalization/replay/reminder policy and automatic coexistence. Preserve ADR0004 automatic immediate shutdown/remove-wins/Identity Loss/revoked local-only behavior and ADR0008 key privacy/storage boundaries. Manual accepted recovery seals old local work, uses roll-forward, and requires durable receipt plus replay guard before private journal sanitization. One shared serialization owner; no second router, UI store or transition lock.
 
 No user action is enabled and no host storage adapter/ingress capability is advertised by core-only completion. Actual strict adapters, queues, restart and UI stay with28–31 and their original gates. No native/CUA/SDK/clipboard/global settings/harness changes. Npm check before code commits; both source reviews, mandatory merger and fresh integrated verify required. Existing approvals persist; no push/PR/deploy/sign-in.
+
+
+## Answer — 2026-10-15
+
+Resolved for the approved core transition and startup/recovery scope. Two isolated implementers co-delivered one canonical claim. Transition commits `bdd17793aabce58d1060cb406a4c42bb425b9dff` and `a18f5599a14c6f219066de0f40c69f74304e3662`, plus startup commit `4cd6fc94fc25f76f636f776712c4122eb799e9f5`, were fast-forward integrated by the mandatory merger on `codex/ux-implementation-integration`. Integrated/reviewed/tested source is `4cd6fc94fc25f76f636f776712c4122eb799e9f5`, tree `b935425152c43502cf8b9afdaabc79e5d4872a50`, clean. Baseline: `2ce3c5f3c1547b9602de4fa618e7a5e2c9e8f078`.
+
+The common owner now supplies typed begin/reconcile/resume/dismiss actions, validated same-candidate durable intent, ambiguous acceptance reconciliation, reversible provisional fencing, accepted roll-forward checkpoints, required receipt/replay metadata before journal sanitization, and explicit reminder policy. Immediate automatic safety, optional notices and automatic recovery semantics remain intact. Independent public snapshots protect policy and lifecycle observers. Core lifecycle prevents cached identity loading, local services and networking during manual recovery; only proven non-acceptance releases provisional suspension, while completed old processes stay sealed pending restart. No host reset capability or UI action is enabled.
+
+TDD source contributions cover the acceptance/failure/replay/reminder/automatic race boundaries and actual core coordinator/lifecycle composition. Both independent Standards and Spec reviews passed with zero findings against the exact integrated tree. Fresh root `npm run verify` using Node 24.16.0 / npm 11.13.0 passed all typechecks, 140 suites / 999 tests, all three production builds and lint with 0 errors / 839 warnings. Source checks and narrower final 89-test union are retained separately; earlier source checks are not relabelled as final integration evidence.
+
+Ignored run artifacts: `ticket27-transition-handoff.md`, `ticket-27-startup-handoff.json`, `ticket-27-merge-receipt.json`, `ticket-27-standards-review.md`, `ticket-27-spec-review.md`, `ticket-27-integrated-verify.log`, and hash-bound `ticket-27-integrated-verification.json` under the run-20261010 artifact root supplied in the coordinator handoff. Source ancestries and unrelated primary/relay work are preserved.
+
+G41 has its core contribution only. Actual host durability, fallback cleanup, writer/native ingress fencing, clipboard baseline, restart and authenticated UI remain with 28–31; the Generate new identity addition remains open. All prior failed/native gates, G14 no alternate host, Chrome G01 no owned public endpoint and recorded deferrals remain unchanged. No native/CUA/SDK/clipboard/global setting or harness work ran in this continuation; no push/PR/deployment/sign-in.

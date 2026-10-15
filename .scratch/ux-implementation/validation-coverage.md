@@ -144,3 +144,8 @@ Historical bounded evidence remains in [native host continuation](../ux-study/na
 ## Existing-task native input and Chrome management allocation — DRAFT 2026-10-14
 
 34/35 preserve every original G01–G41 case, evidence prerequisite and Candidate/External/Retained disposition.13/11 remain original collectors;17/19/15/16/10 retain all residual controls/navigation/scanner/notification/Pairing gates.34 must pass its scoped Android/Electron candidate-native gates;35 must pass its scoped complete Chrome/native/control/Pairing/cutover gates. Root owns future fresh intervals and candidate bindings. Existing08/09/19/25 observations/builds/failures are not new passes. Required-if-changed remains in force; assistive/hardware/export/chooser/OEM/account/external transport gaps stay explicit. No missing candidate portion is converted to Retained to finish. This DRAFT creates no native pass or source-only resolution.
+
+
+## G41 core contribution — 2026-10-15
+
+Ticket 27 is resolved for its core transition and startup/recovery scope at integrated `4cd6fc94fc25f76f636f776712c4122eb799e9f5`, after both reviews and fresh 140 suites / 999 tests / three builds verification. These tests establish the owning core acceptance, same-candidate roll-forward, receipt/replay/reminder, automatic-safety and lifecycle invariants only. G41 remains Candidate and unqualified as a whole. Tickets 28–31 retain real durable-adapter abrupt-stop/reopen, actual cleanup/fallback/queues/ingress, clipboard-baseline/restart and UI gates. No previous failed or unavailable gate changes disposition.
