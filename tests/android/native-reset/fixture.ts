@@ -92,6 +92,7 @@ let commandPid = 0;
 let fenceHeld = false;
 let quiesced = false;
 let running = false;
+let publicRecoveryDiagnostic: SafeStatus = { state: "running" };
 
 function requireProof(value: unknown, code: string): asserts value {
   if (!value) throw new Error(`native_reset_${code}`);
@@ -448,6 +449,39 @@ async function recover(caseId: string) {
   const result = await transition.resumeIdentityReset({
     operationId: meta.operationId,
   });
+  if (result.outcome !== "completed") {
+    // Public coordinator state and counts only. No candidate/journal contents or values.
+    publicRecoveryDiagnostic = {
+      state: "running",
+      resultOutcome: result.outcome,
+    };
+    if ("state" in result) {
+      publicRecoveryDiagnostic.resultPhase = result.state.phase;
+      if ("error" in result.state && result.state.error)
+        publicRecoveryDiagnostic.resultError = result.state.error;
+    }
+    try {
+      let count = 0;
+      for (const key of scoped)
+        if (key !== IDENTITY_KEY && (await raw(key)) !== undefined) count++;
+      publicRecoveryDiagnostic.nativeRemainingScopeCount = count;
+    } catch {
+      publicRecoveryDiagnostic.nativeScopeReadUnavailable = true;
+    }
+    try {
+      publicRecoveryDiagnostic.webRemainingScopeCount = scoped.filter(
+        (key) => localStorage.getItem(PREFIX + key) !== null
+      ).length;
+    } catch {
+      publicRecoveryDiagnostic.webScopeReadUnavailable = true;
+    }
+    try {
+      await history.verifyIdentityResetDataCleared();
+      publicRecoveryDiagnostic.historyCheck = "cleared";
+    } catch {
+      publicRecoveryDiagnostic.historyCheck = "failed";
+    }
+  }
   requireProof(result.outcome === "completed", "recovery_incomplete");
   requireProof(
     (await candidateProof(meta)) === meta.candidatePeerId,
@@ -572,7 +606,7 @@ async function run(command: Command): Promise<void> {
       error instanceof Error && /^native_reset_[a-z_]+$/.test(error.message)
         ? error.message
         : "native_reset_unexpected_failure";
-    fixture.status = { state: "failed", code };
+    fixture.status = { ...publicRecoveryDiagnostic, state: "failed", code };
   } finally {
     running = false;
   }
