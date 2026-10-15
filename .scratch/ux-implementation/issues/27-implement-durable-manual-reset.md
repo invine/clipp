@@ -1,11 +1,11 @@
 # Implement the durable manual reset transition
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-reset-27
 Priority band: 3
 Blocked by: none
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: 2026-10-15 user-directed non-native work; two coordinated implementers under one core claim
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -48,3 +48,14 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Non-native dispatch — 2026-10-15
+
+The user explicitly requested continuing with two implementers on work not blocked by native checks, preserving failed gates and avoiding further harness preparation. This supplies scheduling direction for this independent core package while earlier native-qualified outputs remain incomplete. It changes no behavior, dependency or validation disposition. Tickets17/18/19/20/25/26/34/35 keep every failed/unqualified native gate; dependent storage/runtime/UI reset packages28–31 remain unavailable.
+
+Claim ux-reset-27, baseline37bfe9990fdbcb8bdaa7f67cc991388ee23fcf14 on codex/ux-implementation-integration. One canonical owner, two coordinated source assignments in isolated worktrees: transition/journal/coordinator and core startup/recovery consumer. Both contributions must be integrated and verified together before core27 resolves. No artificial separate source-only ticket or gate waiver is created.
+
+Accepted public test seams are the specified beginIdentityReset/reconcile/resume/dismiss-reminder actions on the existing core transition owner, injected authoritative repository/storage/cleanup/fence ports, and the existing runtime lifecycle/service-start owner. Use owning TDD through these seams, including failure/ambiguous acceptance, one candidate, cleanup/finalization/replay/reminder policy and automatic coexistence. Preserve ADR0004 automatic immediate shutdown/remove-wins/Identity Loss/revoked local-only behavior and ADR0008 key privacy/storage boundaries. Manual accepted recovery seals old local work, uses roll-forward, and requires durable receipt plus replay guard before private journal sanitization. One shared serialization owner; no second router, UI store or transition lock.
+
+No user action is enabled and no host storage adapter/ingress capability is advertised by core-only completion. Actual strict adapters, queues, restart and UI stay with28–31 and their original gates. No native/CUA/SDK/clipboard/global settings/harness changes. Npm check before code commits; both source reviews, mandatory merger and fresh integrated verify required. Existing approvals persist; no push/PR/deploy/sign-in.
