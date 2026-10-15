@@ -76,3 +76,8 @@ The approved delivery refinement permits34 to qualify Android/Electron generic i
 ## Core manual reset decision — 2026-10-15
 
 [Implement the durable manual reset transition](issues/27-implement-durable-manual-reset.md#answer--2026-10-15) is resolved at integrated `4cd6fc94fc25f76f636f776712c4122eb799e9f5` after two coordinated contributions, mandatory integration, both reviews and fresh 140-suite / 999-test / three-build verification. This completes the core package only; tickets 28–31 retain actual durable-host/runtime/native/UI qualification. All earlier failed gates and deferrals remain.
+
+
+## Durable storage progress — 2026-10-16
+
+[Integrate durable reset storage adapters](issues/28-integrate-durable-reset-storage.md#implementation-progress--2026-10-16) has reviewed, integrated implementation and available checks at `eb7768b91baaf01d28f28c92bf5562ea129b4d50`. It remains claimed for required actual browser/native and abrupt-stop storage qualification. No dependent reset package or full G41 gate is released by source/build results.

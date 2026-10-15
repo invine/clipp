@@ -60,7 +60,7 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 
 | Addition                         | Collector ticket | Closure | Evidence / next owner                                                                                                                                                  |
 | -------------------------------- | ---------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Generate new identity            | 31               | Open    | Core 27 resolved at `4cd6fc9`; actual durable-host/runtime/native/UI contributions 28–31 and G41 remain unqualified.                                                                                 |
+| Generate new identity            | 31               | Open    | Core 27 resolved at `4cd6fc9`; storage 28 implementation integrated at `eb7768b` with available checks, but actual storage/runtime/native/UI qualification 28–31 and G41 remain open.                                                                                 |
 | Use device name / alias clearing | 23               | Open    | Ticket 04 completed retained edit/results at `6f8da6c0855024bf9edd88696080ed231bceaa2d`; ticket 23 still owns explicit alias clearing and its candidate qualification. |
 | Clip Sharing Lifetime            | 20               | Open    | Collector and contributions in [traceability](traceability.md) remain to be qualified.                                                                                 |
 

@@ -149,3 +149,10 @@ Historical bounded evidence remains in [native host continuation](../ux-study/na
 ## G41 core contribution — 2026-10-15
 
 Ticket 27 is resolved for its core transition and startup/recovery scope at integrated `4cd6fc94fc25f76f636f776712c4122eb799e9f5`, after both reviews and fresh 140 suites / 999 tests / three builds verification. These tests establish the owning core acceptance, same-candidate roll-forward, receipt/replay/reminder, automatic-safety and lifecycle invariants only. G41 remains Candidate and unqualified as a whole. Tickets 28–31 retain real durable-adapter abrupt-stop/reopen, actual cleanup/fallback/queues/ingress, clipboard-baseline/restart and UI gates. No previous failed or unavailable gate changes disposition.
+
+
+## G41 storage implementation contribution — 2026-10-16
+
+Ticket 28 adapters and their existing-owner consumers are integrated at `eb7768b91baaf01d28f28c92bf5562ea129b4d50` after both source reviews and fresh 144-suite/1,015-test/three-build verification. Available checks include real SQLite graceful fault/reopen, Chrome callback/fake IndexedDB strict/all-generation recovery, Android native commit-failure unit/compile and refreshed unsigned release assembly.
+
+Ticket 28 remains claimed. Actual Chrome/browser and Android file-backed/native persistence, real WebView generation/fallback recovery, and abrupt-process-stop/reopen at every required storage boundary remain unqualified. No fake backend, Java fixture, clean close or build is labelled as that proof. G41 stays Candidate and incomplete; 29/30/31 retain runtime/native ingress/restart/clipboard/UI requirements. Every earlier failure, unavailable gate and deferral keeps its existing disposition.
