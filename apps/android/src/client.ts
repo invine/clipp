@@ -17,7 +17,6 @@ import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import {
   createAndroidRuntimeAdapter,
   createRuntimeIdentityManager,
-  createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
@@ -73,7 +72,6 @@ import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
   createKVIdentityRepository,
   toPublicDeviceIdentity,
-  createIdentityRotationCommitter,
   IDENTITY_KEY,
   type KVStorageBackend,
 } from "@core/trust";
@@ -97,6 +95,7 @@ import {
   peerIdFromPrivateKeyBase64,
 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
+import { createAndroidIdentityRotationOwner } from "./identityResetStorage";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import {
@@ -301,10 +300,10 @@ export class AndroidClient {
     storage: this.storage,
     key: IDENTITY_KEY,
   });
-  private readonly identityRotation = createRuntimeIdentityRotationCoordinator({
+  private readonly identityRotation = createAndroidIdentityRotationOwner({
     repository: this.identityRepo,
     storage: this.storage,
-    capabilities: RUNTIME_CAPABILITIES.android,
+    history: this.historyBackend,
     shutdown: () => this.stopIdentityBoundServices(),
     runtimeCleanup: {
       prepare: async () => {
@@ -325,11 +324,6 @@ export class AndroidClient {
         }
       },
     },
-    committer: createIdentityRotationCommitter({
-      repository: this.identityRepo,
-      storage: this.storage,
-      history: this.historyBackend,
-    }),
   });
   private readonly identityRotationLifecycle =
     createRuntimeIdentityRotationLifecycle({

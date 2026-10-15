@@ -1,6 +1,17 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import type { KVStorageBackend } from "../../../packages/core/trust";
+import {
+  IDENTITY_RESET_JOURNAL_KEY,
+  IDENTITY_RESET_RECEIPT_KEY,
+  IDENTITY_RESET_COMPLETED_KEY,
+} from "../../../packages/core/trust/manualIdentityReset";
+
+const resetMetadataKeys = new Set([
+  IDENTITY_RESET_JOURNAL_KEY,
+  IDENTITY_RESET_RECEIPT_KEY,
+  IDENTITY_RESET_COMPLETED_KEY,
+]);
 
 type PreferenceAuthority = {
   isNative(): boolean;
@@ -20,6 +31,15 @@ export type CapacitorPreferencesStore = {
   get(options: { key: string }): Promise<{ value: string | null }>;
   set(options: { key: string; value: string }): Promise<void>;
   remove(options: { key: string }): Promise<void>;
+};
+/** Native calls resolve only after synchronous commit; failure poisons reads until restart. */
+export type AndroidDurablePreferences = CapacitorPreferencesStore;
+const durableNative = registerPlugin<AndroidDurablePreferences>(
+  "IdentityResetStorage"
+);
+type ResetStorageOptions = {
+  native: AndroidDurablePreferences;
+  isNative(): boolean;
 };
 
 const hasLocalStorage = () => {
@@ -147,10 +167,69 @@ export class LocalStorageBackend implements KVStorageBackend {
   };
   constructor(
     private prefix = "clipp-android:",
-    private readonly preferences: CapacitorPreferencesStore = Preferences
+    private readonly preferences: CapacitorPreferencesStore = Preferences,
+    private readonly resetOptions: ResetStorageOptions = {
+      native: durableNative,
+      isNative: () => Capacitor.getPlatform() === "android",
+    }
   ) {}
 
+  /** No fallback is permitted for reset effects or native startup inspection. */
+  readonly identityResetStorage: KVStorageBackend = {
+    get: async <T>(key: string): Promise<T | undefined> => {
+      this.requireNativeResetStorage();
+      const { value } = await this.resetOptions.native.get({
+        key: this.prefix + key,
+      });
+      // A former web/memory journal cannot be treated as an empty native installation.
+      const fallback = this.readResetFallback(key);
+      if (value === null || value === undefined) {
+        if (fallback !== null)
+          throw new Error("identity_reset_fallback_unreconciled");
+        return undefined;
+      }
+      return JSON.parse(value) as T;
+    },
+    set: async <T>(key: string, value: T): Promise<void> => {
+      this.requireNativeResetStorage();
+      await this.resetOptions.native.set({
+        key: this.prefix + key,
+        value: JSON.stringify(value),
+      });
+      this.removeResetFallback(key);
+    },
+    remove: async (key: string): Promise<void> => {
+      this.requireNativeResetStorage();
+      await this.resetOptions.native.remove({ key: this.prefix + key });
+      this.removeResetFallback(key);
+    },
+  };
+
+  private requireNativeResetStorage(): void {
+    if (!this.resetOptions.isNative())
+      throw new Error("native_identity_reset_storage_required");
+  }
+
+  private readResetFallback(key: string): string | null {
+    // Access errors are unknown state, never evidence of absence.
+    const web =
+      typeof localStorage === "undefined"
+        ? null
+        : localStorage.getItem(this.prefix + key);
+    return web ?? memory.get(this.prefix + key) ?? null;
+  }
+
+  private removeResetFallback(key: string): void {
+    if (typeof localStorage !== "undefined")
+      localStorage.removeItem(this.prefix + key);
+    memory.delete(this.prefix + key);
+    if (this.readResetFallback(key) !== null)
+      throw new Error("identity_reset_fallback_cleanup_failed");
+  }
+
   async get<T = any>(key: string): Promise<T | undefined> {
+    if (this.resetOptions.isNative() && resetMetadataKeys.has(key))
+      return this.identityResetStorage.get<T>(key);
     const raw = await readItem(
       this.prefix + key,
       this.preferences,
@@ -165,6 +244,8 @@ export class LocalStorageBackend implements KVStorageBackend {
   }
 
   async set<T = any>(key: string, value: T): Promise<void> {
+    if (this.resetOptions.isNative() && resetMetadataKeys.has(key))
+      return this.identityResetStorage.set(key, value);
     await writeItem(
       this.prefix + key,
       JSON.stringify(value),
@@ -174,6 +255,8 @@ export class LocalStorageBackend implements KVStorageBackend {
   }
 
   async remove(key: string): Promise<void> {
+    if (this.resetOptions.isNative() && resetMetadataKeys.has(key))
+      return this.identityResetStorage.remove(key);
     await removeItem(this.prefix + key, this.preferences);
   }
 }
