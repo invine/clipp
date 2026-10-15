@@ -1,11 +1,11 @@
 # Simplify the desktop tray and qualify Dock behavior
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-tray-26
 Priority band: 3
 Blocked by: none
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: 2026-10-15 coordinator claim; small related tray cleanup alongside ongoing native task-input work
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -46,3 +46,10 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+
+## Dispatch assessment — 2026-10-15
+
+Claim ux-tray-26. The approved native package explicitly permits a small related tray cleanup alongside host work without delaying urgent correctness. Tickets20 and34 retain urgent acceptance priority; the stalled Android worker experiment is parked. Remove the known duplicate Configure Relays entry while root qualifies existing native input. Preserve all existing window/session behavior. Dock repair remains conditional on an actual reproduced failure; no speculative change. No protocol, authority, glossary, storage or ADR change is requested.
+
+Source baseline18cd65a321a622b37363093228da957042e011d0; isolated codex/ux-26-desktop-tray branch/worktree. Use existing actual Electron menu/window lifecycle seams and TDD for any behavioral code change. Do not add a test that merely mirrors a menu literal. Native actual tray selection, close/Open, minimize/restore, Dock and live draft/query remain required; callback fixtures cannot qualify them. Existing approvals persist; no sign-in, push or deployment. Root owns native runs, reviews, merger and resolution; at most two implementers, ticket20 and26, after ticket34 source handoff.
