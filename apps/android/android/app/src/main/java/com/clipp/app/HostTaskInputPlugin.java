@@ -65,7 +65,14 @@ public final class HostTaskInputPlugin extends Plugin {
     @PluginMethod
     public void completeBack(PluginCall call) {
         String requestedOwner = call.getString("owner");
-        Long requestedSequence = call.getLong("sequence");
+        // Capacitor getLong rejects the Integer used for small JSON numbers.
+        Object rawSequence = call.getData().opt("sequence");
+        double numericSequence = rawSequence instanceof Number
+            ? ((Number) rawSequence).doubleValue() : Double.NaN;
+        Long requestedSequence = Double.isFinite(numericSequence)
+            && numericSequence > 0 && numericSequence <= 9_007_199_254_740_991d
+            && numericSequence == Math.rint(numericSequence)
+                ? (long) numericSequence : null;
         boolean handled = Boolean.TRUE.equals(call.getBoolean("handled"));
         getActivity().runOnUiThread(() -> {
             if (!destroyed && owner != null && owner.equals(requestedOwner)
