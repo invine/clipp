@@ -29,10 +29,12 @@ import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import {
   createKVIdentityRepository,
   toPublicDeviceIdentity,
-  createIdentityRotationCommitter,
   IDENTITY_KEY,
 } from "../../../packages/core/trust";
-import { ChromeStorageBackend } from "./chromeStorage";
+import {
+  ChromeStorageBackend,
+  createChromeIdentityRotationCoordinator,
+} from "./chromeStorage";
 import { createSettingsHandler } from "./settingsHandler";
 import { handleOffscreenStorageRequest } from "./runtimeMessageStorage";
 import {
@@ -42,7 +44,6 @@ import {
 import {
   createChromeExtensionRuntimeAdapter,
   createRuntimeIdentityManager,
-  createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
@@ -607,10 +608,11 @@ let identityRotationRecovery = false;
 let identityRotationLifecycle: ReturnType<
   typeof createRuntimeIdentityRotationLifecycle
 >;
-const identityRotation = createRuntimeIdentityRotationCoordinator({
+const identityRotation = createChromeIdentityRotationCoordinator({
   repository: identityRepo,
   storage,
-  capabilities: RUNTIME_CAPABILITIES.chromeExtension,
+  history: historyBackend,
+  identityKey: IDENTITY_KEY,
   generateKeyMaterial: generateExtensionIdentityKeyMaterial,
   deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
   runtimeCleanup: {
@@ -629,11 +631,6 @@ const identityRotation = createRuntimeIdentityRotationCoordinator({
       () => extensionNetwork.stop(),
     ]);
   },
-  committer: createIdentityRotationCommitter({
-    repository: identityRepo,
-    storage,
-    history: historyBackend,
-  }),
 });
 membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,

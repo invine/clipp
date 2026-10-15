@@ -10,7 +10,7 @@ import {
   type IdentityRepository,
   type IdentityRotationCommitter,
   type KVStorageBackend,
-} from "../../../packages/core/trust"
+} from "../../../packages/core/trust";
 import Database from "better-sqlite3";
 
 type DB = any;
@@ -18,6 +18,7 @@ type DB = any;
 export function openDatabase(dbPath: string): DB {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = FULL");
   return db;
 }
 
@@ -74,7 +75,9 @@ export class SQLiteHistoryBackend implements HistoryStorageBackend {
   }
 
   async get(key: string): Promise<any> {
-    const row = this.db.prepare("SELECT value FROM history WHERE id = ?").get(key);
+    const row = this.db
+      .prepare("SELECT value FROM history WHERE id = ?")
+      .get(key);
     if (!row) return null;
     try {
       return JSON.parse(row.value);
@@ -104,24 +107,32 @@ export class SQLiteHistoryBackend implements HistoryStorageBackend {
     this.db.prepare("DELETE FROM history").run();
   }
 
-  async applyHistoryMutation(input: HistoryMutation): Promise<HistoryMutationResult> {
-    return this.db.transaction((value: HistoryMutation): HistoryMutationResult => {
-      const entries = new Map<string, unknown>();
-      for (const row of this.db.prepare("SELECT id, value FROM history").all()) {
-        try {
-          entries.set(row.id, JSON.parse(row.value));
-        } catch {
-          entries.set(row.id, row.value);
+  async applyHistoryMutation(
+    input: HistoryMutation
+  ): Promise<HistoryMutationResult> {
+    return this.db.transaction(
+      (value: HistoryMutation): HistoryMutationResult => {
+        const entries = new Map<string, unknown>();
+        for (const row of this.db
+          .prepare("SELECT id, value FROM history")
+          .all()) {
+          try {
+            entries.set(row.id, JSON.parse(row.value));
+          } catch {
+            entries.set(row.id, row.value);
+          }
         }
+        const plan = decideAtomicHistoryMutation(entries, value);
+        for (const key of plan.deletes)
+          this.db.prepare("DELETE FROM history WHERE id = ?").run(key);
+        for (const [key, stored] of plan.writes) {
+          this.db
+            .prepare("INSERT OR REPLACE INTO history(id, value) VALUES(?, ?)")
+            .run(key, JSON.stringify(stored));
+        }
+        return plan.result;
       }
-      const plan = decideAtomicHistoryMutation(entries, value);
-      for (const key of plan.deletes) this.db.prepare("DELETE FROM history WHERE id = ?").run(key);
-      for (const [key, stored] of plan.writes) {
-        this.db.prepare("INSERT OR REPLACE INTO history(id, value) VALUES(?, ?)")
-          .run(key, JSON.stringify(stored));
-      }
-      return plan.result;
-    })(input);
+    )(input);
   }
 }
 
@@ -132,7 +143,11 @@ export function createSQLiteIdentityRotationCommitter(options: {
 }): IdentityRotationCommitter {
   return {
     async prepare(backupId) {
-      return { backupId, identity: await options.repository.get(), storageEntries: [] };
+      return {
+        backupId,
+        identity: await options.repository.get(),
+        storageEntries: [],
+      };
     },
     async commit(candidate, notice) {
       const candidatePayload = JSON.stringify(candidate);
@@ -142,16 +157,20 @@ export function createSQLiteIdentityRotationCommitter(options: {
         for (const key of IDENTITY_ROTATION_SCOPED_STORAGE_KEYS) {
           options.db.prepare("DELETE FROM kv WHERE key = ?").run(key);
         }
-        options.db.prepare("DELETE FROM kv WHERE key = ?").run(`${options.identityKey}:initializationError`);
+        options.db
+          .prepare("DELETE FROM kv WHERE key = ?")
+          .run(`${options.identityKey}:initializationError`);
         // The new identity is activated in the same SQLite transaction after
         // every identity-scoped record has been removed.
-        options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
+        options.db
+          .prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
           .run(options.identityKey, candidatePayload);
       })();
       // The notice is non-blocking: cleanup and identity activation are already
       // durable even when this optional presentation write fails.
       try {
-        options.db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
+        options.db
+          .prepare("INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)")
           .run(IDENTITY_ROTATION_NOTICE_KEY, noticePayload);
       } catch {
         // Best effort only.
@@ -164,4 +183,81 @@ export function createSQLiteIdentityRotationCommitter(options: {
       // No staged history records exist outside the SQLite transaction.
     },
   };
+}
+
+import { createRuntimeIdentityRotationCoordinator } from "../../../packages/core/runtime/identityInitialization";
+import { RUNTIME_CAPABILITIES } from "../../../packages/core/runtime/capabilities";
+import {
+  identityResetStorageKeys,
+  type IdentityResetLifecycle,
+} from "../../../packages/core/trust/identityResetStorage";
+
+type SQLiteRotationOptions = Omit<
+  Parameters<typeof createRuntimeIdentityRotationCoordinator>[0],
+  "capabilities" | "committer" | "manualReset" | "storage"
+> & {
+  db: DB;
+  storage: SQLiteKVStore;
+  identityKey: string;
+  lifecycle?: IdentityResetLifecycle;
+};
+
+/** Main's existing transition owner; package 29 supplies complete runtime barriers. */
+export function createSQLiteIdentityRotationCoordinator(
+  options: SQLiteRotationOptions
+) {
+  const { db, storage, identityKey, lifecycle, ...rotation } = options;
+  const keys = identityResetStorageKeys(identityKey);
+  const clear = () => {
+    if (
+      db
+        .prepare("SELECT value FROM kv WHERE key = ?")
+        .get(rotation.stateKey ?? "identityRotation")
+    ) {
+      throw new Error("automatic_rotation_pending");
+    }
+    db.prepare("DELETE FROM history").run();
+    for (const key of keys) db.prepare("DELETE FROM kv WHERE key = ?").run(key);
+  };
+  return createRuntimeIdentityRotationCoordinator({
+    ...rotation,
+    storage,
+    capabilities: RUNTIME_CAPABILITIES.electron,
+    committer: createSQLiteIdentityRotationCommitter({
+      db,
+      repository: rotation.repository,
+      identityKey,
+    }),
+    ...(lifecycle
+      ? {
+          manualReset: {
+            ...lifecycle,
+            storage,
+            async clearIdentityBoundData() {
+              db.transaction(clear)();
+            },
+            async installIdentity(candidate) {
+              // Compatible cleanup and candidate installation share SQLite's atomic boundary.
+              db.transaction(() => {
+                clear();
+                db.prepare(
+                  "INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)"
+                ).run(identityKey, JSON.stringify(candidate));
+              })();
+            },
+            async verifyCleanup() {
+              if (db.prepare("SELECT id FROM history LIMIT 1").get())
+                throw new Error("identity_reset_history_not_empty");
+              for (const key of [
+                ...keys.filter((key) => key !== identityKey),
+                rotation.stateKey ?? "identityRotation",
+              ]) {
+                if ((await storage.get(key)) !== undefined)
+                  throw new Error("identity_reset_cleanup_incomplete");
+              }
+            },
+          },
+        }
+      : {}),
+  });
 }

@@ -18,12 +18,19 @@ type IdentityRotationCheckpoint = {
   replacementGeneration: string;
 };
 
-function isIdentityRotationCheckpoint(value: unknown): value is IdentityRotationCheckpoint {
-  return Boolean(value)
-    && typeof value === "object"
-    && (value as Partial<IdentityRotationCheckpoint>).kind === "indexeddb-history-generation"
-    && typeof (value as Partial<IdentityRotationCheckpoint>).previousGeneration === "string"
-    && typeof (value as Partial<IdentityRotationCheckpoint>).replacementGeneration === "string";
+function isIdentityRotationCheckpoint(
+  value: unknown
+): value is IdentityRotationCheckpoint {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    (value as Partial<IdentityRotationCheckpoint>).kind ===
+      "indexeddb-history-generation" &&
+    typeof (value as Partial<IdentityRotationCheckpoint>).previousGeneration ===
+      "string" &&
+    typeof (value as Partial<IdentityRotationCheckpoint>)
+      .replacementGeneration === "string"
+  );
 }
 
 function physicalKey(generation: string, logicalKey: string): string {
@@ -34,7 +41,9 @@ function physicalKey(generation: string, logicalKey: string): string {
 
 function logicalKey(generation: string, key: string): string | undefined {
   if (generation === LEGACY_GENERATION) {
-    return key === GENERATION_META_KEY || key.startsWith(GENERATION_KEY_PREFIX) ? undefined : key;
+    return key === GENERATION_META_KEY || key.startsWith(GENERATION_KEY_PREFIX)
+      ? undefined
+      : key;
   }
   const prefix = `${GENERATION_KEY_PREFIX}${generation}:`;
   return key.startsWith(prefix) ? key.slice(prefix.length) : undefined;
@@ -51,7 +60,8 @@ function openDb(): Promise<any> {
     req.onerror = () => reject(req.error || new Error("IndexedDB open failed"));
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      if (!db.objectStoreNames.contains(STORE_NAME))
+        db.createObjectStore(STORE_NAME);
     };
     req.onsuccess = () => resolve(req.result);
   });
@@ -61,23 +71,36 @@ async function runTx<T>(
   dbPromise: Promise<any>,
   mode: "readonly" | "readwrite",
   fn: (store: any) => any,
+  strictDurability = false
 ): Promise<T> {
   const db = await dbPromise;
   return await new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, mode);
+    const tx = strictDurability
+      ? db.transaction(STORE_NAME, mode, { durability: "strict" })
+      : db.transaction(STORE_NAME, mode);
+    if (strictDurability && tx.durability !== "strict") {
+      tx.abort();
+      reject(new Error("identity_reset_strict_durability_unavailable"));
+      return;
+    }
     const store = tx.objectStore(STORE_NAME);
     let result: T;
     try {
       const req = fn(store);
-      req.onsuccess = () => { result = req.result as T; };
-      req.onerror = () => reject(req.error || new Error("IndexedDB request failed"));
+      req.onsuccess = () => {
+        result = req.result as T;
+      };
+      req.onerror = () =>
+        reject(req.error || new Error("IndexedDB request failed"));
     } catch (error) {
       reject(error);
       return;
     }
     tx.oncomplete = () => resolve(result);
-    tx.onerror = () => reject(tx.error || new Error("IndexedDB transaction failed"));
-    tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
+    tx.onerror = () =>
+      reject(tx.error || new Error("IndexedDB transaction failed"));
+    tx.onabort = () =>
+      reject(tx.error || new Error("IndexedDB transaction aborted"));
   });
 }
 
@@ -85,11 +108,11 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
   private readonly dbPromise = openDb();
 
   private async currentGeneration(): Promise<string> {
-    return (await runTx<string | undefined>(
-      this.dbPromise,
-      "readonly",
-      (store) => store.get(GENERATION_META_KEY),
-    )) ?? LEGACY_GENERATION;
+    return (
+      (await runTx<string | undefined>(this.dbPromise, "readonly", (store) =>
+        store.get(GENERATION_META_KEY)
+      )) ?? LEGACY_GENERATION
+    );
   }
 
   private async deleteGeneration(generation: string): Promise<void> {
@@ -105,18 +128,24 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
         }
       };
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error("IndexedDB generation cleanup failed"));
-      tx.onabort = () => reject(tx.error || new Error("IndexedDB generation cleanup aborted"));
+      tx.onerror = () =>
+        reject(tx.error || new Error("IndexedDB generation cleanup failed"));
+      tx.onabort = () =>
+        reject(tx.error || new Error("IndexedDB generation cleanup aborted"));
     });
   }
 
   async set(key: string, value: any): Promise<void> {
     const generation = await this.currentGeneration();
-    await runTx(this.dbPromise, "readwrite", (store) => store.put(value, physicalKey(generation, key)));
+    await runTx(this.dbPromise, "readwrite", (store) =>
+      store.put(value, physicalKey(generation, key))
+    );
   }
   async get(key: string): Promise<any> {
     const generation = await this.currentGeneration();
-    return await runTx(this.dbPromise, "readonly", (store) => store.get(physicalKey(generation, key)));
+    return await runTx(this.dbPromise, "readonly", (store) =>
+      store.get(physicalKey(generation, key))
+    );
   }
   async getAll(): Promise<any[]> {
     const generation = await this.currentGeneration();
@@ -129,21 +158,48 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
       tx.oncomplete = () => {
         const values = valuesRequest.result as unknown[];
         const keys = keysRequest.result as IDBValidKey[];
-        resolve(values.filter((_value, index) => logicalKey(generation, String(keys[index])) !== undefined));
+        resolve(
+          values.filter(
+            (_value, index) =>
+              logicalKey(generation, String(keys[index])) !== undefined
+          )
+        );
       };
-      tx.onerror = () => reject(tx.error || new Error("IndexedDB history read failed"));
-      tx.onabort = () => reject(tx.error || new Error("IndexedDB history read aborted"));
+      tx.onerror = () =>
+        reject(tx.error || new Error("IndexedDB history read failed"));
+      tx.onabort = () =>
+        reject(tx.error || new Error("IndexedDB history read aborted"));
     });
   }
   async remove(key: string): Promise<void> {
     const generation = await this.currentGeneration();
-    await runTx(this.dbPromise, "readwrite", (store) => store.delete(physicalKey(generation, key)));
+    await runTx(this.dbPromise, "readwrite", (store) =>
+      store.delete(physicalKey(generation, key))
+    );
   }
   async clearAll(): Promise<void> {
     await this.deleteGeneration(await this.currentGeneration());
   }
 
-  async applyHistoryMutation(input: HistoryMutation): Promise<HistoryMutationResult> {
+  /** Reset is a destructive boundary across every active and recovery generation. */
+  async clearIdentityResetData(): Promise<void> {
+    await runTx(this.dbPromise, "readwrite", (store) => store.clear(), true);
+  }
+
+  async verifyIdentityResetDataCleared(): Promise<void> {
+    const count = await runTx<number>(this.dbPromise, "readonly", (store) =>
+      store.count()
+    );
+    if (count !== 0) throw new Error("identity_reset_history_not_empty");
+  }
+
+  async close(): Promise<void> {
+    (await this.dbPromise).close();
+  }
+
+  async applyHistoryMutation(
+    input: HistoryMutation
+  ): Promise<HistoryMutationResult> {
     const db = await this.dbPromise;
     return await new Promise<HistoryMutationResult>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
@@ -165,8 +221,10 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
             if (logical !== undefined) entries.set(logical, values![index]);
           });
           const mutation = decideAtomicHistoryMutation(entries, input);
-          for (const key of mutation.deletes) store.delete(physicalKey(generation, key));
-          for (const [key, value] of mutation.writes) store.put(value, physicalKey(generation, key));
+          for (const key of mutation.deletes)
+            store.delete(physicalKey(generation, key));
+          for (const [key, value] of mutation.writes)
+            store.put(value, physicalKey(generation, key));
           result = mutation.result;
         } catch (error) {
           planningError = error;
@@ -185,11 +243,20 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
         keys = keysRequest.result as string[];
         plan();
       };
-      tx.oncomplete = () => result
-        ? resolve(result)
-        : reject(new Error("IndexedDB history mutation completed without a result"));
-      tx.onerror = () => reject(tx.error || new Error("IndexedDB history mutation failed"));
-      tx.onabort = () => reject(planningError ?? tx.error ?? new Error("IndexedDB history mutation aborted"));
+      tx.oncomplete = () =>
+        result
+          ? resolve(result)
+          : reject(
+              new Error("IndexedDB history mutation completed without a result")
+            );
+      tx.onerror = () =>
+        reject(tx.error || new Error("IndexedDB history mutation failed"));
+      tx.onabort = () =>
+        reject(
+          planningError ??
+            tx.error ??
+            new Error("IndexedDB history mutation aborted")
+        );
     });
   }
 
@@ -200,19 +267,25 @@ export class IndexedDBHistoryBackend implements HistoryStorageBackend {
       replacementGeneration: `rotation-${backupId}`,
     }),
     commit: async (checkpoint: unknown): Promise<void> => {
-      if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
+      if (!isIdentityRotationCheckpoint(checkpoint))
+        throw new Error("invalid_history_rotation_checkpoint");
       await runTx(this.dbPromise, "readwrite", (store) =>
-        store.put(checkpoint.replacementGeneration, GENERATION_META_KEY));
+        store.put(checkpoint.replacementGeneration, GENERATION_META_KEY)
+      );
     },
     rollback: async (checkpoint: unknown): Promise<void> => {
-      if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
-      await runTx(this.dbPromise, "readwrite", (store) => checkpoint.previousGeneration === LEGACY_GENERATION
-        ? store.delete(GENERATION_META_KEY)
-        : store.put(checkpoint.previousGeneration, GENERATION_META_KEY));
+      if (!isIdentityRotationCheckpoint(checkpoint))
+        throw new Error("invalid_history_rotation_checkpoint");
+      await runTx(this.dbPromise, "readwrite", (store) =>
+        checkpoint.previousGeneration === LEGACY_GENERATION
+          ? store.delete(GENERATION_META_KEY)
+          : store.put(checkpoint.previousGeneration, GENERATION_META_KEY)
+      );
       await this.deleteGeneration(checkpoint.replacementGeneration);
     },
     finalize: async (checkpoint: unknown): Promise<void> => {
-      if (!isIdentityRotationCheckpoint(checkpoint)) throw new Error("invalid_history_rotation_checkpoint");
+      if (!isIdentityRotationCheckpoint(checkpoint))
+        throw new Error("invalid_history_rotation_checkpoint");
       await this.deleteGeneration(checkpoint.previousGeneration);
     },
   };

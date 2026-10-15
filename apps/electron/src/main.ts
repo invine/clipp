@@ -49,7 +49,7 @@ import {
 import "./libp2pGlobals.js";
 import {
   openDatabase,
-  createSQLiteIdentityRotationCommitter,
+  createSQLiteIdentityRotationCoordinator,
   SQLiteHistoryBackend,
   SQLiteKVStore,
 } from "./storage.js";
@@ -60,7 +60,6 @@ import {
   createAutoSyncPreference,
   createClosableRuntimeNotifications,
   createRuntimeIdentityManager,
-  createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeOrchestrator,
@@ -217,17 +216,13 @@ async function bootstrap() {
   let prepareIdentityRotationCleanup: () => Promise<{
     rollback(): Promise<void>;
   }> = async () => ({ rollback: async () => undefined });
-  const identityRotation = createRuntimeIdentityRotationCoordinator({
+  const identityRotation = createSQLiteIdentityRotationCoordinator({
     repository: identityRepo,
     storage: kvStore,
-    capabilities: RUNTIME_CAPABILITIES.electron,
+    db,
+    identityKey: IDENTITY_KEY,
     shutdown: () => stopIdentityBoundServicesForRotation(),
     runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },
-    committer: createSQLiteIdentityRotationCommitter({
-      db,
-      repository: identityRepo,
-      identityKey: IDENTITY_KEY,
-    }),
   });
   let identityRotationRecovery = false;
   let identityRotationLifecycle: ReturnType<
