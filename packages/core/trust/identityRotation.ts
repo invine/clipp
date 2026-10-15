@@ -1,4 +1,9 @@
 import {
+  createManualIdentityReset,
+  type IdentityResetPorts,
+  type IdentityResetState,
+} from "./manualIdentityReset";
+import {
   historySuppressionKey,
   isClipSuppression,
   isHistoryItem,
@@ -42,25 +47,47 @@ type IdentityRotationCommittedState = {
   candidateDeviceId: string;
 };
 
-export type IdentityRotationState = IdentityRotationPendingState | IdentityRotationCommittedState;
+export type IdentityRotationState =
+  IdentityRotationPendingState | IdentityRotationCommittedState;
 
 export type IdentityRotationResult =
-  | { rotated: false; identity: DeviceIdentity | undefined; recovery?: undefined }
+  | {
+      rotated: false;
+      identity: undefined;
+      recovery: {
+        code: "manual_identity_reset_recovery";
+        reason?: undefined;
+        state: IdentityResetState;
+      };
+    }
   | {
       rotated: false;
       identity: DeviceIdentity | undefined;
-      recovery: { code: "identity_rotation_recovery"; reason: IdentityRotationReason };
+      recovery?: undefined;
+    }
+  | {
+      rotated: false;
+      identity: DeviceIdentity | undefined;
+      recovery: {
+        code: "identity_rotation_recovery";
+        reason: IdentityRotationReason;
+      };
     }
   | { rotated: true; reason: IdentityRotationReason; identity: DeviceIdentity };
 
 export type IdentityRotationStatus =
+  | { kind: "manual-reset"; state: IdentityResetState }
   | { kind: "idle" }
   | { kind: "recovering"; reason: IdentityRotationReason }
   | { kind: "rotated"; reason: IdentityRotationReason };
 
 export type IdentityRotationCommitter = {
   prepare(backupId: string): Promise<IdentityRotationBackup>;
-  commit(candidate: DeviceIdentity, notice: IdentityRotationNotice, backup: IdentityRotationBackup): Promise<void>;
+  commit(
+    candidate: DeviceIdentity,
+    notice: IdentityRotationNotice,
+    backup: IdentityRotationBackup
+  ): Promise<void>;
   rollback(backup: IdentityRotationBackup): Promise<void>;
   finalize(backup: IdentityRotationBackup): Promise<void>;
 };
@@ -94,13 +121,21 @@ type RotationHistoryBackupEntry = {
   value: unknown;
 };
 
-function isRotationHistoryBackupEntry(value: unknown): value is RotationHistoryBackupEntry {
-  return Boolean(value)
-    && typeof value === "object"
-    && (value as Partial<RotationHistoryBackupEntry>).kind === "identity-rotation-history-backup"
-    && typeof (value as Partial<RotationHistoryBackupEntry>).backupId === "string"
-    && typeof (value as Partial<RotationHistoryBackupEntry>).storageKey === "string"
-    && typeof (value as Partial<RotationHistoryBackupEntry>).originalKey === "string";
+function isRotationHistoryBackupEntry(
+  value: unknown
+): value is RotationHistoryBackupEntry {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    (value as Partial<RotationHistoryBackupEntry>).kind ===
+      "identity-rotation-history-backup" &&
+    typeof (value as Partial<RotationHistoryBackupEntry>).backupId ===
+      "string" &&
+    typeof (value as Partial<RotationHistoryBackupEntry>).storageKey ===
+      "string" &&
+    typeof (value as Partial<RotationHistoryBackupEntry>).originalKey ===
+      "string"
+  );
 }
 
 function rotationHistoryBackupKey(backupId: string, index: number): string {
@@ -117,15 +152,13 @@ export function createIdentityRotationCommitter(options: {
   storage: KVStorageBackend;
   history: Pick<
     HistoryStorageBackend,
-    | "getAll"
-    | "set"
-    | "remove"
-    | "identityRotation"
+    "getAll" | "set" | "remove" | "identityRotation"
   >;
   storageKeys?: readonly string[];
 }): IdentityRotationCommitter {
   const noticeKey = IDENTITY_ROTATION_NOTICE_KEY;
-  const storageKeys = options.storageKeys ?? IDENTITY_ROTATION_SCOPED_STORAGE_KEYS;
+  const storageKeys =
+    options.storageKeys ?? IDENTITY_ROTATION_SCOPED_STORAGE_KEYS;
   const backupKeys = [...new Set([...storageKeys, noticeKey])];
   const historyRotation = options.history.identityRotation;
 
@@ -134,14 +167,19 @@ export function createIdentityRotationCommitter(options: {
     else await options.storage.set(key, value);
   };
 
-  const storedBackupEntries = async (backupId: string): Promise<RotationHistoryBackupEntry[]> =>
-    (await options.history.getAll())
-      .filter((value): value is RotationHistoryBackupEntry =>
-        isRotationHistoryBackupEntry(value) && value.backupId === backupId);
+  const storedBackupEntries = async (
+    backupId: string
+  ): Promise<RotationHistoryBackupEntry[]> =>
+    (await options.history.getAll()).filter(
+      (value): value is RotationHistoryBackupEntry =>
+        isRotationHistoryBackupEntry(value) && value.backupId === backupId
+    );
 
   const removeStoredBackup = async (backupId: string): Promise<void> => {
     const entries = await storedBackupEntries(backupId);
-    await Promise.all(entries.map((entry) => options.history.remove(entry.storageKey)));
+    await Promise.all(
+      entries.map((entry) => options.history.remove(entry.storageKey))
+    );
   };
 
   const rollback = async (backup: IdentityRotationBackup): Promise<void> => {
@@ -149,13 +187,24 @@ export function createIdentityRotationCommitter(options: {
       await historyRotation.rollback(backup.historyCheckpoint);
     } else {
       const allValues = await options.history.getAll();
-      const backupEntries = allValues.filter((value): value is RotationHistoryBackupEntry =>
-        isRotationHistoryBackupEntry(value) && value.backupId === backup.backupId);
-      const currentEntries = allValues.filter((value) => !isRotationHistoryBackupEntry(value));
-      await Promise.all(currentEntries.map((value) => options.history.remove(historyEntryKey(value))));
-      for (const entry of backupEntries) await options.history.set(entry.originalKey, entry.value);
+      const backupEntries = allValues.filter(
+        (value): value is RotationHistoryBackupEntry =>
+          isRotationHistoryBackupEntry(value) &&
+          value.backupId === backup.backupId
+      );
+      const currentEntries = allValues.filter(
+        (value) => !isRotationHistoryBackupEntry(value)
+      );
+      await Promise.all(
+        currentEntries.map((value) =>
+          options.history.remove(historyEntryKey(value))
+        )
+      );
+      for (const entry of backupEntries)
+        await options.history.set(entry.originalKey, entry.value);
     }
-    for (const entry of backup.storageEntries) await restoreValue(entry.key, entry.value);
+    for (const entry of backup.storageEntries)
+      await restoreValue(entry.key, entry.value);
     if (backup.identity) await options.repository.upsert(backup.identity);
   };
 
@@ -187,7 +236,10 @@ export function createIdentityRotationCommitter(options: {
       return {
         backupId,
         identity,
-        storageEntries: backupKeys.map((key, index) => ({ key, value: storageValues[index] })),
+        storageEntries: backupKeys.map((key, index) => ({
+          key,
+          value: storageValues[index],
+        })),
         ...(historyCheckpoint === undefined ? {} : { historyCheckpoint }),
       };
     },
@@ -196,7 +248,11 @@ export function createIdentityRotationCommitter(options: {
         await historyRotation.commit(backup.historyCheckpoint);
       } else {
         const historyEntries = await storedBackupEntries(backup.backupId);
-        await Promise.all(historyEntries.map((entry) => options.history.remove(entry.originalKey)));
+        await Promise.all(
+          historyEntries.map((entry) =>
+            options.history.remove(entry.originalKey)
+          )
+        );
       }
       await Promise.all(storageKeys.map((key) => options.storage.remove(key)));
       await options.repository.clearInitializationError?.();
@@ -219,6 +275,7 @@ export function createIdentityRotationCommitter(options: {
 export function createIdentityRotationCoordinator(options: {
   repository: IdentityRepository;
   storage: KVStorageBackend;
+  manualReset?: IdentityResetPorts;
   committer: IdentityRotationCommitter;
   stateKey?: string;
   initialDeviceName: string;
@@ -231,7 +288,8 @@ export function createIdentityRotationCoordinator(options: {
 }) {
   const stateKey = options.stateKey ?? "identityRotation";
   const now = options.now ?? Date.now;
-  const generateKeyMaterial = options.generateKeyMaterial ?? generateIdentityKeyMaterial;
+  const generateKeyMaterial =
+    options.generateKeyMaterial ?? generateIdentityKeyMaterial;
   const deriveKeyMaterial = options.deriveKeyMaterial;
   let operation: Promise<IdentityRotationResult> | undefined;
   // A failed first marker write has no durable state to resume from, but the
@@ -240,23 +298,44 @@ export function createIdentityRotationCoordinator(options: {
   let unstoredState: IdentityRotationState | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryAttempt = 0;
+  let manualTaskActive = false;
+  let automaticSignal = 0;
+  let pendingAutomaticReason: IdentityRotationReason | undefined;
+  let immediateShutdown: Promise<void> | undefined;
   const statusListeners = new Set<(status: IdentityRotationStatus) => void>();
 
-  const inspectStoredPrivateKey = async (identity: DeviceIdentity | undefined): Promise<
-    { kind: "absent" } | { kind: "lost" } | { kind: "valid"; key?: IdentityKeyMaterial }
+  const inspectStoredPrivateKey = async (
+    identity: DeviceIdentity | undefined
+  ): Promise<
+    | { kind: "absent" }
+    | { kind: "lost" }
+    | { kind: "valid"; key?: IdentityKeyMaterial }
   > => {
     if (!identity) return { kind: "absent" };
-    if (typeof identity.privateKey !== "string" || identity.privateKey.length === 0) return { kind: "lost" };
+    if (
+      typeof identity.privateKey !== "string" ||
+      identity.privateKey.length === 0
+    )
+      return { kind: "lost" };
     if (!deriveKeyMaterial) return { kind: "valid" };
     try {
-      return { kind: "valid", key: await deriveKeyMaterial(identity.privateKey) };
+      return {
+        kind: "valid",
+        key: await deriveKeyMaterial(identity.privateKey),
+      };
     } catch {
       return { kind: "lost" };
     }
   };
 
   const publishStatus = (status: IdentityRotationStatus): void => {
-    statusListeners.forEach((listener) => listener(status));
+    statusListeners.forEach((listener) => {
+      try {
+        listener(status);
+      } catch {
+        /* Observers cannot change transition acceptance. */
+      }
+    });
   };
 
   const validState = (value: unknown): value is IdentityRotationState => {
@@ -270,16 +349,22 @@ export function createIdentityRotationCoordinator(options: {
       candidateDeviceId?: unknown;
     };
     const candidate = state.candidate;
-    if (state.version !== 1 || (state.reason !== "revoked" && state.reason !== "identity-loss")) return false;
+    if (
+      state.version !== 1 ||
+      (state.reason !== "revoked" && state.reason !== "identity-loss")
+    )
+      return false;
     if (state.phase === "committed") {
       return typeof state.candidateDeviceId === "string";
     }
-    return (state.phase === "prepared" || state.phase === "committing")
-      && (state.phase !== "committing" || Boolean(state.backup))
-      && Boolean(candidate)
-      && typeof candidate?.deviceId === "string"
-      && typeof candidate?.privateKey === "string"
-      && typeof candidate?.publicKey === "string";
+    return (
+      (state.phase === "prepared" || state.phase === "committing") &&
+      (state.phase !== "committing" || Boolean(state.backup)) &&
+      Boolean(candidate) &&
+      typeof candidate?.deviceId === "string" &&
+      typeof candidate?.privateKey === "string" &&
+      typeof candidate?.publicKey === "string"
+    );
   };
 
   const createCandidate = async (): Promise<DeviceIdentity> => {
@@ -299,10 +384,16 @@ export function createIdentityRotationCoordinator(options: {
     };
   };
 
-  const rollbackForRetry = async (state: IdentityRotationPendingState & { backup: IdentityRotationBackup }): Promise<void> => {
+  const rollbackForRetry = async (
+    state: IdentityRotationPendingState & { backup: IdentityRotationBackup }
+  ): Promise<void> => {
     try {
       await options.committer.rollback(state.backup);
-      const prepared: IdentityRotationState = { ...state, phase: "prepared", backup: undefined };
+      const prepared: IdentityRotationState = {
+        ...state,
+        phase: "prepared",
+        backup: undefined,
+      };
       await options.storage.set(stateKey, prepared);
     } catch {
       // Keep the durable committing marker and backup so the next retry can
@@ -310,7 +401,10 @@ export function createIdentityRotationCoordinator(options: {
     }
   };
 
-  const completeCommittedMarker = async (reason: IdentityRotationReason, candidateDeviceId: string): Promise<void> => {
+  const completeCommittedMarker = async (
+    reason: IdentityRotationReason,
+    candidateDeviceId: string
+  ): Promise<void> => {
     const committed: IdentityRotationCommittedState = {
       version: 1,
       reason,
@@ -330,8 +424,21 @@ export function createIdentityRotationCoordinator(options: {
     await options.storage.remove(stateKey).catch(() => undefined);
   };
 
-  const execute = async (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
-    const storedState = await options.storage.get<IdentityRotationState>(stateKey);
+  const execute = async (
+    reason?: IdentityRotationReason
+  ): Promise<IdentityRotationResult> => {
+    const manualState = await manual.reconcile();
+    if (manualState.phase !== "idle")
+      return {
+        rotated: false,
+        identity: undefined,
+        recovery: {
+          code: "manual_identity_reset_recovery",
+          state: manualState,
+        },
+      };
+    const storedState =
+      await options.storage.get<IdentityRotationState>(stateKey);
     if (storedState !== undefined && !validState(storedState)) {
       throw new Error("invalid_identity_rotation_state");
     }
@@ -357,21 +464,42 @@ export function createIdentityRotationCoordinator(options: {
       current = repaired;
     }
     if (state?.phase === "committed") {
-      if (!current || identityKeyLost || current.deviceId !== state.candidateDeviceId) {
+      if (
+        !current ||
+        identityKeyLost ||
+        current.deviceId !== state.candidateDeviceId
+      ) {
         throw new Error("invalid_committed_identity_rotation_state");
       }
       await options.storage.remove(stateKey).catch(() => undefined);
       return { rotated: false, identity: current };
     }
-    const selfRevoked = Boolean(current?.membershipView?.revokedPeerIds?.includes(current.deviceId));
-    const rotationReason = state?.reason ?? reason ?? (identityKeyLost ? "identity-loss" : selfRevoked ? "revoked" : undefined);
+    const selfRevoked = Boolean(
+      current?.membershipView?.revokedPeerIds?.includes(current.deviceId)
+    );
+    const rotationReason =
+      state?.reason ??
+      reason ??
+      (identityKeyLost ? "identity-loss" : selfRevoked ? "revoked" : undefined);
     if (!rotationReason) return { rotated: false, identity: current };
-    await options.shutdown();
-    if (state && !identityKeyLost && current?.deviceId === state.candidate.deviceId) {
+    if (immediateShutdown) {
+      await immediateShutdown;
+      immediateShutdown = undefined;
+    } else await options.shutdown();
+    if (
+      state &&
+      !identityKeyLost &&
+      current?.deviceId === state.candidate.deviceId
+    ) {
       try {
         if (state.backup) await options.committer.finalize(state.backup);
       } catch (error) {
-        if (state.backup) await rollbackForRetry(state as IdentityRotationPendingState & { backup: IdentityRotationBackup });
+        if (state.backup)
+          await rollbackForRetry(
+            state as IdentityRotationPendingState & {
+              backup: IdentityRotationBackup;
+            }
+          );
         throw error;
       }
       await completeCommittedMarker(state.reason, state.candidate.deviceId);
@@ -401,14 +529,22 @@ export function createIdentityRotationCoordinator(options: {
     let runtimeCleanup: { rollback(): Promise<void> } | undefined;
     try {
       runtimeCleanup = await options.runtimeCleanup?.prepare();
-      await options.committer.commit(state.candidate, {
-        reason: state.reason,
-        historyDeleted: true,
-        pairingRequired: true,
-      }, backup);
+      await options.committer.commit(
+        state.candidate,
+        {
+          reason: state.reason,
+          historyDeleted: true,
+          pairingRequired: true,
+        },
+        backup
+      );
       await options.committer.finalize(backup);
     } catch (error) {
-      await rollbackForRetry(state as IdentityRotationPendingState & { backup: IdentityRotationBackup });
+      await rollbackForRetry(
+        state as IdentityRotationPendingState & {
+          backup: IdentityRotationBackup;
+        }
+      );
       await runtimeCleanup?.rollback();
       throw error;
     }
@@ -429,48 +565,125 @@ export function createIdentityRotationCoordinator(options: {
       retryTimer = undefined;
       void serialize(reason);
     }, delay);
-    (retryTimer as ReturnType<typeof setTimeout> & { unref?(): void }).unref?.();
+    (
+      retryTimer as ReturnType<typeof setTimeout> & { unref?(): void }
+    ).unref?.();
   };
 
-  const attempt = async (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
+  const attempt = async (
+    reason?: IdentityRotationReason
+  ): Promise<IdentityRotationResult> => {
     try {
       const result = await execute(reason);
       if (result.rotated) {
         retryAttempt = 0;
         publishStatus({ kind: "rotated", reason: result.reason });
-      } else {
+      } else if (result.recovery?.code !== "manual_identity_reset_recovery") {
         publishStatus({ kind: "idle" });
       }
       return result;
     } catch (error) {
-      const state = await options.storage.get<IdentityRotationState>(stateKey).catch(() => undefined);
+      const state = await options.storage
+        .get<IdentityRotationState>(stateKey)
+        .catch(() => undefined);
       if (state !== undefined && !validState(state)) throw error;
       const identity = await options.repository.get().catch(() => undefined);
-      const identityKeyLost = (await inspectStoredPrivateKey(identity)).kind === "lost";
-      const recoveryReason = state?.reason
-        ?? reason
-        ?? (identityKeyLost ? "identity-loss" : undefined)
-        ?? (identity?.membershipView?.revokedPeerIds?.includes(identity.deviceId) ? "revoked" : undefined);
+      const identityKeyLost =
+        (await inspectStoredPrivateKey(identity)).kind === "lost";
+      const recoveryReason =
+        state?.reason ??
+        reason ??
+        (identityKeyLost ? "identity-loss" : undefined) ??
+        (identity?.membershipView?.revokedPeerIds?.includes(identity.deviceId)
+          ? "revoked"
+          : undefined);
       if (!recoveryReason) throw error;
       publishStatus({ kind: "recovering", reason: recoveryReason });
       scheduleRetry(recoveryReason);
       return {
         rotated: false,
         identity,
-        recovery: { code: "identity_rotation_recovery", reason: recoveryReason },
+        recovery: {
+          code: "identity_rotation_recovery",
+          reason: recoveryReason,
+        },
       };
     }
   };
 
-  const serialize = (reason?: IdentityRotationReason): Promise<IdentityRotationResult> => {
-    if (!operation) operation = attempt(reason).finally(() => { operation = undefined; });
+  let transitionTail: Promise<unknown> = Promise.resolve();
+  const enqueue = <T>(action: () => Promise<T>): Promise<T> => {
+    const next = transitionTail.then(action);
+    transitionTail = next.catch(() => undefined);
+    return next;
+  };
+  const manual = createManualIdentityReset({
+    repository: options.repository,
+    storage: options.manualReset?.storage ?? options.storage,
+    ports: options.manualReset,
+    deriveKeyMaterial: options.deriveKeyMaterial,
+    createCandidate,
+    initialDeviceName: options.initialDeviceName,
+    automaticSignal: () => automaticSignal,
+    automaticPending: async () =>
+      Boolean(
+        pendingAutomaticReason ||
+        unstoredState ||
+        (await options.storage.get(stateKey))
+      ),
+    now,
+    publish: (state) => publishStatus({ kind: "manual-reset", state }),
+  });
+  const serialize = (
+    reason?: IdentityRotationReason
+  ): Promise<IdentityRotationResult> => {
+    if (!operation)
+      operation = enqueue(() =>
+        attempt(reason ?? pendingAutomaticReason)
+      ).finally(() => {
+        operation = undefined;
+        pendingAutomaticReason = undefined;
+      });
     return operation;
   };
 
+  const manualAction = <T>(action: () => Promise<T>): Promise<T> =>
+    enqueue(async () => {
+      manualTaskActive = true;
+      try {
+        return await action();
+      } finally {
+        manualTaskActive = false;
+      }
+    });
   return {
+    beginIdentityReset: (request: {
+      operationId: string;
+      reviewedPeerId: string;
+    }) => manualAction(() => manual.begin(request)),
+    reconcileIdentityReset: () => manualAction(() => manual.reconcile()),
+    resumeIdentityReset: (request: { operationId: string }) =>
+      manualAction(() => manual.resume(request.operationId)),
+    dismissIdentityResetReminder: (request: { receiptId: string }) =>
+      manualAction(() => manual.dismiss(request.receiptId)),
     recoverOrRotate: () => serialize(),
-    rotate: (reason: IdentityRotationReason) => serialize(reason),
-    onStatusChanged(listener: (status: IdentityRotationStatus) => void): () => void {
+    rotate: (reason: IdentityRotationReason) => {
+      automaticSignal += 1;
+      pendingAutomaticReason = reason;
+      if (manualTaskActive) {
+        // The safety barrier runs before waiting for the shared transition queue.
+        try {
+          immediateShutdown = Promise.resolve(options.shutdown());
+        } catch (error) {
+          immediateShutdown = Promise.reject(error);
+        }
+        void immediateShutdown.catch(() => undefined);
+      }
+      return serialize(reason);
+    },
+    onStatusChanged(
+      listener: (status: IdentityRotationStatus) => void
+    ): () => void {
       statusListeners.add(listener);
       return () => statusListeners.delete(listener);
     },
@@ -480,8 +693,10 @@ export function createIdentityRotationCoordinator(options: {
         ? { code: "identity_rotation_recovery" as const, reason: state.reason }
         : undefined;
     },
-    notice: () => options.storage.get<IdentityRotationNotice>(IDENTITY_ROTATION_NOTICE_KEY),
-    acknowledgeNotice: () => options.storage.remove(IDENTITY_ROTATION_NOTICE_KEY),
+    notice: () =>
+      options.storage.get<IdentityRotationNotice>(IDENTITY_ROTATION_NOTICE_KEY),
+    acknowledgeNotice: () =>
+      options.storage.remove(IDENTITY_ROTATION_NOTICE_KEY),
     stop(): void {
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = undefined;
