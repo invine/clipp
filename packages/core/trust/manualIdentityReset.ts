@@ -103,15 +103,15 @@ export function createManualIdentityReset(options: {
   let state: IdentityResetState = { phase: "idle" };
   const publish = (next: IdentityResetState): IdentityResetState => {
     const previous = state;
-    state = next;
+    state = structuredClone(next);
     if (
       next.phase !== "idle" ||
       next.receipt ||
       next.completedOperation ||
       previous.phase !== "idle"
     )
-      options.publish(next);
-    return next;
+      options.publish(structuredClone(next));
+    return structuredClone(next);
   };
   const validId = (value: unknown): value is string =>
     typeof value === "string" &&
@@ -558,7 +558,7 @@ export function createManualIdentityReset(options: {
       return reconcile();
     },
     get state() {
-      return state;
+      return structuredClone(state);
     },
   };
 }

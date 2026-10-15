@@ -705,3 +705,70 @@ it("retains the private recovery journal until both completion records are obser
     f.create().resumeIdentityReset({ operationId: "operation-1" })
   ).resolves.toMatchObject({ outcome: "completed" });
 });
+
+it.each(["malformed", "unreadable"] as const)(
+  "shuts down automatic revocation before waiting for %s manual state",
+  async (failure) => {
+    const f = await setup();
+    if (failure === "malformed")
+      await f.storage.set("manualIdentityReset", { version: 999 });
+    else f.storage.unreadable = true;
+    const automatic = f.coordinator.rotate("revoked");
+    expect(f.shutdown).toHaveBeenCalledTimes(1);
+    await expect(automatic).resolves.toMatchObject({
+      rotated: false,
+      identity: undefined,
+      recovery: {
+        code: "manual_identity_reset_recovery",
+        state: { phase: "checking" },
+      },
+    });
+    expect(f.generateKeyMaterial).not.toHaveBeenCalled();
+  }
+);
+
+it("keeps the durable reminder policy independent of observer mutation", async () => {
+  const f = await setup();
+  await f.coordinator.beginIdentityReset({
+    operationId: "operation-1",
+    reviewedPeerId: "old",
+  });
+  const fresh = f.create();
+  fresh.onStatusChanged((status) => {
+    if (status.kind === "manual-reset" && status.state.phase === "idle")
+      delete status.state.receipt;
+  });
+  await expect(fresh.reconcileIdentityReset()).resolves.toMatchObject({
+    phase: "idle",
+    receipt: { formerPeerId: "old" },
+  });
+  await expect(
+    fresh.beginIdentityReset({
+      operationId: "operation-2",
+      reviewedPeerId: "new",
+    })
+  ).resolves.toEqual({ outcome: "rejected", code: "reminder_pending" });
+});
+
+it("isolates reset phases delivered to separate lifecycle observers", async () => {
+  const f = await setup();
+  const phases: string[] = [];
+  f.coordinator.onStatusChanged((status) => {
+    if (status.kind === "manual-reset")
+      Object.assign(status.state, { phase: "idle" });
+  });
+  f.coordinator.onStatusChanged((status) => {
+    if (status.kind === "manual-reset") phases.push(status.state.phase);
+  });
+  await expect(
+    f.coordinator.beginIdentityReset({
+      operationId: "operation-1",
+      reviewedPeerId: "old",
+    })
+  ).resolves.toMatchObject({
+    outcome: "completed",
+    state: { phase: "completed" },
+  });
+  expect(phases).toContain("accepted");
+  expect(phases).toContain("completed");
+});

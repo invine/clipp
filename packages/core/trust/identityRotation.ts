@@ -298,7 +298,6 @@ export function createIdentityRotationCoordinator(options: {
   let unstoredState: IdentityRotationState | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryAttempt = 0;
-  let manualTaskActive = false;
   let automaticSignal = 0;
   let pendingAutomaticReason: IdentityRotationReason | undefined;
   let immediateShutdown: Promise<void> | undefined;
@@ -331,7 +330,7 @@ export function createIdentityRotationCoordinator(options: {
   const publishStatus = (status: IdentityRotationStatus): void => {
     statusListeners.forEach((listener) => {
       try {
-        listener(status);
+        listener(structuredClone(status));
       } catch {
         /* Observers cannot change transition acceptance. */
       }
@@ -428,7 +427,13 @@ export function createIdentityRotationCoordinator(options: {
     reason?: IdentityRotationReason
   ): Promise<IdentityRotationResult> => {
     const manualState = await manual.reconcile();
-    if (manualState.phase !== "idle")
+    if (manualState.phase !== "idle") {
+      if (immediateShutdown) {
+        const shutdown = immediateShutdown;
+        immediateShutdown = undefined;
+        // A failed shutdown cannot release the stricter manual suspension.
+        await shutdown.catch(() => undefined);
+      }
       return {
         rotated: false,
         identity: undefined,
@@ -437,6 +442,7 @@ export function createIdentityRotationCoordinator(options: {
           state: manualState,
         },
       };
+    }
     const storedState =
       await options.storage.get<IdentityRotationState>(stateKey);
     if (storedState !== undefined && !validState(storedState)) {
@@ -483,8 +489,9 @@ export function createIdentityRotationCoordinator(options: {
       (identityKeyLost ? "identity-loss" : selfRevoked ? "revoked" : undefined);
     if (!rotationReason) return { rotated: false, identity: current };
     if (immediateShutdown) {
-      await immediateShutdown;
+      const shutdown = immediateShutdown;
       immediateShutdown = undefined;
+      await shutdown;
     } else await options.shutdown();
     if (
       state &&
@@ -647,30 +654,21 @@ export function createIdentityRotationCoordinator(options: {
     return operation;
   };
 
-  const manualAction = <T>(action: () => Promise<T>): Promise<T> =>
-    enqueue(async () => {
-      manualTaskActive = true;
-      try {
-        return await action();
-      } finally {
-        manualTaskActive = false;
-      }
-    });
   return {
     beginIdentityReset: (request: {
       operationId: string;
       reviewedPeerId: string;
-    }) => manualAction(() => manual.begin(request)),
-    reconcileIdentityReset: () => manualAction(() => manual.reconcile()),
+    }) => enqueue(() => manual.begin(request)),
+    reconcileIdentityReset: () => enqueue(() => manual.reconcile()),
     resumeIdentityReset: (request: { operationId: string }) =>
-      manualAction(() => manual.resume(request.operationId)),
+      enqueue(() => manual.resume(request.operationId)),
     dismissIdentityResetReminder: (request: { receiptId: string }) =>
-      manualAction(() => manual.dismiss(request.receiptId)),
+      enqueue(() => manual.dismiss(request.receiptId)),
     recoverOrRotate: () => serialize(),
     rotate: (reason: IdentityRotationReason) => {
       automaticSignal += 1;
       pendingAutomaticReason = reason;
-      if (manualTaskActive) {
+      if (!immediateShutdown) {
         // The safety barrier runs before waiting for the shared transition queue.
         try {
           immediateShutdown = Promise.resolve(options.shutdown());
