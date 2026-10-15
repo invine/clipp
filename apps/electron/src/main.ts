@@ -1007,7 +1007,6 @@ async function bootstrap() {
     tray = new Tray(icon);
     const contextMenu = Menu.buildFromTemplate([
       { label: "Open Clipp", click: () => showWindow() },
-      { label: "Configure Relays", click: () => showWindow() },
       {
         label: "Quit",
         click: () => {
