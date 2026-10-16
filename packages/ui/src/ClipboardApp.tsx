@@ -2201,15 +2201,24 @@ export function ClipboardApp({
       ref={rootRef}
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
-        event.preventDefault();
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
         if (openMenuId || timeMenuOpen || sourceMenuOpen) {
+          event.preventDefault();
           setOpenMenuId(null);
           setTimeMenuOpen(false);
           setSourceMenuOpen(false);
           return;
         }
-        if (session.getSnapshot().tasks.length) session.back();
-        else if (showNav) dismissNav();
+        if (session.getSnapshot().tasks.length) {
+          event.preventDefault();
+          session.back();
+        } else if (showNav) {
+          event.preventDefault();
+          dismissNav();
+        }
       }}
       onFocusCapture={(event) => {
         const key = (event.target as HTMLElement).dataset.sessionFocus;
