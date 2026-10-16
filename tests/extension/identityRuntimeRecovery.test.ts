@@ -61,3 +61,75 @@ it("unknown acceptance also retires offscreen, and a close failure keeps runtime
     "identity_runtime_suspended"
   );
 });
+
+it.each([false, true])(
+  "preflight uncertainty resolved during the first initialize requests a fresh sealed bootstrap (restart failure: %s)",
+  async (restartFails) => {
+    const {
+      createRuntimeIdentityRotationLifecycle,
+      startIdentityBoundRuntimeServices,
+    } = await import("../../packages/core/runtime/identityInitialization");
+    const workFence = createIdentityBoundWorkFence();
+    let publish!: (
+      status: import("../../packages/core/trust/identityRotation").IdentityRotationStatus
+    ) => void;
+    const restart = jest.fn(() => {
+      if (restartFails) throw new Error("restart_unavailable");
+    });
+    const loadIdentity = jest.fn(async () => undefined);
+    const lifecycle = createRuntimeIdentityRotationLifecycle({
+      workFence,
+      rotation: {
+        onStatusChanged(listener) {
+          publish = listener;
+          return () => {};
+        },
+        async recoverOrRotate() {
+          publish({
+            kind: "manual-reset",
+            state: { phase: "idle", acceptance: "not-accepted" },
+          });
+          return { rotated: false, identity: undefined };
+        },
+        rotate: async () => {
+          throw new Error("unexpected automatic rotation");
+        },
+      },
+      loadIdentity,
+      restart,
+      startLocalRecovery() {},
+      publishState() {},
+    });
+    const retireOffscreen = jest.fn(async () => undefined);
+    await prepareChromeIdentityRuntime({
+      async reconcileIdentityReset() {
+        const state = {
+          phase: "checking",
+          error: "storage_unavailable",
+        } as const;
+        publish({ kind: "manual-reset", state });
+        return state;
+      },
+      workFence,
+      retireOffscreen,
+    });
+    const startLocalServices = jest.fn();
+    const startNetworkServices = jest.fn();
+    await expect(
+      startIdentityBoundRuntimeServices({
+        workFence,
+        initializeIdentity: () => lifecycle.initialize(),
+        startLocalServices,
+        startNetworkServices,
+      })
+    ).resolves.toBeUndefined();
+    expect(retireOffscreen).toHaveBeenCalledTimes(1);
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(workFence.isFenced()).toBe(true);
+    expect(lifecycle.isRecovering()).toBe(true);
+    expect(loadIdentity).not.toHaveBeenCalled();
+    expect(startLocalServices).not.toHaveBeenCalled();
+    expect(startNetworkServices).not.toHaveBeenCalled();
+    lifecycle.dispose();
+  }
+);

@@ -69,7 +69,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   let recovering = false;
   let manualSuspended = false;
   let manualAccepted = false;
-  let coldManualRecovery = false;
+  let ordinaryInitializationCompleted = false;
   let recoveryReason: IdentityRotationReason | undefined;
   let restartRequested = false;
   let recoveryFence: Promise<{ release(): Promise<void> }> | undefined;
@@ -90,7 +90,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   const applyManualState = (state: IdentityResetState): void => {
     if (state.phase === "idle") {
       if (state.acceptance === "not-accepted" && !manualAccepted) {
-        if (coldManualRecovery) {
+        if (!ordinaryInitializationCompleted) {
           // No ordinary owners were started. A fresh bootstrap rebuilds them;
           // restart failure must not make this suspended process appear ready.
           try {
@@ -124,7 +124,6 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     }
   };
   const suspendedInitialization = (): IdentityBoundRuntimeInitialization => {
-    coldManualRecovery = true;
     return { networkingEnabled: false, localServicesEnabled: false };
   };
   const unsubscribe = options.rotation.onStatusChanged((status) => {
@@ -170,11 +169,14 @@ export function createRuntimeIdentityRotationLifecycle(options: {
       }
       setRecovering(Boolean(result.recovery));
       recoveryReason = result.recovery?.reason;
-      if (recovering) return { networkingEnabled: false };
+      if (recovering) {
+        ordinaryInitializationCompleted = true;
+        return { networkingEnabled: false };
+      }
       await options.loadIdentity();
-      return manualSuspended
-        ? suspendedInitialization()
-        : { networkingEnabled: !recovering };
+      if (manualSuspended) return suspendedInitialization();
+      ordinaryInitializationCompleted = true;
+      return { networkingEnabled: !recovering };
     },
     async rotateRevoked(): Promise<void> {
       const result = await options.rotation.rotate("revoked");
