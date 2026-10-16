@@ -125,27 +125,36 @@ it("a missing tab lookup callback preserves the accepted target for reconciliati
     f.host.tabs.get = (_id, done) => {
       late = done;
     };
-    let error: unknown;
     let completed = false;
-    const routing = coordinator.route("target-uncertain").then(
-      () => {
-        completed = true;
-      },
-      (value) => {
-        error = value;
-      }
-    );
+    const routing = coordinator.route("target-uncertain").then(() => {
+      completed = true;
+    });
     await jest.advanceTimersByTimeAsync(5000);
-    expect(error).toEqual(new Error("management_host_callback_timeout"));
-    expect(completed).toBe(false);
-    await routing;
+    expect(completed).toBe(true);
+    await expect(routing).resolves.toBeUndefined();
     late({ id: 99, url: f.api.runtime.getURL("src/options.html") });
     f.host.tabs.get = get;
     expect(await f.message({ type: "managementStatus" }).result).toMatchObject({
       ok: true,
-      records: [{ id: "target-uncertain", target: 1, attempts: 1 }],
+      records: [
+        {
+          id: "target-uncertain",
+          target: 1,
+          attempts: 1,
+          status: "unconfirmed",
+        },
+      ],
     });
+    expect(
+      await f.message({ type: "managementRetry", id: "target-uncertain" })
+        .result
+    ).toMatchObject({ ok: true });
     await coordinator.flush();
+    expect(await f.message({ type: "managementStatus" }).result).toMatchObject({
+      records: [
+        { id: "target-uncertain", target: 1, attempts: 0, status: "pending" },
+      ],
+    });
   } finally {
     jest.useRealTimers();
   }
@@ -568,13 +577,19 @@ it.each(["callback error", "synchronous throw"])(
       done(undefined);
       f.host.runtime.lastError = undefined;
     };
-    await expect(coordinator.route("transient")).rejects.toThrow(
-      "host unavailable"
-    );
+    await expect(coordinator.route("transient")).resolves.toBeUndefined();
     f.host.tabs.get = get;
     expect(await f.message({ type: "managementStatus" }).result).toMatchObject({
-      records: [{ id: "transient", target: 1, attempts: 1 }],
+      records: [
+        { id: "transient", target: 1, attempts: 1, status: "unconfirmed" },
+      ],
     });
+    expect(
+      await f.message({ type: "managementRetry", id: "transient" }).result
+    ).toMatchObject({ ok: true });
     await coordinator.flush();
+    expect(await f.message({ type: "managementStatus" }).result).toMatchObject({
+      records: [{ id: "transient", target: 1, attempts: 0, status: "pending" }],
+    });
   }
 );

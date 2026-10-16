@@ -228,6 +228,106 @@ it("uncertain creation reconciles a new canonical tab before retry and retains e
   await host.dismiss(sender, "uncertain");
   expect(records).toHaveLength(0);
 });
+it("retry retains an unseen uncertain creation across worker restart until the original tab appears", async () => {
+  let records: any[] = [];
+  let creates = 0;
+  const tabs: number[] = [];
+  const options = {
+    extensionId: "extension",
+    popupUrl: "chrome-extension://extension/src/popup.html",
+    pageUrl: "chrome-extension://extension/src/options.html",
+    read: async () => structuredClone(records),
+    write: async (values: any[]) => {
+      records = structuredClone(values);
+    },
+    create: async () => {
+      creates++;
+      if (creates === 1) throw new Error("lost callback before tab appears");
+      tabs.push(102);
+      return { id: 102, windowId: 1 };
+    },
+    exists: async (id: number) => tabs.includes(id),
+    canonicalTabs: async () => [...tabs],
+    activate: async () => {},
+    now: () => 10,
+  };
+  const sender = { id: "extension", url: options.popupUrl };
+  const first = createChromeManagement(options);
+  await first.accept({
+    id: "delayed-create",
+    destination: { kind: "requests" },
+  });
+  await first.route("delayed-create");
+  const restarted = createChromeManagement(options);
+  await restarted.retry(sender, "delayed-create");
+  expect((await restarted.status(sender)).records).toEqual([
+    expect.objectContaining({ id: "delayed-create", status: "unconfirmed" }),
+  ]);
+  expect(creates).toBe(1);
+
+  tabs.push(101);
+  await restarted.retry(sender, "delayed-create");
+  const original = page(101);
+  restarted.register(original.port);
+  original.receive({ type: "ready", idle: true });
+  await restarted.flush();
+  expect(original.sent).toContainEqual({
+    type: "destination",
+    handoff: expect.objectContaining({ id: "delayed-create", target: 101 }),
+  });
+  original.receive({ type: "ack", id: "delayed-create", status: "applied" });
+  await restarted.flush();
+  expect((await restarted.status(sender)).records[0]).toMatchObject({
+    id: "delayed-create",
+    status: "applied",
+    target: 101,
+  });
+  expect(creates).toBe(1);
+});
+it("a failed tab query keeps uncertain creation recoverable through its original handoff", async () => {
+  let records: any[] = [];
+  let queryFails = false;
+  let creates = 0;
+  const host = createChromeManagement({
+    extensionId: "extension",
+    popupUrl: "popup",
+    pageUrl: "page",
+    read: async () => structuredClone(records),
+    write: async (values) => {
+      records = structuredClone(values);
+    },
+    create: async () => {
+      creates++;
+      throw new Error("lost create callback");
+    },
+    exists: async () => true,
+    canonicalTabs: async () => {
+      if (queryFails) throw new Error("tab query unavailable");
+      return creates ? [101] : [];
+    },
+    activate: async () => {},
+    now: () => 10,
+  });
+  const sender = { id: "extension", url: "popup" };
+  await host.accept({ id: "query", destination: { kind: "requests" } });
+  await host.route("query");
+  queryFails = true;
+  await expect(host.retry(sender, "query")).resolves.toMatchObject({
+    ok: true,
+  });
+  expect((await host.status(sender)).records[0]).toMatchObject({
+    id: "query",
+    status: "unconfirmed",
+  });
+  queryFails = false;
+  await host.retry(sender, "query");
+  expect((await host.status(sender)).records[0]).toMatchObject({
+    id: "query",
+    status: "pending",
+    target: 101,
+  });
+  expect(creates).toBe(1);
+});
 it("rejects non-navigation payloads and storage failures before acceptance", async () => {
   const f = fixture();
   for (const destination of [
@@ -293,6 +393,58 @@ it("readback failure never claims accepted ownership and removed target gets a f
   await host.route("closed");
   await host.route("closed");
   expect(records[0].target).toBe(2);
+});
+it("an uncertain target lookup retains the original handoff for a later retry", async () => {
+  let records: any[] = [];
+  let lookupFails = true;
+  let creates = 0;
+  const host = createChromeManagement({
+    extensionId: "extension",
+    popupUrl: "chrome-extension://extension/src/popup.html",
+    pageUrl: "chrome-extension://extension/src/options.html",
+    read: async () => structuredClone(records),
+    write: async (values) => {
+      records = structuredClone(values);
+    },
+    create: async () => ({ id: ++creates, windowId: 1 }),
+    exists: async () => {
+      if (lookupFails) throw new Error("tab lookup callback unavailable");
+      return true;
+    },
+    activate: async () => {},
+    now: () => 10,
+  });
+  const sender = {
+    id: "extension",
+    url: "chrome-extension://extension/src/popup.html",
+  };
+  await host.accept({ id: "lookup", destination: { kind: "requests" } });
+  await host.route("lookup");
+  await expect(host.retry(sender, "lookup")).resolves.toMatchObject({
+    ok: true,
+  });
+  expect((await host.status(sender)).records).toEqual([
+    expect.objectContaining({ id: "lookup", status: "unconfirmed", target: 1 }),
+  ]);
+
+  lookupFails = false;
+  await host.retry(sender, "lookup");
+  const original = page(1);
+  host.register(original.port);
+  original.receive({ type: "ready", idle: true });
+  await host.flush();
+  expect(original.sent).toContainEqual({
+    type: "destination",
+    handoff: expect.objectContaining({ id: "lookup", target: 1 }),
+  });
+  original.receive({ type: "ack", id: "lookup", status: "applied" });
+  await host.flush();
+  expect((await host.status(sender)).records[0]).toMatchObject({
+    id: "lookup",
+    status: "applied",
+    target: 1,
+  });
+  expect(creates).toBe(1);
 });
 it("rejects inconsistent page/tab identity, wrong extension and stale replaced document acknowledgement", async () => {
   const f = fixture();

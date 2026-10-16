@@ -97,21 +97,36 @@ export function createChromeManagement(host: {
     const records = await read();
     const record = records.find((r) => r.id === id);
     if (!record || record.status !== "pending") return;
-    if (record.target !== undefined && !(await host.exists(record.target))) {
-      record.target = undefined;
-      record.creating = false;
+    if (record.target !== undefined) {
+      let exists: boolean;
+      try {
+        exists = await host.exists(record.target);
+      } catch {
+        record.status = "unconfirmed";
+        record.error =
+          "The original page could not be confirmed. Retry to reconcile this handoff.";
+        await host.write(records);
+        return;
+      }
+      if (!exists) {
+        record.target = undefined;
+        record.creating = false;
+      }
     }
     if (record.creating && record.target === undefined) {
-      const tabs = (await host.canonicalTabs?.()) ?? [];
+      let tabs: number[] = [];
+      try {
+        tabs = (await host.canonicalTabs?.()) ?? [];
+      } catch {
+        // Failed observation leaves the original create outcome uncertain too.
+      }
       const added = tabs.filter((tab) => !record.beforeCreate?.includes(tab));
       if (added.length === 1) {
         record.target = added[0];
         record.creating = false;
         await host.write(records);
-      } else if (added.length === 0 && host.canonicalTabs) {
-        record.creating = false;
-        await host.write(records);
       } else {
+        // An empty snapshot cannot prove the original create will not complete later.
         record.status = "unconfirmed";
         record.error =
           "Tab creation could not be confirmed. Retry to reconcile this handoff.";
