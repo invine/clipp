@@ -46,3 +46,11 @@ Run focused owning-interface tests and npm run check before code commit; root pe
 ## Handoff
 
 Root refreshes canonical claim/tip/decision and records the co-delivered Chrome13 allocation. Implementer records RED/GREEN, meaningful focused checks/npm check/full commit, each real wrapper/bridge, current-tip incorporation, parity/cutover state, secure mailbox/native results and exact outstanding gates. Source-only handoff cannot resolve35. This DRAFT has not run or changed source.
+
+## Resume assessment — 2026-10-16
+
+Resume existing claim `ux-chrome-management-35` after confirming all named predecessors remain resolved. Two fresh isolated contributors start from integration `f3e1a531bef8d746126a6af39c386608f44fb840`: `codex/ux-35-ui` owns shared UI/session and actual popup/options composition; `codex/ux-35-runtime` owns trusted Port/mailbox/handoff runtime and the pure destination schema. Preserve the old worktree and stash `c6058cba77d010d497c4bfc31674af4f7c10b634`; its tracked patch and 13 untracked source files were exported only as reference. Do not apply or drop that stash wholesale. Exact access/ownership is in ignored run `ticket35-resume-worktree-handoff.json`.
+
+Continue the real producer/consumer implementation and current-source correctness through approved owning-interface TDD. Preserve ticket29's generation/auth/startup protections and invalidate old reset handoffs without losing ordinary worker-reconnect reconciliation. Root owns native execution, canonical updates, mandatory integration, both reviews and fresh integrated verification.
+
+Stage the complete canonical management destination while existing popup management remains functional. **No popup retirement or cutover before required actual parity, secure handoff and native qualification.** G01/G13/G14/G36/G39/G40 and every original collector/contribution remain required; missing public peer/alternate OS text-size host are not waived. No repeated approval/readiness request, real account/sign-in, operator profile, push or deployment is introduced.

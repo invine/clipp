@@ -83,3 +83,7 @@ The approved delivery refinement permits34 to qualify Android/Electron generic i
 ## Durable storage decision — 2026-10-16
 
 [Integrate durable reset storage adapters](issues/28-integrate-durable-reset-storage.md#answer--2026-10-16) is resolved after actual cross-host storage crash/reopen qualification, the Android fallback-resurrection repair, both reviews and fresh146/1033/all-build verification on6c0e26f. [Runtime admission, queues and restart](issues/29-fence-reset-runtime-work.md) is now claimable and assigned under the same accepted contract. G41/31 remains open; no UI/runtime activation or earlier native gate waiver follows.
+
+## Runtime and management continuation — 2026-10-16
+
+[Runtime29](issues/29-fence-reset-runtime-work.md#reviewed-implementation-and-available-native-checks--2026-10-16) has reviewed/verified source and 18 scoped Android native passes; complete host/clipboard gates keep it claimed. [Chrome35](issues/35-deliver-chrome-management-and-task-input.md#resume-assessment--2026-10-16) resumes with two isolated implementers using preserved source references. Popup management remains live until actual candidate cutover gates pass. No additional resolution or finding closure is recorded.

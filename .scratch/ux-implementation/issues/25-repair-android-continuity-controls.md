@@ -52,7 +52,6 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
 
-
 ## Dispatch assessment — 2026-10-13
 
 Coordinator applies the approved scope-preserving predecessor allocation already used by20/18/19/13:25 consumes resolved32's shared interface and qualified Android controls. Residual17 retains all desktop G13/G14 and collection;25 retains all its own candidate/native action, stale/rejected/unknown state, notification denial/reopen, queue/ingress and export-boundary requirements. No gate is waived or finding closed.
@@ -60,3 +59,7 @@ Coordinator applies the approved scope-preserving predecessor allocation already
 Predecessors08/32 are resolved. Correct applied Auto Sync, one Pause/Resume and separate Stop preserve user preferences, best-effort continuity, durable ingress/intentional-repeat semantics and ADR-0012. Source preparation is `ticket-25-current-prep.md` in the local handoff mapping. Coordinator claim `ux-continuity-25`, client isolated `codex/ux-25-continuity-controls`, begins from this claim commit. Owning-interface TDD, current-tip incorporation, both reviews, mandatory merger and applicable verification remain required. Native/SDK/OS/clipboard/account/push operations stay root-owned or deferred.
 
 Priority band2 remains. Approved early usable native-state/feedback fixes proceed alongside ticket09's correctness qualification; unresolved urgent work is not displaced. User explicitly requested two-ticket progress. Root serializes native validation; at most two ticket implementers operate.
+
+## Native regression contribution — 2026-10-16
+
+The current isolated Android acceptance APK passed all nine existing `BackgroundContinuityLifecycleTest` methods before the reset matrix. Actual service, notification PendingIntent, direct boot-receiver and durable preference/diagnostic behavior were exercised; each method ran in a force-stopped separate process. Raw candidate-bound evidence is in ignored run `ticket29-native-runtime-7cea228b54`, manifest and audit. Direct receiver invocation is not a device reboot, and actual PendingIntent execution is not a physical notification tap. This contributes regression evidence only: the complete current UI/client controls, reopen, ingress and export-boundary matrix and this ticket's own required gates remain open. No ticket/finding closes by implication.

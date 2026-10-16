@@ -47,13 +47,11 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
 
-
 ## Dispatch assessment — 2026-10-15
 
 Claim ux-tray-26. The approved native package explicitly permits a small related tray cleanup alongside host work without delaying urgent correctness. Tickets20 and34 retain urgent acceptance priority; the stalled Android worker experiment is parked. Remove the known duplicate Configure Relays entry while root qualifies existing native input. Preserve all existing window/session behavior. Dock repair remains conditional on an actual reproduced failure; no speculative change. No protocol, authority, glossary, storage or ADR change is requested.
 
 Source baseline18cd65a321a622b37363093228da957042e011d0; isolated codex/ux-26-desktop-tray branch/worktree. Use existing actual Electron menu/window lifecycle seams and TDD for any behavioral code change. Do not add a test that merely mirrors a menu literal. Native actual tray selection, close/Open, minimize/restore, Dock and live draft/query remain required; callback fixtures cannot qualify them. Existing approvals persist; no sign-in, push or deployment. Root owns native runs, reviews, merger and resolution; at most two implementers, ticket20 and26, after ticket34 source handoff.
-
 
 ## Reviewed source integration and native blocker — 2026-10-15
 
@@ -62,3 +60,7 @@ Source e5f2407d25a13e3ecd85b8cca27057f52dd590a9 removes exactly the duplicate Co
 Root attempted actual native acceptance using a fresh owned disposable profile, production main/preload/renderer and protected process-local clipboard. Actual close-to-tray hid the earlier owned window, but status-menu inspection timed out. A later attempt returned conflicting accessibility/pixels, missing frames and finally ScreenCaptureKit.SCStreamErrorDomain -3811 after tool-session recovery. No actual tray selection, reliable Open/minimize/restore/Dock or normal Quit pass is inferred. All owned runtime PIDs/sessions are closed; profiles/helpers/backups are preserved inert. Source cleanup is integrated; ticket26 remains claimed until these required native gates can be measured.
 
 Evidence: private ticket-26-tray-source/handoff.json; ignored run tickets-20-26-source-{standards,spec}-review.md, tickets-20-26-merge-receipt.json, tickets-20-26-integrated-verification.json and manual-electron-tray-20261015-a6e8ec4b/observations-and-closure.json. No approval is requested again; standing user authorization remains valid. VoiceOver and all earlier deferrals remain recorded.
+
+## Current native retry — 2026-10-16
+
+A fresh disposable profile on source `a096b35b1bdefa4d6b72acb8697a7fc71f284441` rendered the production Electron window and accepted synthetic Search text. The existing passive launcher used process-local clipboard memory only. Native control then returned unchanged/stale Settings state and `noWindowsAvailable`; a normal Quit attempt did not establish termination. No tray/Open/minimize/Dock/Quit or retained-editor qualification is inferred. The exact owned process/group was closed after UID/command/profile verification; source assets were unchanged and the inert profile/logs are preserved at ignored run `manual-electron-tray-20261016-a721c35b/observations-and-closure.json`. Ticket26 remains claimed; every earlier failed observation and VoiceOver limit remains.
