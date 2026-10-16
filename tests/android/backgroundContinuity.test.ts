@@ -85,6 +85,25 @@ function createPlatform(
   };
 }
 
+test("manual reset suspends continuity and capture without changing saved background mode or Auto Sync", async () => {
+  const fake = createPlatform();
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.initialize();
+  await coordinator.setEnabledFromUser(true);
+  await coordinator.setActivityState({ resumed: true, windowFocused: true });
+  await coordinator.suspendForIdentityReset();
+  expect(fake.enabled()).toBe(true);
+  expect(fake.autoSync).toEqual([]);
+  expect(fake.captureEligibility.at(-1)).toBe(false);
+  expect(coordinator.snapshot()).toMatchObject({
+    service: "stopped",
+    captureEligible: false,
+    backgroundEnabled: true,
+  });
+});
+
 test("qualifies repeatedly failing background configurations as limited before offering battery guidance", async () => {
   const fake = createPlatform();
   fake.setDiagnosticStatus({

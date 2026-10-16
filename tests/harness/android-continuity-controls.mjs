@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import { IDBFactory } from "fake-indexeddb";
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 await mkdir(join(repo, ".local"), { recursive: true });
 const own = await mkdtemp(join(repo, ".local", "android-continuity-controls-"));
@@ -19,6 +20,7 @@ let rejectPreferences = false;
 let rejectPreferencesRead = false;
 let rejectStop = false;
 const nativeEvents = new Map();
+globalThis.resetRuntimeFixture = {};
 globalThis.continuityFixture = {
   getPlatformInfo: async () => {
     if (rejectInfo) throw new Error("native_info_unavailable");
@@ -61,7 +63,7 @@ globalThis.continuityFixture = {
 try {
   await build({
     stdin: {
-      contents: `export {AndroidClient} from '${repo}/apps/android/src/client'; export {LocalStorageBackend} from '${repo}/apps/android/src/storage';`,
+      contents: `export {AndroidClient} from '${repo}/apps/android/src/client'; export {LocalStorageBackend} from '${repo}/apps/android/src/storage'; export {generateIdentityKeyMaterial} from '${repo}/packages/core/trust/identity';`,
       loader: "ts",
       resolveDir: repo,
     },
@@ -83,7 +85,7 @@ try {
             (args) => ({
               loader: "js",
               contents: args.path.endsWith("core")
-                ? 'export const Capacitor={getPlatform:()=>"android",isNativePlatform:()=>true}; export const registerPlugin=(name)=>name==="BackgroundContinuity"?globalThis.continuityFixture:{};'
+                ? 'export const Capacitor={getPlatform:()=>"android",isNativePlatform:()=>true}; export const registerPlugin=(name)=>name==="BackgroundContinuity"?globalThis.continuityFixture:name==="IdentityResetStorage"?globalThis.resetRuntimeFixture??{}:{};'
                 : args.path.endsWith("clipboard")
                   ? 'export const Clipboard={read:async()=>({value:""}),write:async()=>{},addListener:async()=>({remove:async()=>{}})};'
                   : 'export const LocalNotifications={addListener:async()=>({remove:async()=>{}}),schedule:async()=>{},cancel:async()=>{},checkPermissions:async()=>({display:"granted"})};',
@@ -93,9 +95,8 @@ try {
       },
     ],
   });
-  const { AndroidClient, LocalStorageBackend } = await import(
-    join(own, "client.mjs")
-  );
+  const { AndroidClient, LocalStorageBackend, generateIdentityKeyMaterial } =
+    await import(join(own, "client.mjs"));
   const values = new Map([["fixture:autoSync", "false"]]);
   const preferences = {
     get: async ({ key }) => {
@@ -252,6 +253,104 @@ try {
     "return from settings refreshes denial"
   );
   assert.equal(state.backgroundContinuity.controlStateKnown, true);
+  // Cold accepted startup uses the actual client, strict storage adapter and shared lifecycle.
+  // OS boundaries remain inert; native queue durability is qualified by instrumentation.
+  globalThis.indexedDB = new IDBFactory();
+  globalThis.window = {
+    addEventListener() {},
+    location: {
+      reload() {
+        throw new Error("synthetic_restart_unavailable");
+      },
+    },
+  };
+  const resetValues = new Map();
+  let nativeOpened = 0;
+  Object.assign(globalThis.resetRuntimeFixture, {
+    get: async ({ key }) => ({ value: resetValues.get(key) ?? null }),
+    set: async ({ key, value }) => {
+      resetValues.set(key, value);
+    },
+    remove: async ({ key }) => {
+      resetValues.delete(key);
+    },
+    acquireFence: async () => {},
+    releaseFence: async () => {},
+    clearNativeQueues: async () => {},
+    verifyNativeQueues: async () => {},
+    openRuntime: async () => {
+      nativeOpened += 1;
+    },
+  });
+  // The registered bridge is resolved once at bundle import; its object stays stable.
+  const key = await generateIdentityKeyMaterial();
+  const candidateKey = await generateIdentityKeyMaterial();
+  const identity = (material) => ({
+    deviceId: material.peerId,
+    publicKey: material.publicKey,
+    privateKey: material.privateKey,
+    deviceName: "Mobile",
+    nameRevision: 0,
+    createdAt: 1,
+    multiaddrs: [],
+    membershipView: { admittedPeerIds: [material.peerId], revokedPeerIds: [] },
+  });
+  resetValues.set(
+    "clipp-android:localDeviceIdentity",
+    JSON.stringify(identity(key))
+  );
+  resetValues.set(
+    "clipp-android:manualIdentityReset",
+    JSON.stringify({
+      version: 1,
+      reason: "manual",
+      operationId: "cold-accepted-reset",
+      formerPeerId: key.peerId,
+      candidate: identity(candidateKey),
+      phase: "accepted",
+    })
+  );
+  const cold = new AndroidClient(
+    new LocalStorageBackend("clipp-android:", globalThis.resetRuntimeFixture, {
+      native: globalThis.resetRuntimeFixture,
+      isNative: () => true,
+    })
+  );
+  assert.equal(
+    await cold.getIdentity(),
+    null,
+    "cold public reads cannot load a candidate before reconciliation"
+  );
+  assert.deepEqual((await cold.getState()).clips, []);
+  await assert.rejects(
+    cold.shareCurrentClipboard(),
+    /identity_runtime_not_initialized/
+  );
+  let timeout;
+  await Promise.race([
+    cold.start(),
+    new Promise((_, reject) => {
+      timeout = setTimeout(
+        () => reject(new Error("cold_reset_start_deadlocked")),
+        2000
+      );
+    }),
+  ]);
+  clearTimeout(timeout);
+  assert.equal(
+    nativeOpened,
+    0,
+    "incomplete recovery cannot reopen native admission"
+  );
+  const recoveryState = await cold.getState();
+  assert.equal(recoveryState.identity, null);
+  assert.equal(recoveryState.identityRotationRecovery, true);
+  assert.deepEqual(recoveryState.clips, []);
+  await assert.rejects(
+    cold.shareCurrentClipboard(),
+    /identity_runtime_suspended/
+  );
+  await assert.rejects(cold.getPairingCode(), /identity_runtime_suspended/);
   console.log(
     JSON.stringify({
       pass: true,
@@ -261,5 +360,8 @@ try {
   );
 } finally {
   delete globalThis.continuityFixture;
+  delete globalThis.resetRuntimeFixture;
+  delete globalThis.indexedDB;
+  delete globalThis.window;
   await rm(own, { recursive: true, force: true });
 }

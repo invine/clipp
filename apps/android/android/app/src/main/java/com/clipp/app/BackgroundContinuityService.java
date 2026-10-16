@@ -47,6 +47,7 @@ public final class BackgroundContinuityService extends Service {
     public static final String EXTRA_CONNECTION_STATE = "connectionState";
     public static final String EXTRA_CONNECTED_DEVICE_COUNT = "connectedTrustedDeviceCount";
     public static final String EXTRA_ACTION = "action";
+    static final String EXTRA_IDENTITY_RUNTIME_GENERATION = "identityRuntimeGeneration";
     public static final String EXTRA_AUTO_SYNC = "autoSync";
     public static final String EXTRA_ACTION_TOKEN = "actionToken";
     static final String EXTRA_HEARTBEAT_TIMEOUT_MS = "heartbeatTimeoutMs";
@@ -131,89 +132,101 @@ public final class BackgroundContinuityService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? null : intent.getAction();
-        boolean notificationAction = ACTION_STOP.equals(action) || ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action);
-        if (notificationAction && intent.hasExtra(EXTRA_ACTION_TOKEN)
-            && !actionToken.equals(intent.getStringExtra(EXTRA_ACTION_TOKEN))) return START_NOT_STICKY;
-        if (ACTION_STOP.equals(action)) {
-            diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_STOP);
-            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_BY_USER);
-            boolean saved = persistEnabled(this, false);
-            if (!saved) {
-                Toast.makeText(this, "Background Stop could not be saved. Reopen Clipp to check the current state.", Toast.LENGTH_LONG).show();
+        synchronized (NativeIdentityResetFence.LOCK) {
+            if (intent != null && intent.hasExtra(EXTRA_IDENTITY_RUNTIME_GENERATION) &&
+                !NativeIdentityResetFence.generation().equals(intent.getStringExtra(EXTRA_IDENTITY_RUNTIME_GENERATION))) return START_NOT_STICKY;
+            if (NativeIdentityResetFence.forContext(this).isBlocked()) {
+                running = false;
+                handler.removeCallbacks(heartbeatWatchdog);
+                releaseWakeLock();
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf(startId);
                 return START_NOT_STICKY;
             }
-            preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
-            running = false;
-            notifyAction("stop");
-            releaseWakeLock();
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-        boolean starting = ACTION_START.equals(action);
-        if (starting && !preferences(this).getBoolean(ENABLED, false)) {
-            stopSelf(startId);
-            return START_NOT_STICKY;
-        }
-        if (!starting && (!running || !preferences(this).getBoolean(ENABLED, false))) {
-            releaseWakeLock();
-            stopSelf(startId);
-            return START_NOT_STICKY;
-        }
-        if (starting) {
-            if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                heartbeatTimeoutMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS));
-                heartbeatCheckMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_CHECK_MS, DEFAULT_HEARTBEAT_CHECK_MS));
+            String action = intent == null ? null : intent.getAction();
+            boolean notificationAction = ACTION_STOP.equals(action) || ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action);
+            if (notificationAction && intent.hasExtra(EXTRA_ACTION_TOKEN)
+                && !actionToken.equals(intent.getStringExtra(EXTRA_ACTION_TOKEN))) return START_NOT_STICKY;
+            if (ACTION_STOP.equals(action)) {
+                diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_STOP);
+                diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_BY_USER);
+                boolean saved = persistEnabled(this, false);
+                if (!saved) {
+                    Toast.makeText(this, "Background Stop could not be saved. Reopen Clipp to check the current state.", Toast.LENGTH_LONG).show();
+                    return START_NOT_STICKY;
+                }
+                preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
+                running = false;
+                notifyAction("stop");
+                releaseWakeLock();
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+                return START_NOT_STICKY;
             }
-            preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
-            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.RUNNING);
-            diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.AWAITING);
-            diagnostics.recordEnvironmentSnapshot();
-            heartbeatHealthy = false;
-        }
-        if (starting || ACTION_UPDATE.equals(action)) {
-            Boolean nextAutoSync = intent.hasExtra(EXTRA_AUTO_SYNC) ? intent.getBooleanExtra(EXTRA_AUTO_SYNC, false) : null;
-            if (starting || !Objects.equals(appliedAutoSync, nextAutoSync)) actionToken = UUID.randomUUID().toString();
-            appliedAutoSync = nextAutoSync;
-            if (starting) connectionState = Boolean.FALSE.equals(appliedAutoSync)
-                ? BackgroundContinuityConnectionState.PAUSED : BackgroundContinuityConnectionState.WAITING;
-        }
-        if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
-            if (appliedAutoSync == null || !intent.hasExtra(EXTRA_ACTION_TOKEN)
-                || appliedAutoSync == ACTION_RESUME.equals(action)) return START_NOT_STICKY;
-            diagnostics.recordLifecycleTransition(
-                ACTION_PAUSE.equals(action)
-                    ? BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_PAUSE
-                    : BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_RESUME
-            );
-            // The JS settings owner must persist and publish before presentation changes.
-            notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
-        }
-        if (ACTION_UPDATE.equals(action)) {
-            connectionState = BackgroundContinuityConnectionState.fromWire(
-                intent.getStringExtra(EXTRA_CONNECTION_STATE)
-            );
-            connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
-        }
-        if (starting || ACTION_HEARTBEAT.equals(action)) {
-            lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
-            if (ACTION_HEARTBEAT.equals(action) && !heartbeatHealthy) {
-                heartbeatHealthy = true;
-                diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.HEALTHY);
+            boolean starting = ACTION_START.equals(action);
+            if (starting && !preferences(this).getBoolean(ENABLED, false)) {
+                stopSelf(startId);
+                return START_NOT_STICKY;
             }
+            if (!starting && (!running || !preferences(this).getBoolean(ENABLED, false))) {
+                releaseWakeLock();
+                stopSelf(startId);
+                return START_NOT_STICKY;
+            }
+            if (starting) {
+                if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    heartbeatTimeoutMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS));
+                    heartbeatCheckMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_CHECK_MS, DEFAULT_HEARTBEAT_CHECK_MS));
+                }
+                preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
+                diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.RUNNING);
+                diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.AWAITING);
+                diagnostics.recordEnvironmentSnapshot();
+                heartbeatHealthy = false;
+            }
+            if (starting || ACTION_UPDATE.equals(action)) {
+                Boolean nextAutoSync = intent.hasExtra(EXTRA_AUTO_SYNC) ? intent.getBooleanExtra(EXTRA_AUTO_SYNC, false) : null;
+                if (starting || !Objects.equals(appliedAutoSync, nextAutoSync)) actionToken = UUID.randomUUID().toString();
+                appliedAutoSync = nextAutoSync;
+                if (starting) connectionState = Boolean.FALSE.equals(appliedAutoSync)
+                    ? BackgroundContinuityConnectionState.PAUSED : BackgroundContinuityConnectionState.WAITING;
+            }
+            if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
+                if (appliedAutoSync == null || !intent.hasExtra(EXTRA_ACTION_TOKEN)
+                    || appliedAutoSync == ACTION_RESUME.equals(action)) return START_NOT_STICKY;
+                diagnostics.recordLifecycleTransition(
+                    ACTION_PAUSE.equals(action)
+                        ? BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_PAUSE
+                        : BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_RESUME
+                );
+                // The JS settings owner must persist and publish before presentation changes.
+                notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
+            }
+            if (ACTION_UPDATE.equals(action)) {
+                connectionState = BackgroundContinuityConnectionState.fromWire(
+                    intent.getStringExtra(EXTRA_CONNECTION_STATE)
+                );
+                connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
+            }
+            if (starting || ACTION_HEARTBEAT.equals(action)) {
+                lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
+                if (ACTION_HEARTBEAT.equals(action) && !heartbeatHealthy) {
+                    heartbeatHealthy = true;
+                    diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.HEALTHY);
+                }
+            }
+            diagnostics.recordConnectionTransition(connectionState, connectedTrustedDeviceCount);
+            createNotificationChannel(this);
+            startForegroundSafely();
+            acquireWakeLock();
+            running = true;
+            if (starting) notifyServiceStarted();
+            if (ACTION_UPDATE.equals(action)) sendBroadcast(new Intent(ACTION_SERVICE_UPDATED).setPackage(getPackageName())
+                .putExtra(EXTRA_UPDATE_ID, intent.getStringExtra(EXTRA_UPDATE_ID)));
+            handler.removeCallbacks(heartbeatWatchdog);
+            handler.postDelayed(heartbeatWatchdog, heartbeatCheckMs);
+            return START_NOT_STICKY;
         }
-        diagnostics.recordConnectionTransition(connectionState, connectedTrustedDeviceCount);
-        createNotificationChannel(this);
-        startForegroundSafely();
-        acquireWakeLock();
-        running = true;
-        if (starting) notifyServiceStarted();
-        if (ACTION_UPDATE.equals(action)) sendBroadcast(new Intent(ACTION_SERVICE_UPDATED).setPackage(getPackageName())
-            .putExtra(EXTRA_UPDATE_ID, intent.getStringExtra(EXTRA_UPDATE_ID)));
-        handler.removeCallbacks(heartbeatWatchdog);
-        handler.postDelayed(heartbeatWatchdog, heartbeatCheckMs);
-        return START_NOT_STICKY;
     }
 
     @Override
@@ -319,6 +332,7 @@ public final class BackgroundContinuityService extends Service {
     }
 
     static void postReconnectNotification(Context context) {
+        if (NativeIdentityResetFence.forContext(context).isBlocked()) return;
         boolean available = notificationsAvailable(context);
         new BackgroundContinuityDiagnostics(context).recordNotificationAvailability(available);
         if (!available) return;

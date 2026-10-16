@@ -433,6 +433,24 @@ export function createAndroidBackgroundContinuityCoordinator(
   return {
     snapshot,
 
+    async suspendForIdentityReset(): Promise<void> {
+      this.stopRuntimeHeartbeat();
+      activityStateGeneration += 1;
+      resumed = false;
+      windowFocused = false;
+      await platform.setClipboardCaptureEligible(false);
+      await serializeClipContinuity(async () => undefined);
+      await platform.stopService();
+      service = platform.readServiceState
+        ? await platform.readServiceState()
+        : "stopped";
+      if (service !== "stopped")
+        throw new Error("identity_reset_continuity_not_stopped");
+      runtimeHealthy = false;
+      connectedTrustedDeviceCount = 0;
+      connection = "disconnected";
+    },
+
     startRuntimeHeartbeat(): void {
       if (cancelHeartbeatSchedule) return;
       const generation = ++heartbeatScheduleGeneration;

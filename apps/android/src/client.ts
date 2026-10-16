@@ -96,6 +96,8 @@ import {
 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
 import { createAndroidIdentityRotationOwner } from "./identityResetStorage";
+import { createAndroidIdentityResetRuntime } from "./identityResetRuntime";
+import { Capacitor } from "@capacitor/core";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import {
@@ -230,6 +232,21 @@ function logPairing(
 }
 
 export class AndroidClient {
+  private readonly identityResetRuntime = createAndroidIdentityResetRuntime({
+    suspend: async () => {
+      await this.stopIdentityBoundServices(true);
+      if (Capacitor.getPlatform() === "android")
+        await this.backgroundContinuity.suspendForIdentityReset();
+    },
+  });
+  private readonly workFence = this.identityResetRuntime.workFence;
+  private readonly storage = this.workFence.protect(this.rawStorage);
+  private identityStartupInspected = false;
+  private assertIdentityWorkReady(): void {
+    this.workFence.assertOpen();
+    if (!this.identityStartupInspected)
+      throw new Error("identity_runtime_not_initialized");
+  }
   private sharingLifetimeMs = DEFAULT_CLIP_SHARING_LIFETIME_MS;
   private readonly settingsListeners = new Set<
     (snapshot: SettingsSnapshot) => void
@@ -256,9 +273,11 @@ export class AndroidClient {
     return { ok: true as const, snapshot: await this.settingsHandler.read() };
   }
   setSharingLifetime(value: unknown) {
+    this.workFence.assertOpen();
     return this.settingsHandler.write({ sharingLifetimeMs: value });
   }
   async setSettings(patch: unknown) {
+    this.workFence.assertOpen();
     const result = await this.settingsHandler.write(patch);
     try {
       await this.backgroundContinuity.reflectAutoSync(this.autoSync);
@@ -269,6 +288,7 @@ export class AndroidClient {
     return result;
   }
   setTheme(theme: unknown) {
+    this.workFence.assertOpen();
     return this.settingsHandler.write({ theme });
   }
   onSettingsUpdate(listener: (snapshot: SettingsSnapshot) => void) {
@@ -282,8 +302,13 @@ export class AndroidClient {
   private managedRelays: ManagedRelayController | null = null;
   private managedRelayConfigurations: RelayConfiguration[] = [];
   private removeRelayCallback: (() => void) | null = null;
-  private readonly historyBackend = createHistoryBackend();
-  private readonly history = new MemoryHistoryStore(this.historyBackend);
+  private readonly rawHistoryBackend = createHistoryBackend();
+  private readonly historyBackend = this.workFence.protect(
+    this.rawHistoryBackend
+  );
+  private readonly history = this.workFence.protect(
+    new MemoryHistoryStore(this.historyBackend)
+  );
   private readonly retentionPreference = createLocalRetentionPreference({
     storage: this.storage,
     history: this.history,
@@ -301,9 +326,24 @@ export class AndroidClient {
     key: IDENTITY_KEY,
   });
   private readonly identityRotation = createAndroidIdentityRotationOwner({
-    repository: this.identityRepo,
-    storage: this.storage,
-    history: this.historyBackend,
+    repository: createKVIdentityRepository({
+      storage: this.rawStorage,
+      key: IDENTITY_KEY,
+    }),
+    storage: this.rawStorage,
+    history: this.rawHistoryBackend,
+    ...(this.rawStorage instanceof LocalStorageBackend &&
+    this.rawHistoryBackend instanceof IndexedDBHistoryBackend &&
+    Capacitor.getPlatform() === "android"
+      ? {
+          reset: {
+            storage: this.rawStorage,
+            persistentHistory: this.rawHistoryBackend,
+            lifecycle: this.identityResetRuntime.lifecycle,
+            verifyNativeCleanup: this.identityResetRuntime.verifyNativeCleanup,
+          },
+        }
+      : {}),
     shutdown: () => this.stopIdentityBoundServices(),
     runtimeCleanup: {
       prepare: async () => {
@@ -328,8 +368,17 @@ export class AndroidClient {
   private readonly identityRotationLifecycle =
     createRuntimeIdentityRotationLifecycle({
       rotation: this.identityRotation,
+      workFence: this.workFence,
       loadIdentity: () => this.identitySvc.get(),
-      restart: () => window.location.reload(),
+      restart: () => {
+        if (Capacitor.getPlatform() === "android") {
+          void this.identityResetRuntime
+            .restartRuntime()
+            .catch(() =>
+              log.warn("Android runtime restart could not be completed")
+            );
+        } else window.location.reload();
+      },
       startLocalRecovery: () => {
         this.clipboardSync.startLocalOnly();
         this.started = true;
@@ -341,6 +390,7 @@ export class AndroidClient {
     });
   private readonly identitySvc = createRuntimeIdentityManager({
     repo: this.identityRepo,
+    workFence: this.workFence,
     capabilities: RUNTIME_CAPABILITIES.android,
   });
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null =
@@ -357,7 +407,7 @@ export class AndroidClient {
   > | null = null;
 
   constructor(
-    private readonly storage: KVStorageBackend = new LocalStorageBackend()
+    private readonly rawStorage: KVStorageBackend = new LocalStorageBackend()
   ) {
     // The companion can report loss before networking or the focused Activity starts.
     void this.backgroundNative.on("runtimeLost", () =>
@@ -375,7 +425,7 @@ export class AndroidClient {
       "localNotificationActionPerformed",
       (event) => {
         const id = event.notification.extra?.runtimeNotificationId;
-        if (typeof id === "string") {
+        if (typeof id === "string" && !this.workFence.isFenced()) {
           this.notificationSelection.emit(id);
         }
       }
@@ -383,6 +433,7 @@ export class AndroidClient {
   }
 
   private async ensureMessaging(): Promise<void> {
+    this.workFence.assertOpen();
     if (this.transport && this.liveClipGossip) {
       if (!this.pairedConnections) {
         this.pairedConnections = createPairedPeerConnectionManager({
@@ -393,6 +444,7 @@ export class AndroidClient {
       return;
     }
     const identity = await this.identitySvc.get();
+    this.workFence.assertOpen();
     const peerId =
       identity.privateKey && typeof identity.privateKey === "string"
         ? await peerIdFromPrivateKeyBase64(identity.privateKey)
@@ -408,6 +460,7 @@ export class AndroidClient {
       relayAddresses,
       circuitRelays: relayAddresses,
     });
+    this.workFence.assertOpen();
     this.transport = createLibp2pMessagingTransport({
       peerId,
       privateKey,
@@ -463,6 +516,7 @@ export class AndroidClient {
     this.transport.onPeerDisconnected(() => void this.emitState());
     this.transport.onRelayConnectionChanged?.(() => void this.emitState());
     this.transport.onSelfPeerUpdate((multiaddrs) => {
+      if (this.workFence.isFenced()) return;
       void this.identitySvc
         .updateMultiaddrs(multiaddrs)
         .then(() => this.emitState());
@@ -484,7 +538,7 @@ export class AndroidClient {
         }
       },
       writeText: async (text: string) => {
-        await writeClipboardText(text);
+        await this.workFence.run(() => writeClipboardText(text));
       },
       onHistoryErrorChanged: (error) => {
         this.clipboardHistoryError = error;
@@ -615,8 +669,8 @@ export class AndroidClient {
     applicationStateKey: "runtimeApplicationState",
     initialApplicationState: () => ({}) as Record<string, unknown>,
     clipboard: {
-      readText: readClipboardText,
-      writeText: writeClipboardText,
+      readText: () => this.workFence.run(readClipboardText),
+      writeText: (text) => this.workFence.run(() => writeClipboardText(text)),
     },
     notifications: {
       show: async (message) => {
@@ -629,27 +683,33 @@ export class AndroidClient {
             permission = await LocalNotifications.requestPermissions();
           }
           if (permission.display !== "granted") return;
-          await LocalNotifications.schedule({
-            notifications: [
-              {
-                id: nativeNotificationId(message.id),
-                title: message.title,
-                body: message.body,
-                extra: { runtimeNotificationId: message.id },
-              },
-            ],
-          });
+          this.workFence.assertOpen();
+          await this.workFence.run(() =>
+            LocalNotifications.schedule({
+              notifications: [
+                {
+                  id: nativeNotificationId(message.id),
+                  title: message.title,
+                  body: message.body,
+                  extra: { runtimeNotificationId: message.id },
+                },
+              ],
+            })
+          );
         } catch (err) {
           if (typeof Notification === "undefined") {
             log.warn("Failed to show pairing request notification", err);
             return;
           }
+          this.workFence.assertOpen();
           const notification = new Notification(message.title, {
             body: message.body,
             tag: message.id,
           });
-          notification.onclick = () =>
-            this.notificationSelection.emit(message.id);
+          notification.onclick = () => {
+            if (!this.workFence.isFenced())
+              this.notificationSelection.emit(message.id);
+          };
         }
       },
       async dismiss(id) {
@@ -694,7 +754,9 @@ export class AndroidClient {
     verify: verifyPairingTrustRequestSignature,
     membership: this.identitySvc,
     sendResponse: async (peerId, frame) =>
-      this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
+      this.workFence.run(() =>
+        this.transport!.send(PAIRING_PROTOCOL, peerId, frame)
+      ),
     responseIdentity: async () => {
       const identity = await this.identitySvc.get();
       return {
@@ -740,7 +802,9 @@ export class AndroidClient {
       };
     },
     send: (targetPeerId, frame) =>
-      this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame),
+      this.workFence.run(() =>
+        this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame)
+      ),
     sign: async (bytes) => {
       const identity = await this.identitySvc.get();
       if (!identity.privateKey) throw new Error("identity_unavailable");
@@ -853,15 +917,18 @@ export class AndroidClient {
     if (this.backgroundEventsBound) return;
     this.backgroundEventsBound = true;
 
-    const updateActivity = () =>
+    const updateActivity = () => {
+      if (this.workFence.isFenced()) return;
       void this.setBackgroundActivityState()
         .then(() => this.emitState())
         .catch(() => this.emitState());
+    };
     window.addEventListener("focus", updateActivity);
     window.addEventListener("blur", updateActivity);
     document.addEventListener("visibilitychange", updateActivity);
 
     void this.backgroundNative.on("activityState", (event) => {
+      if (this.workFence.isFenced()) return;
       const resumed = event.resumed === true;
       const windowFocused = event.windowFocused === true;
       void this.backgroundContinuity
@@ -873,6 +940,7 @@ export class AndroidClient {
         .catch(() => this.emitState());
     });
     void this.backgroundNative.on("action", (event) => {
+      if (this.workFence.isFenced()) return;
       const action = event.action;
       if (action !== "pause" && action !== "resume" && action !== "stop")
         return;
@@ -893,6 +961,7 @@ export class AndroidClient {
         );
     });
     void this.backgroundNative.on("explicitText", () => {
+      if (this.workFence.isFenced()) return;
       void this.backgroundContinuity.handleExplicitTextActionsAvailable();
     });
   }
@@ -935,8 +1004,14 @@ export class AndroidClient {
       await this.storage.get<unknown>("sharingLifetimeMs")
     );
     await startIdentityBoundRuntimeServices({
-      initializeIdentity: () => this.identityRotationLifecycle.initialize(),
+      initializeIdentity: async () => {
+        const initialized = await this.identityRotationLifecycle.initialize();
+        if (initialized.localServicesEnabled !== false)
+          this.identityStartupInspected = true;
+        return initialized;
+      },
       startLocalServices: async () => {
+        await this.identityResetRuntime.openRuntime();
         this.bindEvents();
         this.bindBackgroundContinuityEvents();
         this.androidApiLevel = await this.backgroundNative.apiLevel();
@@ -991,6 +1066,7 @@ export class AndroidClient {
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
           this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+            if (this.workFence.isFenced()) return;
             void this.pairingSessions
               .receive(from, frame, (peerId, requestFrame) =>
                 this.pairingPending.receive(peerId, requestFrame)
@@ -1000,7 +1076,7 @@ export class AndroidClient {
               );
           });
         }
-        await this.transport!.start();
+        await this.workFence.run(() => this.transport!.start());
         await this.startManagedRelays();
         this.pairedConnections?.start();
         this.historyReconciliation?.start();
@@ -1016,12 +1092,15 @@ export class AndroidClient {
     await this.stopIdentityBoundServices();
   }
 
-  private async stopIdentityBoundServices() {
+  private async stopIdentityBoundServices(strict = false) {
     this.removeRelayCallback?.();
     this.removeRelayCallback = null;
-    await this.managedRelays
-      ?.stop()
-      .catch((error) => log.warn("Managed relay cleanup timed out", error));
+    const relayStop = this.managedRelays?.stop();
+    if (strict) await relayStop;
+    else
+      await relayStop?.catch((error) =>
+        log.warn("Managed relay cleanup timed out", error)
+      );
     this.backgroundContinuity.stopRuntimeHeartbeat();
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
@@ -1044,6 +1123,7 @@ export class AndroidClient {
   }
 
   start() {
+    this.workFence.assertOpen();
     return this.runtime.start();
   }
 
@@ -1073,6 +1153,22 @@ export class AndroidClient {
   }
 
   async getState(): Promise<AndroidAppState> {
+    if (!this.identityStartupInspected || this.workFence.isFenced())
+      return {
+        clips: [],
+        devices: [],
+        pending: [],
+        peers: [],
+        identity: null,
+        pinnedIds: [],
+        identityRotationRecovery:
+          this.identityRotationRecovery || this.workFence.isFenced(),
+        relayAddresses: [],
+        localRetentionMs: this.localRetentionMs,
+        autoSync: this.autoSync,
+        backgroundContinuity: this.backgroundContinuity.snapshot(),
+      };
+    const generation = this.workFence.generation();
     const pairingState = this.pairingSessions.snapshot();
     const historyProjection = await this.historyState.read();
     const devices = await this.identitySvc.trustedDevices();
@@ -1105,7 +1201,7 @@ export class AndroidClient {
       }
     );
 
-    return {
+    const state: AndroidAppState = {
       clips: historyProjection.clips,
       devices,
       pending: this.pendingRequests,
@@ -1134,14 +1230,18 @@ export class AndroidClient {
       },
       backgroundContinuity: this.backgroundContinuity.snapshot(),
     };
+    this.workFence.assertOpen(generation);
+    return state;
   }
 
   async deleteClip(id: string) {
+    this.assertIdentityWorkReady();
     await this.backgroundContinuity.removeClip(id);
     await this.emitState();
   }
 
   async reuseClip(id: string) {
+    this.assertIdentityWorkReady();
     const outcome = await reuseRetainedClip(id, {
       history: this.history,
       clipboard: this.clipboard,
@@ -1151,6 +1251,7 @@ export class AndroidClient {
   }
 
   async clearHistory() {
+    this.assertIdentityWorkReady();
     try {
       await this.backgroundContinuity.clearHistory();
     } finally {
@@ -1159,11 +1260,13 @@ export class AndroidClient {
   }
 
   async unpairDevice(id: string) {
+    this.assertIdentityWorkReady();
     await this.identitySvc.revoke(id);
     await this.emitState();
   }
 
   async renameDevice(id: string, name: string): Promise<Device | null> {
+    this.assertIdentityWorkReady();
     const device = await this.identitySvc.setLocalDeviceAlias(id, name);
     await this.emitState();
     return device;
@@ -1173,6 +1276,7 @@ export class AndroidClient {
     name: string,
     expectedDeviceId: string
   ): Promise<Identity | null> {
+    this.assertIdentityWorkReady();
     await this.identitySvc.rename(name, expectedDeviceId);
     const identity = await this.getIdentity();
     await this.emitState();
@@ -1180,6 +1284,7 @@ export class AndroidClient {
   }
 
   async acceptRequest(dev: PendingRequest) {
+    this.assertIdentityWorkReady();
     const result = await this.pairingPending.decide(
       dev.deviceId,
       "accepted",
@@ -1199,6 +1304,7 @@ export class AndroidClient {
   }
 
   async rejectRequest(dev: PendingRequest) {
+    this.assertIdentityWorkReady();
     const result = await this.pairingPending.decide(
       dev.deviceId,
       "rejected",
@@ -1218,6 +1324,7 @@ export class AndroidClient {
   }
 
   async setPinned(id: string, pinned: boolean) {
+    this.assertIdentityWorkReady();
     const pinnedIds = await this.history.setPinned(id, pinned);
     await this.emitState();
     return pinnedIds;
@@ -1228,15 +1335,18 @@ export class AndroidClient {
   }
 
   async retryHistoryCleanup() {
+    this.assertIdentityWorkReady();
     await this.historyRetentionCleanup?.retry();
   }
 
   async acknowledgeIdentityRotationNotice() {
+    this.assertIdentityWorkReady();
     await this.identityRotation.acknowledgeNotice();
     await this.emitState();
   }
 
   async setLocalRetention(retentionMs: number) {
+    this.workFence.assertOpen();
     return this.settingsHandler.write({ localRetentionMs: retentionMs });
   }
 
@@ -1270,9 +1380,11 @@ export class AndroidClient {
     return this.relayMutationOwner.refresh();
   }
   async mutateManagedRelay(mutation: RelayMutation) {
+    this.workFence.assertOpen();
     return this.relayMutationOwner.mutate(mutation);
   }
   async loginManagedRelay(key: string) {
+    this.workFence.assertOpen();
     return performRelayAction(
       "authenticated",
       async () => {
@@ -1284,6 +1396,7 @@ export class AndroidClient {
     );
   }
   async openManagedRelayAccount(key: string) {
+    this.workFence.assertOpen();
     return performRelayAction(
       "portal-opened",
       async () => {
@@ -1295,6 +1408,7 @@ export class AndroidClient {
     );
   }
   async retryManagedRelay(key: string) {
+    this.workFence.assertOpen();
     return performRelayAction(
       "retry-requested",
       async () => {
@@ -1313,6 +1427,7 @@ export class AndroidClient {
   }
 
   async setAutoSync(enabled: boolean) {
+    this.workFence.assertOpen();
     return performAutoSyncAction(enabled, {
       set: async (value) => {
         await this.backgroundContinuity.setAutoSync(value);
@@ -1329,6 +1444,7 @@ export class AndroidClient {
     });
   }
   async refreshAutoSync() {
+    this.workFence.assertOpen();
     const settings = await this.settingsHandler.read();
     await this.backgroundContinuity.reflectAutoSync(settings.state.autoSync);
     await this.emitState();
@@ -1336,6 +1452,7 @@ export class AndroidClient {
   }
 
   async setBackgroundContinuity(enabled: boolean) {
+    this.workFence.assertOpen();
     const results = await Promise.allSettled([
       this.backgroundContinuity.setEnabledFromUser(enabled),
       this.emitState(),
@@ -1347,6 +1464,7 @@ export class AndroidClient {
   }
 
   async refreshBackgroundContinuity() {
+    this.workFence.assertOpen();
     try {
       this.androidApiLevel = await this.backgroundNative.apiLevel();
       await this.backgroundContinuity.initialize();
@@ -1368,6 +1486,7 @@ export class AndroidClient {
   }
 
   async getIdentity(): Promise<Identity | null> {
+    if (!this.identityStartupInspected) return null;
     const id = await this.identitySvc.get();
     return toPublicDeviceIdentity(id);
   }
@@ -1377,21 +1496,27 @@ export class AndroidClient {
   }
 
   async retryIdentityInitialization(): Promise<AndroidAppState> {
+    this.workFence.assertOpen();
+    const reset = await this.identityRotation.reconcileIdentityReset();
+    if (reset.phase !== "idle") return this.getState();
     await this.identitySvc.retryInitialization();
     await this.runtime.start();
     return this.getState();
   }
 
   copyPairingText(text: string) {
+    this.workFence.assertOpen();
     return copyPayloadText(text, (value) =>
       CapacitorClipboard.write({ string: value })
     );
   }
 
   async getPairingCode(): Promise<PairingCode | null> {
+    this.assertIdentityWorkReady();
+    const generation = this.workFence.generation();
     const id = await this.identitySvc.get();
     await this.ensureMessaging();
-    await this.transport!.start();
+    await this.workFence.run(() => this.transport!.start());
     if (!this.transport!.getSignedPeerRecord)
       throw new Error("signed_peer_record_unavailable");
     const signedPeerRecord = await this.transport!.getSignedPeerRecord();
@@ -1400,10 +1525,13 @@ export class AndroidClient {
       signedPeerRecord,
       deviceNameHint: id.deviceName,
     });
-    return createPairingCode(text);
+    const code = await createPairingCode(text);
+    this.workFence.assertOpen(generation);
+    return code;
   }
 
   async pairFromText(txt: string): Promise<PairingResult> {
+    this.assertIdentityWorkReady();
     const diagnostics = this.createPairingDiagnostics(
       typeof txt === "string" ? txt.length : 0
     );
@@ -1432,13 +1560,14 @@ export class AndroidClient {
       const target = decodePairingTarget(txt);
       if (!target) return fail("invalid");
       await this.ensureMessaging();
-      await this.transport!.start();
+      await this.workFence.run(() => this.transport!.start());
       const localIdentity = await this.identitySvc.get();
       if (!localIdentity.privateKey) return fail("invalid");
       await importPairingTargetAndRequest({
         text: txt,
-        network: this.transport!,
-        request: this.pairingSessions.request,
+        network: this.workFence.protect(this.transport!),
+        request: (...args) =>
+          this.workFence.run(() => this.pairingSessions.request(...args)),
       });
       return {
         ok: true,
@@ -1458,7 +1587,8 @@ export class AndroidClient {
   }
 
   async shareCurrentClipboard() {
-    const text = await readClipboardText();
+    this.assertIdentityWorkReady();
+    const text = await this.workFence.run(readClipboardText);
     await this.clipboard.processLocalText(text, { shareNow: true });
     await this.emitState();
   }

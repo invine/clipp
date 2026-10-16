@@ -18,6 +18,8 @@ public final class ExplicitTextIngressActivity extends Activity {
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 startActivity(launch);
             }
+        } else if (result == ExplicitTextIngressStore.EnqueueResult.UNAVAILABLE) {
+            Toast.makeText(this, "Clipp setup is incomplete. Retry sharing after setup finishes.", Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, R.string.explicit_text_failed, Toast.LENGTH_SHORT).show();
         }

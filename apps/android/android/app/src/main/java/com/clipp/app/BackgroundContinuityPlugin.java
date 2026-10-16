@@ -32,6 +32,15 @@ import java.nio.charset.StandardCharsets;
 @CapacitorPlugin(name = "BackgroundContinuity")
 public final class BackgroundContinuityPlugin extends Plugin {
     private static final long SERVICE_START_TIMEOUT_MS = 10_000L;
+    private String runtimeGeneration;
+    private boolean admit(PluginCall call) {
+        if (!NativeIdentityResetFence.generation().equals(runtimeGeneration) || NativeIdentityResetFence.forContext(getContext()).isBlocked()) {
+            call.reject("identity_reset_incomplete_retry_after_setup");
+            return false;
+        }
+        return true;
+    }
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private volatile PluginCall pendingStartCall;
     private final Map<PluginCall, Runnable> pendingStops = new ConcurrentHashMap<>();
@@ -93,6 +102,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @Override
     public void load() {
+        runtimeGeneration = NativeIdentityResetFence.generation();
         IntentFilter filter = new IntentFilter();
         filter.addAction(BackgroundContinuityService.ACTION_RUNTIME_LOST);
         filter.addAction(BackgroundContinuityService.ACTION_TASK_REMOVED);
@@ -155,51 +165,65 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void setEnabled(PluginCall call) {
-        boolean enabled = call.getBoolean("enabled", false);
-        boolean saved = BackgroundContinuityService.persistEnabled(getContext(), enabled);
-        if (!saved) { call.reject("background_continuity_persistence_failed"); return; }
-        if (!enabled) {
-            rejectPendingUpdates("background_continuity_stopped");
-            PluginCall startCall = takePendingStartCall();
-            if (startCall != null) startCall.reject("background_continuity_stopped");
-            stopAndResolve(call);
-            return;
-        }
-        call.resolve();
+        try {
+            boolean enabled = call.getBoolean("enabled", false);
+            synchronized (NativeIdentityResetFence.LOCK) {
+                if (!admit(call)) return;
+                if (!BackgroundContinuityService.persistEnabled(getContext(), enabled)) {
+                    call.reject("background_continuity_persistence_failed"); return;
+                }
+            }
+            if (!enabled) {
+                rejectPendingUpdates("background_continuity_stopped");
+                PluginCall startCall = takePendingStartCall();
+                if (startCall != null) startCall.reject("background_continuity_stopped");
+                stopAndResolve(call);
+                return;
+            }
+            call.resolve();
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public synchronized void start(PluginCall call) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            call.reject("background_continuity_unavailable");
-            return;
-        }
-        if (!BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.ENABLED, false)) {
-            call.reject("background_continuity_not_enabled");
-            return;
-        }
-        if (pendingStartCall != null) {
-            call.reject("background_continuity_start_in_progress");
-            return;
-        }
-        pendingStartCall = call;
-        new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition(
-            BackgroundContinuityDiagnostics.ServiceTransition.START_REQUESTED
-        );
-        handler.postDelayed(serviceStartTimeout, SERVICE_START_TIMEOUT_MS);
         try {
-            Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START);
-            Boolean autoSync = call.getBoolean("autoSync");
-            if (autoSync != null) intent.putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync);
-            ContextCompat.startForegroundService(getContext(), intent);
-        } catch (RuntimeException error) {
-            PluginCall startCall = takePendingStartCall();
-            if (startCall != null) startCall.reject("background_continuity_start_failed", error);
-        }
+            if (!admit(call)) return;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                call.reject("background_continuity_unavailable");
+                return;
+            }
+            if (!BackgroundContinuityService.preferences(getContext()).getBoolean(BackgroundContinuityService.ENABLED, false)) {
+                call.reject("background_continuity_not_enabled");
+                return;
+            }
+            if (pendingStartCall != null) {
+                call.reject("background_continuity_start_in_progress");
+                return;
+            }
+            pendingStartCall = call;
+            new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition(
+                BackgroundContinuityDiagnostics.ServiceTransition.START_REQUESTED
+            );
+            handler.postDelayed(serviceStartTimeout, SERVICE_START_TIMEOUT_MS);
+            try {
+                Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_START)
+                    .putExtra(BackgroundContinuityService.EXTRA_IDENTITY_RUNTIME_GENERATION, runtimeGeneration);
+                Boolean autoSync = call.getBoolean("autoSync");
+                if (autoSync != null) intent.putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync);
+                ContextCompat.startForegroundService(getContext(), intent);
+            } catch (RuntimeException error) {
+                PluginCall startCall = takePendingStartCall();
+                if (startCall != null) startCall.reject("background_continuity_start_failed", error);
+            }
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public void stop(PluginCall call) {
+        if (!NativeIdentityResetFence.generation().equals(runtimeGeneration) && !NativeIdentityResetFence.forContext(getContext()).isBlocked()) {
+            call.reject("identity_runtime_retired"); return;
+        }
         new BackgroundContinuityDiagnostics(getContext()).recordServiceTransition(
             BackgroundContinuityDiagnostics.ServiceTransition.STOP_REQUESTED
         );
@@ -211,32 +235,40 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void heartbeat(PluginCall call) {
-        getContext().startService(new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_HEARTBEAT));
-        call.resolve();
+        try {
+            if (!admit(call)) return;
+            getContext().startService(new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_HEARTBEAT).putExtra(BackgroundContinuityService.EXTRA_IDENTITY_RUNTIME_GENERATION, runtimeGeneration));
+            call.resolve();
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public void update(PluginCall call) {
-        if (!BackgroundContinuityService.isRunning()) { call.reject("background_continuity_not_running"); return; }
-        String id = UUID.randomUUID().toString();
-        Runnable timeout = () -> {
-            PluginCall pending = takePendingUpdate(id);
-            if (pending != null) pending.reject("background_continuity_update_timeout");
-        };
-        pendingUpdates.put(id, call);
-        updateTimeouts.put(id, timeout);
-        handler.postDelayed(timeout, SERVICE_START_TIMEOUT_MS);
-        Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_UPDATE);
-        intent.putExtra(BackgroundContinuityService.EXTRA_CONNECTION_STATE, call.getString("state", "waiting"));
-        intent.putExtra(BackgroundContinuityService.EXTRA_CONNECTED_DEVICE_COUNT, call.getInt("connectedTrustedDeviceCount", 0));
-        Boolean autoSync = call.getBoolean("autoSync");
-        if (autoSync != null) intent.putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync);
-        intent.putExtra(BackgroundContinuityService.EXTRA_UPDATE_ID, id);
-        try { getContext().startService(intent); }
-        catch (RuntimeException error) {
-            PluginCall pending = takePendingUpdate(id);
-            if (pending != null) pending.reject("background_continuity_update_failed", error);
-        }
+        try {
+            if (!admit(call)) return;
+            if (!BackgroundContinuityService.isRunning()) { call.reject("background_continuity_not_running"); return; }
+            String id = UUID.randomUUID().toString();
+            Runnable timeout = () -> {
+                PluginCall pending = takePendingUpdate(id);
+                if (pending != null) pending.reject("background_continuity_update_timeout");
+            };
+            pendingUpdates.put(id, call);
+            updateTimeouts.put(id, timeout);
+            handler.postDelayed(timeout, SERVICE_START_TIMEOUT_MS);
+            Intent intent = new Intent(getContext(), BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_UPDATE).putExtra(BackgroundContinuityService.EXTRA_IDENTITY_RUNTIME_GENERATION, runtimeGeneration);
+            intent.putExtra(BackgroundContinuityService.EXTRA_CONNECTION_STATE, call.getString("state", "waiting"));
+            intent.putExtra(BackgroundContinuityService.EXTRA_CONNECTED_DEVICE_COUNT, call.getInt("connectedTrustedDeviceCount", 0));
+            Boolean autoSync = call.getBoolean("autoSync");
+            if (autoSync != null) intent.putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync);
+            intent.putExtra(BackgroundContinuityService.EXTRA_UPDATE_ID, id);
+            try { getContext().startService(intent); }
+            catch (RuntimeException error) {
+                PluginCall pending = takePendingUpdate(id);
+                if (pending != null) pending.reject("background_continuity_update_failed", error);
+            }
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
@@ -259,8 +291,12 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void showReconnectNotification(PluginCall call) {
-        BackgroundContinuityService.postReconnectNotification(getContext());
-        call.resolve();
+        try {
+            if (!admit(call)) return;
+            BackgroundContinuityService.postReconnectNotification(getContext());
+            call.resolve();
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
@@ -309,36 +345,48 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void getExplicitTextActions(PluginCall call) {
-        JSObject result = new JSObject();
-        result.put("actions", new ExplicitTextIngressStore(getContext()).actionsJson());
-        call.resolve(result);
+        try {
+            if (!admit(call)) return;
+            JSObject result = new JSObject();
+            result.put("actions", new ExplicitTextIngressStore(getContext()).actionsJson());
+            call.resolve(result);
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public void prepareExplicitTextAction(PluginCall call) {
-        String actionId = call.getString("actionId");
-        String clipId = call.getString("clipId");
-        Long capturedAt = call.getLong("capturedAt");
-        Long sharingLifetimeMs = call.getLong("sharingLifetimeMs");
-        if (actionId == null || clipId == null || capturedAt == null || sharingLifetimeMs == null || sharingLifetimeMs <= 0 || sharingLifetimeMs > 2592000000L) {
-            call.reject("invalid_explicit_text_action");
-            return;
-        }
-        if (!new ExplicitTextIngressStore(getContext()).prepare(actionId, clipId, capturedAt, sharingLifetimeMs)) {
-            call.reject("explicit_text_action_persistence_failed");
-            return;
-        }
-        call.resolve();
+        try {
+            if (!admit(call)) return;
+            String actionId = call.getString("actionId");
+            String clipId = call.getString("clipId");
+            Long capturedAt = call.getLong("capturedAt");
+            Long sharingLifetimeMs = call.getLong("sharingLifetimeMs");
+            if (actionId == null || clipId == null || capturedAt == null || sharingLifetimeMs == null || sharingLifetimeMs <= 0 || sharingLifetimeMs > 2592000000L) {
+                call.reject("invalid_explicit_text_action");
+                return;
+            }
+            if (!new ExplicitTextIngressStore(getContext()).prepare(actionId, clipId, capturedAt, sharingLifetimeMs)) {
+                call.reject("explicit_text_action_persistence_failed");
+                return;
+            }
+            call.resolve();
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public void completeExplicitTextAction(PluginCall call) {
-        String actionId = call.getString("actionId");
-        if (actionId == null || !new ExplicitTextIngressStore(getContext()).complete(actionId)) {
-            call.reject("explicit_text_action_completion_failed");
-            return;
-        }
-        call.resolve();
+        try {
+            if (!admit(call)) return;
+            String actionId = call.getString("actionId");
+            if (actionId == null || !new ExplicitTextIngressStore(getContext()).complete(actionId)) {
+                call.reject("explicit_text_action_completion_failed");
+                return;
+            }
+            call.resolve();
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
@@ -353,28 +401,40 @@ public final class BackgroundContinuityPlugin extends Plugin {
 
     @PluginMethod
     public void getPendingClipboardApplication(PluginCall call) {
-        JSObject result = new JSObject();
-        result.put("clipId", new PendingClipboardApplicationStore(getContext()).read());
-        call.resolve(result);
+        try {
+            if (!admit(call)) return;
+            JSObject result = new JSObject();
+            result.put("clipId", new PendingClipboardApplicationStore(getContext()).read());
+            call.resolve(result);
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public void setPendingClipboardApplication(PluginCall call) {
-        String clipId = call.getString("clipId");
-        if (clipId == null || !new PendingClipboardApplicationStore(getContext()).write(clipId)) {
-            call.reject("pending_clipboard_application_persistence_failed");
-            return;
-        }
-        call.resolve();
+        try {
+            if (!admit(call)) return;
+            String clipId = call.getString("clipId");
+            if (clipId == null || !new PendingClipboardApplicationStore(getContext()).write(clipId)) {
+                call.reject("pending_clipboard_application_persistence_failed");
+                return;
+            }
+            call.resolve();
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     @PluginMethod
     public void clearPendingClipboardApplication(PluginCall call) {
-        if (!new PendingClipboardApplicationStore(getContext()).clear()) {
-            call.reject("pending_clipboard_application_clear_failed");
-            return;
-        }
-        call.resolve();
+        try {
+            if (!admit(call)) return;
+            if (!new PendingClipboardApplicationStore(getContext()).clear()) {
+                call.reject("pending_clipboard_application_clear_failed");
+                return;
+            }
+            call.resolve();
+
+        } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
     private void notifyActivityState(boolean resumed) {

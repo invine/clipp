@@ -10,14 +10,18 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     private static volatile boolean activityOwnedRuntimeAvailable;
+    private static NativeIdentityResetFence activityResetFence;
     private static final float BODY_TEXT_REFERENCE = 16f;
 
     public static boolean hasActivityOwnedRuntime() {
-        return activityOwnedRuntimeAvailable;
+        return activityOwnedRuntimeAvailable && activityResetFence != null && !activityResetFence.isBlocked();
     }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        activityResetFence = NativeIdentityResetFence.forContext(this);
+        boolean resetBlocked = activityResetFence.isBlocked();
+        if (resetBlocked) stopService(new Intent(this, BackgroundContinuityService.class));
         registerPlugin(BackgroundContinuityPlugin.class);
         registerPlugin(ManagedRelayPlugin.class);
         registerPlugin(HostGeometryPlugin.class);

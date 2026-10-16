@@ -24,6 +24,7 @@ type OwnerOptions = Omit<
     storage: LocalStorageBackend;
     persistentHistory: IndexedDBHistoryBackend;
     lifecycle: IdentityResetLifecycle;
+    verifyNativeCleanup?(): Promise<void>;
   };
 };
 
@@ -75,6 +76,7 @@ export function createAndroidIdentityRotationOwner(options: OwnerOptions) {
           installIdentity: (candidate) => strict.set(IDENTITY_KEY, candidate),
           verifyCleanup: async (candidatePeerId) => {
             await assertAutomaticSettled();
+            await reset.verifyNativeCleanup?.();
             await reset.persistentHistory.verifyIdentityResetDataCleared();
             if ((await history.getAll()).length !== 0)
               throw new Error("identity_reset_history_remaining");

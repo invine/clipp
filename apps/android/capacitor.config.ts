@@ -7,6 +7,8 @@ const config: CapacitorConfig = {
   appName: "Clipp",
   webDir: "dist",
   bundledWebRuntime: false,
+  // Native plugin payloads include private identity/reset persistence values.
+  loggingBehavior: "none",
   ...(devServerUrl
     ? {
         server: {
