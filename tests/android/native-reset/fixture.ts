@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import {
   LocalStorageBackend,
+  IDENTITY_RESET_NATIVE_AUTHORITY_KEY,
   type AndroidDurablePreferences,
 } from "../../../apps/android/src/storage";
 import { createAndroidIdentityRotationOwner } from "../../../apps/android/src/identityResetStorage";
@@ -290,6 +291,7 @@ async function seed(caseId: string) {
     GUARD,
     "identityRotation",
     META,
+    IDENTITY_RESET_NATIVE_AUTHORITY_KEY,
   ])
     await native.remove({ key: PREFIX + key });
   for (const key of [...scoped, JOURNAL, RECEIPT, GUARD, "identityRotation"])
@@ -305,11 +307,17 @@ async function seed(caseId: string) {
     createdAt: 1,
     membershipView: { admittedPeerIds: [former.peerId], revokedPeerIds: [] },
   };
-  await storage.identityResetStorage.set(IDENTITY_KEY, identity);
+  // Legacy fixtures predate reset authority. Use the actual native primitive directly;
+  // the real owner supplies the first strict reset effects, never synthetic setup.
+  await native.set({
+    key: PREFIX + IDENTITY_KEY,
+    value: JSON.stringify(identity),
+  });
   for (const key of scoped) {
     if (key !== IDENTITY_KEY)
-      await storage.identityResetStorage.set(key, {
-        syntheticFormerScope: key,
+      await native.set({
+        key: PREFIX + key,
+        value: JSON.stringify({ syntheticFormerScope: key }),
       });
     localStorage.setItem(
       PREFIX + key,
