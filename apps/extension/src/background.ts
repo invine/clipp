@@ -149,7 +149,8 @@ const retentionPreference = createLocalRetentionPreference({
   },
 });
 const managedCredentials = createChromeManagedRelayCredentials(
-  import.meta.env.VITE_CLIPP_REGISTERED_EXTENSION_ID ?? ""
+  import.meta.env.VITE_CLIPP_REGISTERED_EXTENSION_ID ?? "",
+  identityWork
 );
 const managedConfigurationStore = {
   readNewModel: () => storage.get(MANAGED_RELAY_CONFIGURATION_KEY),

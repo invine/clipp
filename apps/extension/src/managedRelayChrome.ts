@@ -1,9 +1,11 @@
+import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { createExtensionManagedRelayCredentials } from "./managedRelayCredentials";
 import { postManagedRelayToken } from "./managedRelayTokenHttp";
 
 export function createChromeManagedRelayCredentials(
-  registeredExtensionId: string
+  registeredExtensionId: string,
+  workFence?: IdentityBoundWorkFence
 ) {
   const area = chrome.storage.local;
   const backend = new ChromeStorageBackend();
@@ -26,6 +28,7 @@ export function createChromeManagedRelayCredentials(
   };
   return createExtensionManagedRelayCredentials({
     storage,
+    workFence,
     identity,
     registeredExtensionId,
     fetchToken: postManagedRelayToken,

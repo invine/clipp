@@ -6,10 +6,15 @@ jest.mock(
 
 import { createExtensionManagedRelayCredentials } from "../../apps/extension/src/managedRelayCredentials";
 
+import {
+  createIdentityBoundWorkFence,
+  type IdentityBoundWorkFence,
+} from "../../packages/core/runtime/identityInitialization";
+
 const endpoint = "https://relay.example/v1/relay";
 const extensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-function harness() {
+function harness(workFence?: IdentityBoundWorkFence) {
   const events: string[] = [];
   const records = new Map<string, unknown>();
   const storage = {
@@ -52,6 +57,7 @@ function harness() {
     identity,
     fetchToken,
     registeredExtensionId: extensionId,
+    workFence,
     now: () => 1000,
   });
   return { service, events, records, identity, fetchToken, storage };
@@ -303,4 +309,96 @@ describe("Chrome managed relay credentials", () => {
     expect(launch).toHaveBeenCalledTimes(1);
     expect(fetchToken).toHaveBeenCalledTimes(1);
   });
+});
+
+it("a delayed Chrome login callback cannot persist or adopt credentials after reset admission closes", async () => {
+  const work = createIdentityBoundWorkFence();
+  const { service, identity, records, fetchToken } = harness(work);
+  await service.interactiveLogin(endpoint);
+  const saved = [...records.entries()];
+  let reply!: () => void;
+  let entered!: () => void;
+  const launching = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  identity.launch = async (url) => {
+    entered();
+    await new Promise<void>((resolve) => {
+      reply = resolve;
+    });
+    return `${identity.redirectUrl}?code=retired-code&state=${new URL(url).searchParams.get("state")}`;
+  };
+  const login = service.interactiveLogin(endpoint);
+  await launching;
+  const fence = await work.acquireFence();
+  reply();
+  await expect(login).rejects.toThrow("identity_runtime_suspended");
+  expect([...records.entries()]).toEqual(saved);
+  expect(fetchToken).toHaveBeenCalledTimes(1);
+  await fence.release();
+  expect(await service.accessToken(endpoint)).toBe("access-1");
+});
+
+it("a token exchange that finishes after reset fencing cannot replace its last durable credential state", async () => {
+  const work = createIdentityBoundWorkFence();
+  const { service, records, fetchToken } = harness(work);
+  await service.interactiveLogin(endpoint);
+  let finish!: () => void;
+  let entered!: () => void;
+  const exchanging = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  fetchToken.mockImplementationOnce(async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return {
+      access_token: "retired-access",
+      refresh_token: "retired-refresh",
+      token_type: "Bearer",
+      expires_in: 900,
+    };
+  });
+  const login = service.interactiveLogin(endpoint);
+  await exchanging;
+  const saved = [...records.entries()];
+  const fence = await work.acquireFence();
+  finish();
+  await expect(login).rejects.toThrow("identity_runtime_suspended");
+  expect([...records.entries()]).toEqual(saved);
+  await fence.release();
+  expect(await service.accessToken(endpoint)).toBe("access-1");
+});
+
+it("a refresh reply from before a rejected reset stays retired after provisional admission reopens", async () => {
+  const work = createIdentityBoundWorkFence();
+  const { service, records, fetchToken } = harness(work);
+  await service.interactiveLogin(endpoint);
+  let finish!: () => void;
+  let entered!: () => void;
+  const exchanging = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  fetchToken.mockImplementationOnce(async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return {
+      access_token: "retired-access",
+      refresh_token: "retired-refresh",
+      token_type: "Bearer",
+      expires_in: 900,
+    };
+  });
+  const refresh = service.accessToken(endpoint, { forceRefresh: true });
+  await exchanging;
+  const saved = [...records.entries()];
+  const fence = await work.acquireFence();
+  await fence.release();
+  finish();
+  await expect(refresh).rejects.toThrow("identity_runtime_retired");
+  expect([...records.entries()]).toEqual(saved);
+  expect(await service.accessToken(endpoint)).toBe("access-1");
 });
