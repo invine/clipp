@@ -51,9 +51,11 @@ export function createChromeManagement(host: {
   exists(id: number): Promise<boolean>;
   activate(id: number, windowId?: number): Promise<void>;
   now(): number;
+  available?(): boolean;
   canonicalTabs?(): Promise<number[]>;
 }) {
   let tail: Promise<unknown> = Promise.resolve();
+  let invalidated = false;
   const pages = new Map<number, Page>();
   const serialized = <T>(work: () => Promise<T>): Promise<T> => {
     const next = tail.then(work, work);
@@ -63,7 +65,11 @@ export function createChromeManagement(host: {
   const trusted = (sender?: Sender) =>
     authorizedRelayUi(sender, host.extensionId, host.popupUrl, host.pageUrl) &&
     (sender?.frameId === undefined || sender.frameId === 0) &&
-    (!sender?.tab || sender.tab.url === sender.url);
+    (!sender?.tab || sender.tab.url === sender.url) &&
+    (sender?.url !== host.pageUrl ||
+      (sender.frameId === 0 &&
+        Number.isInteger(sender.tab?.id) &&
+        sender.tab!.id! >= 0));
   async function read() {
     const stored = await host.read();
     const records = stored.filter(
@@ -86,6 +92,7 @@ export function createChromeManagement(host: {
     return records;
   }
   async function routeRecord(id: string) {
+    if (invalidated || host.available?.() === false) return;
     const records = await read();
     const record = records.find((r) => r.id === id);
     if (!record || record.status !== "pending") return;
@@ -174,15 +181,37 @@ export function createChromeManagement(host: {
   }
   const coordinator = {
     flush: () => tail,
+    invalidate() {
+      // Admission closes synchronously, before queued navigation can run again.
+      invalidated = true;
+      return serialized(async () => {
+        try {
+          await host.write([]);
+          if ((await host.read()).length !== 0)
+            throw new Error("management_reset_cleanup_unconfirmed");
+        } finally {
+          for (const page of pages.values()) {
+            try {
+              page.port.postMessage({ type: "identity-reset" });
+            } catch {
+              // Reconnection must revalidate identity and authoritative state.
+            }
+          }
+        }
+      });
+    },
     route: (id: string) => serialized(() => routeRecord(id)),
     register(port: ManagementPort) {
       const sender = port.sender,
         tab = sender?.tab;
       if (
+        invalidated ||
         port.name !== MANAGEMENT_PORT ||
         sender?.id !== host.extensionId ||
         sender.url !== host.pageUrl ||
         tab?.id === undefined ||
+        !Number.isInteger(tab.id) ||
+        tab.id < 0 ||
         tab.url !== host.pageUrl ||
         sender.frameId !== 0
       ) {
@@ -261,13 +290,27 @@ export function createChromeManagement(host: {
           record = records.find((r) => r.id === id);
         if (!record) return { ok: false };
         if (record.status === "applied") {
-          if (record.target !== undefined)
-            await host.activate(record.target, record.windowId);
+          if (record.target !== undefined) {
+            try {
+              await host.activate(record.target, record.windowId);
+              if (
+                record.error ===
+                "The destination opened, but its window could not be activated."
+              ) {
+                record.error = undefined;
+                await host.write(records);
+              }
+            } catch {
+              return { ok: false, error: "management_activation_unconfirmed" };
+            }
+          }
           return { ok: true };
         }
         record.status = "pending";
         record.error = undefined;
         record.createdAt = host.now();
+        record.attempts = 0;
+        record.declined = [];
         // Preserve target/creation evidence: reconciliation always precedes another create.
         await host.write(records);
         await routeRecord(id);
@@ -290,6 +333,8 @@ export function createChromeManagement(host: {
     },
     accept(value: unknown, windowId?: number) {
       return serialized(async () => {
+        if (invalidated || host.available?.() === false)
+          return { ok: false, error: "identity_runtime_suspended" };
         const v = value as { id?: unknown; destination?: unknown };
         const destination = parseUiDestination(v?.destination);
         if (

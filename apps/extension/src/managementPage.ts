@@ -4,6 +4,7 @@ import type { UiSession } from "../../../packages/ui/src/uiSession";
 import { parseUiDestination } from "../../../packages/ui/src/uiDestination";
 export type ManagementAuthority = {
   ready: boolean;
+  identityId?: string;
   clipIds: string[];
   requestIds: string[];
 };
@@ -16,6 +17,7 @@ export function bindManagementPage(options: {
   schedule?(listener: () => void): () => void;
 }) {
   let reconciling = false;
+  let identityId: string | undefined;
   let disposed = false,
     port: chrome.runtime.Port | undefined,
     cancelReconnect: (() => void) | undefined;
@@ -32,6 +34,13 @@ export function bindManagementPage(options: {
     reconciling = true;
     try {
       const authority = options.authority();
+      if (authority.identityId && identityId !== authority.identityId) {
+        if (identityId !== undefined) {
+          pending.clear();
+          options.session.rotateIdentity();
+        }
+        identityId = authority.identityId;
+      }
       for (const handoff of pending.values()) {
         const result = options.session.acceptDestination(
           handoff.id,
@@ -61,7 +70,13 @@ export function bindManagementPage(options: {
     }
     const active = port;
     active.onMessage.addListener((value) => {
-      if (disposed || port !== active || value?.type !== "destination") return;
+      if (disposed || port !== active) return;
+      if (value?.type === "identity-reset") {
+        pending.clear();
+        options.session.rotateIdentity();
+        return;
+      }
+      if (value?.type !== "destination") return;
       const destination = parseUiDestination(value.handoff?.destination);
       if (!destination || typeof value.handoff.id !== "string") return;
       pending.set(value.handoff.id, { ...value.handoff, destination });

@@ -89,3 +89,42 @@ it("actual page binder waits for authority then applies once across worker recon
   });
   expect(session.getSnapshot().destination).toBe("history");
 });
+it("surviving page drops pending old-identity handoffs on reset and detects rotation across worker interruption", () => {
+  const session = createUiSession();
+  const first = portFixture(),
+    second = portFixture();
+  let ready = false,
+    identityId = "old",
+    refresh!: () => void,
+    reconnect!: () => void,
+    connections = 0;
+  bindManagementPage({
+    connect: () => (connections++ ? second.port : first.port),
+    session,
+    authority: () => ({ ready, identityId, clipIds: [], requestIds: [] }),
+    subscribeAuthority: (listener) => {
+      refresh = listener;
+      return () => {};
+    },
+    schedule: (listener) => {
+      reconnect = listener;
+      return () => {};
+    },
+  });
+  first.message({
+    type: "destination",
+    handoff: { id: "old-handoff", destination: { kind: "pairing" } },
+  });
+  first.message({ type: "identity-reset" });
+  ready = true;
+  refresh();
+  expect(session.getSnapshot().tasks).toEqual([]);
+  session.open({ kind: "pairing", origin: "devices" });
+  first.disconnected();
+  identityId = "new";
+  reconnect();
+  expect(session.getSnapshot().tasks).toEqual([]);
+  expect(second.sent).not.toContainEqual(
+    expect.objectContaining({ type: "ack", id: "old-handoff" })
+  );
+});

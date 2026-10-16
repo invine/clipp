@@ -6,7 +6,10 @@ import {
 } from "./chromeManagement";
 const MAILBOX = "clippManagementNavigationV1";
 /** Chrome 109 callback listeners; no credentials or task contents cross this boundary. */
-export function installChromeManagement(api: typeof chrome) {
+export function installChromeManagement(
+  api: typeof chrome,
+  admission: { ready?: Promise<unknown>; available?(): boolean } = {}
+) {
   const callback = <T>(invoke: (done: (value: T) => void) => void) =>
     new Promise<T>((resolve, reject) => {
       invoke((value) => {
@@ -15,20 +18,32 @@ export function installChromeManagement(api: typeof chrome) {
         else resolve(value);
       });
     });
+  // Explicitly restore the trusted-context boundary before reading any mailbox.
+  const storageReady = callback<void>((done) =>
+    api.storage.session.setAccessLevel(
+      { accessLevel: "TRUSTED_CONTEXTS" },
+      done
+    )
+  );
+  // A worker can start before any document asks for management status.
+  void storageReady.catch(() => {});
   const coordinator = createChromeManagement({
     extensionId: api.runtime.id,
     popupUrl: api.runtime.getURL("src/popup.html"),
     pageUrl: api.runtime.getURL("src/options.html"),
     read: async () => {
+      await storageReady;
       const result = await callback<Record<string, unknown>>((done) =>
         api.storage.session.get(MAILBOX, done)
       );
       return (result[MAILBOX] ?? []) as Handoff[];
     },
-    write: (records) =>
-      callback<void>((done) =>
+    write: async (records) => {
+      await storageReady;
+      return callback<void>((done) =>
         api.storage.session.set({ [MAILBOX]: records }, done)
-      ),
+      );
+    },
     create: () =>
       callback<chrome.tabs.Tab>((done) =>
         api.tabs.create(
@@ -69,9 +84,31 @@ export function installChromeManagement(api: typeof chrome) {
         );
     },
     now: Date.now,
+    available: admission.available,
   });
   api.runtime.onConnect.addListener((port) => {
-    if (port.name === MANAGEMENT_PORT) coordinator.register(port);
+    if (port.name === MANAGEMENT_PORT)
+      coordinator.register({
+        name: port.name,
+        sender: port.sender,
+        postMessage: (value) => port.postMessage(value),
+        disconnect: () => port.disconnect(),
+        onDisconnect: port.onDisconnect,
+        onMessage: {
+          addListener(listener) {
+            // Install synchronously: a page may advertise readiness before startup settles.
+            port.onMessage.addListener((value) => {
+              void Promise.resolve(admission.ready).then(
+                () => {
+                  if (admission.available?.() === false) port.disconnect();
+                  else listener(value);
+                },
+                () => port.disconnect()
+              );
+            });
+          },
+        },
+      });
   });
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (
@@ -83,17 +120,27 @@ export function installChromeManagement(api: typeof chrome) {
       ].includes(message?.type)
     )
       return;
-    const action =
-      message.type === "managementNavigate"
+    const action = Promise.resolve(admission.ready).then(() => {
+      if (
+        admission.available?.() === false &&
+        message.type !== "managementStatus"
+      )
+        return { ok: false, error: "identity_runtime_suspended" };
+      return message.type === "managementNavigate"
         ? coordinator.request(sender, message.handoff)
         : message.type === "managementStatus"
           ? coordinator.status(sender)
           : message.type === "managementRetry"
             ? coordinator.retry(sender, message.id)
             : coordinator.dismiss(sender, message.id);
+    });
     void action.then(
       (result) => {
-        sendResponse(result);
+        try {
+          sendResponse(result);
+        } catch {
+          // Ownership is already durable; a destroyed source cannot cancel routing.
+        }
         if (
           message.type === "managementStatus" &&
           result.ok &&
@@ -109,7 +156,13 @@ export function installChromeManagement(api: typeof chrome) {
         )
           void coordinator.route(String(result.id)).catch(() => {});
       },
-      () => sendResponse({ ok: false, error: "management_storage_unavailable" })
+      () => {
+        try {
+          sendResponse({ ok: false, error: "management_storage_unavailable" });
+        } catch {
+          // A later trusted document can inspect the durable mailbox.
+        }
+      }
     );
     return true;
   });

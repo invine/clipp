@@ -355,3 +355,167 @@ it("a duplicate handoff with equivalent filter context is idempotent regardless 
     })
   ).toMatchObject({ ok: false, error: "handoff_id_conflict" });
 });
+it("identity reset durably invalidates accepted navigation and tells surviving documents to forget it", async () => {
+  const f = fixture(),
+    p = page(7);
+  f.host.register(p.port);
+  p.receive({ type: "ready", idle: true });
+  await f.host.flush();
+  await f.host.accept({
+    id: "old-identity",
+    destination: { kind: "requests" },
+  });
+  await f.host.route("old-identity");
+  await f.host.invalidate();
+  expect(f.records()).toEqual([]);
+  expect(p.sent).toContainEqual({ type: "identity-reset" });
+  p.receive({ type: "ack", id: "old-identity", status: "applied" });
+  await f.host.flush();
+  expect(f.activated).toEqual([]);
+  expect(
+    await f.host.accept({
+      id: "during-reset",
+      destination: { kind: "requests" },
+    })
+  ).toMatchObject({ ok: false });
+});
+it("requires canonical top-level page identity for options-origin navigation", async () => {
+  const f = fixture();
+  const request = { id: "page-identity", destination: { kind: "requests" } };
+  for (const sender of [
+    {
+      id: "extension",
+      url: "chrome-extension://extension/src/options.html",
+      frameId: 0,
+    },
+    {
+      id: "extension",
+      url: "chrome-extension://extension/src/options.html",
+      frameId: 0,
+      tab: { id: -1, url: "chrome-extension://extension/src/options.html" },
+    },
+    {
+      id: "extension",
+      url: "chrome-extension://extension/src/options.html",
+      frameId: 2,
+      tab: { id: 7, url: "chrome-extension://extension/src/options.html" },
+    },
+  ])
+    expect(await f.host.request(sender, request)).toMatchObject({ ok: false });
+  expect(await f.host.request(page(7).port.sender, request)).toMatchObject({
+    ok: true,
+  });
+});
+it("retry clears a retained activation failure after the original page is focused", async () => {
+  let records: any[] = [],
+    fail = true;
+  const host = createChromeManagement({
+    extensionId: "extension",
+    popupUrl: "popup",
+    pageUrl: "page",
+    read: async () => structuredClone(records),
+    write: async (values) => {
+      records = structuredClone(values);
+    },
+    create: async () => ({ id: 1 }),
+    exists: async () => true,
+    activate: async () => {
+      if (fail) throw new Error("window unavailable");
+    },
+    now: () => 10,
+  });
+  const target = page(7);
+  target.port.sender.url = "page";
+  target.port.sender.tab.url = "page";
+  host.register(target.port);
+  target.receive({ type: "ready", idle: true });
+  await host.flush();
+  await host.accept({ id: "activation", destination: { kind: "requests" } });
+  await host.route("activation");
+  target.receive({ type: "ack", id: "activation", status: "applied" });
+  await host.flush();
+  expect(records[0].error).toContain("could not be activated");
+  fail = false;
+  expect(
+    await host.retry({ id: "extension", url: "popup" }, "activation")
+  ).toMatchObject({ ok: true });
+  expect(
+    (await host.status({ id: "extension", url: "popup" })).records[0]
+  ).toMatchObject({ status: "applied", error: undefined });
+});
+it("failed durable reset cleanup still retires surviving page navigation", async () => {
+  const p = page(7);
+  const host = createChromeManagement({
+    extensionId: "extension",
+    popupUrl: "popup",
+    pageUrl: "chrome-extension://extension/src/options.html",
+    read: async () => [],
+    write: async () => {
+      throw new Error("mailbox unavailable");
+    },
+    create: async () => ({ id: 1 }),
+    exists: async () => true,
+    activate: async () => {},
+    now: () => 10,
+  });
+  host.register(p.port);
+  await expect(host.invalidate()).rejects.toThrow("mailbox unavailable");
+  expect(p.sent).toContainEqual({ type: "identity-reset" });
+  expect(
+    await host.accept({ id: "retired", destination: { kind: "requests" } })
+  ).toMatchObject({ ok: false });
+});
+it("reset cannot confirm durable navigation cleanup from an unverified write callback", async () => {
+  const host = createChromeManagement({
+    extensionId: "extension",
+    popupUrl: "popup",
+    pageUrl: "page",
+    read: async () => [
+      {
+        id: "old",
+        destination: { kind: "requests" },
+        status: "pending",
+        createdAt: 10,
+        attempts: 0,
+      },
+    ],
+    write: async () => {},
+    create: async () => ({ id: 1 }),
+    exists: async () => true,
+    activate: async () => {},
+    now: () => 10,
+  });
+  await expect(host.invalidate()).rejects.toThrow(
+    "management_reset_cleanup_unconfirmed"
+  );
+});
+it("an explicit Retry gives a failed handoff another bounded opportunity without changing its ID", async () => {
+  let records: any[] = [],
+    created = 0;
+  const host = createChromeManagement({
+    extensionId: "extension",
+    popupUrl: "popup",
+    pageUrl: "page",
+    read: async () => structuredClone(records),
+    write: async (values) => {
+      records = structuredClone(values);
+    },
+    create: async () => ({ id: ++created }),
+    exists: async () => false,
+    activate: async () => {},
+    now: () => 10,
+  });
+  await host.accept({ id: "retry-bounded", destination: { kind: "requests" } });
+  for (let attempt = 0; attempt < 4; attempt++)
+    await host.route("retry-bounded");
+  const sender = { id: "extension", url: "popup" };
+  expect((await host.status(sender)).records[0].status).toBe("failed");
+  await host.retry(sender, "retry-bounded");
+  expect((await host.status(sender)).records).toEqual([
+    expect.objectContaining({
+      id: "retry-bounded",
+      status: "pending",
+      target: 4,
+    }),
+  ]);
+});

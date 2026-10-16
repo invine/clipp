@@ -29,6 +29,7 @@ function runtimeFixture() {
     },
     storage: {
       session: {
+        setAccessLevel: (_options: unknown, done: () => void) => done(),
         get: (_key: string, done: (v: any) => void) =>
           done(structuredClone(stored)),
         set: (values: any, done: () => void) => {

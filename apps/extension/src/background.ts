@@ -186,7 +186,10 @@ const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 const POPUP_URL = chrome.runtime.getURL("src/popup.html");
 const OPTIONS_URL = chrome.runtime.getURL("src/options.html");
 
-const managementNavigation = installChromeManagement(chrome);
+const managementNavigation = installChromeManagement(chrome, {
+  ready: startupResetReady,
+  available: () => !identityWork.isFenced(),
+});
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === MANAGEMENT_PORT) return;
@@ -743,16 +746,21 @@ const identityRotation = createChromeIdentityRotationCoordinator({
   shutdown: () => identityRotationShutdown(),
 });
 async function identityRotationShutdown() {
-  historyRetentionCleanup?.stop();
-  historyRetentionCleanup = undefined;
-  await historyPolicyReady;
-  membershipReconciler?.stop();
   await stopIdentityBoundRuntimeServices([
-    () => pairingSessions.stop(),
-    () => pairingPending.stop(),
-    () => clipboardSync.stop(),
-    () => historyReconciliation.stop(),
-    () => extensionNetwork.stop(),
+    () => managementNavigation.invalidate(),
+    async () => {
+      historyRetentionCleanup?.stop();
+      historyRetentionCleanup = undefined;
+      await historyPolicyReady;
+      membershipReconciler?.stop();
+      await stopIdentityBoundRuntimeServices([
+        () => pairingSessions.stop(),
+        () => pairingPending.stop(),
+        () => clipboardSync.stop(),
+        () => historyReconciliation.stop(),
+        () => extensionNetwork.stop(),
+      ]);
+    },
   ]);
 }
 
