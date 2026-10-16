@@ -20,6 +20,7 @@ export type SessionTask = {
     | "pairing-recovery";
   entity?: string;
   origin: string;
+  initialFocusKey?: string;
 };
 export type SessionContext = {
   search: string;
@@ -296,7 +297,13 @@ export function createUiSession() {
       const task = state.tasks.at(-1);
       dismissTask(task);
       update({
-        tasks: state.tasks.slice(0, -1),
+        tasks: state.tasks
+          .slice(0, -1)
+          .map((parent, index) =>
+            index === state.tasks.length - 2
+              ? { ...parent, initialFocusKey: task?.origin }
+              : parent
+          ),
         focusKey: task?.origin ?? state.focusKey,
       });
     },

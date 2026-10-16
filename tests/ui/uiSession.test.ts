@@ -64,14 +64,29 @@ it("re-presents a failed relay draft with one live owner and retains query, scro
   session.relay.begin(a);
   expect(session.relay.getSnapshot()?.raw.name).toBe("A");
 });
-it("Back leaves the parent Pairing task and retains input, while Discard only clears unsubmitted input", () => {
+it("Back restores the parent Pairing invoker and retains input, while Discard only clears unsubmitted input", () => {
   const session = createUiSession();
   session.open({ kind: "pairing", origin: "add-device" });
+  expect(session.getSnapshot().tasks).toEqual([
+    { kind: "pairing", origin: "add-device" },
+  ]);
   session.open({ kind: "paste", origin: "paste-choice" });
   session.pairing.change("raw invalid target");
   session.back();
   expect(session.getSnapshot().tasks).toEqual([
-    { kind: "pairing", origin: "add-device" },
+    {
+      kind: "pairing",
+      origin: "add-device",
+      initialFocusKey: "paste-choice",
+    },
+  ]);
+  session.update({ focusKey: "another-chooser-control" });
+  expect(session.getSnapshot().tasks).toEqual([
+    {
+      kind: "pairing",
+      origin: "add-device",
+      initialFocusKey: "paste-choice",
+    },
   ]);
   expect(session.pairing.getSnapshot().raw).toBe("raw invalid target");
   session.discard();

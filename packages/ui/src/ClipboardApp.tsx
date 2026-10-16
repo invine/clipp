@@ -2790,6 +2790,7 @@ export function ClipboardApp({
           <TaskDialog
             title="Pairing"
             focusVersion={sessionState.navigationVersion}
+            initialFocusKey={sessionState.tasks.at(-1)?.initialFocusKey}
             pending={pair.pending || sessionState.pairingImport.pending}
             originKey={sessionState.tasks.at(-1)?.origin}
             returnLabel="Close Pairing"
