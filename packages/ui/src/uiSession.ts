@@ -88,6 +88,7 @@ export function createUiSession() {
   const appliedDestinations = new Map<string, "applied" | "unavailable">();
   let historyGeneration = 0;
   let retryPairingImport: (() => Promise<void>) | undefined;
+  let pairingImportOperation: { submitted: boolean } | undefined;
   const historyRetries = new Map<
     string,
     () => Promise<ClipboardActionFeedback | null>
@@ -229,11 +230,16 @@ export function createUiSession() {
       if (state.pairingImport.pending || pairing.getSnapshot().pending) return;
       const generation = historyGeneration;
       const originalInput = pairing.getSnapshot().raw;
+      const operation = { submitted: false };
+      pairingImportOperation = operation;
+      const isCurrent = () =>
+        generation === historyGeneration &&
+        pairingImportOperation === operation;
       retryPairingImport = () => this.importPairing(read, submit);
       update({ pairingImport: { pending: true, error: null } });
       try {
         const text = await read();
-        if (generation !== historyGeneration) return;
+        if (!isCurrent()) return;
         if (
           pairing.getSnapshot().raw !== originalInput ||
           pairing.getSnapshot().pending
@@ -241,12 +247,15 @@ export function createUiSession() {
           throw new Error(
             "Pairing input changed while importing. Choose the input again to replace it."
           );
+        operation.submitted = true;
         await submit(text);
-        if (generation !== historyGeneration) return;
+        if (!isCurrent()) return;
+        pairingImportOperation = undefined;
         retryPairingImport = undefined;
         update({ pairingImport: { pending: false, error: null } });
       } catch (error) {
-        if (generation !== historyGeneration) return;
+        if (!isCurrent()) return;
+        pairingImportOperation = undefined;
         update({
           pairingImport: {
             pending: false,
@@ -306,8 +315,12 @@ export function createUiSession() {
       if (task?.kind === "alias") alias.cancel();
       if (task?.kind === "relay") relay.discard();
       if (task?.kind === "paste" || task?.kind === "pairing") {
-        pairing.discard();
-        if (!state.pairingImport.pending) {
+        if (
+          !pairing.getSnapshot().pending &&
+          !pairingImportOperation?.submitted
+        ) {
+          pairingImportOperation = undefined;
+          pairing.discard();
           retryPairingImport = undefined;
           update({ pairingImport: { pending: false, error: null } });
         }
@@ -318,6 +331,7 @@ export function createUiSession() {
       historyGeneration++;
       historyRetries.clear();
       appliedDestinations.clear();
+      pairingImportOperation = undefined;
       retryPairingImport = undefined;
       name.clear();
       alias.clear();
