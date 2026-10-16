@@ -111,7 +111,14 @@ try {
       values.delete(key);
     },
   };
-  const storage = new LocalStorageBackend("fixture:", preferences);
+  const storage = new LocalStorageBackend("fixture:", preferences, {
+    native: {
+      get: async ({ key }) => ({ value: values.get(key) ?? null }),
+      set: preferences.set,
+      remove: preferences.remove,
+    },
+    isNative: () => true,
+  });
   const client = new AndroidClient(storage);
   await client.refreshBackgroundContinuity();
   await client.setBackgroundContinuity(true);

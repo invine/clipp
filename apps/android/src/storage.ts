@@ -1,6 +1,8 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import type { KVStorageBackend } from "../../../packages/core/trust";
+import { IDENTITY_KEY } from "../../../packages/core/trust/storage";
+import { identityResetStorageKeys } from "../../../packages/core/trust/identityResetStorage";
 import {
   IDENTITY_RESET_JOURNAL_KEY,
   IDENTITY_RESET_RECEIPT_KEY,
@@ -11,6 +13,14 @@ const resetMetadataKeys = new Set([
   IDENTITY_RESET_JOURNAL_KEY,
   IDENTITY_RESET_RECEIPT_KEY,
   IDENTITY_RESET_COMPLETED_KEY,
+]);
+
+/** Native-only retirement evidence; contains key names, never identity values. */
+export const IDENTITY_RESET_NATIVE_AUTHORITY_KEY =
+  "identityResetNativeAuthority";
+const resetOwnedKeys = new Set([
+  ...identityResetStorageKeys(IDENTITY_KEY),
+  ...resetMetadataKeys,
 ]);
 
 type PreferenceAuthority = {
@@ -181,6 +191,7 @@ export class LocalStorageBackend implements KVStorageBackend {
       const { value } = await this.resetOptions.native.get({
         key: this.prefix + key,
       });
+      await this.reconcileResetAuthority();
       // A former web/memory journal cannot be treated as an empty native installation.
       const fallback = this.readResetFallback(key);
       if (value === null || value === undefined) {
@@ -196,14 +207,64 @@ export class LocalStorageBackend implements KVStorageBackend {
         key: this.prefix + key,
         value: JSON.stringify(value),
       });
+      await this.reconcileResetAuthority();
       this.removeResetFallback(key);
     },
     remove: async (key: string): Promise<void> => {
       this.requireNativeResetStorage();
       await this.resetOptions.native.remove({ key: this.prefix + key });
+      if (resetOwnedKeys.has(key)) await this.retireResetFallback(key);
       this.removeResetFallback(key);
     },
   };
+
+  private authorityUpdate: Promise<void> = Promise.resolve();
+
+  private async readResetAuthority(): Promise<Set<string>> {
+    const { value } = await this.resetOptions.native.get({
+      key: this.prefix + IDENTITY_RESET_NATIVE_AUTHORITY_KEY,
+    });
+    if (value === null || value === undefined) return new Set();
+    const ledger: unknown = JSON.parse(value);
+    if (
+      !ledger ||
+      typeof ledger !== "object" ||
+      Object.keys(ledger).length !== 2 ||
+      !("version" in ledger) ||
+      ledger.version !== 1 ||
+      !("keys" in ledger) ||
+      !Array.isArray(ledger.keys) ||
+      ledger.keys.length > resetOwnedKeys.size ||
+      ledger.keys.some(
+        (key: unknown) => typeof key !== "string" || !resetOwnedKeys.has(key)
+      ) ||
+      new Set(ledger.keys).size !== ledger.keys.length
+    )
+      throw new Error("identity_reset_authority_invalid");
+    return new Set(ledger.keys);
+  }
+
+  private async reconcileResetAuthority(): Promise<Set<string>> {
+    const keys = await this.readResetAuthority();
+    // Sweep the complete retired set before identity admission, including after
+    // journal sanitization or receipt dismissal. Native values remain untouched.
+    for (const key of keys) this.removeResetFallback(key);
+    return keys;
+  }
+
+  private async retireResetFallback(key: string): Promise<void> {
+    const update = this.authorityUpdate.then(async () => {
+      const keys = await this.readResetAuthority();
+      if (keys.has(key)) return;
+      keys.add(key);
+      await this.resetOptions.native.set({
+        key: this.prefix + IDENTITY_RESET_NATIVE_AUTHORITY_KEY,
+        value: JSON.stringify({ version: 1, keys: [...keys] }),
+      });
+    });
+    this.authorityUpdate = update.catch(() => {});
+    await update;
+  }
 
   private requireNativeResetStorage(): void {
     if (!this.resetOptions.isNative())
@@ -230,6 +291,10 @@ export class LocalStorageBackend implements KVStorageBackend {
   async get<T = any>(key: string): Promise<T | undefined> {
     if (this.resetOptions.isNative() && resetMetadataKeys.has(key))
       return this.identityResetStorage.get<T>(key);
+    if (this.resetOptions.isNative() && resetOwnedKeys.has(key)) {
+      const keys = await this.reconcileResetAuthority();
+      if (keys.has(key)) return this.identityResetStorage.get<T>(key);
+    }
     const raw = await readItem(
       this.prefix + key,
       this.preferences,
@@ -246,6 +311,19 @@ export class LocalStorageBackend implements KVStorageBackend {
   async set<T = any>(key: string, value: T): Promise<void> {
     if (this.resetOptions.isNative() && resetMetadataKeys.has(key))
       return this.identityResetStorage.set(key, value);
+    if (this.resetOptions.isNative() && resetOwnedKeys.has(key)) {
+      const keys = await this.reconcileResetAuthority();
+      if (keys.has(key)) {
+        // Automatic rotation's optional notice uses ordinary Preferences: a
+        // failed notice must not poison the strict native reset plugin.
+        await this.preferences.set({
+          key: this.prefix + key,
+          value: JSON.stringify(value),
+        });
+        this.removeResetFallback(key);
+        return;
+      }
+    }
     await writeItem(
       this.prefix + key,
       JSON.stringify(value),
@@ -257,6 +335,14 @@ export class LocalStorageBackend implements KVStorageBackend {
   async remove(key: string): Promise<void> {
     if (this.resetOptions.isNative() && resetMetadataKeys.has(key))
       return this.identityResetStorage.remove(key);
+    if (this.resetOptions.isNative() && resetOwnedKeys.has(key)) {
+      const keys = await this.reconcileResetAuthority();
+      if (keys.has(key)) {
+        await this.preferences.remove({ key: this.prefix + key });
+        this.removeResetFallback(key);
+        return;
+      }
+    }
     await removeItem(this.prefix + key, this.preferences);
   }
 }

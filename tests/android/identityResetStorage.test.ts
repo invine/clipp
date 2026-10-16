@@ -286,6 +286,7 @@ test("reset-enabled owner preserves automatic rotation when its optional notice 
       preferences,
       { native, isNative: () => true }
     );
+    await storage.identityResetStorage.remove("identityRotationNotice");
     const repository = createKVIdentityRepository({
       storage,
       key: IDENTITY_KEY,
