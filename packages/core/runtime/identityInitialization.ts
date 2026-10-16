@@ -3,6 +3,7 @@ import {
   createIdentityManager,
   createIdentityRotationCoordinator,
   type IdentityManager,
+  type KVStorageBackend,
   type IdentityResetState,
   type IdentityRotationReason,
   type IdentityRotationResult,
@@ -68,6 +69,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   let recovering = false;
   let manualSuspended = false;
   let manualAccepted = false;
+  let coldManualRecovery = false;
   let recoveryReason: IdentityRotationReason | undefined;
   let restartRequested = false;
   let recoveryFence: Promise<{ release(): Promise<void> }> | undefined;
@@ -88,6 +90,16 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   const applyManualState = (state: IdentityResetState): void => {
     if (state.phase === "idle") {
       if (state.acceptance === "not-accepted" && !manualAccepted) {
+        if (coldManualRecovery) {
+          // No ordinary owners were started. A fresh bootstrap rebuilds them;
+          // restart failure must not make this suspended process appear ready.
+          try {
+            requestRestart();
+          } catch {
+            /* Keep this runtime sealed. */
+          }
+          return;
+        }
         void recoveryFence?.then((fence) => fence.release());
         recoveryFence = undefined;
         manualSuspended = false;
@@ -98,8 +110,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     if (state.phase !== "checking") manualAccepted = true;
     // A cached identity manager belongs to the former runtime. Only a fresh
     // lifecycle after restart may admit ordinary work again.
-    if (options.workFence && !options.workFence.isFenced())
-      recoveryFence = options.workFence.acquireFence();
+    if (options.workFence) recoveryFence ??= options.workFence.acquireFence();
     manualSuspended = true;
     recoveryReason = undefined;
     setRecovering(true);
@@ -112,10 +123,10 @@ export function createRuntimeIdentityRotationLifecycle(options: {
       }
     }
   };
-  const suspendedInitialization = (): IdentityBoundRuntimeInitialization => ({
-    networkingEnabled: false,
-    localServicesEnabled: false,
-  });
+  const suspendedInitialization = (): IdentityBoundRuntimeInitialization => {
+    coldManualRecovery = true;
+    return { networkingEnabled: false, localServicesEnabled: false };
+  };
   const unsubscribe = options.rotation.onStatusChanged((status) => {
     if (status.kind === "manual-reset") {
       if (
@@ -219,6 +230,7 @@ export function createIdentityBoundWorkFence() {
   const session = globalThis.crypto.randomUUID();
   let revision = 0;
   let suspended = false;
+  let activeFence: { release(): Promise<void> } | undefined;
   const admitted = new Set<Promise<unknown>>();
   const generation = () => `${session}:${revision}`;
   const assertOpen = (expectedGeneration?: string): void => {
@@ -248,19 +260,31 @@ export function createIdentityBoundWorkFence() {
     isFenced: () => suspended,
     run,
     async acquireFence() {
+      if (activeFence) return activeFence;
       suspended = true;
       revision += 1;
       const acquiredRevision = revision;
-      return {
+      activeFence = {
         async release() {
           if (revision !== acquiredRevision) return;
           suspended = false;
           revision += 1;
+          activeFence = undefined;
         },
       };
+      return activeFence;
     },
     async quiesce(): Promise<void> {
       while (admitted.size) await Promise.allSettled([...admitted]);
+    },
+    /** Pairing stop must read pending work to dismiss it; every write still uses admission. */
+    protectStorageWrites(storage: KVStorageBackend): KVStorageBackend {
+      return {
+        get: <Value>(key: string) => storage.get<Value>(key),
+        set: <Value>(key: string, value: Value) =>
+          run(() => storage.set(key, value)),
+        remove: (key: string) => run(() => storage.remove(key)),
+      };
     },
     protect<T extends object>(owner: T): T {
       return new Proxy(owner, {

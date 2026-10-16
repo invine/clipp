@@ -480,7 +480,7 @@ describe("runtime identity initialization", () => {
     lifecycle.dispose();
   });
 
-  it("resumes ordinary startup when the actual owner proves an uncertain start was not accepted", async () => {
+  it("restarts cold suspended owners after proven nonacceptance and admits only a fresh lifecycle", async () => {
     const storage = new RotationStorage();
     const repository = createKVIdentityRepository({ storage, key: "identity" });
     await repository.upsert({
@@ -506,10 +506,11 @@ describe("runtime identity initialization", () => {
       }),
     });
     const loadIdentity = jest.fn(() => repository.get());
+    const restart = jest.fn();
     const lifecycle = createRuntimeIdentityRotationLifecycle({
       rotation,
       loadIdentity,
-      restart: jest.fn(),
+      restart,
       startLocalRecovery: jest.fn(),
       publishState: async () => undefined,
     });
@@ -525,12 +526,26 @@ describe("runtime identity initialization", () => {
       acceptance: "not-accepted",
     });
 
-    expect(lifecycle.isRecovering()).toBe(false);
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(lifecycle.isRecovering()).toBe(true);
     await expect(lifecycle.initialize()).resolves.toEqual({
+      networkingEnabled: false,
+      localServicesEnabled: false,
+    });
+    expect(loadIdentity).not.toHaveBeenCalled();
+    lifecycle.dispose();
+    const fresh = createRuntimeIdentityRotationLifecycle({
+      rotation,
+      loadIdentity,
+      restart: jest.fn(),
+      startLocalRecovery: jest.fn(),
+      publishState() {},
+    });
+    await expect(fresh.initialize()).resolves.toEqual({
       networkingEnabled: true,
     });
     expect(loadIdentity).toHaveBeenCalledTimes(1);
-    lifecycle.dispose();
+    fresh.dispose();
     rotation.stop();
   });
 

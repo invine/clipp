@@ -80,3 +80,41 @@ describe("offscreen managed relay control", () => {
     ).toEqual({ action: "shutdown" });
   });
 });
+
+it.each([
+  [
+    {
+      target: "offscreen",
+      action: "init",
+      relays: [],
+      managedConfigurations: [],
+    },
+    { action: "init", configurations: [] },
+  ],
+  [
+    { target: "offscreen", action: "setManagedRelays", configurations: [] },
+    { action: "setManagedRelays", configurations: [] },
+  ],
+  [
+    { target: "offscreen", action: "retryManagedRelay", key: "saved" },
+    { action: "retryManagedRelay", key: "saved" },
+  ],
+])(
+  "validates the current runtime envelope around strict managed control %j",
+  (payload, control) => {
+    const message = { ...payload, runtimeGeneration: "worker-session:0" };
+    expect(
+      parseManagedRelayControlMessage(message, "worker-session:0")
+    ).toEqual(control);
+    expect(
+      parseManagedRelayControlMessage(message, "retired-session:0")
+    ).toBeNull();
+    expect(
+      parseManagedRelayControlMessage(
+        { ...message, accessToken: "unexpected" },
+        "worker-session:0"
+      )
+    ).toBeNull();
+    expect(parseManagedRelayControlMessage(message)).toBeNull();
+  }
+);

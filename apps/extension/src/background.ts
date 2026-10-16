@@ -1,3 +1,4 @@
+import { prepareChromeIdentityRuntime } from "./identityRuntimeRecovery";
 import { installChromeManagement } from "./chromeManagementRuntime";
 import { MANAGEMENT_PORT } from "./chromeManagement";
 import { observeExtensionClipboard } from "./clipboardObservation";
@@ -126,13 +127,15 @@ const resetStorage = new ChromeStorageBackend();
 const storage = identityWork.protect(resetStorage);
 // This runs before eager preferences, History maintenance, UI requests or offscreen wake.
 const startupResetReady = Promise.resolve().then(async () => {
-  const state = await identityRotation.reconcileIdentityReset();
+  const state = await prepareChromeIdentityRuntime({
+    reconcileIdentityReset: () => identityRotation.reconcileIdentityReset(),
+    workFence: identityWork,
+    retireOffscreen: () => stopOffscreenDocument(true),
+  });
   if (state.phase === "idle" && state.completedOperation)
     resetClipboardBaselineRequired =
       (await identityRepo.get())?.deviceId ===
       state.completedOperation.generatedPeerId;
-  if (state.phase !== "idle" && !identityWork.isFenced())
-    await identityWork.acquireFence();
   startupResetChecked = true;
 });
 let historyPolicySettled = false;
@@ -235,7 +238,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     message?.action !== "offscreenStorage"
   )
     return;
-  void startupResetReady
+  void (identityWork.isFenced() ? Promise.resolve() : startupResetReady)
     .then(() =>
       handleOffscreenStorageRequest(message, sender, {
         storage: resetStorage,
@@ -244,7 +247,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         offscreenUrl: OFFSCREEN_URL,
       })
     )
-    .then(sendResponse);
+    .then(sendResponse)
+    .catch(() =>
+      sendResponse({ ok: false, error: "identity_runtime_suspended" })
+    );
   return true;
 });
 
@@ -285,7 +291,7 @@ async function ensureOffscreenDocument(): Promise<void> {
         : false;
       identityWork.assertOpen();
       if (has && !offscreenOwned) {
-        await stopOffscreenDocument();
+        await stopOffscreenDocument(true);
         identityWork.assertOpen();
         has = false;
       }
@@ -340,7 +346,7 @@ async function initializeOffscreen(): Promise<void> {
   await offscreenInitFlight;
 }
 
-async function stopOffscreenDocument(): Promise<void> {
+async function stopOffscreenDocument(retire = false): Promise<void> {
   const offscreen = chrome.offscreen as typeof chrome.offscreen & {
     hasDocument?(): Promise<boolean>;
     closeDocument?(): Promise<void>;
@@ -350,12 +356,16 @@ async function stopOffscreenDocument(): Promise<void> {
     ? await offscreen.hasDocument()
     : true;
   if (!hasDocument) return;
-  await new Promise<void>((resolve) => {
-    chrome.runtime.sendMessage(
-      { target: "offscreen", action: "shutdown" },
-      () => resolve()
-    );
-  });
+  if (retire && !offscreen.closeDocument)
+    throw new Error("offscreen_retirement_unavailable");
+  if (!retire) {
+    await new Promise<void>((resolve) => {
+      chrome.runtime.sendMessage(
+        { target: "offscreen", action: "shutdown" },
+        () => resolve()
+      );
+    });
+  }
   offscreenInitialized = false;
   offscreenOwned = false;
   await offscreen.closeDocument?.();
@@ -520,21 +530,28 @@ void startupResetReady
   });
 const historySessionId = crypto.randomUUID();
 history.onChanged((revision) => {
+  if (identityWork.isFenced()) return;
   chrome.runtime.sendMessage({
     type: "historyChanged",
     sessionId: historySessionId,
     revision,
   });
 });
-void historyPolicyReady.then(async () => {
-  const snapshot = await history.snapshot();
-  chrome.runtime.sendMessage({
-    type: "historyChanged",
-    sessionId: historySessionId,
-    revision: snapshot.revision,
-  });
-});
+void historyPolicyReady
+  .then(async () => {
+    if (identityWork.isFenced()) return;
+    const generation = identityWork.generation();
+    const snapshot = await history.snapshot();
+    identityWork.assertOpen(generation);
+    await chrome.runtime.sendMessage({
+      type: "historyChanged",
+      sessionId: historySessionId,
+      revision: snapshot.revision,
+    });
+  })
+  .catch(() => undefined);
 history.onNew((item) => {
+  if (identityWork.isFenced()) return;
   // Notify all extension pages about the new clip
   // @ts-ignore
   chrome.runtime.sendMessage({ type: "newClip", clip: item.clip });
@@ -858,7 +875,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
 const pairingPending = createPendingTrustRequestCoordinator({
   localPeerId: async () => deviceIdToPeerId((await identitySvc.get()).deviceId),
   store: createKVPendingTrustRequestStore({
-    storage,
+    storage: identityWork.protectStorageWrites(resetStorage),
     key: "pairingPendingRequests",
   }),
   notifications: runtimeAdapter.notifications,
@@ -1028,34 +1045,30 @@ const relayMutationOwner = createChromeRelayMutationOwner({
 chrome.runtime.onMessage.addListener(
   function handleRuntimeMessage(msg, sender, sendResponse) {
     if (!startupResetChecked) {
-      void startupResetReady.then(() =>
-        handleRuntimeMessage(msg, sender, sendResponse)
-      );
+      void startupResetReady
+        .then(() => handleRuntimeMessage(msg, sender, sendResponse))
+        .catch(() =>
+          sendResponse({ ok: false, error: "identity_runtime_suspended" })
+        );
       return true;
     }
+    const recoveryReadable = [
+      "getRuntimeAuthority",
+      "getRuntimeState",
+      "getInitializationError",
+    ].includes(msg?.type);
     const admittedGeneration = identityWork.generation();
     const reply = sendResponse;
     sendResponse = (value) => {
       if (
-        ![
-          "getRuntimeAuthority",
-          "getRuntimeState",
-          "getInitializationError",
-        ].includes(msg?.type) &&
+        !recoveryReadable &&
         (admittedGeneration !== identityWork.generation() ||
           identityWork.isFenced())
       )
         reply({ ok: false, error: "identity_runtime_retired" });
       else reply(value);
     };
-    if (
-      identityWork.isFenced() &&
-      ![
-        "getRuntimeAuthority",
-        "getRuntimeState",
-        "getInitializationError",
-      ].includes(msg?.type)
-    ) {
+    if (identityWork.isFenced() && !recoveryReadable) {
       sendResponse({ ok: false, error: "identity_runtime_suspended" });
       return false;
     }
