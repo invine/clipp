@@ -14,7 +14,11 @@ it("Electron activation waits for the subscribed renderer and reuses its live se
   session.pairing.change("retained target");
   let listener: (() => void) | undefined;
   let entries = 0;
-  const delivery = createElectronTaskActivation(() => listener?.());
+  const delivery = createElectronTaskActivation(() => {
+    if (!listener) return false;
+    listener();
+    return true;
+  });
   delivery.activate();
   delivery.activate();
   expect(entries).toBe(0);
@@ -54,6 +58,7 @@ it("a replaced renderer keeps activation pending and ignores the old owner's dis
   let entries = 0;
   const delivery = createElectronTaskActivation(() => {
     entries++;
+    return true;
   });
   delivery.setReady("old", true);
   delivery.invalidate();

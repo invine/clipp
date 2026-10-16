@@ -823,8 +823,9 @@ async function bootstrap() {
   }
 
   const taskActivation = createElectronTaskActivation(() => {
-    if (mainWindow && !mainWindow.webContents.isDestroyed())
-      mainWindow.webContents.send("clipp:task-activation");
+    if (!mainWindow || mainWindow.webContents.isDestroyed()) return false;
+    mainWindow.webContents.send("clipp:task-activation");
+    return true;
   });
   ipcMain.handle("clipp:task-input-ready", (event, value: unknown) => {
     if (
