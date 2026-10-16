@@ -44,3 +44,9 @@ Run npm focused owning-interface checks, npm run check before code commit; root 
 ## Handoff
 
 Root owns canonical claim, refreshed baseline and accepted-decision assessment. Implementer records owning RED/GREEN, meaningful focused checks/npm check/full commit, current-tip incorporation, every changed live bridge, source-to-integration mapping and remaining native limits. Source-only handoff is not resolution. No operation has occurred for this DRAFT.
+
+## Remaining source lifecycle dispatch — 2026-10-16
+
+Continue existing claim from clean integration `9a331ff93c43fec62771b412e3a11ac8f738aded`; named predecessors remain resolved. Electron activation source delivery: retain pending activation when the ready renderer disappears or delivery throws/declines. Retry only after valid readiness, keeping the existing main/preload/renderer session and focus owner. Prove actual owning public activation/bridge/UiSession path with existing tests; do not change Dock behavior or native qualification.
+
+Two fresh isolated implementers maximum, retained ticket-34 branch/worktree fast-forwarded from its inspected clean prior tip. Approved public owning-interface TDD seams and standing approvals persist. Root owns broad-check serialization, integration, two-axis review and fresh verification. Preserve ADR0012, existing worktrees/stashes/dirty files, every failed/unqualified native gate and deferral. No native/CUA/SDK/browser/clipboard operations, harness preparation, repeated approval request, consumer claim across hard dependency or source-only ticket resolution.

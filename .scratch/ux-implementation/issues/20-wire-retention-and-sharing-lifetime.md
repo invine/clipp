@@ -53,7 +53,6 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
 
-
 ## Dispatch assessment — 2026-10-12
 
 Consume the genuinely resolved compatible asset/control foundation in32 instead of residual desktop qualification17. This follows the approved numbered refinement already used by13/18/19; it changes no output or required gate. Residual17 retains all desktop control/G13/G14 and styling collection. Ticket20 retains every affected current presentation, emitted Clip, cleanup/pin/suppression, persistence, restart and simultaneous-view G35/G36 check. A prior host result is not a pass for changed consumers.
@@ -62,9 +61,14 @@ Predecessors01/02/32 are resolved. Requested retention and Clip Sharing Lifetime
 
 Coordinator claim `ux-retention-20`: client branch `codex/ux-20-retention-lifetime`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-20`, based on this claim commit. Read current preparation `/private/tmp/clipp-ux-implementation-20261010/ticket-20-current-prep.md`; use owning-interface TDD and update every live bridge with each shared action-surface change. Root serializes broad/native/rendered checks, review and integration. No host clipboard, native SDK/OS changes, real sign-in, external relay work, push or publication is assigned. At most two source implementers. Required native/persistence/current-view gates remain incomplete until measured and reviewed.
 
-
 ## Reviewed durable reopen acceptance — 2026-10-15
 
 Source acceptance commit82f6902cb6225f38133dcf073b8e3dcae60536e4 is integrated through mandatory merger55870d7dae378cfef9b88aa620ae725864a79bac. The new test closes and reopens a real on-disk SQLite database twice, reconstructing the actual settings/retention/History owners and production Electron clipboard factory. It observes exact5001/7003ms emitted deadlines, immutable imported metadata and original local age, saved custom retention, pins, Unpin and durable removal suppression. Product behavior is unchanged by this test increment. Both Standards and Spec pass; fresh integrated npm run verify passes139 suites/962 tests, all typechecks and all three production builds, lint0 errors/833 existing warnings.
 
 Evidence: ignored run directory tickets-20-resumed-current-source-evidence.json, ticket-20-resumed-closure-handoff.md, tickets-20-26-source-{standards,spec}-review.md, tickets-20-26-merge-receipt.json and tickets-20-26-integrated-verification.json. Reconstruction is not actual native process restart. Required current Chrome simultaneous-view/worker G36, Android native ingress/pending/restart and affected presentation G35/G36 remain unqualified. Existing required G14/Chrome G01 and external deferrals remain unchanged. Ticket20 stays claimed.
+
+## Remaining source lifecycle dispatch — 2026-10-16
+
+Continue existing claim from clean integration `9a331ff93c43fec62771b412e3a11ac8f738aded`; named predecessors remain resolved. Retention cleanup source lifecycle: stop must retire timer/manual admission and ignore late completion/failure notifications so an old owner cannot publish stale cleanup state into a resumed runtime. Prove through existing startHistoryRetentionCleanup public seam, including deferred completion and real History where useful. Retention/pin/suppression/lifetime semantics and existing result contracts remain unchanged.
+
+Two fresh isolated implementers maximum, retained ticket-20 branch/worktree fast-forwarded from its inspected clean prior tip. Approved public owning-interface TDD seams and standing approvals persist. Root owns broad-check serialization, integration, two-axis review and fresh verification. Preserve ADR0012, existing worktrees/stashes/dirty files, every failed/unqualified native gate and deferral. No native/CUA/SDK/browser/clipboard operations, harness preparation, repeated approval request, consumer claim across hard dependency or source-only ticket resolution.
