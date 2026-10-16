@@ -87,3 +87,7 @@ The approved delivery refinement permits34 to qualify Android/Electron generic i
 ## Runtime and management continuation — 2026-10-16
 
 [Runtime29](issues/29-fence-reset-runtime-work.md#reviewed-implementation-and-available-native-checks--2026-10-16) has reviewed/verified source and 18 scoped Android native passes; complete host/clipboard gates keep it claimed. [Chrome35](issues/35-deliver-chrome-management-and-task-input.md#resume-assessment--2026-10-16) resumes with two isolated implementers using preserved source references. Popup management remains live until actual candidate cutover gates pass. No additional resolution or finding closure is recorded.
+
+## Chrome management implementation checkpoint — 2026-10-16
+
+[Chrome35](issues/35-deliver-chrome-management-and-task-input.md#reviewed-implementation-and-partial-native-results--2026-10-16) has integrated source, both final reviews and fresh152/1088/all-build verification at b415. Specific actual full-page input/draft/Save/theme checks pass; required full native/toolbar/handoff/Pairing/control/cutover gates keep35 claimed. The original Discard Spec failure and repair are preserved. [Electron26](issues/26-simplify-desktop-tray-and-qualify-dock.md#bounded-current-candidate-retry--2026-10-16) again hit noWindowsAvailable and stays claimed with owned resources closed. No new resolution, finding closure, dependency release or gate waiver;15/35 remain resolved.
