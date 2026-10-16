@@ -1,4 +1,4 @@
-import { findSessionFocus } from "./sessionFocus";
+import { findSessionFocus, restoreSessionFocus } from "./sessionFocus";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { hostContentSize, HOST_GEOMETRY_EVENT } from "./hostGeometry";
 import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
@@ -104,14 +104,28 @@ export function TaskDialog({
   }, [originKey, initialFocusKey, focusVersion]);
 
   useEffect(() => {
-    if (
-      pending &&
-      (document.activeElement === document.body ||
-        (document.activeElement instanceof HTMLButtonElement &&
-          document.activeElement.disabled))
-    )
-      dialogRef.current?.focus();
-  }, [pending]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const recover = () => {
+      const activeTask = [
+        ...document.querySelectorAll<HTMLElement>("[data-task-dialog]"),
+      ]
+        .filter((element) => element.getClientRects().length > 0)
+        .at(-1);
+      if (activeTask === dialog) restoreSessionFocus(document, null);
+    };
+    // Child-owned pending state can disable or remove the focused control
+    // without rendering this dialog or changing its pending prop.
+    const observer = new MutationObserver(recover);
+    observer.observe(dialog, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["disabled", "hidden", "inert", "class", "style"],
+    });
+    recover();
+    return () => observer.disconnect();
+  }, []);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {

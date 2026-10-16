@@ -5,6 +5,75 @@ jest.mock(
 );
 import { createUiSession } from "../../packages/ui/src/uiSession";
 import { createHostTaskInput } from "../../packages/ui/src/hostTaskInput";
+import { restoreSessionFocus } from "../../packages/ui/src/sessionFocus";
+
+it("recovers lost or disabled task focus while preserving a usable focused field", () => {
+  // Node boundary only: this checks the public focus policy, not browser focus
+  // events or the mounted TaskDialog observer's delivery after a child commit.
+  let active: Element;
+  class FocusElement {
+    dataset: Record<string, string> = {};
+    children: FocusElement[] = [];
+    disabled = false;
+    visible = true;
+    focus() {
+      active = this as unknown as Element;
+    }
+    contains(element: Element): boolean {
+      return (
+        element === (this as unknown as Element) ||
+        this.children.some((child) => child.contains(element))
+      );
+    }
+    getClientRects() {
+      return this.visible ? [{}] : [];
+    }
+    matches(selector: string) {
+      return selector === ":disabled" && this.disabled;
+    }
+    closest() {
+      return null;
+    }
+    querySelectorAll() {
+      return this.children;
+    }
+    querySelector(selector: string) {
+      return selector === "[data-task-return]" ? close : null;
+    }
+  }
+  const original = Object.getOwnPropertyDescriptor(globalThis, "HTMLElement");
+  Object.defineProperty(globalThis, "HTMLElement", {
+    value: FocusElement,
+    configurable: true,
+  });
+  const body = new FocusElement();
+  const task = new FocusElement();
+  const close = new FocusElement();
+  const copy = new FocusElement();
+  const input = new FocusElement();
+  task.children = [close, copy, input];
+  const doc = {
+    body,
+    get activeElement() {
+      return active;
+    },
+    querySelectorAll: () => [task],
+  } as unknown as Document;
+  try {
+    for (const lost of [body, copy, new FocusElement()]) {
+      copy.disabled = true;
+      lost.focus();
+      restoreSessionFocus(doc, null);
+      expect(active!).toBe(close);
+    }
+    input.focus();
+    restoreSessionFocus(doc, null);
+    expect(active!).toBe(input);
+  } finally {
+    if (original) Object.defineProperty(globalThis, "HTMLElement", original);
+    else Reflect.deleteProperty(globalThis, "HTMLElement");
+  }
+});
 
 it("native IME Back keeps the task, then one hidden-IME Back returns from QR without discarding a failed draft", async () => {
   const session = createUiSession();
