@@ -162,3 +162,45 @@ function memoryStorage(values: Map<string, unknown>): KVStorageBackend {
     },
   };
 }
+
+test("background refuses retired offscreen storage after worker restart and drains admitted proxy writes", async () => {
+  const { createIdentityBoundWorkFence } =
+    await import("../../packages/core/runtime/identityInitialization");
+  const current = createIdentityBoundWorkFence();
+  const retired = createIdentityBoundWorkFence();
+  const values = new Map<string, unknown>();
+  const options = {
+    storage: memoryStorage(values),
+    extensionId: "extension",
+    offscreenUrl: "chrome-extension://extension/offscreen.html",
+    workFence: current,
+  };
+  const sender = { id: options.extensionId, url: options.offscreenUrl };
+  const request = {
+    target: "background",
+    action: "offscreenStorage",
+    operation: "set",
+    key: "signedPeerRecords",
+    value: "old",
+    runtimeGeneration: retired.generation(),
+  };
+  await expect(
+    handleOffscreenStorageRequest(request, sender, options)
+  ).resolves.toEqual({ ok: false, error: "identity_runtime_retired" });
+  await expect(
+    handleOffscreenStorageRequest(
+      { ...request, runtimeGeneration: current.generation() },
+      sender,
+      options
+    )
+  ).resolves.toEqual({ ok: true });
+  await current.acquireFence();
+  await expect(
+    handleOffscreenStorageRequest(
+      { ...request, runtimeGeneration: current.generation(), value: "late" },
+      sender,
+      options
+    )
+  ).resolves.toEqual({ ok: false, error: "identity_runtime_suspended" });
+  expect(values.get("signedPeerRecords")).toBe("old");
+});

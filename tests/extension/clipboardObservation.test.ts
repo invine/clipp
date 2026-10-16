@@ -34,3 +34,32 @@ it("reports processing rejection and invalid observations as confirmed backgroun
     )
   ).toEqual({ ok: false, error: "invalid_clipboard_observation" });
 });
+
+it("a completed reset's Chrome owner baselines former clipboard content while explicit Share now creates a new event", async () => {
+  const { createExtensionClipboardService } =
+    await import("../../apps/extension/src/clipboardFactory");
+  const { MemoryHistoryStore } =
+    await import("../../packages/core/history/store");
+  const history = new MemoryHistoryStore();
+  const clipboard = createExtensionClipboardService({
+    history,
+    baselineFirstObservation: () => true,
+    getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
+    appliedSharingLifetime: () => 86_400_000,
+  });
+  clipboard.start();
+  try {
+    expect(
+      await observeExtensionClipboard(
+        "former clipboard",
+        clipboard,
+        Promise.resolve()
+      )
+    ).toEqual({ ok: true });
+    expect(await history.query()).toEqual([]);
+    await clipboard.processLocalText("former clipboard", { shareNow: true });
+    expect(await history.query()).toHaveLength(1);
+  } finally {
+    await clipboard.stop();
+  }
+});

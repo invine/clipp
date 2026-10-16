@@ -60,6 +60,7 @@ import {
   createAutoSyncPreference,
   createClosableRuntimeNotifications,
   createRuntimeIdentityManager,
+  createIdentityBoundWorkFence,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeOrchestrator,
@@ -130,11 +131,50 @@ async function bootstrap() {
 
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
-  const kvStore = new SQLiteKVStore(db);
+  const identityWork = createIdentityBoundWorkFence();
+  const identityNotifications = new Set<Notification>();
+  const handleRuntime: typeof ipcMain.handle = (channel, listener) => {
+    ipcMain.handle(channel, (event, ...args) =>
+      identityWork.run(() => listener(event, ...args))
+    );
+  };
+  const resetStorage = new SQLiteKVStore(db);
+  const kvStore = identityWork.protect(resetStorage);
+  const identityRepo = createKVIdentityRepository({
+    storage: resetStorage,
+    key: IDENTITY_KEY,
+  });
+  let stopIdentityBoundServicesForRotation: () => Promise<void> = async () =>
+    undefined;
+  let prepareIdentityRotationCleanup: () => Promise<{
+    rollback(): Promise<void>;
+  }> = async () => ({ rollback: async () => undefined });
+  const identityRotation = createSQLiteIdentityRotationCoordinator({
+    repository: identityRepo,
+    storage: resetStorage,
+    db,
+    identityKey: IDENTITY_KEY,
+    lifecycle: {
+      acquireFence: identityWork.acquireFence,
+      async quiesce() {
+        await stopIdentityBoundServicesForRotation();
+        await identityWork.quiesce();
+        for (const notification of identityNotifications) notification.close();
+        identityNotifications.clear();
+      },
+    },
+    shutdown: () => stopIdentityBoundServicesForRotation(),
+    runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },
+  });
+  let startupResetState = await identityRotation.reconcileIdentityReset();
+  identityRotation.onStatusChanged((status) => {
+    if (status.kind === "manual-reset") startupResetState = status.state;
+  });
+  if (startupResetState.phase !== "idle") await identityWork.acquireFence();
   let managedConfigurations = await loadManagedRelayConfigurations({
-    readNewModel: () => kvStore.get("managedRelayConfigurations"),
+    readNewModel: () => resetStorage.get("managedRelayConfigurations"),
     writeNewModel: (values) =>
-      kvStore.set("managedRelayConfigurations", values),
+      resetStorage.set("managedRelayConfigurations", values),
   });
   const managedAuth = createElectronManagedRelayAuth({
     storage: {
@@ -145,7 +185,9 @@ async function bootstrap() {
     protection: safeStorage,
     openExternal: (url) => shell.openExternal(url),
   });
-  const initialTheme = normalizeThemePreference(await kvStore.get("theme"));
+  const initialTheme = normalizeThemePreference(
+    await resetStorage.get("theme")
+  );
   nativeTheme.themeSource = initialTheme;
   const windowBackground = () =>
     nativeTheme.shouldUseDarkColors ? "#14141b" : "#faf9fc";
@@ -153,13 +195,15 @@ async function bootstrap() {
     for (const window of BrowserWindow.getAllWindows())
       window.setBackgroundColor(windowBackground());
   });
-  const autoSyncPreference = createAutoSyncPreference({ storage: kvStore });
+  const autoSyncPreference = createAutoSyncPreference({
+    storage: resetStorage,
+  });
   const signedPeerRecordPersistence = createKVSignedPeerRecordPersistence({
     storage: kvStore,
   });
   let localRetentionMs = RETENTION_MS;
   const historyBackend = new SQLiteHistoryBackend(db);
-  const history = new MemoryHistoryStore(historyBackend);
+  const history = identityWork.protect(new MemoryHistoryStore(historyBackend));
   let publishRetention: (() => Promise<void>) | undefined;
   const retentionPreference = createLocalRetentionPreference({
     storage: kvStore,
@@ -189,47 +233,31 @@ async function bootstrap() {
         window.webContents.send("clipp:settings-update", snapshot);
     },
   });
-  await settingsHandler.read();
-  ipcMain.handle("clipp:set-settings", (_event, patch: unknown) =>
+  if (!identityWork.isFenced()) await settingsHandler.read();
+  handleRuntime("clipp:set-settings", (_event, patch: unknown) =>
     settingsHandler.write(patch)
   );
-  ipcMain.handle("clipp:set-sharing-lifetime", (_event, value: unknown) =>
+  handleRuntime("clipp:set-sharing-lifetime", (_event, value: unknown) =>
     settingsHandler.write({ sharingLifetimeMs: value })
   );
   ipcMain.handle("clipp:get-settings", async () => ({
     ok: true,
     snapshot: await settingsHandler.read(),
   }));
-  ipcMain.handle("clipp:set-theme", async (_event, theme: unknown) =>
+  handleRuntime("clipp:set-theme", async (_event, theme: unknown) =>
     settingsHandler.write({ theme })
   );
 
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
   let historyRetentionCleanup: HistoryRetentionCleanup | null = null;
-  const identityRepo = createKVIdentityRepository({
-    storage: kvStore,
-    key: IDENTITY_KEY,
-  });
-  let stopIdentityBoundServicesForRotation: () => Promise<void> = async () =>
-    undefined;
-  let prepareIdentityRotationCleanup: () => Promise<{
-    rollback(): Promise<void>;
-  }> = async () => ({ rollback: async () => undefined });
-  const identityRotation = createSQLiteIdentityRotationCoordinator({
-    repository: identityRepo,
-    storage: kvStore,
-    db,
-    identityKey: IDENTITY_KEY,
-    shutdown: () => stopIdentityBoundServicesForRotation(),
-    runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },
-  });
   let identityRotationRecovery = false;
   let identityRotationLifecycle: ReturnType<
     typeof createRuntimeIdentityRotationLifecycle
   >;
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
+    workFence: identityWork,
     capabilities: RUNTIME_CAPABILITIES.electron,
   });
   // Managed relay configuration starts empty on first adoption. The legacy
@@ -237,6 +265,14 @@ async function bootstrap() {
   let relayAddresses: string[] = [];
   let localIdentity;
   try {
+    const startup = await identityRotation.recoverOrRotate();
+    if (startup.rotated) {
+      app.relaunch();
+      app.exit(0);
+      return;
+    }
+    if (startup.recovery?.code === "manual_identity_reset_recovery")
+      throw new Error("manual_identity_reset_recovery");
     localIdentity = await identitySvc.get();
   } catch (error) {
     const rotation = await identityRotation
@@ -259,10 +295,8 @@ async function bootstrap() {
       error: (error as Error).message,
     });
     await app.whenReady();
-    ipcMain.handle(
-      "clipp:get-runtime-authority",
-      () => pairingSessions.snapshot().sessionId
-    );
+    const recoverySessionId = globalThis.crypto.randomUUID();
+    ipcMain.handle("clipp:get-runtime-authority", () => recoverySessionId);
 
     ipcMain.handle("clipp:get-state", async () => {
       throw error;
@@ -482,6 +516,7 @@ async function bootstrap() {
         }
       },
       writeText: async (text: string) => {
+        identityWork.assertOpen();
         clipboard.writeText(text);
       },
       onHistoryErrorChanged: (error) => {
@@ -565,19 +600,28 @@ async function bootstrap() {
 
   async function getState() {
     const pairingState = pairingSessions.snapshot();
-    const historyProjection = await historyState.read();
-    const devices = await identitySvc.trustedDevices();
-    const peers = transport.getConnectedPeers();
+    const suspended = identityWork.isFenced();
+    const historyProjection = suspended
+      ? {
+          clips: [],
+          pinnedIds: [],
+          historyUnavailable: false,
+          historyRefreshError: null,
+        }
+      : await historyState.read();
+    const devices = suspended ? [] : await identitySvc.trustedDevices();
+    const peers = suspended ? [] : transport.getConnectedPeers();
     const peerConnections = transport.getPeerConnectionInfo?.() ?? [];
     const relayConnections = transport.getRelayConnectionInfo?.() ?? [];
-    const identity = identityRotationRecovery
-      ? null
-      : toPublicDeviceIdentity(await identitySvc.get());
+    const identity =
+      suspended || identityRotationRecovery
+        ? null
+        : toPublicDeviceIdentity(await identitySvc.get());
     return {
       clips: historyProjection.clips,
       devices,
-      pending: pendingRequests,
-      waiting: pairingState.waiting,
+      pending: suspended ? [] : pendingRequests,
+      waiting: suspended ? [] : pairingState.waiting,
       pairingErrors: pairingState.errors,
       pairingState,
       peers,
@@ -591,7 +635,8 @@ async function bootstrap() {
       autoSync: clipboardSync.isAutoSync(),
       clipboardHistoryError,
       historyPolicyError,
-      identityRotationRecovery,
+      identityRotationRecovery: suspended || identityRotationRecovery,
+      identityResetState: startupResetState,
       identityRotationNotice: (await identityRotation.notice())?.reason ?? null,
       relayAddresses,
       managedRelayConfigurations: managedConfigurations,
@@ -1044,13 +1089,20 @@ async function bootstrap() {
 
   const runtimeNotifications = createClosableRuntimeNotifications({
     create(message, events) {
+      identityWork.assertOpen();
       if (!Notification.isSupported()) return undefined;
       const notification = new Notification({
         title: message.title,
         body: message.body,
         silent: false,
       });
-      notification.on("click", events.select);
+      identityNotifications.add(notification);
+      notification.on("close", () =>
+        identityNotifications.delete(notification)
+      );
+      notification.on("click", () => {
+        if (!identityWork.isFenced()) events.select();
+      });
       notification.on("close", events.closed);
       notification.show();
       return { close: () => notification.close() };
@@ -1088,9 +1140,11 @@ async function bootstrap() {
     if (pendingSelfPeerUpdates.size > 0) {
       await Promise.allSettled(Array.from(pendingSelfPeerUpdates));
     }
+    if (identityWork.isFenced()) await clipboardSvc.discardPending?.();
   };
   identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
     rotation: identityRotation,
+    workFence: identityWork,
     loadIdentity: () => identitySvc.get(),
     restart: () => {
       app.relaunch();
@@ -1109,7 +1163,10 @@ async function bootstrap() {
     initialApplicationState: () => ({}) as Record<string, unknown>,
     clipboard: {
       readText: async () => clipboard.readText() ?? "",
-      writeText: async (text) => clipboard.writeText(text),
+      writeText: async (text) => {
+        identityWork.assertOpen();
+        clipboard.writeText(text);
+      },
     },
     notifications: runtimeNotifications,
     lifecycle: {
@@ -1250,7 +1307,7 @@ async function bootstrap() {
     return await getState();
   });
 
-  ipcMain.handle(
+  handleRuntime(
     "clipp:dismiss-pairing-outcome",
     (_event, { targetPeerId, expected }) => {
       if (
@@ -1263,22 +1320,22 @@ async function bootstrap() {
     }
   );
 
-  ipcMain.handle("clipp:get-identity", async () => {
+  handleRuntime("clipp:get-identity", async () => {
     const id = await identitySvc.get();
     return toPublicDeviceIdentity(id);
   });
 
   ipcMain.handle("clipp:get-initialization-error", async () => {
-    return (await identitySvc.getInitializationError()) ?? null;
+    return (await identityRepo.loadInitializationError?.()) ?? null;
   });
 
-  ipcMain.handle("clipp:retry-identity-initialization", async () => {
+  handleRuntime("clipp:retry-identity-initialization", async () => {
     await identitySvc.retryInitialization();
     app.relaunch();
     app.exit(0);
   });
 
-  ipcMain.handle(
+  handleRuntime(
     "clipp:rename-identity",
     async (_evt, payload: { name: string; expectedDeviceId: string }) => {
       await identitySvc.rename(payload.name, payload.expectedDeviceId);
@@ -1300,28 +1357,28 @@ async function bootstrap() {
     },
     reconcile: emitState,
   });
-  ipcMain.handle("clipp:refresh-managed-relays", () =>
+  handleRuntime("clipp:refresh-managed-relays", () =>
     relayMutationOwner.refresh()
   );
-  ipcMain.handle(
+  handleRuntime(
     "clipp:mutate-managed-relay",
     async (_evt, mutation: RelayMutation) => relayMutationOwner.mutate(mutation)
   );
-  ipcMain.handle("clipp:managed-relay-login", async (_evt, key: string) =>
+  handleRuntime("clipp:managed-relay-login", async (_evt, key: string) =>
     performRelayAction(
       "authenticated",
       () => managedController.requestLogin(key),
       emitState
     )
   );
-  ipcMain.handle("clipp:managed-relay-account", async (_evt, key: string) =>
+  handleRuntime("clipp:managed-relay-account", async (_evt, key: string) =>
     performRelayAction(
       "portal-opened",
       () => managedController.manageAccount(key),
       emitState
     )
   );
-  ipcMain.handle("clipp:managed-relay-retry", async (_evt, key: string) =>
+  handleRuntime("clipp:managed-relay-retry", async (_evt, key: string) =>
     performRelayAction(
       "retry-requested",
       () => managedController.retry(key),
@@ -1329,14 +1386,14 @@ async function bootstrap() {
     )
   );
 
-  ipcMain.handle(
+  handleRuntime(
     "clipp:set-local-retention",
     async (_evt, retentionMs: number) => {
       return settingsHandler.write({ localRetentionMs: retentionMs });
     }
   );
 
-  ipcMain.handle("clipp:set-auto-sync", async (_evt, enabled: boolean) =>
+  handleRuntime("clipp:set-auto-sync", async (_evt, enabled: boolean) =>
     performAutoSyncAction(enabled, {
       set: async (value) => {
         autoSync = await autoSyncPreference.set(value);
@@ -1351,14 +1408,14 @@ async function bootstrap() {
       reconcile: emitState,
     })
   );
-  ipcMain.handle("clipp:refresh-auto-sync", async () => {
+  handleRuntime("clipp:refresh-auto-sync", async () => {
     autoSync = await autoSyncPreference.load();
     clipboardSync.setAutoSync(autoSync);
     await emitState();
     return true;
   });
 
-  ipcMain.handle("clipp:reuse-clip", async (_evt, id: string) => {
+  handleRuntime("clipp:reuse-clip", async (_evt, id: string) => {
     const outcome = await reuseRetainedClip(id, {
       history,
       clipboard: clipboardSvc,
@@ -1367,7 +1424,7 @@ async function bootstrap() {
     return { ok: true, outcome: outcome.status };
   });
 
-  ipcMain.handle("clipp:share-now", async () => {
+  handleRuntime("clipp:share-now", async () => {
     await clipboardSvc.processLocalText(clipboard.readText() ?? "", {
       shareNow: true,
     });
@@ -1375,12 +1432,12 @@ async function bootstrap() {
     return { ok: true };
   });
 
-  ipcMain.handle("clipp:delete-clip", async (_evt, id: string) => {
+  handleRuntime("clipp:delete-clip", async (_evt, id: string) => {
     await history.remove(id);
     await emitState();
   });
 
-  ipcMain.handle("clipp:clear-history", async () => {
+  handleRuntime("clipp:clear-history", async () => {
     try {
       await clipboardSvc.clearHistory(() => history.clearAll());
     } catch (err) {
@@ -1391,12 +1448,12 @@ async function bootstrap() {
     }
   });
 
-  ipcMain.handle("clipp:unpair-device", async (_evt, id: string) => {
+  handleRuntime("clipp:unpair-device", async (_evt, id: string) => {
     await identitySvc.revoke(id);
     await emitState();
   });
 
-  ipcMain.handle(
+  handleRuntime(
     "clipp:rename-device",
     async (_evt, payload: { id: string; name: string }) => {
       const device = await identitySvc.setLocalDeviceAlias(
@@ -1408,7 +1465,7 @@ async function bootstrap() {
     }
   );
 
-  ipcMain.handle(
+  handleRuntime(
     "clipp:set-pin",
     async (_evt, payload: { id: string; pinned: boolean }) => {
       const pinnedIds = await history.setPinned(payload.id, payload.pinned);
@@ -1417,20 +1474,20 @@ async function bootstrap() {
     }
   );
 
-  ipcMain.handle("clipp:dismiss-clipboard-history-error", async () => {
+  handleRuntime("clipp:dismiss-clipboard-history-error", async () => {
     clipboardSvc.dismissHistoryError?.();
   });
 
-  ipcMain.handle("clipp:retry-history-cleanup", async () => {
+  handleRuntime("clipp:retry-history-cleanup", async () => {
     await historyRetentionCleanup?.retry();
   });
 
-  ipcMain.handle("clipp:acknowledge-identity-rotation-notice", async () => {
+  handleRuntime("clipp:acknowledge-identity-rotation-notice", async () => {
     await identityRotation.acknowledgeNotice();
     await emitState();
   });
 
-  ipcMain.handle(
+  handleRuntime(
     "clipp:respond-trust",
     async (_evt, payload: { accept: boolean; device: any }) => {
       const { accept, device } = payload;
@@ -1455,7 +1512,7 @@ async function bootstrap() {
     }
   );
 
-  ipcMain.handle("clipp:pair-text", async (_evt, txt: string) => {
+  handleRuntime("clipp:pair-text", async (_evt, txt: string) => {
     const target = decodePairingTarget(txt);
     if (!target) return { ok: false, error: "invalid" as const };
     if (!privateKey)
@@ -1473,11 +1530,14 @@ async function bootstrap() {
     }
   });
 
-  ipcMain.handle("clipp:copy-pairing-text", (_event, text: string) =>
-    copyPayloadText(text, (value) => clipboard.writeText(value))
+  handleRuntime("clipp:copy-pairing-text", (_event, text: string) =>
+    copyPayloadText(text, (value) => {
+      identityWork.assertOpen();
+      clipboard.writeText(value);
+    })
   );
 
-  ipcMain.handle("clipp:open-qr-window", async () => {
+  handleRuntime("clipp:open-qr-window", async () => {
     await ensureMessagingStarted();
     const id = await identitySvc.get();
     if (!transport.getSignedPeerRecord)

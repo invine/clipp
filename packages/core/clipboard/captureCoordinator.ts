@@ -81,6 +81,8 @@ export function createClipCaptureCoordinator(options: {
   now?: () => number;
   makeId?: () => string;
   sharingLifetimeMs?: () => number;
+  /** A fresh owner after manual reset must not reattribute the former clipboard. */
+  baselineFirstObservation?: () => boolean;
   onStored?: (clip: Clip) => void | Promise<void>;
   pendingMaxClips?: number;
   pendingMaxBytes?: number;
@@ -312,6 +314,10 @@ export function createClipCaptureCoordinator(options: {
     },
     observe: async (value) =>
       serialize(async () => {
+        if (baseline === undefined && options.baselineFirstObservation?.()) {
+          baseline = value;
+          return null;
+        }
         if (value === baseline) return null;
         baseline = value;
         await retryPendingUnserialized();

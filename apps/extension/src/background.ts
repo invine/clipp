@@ -44,6 +44,7 @@ import {
 import {
   createChromeExtensionRuntimeAdapter,
   createRuntimeIdentityManager,
+  createIdentityBoundWorkFence,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNotificationSelection,
   createRuntimeOrchestrator,
@@ -105,18 +106,35 @@ import {
   sendBufferedExtensionStream,
 } from "./streamBridge";
 
+const identityWork = createIdentityBoundWorkFence();
 const historyBackend =
   typeof (globalThis as any).indexedDB !== "undefined"
     ? new IndexedDBHistoryBackend()
     : new InMemoryHistoryBackend();
-const history = new MemoryHistoryStore(historyBackend, {
-  pinPersistence: "session",
-});
+const history = identityWork.protect(
+  new MemoryHistoryStore(historyBackend, {
+    pinPersistence: "session",
+  })
+);
 let localRetentionMs = RETENTION_MS;
 let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
 let historyPolicyError: "history_cleanup_failed" | null = null;
 let historyRetentionCleanup: HistoryRetentionCleanup | undefined;
-const storage = new ChromeStorageBackend();
+let resetClipboardBaselineRequired = false;
+let startupResetChecked = false;
+const resetStorage = new ChromeStorageBackend();
+const storage = identityWork.protect(resetStorage);
+// This runs before eager preferences, History maintenance, UI requests or offscreen wake.
+const startupResetReady = Promise.resolve().then(async () => {
+  const state = await identityRotation.reconcileIdentityReset();
+  if (state.phase === "idle" && state.completedOperation)
+    resetClipboardBaselineRequired =
+      (await identityRepo.get())?.deviceId ===
+      state.completedOperation.generatedPeerId;
+  if (state.phase !== "idle" && !identityWork.isFenced())
+    await identityWork.acquireFence();
+  startupResetChecked = true;
+});
 let historyPolicySettled = false;
 const retentionPreference = createLocalRetentionPreference({
   storage,
@@ -148,9 +166,13 @@ let resolveHistoryPolicyReady: (() => void) | undefined;
 const historyPolicyReady = new Promise<void>((resolve) => {
   resolveHistoryPolicyReady = resolve;
 });
-const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
+const identityRepo = createKVIdentityRepository({
+  storage: resetStorage,
+  key: IDENTITY_KEY,
+});
 const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
+  workFence: identityWork,
   capabilities: RUNTIME_CAPABILITIES.chromeExtension,
   generateKeyMaterial: generateExtensionIdentityKeyMaterial,
   deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
@@ -177,22 +199,32 @@ chrome.runtime.onConnect.addListener((port) => {
   }
   port.onMessage.addListener((value: unknown) => {
     const request = parseAccessRequest(value);
-    if (!request) {
+    if (
+      !request ||
+      request.runtimeGeneration !== identityWork.generation() ||
+      identityWork.isFenced()
+    ) {
       port.postMessage({ error: "invalid_relay_access_request" });
       return;
     }
-    void managedConfigurationsReady
-      .then(() =>
-        isConfiguredManagedEndpoint(managedConfigurations, request.discoveryUrl)
+    void startupResetReady
+      .then(() => managedConfigurationsReady)
+      .then(() => {
+        identityWork.assertOpen(request.runtimeGeneration);
+        return isConfiguredManagedEndpoint(
+          managedConfigurations,
+          request.discoveryUrl
+        )
           ? managedCredentials.accessToken(request.discoveryUrl)
-          : null
-      )
-      .then((accessToken) =>
+          : null;
+      })
+      .then((accessToken) => {
+        identityWork.assertOpen(request.runtimeGeneration);
         port.postMessage({
           accessToken,
           warning: managedCredentials.warning(request.discoveryUrl),
-        })
-      )
+        });
+      })
       .catch(() => port.postMessage({ accessToken: null }));
   });
 });
@@ -203,11 +235,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     message?.action !== "offscreenStorage"
   )
     return;
-  void handleOffscreenStorageRequest(message, sender, {
-    storage,
-    extensionId: chrome.runtime.id,
-    offscreenUrl: OFFSCREEN_URL,
-  }).then(sendResponse);
+  void startupResetReady
+    .then(() =>
+      handleOffscreenStorageRequest(message, sender, {
+        storage: resetStorage,
+        workFence: identityWork,
+        extensionId: chrome.runtime.id,
+        offscreenUrl: OFFSCREEN_URL,
+      })
+    )
+    .then(sendResponse);
   return true;
 });
 
@@ -228,11 +265,14 @@ function createOffscreenStartupGate(): {
   };
 }
 
+let offscreenOwned = false;
 let offscreenCreateFlight: Promise<void> | null = null;
 let offscreenInitialized = false;
 let offscreenInitFlight: Promise<void> | null = null;
 
 async function ensureOffscreenDocument(): Promise<void> {
+  await startupResetReady;
+  identityWork.assertOpen();
   if (
     !chrome.offscreen ||
     typeof chrome.offscreen.createDocument !== "function"
@@ -240,9 +280,15 @@ async function ensureOffscreenDocument(): Promise<void> {
     return;
   if (!offscreenCreateFlight) {
     offscreenCreateFlight = (async () => {
-      const has = (chrome.offscreen as any).hasDocument
+      let has = (chrome.offscreen as any).hasDocument
         ? await (chrome.offscreen as any).hasDocument()
         : false;
+      identityWork.assertOpen();
+      if (has && !offscreenOwned) {
+        await stopOffscreenDocument();
+        identityWork.assertOpen();
+        has = false;
+      }
       if (!has) {
         offscreenInitialized = false;
         try {
@@ -255,6 +301,7 @@ async function ensureOffscreenDocument(): Promise<void> {
             justification:
               "Run libp2p WebRTC networking and access the clipboard",
           });
+          offscreenOwned = true;
         } catch (err) {
           log.error("Failed to create offscreen document", err);
           throw err;
@@ -265,9 +312,11 @@ async function ensureOffscreenDocument(): Promise<void> {
     });
   }
   await offscreenCreateFlight;
+  identityWork.assertOpen();
 }
 
 async function initializeOffscreen(): Promise<void> {
+  identityWork.assertOpen();
   if (offscreenInitialized) return;
   if (!offscreenInitFlight) {
     offscreenInitFlight = (async () => {
@@ -277,6 +326,13 @@ async function initializeOffscreen(): Promise<void> {
         relays: [],
         managedConfigurations,
       });
+      for (const protocol of runtimeProtocolHandlers.keys())
+        await sendOffscreen({ action: "runtimeRegisterProtocol", protocol });
+      for (const protocol of runtimeRegisteredStreamProtocols)
+        await sendOffscreen({
+          action: "runtimeRegisterStreamProtocol",
+          protocol,
+        });
     })().finally(() => {
       offscreenInitFlight = null;
     });
@@ -301,10 +357,17 @@ async function stopOffscreenDocument(): Promise<void> {
     );
   });
   offscreenInitialized = false;
+  offscreenOwned = false;
   await offscreen.closeDocument?.();
 }
 
-async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
+async function sendOffscreen<T = any>(
+  message: any,
+  attempt = 0,
+  generation = identityWork.generation()
+): Promise<T> {
+  await startupResetReady;
+  identityWork.assertOpen(generation);
   await ensureOffscreenDocument();
   if (
     message.action !== "init" &&
@@ -314,31 +377,41 @@ async function sendOffscreen<T = any>(message: any, attempt = 0): Promise<T> {
     await initializeOffscreen();
   }
   return await new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ target: "offscreen", ...message }, (resp) => {
-      // @ts-ignore
-      const err = chrome.runtime.lastError;
-      if (err) {
-        if (attempt < 5) {
-          setTimeout(
-            () => {
-              sendOffscreen<T>(message, attempt + 1)
-                .then(resolve)
-                .catch(reject);
-            },
-            200 * (attempt + 1)
-          );
+    identityWork.assertOpen(generation);
+    chrome.runtime.sendMessage(
+      { target: "offscreen", ...message, runtimeGeneration: generation },
+      (resp) => {
+        try {
+          identityWork.assertOpen(generation);
+        } catch (error) {
+          reject(error);
           return;
         }
-        reject(new Error(err.message || "offscreen_unavailable"));
-        return;
+        // @ts-ignore
+        const err = chrome.runtime.lastError;
+        if (err) {
+          if (attempt < 5) {
+            setTimeout(
+              () => {
+                sendOffscreen<T>(message, attempt + 1, generation)
+                  .then(resolve)
+                  .catch(reject);
+              },
+              200 * (attempt + 1)
+            );
+            return;
+          }
+          reject(new Error(err.message || "offscreen_unavailable"));
+          return;
+        }
+        if (resp?.ok === false) {
+          reject(new Error(resp.error || "offscreen_error"));
+          return;
+        }
+        if (message.action === "init") offscreenInitialized = true;
+        resolve(resp as T);
       }
-      if (resp?.ok === false) {
-        reject(new Error(resp.error || "offscreen_error"));
-        return;
-      }
-      if (message.action === "init") offscreenInitialized = true;
-      resolve(resp as T);
-    });
+    );
   });
 }
 
@@ -368,6 +441,7 @@ function createExtensionClipboardService() {
   return composeExtensionClipboard({
     history,
     appliedSharingLifetime: () => sharingLifetimeMs,
+    baselineFirstObservation: () => resetClipboardBaselineRequired,
     getSenderId: async () => {
       const id = await identitySvc.get();
       return id.deviceId;
@@ -425,12 +499,16 @@ const settingsHandler = createSettingsHandler({
     await chrome.runtime.sendMessage({ type: "settingsState", snapshot });
   },
 });
-const autoSyncReady = settingsHandler.read().then((snapshot) => {
+const autoSyncReady = startupResetReady.then(async () => {
+  if (identityWork.isFenced()) return;
+  const snapshot = await settingsHandler.read();
   autoSync = snapshot.state.autoSync;
   log.info("Background script initialized");
 });
-void retentionPreference
-  .load()
+void startupResetReady
+  .then(() =>
+    identityWork.isFenced() ? undefined : retentionPreference.load()
+  )
   .catch((error) => {
     historyPolicyError = "history_cleanup_failed";
     log.warn("Initial history policy unavailable", error);
@@ -610,28 +688,56 @@ let identityRotationLifecycle: ReturnType<
 >;
 const identityRotation = createChromeIdentityRotationCoordinator({
   repository: identityRepo,
-  storage,
+  storage: resetStorage,
   history: historyBackend,
+  ...(historyBackend instanceof IndexedDBHistoryBackend
+    ? {
+        lifecycle: {
+          async acquireFence() {
+            offscreenOwned = false;
+            return identityWork.acquireFence();
+          },
+          async quiesce() {
+            await identityRotationShutdown();
+            await identityWork.quiesce();
+            await clipboard.discardPending?.();
+            const notifications = chrome.notifications?.getAll
+              ? await new Promise<object>((resolve) =>
+                  chrome.notifications.getAll(resolve)
+                )
+              : {};
+            for (const id of Object.keys(notifications))
+              await chrome.notifications?.clear?.(id);
+            await Promise.allSettled(
+              [offscreenCreateFlight, offscreenInitFlight].filter(Boolean)
+            );
+            await stopOffscreenDocument();
+          },
+        },
+      }
+    : {}),
   identityKey: IDENTITY_KEY,
   generateKeyMaterial: generateExtensionIdentityKeyMaterial,
   deriveKeyMaterial: deriveExtensionIdentityKeyMaterial,
   runtimeCleanup: {
     prepare: () => clipboardSync.prepareIdentityRotationCleanup(),
   },
-  shutdown: async () => {
-    historyRetentionCleanup?.stop();
-    historyRetentionCleanup = undefined;
-    await historyPolicyReady;
-    membershipReconciler?.stop();
-    await stopIdentityBoundRuntimeServices([
-      () => pairingSessions.stop(),
-      () => pairingPending.stop(),
-      () => clipboardSync.stop(),
-      () => historyReconciliation.stop(),
-      () => extensionNetwork.stop(),
-    ]);
-  },
+  shutdown: () => identityRotationShutdown(),
 });
+async function identityRotationShutdown() {
+  historyRetentionCleanup?.stop();
+  historyRetentionCleanup = undefined;
+  await historyPolicyReady;
+  membershipReconciler?.stop();
+  await stopIdentityBoundRuntimeServices([
+    () => pairingSessions.stop(),
+    () => pairingPending.stop(),
+    () => clipboardSync.stop(),
+    () => historyReconciliation.stop(),
+    () => extensionNetwork.stop(),
+  ]);
+}
+
 membershipReconciler = createMembershipReconciler({
   transport: extensionNetwork,
   identity: identitySvc,
@@ -656,12 +762,15 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   },
   notifications: {
     async show(message) {
-      if (!chrome.notifications?.create) return;
-      await chrome.notifications.create(message.id, {
-        type: "basic",
-        iconUrl: chrome.runtime.getURL("icon-128.png"),
-        title: message.title,
-        message: message.body,
+      return identityWork.run(async () => {
+        identityWork.assertOpen();
+        if (!chrome.notifications?.create) return;
+        await chrome.notifications.create(message.id, {
+          type: "basic",
+          iconUrl: chrome.runtime.getURL("icon-128.png"),
+          title: message.title,
+          message: message.body,
+        });
       });
     },
     async dismiss(id) {
@@ -690,13 +799,20 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
   publicState: {
     async read() {
       const pairingState = pairingSessions.snapshot();
+      const suspended = identityWork.isFenced();
       const [clips, pinnedIds, devices, identity, peerState, rotationNotice] =
         await Promise.all([
-          historyPolicyReady.then(() => history.exportAll()),
-          historyPolicyReady.then(() => history.pinnedIds()),
-          identitySvc.trustedDevices(),
-          identityRotationRecovery ? Promise.resolve(null) : identitySvc.get(),
-          identityRotationRecovery
+          suspended
+            ? Promise.resolve([])
+            : historyPolicyReady.then(() => history.exportAll()),
+          suspended
+            ? Promise.resolve([])
+            : historyPolicyReady.then(() => history.pinnedIds()),
+          suspended ? Promise.resolve([]) : identitySvc.trustedDevices(),
+          suspended || identityRotationRecovery
+            ? Promise.resolve(null)
+            : identitySvc.get(),
+          suspended || identityRotationRecovery
             ? Promise.resolve({ peers: [], peerConnections: [] })
             : offscreenReady
                 .then(() =>
@@ -711,7 +827,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
       return {
         clips,
         devices,
-        pending: pendingRequests,
+        pending: suspended ? [] : pendingRequests,
         waiting: pairingState.waiting,
         pairingErrors: pairingState.errors,
         pairingState,
@@ -721,7 +837,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         pinnedIds,
         clipboardHistoryError,
         historyPolicyError,
-        identityRotationRecovery,
+        identityRotationRecovery: suspended || identityRotationRecovery,
         identityRotationNotice: rotationNotice?.reason ?? null,
         autoSync: clipboardSync.isAutoSync(),
         relayAddresses: [],
@@ -788,6 +904,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
 });
 identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
   rotation: identityRotation,
+  workFence: identityWork,
   loadIdentity: () => identitySvc.get(),
   restart: () => chrome.runtime.reload(),
   startLocalRecovery: () => clipboardSync.startLocalOnly(),
@@ -807,6 +924,7 @@ extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
     .catch((error) => log.warn("Pairing message processing failed", error));
 });
 chrome.notifications?.onClicked?.addListener((id) => {
+  if (identityWork.isFenced()) return;
   notificationSelection.emit(id);
 });
 const sharedRuntime = createRuntimeOrchestrator({
@@ -907,468 +1025,544 @@ const relayMutationOwner = createChromeRelayMutationOwner({
     await sharedRuntime.publishState();
   },
 });
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (typeof msg?.type === "string" && msg.type.startsWith("managedRelay")) {
-    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
-      sendResponse({ ok: false, error: "relay_ui_unauthorized" });
-      return false;
-    }
-    void (async () => {
-      await managedConfigurationsReady;
-      if (msg.type === "managedRelayGet") {
-        return {
-          ok: true,
-          configurations: managedConfigurations,
-          states: managedStates,
-        };
-      }
-      if (msg.type === "managedRelayRefresh")
-        return { ok: true, configurations: await relayMutationOwner.refresh() };
-      if (msg.type === "managedRelayMutate") {
-        const result = await relayMutationOwner.mutate(msg.mutation);
-        return { ok: true, result };
-      }
-      if (typeof msg.key !== "string") throw new Error("invalid_relay_key");
-      const config = managedConfigurations.find(
-        (entry) => entry.key === msg.key
+chrome.runtime.onMessage.addListener(
+  function handleRuntimeMessage(msg, sender, sendResponse) {
+    if (!startupResetChecked) {
+      void startupResetReady.then(() =>
+        handleRuntimeMessage(msg, sender, sendResponse)
       );
-      if (!config) throw new Error("relay_not_found");
+      return true;
+    }
+    const admittedGeneration = identityWork.generation();
+    const reply = sendResponse;
+    sendResponse = (value) => {
       if (
-        msg.type === "managedRelayLogin" ||
-        msg.type === "managedRelayAccount" ||
-        msg.type === "managedRelayRetry"
+        ![
+          "getRuntimeAuthority",
+          "getRuntimeState",
+          "getInitializationError",
+        ].includes(msg?.type) &&
+        (admittedGeneration !== identityWork.generation() ||
+          identityWork.isFenced())
+      )
+        reply({ ok: false, error: "identity_runtime_retired" });
+      else reply(value);
+    };
+    if (
+      identityWork.isFenced() &&
+      ![
+        "getRuntimeAuthority",
+        "getRuntimeState",
+        "getInitializationError",
+      ].includes(msg?.type)
+    ) {
+      sendResponse({ ok: false, error: "identity_runtime_suspended" });
+      return false;
+    }
+    if (typeof msg?.type === "string" && msg.type.startsWith("managedRelay")) {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)
       ) {
-        const result = await performRelayAction(
-          msg.type === "managedRelayAccount"
-            ? "portal-opened"
-            : msg.type === "managedRelayLogin"
-              ? "authenticated"
-              : "retry-requested",
-          async () => {
-            if (msg.type === "managedRelayAccount") {
-              if (config.kind !== "managed")
-                throw new Error("relay_account_not_supported");
-              await managedCredentials.openAccount(config.discoveryUrl);
-            } else {
-              if (msg.type === "managedRelayLogin") {
-                if (config.kind !== "managed")
-                  throw new Error("relay_login_not_supported");
-                await managedCredentials.interactiveLogin(config.discoveryUrl);
-              }
-              // The configuration may have been removed while the auth browser was open.
-              if (
-                !managedConfigurations.some(
-                  (current) =>
-                    current.key === config.key &&
-                    current.kind === config.kind &&
-                    (current.kind !== "managed" ||
-                      config.kind !== "managed" ||
-                      current.discoveryUrl === config.discoveryUrl)
-                )
-              )
-                throw new Error("relay_not_found");
-              await offscreenReady;
-              await sendOffscreen({
-                action: "retryManagedRelay",
-                key: config.key,
-              });
-            }
-          },
-          async () => {
-            await sharedRuntime.publishState();
-          }
+        sendResponse({ ok: false, error: "relay_ui_unauthorized" });
+        return false;
+      }
+      void (async () => {
+        await managedConfigurationsReady;
+        if (msg.type === "managedRelayGet") {
+          return {
+            ok: true,
+            configurations: managedConfigurations,
+            states: managedStates,
+          };
+        }
+        if (msg.type === "managedRelayRefresh")
+          return {
+            ok: true,
+            configurations: await relayMutationOwner.refresh(),
+          };
+        if (msg.type === "managedRelayMutate") {
+          const result = await relayMutationOwner.mutate(msg.mutation);
+          return { ok: true, result };
+        }
+        if (typeof msg.key !== "string") throw new Error("invalid_relay_key");
+        const config = managedConfigurations.find(
+          (entry) => entry.key === msg.key
         );
-        return { ok: true, result };
+        if (!config) throw new Error("relay_not_found");
+        if (
+          msg.type === "managedRelayLogin" ||
+          msg.type === "managedRelayAccount" ||
+          msg.type === "managedRelayRetry"
+        ) {
+          const result = await performRelayAction(
+            msg.type === "managedRelayAccount"
+              ? "portal-opened"
+              : msg.type === "managedRelayLogin"
+                ? "authenticated"
+                : "retry-requested",
+            async () => {
+              if (msg.type === "managedRelayAccount") {
+                if (config.kind !== "managed")
+                  throw new Error("relay_account_not_supported");
+                await managedCredentials.openAccount(config.discoveryUrl);
+              } else {
+                if (msg.type === "managedRelayLogin") {
+                  if (config.kind !== "managed")
+                    throw new Error("relay_login_not_supported");
+                  await managedCredentials.interactiveLogin(
+                    config.discoveryUrl
+                  );
+                }
+                // The configuration may have been removed while the auth browser was open.
+                if (
+                  !managedConfigurations.some(
+                    (current) =>
+                      current.key === config.key &&
+                      current.kind === config.kind &&
+                      (current.kind !== "managed" ||
+                        config.kind !== "managed" ||
+                        current.discoveryUrl === config.discoveryUrl)
+                  )
+                )
+                  throw new Error("relay_not_found");
+                await offscreenReady;
+                await sendOffscreen({
+                  action: "retryManagedRelay",
+                  key: config.key,
+                });
+              }
+            },
+            async () => {
+              await sharedRuntime.publishState();
+            }
+          );
+          return { ok: true, result };
+        }
+        throw new Error("unknown_relay_action");
+      })()
+        .then(sendResponse)
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "getRuntimeAuthority") {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)
+      ) {
+        sendResponse({ error: "runtime_authority_unauthorized" });
+        return false;
       }
-      throw new Error("unknown_relay_action");
-    })()
-      .then(sendResponse)
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "getRuntimeAuthority") {
-    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
-      sendResponse({ error: "runtime_authority_unauthorized" });
-      return false;
+      sendResponse({ sessionId: pairingSessions.snapshot().sessionId });
+      return true;
     }
-    sendResponse({ sessionId: pairingSessions.snapshot().sessionId });
-    return true;
-  }
-  if (msg.type === "getRuntimeState") {
-    runtimeAdapter.publicState
-      .read()
-      .then((state) => sendResponse({ state }))
-      .catch((error) => sendResponse({ error: (error as Error).message }));
-    return true;
-  }
-  if (msg.type === "getInitializationError") {
-    identitySvc
-      .getInitializationError()
-      .then((error) => sendResponse({ error: error ?? null }));
-    return true;
-  }
-  if (msg.type === "retryIdentityInitialization") {
-    identitySvc
-      .retryInitialization()
-      .then(() => {
-        sendResponse({ ok: true });
-        chrome.runtime.reload();
-      })
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
+    if (msg.type === "getRuntimeState") {
+      runtimeAdapter.publicState
+        .read()
+        .then((state) => sendResponse({ state }))
+        .catch((error) => sendResponse({ error: (error as Error).message }));
+      return true;
+    }
+    if (msg.type === "getInitializationError") {
+      identityRepo.loadInitializationError!().then((error) =>
+        sendResponse({ error: error ?? null })
       );
-    return true;
-  }
-  if (msg.type === "getLatestClip") {
-    historyPolicyReady
-      .then(() => history.query({ limit: 1 }))
-      .then((items) => {
-        sendResponse({ clip: items[0]?.clip || null });
-      });
-    return true;
-  }
-  // Handle shareClip from popup
-  if (msg.type === "shareClip" && msg.clip) {
-    Promise.all([historyPolicyReady, autoSyncReady])
-      .then(() => clipboard.processLocalText(msg.clip.content))
-      .then(async () => {
-        sendResponse({ ok: true });
-      });
-    return true;
-  }
-  // Handle getPeerStatus from popup
-  if (msg.type === "getPeerStatus") {
-    // Example: get peer count and connection status from messaging layer
-    offscreenReady
-      .then(() =>
-        sendOffscreen<{
-          peers: string[];
-          peerConnections?: PeerConnectionInfo[];
-        }>({ action: "getPeers" })
-      )
-      .then((resp) => {
-        const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
-        sendResponse({ peerCount: peers.length, connected: peers.length > 0 });
-      })
-      .catch(() => sendResponse({ peerCount: 0, connected: false }));
-    return true;
-  }
-  // Handle clipboard history for options page
-  if (msg.type === "getClipHistory") {
-    historyPolicyReady
-      .then(() => history.snapshot())
-      .then((snapshot) =>
-        sendResponse({
-          ok: true,
-          snapshot: { ...snapshot, sessionId: historySessionId },
-          clips: snapshot.clips,
+      return true;
+    }
+    if (msg.type === "retryIdentityInitialization") {
+      identitySvc
+        .retryInitialization()
+        .then(() => {
+          sendResponse({ ok: true });
+          chrome.runtime.reload();
         })
-      )
-      .catch(() => sendResponse({ ok: false, error: "history_unavailable" }));
-    return true;
-  }
-  if (msg.type === "clearHistory") {
-    Promise.all([historyPolicyReady, autoSyncReady])
-      .then(() => clipboard.clearHistory(() => history.clearAll()))
-      .then(() => {
-        sendResponse({ ok: true });
-      })
-      .catch((err) => {
-        log.warn("Failed to clear history", err);
-        sendResponse({ ok: false, error: "clear_failed" });
-      });
-    return true;
-  }
-  if (msg.type === "searchClipHistory") {
-    historyPolicyReady
-      .then(() => history.query({ search: msg.query || "" }))
-      .then((items) => {
-        sendResponse({ clips: items.map((i) => i.clip) });
-      });
-    return true;
-  }
-  if (msg.type === "getPendingRequests") {
-    sendResponse(pendingRequests);
-    return true;
-  }
-  if (msg.type === "dismissPairingOutcome") {
-    if (
-      !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL) ||
-      typeof msg.targetPeerId !== "string" ||
-      typeof msg.expected?.sessionId !== "string" ||
-      typeof msg.expected?.revision !== "number"
-    ) {
-      sendResponse({ error: "pairing_outcome_unauthorized" });
-      return false;
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
     }
-    sendResponse({
-      dismissed: pairingSessions.dismissOutcome(msg.targetPeerId, msg.expected),
-    });
-    return true;
-  }
-  if (msg.type === "respondTrust") {
-    void pairingPending
-      .decide(
-        msg.id,
-        msg.accept ? "accepted" : "rejected",
-        msg.device?.requestVersion
-      )
-      .then((result) => sendResponse(result))
-      .catch((error) => {
-        log.warn("Pairing response failed", error);
-        sendResponse({
-          ok: false,
-          error: "outcome_unconfirmed",
-          admitted: null,
+    if (msg.type === "getLatestClip") {
+      historyPolicyReady
+        .then(() => history.query({ limit: 1 }))
+        .then((items) => {
+          sendResponse({ clip: items[0]?.clip || null });
         });
-      });
-    return true;
-  }
-  if (msg.type === "clipboardUpdate") {
-    void observeExtensionClipboard(
-      msg.text,
-      clipboard,
+      return true;
+    }
+    // Handle shareClip from popup
+    if (msg.type === "shareClip" && msg.clip) {
       Promise.all([historyPolicyReady, autoSyncReady])
-    ).then(sendResponse);
-    return true;
-  }
-  if (msg.type === "shareNow") {
-    if (
-      typeof msg.text !== "string" ||
-      !isAuthorizedPopupShareNowSender(sender.url, POPUP_URL)
-    ) {
-      sendResponse({ ok: false, error: "share_now_unauthorized" });
-      return false;
+        .then(() => clipboard.processLocalText(msg.clip.content))
+        .then(async () => {
+          sendResponse({ ok: true });
+        });
+      return true;
     }
-    Promise.all([historyPolicyReady, autoSyncReady])
-      .then(() => clipboard.processLocalText(msg.text, { shareNow: true }))
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "reuseClip" && msg.id) {
-    Promise.all([historyPolicyReady, autoSyncReady])
-      .then(() => reuseRetainedClip(msg.id, { history, clipboard }))
-      .then((outcome) => sendResponse({ ok: true, outcome: outcome.status }))
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "getLocalIdentity") {
-    identitySvc.get().then((id) => {
-      sendResponse({ identity: toPublicDeviceIdentity(id) });
-    });
-    return true;
-  }
-  if (msg.type === "getPairingTarget") {
-    void (async () => {
-      try {
-        await offscreenReady;
-        const identity = await identitySvc.get();
-        if (!extensionNetwork.getSignedPeerRecord)
-          throw new Error("signed_peer_record_unavailable");
-        const signedPeerRecord = await extensionNetwork.getSignedPeerRecord();
-        sendResponse({
-          text: encodePairingTarget({
-            targetPeerId: await deviceIdToPeerId(identity.deviceId),
-            signedPeerRecord,
-            deviceNameHint: identity.deviceName,
-          }),
-        });
-      } catch (error) {
-        sendResponse({ error: (error as Error).message });
-      }
-    })();
-    return true;
-  }
-  if (
-    msg.type === "renameLocalIdentity" &&
-    typeof msg.name === "string" &&
-    typeof msg.expectedDeviceId === "string"
-  ) {
-    void publishedRenameResult(async () => {
-      await identitySvc.rename(msg.name, msg.expectedDeviceId);
-      return toPublicDeviceIdentity(await identitySvc.get());
-    }, "identity").then(sendResponse);
-    return true;
-  }
-  if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
-    void (async () => {
-      try {
-        await offscreenReady;
-        const id = await identitySvc.get();
-        if (!id.privateKey) throw new Error("missing_private_key");
-        const target = decodePairingTarget(msg.pairingText);
-        if (!target) throw new Error("invalid_pairing_target");
-        await importPairingTargetAndRequest({
-          text: msg.pairingText,
-          network: extensionNetwork,
-          request: pairingSessions.request,
-        });
-        sendResponse({ ok: true });
-      } catch (error) {
-        sendResponse({ ok: false, error: (error as Error).message });
-      }
-    })();
-    return true;
-  }
-  if (msg.type === "getStatus") {
-    offscreenReady
-      .then(() =>
-        sendOffscreen<{
-          peers: string[];
-          peerConnections?: PeerConnectionInfo[];
-        }>({ action: "getPeers" })
-      )
-      .then((resp) => {
-        const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
-        sendResponse({
-          peerCount: peers.length,
-          autoSync: clipboardSync.isAutoSync(),
-        });
-      })
-      .catch(() =>
-        sendResponse({ peerCount: 0, autoSync: clipboardSync.isAutoSync() })
-      );
-    return true;
-  }
-  if (msg.type === "getConnectedPeers") {
-    offscreenReady
-      .then(() =>
-        sendOffscreen<{
-          peers: string[];
-          peerConnections?: PeerConnectionInfo[];
-        }>({ action: "getPeers" })
-      )
-      .then((resp) =>
-        sendResponse({
-          peers: Array.isArray(resp?.peers) ? resp!.peers : [],
-          peerConnections: Array.isArray(resp?.peerConnections)
-            ? resp!.peerConnections
-            : [],
+    // Handle getPeerStatus from popup
+    if (msg.type === "getPeerStatus") {
+      // Example: get peer count and connection status from messaging layer
+      offscreenReady
+        .then(() =>
+          sendOffscreen<{
+            peers: string[];
+            peerConnections?: PeerConnectionInfo[];
+          }>({ action: "getPeers" })
+        )
+        .then((resp) => {
+          const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
+          sendResponse({
+            peerCount: peers.length,
+            connected: peers.length > 0,
+          });
         })
-      )
-      .catch(() => sendResponse({ peers: [], peerConnections: [] }));
-    return true;
-  }
-  if (msg.type === "getTrustedDevices") {
-    identitySvc.trustedDevices().then((devices) => {
-      sendResponse({ devices });
-    });
-    return true;
-  }
-  if (msg.type === "deleteClip" && msg.id) {
-    historyPolicyReady
-      .then(() => history.remove(msg.id))
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "setPin" && msg.id && typeof msg.pinned === "boolean") {
-    historyPolicyReady
-      .then(() => history.setPinned(msg.id, msg.pinned))
-      .then((pinnedIds) => sendResponse({ ok: true, pinnedIds }))
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "dismissClipboardHistoryError") {
-    clipboard.dismissHistoryError?.();
-    sendResponse({ ok: true });
-    return true;
-  }
-  if (msg.type === "acknowledgeIdentityRotationNotice") {
-    identityRotation
-      .acknowledgeNotice()
-      .then(async () => {
-        await sharedRuntime.publishState();
-        sendResponse({ ok: true });
-      })
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "retryHistoryCleanup") {
-    historyRetentionCleanup
-      ?.retry()
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "setLocalRetention" && typeof msg.retentionMs === "number") {
-    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
-      sendResponse({ status: "rejected", error: "settings_unauthorized" });
-      return false;
+        .catch(() => sendResponse({ peerCount: 0, connected: false }));
+      return true;
     }
-    void settingsHandler
-      .write({ localRetentionMs: msg.retentionMs })
-      .then(sendResponse)
-      .catch((error) =>
-        sendResponse({ status: "unconfirmed", error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "revokeDevice" && msg.id) {
-    identitySvc
-      .revoke(msg.id)
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
-    void publishedRenameResult(
-      () => identitySvc.setLocalDeviceAlias(msg.id, msg.name),
-      "device"
-    ).then(sendResponse);
-    return true;
-  }
-  // Settings are owned by the serialized preference handler.
-  if (msg.type === "getSettings") {
-    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
-      sendResponse({ ok: false, error: "settings_unauthorized" });
-      return false;
+    // Handle clipboard history for options page
+    if (msg.type === "getClipHistory") {
+      historyPolicyReady
+        .then(() => history.snapshot())
+        .then((snapshot) =>
+          sendResponse({
+            ok: true,
+            snapshot: { ...snapshot, sessionId: historySessionId },
+            clips: snapshot.clips,
+          })
+        )
+        .catch(() => sendResponse({ ok: false, error: "history_unavailable" }));
+      return true;
     }
-    void Promise.all([historyPolicyReady, settingsHandler.read()])
-      .then(([, snapshot]) =>
-        sendResponse({ ok: true, snapshot, localRetentionMs })
-      )
-      .catch((error) =>
-        sendResponse({ ok: false, error: (error as Error).message })
-      );
-    return true;
-  }
-  if (msg.type === "setSettings") {
-    if (!authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)) {
-      sendResponse({ ok: false, error: "settings_unauthorized" });
-      return false;
+    if (msg.type === "clearHistory") {
+      Promise.all([historyPolicyReady, autoSyncReady])
+        .then(() => clipboard.clearHistory(() => history.clearAll()))
+        .then(() => {
+          sendResponse({ ok: true });
+        })
+        .catch((err) => {
+          log.warn("Failed to clear history", err);
+          sendResponse({ ok: false, error: "clear_failed" });
+        });
+      return true;
     }
-    void settingsHandler
-      .write(msg.settings)
-      .then((result) => sendResponse(result))
-      .catch((error) =>
-        sendResponse({ status: "unconfirmed", error: (error as Error).message })
-      );
-    return true;
+    if (msg.type === "searchClipHistory") {
+      historyPolicyReady
+        .then(() => history.query({ search: msg.query || "" }))
+        .then((items) => {
+          sendResponse({ clips: items.map((i) => i.clip) });
+        });
+      return true;
+    }
+    if (msg.type === "getPendingRequests") {
+      sendResponse(pendingRequests);
+      return true;
+    }
+    if (msg.type === "dismissPairingOutcome") {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL) ||
+        typeof msg.targetPeerId !== "string" ||
+        typeof msg.expected?.sessionId !== "string" ||
+        typeof msg.expected?.revision !== "number"
+      ) {
+        sendResponse({ error: "pairing_outcome_unauthorized" });
+        return false;
+      }
+      sendResponse({
+        dismissed: pairingSessions.dismissOutcome(
+          msg.targetPeerId,
+          msg.expected
+        ),
+      });
+      return true;
+    }
+    if (msg.type === "respondTrust") {
+      void pairingPending
+        .decide(
+          msg.id,
+          msg.accept ? "accepted" : "rejected",
+          msg.device?.requestVersion
+        )
+        .then((result) => sendResponse(result))
+        .catch((error) => {
+          log.warn("Pairing response failed", error);
+          sendResponse({
+            ok: false,
+            error: "outcome_unconfirmed",
+            admitted: null,
+          });
+        });
+      return true;
+    }
+    if (msg.type === "clipboardUpdate") {
+      void observeExtensionClipboard(
+        msg.text,
+        clipboard,
+        Promise.all([historyPolicyReady, autoSyncReady])
+      ).then(sendResponse);
+      return true;
+    }
+    if (msg.type === "shareNow") {
+      if (
+        typeof msg.text !== "string" ||
+        !isAuthorizedPopupShareNowSender(sender.url, POPUP_URL)
+      ) {
+        sendResponse({ ok: false, error: "share_now_unauthorized" });
+        return false;
+      }
+      Promise.all([historyPolicyReady, autoSyncReady])
+        .then(() => clipboard.processLocalText(msg.text, { shareNow: true }))
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "reuseClip" && msg.id) {
+      Promise.all([historyPolicyReady, autoSyncReady])
+        .then(() => reuseRetainedClip(msg.id, { history, clipboard }))
+        .then((outcome) => sendResponse({ ok: true, outcome: outcome.status }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "getLocalIdentity") {
+      identitySvc.get().then((id) => {
+        sendResponse({ identity: toPublicDeviceIdentity(id) });
+      });
+      return true;
+    }
+    if (msg.type === "getPairingTarget") {
+      void (async () => {
+        try {
+          await offscreenReady;
+          const identity = await identitySvc.get();
+          if (!extensionNetwork.getSignedPeerRecord)
+            throw new Error("signed_peer_record_unavailable");
+          const signedPeerRecord = await extensionNetwork.getSignedPeerRecord();
+          sendResponse({
+            text: encodePairingTarget({
+              targetPeerId: await deviceIdToPeerId(identity.deviceId),
+              signedPeerRecord,
+              deviceNameHint: identity.deviceName,
+            }),
+          });
+        } catch (error) {
+          sendResponse({ error: (error as Error).message });
+        }
+      })();
+      return true;
+    }
+    if (
+      msg.type === "renameLocalIdentity" &&
+      typeof msg.name === "string" &&
+      typeof msg.expectedDeviceId === "string"
+    ) {
+      void publishedRenameResult(async () => {
+        await identitySvc.rename(msg.name, msg.expectedDeviceId);
+        return toPublicDeviceIdentity(await identitySvc.get());
+      }, "identity").then(sendResponse);
+      return true;
+    }
+    if (msg.type === "pairDevice" && typeof msg.pairingText === "string") {
+      void (async () => {
+        try {
+          await offscreenReady;
+          const id = await identitySvc.get();
+          if (!id.privateKey) throw new Error("missing_private_key");
+          const target = decodePairingTarget(msg.pairingText);
+          if (!target) throw new Error("invalid_pairing_target");
+          await importPairingTargetAndRequest({
+            text: msg.pairingText,
+            network: extensionNetwork,
+            request: pairingSessions.request,
+          });
+          sendResponse({ ok: true });
+        } catch (error) {
+          sendResponse({ ok: false, error: (error as Error).message });
+        }
+      })();
+      return true;
+    }
+    if (msg.type === "getStatus") {
+      offscreenReady
+        .then(() =>
+          sendOffscreen<{
+            peers: string[];
+            peerConnections?: PeerConnectionInfo[];
+          }>({ action: "getPeers" })
+        )
+        .then((resp) => {
+          const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
+          sendResponse({
+            peerCount: peers.length,
+            autoSync: clipboardSync.isAutoSync(),
+          });
+        })
+        .catch(() =>
+          sendResponse({ peerCount: 0, autoSync: clipboardSync.isAutoSync() })
+        );
+      return true;
+    }
+    if (msg.type === "getConnectedPeers") {
+      offscreenReady
+        .then(() =>
+          sendOffscreen<{
+            peers: string[];
+            peerConnections?: PeerConnectionInfo[];
+          }>({ action: "getPeers" })
+        )
+        .then((resp) =>
+          sendResponse({
+            peers: Array.isArray(resp?.peers) ? resp!.peers : [],
+            peerConnections: Array.isArray(resp?.peerConnections)
+              ? resp!.peerConnections
+              : [],
+          })
+        )
+        .catch(() => sendResponse({ peers: [], peerConnections: [] }));
+      return true;
+    }
+    if (msg.type === "getTrustedDevices") {
+      identitySvc.trustedDevices().then((devices) => {
+        sendResponse({ devices });
+      });
+      return true;
+    }
+    if (msg.type === "deleteClip" && msg.id) {
+      historyPolicyReady
+        .then(() => history.remove(msg.id))
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "setPin" && msg.id && typeof msg.pinned === "boolean") {
+      historyPolicyReady
+        .then(() => history.setPinned(msg.id, msg.pinned))
+        .then((pinnedIds) => sendResponse({ ok: true, pinnedIds }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "dismissClipboardHistoryError") {
+      clipboard.dismissHistoryError?.();
+      sendResponse({ ok: true });
+      return true;
+    }
+    if (msg.type === "acknowledgeIdentityRotationNotice") {
+      identityRotation
+        .acknowledgeNotice()
+        .then(async () => {
+          await sharedRuntime.publishState();
+          sendResponse({ ok: true });
+        })
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "retryHistoryCleanup") {
+      historyRetentionCleanup
+        ?.retry()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (
+      msg.type === "setLocalRetention" &&
+      typeof msg.retentionMs === "number"
+    ) {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)
+      ) {
+        sendResponse({ status: "rejected", error: "settings_unauthorized" });
+        return false;
+      }
+      void settingsHandler
+        .write({ localRetentionMs: msg.retentionMs })
+        .then(sendResponse)
+        .catch((error) =>
+          sendResponse({
+            status: "unconfirmed",
+            error: (error as Error).message,
+          })
+        );
+      return true;
+    }
+    if (msg.type === "revokeDevice" && msg.id) {
+      identitySvc
+        .revoke(msg.id)
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "renameDevice" && msg.id && typeof msg.name === "string") {
+      void publishedRenameResult(
+        () => identitySvc.setLocalDeviceAlias(msg.id, msg.name),
+        "device"
+      ).then(sendResponse);
+      return true;
+    }
+    // Settings are owned by the serialized preference handler.
+    if (msg.type === "getSettings") {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)
+      ) {
+        sendResponse({ ok: false, error: "settings_unauthorized" });
+        return false;
+      }
+      void Promise.all([historyPolicyReady, settingsHandler.read()])
+        .then(([, snapshot]) =>
+          sendResponse({ ok: true, snapshot, localRetentionMs })
+        )
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
+      return true;
+    }
+    if (msg.type === "setSettings") {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)
+      ) {
+        sendResponse({ ok: false, error: "settings_unauthorized" });
+        return false;
+      }
+      void settingsHandler
+        .write(msg.settings)
+        .then((result) => sendResponse(result))
+        .catch((error) =>
+          sendResponse({
+            status: "unconfirmed",
+            error: (error as Error).message,
+          })
+        );
+      return true;
+    }
+    // Add more message handlers as needed
   }
-  // Add more message handlers as needed
-});
+);
 
 // Listen for messages forwarded from offscreen (libp2p)
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.source !== "offscreen") return;
+  try {
+    if (
+      _sender.id !== chrome.runtime.id ||
+      _sender.url !== OFFSCREEN_URL ||
+      typeof msg.runtimeGeneration !== "string"
+    )
+      throw new Error("identity_runtime_retired");
+    identityWork.assertOpen(msg.runtimeGeneration);
+  } catch {
+    sendResponse({ ok: false, error: "identity_runtime_retired" });
+    return false;
+  }
   if (msg?.action === "managedRelayStates") {
     if (
       _sender.id !== chrome.runtime.id ||

@@ -63,12 +63,14 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   startLocalRecovery(): void;
   publishState(): void | Promise<void>;
   onRecoveryChanged?(recovering: boolean): void;
+  workFence?: IdentityBoundWorkFence;
 }) {
   let recovering = false;
   let manualSuspended = false;
   let manualAccepted = false;
   let recoveryReason: IdentityRotationReason | undefined;
   let restartRequested = false;
+  let recoveryFence: Promise<{ release(): Promise<void> }> | undefined;
 
   const setRecovering = (next: boolean): void => {
     recovering = manualSuspended || next;
@@ -86,6 +88,8 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   const applyManualState = (state: IdentityResetState): void => {
     if (state.phase === "idle") {
       if (state.acceptance === "not-accepted" && !manualAccepted) {
+        void recoveryFence?.then((fence) => fence.release());
+        recoveryFence = undefined;
         manualSuspended = false;
         setRecovering(false);
       }
@@ -94,6 +98,8 @@ export function createRuntimeIdentityRotationLifecycle(options: {
     if (state.phase !== "checking") manualAccepted = true;
     // A cached identity manager belongs to the former runtime. Only a fresh
     // lifecycle after restart may admit ordinary work again.
+    if (options.workFence && !options.workFence.isFenced())
+      recoveryFence = options.workFence.acquireFence();
     manualSuspended = true;
     recoveryReason = undefined;
     setRecovering(true);
@@ -207,3 +213,67 @@ export async function stopIdentityBoundRuntimeServices(
   );
   if (failure) throw failure.reason;
 }
+
+/** Admission and drain barrier for one cached runtime; durable transition ownership stays in rotation. */
+export function createIdentityBoundWorkFence() {
+  const session = globalThis.crypto.randomUUID();
+  let revision = 0;
+  let suspended = false;
+  const admitted = new Set<Promise<unknown>>();
+  const generation = () => `${session}:${revision}`;
+  const assertOpen = (expectedGeneration?: string): void => {
+    if (suspended) throw new Error("identity_runtime_suspended");
+    if (expectedGeneration !== undefined && expectedGeneration !== generation())
+      throw new Error("identity_runtime_retired");
+  };
+  const run = <T>(operation: () => T): T => {
+    assertOpen();
+    const result = operation();
+    if (
+      result &&
+      typeof (result as unknown as PromiseLike<unknown>).then === "function"
+    ) {
+      const pending = Promise.resolve(result);
+      admitted.add(pending);
+      void pending.then(
+        () => admitted.delete(pending),
+        () => admitted.delete(pending)
+      );
+    }
+    return result;
+  };
+  return {
+    generation,
+    assertOpen,
+    isFenced: () => suspended,
+    run,
+    async acquireFence() {
+      suspended = true;
+      revision += 1;
+      const acquiredRevision = revision;
+      return {
+        async release() {
+          if (revision !== acquiredRevision) return;
+          suspended = false;
+          revision += 1;
+        },
+      };
+    },
+    async quiesce(): Promise<void> {
+      while (admitted.size) await Promise.allSettled([...admitted]);
+    },
+    protect<T extends object>(owner: T): T {
+      return new Proxy(owner, {
+        get(target, property) {
+          const value = Reflect.get(target, property, target);
+          if (typeof value !== "function") return value;
+          return (...args: unknown[]) =>
+            run(() => Reflect.apply(value, target, args));
+        },
+      });
+    },
+  };
+}
+export type IdentityBoundWorkFence = ReturnType<
+  typeof createIdentityBoundWorkFence
+>;
