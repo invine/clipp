@@ -3,6 +3,8 @@ import {
   type AndroidBackgroundDiagnosticStatus,
   type AndroidBackgroundContinuityPlatform,
 } from "../../apps/android/src/backgroundContinuity";
+import { createIdentityBoundWorkFence } from "../../packages/core/runtime/identityInitialization";
+import { createAndroidIdentityResetRuntime } from "../../apps/android/src/identityResetRuntime";
 
 function createPlatform(
   androidApiLevel = 36,
@@ -101,6 +103,173 @@ test("manual reset suspends continuity and capture without changing saved backgr
     service: "stopped",
     captureEligible: false,
     backgroundEnabled: true,
+  });
+});
+
+test("manual reset waits for an admitted Start before confirming the companion is stopped", async () => {
+  const fake = createPlatform();
+  let running = false;
+  let started!: () => void;
+  const startEntered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let finishStart!: () => void;
+  const startCompletion = new Promise<void>((resolve) => {
+    finishStart = resolve;
+  });
+  fake.platform.startService = async () => {
+    started();
+    await startCompletion;
+    running = true;
+  };
+  fake.platform.stopService = async () => {
+    running = false;
+  };
+  fake.platform.readServiceState = async () =>
+    running ? "running" : "stopped";
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.initialize();
+  const starting = coordinator.setEnabledFromUser(true);
+  await startEntered;
+  let suspended = false;
+  const suspending = coordinator.suspendForIdentityReset().then(() => {
+    suspended = true;
+  });
+  // Give suspension every opportunity to complete while native Start is pending.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const suspendedBeforeStartFinished = suspended;
+  finishStart();
+  await Promise.all([starting, suspending]);
+  expect(suspendedBeforeStartFinished).toBe(false);
+  expect(running).toBe(false);
+  expect(coordinator.snapshot()).toMatchObject({
+    service: "stopped",
+    backgroundEnabled: true,
+    autoSync: true,
+  });
+});
+
+test("reset admission drains scheduled heartbeats and refuses controls until its provisional fence is released", async () => {
+  const fake = createPlatform();
+  const workFence = createIdentityBoundWorkFence();
+  let tick!: () => Promise<void>;
+  const options = {
+    workFence,
+    schedulePeriodicHeartbeat(next: () => Promise<void>) {
+      tick = next;
+      return () => {};
+    },
+  };
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform,
+    options
+  );
+  await coordinator.setEnabledFromUser(true);
+  let entered!: () => void;
+  const heartbeatEntered = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let finish!: () => void;
+  fake.platform.sendHeartbeat = () => {
+    entered();
+    return new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+  };
+  coordinator.startRuntimeHeartbeat();
+  const heartbeat = tick();
+  await heartbeatEntered;
+  const fence = await workFence.acquireFence();
+  let drained = false;
+  const draining = workFence.quiesce().then(() => {
+    drained = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const drainedBeforeHeartbeatFinished = drained;
+  finish();
+  await Promise.all([heartbeat, draining]);
+  expect(drainedBeforeHeartbeatFinished).toBe(false);
+  expect(() => coordinator.setEnabledFromUser(true)).toThrow(
+    "identity_runtime_suspended"
+  );
+  expect(() => coordinator.handleNotificationAction("stop")).toThrow(
+    "identity_runtime_suspended"
+  );
+  let lateHeartbeat = false;
+  fake.platform.sendHeartbeat = async () => {
+    lateHeartbeat = true;
+  };
+  await tick();
+  expect(lateHeartbeat).toBe(false);
+  await coordinator.suspendForIdentityReset();
+  expect(coordinator.snapshot().service).toBe("stopped");
+  await tick(); // A stale scheduled callback cannot enter the sealed runtime.
+  await fence.release();
+  await coordinator.setEnabledFromUser(true);
+  expect(coordinator.snapshot().service).toBe("running");
+  expect(fake.enabled()).toBe(true);
+});
+
+test("the Android reset lifecycle reaps admitted Activity capture before native queue cleanup", async () => {
+  const fake = createPlatform();
+  let captureEligible = false;
+  let cleared = false;
+  let coordinator: ReturnType<
+    typeof createAndroidBackgroundContinuityCoordinator
+  >;
+  const runtime = createAndroidIdentityResetRuntime({
+    native: {
+      acquireFence: async () => {},
+      releaseFence: async () => {},
+      clearNativeQueues: async () => {
+        cleared = true;
+      },
+      verifyNativeQueues: async () => {},
+      openRuntime: async () => {},
+      restartRuntime: async () => {},
+    },
+    suspend: () => coordinator.suspendForIdentityReset(),
+  });
+  coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform, {
+    workFence: runtime.workFence,
+  });
+  await coordinator.setEnabledFromUser(true);
+  let entered!: () => void;
+  const captureEntered = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let finish!: () => void;
+  fake.platform.setClipboardCaptureEligible = async (eligible) => {
+    if (eligible) {
+      entered();
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    }
+    captureEligible = eligible;
+  };
+  const resuming = coordinator.setActivityState({
+    resumed: true,
+    windowFocused: true,
+  });
+  await captureEntered;
+  await runtime.lifecycle.acquireFence();
+  const resetting = runtime.lifecycle.quiesce();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const clearedBeforeCaptureSettled = cleared;
+  finish();
+  await Promise.all([resuming, resetting]);
+  expect(clearedBeforeCaptureSettled).toBe(false);
+  expect(cleared).toBe(true);
+  expect(captureEligible).toBe(false);
+  expect(coordinator.snapshot()).toMatchObject({
+    captureEligible: false,
+    service: "stopped",
+    runtimeHealthy: false,
+    backgroundEnabled: true,
+    autoSync: true,
   });
 });
 

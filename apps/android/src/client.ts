@@ -668,7 +668,10 @@ export class AndroidClient {
         retryRemoteClipboardApplication: async (clip, isEligible) =>
           await this.clipboard.writeRemoteClip(clip, isEligible),
       },
-      { sharingLifetimeMs: () => this.sharingLifetimeMs }
+      {
+        sharingLifetimeMs: () => this.sharingLifetimeMs,
+        workFence: this.workFence,
+      }
     );
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
@@ -908,8 +911,9 @@ export class AndroidClient {
   private async settleBackgroundLifecycleEvent(
     operation: () => Promise<unknown>
   ): Promise<void> {
+    if (this.workFence.isFenced()) return;
     try {
-      await operation();
+      await this.workFence.run(operation);
     } catch {
       this.backgroundContinuity.markControlStateUnknown();
     }
@@ -926,9 +930,11 @@ export class AndroidClient {
 
     const updateActivity = () => {
       if (this.workFence.isFenced()) return;
-      void this.setBackgroundActivityState()
-        .then(() => this.emitState())
-        .catch(() => this.emitState());
+      void this.workFence.run(() =>
+        this.setBackgroundActivityState()
+          .then(() => this.emitState())
+          .catch(() => this.emitState())
+      );
     };
     window.addEventListener("focus", updateActivity);
     window.addEventListener("blur", updateActivity);
@@ -938,34 +944,40 @@ export class AndroidClient {
       if (this.workFence.isFenced()) return;
       const resumed = event.resumed === true;
       const windowFocused = event.windowFocused === true;
-      void this.backgroundContinuity
-        .setActivityState({ resumed, windowFocused })
-        .then(async () => {
-          if (resumed) await this.refreshBackgroundContinuity();
-          else await this.emitState();
-        })
-        .catch(() => this.emitState());
+      void this.workFence.run(() =>
+        this.backgroundContinuity
+          .setActivityState({ resumed, windowFocused })
+          .then(async () => {
+            if (resumed) await this.refreshBackgroundContinuity();
+            else await this.emitState();
+          })
+          .catch(() => this.emitState())
+      );
     });
     void this.backgroundNative.on("action", (event) => {
       if (this.workFence.isFenced()) return;
       const action = event.action;
       if (action !== "pause" && action !== "resume" && action !== "stop")
         return;
-      void this.backgroundContinuity
-        .handleNotificationAction(
-          action as AndroidBackgroundNotificationAction,
-          () => this.backgroundNative.isActionCurrent(event.actionToken, action)
-        )
-        .then(
-          () => this.emitState(),
-          async () => {
-            await this.emitState();
-            await this.backgroundNative.showControlFeedback(
-              this.backgroundContinuity.snapshot().controlError ??
-                "The action could not be confirmed."
-            );
-          }
-        );
+      void this.workFence.run(() =>
+        this.backgroundContinuity
+          .handleNotificationAction(
+            action as AndroidBackgroundNotificationAction,
+            () =>
+              this.backgroundNative.isActionCurrent(event.actionToken, action)
+          )
+          .then(
+            () => this.emitState(),
+            async () => {
+              await this.emitState();
+              if (this.workFence.isFenced()) return;
+              await this.backgroundNative.showControlFeedback(
+                this.backgroundContinuity.snapshot().controlError ??
+                  "The action could not be confirmed."
+              );
+            }
+          )
+      );
     });
     void this.backgroundNative.on("explicitText", () => {
       if (this.workFence.isFenced()) return;
@@ -1441,54 +1453,58 @@ export class AndroidClient {
   }
 
   async setAutoSync(enabled: boolean) {
-    this.workFence.assertOpen();
-    return performAutoSyncAction(enabled, {
-      set: async (value) => {
-        await this.backgroundContinuity.setAutoSync(value);
-        return this.autoSync;
-      },
-      recover: async () => {
-        const settings = await this.settingsHandler.read();
-        await this.backgroundContinuity.reflectAutoSync(
-          settings.state.autoSync
-        );
-      },
-      current: () => this.autoSync,
-      reconcile: () => this.emitState(),
-    });
+    return this.workFence.run(() =>
+      performAutoSyncAction(enabled, {
+        set: async (value) => {
+          await this.backgroundContinuity.setAutoSync(value);
+          return this.autoSync;
+        },
+        recover: async () => {
+          const settings = await this.settingsHandler.read();
+          await this.backgroundContinuity.reflectAutoSync(
+            settings.state.autoSync
+          );
+        },
+        current: () => this.autoSync,
+        reconcile: () => this.emitState(),
+      })
+    );
   }
   async refreshAutoSync() {
-    this.workFence.assertOpen();
-    const settings = await this.settingsHandler.read();
-    await this.backgroundContinuity.reflectAutoSync(settings.state.autoSync);
-    await this.emitState();
-    return true;
+    return this.workFence.run(async () => {
+      const settings = await this.settingsHandler.read();
+      await this.backgroundContinuity.reflectAutoSync(settings.state.autoSync);
+      await this.emitState();
+      return true;
+    });
   }
 
   async setBackgroundContinuity(enabled: boolean) {
-    this.workFence.assertOpen();
-    const results = await Promise.allSettled([
-      this.backgroundContinuity.setEnabledFromUser(enabled),
-      this.emitState(),
-    ]);
-    await this.emitState();
-    for (const result of results)
-      if (result.status === "rejected") throw result.reason;
-    return this.backgroundContinuity.snapshot();
+    return this.workFence.run(async () => {
+      const results = await Promise.allSettled([
+        this.backgroundContinuity.setEnabledFromUser(enabled),
+        this.emitState(),
+      ]);
+      await this.emitState();
+      for (const result of results)
+        if (result.status === "rejected") throw result.reason;
+      return this.backgroundContinuity.snapshot();
+    });
   }
 
   async refreshBackgroundContinuity() {
-    this.workFence.assertOpen();
-    try {
-      this.androidApiLevel = await this.backgroundNative.apiLevel();
-      await this.backgroundContinuity.initialize();
-      return true;
-    } catch (error) {
-      this.backgroundContinuity.markControlStateUnknown();
-      throw error;
-    } finally {
-      await this.emitState();
-    }
+    return this.workFence.run(async () => {
+      try {
+        this.androidApiLevel = await this.backgroundNative.apiLevel();
+        await this.backgroundContinuity.initialize();
+        return true;
+      } catch (error) {
+        this.backgroundContinuity.markControlStateUnknown();
+        throw error;
+      } finally {
+        await this.emitState();
+      }
+    });
   }
 
   async openBackgroundNotificationSettings() {

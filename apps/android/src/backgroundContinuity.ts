@@ -7,6 +7,7 @@ import type {
   BackgroundContinuityDiagnosticStatus,
   BackgroundContinuityState,
 } from "@clipp/ui";
+import type { IdentityBoundWorkFence } from "@core/runtime/identityInitialization";
 
 /**
  * The public orchestration seam for the optional Android foreground-service
@@ -106,6 +107,7 @@ const ANDROID_12_API_LEVEL = 31;
 export function createAndroidBackgroundContinuityCoordinator(
   platform: AndroidBackgroundContinuityPlatform,
   options: {
+    workFence?: IdentityBoundWorkFence;
     now?: () => number;
     sharingLifetimeMs?: () => number;
     heartbeatTimeoutMs?: number;
@@ -430,7 +432,7 @@ export function createAndroidBackgroundContinuityCoordinator(
     return next;
   }
 
-  return {
+  const coordinator = {
     snapshot,
 
     async suspendForIdentityReset(): Promise<void> {
@@ -439,6 +441,9 @@ export function createAndroidBackgroundContinuityCoordinator(
       resumed = false;
       windowFocused = false;
       await platform.setClipboardCaptureEligible(false);
+      // A queued Start can still own a native acknowledgement. Reap it before
+      // the final stop, without changing the saved background preference.
+      await controlQueue;
       await serializeClipContinuity(async () => undefined);
       await platform.stopService();
       service = platform.readServiceState
@@ -457,10 +462,12 @@ export function createAndroidBackgroundContinuityCoordinator(
       cancelHeartbeatSchedule = schedulePeriodicHeartbeat(async () => {
         if (
           !cancelHeartbeatSchedule ||
-          generation !== heartbeatScheduleGeneration
+          generation !== heartbeatScheduleGeneration ||
+          options.workFence?.isFenced()
         )
           return;
-        await heartbeat();
+        if (options.workFence) await options.workFence.run(heartbeat);
+        else await heartbeat();
       }, heartbeatIntervalMs);
     },
 
@@ -705,5 +712,18 @@ export function createAndroidBackgroundContinuityCoordinator(
         };
       });
     },
+  };
+
+  if (!options.workFence) return coordinator;
+  return {
+    ...options.workFence.protect(coordinator),
+    // Projection and teardown remain available while ordinary work is sealed.
+    snapshot,
+    markControlStateUnknown: coordinator.markControlStateUnknown,
+    stopRuntimeHeartbeat: coordinator.stopRuntimeHeartbeat,
+    suspendForIdentityReset: () => coordinator.suspendForIdentityReset(),
+    handleTaskRemoved: () => coordinator.handleTaskRemoved(),
+    prepareIdentityRotationCleanup: () =>
+      coordinator.prepareIdentityRotationCleanup(),
   };
 }
