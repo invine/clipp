@@ -11,12 +11,14 @@ function DurationSelect({
   value,
   values,
   disabled,
+  pending,
   onChange,
 }: {
   label: string;
   value: number | undefined;
   values: Array<[number, string]>;
   disabled: boolean;
+  pending: boolean;
   // eslint-disable-next-line no-unused-vars
   onChange(value: number): void;
 }) {
@@ -29,7 +31,15 @@ function DurationSelect({
         aria-label={label}
         value={value ?? ""}
         disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value))}
+        aria-disabled={pending || undefined}
+        aria-busy={pending || undefined}
+        onChange={(event) => {
+          if (pending) {
+            event.currentTarget.value = String(value ?? "");
+            return;
+          }
+          onChange(Number(event.target.value));
+        }}
       >
         {value === undefined && <option value="">Unknown</option>}
         {custom && <option value={value}>Custom ({value} ms)</option>}
@@ -53,7 +63,7 @@ export function ClipSettings({
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const applied = settings.snapshot?.state;
-  const disabled = !applied || settings.pending || settings.recoveryRequired;
+  const disabled = !applied || settings.recoveryRequired;
   const feedback = settings.feedback?.fields?.some(
     (field) => field === "localRetentionMs" || field === "sharingLifetimeMs"
   )
@@ -85,6 +95,7 @@ export function ClipSettings({
           [365 * day, "365 days (maximum)"],
         ]}
         disabled={disabled}
+        pending={settings.pending}
         onChange={(value) => {
           void settings.save({ localRetentionMs: value });
         }}
@@ -103,6 +114,7 @@ export function ClipSettings({
           [30 * day, "30 days (maximum)"],
         ]}
         disabled={disabled}
+        pending={settings.pending}
         onChange={(value) => {
           void settings.save({ sharingLifetimeMs: value });
         }}

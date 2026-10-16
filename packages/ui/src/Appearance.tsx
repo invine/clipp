@@ -14,10 +14,14 @@ export function Appearance({ settings }: { settings: AppearanceSettings }) {
         <select
           aria-label="Appearance"
           value={settings.snapshot?.state.theme ?? ""}
-          disabled={
-            !settings.snapshot || settings.pending || settings.recoveryRequired
-          }
+          disabled={!settings.snapshot || settings.recoveryRequired}
+          aria-disabled={settings.pending || undefined}
+          aria-busy={settings.pending || undefined}
           onChange={(event) => {
+            if (settings.pending) {
+              event.currentTarget.value = settings.snapshot?.state.theme ?? "";
+              return;
+            }
             void settings.save({
               theme: event.target.value as ThemePreference,
             });
