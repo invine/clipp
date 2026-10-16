@@ -30,6 +30,9 @@ public final class NativeIdentityResetRuntimeTest {
     private static final String PREFIX = NativeIdentityResetFence.PREFIX;
     private static final String PID = PREFIX + "runtime-proof-pid";
     private static final String CHECKPOINT = PREFIX + "runtime-proof-checkpoint";
+    private static final String ENDPOINT = "https://runtime-reset-proof.example/v1/relay";
+    private static final String CREDENTIAL = "synthetic-preserved-runtime-credential";
+    private static final String[] PRESERVED_KEYS = {"theme", "sharingLifetimeMs", "localRetentionMs", "managedRelayConfigurations"};
 
     @Before public void requireIsolatedTarget() {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -43,7 +46,7 @@ public final class NativeIdentityResetRuntimeTest {
             .putExtra(Intent.ACTION_SEND.equals(action) ? Intent.EXTRA_TEXT : Intent.EXTRA_PROCESS_TEXT, "synthetic-reset-native-text");
     }
 
-    private void seed() {
+    private void seed() throws Exception {
         for (String key : new String[] {"manualIdentityReset", "manualIdentityResetReceipt", "manualIdentityResetCompleted", "nativeIdentityResetFence"})
             persistence.remove(PREFIX + key);
         assertTrue(context.getSharedPreferences(ClipContinuityPreferences.NAME, Context.MODE_PRIVATE).edit().clear().commit());
@@ -51,6 +54,8 @@ public final class NativeIdentityResetRuntimeTest {
             .putBoolean(BackgroundContinuityService.ENABLED, true)
             .putBoolean(BackgroundContinuityService.USER_STOPPED, false).commit());
         persistence.set(PREFIX + "autoSyncEnabled", "false");
+        for (String key : PRESERVED_KEYS) persistence.set(PREFIX + key, "synthetic-preserved-" + key);
+        new ManagedRelayCredentialStore(context).write(ENDPOINT, CREDENTIAL);
         assertEquals(ExplicitTextIngressStore.EnqueueResult.QUEUED, new ExplicitTextIngressStore(context).enqueue(text(Intent.ACTION_SEND)));
         assertEquals(ExplicitTextIngressStore.EnqueueResult.QUEUED, new ExplicitTextIngressStore(context).enqueue(text(Intent.ACTION_PROCESS_TEXT)));
         assertTrue(new PendingClipboardApplicationStore(context).write("synthetic-former-remote-clip"));
@@ -60,6 +65,8 @@ public final class NativeIdentityResetRuntimeTest {
         assertTrue(BackgroundContinuityService.preferences(context).getBoolean(BackgroundContinuityService.ENABLED, false));
         assertFalse(BackgroundContinuityService.preferences(context).getBoolean(BackgroundContinuityService.USER_STOPPED, true));
         assertEquals("false", persistence.get(PREFIX + "autoSyncEnabled"));
+        for (String key : PRESERVED_KEYS) assertEquals("synthetic-preserved-" + key, persistence.get(PREFIX + key));
+        assertEquals(CREDENTIAL, new ManagedRelayCredentialStore(context).read(ENDPOINT));
     }
 
     private void refused() {
@@ -77,12 +84,15 @@ public final class NativeIdentityResetRuntimeTest {
     private void completePrimitive() {
         persistence.set(PREFIX + "localDeviceIdentity", "{\"deviceId\":\"synthetic-new-peer\"}");
         persistence.set(PREFIX + "manualIdentityResetCompleted", "{\"operationId\":\"synthetic-runtime-reset\",\"generatedPeerId\":\"synthetic-new-peer\"}");
+        persistence.set(PREFIX + "manualIdentityResetReceipt", "{\"receiptId\":\"synthetic-runtime-reset\",\"operationId\":\"synthetic-runtime-reset\",\"formerPeerId\":\"synthetic-former-peer\",\"generatedPeerId\":\"synthetic-new-peer\",\"completedAt\":1}");
     }
 
     @Test public void conclusiveNonacceptanceRestoresOriginalQueuesAndPreferences() throws Exception {
         seed();
         fence.acquire();
         refused();
+        fence.requireRestartReady(context);
+        assertTrue("Provisional restart keeps native admission closed until fresh reconciliation", fence.isBlocked());
         fence.release();
         assertEquals(2, new JSONArray(new ExplicitTextIngressStore(context).actionsJson()).length());
         assertEquals("synthetic-former-remote-clip", new PendingClipboardApplicationStore(context).read());
@@ -108,6 +118,9 @@ public final class NativeIdentityResetRuntimeTest {
         assertEquals("[]", new ExplicitTextIngressStore(context).actionsJson());
         assertNull(new PendingClipboardApplicationStore(context).read());
         preserved();
+        assertFalse("A valid visible reminder permits the completed runtime", fence.isBlocked());
+        persistence.remove(PREFIX + "manualIdentityResetReceipt");
+        assertFalse("Dismissing the reminder preserves the completed runtime", fence.isBlocked());
         persistence.set(PREFIX + "manualIdentityResetCompleted", "{\"operationId\":1,\"generatedPeerId\":\"synthetic-new-peer\"}");
         refused(); // Native startup treats malformed metadata as unknown before a WebView exists.
     }
@@ -163,6 +176,8 @@ public final class NativeIdentityResetRuntimeTest {
         assertEquals(originalMode, Os.stat(directory.getAbsolutePath()).st_mode & 07777);
         try { fence.verifyQueues(context); fail("Restored permissions cannot confirm cached removals"); }
         catch (IllegalStateException expected) { assertEquals("identity_reset_native_cleanup_unconfirmed", expected.getMessage()); }
+        try { fence.clearQueues(context); fail("Cached no-op retries require a real process reopen"); }
+        catch (IllegalStateException expected) { assertEquals("identity_reset_native_cleanup_unconfirmed", expected.getMessage()); }
         refused();
     }
 
@@ -179,7 +194,7 @@ public final class NativeIdentityResetRuntimeTest {
         persistence.set(PID, Integer.toString(Process.myPid()));
     }
 
-    @Test public void phase0DurableAdmissionAndIntent() {
+    @Test public void phase0DurableAdmissionAndIntent() throws Exception {
         phase("0", null);
         seed();
         fence.acquire();
@@ -188,7 +203,7 @@ public final class NativeIdentityResetRuntimeTest {
         checkpoint("accepted");
     }
 
-    @Test public void provisionalPhase0DurableAdmissionWithoutAcceptance() {
+    @Test public void provisionalPhase0DurableAdmissionWithoutAcceptance() throws Exception {
         phase("provisional-0", null);
         seed();
         fence.acquire();

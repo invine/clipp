@@ -62,10 +62,7 @@ import {
   createMembershipPeerRecordBridge,
   createMembershipReconciler,
 } from "@core/membership/reconciliation";
-import {
-  createKVPendingTrustRequestStore,
-  createPendingTrustRequestCoordinator,
-} from "@core/pairing/pending";
+import { createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingRuntimeSessions } from "@core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
@@ -96,7 +93,10 @@ import {
 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
 import { createAndroidIdentityRotationOwner } from "./identityResetStorage";
-import { createAndroidIdentityResetRuntime } from "./identityResetRuntime";
+import {
+  createAndroidIdentityResetRuntime,
+  createAndroidPendingTrustRequestStore,
+} from "./identityResetRuntime";
 import { Capacitor } from "@capacitor/core";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
@@ -297,8 +297,15 @@ export class AndroidClient {
       this.settingsListeners.delete(listener);
     };
   }
-  private readonly relaySecrets = createAndroidRelaySecretBridge();
-  private readonly relayAuth = new AndroidManagedRelayAuth(this.relaySecrets);
+  private readonly relaySecrets = this.workFence.protect(
+    createAndroidRelaySecretBridge()
+  );
+  private readonly relayAuth = new AndroidManagedRelayAuth(
+    this.relaySecrets,
+    fetch,
+    Date.now,
+    this.workFence
+  );
   private managedRelays: ManagedRelayController | null = null;
   private managedRelayConfigurations: RelayConfiguration[] = [];
   private removeRelayCallback: (() => void) | null = null;
@@ -744,10 +751,10 @@ export class AndroidClient {
   private readonly pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () =>
       deviceIdToPeerId((await this.identitySvc.get()).deviceId),
-    store: createKVPendingTrustRequestStore({
-      storage: this.storage,
-      key: "pairingPendingRequests",
-    }),
+    store: createAndroidPendingTrustRequestStore(
+      this.rawStorage,
+      this.workFence
+    ),
     notifications: this.runtimeAdapter.notifications,
     lifecycle: this.runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
@@ -1004,6 +1011,7 @@ export class AndroidClient {
       await this.storage.get<unknown>("sharingLifetimeMs")
     );
     await startIdentityBoundRuntimeServices({
+      workFence: this.workFence,
       initializeIdentity: async () => {
         const initialized = await this.identityRotationLifecycle.initialize();
         if (initialized.localServicesEnabled !== false)
@@ -1028,9 +1036,13 @@ export class AndroidClient {
         if (!this.removeRelayCallback) {
           this.removeRelayCallback = await this.relaySecrets.onCallback(
             (url) => {
-              void this.relayAuth.acceptCallback(url).then((accepted) => {
-                if (accepted) void this.emitState();
-              });
+              if (this.workFence.isFenced()) return;
+              void this.relayAuth
+                .acceptCallback(url)
+                .then((accepted) => {
+                  if (accepted) void this.emitState();
+                })
+                .catch(() => undefined);
             }
           );
         }
@@ -1077,7 +1089,9 @@ export class AndroidClient {
           });
         }
         await this.workFence.run(() => this.transport!.start());
+        this.workFence.assertOpen();
         await this.startManagedRelays();
+        this.workFence.assertOpen();
         this.pairedConnections?.start();
         this.historyReconciliation?.start();
       },
@@ -1489,6 +1503,10 @@ export class AndroidClient {
     if (!this.identityStartupInspected) return null;
     const id = await this.identitySvc.get();
     return toPublicDeviceIdentity(id);
+  }
+
+  reconcileIdentityReset() {
+    return this.identityRotation.reconcileIdentityReset();
   }
 
   async getInitializationError() {

@@ -112,3 +112,232 @@ test("cold startup with unreadable reset acceptance seals ordinary owners before
   );
   lifecycle.dispose();
 });
+
+it.each([false, true])(
+  "cold conclusive nonacceptance restarts sealed recovery, while accepted reset cannot reopen (%s)",
+  async (accepted) => {
+    const { createRuntimeIdentityRotationLifecycle } =
+      await import("../../../packages/core/runtime/identityInitialization");
+    const workFence = createIdentityBoundWorkFence();
+    await workFence.acquireFence(); // The cold host preflight sealed admission before services.
+    let status!: (
+      value: import("../../../packages/core/trust/identityRotation").IdentityRotationStatus
+    ) => void;
+    const restart = jest.fn();
+    const lifecycle = createRuntimeIdentityRotationLifecycle({
+      workFence,
+      rotation: {
+        recoverOrRotate: async () => ({
+          rotated: false,
+          identity: undefined,
+          recovery: {
+            code: "manual_identity_reset_recovery",
+            state: { phase: "checking", error: "storage_unavailable" },
+          },
+        }),
+        rotate: async () => {
+          throw new Error("unexpected automatic rotation");
+        },
+        onStatusChanged(listener) {
+          status = listener;
+          return () => {};
+        },
+      },
+      loadIdentity: async () => undefined,
+      restart,
+      startLocalRecovery() {},
+      publishState() {},
+    });
+    await lifecycle.initialize();
+    if (accepted)
+      status({
+        kind: "manual-reset",
+        state: { phase: "accepted", operationId: "accepted-reset" },
+      });
+    status({
+      kind: "manual-reset",
+      state: { phase: "idle", acceptance: "not-accepted" },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(workFence.isFenced()).toBe(true);
+    expect(restart).toHaveBeenCalledTimes(accepted ? 0 : 1);
+    lifecycle.dispose();
+  }
+);
+
+it("Pairing teardown can read and dismiss pending notifications after fencing while its store refuses late writes", async () => {
+  const {
+    createKVPendingTrustRequestStore,
+    createPendingTrustRequestCoordinator,
+  } = await import("../../../packages/core/pairing/pending");
+  const work = createIdentityBoundWorkFence();
+  const values = new Map<string, unknown>();
+  const storage: import("../../../packages/core/trust").KVStorageBackend = {
+    get: async <T>(key: string) => values.get(key) as T | undefined,
+    set: async (key, value) => {
+      values.set(key, value);
+    },
+    remove: async (key) => {
+      values.delete(key);
+    },
+  };
+  const store = createKVPendingTrustRequestStore({
+    storage: work.protectStorageWrites(storage),
+    key: "pending",
+  });
+  const request = {
+    initiatorPeerId: "remote",
+    deviceName: "Mobile",
+    nameRevision: 0n,
+    requestEnvelope: new Uint8Array([1]),
+    expiresAtUnixMs: 10000n,
+  };
+  await store.save(request);
+  const dismiss = jest.fn(async () => {});
+  const pending = createPendingTrustRequestCoordinator({
+    store,
+    localPeerId: async () => "local",
+    notifications: { show: async () => {}, dismiss, onSelect: () => () => {} },
+    lifecycle: { openApprovalView() {} },
+    clock: { now: () => 1, setTimeout: () => 1, clearTimeout() {} },
+    verify: async () => true,
+    membership: {
+      membershipStatus: async () => "unknown",
+      admit: async () => "admitted",
+    },
+  });
+  await work.acquireFence();
+  await expect(store.save(request)).rejects.toThrow(
+    "identity_runtime_suspended"
+  );
+  await expect(pending.stop()).resolves.toBeUndefined();
+  expect(dismiss).toHaveBeenCalledWith("pairing-request-remote");
+});
+
+it("an active runtime releases proven nonacceptance without restarting its existing services", async () => {
+  const { createRuntimeIdentityRotationLifecycle } =
+    await import("../../../packages/core/runtime/identityInitialization");
+  const workFence = createIdentityBoundWorkFence();
+  let status!: (
+    value: import("../../../packages/core/trust/identityRotation").IdentityRotationStatus
+  ) => void;
+  const restart = jest.fn();
+  const lifecycle = createRuntimeIdentityRotationLifecycle({
+    workFence,
+    rotation: {
+      recoverOrRotate: async () => ({ rotated: false, identity: undefined }),
+      rotate: async () => {
+        throw new Error("unexpected automatic rotation");
+      },
+      onStatusChanged(listener) {
+        status = listener;
+        return () => {};
+      },
+    },
+    loadIdentity: async () => undefined,
+    restart,
+    startLocalRecovery() {},
+    publishState() {},
+  });
+  await lifecycle.initialize();
+  await workFence.acquireFence();
+  status({
+    kind: "manual-reset",
+    state: { phase: "checking", error: "storage_unavailable" },
+  });
+  status({
+    kind: "manual-reset",
+    state: { phase: "idle", acceptance: "not-accepted" },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(workFence.isFenced()).toBe(false);
+  expect(lifecycle.isRecovering()).toBe(false);
+  expect(restart).not.toHaveBeenCalled();
+  lifecycle.dispose();
+});
+
+it("uncertain reset arriving during identity load restarts after conclusive rejection once startup returned suspended", async () => {
+  const { createRuntimeIdentityRotationLifecycle } =
+    await import("../../../packages/core/runtime/identityInitialization");
+  const workFence = createIdentityBoundWorkFence();
+  let status!: (
+    value: import("../../../packages/core/trust/identityRotation").IdentityRotationStatus
+  ) => void;
+  let loaded!: () => void;
+  const loading = new Promise<void>((resolve) => {
+    loaded = resolve;
+  });
+  const restart = jest.fn();
+  const lifecycle = createRuntimeIdentityRotationLifecycle({
+    workFence,
+    rotation: {
+      recoverOrRotate: async () => ({ rotated: false, identity: undefined }),
+      rotate: async () => {
+        throw new Error("unexpected automatic rotation");
+      },
+      onStatusChanged(listener) {
+        status = listener;
+        return () => {};
+      },
+    },
+    loadIdentity: () => loading,
+    restart,
+    startLocalRecovery() {},
+    publishState() {},
+  });
+  const starting = lifecycle.initialize();
+  await Promise.resolve();
+  status({
+    kind: "manual-reset",
+    state: { phase: "checking", error: "storage_unavailable" },
+  });
+  loaded();
+  expect(await starting).toEqual({
+    networkingEnabled: false,
+    localServicesEnabled: false,
+  });
+  status({
+    kind: "manual-reset",
+    state: { phase: "idle", acceptance: "not-accepted" },
+  });
+  await Promise.resolve();
+  expect(restart).toHaveBeenCalledTimes(1);
+  expect(workFence.isFenced()).toBe(true);
+  lifecycle.dispose();
+});
+
+it("runtime startup admitted before reset remains in the drain and rejects its retired network completion", async () => {
+  const { startIdentityBoundRuntimeServices } =
+    await import("../../../packages/core/runtime/identityInitialization");
+  const workFence = createIdentityBoundWorkFence();
+  let finish!: () => void;
+  let networkStarted!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    networkStarted = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const starting = startIdentityBoundRuntimeServices({
+    workFence,
+    initializeIdentity: async () => ({ networkingEnabled: true }),
+    startLocalServices() {},
+    async startNetworkServices() {
+      networkStarted();
+      await pending;
+    },
+  });
+  await entered;
+  await workFence.acquireFence();
+  let drained = false;
+  const drain = workFence.quiesce().then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+  finish();
+  await expect(starting).rejects.toThrow("identity_runtime_suspended");
+  await drain;
+});

@@ -284,7 +284,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runtimeGeneration = msg.runtimeGeneration;
   }
   const managedControl = isManagedRelayControlAction(msg.action)
-    ? parseManagedRelayControlMessage(msg)
+    ? parseManagedRelayControlMessage(
+        msg,
+        msg.runtimeGeneration === undefined ? undefined : runtimeGeneration
+      )
     : null;
   if (
     isManagedRelayControlAction(msg.action) &&

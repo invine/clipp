@@ -1,5 +1,21 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { createIdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
+import {
+  createIdentityBoundWorkFence,
+  type IdentityBoundWorkFence,
+} from "../../../packages/core/runtime/identityInitialization";
+import { createKVPendingTrustRequestStore } from "../../../packages/core/pairing/pending";
+import type { KVStorageBackend } from "../../../packages/core/trust/storage";
+
+/** Teardown must list pending notification IDs after admission closes; mutations remain fenced. */
+export function createAndroidPendingTrustRequestStore(
+  storage: KVStorageBackend,
+  workFence: IdentityBoundWorkFence
+) {
+  return createKVPendingTrustRequestStore({
+    key: "pairingPendingRequests",
+    storage: workFence.protectStorageWrites(storage),
+  });
+}
 
 export type AndroidIdentityResetNative = {
   acquireFence(): Promise<void>;
@@ -38,6 +54,8 @@ export function createAndroidIdentityResetRuntime(options: {
       async quiesce() {
         await options.suspend();
         await workFence.quiesce();
+        // An admitted start can complete after the first stop; reap its resulting owners.
+        await options.suspend();
         await native.clearNativeQueues();
       },
     },

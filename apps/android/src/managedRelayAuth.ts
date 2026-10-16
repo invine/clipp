@@ -1,3 +1,4 @@
+import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { canonicalDiscoveryUrl } from "@core/network/managedRelays";
 
 /** This value is also pinned by AndroidManifest.xml and the relay public-client configuration. */
@@ -104,8 +105,18 @@ export class AndroidManagedRelayAuth {
   constructor(
     private readonly bridge: AndroidRelaySecretBridge,
     private readonly fetcher: typeof fetch = fetch,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly workFence?: IdentityBoundWorkFence
   ) {}
+
+  private runtimeCurrent(generation: string | undefined): boolean {
+    try {
+      this.workFence?.assertOpen(generation);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   warning(endpoint: string): string | undefined {
     return this.warnings.get(endpoint);
@@ -135,6 +146,7 @@ export class AndroidManagedRelayAuth {
     endpoint: string,
     signal: AbortSignal
   ): Promise<string | null> {
+    this.workFence?.assertOpen();
     endpoint = canonicalDiscoveryUrl(endpoint);
     const cached = this.access.get(endpoint);
     if (cached && cached.expiresAt - this.now() > 60_000) return cached.token;
@@ -153,6 +165,7 @@ export class AndroidManagedRelayAuth {
     endpoint: string,
     signal: AbortSignal
   ): Promise<string | null> {
+    const runtimeGeneration = this.workFence?.generation();
     const generation = this.generations.get(endpoint) ?? 0;
     let old = this.renewable.get(endpoint);
     if (!old) {
@@ -160,7 +173,11 @@ export class AndroidManagedRelayAuth {
         old = (await this.bridge.readCredential(endpoint)) ?? undefined;
       } catch {
         await this.serializedCredential(endpoint, async () => {
-          if ((this.generations.get(endpoint) ?? 0) !== generation) return;
+          if (
+            !this.runtimeCurrent(runtimeGeneration) ||
+            (this.generations.get(endpoint) ?? 0) !== generation
+          )
+            return;
           await this.bridge.eraseCredential(endpoint);
           this.warnings.set(
             endpoint,
@@ -170,16 +187,28 @@ export class AndroidManagedRelayAuth {
         return null;
       }
     }
-    if ((this.generations.get(endpoint) ?? 0) !== generation) return null;
+    if (
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(endpoint) ?? 0) !== generation
+    )
+      return null;
     if (!old) return null;
     // A refresh can consume its input even when the response or later save fails.
     // Remove the durable old token before sending it, so restart cannot replay it.
     const erased = await this.serializedCredential(endpoint, async () => {
-      if ((this.generations.get(endpoint) ?? 0) !== generation) return false;
+      if (
+        !this.runtimeCurrent(runtimeGeneration) ||
+        (this.generations.get(endpoint) ?? 0) !== generation
+      )
+        return false;
       await this.bridge.eraseCredential(endpoint);
       return true;
     });
-    if (!erased || (this.generations.get(endpoint) ?? 0) !== generation)
+    if (
+      !erased ||
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(endpoint) ?? 0) !== generation
+    )
       return null;
     this.renewable.delete(endpoint);
     let result: Awaited<ReturnType<typeof tokenResponse>>;
@@ -194,13 +223,21 @@ export class AndroidManagedRelayAuth {
         signal
       );
     } catch (error) {
-      if ((this.generations.get(endpoint) ?? 0) !== generation) return null;
+      if (
+        !this.runtimeCurrent(runtimeGeneration) ||
+        (this.generations.get(endpoint) ?? 0) !== generation
+      )
+        return null;
       this.access.delete(endpoint);
       if (error instanceof Error && error.message === "invalid_credentials")
         return null;
       throw error;
     }
-    if ((this.generations.get(endpoint) ?? 0) !== generation) return null;
+    if (
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(endpoint) ?? 0) !== generation
+    )
+      return null;
     this.renewable.set(endpoint, result.refresh_token);
     this.access.set(endpoint, {
       token: result.access_token,
@@ -208,19 +245,33 @@ export class AndroidManagedRelayAuth {
     });
     try {
       await this.serializedCredential(endpoint, async () => {
-        if ((this.generations.get(endpoint) ?? 0) !== generation) return;
+        if (
+          !this.runtimeCurrent(runtimeGeneration) ||
+          (this.generations.get(endpoint) ?? 0) !== generation
+        )
+          return;
         await this.bridge.writeCredential(endpoint, result.refresh_token);
-        if ((this.generations.get(endpoint) ?? 0) === generation)
+        if (
+          this.runtimeCurrent(runtimeGeneration) &&
+          (this.generations.get(endpoint) ?? 0) === generation
+        )
           this.warnings.delete(endpoint);
       });
     } catch {
-      if ((this.generations.get(endpoint) ?? 0) === generation)
+      if (
+        this.runtimeCurrent(runtimeGeneration) &&
+        (this.generations.get(endpoint) ?? 0) === generation
+      )
         this.warnings.set(
           endpoint,
           "Relay credential is held only in memory. Log in again after restart."
         );
     }
-    if ((this.generations.get(endpoint) ?? 0) !== generation) return null;
+    if (
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(endpoint) ?? 0) !== generation
+    )
+      return null;
     return result.access_token;
   }
 
@@ -249,6 +300,8 @@ export class AndroidManagedRelayAuth {
   }
 
   async login(endpoint: string): Promise<void> {
+    this.workFence?.assertOpen();
+    const runtimeGeneration = this.workFence?.generation();
     endpoint = canonicalDiscoveryUrl(endpoint);
     if (this.pending || this.loginPreparing)
       throw new Error("login_already_pending");
@@ -261,7 +314,10 @@ export class AndroidManagedRelayAuth {
       state = randomBase64Url();
       verifier = randomBase64Url();
       codeChallenge = await challenge(verifier);
-      if ((this.generations.get(endpoint) ?? 0) !== generation)
+      if (
+        !this.runtimeCurrent(runtimeGeneration) ||
+        (this.generations.get(endpoint) ?? 0) !== generation
+      )
         throw new Error("login_cancelled");
     } finally {
       this.loginPreparing = false;
@@ -305,6 +361,7 @@ export class AndroidManagedRelayAuth {
   }
 
   async acceptCallback(raw: string): Promise<boolean> {
+    this.workFence?.assertOpen();
     const pending = this.pending;
     if (!pending || this.now() - pending.startedAt >= LOGIN_LIFETIME_MS) {
       if (pending) {
@@ -379,14 +436,21 @@ export class AndroidManagedRelayAuth {
     pending: PendingLogin,
     code: string
   ): Promise<void> {
+    const runtimeGeneration = this.workFence?.generation();
     const generation = this.generations.get(pending.endpoint) ?? 0;
     // An existing grant must not remain durable if a new code consumes its replacement.
     await this.serializedCredential(pending.endpoint, async () => {
-      if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+      if (
+        !this.runtimeCurrent(runtimeGeneration) ||
+        (this.generations.get(pending.endpoint) ?? 0) !== generation
+      )
         throw new Error("login_cancelled");
       await this.bridge.eraseCredential(pending.endpoint);
     });
-    if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+    if (
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(pending.endpoint) ?? 0) !== generation
+    )
       throw new Error("login_cancelled");
     this.renewable.delete(pending.endpoint);
     this.access.delete(pending.endpoint);
@@ -397,7 +461,10 @@ export class AndroidManagedRelayAuth {
       code,
       code_verifier: pending.verifier,
     });
-    if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+    if (
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(pending.endpoint) ?? 0) !== generation
+    )
       throw new Error("login_cancelled");
     this.renewable.set(pending.endpoint, result.refresh_token);
     this.access.set(pending.endpoint, {
@@ -406,33 +473,48 @@ export class AndroidManagedRelayAuth {
     });
     try {
       await this.serializedCredential(pending.endpoint, async () => {
-        if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+        if (
+          !this.runtimeCurrent(runtimeGeneration) ||
+          (this.generations.get(pending.endpoint) ?? 0) !== generation
+        )
           throw new Error("login_cancelled");
         await this.bridge.writeCredential(
           pending.endpoint,
           result.refresh_token
         );
-        if ((this.generations.get(pending.endpoint) ?? 0) === generation)
+        if (
+          this.runtimeCurrent(runtimeGeneration) &&
+          (this.generations.get(pending.endpoint) ?? 0) === generation
+        )
           this.warnings.delete(pending.endpoint);
       });
     } catch {
-      if ((this.generations.get(pending.endpoint) ?? 0) === generation)
+      if (
+        this.runtimeCurrent(runtimeGeneration) &&
+        (this.generations.get(pending.endpoint) ?? 0) === generation
+      )
         this.warnings.set(
           pending.endpoint,
           "Relay credential is held only in memory. Log in again after restart."
         );
     }
-    if ((this.generations.get(pending.endpoint) ?? 0) !== generation)
+    if (
+      !this.runtimeCurrent(runtimeGeneration) ||
+      (this.generations.get(pending.endpoint) ?? 0) !== generation
+    )
       throw new Error("login_cancelled");
   }
 
   async openAccount(endpoint: string): Promise<void> {
+    this.workFence?.assertOpen();
     await this.bridge.openBrowser(
       new URL(canonicalDiscoveryUrl(endpoint)).origin + "/"
     );
   }
 
   async erase(endpoint: string): Promise<void> {
+    this.workFence?.assertOpen();
+    const runtimeGeneration = this.workFence?.generation();
     endpoint = canonicalDiscoveryUrl(endpoint);
     this.generations.set(endpoint, (this.generations.get(endpoint) ?? 0) + 1);
     if (this.pending?.endpoint === endpoint) {
@@ -445,6 +527,7 @@ export class AndroidManagedRelayAuth {
       this.flights.get(endpoint),
       this.loginFlights.get(endpoint),
     ]);
+    this.workFence?.assertOpen(runtimeGeneration);
     this.access.delete(endpoint);
     this.renewable.delete(endpoint);
     this.warnings.delete(endpoint);

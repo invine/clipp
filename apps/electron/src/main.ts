@@ -159,12 +159,30 @@ async function bootstrap() {
       async quiesce() {
         await stopIdentityBoundServicesForRotation();
         await identityWork.quiesce();
+        await stopIdentityBoundServicesForRotation();
         for (const notification of identityNotifications) notification.close();
         identityNotifications.clear();
       },
     },
     shutdown: () => stopIdentityBoundServicesForRotation(),
     runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },
+  });
+  let identityRotationRecovery = false;
+  let publishIdentityRecovery: () => void | Promise<void> = () => undefined;
+  let startLocalIdentityRecovery: () => void = () => undefined;
+  const identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
+    rotation: identityRotation,
+    workFence: identityWork,
+    loadIdentity: () => identitySvc.get(),
+    restart: () => {
+      app.relaunch();
+      app.exit(0);
+    },
+    startLocalRecovery: () => startLocalIdentityRecovery(),
+    publishState: () => publishIdentityRecovery(),
+    onRecoveryChanged: (recovering) => {
+      identityRotationRecovery = recovering;
+    },
   });
   let startupResetState = await identityRotation.reconcileIdentityReset();
   identityRotation.onStatusChanged((status) => {
@@ -251,10 +269,6 @@ async function bootstrap() {
   let clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
   let historyPolicyError: "history_cleanup_failed" | null = null;
   let historyRetentionCleanup: HistoryRetentionCleanup | null = null;
-  let identityRotationRecovery = false;
-  let identityRotationLifecycle: ReturnType<
-    typeof createRuntimeIdentityRotationLifecycle
-  >;
   const identitySvc = createRuntimeIdentityManager({
     repo: identityRepo,
     workFence: identityWork,
@@ -265,13 +279,8 @@ async function bootstrap() {
   let relayAddresses: string[] = [];
   let localIdentity;
   try {
-    const startup = await identityRotation.recoverOrRotate();
-    if (startup.rotated) {
-      app.relaunch();
-      app.exit(0);
-      return;
-    }
-    if (startup.recovery?.code === "manual_identity_reset_recovery")
+    const startup = await identityRotationLifecycle.initialize();
+    if (startup.localServicesEnabled === false)
       throw new Error("manual_identity_reset_recovery");
     localIdentity = await identitySvc.get();
   } catch (error) {
@@ -282,14 +291,6 @@ async function bootstrap() {
       app.relaunch();
       app.exit(0);
       return;
-    }
-    if (rotation?.recovery) {
-      const unsubscribe = identityRotation.onStatusChanged((status) => {
-        if (status.kind !== "rotated") return;
-        unsubscribe();
-        app.relaunch();
-        app.exit(0);
-      });
     }
     (log as any).error?.("Device identity initialization failed", {
       error: (error as Error).message,
@@ -406,9 +407,15 @@ async function bootstrap() {
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     if (messagingStarted) return;
+    const startingTransport = transport;
     try {
-      await transport.start();
+      await startingTransport.start();
+      identityWork.assertOpen(generation);
+      if (startingTransport !== transport)
+        throw new Error("identity_runtime_retired");
       messagingStarted = true;
       managedHost = transport.managedRelayHost((connection) => {
         for (const state of managedController.states()) {
@@ -416,15 +423,18 @@ async function bootstrap() {
             void managedController.connectionLost(state.key, connection);
         }
       });
-      void managedController
+      await managedController
         .setConfigurations(managedConfigurations)
         .catch((error) => {
           (log as any).warn("Managed relay startup failed", {
             error: (error as Error).message,
           });
         });
+      identityWork.assertOpen(generation);
     } catch (err) {
       messagingStarted = false;
+      if (identityWork.isFenced() || identityWork.generation() !== generation)
+        await startingTransport.stop();
       throw err;
     }
   }
@@ -702,6 +712,8 @@ async function bootstrap() {
   }
 
   async function startLocalServices() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     historyRetentionCleanup ??= startHistoryRetentionCleanup(
       {
         pruneExpired: async () => {
@@ -729,18 +741,23 @@ async function bootstrap() {
 
     bindTransportHandlers(transport);
     await pairingPending?.start();
-
+    identityWork.assertOpen(generation);
     clipboardSync.start();
   }
 
   async function startNetworkServices() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     await ensureMessagingStarted();
+    identityWork.assertOpen(generation);
     membershipReconciler.start();
     pairedConnections.start();
     historyReconciliation.start();
   }
 
   async function restartMessaging() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     await managedController.stop().catch((error) => {
       (log as any).warn("Managed relay stop failed", {
         error: (error as Error).message,
@@ -755,6 +772,7 @@ async function bootstrap() {
     } catch {
       // ignore stop failures
     }
+    identityWork.assertOpen(generation);
     messagingStarted = false;
     transport = createLibp2pMessagingTransport({
       peerId,
@@ -792,6 +810,7 @@ async function bootstrap() {
     runtimeNetwork.bindCurrent();
     clipboardSync.bindLiveGossip(liveClipGossip);
     await ensureMessagingStarted();
+    identityWork.assertOpen(generation);
     pairedConnections.start();
     historyReconciliation.start();
     await emitState();
@@ -1142,20 +1161,8 @@ async function bootstrap() {
     }
     if (identityWork.isFenced()) await clipboardSvc.discardPending?.();
   };
-  identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
-    rotation: identityRotation,
-    workFence: identityWork,
-    loadIdentity: () => identitySvc.get(),
-    restart: () => {
-      app.relaunch();
-      app.exit(0);
-    },
-    startLocalRecovery: () => clipboardSync.startLocalOnly(),
-    publishState: emitState,
-    onRecoveryChanged: (recovering) => {
-      identityRotationRecovery = recovering;
-    },
-  });
+  publishIdentityRecovery = emitState;
+  startLocalIdentityRecovery = () => clipboardSync.startLocalOnly();
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,
@@ -1199,7 +1206,7 @@ async function bootstrap() {
   pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () => peerId.toString(),
     store: createKVPendingTrustRequestStore({
-      storage: kvStore,
+      storage: identityWork.protectStorageWrites(resetStorage),
       key: "pairingPendingRequests",
     }),
     notifications: runtimeAdapter.notifications,
@@ -1261,6 +1268,7 @@ async function bootstrap() {
     adapter: runtimeAdapter,
     start: () =>
       startIdentityBoundRuntimeServices({
+        workFence: identityWork,
         initializeIdentity: () => identityRotationLifecycle.initialize(),
         startLocalServices,
         startNetworkServices,

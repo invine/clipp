@@ -10,19 +10,22 @@ final class NativeIdentityResetFence {
     static final String PREFIX = "clipp-android:";
     static final String JOURNAL = PREFIX + "manualIdentityReset";
     static final String MARKER = PREFIX + "nativeIdentityResetFence";
-    private static boolean cleanupUnconfirmed;
+    private boolean cleanupUnconfirmed;
+    private static NativeIdentityResetFence instance;
     private static String generation = UUID.randomUUID().toString();
     static String generation() { synchronized (LOCK) { return generation; } }
     private final IdentityResetPersistence persistence;
 
     NativeIdentityResetFence(IdentityResetPersistence persistence) { this.persistence = persistence; }
-    static NativeIdentityResetFence forContext(Context context) {
-        return new NativeIdentityResetFence(IdentityResetPersistence.forContext(context));
+    static synchronized NativeIdentityResetFence forContext(Context context) {
+        if (instance == null) instance = new NativeIdentityResetFence(IdentityResetPersistence.forContext(context));
+        return instance;
     }
 
     boolean isBlocked() {
         synchronized (LOCK) {
             try {
+                if (cleanupUnconfirmed) return true;
                 if (persistence.get(MARKER) != null || persistence.get(JOURNAL) != null) return true;
                 requireValidMetadata();
                 return false;
@@ -40,7 +43,7 @@ final class NativeIdentityResetFence {
                 throw new IllegalStateException("identity_reset_native_metadata_invalid");
             if (receiptRaw != null) {
                 JSONObject receipt = new JSONObject(receiptRaw);
-                if (receipt.length() != 6 || guard == null || !id(receipt, "operationId").equals(id(guard, "operationId")) ||
+                if (receipt.length() != 5 || guard == null || !id(receipt, "operationId").equals(id(guard, "operationId")) ||
                     !id(receipt, "receiptId").equals(id(receipt, "operationId")) ||
                     !id(receipt, "generatedPeerId").equals(id(guard, "generatedPeerId")) ||
                     !validId(id(receipt, "formerPeerId")) || id(receipt, "formerPeerId").equals(id(receipt, "generatedPeerId")) ||
@@ -99,6 +102,7 @@ final class NativeIdentityResetFence {
 
     void clearQueues(DurableStringStore queues) {
         synchronized (LOCK) {
+            if (cleanupUnconfirmed) throw new IllegalStateException("identity_reset_native_cleanup_unconfirmed");
             seal();
             cleanupUnconfirmed = true;
             if (!queues.remove("actions") || !queues.remove("pending_clipboard_application"))
@@ -128,6 +132,7 @@ final class NativeIdentityResetFence {
             requireValidMetadata();
             String marker = persistence.get(MARKER);
             if (marker == null) return; // Ordinary automatic rotation also rebuilds the Activity.
+            if ("provisional".equals(marker)) return; // Conclusive nonacceptance: fresh startup rechecks before reopening.
             if (!"sealed".equals(marker)) throw new IllegalStateException("identity_reset_native_fence_invalid");
             requireCompletedIdentity();
             verifyQueues(context);
@@ -144,6 +149,7 @@ final class NativeIdentityResetFence {
     /** Only a fresh bridge, after core startup reconciliation, can reopen native admission. */
     void openAfterReconciliation() throws Exception {
         synchronized (LOCK) {
+            if (cleanupUnconfirmed) throw new IllegalStateException("identity_reset_native_cleanup_unconfirmed");
             if (persistence.get(JOURNAL) != null)
                 throw new IllegalStateException("identity_reset_incomplete_retry_after_setup");
             requireValidMetadata();

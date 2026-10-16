@@ -46,16 +46,23 @@ public class NativeIdentityResetFenceTest {
         Map<String, String> queues = new HashMap<>();
         queues.put("actions", "former-actions");
         queues.put("pending_clipboard_application", "former-remote-pointer");
+        boolean[] failOnce = {true};
         DurableStringStore queueStore = new DurableStringStore() {
             public String getString(String key, String fallback) { return queues.getOrDefault(key, fallback); }
             public boolean putString(String key, String value) { queues.put(key, value); return true; }
-            public boolean remove(String key) { queues.remove(key); return !key.equals("pending_clipboard_application"); }
+            public boolean remove(String key) {
+                queues.remove(key);
+                if (key.equals("pending_clipboard_application") && failOnce[0]) { failOnce[0] = false; return false; }
+                return true; // A cached no-op retry is not proof that the failed removal reached disk.
+            }
         };
         try { fence.clearQueues(queueStore); fail(); } catch (IllegalStateException expected) {}
         assertTrue(fence.isBlocked());
         try { fence.verifyQueues(queueStore); fail(); } catch (IllegalStateException expected) {
             assertEquals("identity_reset_native_cleanup_unconfirmed", expected.getMessage());
         }
+        try { fence.clearQueues(queueStore); fail("A successful cached no-op retry cannot repair unconfirmed disk state"); }
+        catch (IllegalStateException expected) { assertEquals("identity_reset_native_cleanup_unconfirmed", expected.getMessage()); }
     }
 
     private IdentityResetPersistence persistence(Map<String, String> disk) {

@@ -134,7 +134,10 @@ public final class BackgroundContinuityService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         synchronized (NativeIdentityResetFence.LOCK) {
             if (intent != null && intent.hasExtra(EXTRA_IDENTITY_RUNTIME_GENERATION) &&
-                !NativeIdentityResetFence.generation().equals(intent.getStringExtra(EXTRA_IDENTITY_RUNTIME_GENERATION))) return START_NOT_STICKY;
+                !NativeIdentityResetFence.generation().equals(intent.getStringExtra(EXTRA_IDENTITY_RUNTIME_GENERATION))) {
+                if (!running) stopSelf(startId);
+                return START_NOT_STICKY;
+            }
             if (NativeIdentityResetFence.forContext(this).isBlocked()) {
                 running = false;
                 handler.removeCallbacks(heartbeatWatchdog);

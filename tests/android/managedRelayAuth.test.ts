@@ -10,6 +10,7 @@ import {
 } from "../../apps/android/src/managedRelayAuth";
 import { performRelayAction } from "../../packages/core/network/relayActions";
 import { createUiSession } from "../../packages/ui/src/uiSession";
+import { createIdentityBoundWorkFence } from "../../packages/core/runtime/identityInitialization";
 
 const endpoint = "https://relay.example/v1/relay";
 
@@ -41,6 +42,31 @@ function tokens(access = "access-new", refresh = "refresh-new") {
 }
 
 describe("Android managed relay authorization", () => {
+  it("discards a delayed credential refresh from the fenced former runtime", async () => {
+    const native = bridge();
+    native.saved.set(endpoint, "synthetic-prior-refresh");
+    let finish!: (response: Response) => void;
+    const fetcher = jest.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const fence = createIdentityBoundWorkFence();
+    const auth = new AndroidManagedRelayAuth(native, fetcher, Date.now, fence);
+    const refreshing = auth.accessToken(endpoint, new AbortController().signal);
+    while (fetcher.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const held = await fence.acquireFence();
+    finish(tokens());
+    expect(await refreshing).toBeNull();
+    expect(native.writeCredential).not.toHaveBeenCalled();
+    await held.release();
+    expect(
+      await auth.accessToken(endpoint, new AbortController().signal)
+    ).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("settles denial through the owning action when the WebView reports an opaque callback path", async () => {
     const native = bridge();
     const fetcher = jest.fn(async (_input: RequestInfo | URL) => tokens());

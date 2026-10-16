@@ -266,8 +266,14 @@ try {
   };
   const resetValues = new Map();
   let nativeOpened = 0;
+  let nativeRestarted = 0;
+  let unknownNativeRead = false;
   Object.assign(globalThis.resetRuntimeFixture, {
-    get: async ({ key }) => ({ value: resetValues.get(key) ?? null }),
+    get: async ({ key }) => {
+      if (unknownNativeRead && key === "clipp-android:manualIdentityReset")
+        throw new Error("synthetic_unknown_acceptance");
+      return { value: resetValues.get(key) ?? null };
+    },
     set: async ({ key, value }) => {
       resetValues.set(key, value);
     },
@@ -280,6 +286,9 @@ try {
     verifyNativeQueues: async () => {},
     openRuntime: async () => {
       nativeOpened += 1;
+    },
+    restartRuntime: async () => {
+      nativeRestarted += 1;
     },
   });
   // The registered bridge is resolved once at bundle import; its object stays stable.
@@ -351,6 +360,37 @@ try {
     /identity_runtime_suspended/
   );
   await assert.rejects(cold.getPairingCode(), /identity_runtime_suspended/);
+  // A cold unknown outcome may reopen only after the same owner proves nonacceptance.
+  resetValues.delete("clipp-android:manualIdentityReset");
+  unknownNativeRead = true;
+  const unknown = new AndroidClient(
+    new LocalStorageBackend("clipp-android:", globalThis.resetRuntimeFixture, {
+      native: globalThis.resetRuntimeFixture,
+      isNative: () => true,
+    })
+  );
+  await unknown.start();
+  assert.equal((await unknown.getState()).identityRotationRecovery, true);
+  assert.equal(nativeOpened, 0);
+  unknownNativeRead = false;
+  const conclusive = await unknown.reconcileIdentityReset();
+  assert.equal(conclusive.phase, "idle");
+  assert.equal(conclusive.acceptance, "not-accepted");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    nativeOpened,
+    0,
+    "cold nonacceptance rebuilds owners before reopening native admission"
+  );
+  assert.equal(
+    nativeRestarted,
+    1,
+    "cold recovery rebuilds native owners through Activity recreation"
+  );
+  await assert.rejects(
+    unknown.shareCurrentClipboard(),
+    /identity_runtime_suspended/
+  );
   console.log(
     JSON.stringify({
       pass: true,

@@ -1,4 +1,43 @@
-import { createAndroidIdentityResetRuntime } from "../../apps/android/src/identityResetRuntime";
+import {
+  createAndroidIdentityResetRuntime,
+  createAndroidPendingTrustRequestStore,
+} from "../../apps/android/src/identityResetRuntime";
+import { createIdentityBoundWorkFence } from "../../packages/core/runtime/identityInitialization";
+
+test("fenced Android Pairing teardown can list former notifications while new pending writers are refused", async () => {
+  const data = new Map();
+  const fence = createIdentityBoundWorkFence();
+  const store = createAndroidPendingTrustRequestStore(
+    {
+      get: async (key) => data.get(key),
+      set: async (key, value) => {
+        data.set(key, value);
+      },
+      remove: async (key) => {
+        data.delete(key);
+      },
+    },
+    fence
+  );
+  const pending = {
+    initiatorPeerId: "former-pending-peer",
+    deviceName: "Mobile",
+    nameRevision: 0n,
+    requestEnvelope: new Uint8Array([1]),
+    expiresAtUnixMs: 1000n,
+  };
+  await store.save(pending);
+  await fence.acquireFence();
+  expect(
+    (await store.list()).map((request) => request.initiatorPeerId)
+  ).toEqual(["former-pending-peer"]);
+  await expect(store.save(pending)).rejects.toThrow(
+    "identity_runtime_suspended"
+  );
+  await expect(store.remove(pending.initiatorPeerId)).rejects.toThrow(
+    "identity_runtime_suspended"
+  );
+});
 
 test("Android reset drains admitted writers, suspends continuity and clears native queues before cleanup", async () => {
   const effects: string[] = [];
@@ -39,6 +78,7 @@ test("Android reset drains admitted writers, suspends continuity and clears nati
   await quiescing;
   expect(effects).toEqual([
     "native-fenced",
+    "continuity-suspended",
     "continuity-suspended",
     "native-cleared",
   ]);
@@ -118,4 +158,37 @@ test("a failed native Activity restart keeps the completed former runtime sealed
     "native_activity_restart_failed"
   );
   expect(runtime.workFence.isFenced()).toBe(true);
+});
+
+test("Android reset stops a former transport whose admitted start finishes after initial suspension", async () => {
+  let active = false;
+  let finishStart!: () => void;
+  const runtime = createAndroidIdentityResetRuntime({
+    native: {
+      acquireFence: async () => {},
+      releaseFence: async () => {},
+      clearNativeQueues: async () => {
+        expect(active).toBe(false);
+      },
+      verifyNativeQueues: async () => {},
+      openRuntime: async () => {},
+      restartRuntime: async () => {},
+    },
+    suspend: async () => {
+      active = false;
+    },
+  });
+  const starting = runtime.workFence.run(async () => {
+    await new Promise<void>((resolve) => {
+      finishStart = resolve;
+    });
+    active = true;
+  });
+  await runtime.lifecycle.acquireFence();
+  const stopping = runtime.lifecycle.quiesce();
+  await Promise.resolve();
+  finishStart();
+  await starting;
+  await stopping;
+  expect(active).toBe(false);
 });
