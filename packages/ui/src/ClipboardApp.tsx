@@ -734,7 +734,7 @@ export function ClipboardApp({
     managedRelayStates,
   });
   for (const [target, action] of Object.entries(sessionState.historyActions)) {
-    if (action.feedback)
+    if (action.feedback && action.feedback.status !== "success")
       issues.push({
         id: `history:${target}:action_failed`,
         scope: "history",

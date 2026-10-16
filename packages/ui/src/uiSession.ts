@@ -364,7 +364,10 @@ export function createUiSession() {
           ...state.historyActions,
           [id]: {
             pending: true,
-            feedback: state.historyActions[id]?.feedback ?? null,
+            feedback:
+              state.historyActions[id]?.feedback?.status === "success"
+                ? null
+                : (state.historyActions[id]?.feedback ?? null),
           },
         },
       });

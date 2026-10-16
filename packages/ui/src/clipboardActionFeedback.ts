@@ -5,13 +5,19 @@ export type ShareNowFailureCode = "clipboard_read_failed" | "share_now_failed";
 export type ClipboardActionFeedback = {
   message: string;
   action: "retry" | "dismiss";
+  status?: "success";
   requiresAcknowledgement?: boolean;
 };
 
 export function reuseClipFeedback(
   outcome: unknown
 ): ClipboardActionFeedback | null {
-  if (outcome === "complete") return null;
+  if (outcome === "complete")
+    return {
+      message: "Copied to clipboard.",
+      action: "dismiss",
+      status: "success",
+    };
   if (outcome === "copied-without-clip")
     return {
       message:

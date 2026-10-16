@@ -6,7 +6,10 @@ import {
 
 describe("clipboard action feedback", () => {
   it("distinguishes complete reuse, partial reuse, and write failure", () => {
-    expect(reuseClipFeedback("complete")).toBeNull();
+    expect(reuseClipFeedback("complete")).toMatchObject({
+      message: "Copied to clipboard.",
+      action: "dismiss",
+    });
     expect(reuseClipFeedback("copied-without-clip")).toEqual({
       message:
         "Copied to clipboard, but Clipp could not save or share a new Clip.",

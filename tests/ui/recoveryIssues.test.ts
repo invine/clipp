@@ -14,6 +14,7 @@ import {
   type ClipboardAppProps,
 } from "../../packages/ui/src/ClipboardApp";
 import { createUiSession } from "../../packages/ui/src/uiSession";
+import { reuseClipFeedback } from "../../packages/ui/src/clipboardActionFeedback";
 
 const props: ClipboardAppProps = {
   clips: [],
@@ -38,6 +39,25 @@ const render = (more: Partial<ClipboardAppProps>) =>
   renderToStaticMarkup(
     React.createElement(ClipboardApp, { ...props, ...more })
   );
+it("presents confirmed Copy without counting it as a problem while partial Copy remains actionable", async () => {
+  const session = createUiSession();
+  await session.runHistoryAction("copy:clip-a", async () =>
+    reuseClipFeedback("complete")
+  );
+  expect(render({ session })).toContain("Copied to clipboard.");
+  session.open({ kind: "issues", origin: "issues-summary" });
+  expect(render({ session })).not.toContain("issue needs attention");
+  expect(render({ session })).not.toContain("action_failed");
+  await session.runHistoryAction("copy:clip-b", async () =>
+    reuseClipFeedback("copied-without-clip")
+  );
+  const html = render({ session });
+  expect(html).toContain("1 issue needs attention");
+  expect(html).toContain('data-issue-id="history:copy:clip-b:action_failed"');
+  expect(html).not.toContain(
+    'data-issue-id="history:copy:clip-a:action_failed"'
+  );
+});
 it("composes independent source faults once through the shared shell and retains recovery after Close", () => {
   const session = createUiSession();
   const faults: Partial<ClipboardAppProps> = {

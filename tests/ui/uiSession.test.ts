@@ -262,6 +262,31 @@ it("unconfirmed Copy cannot be directly repeated or retried before explicit ackn
   await session.runHistoryAction("copy:clip", action);
   expect(copies).toBe(2);
 });
+it("a new Copy clears earlier success while pending and does not start a duplicate action", async () => {
+  const session = createUiSession();
+  await session.runHistoryAction("copy:clip", async () => ({
+    message: "Copied to clipboard.",
+    action: "dismiss",
+    status: "success",
+  }));
+  let finish!: (value: null) => void;
+  let copies = 0;
+  const copy = () => {
+    copies++;
+    return new Promise<null>((resolve) => {
+      finish = resolve;
+    });
+  };
+  const pending = session.runHistoryAction("copy:clip", copy);
+  await session.runHistoryAction("copy:clip", copy);
+  expect(copies).toBe(1);
+  expect(session.getSnapshot().historyActions["copy:clip"]).toEqual({
+    pending: true,
+    feedback: null,
+  });
+  finish(null);
+  await pending;
+});
 it("publishes destination availability as suspended editor work starts and is discarded", () => {
   const session = createUiSession();
   const availability: boolean[] = [];
