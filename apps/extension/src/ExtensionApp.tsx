@@ -349,6 +349,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       className={surface === "popup" ? "popup-host" : "options-host"}
     >
       <ManagementNavigation
+        key={identity?.deviceId ?? "identity-loading"}
         runtime={chrome.runtime}
         session={session}
         surface={surface}
