@@ -1,11 +1,11 @@
 # Fence reset runtime work and restart
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-reset-runtime-29
 Priority band: 3
 Blocked by: 28
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: 2026-10-16 whole-backlog continuation after qualified storage28; two implementers
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -53,3 +53,11 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch — 2026-10-16
+
+Storage28 is genuinely complete at6c0e26fc3567bda701ea6b2e4b70c80664a0974a after real cross-host durable-store crash/reopen proof, both reviews and fresh146/1033/all-build verification. Existing claim29 ux-reset-runtime-29 has two coordinated fresh isolated contributors: shared core admission/drain plus Electron/Chrome host integration; Android native ingress/continuity plus client integration. Root records exact new worktree/baseline branches in the supplied run artifacts before assignment.
+
+Decision assessment: preserve approved ADR0004/0008 and the manual-reset runtime responsibilities. One transition owner, no old-writer repopulation, no fresh candidate during recovery, durable native refusal/queue cleanup, preference-preserving suspension and rebuilt owners after completion. Unknown acceptance remains fenced. Changes to the shared seam include every consuming bridge. Production user actions/UI remain unavailable until their complete qualified path; package30 is separate.
+
+Approved public seams are actual runtime action/storage/writer ownership, offscreen wake/proxy generations and native ingress/continuity queues, plus the existing core lifecycle ports. Use meaningful TDD and actual host tests; native fixtures/builds cannot waive actual required behavior. External Chrome restart-recapture remains owned separately and must be demonstrably satisfied where consumed. Real system-clipboard tests use fresh synthetic marker intervals under the user's existing write/retry authorization; do not repeat Ready/approval questions. Root serializes native/global resources and preserves all earlier failed gates/deferrals. No real sign-in, operator profile mutation, push/PR/publication/deployment.

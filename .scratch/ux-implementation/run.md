@@ -148,7 +148,6 @@ Android08 current v8/403ad927 bootstrap public-load settlement, bounded reposito
 
 User reports no other desktop host available. Required G14 remains unqualified, with no waiver. Existing sign-in, provider, assistive/hardware and external-owner deferrals remain unchanged. Primary unrelated changes remain preserved. At most two implementers; no native interval is open.
 
-
 ## Combined native repairs and continued correctness — 2026-10-12
 
 Current production integration `285413c883fc0ba55b51602f40fa7a4e594aa718`, tree `62b0a6ad264a43ec77f0acf86c894e5b1a3b7835`, includes reviewed native target upward rounding (5656/e05), fontScale activity continuity (7e/3cc), native WebView body-reference text zoom (7b/586) and notice inline inset (33be/285). Each source repair passed renewed Standards/Spec review and mandatory merger integration. Fresh combined routine verification passes118 suites/852 tests/all three builds/zero lint errors;60 runtime assets map exactly to reviewed source, with virtual CRX metadata disclosed separately. Receipts remain in the ignored run evidence directory.
@@ -196,6 +195,7 @@ Chrome v4 c19ac08f starts and connects to CDP/version/ServiceWorker, retaining t
 ## Scoped recovery resolution and next frontier — 2026-10-13
 
 Both current149c1e1c evidence/completion audits PASS. Coordinator resolves08 for its integrated reviewed foundation and claims09, the next eligible urgent correctness output, for `ux-focus-capture-09`. Later owners and finding statuses remain unchanged. Product source remains ea09 at this metadata-only checkpoint; no native interval is open. At most two implementers, including the separate bounded Chrome test-runner author.
+
 # Prepared coordinator progress — pending next native boundary
 
 Ticket09 reviewed source272b83e9b81feabe0efe07951c73a100be81abe2 is mandatory-FF integrated on codex/ux-implementation-integration, tree7fcd75c285fe7f7dc009928eebfee5bfa2404b46. All9 source modes/blobs match and both worktrees are clean. Fresh integrated verify passes127 suites/913 tests/all3builds/zero lint errors775warnings, pinned Node24.16.0/npm11.13.0;61 build assets are recorded. Actual focused toolbar read/Retry remains required/unrun; ticket09/C16 remain incomplete. Root-only safe fresh-marker/native harness preparation is underway.
@@ -205,7 +205,6 @@ Native19 a463e20c at historical4746 observed narrow320x650 and zoom200 content11
 Chrome b7d84d2e diagnostic at4746 safelytimesout firstmetadataread within30s, preservesinitialcandidate/thunkworker URLs, closesbrowser0/profileremoved/disconnectconfirmed andrunnerfinishes. This is a diagnostic failure, noG36/workertrust exemption. All precedingfailures/privateprofiles remainpreserved. Source09's actualtoolbar harness uses supportedpublicCDP instead of the hung Playwrightworker evaluation and needsits ownreviews.
 
 Allnative/clipboardintervals closed. RequireddesktopOStextG14 andChromeG01publicendpoint unavailable, no waiver; sign-in/provider/physical/assistive/externalowner/push/deploy deferrals unchanged. Originalprimarytwofiles hashidentical andall preexistingwork retained. Atmost2 implementationauthors:09nativeprep and19Saveprep. Read-only25sourcepreparation concluded: compatible32 isactualAndroidcontrolpredecessor, residual17desktopgates retained; coordinatorclaim/edgechange notyetmade.
-
 
 ## Two-ticket progress — 2026-10-13
 
@@ -241,11 +240,9 @@ Required G14 desktop OS text-size and native ChromeG01 owned public peer remain 
 
 Actual Android25 v10/c6e0ea60 first3+1+1 and owned closure pass both evidence audits. Programmatic DOM/real PendingIntent/owning bridge preferences and separate-process reopen are labelled precisely; other25 gates remain open. Root independently confirms guest47128/serial/forward absence and exact original absent Qt restoration. Next bounded on-state Stop/reopen preparation continues beside Electron34 signal repair.
 
-
 ## Closure-focused continuation — 2026-10-15
 
 User requested two implementers focused on closing tickets and carrying forward existing approvals. Resumed20 durable production composition acceptance;34 source handoff complete, actual native remains root-owned and required. Parked25 worker experiment. Claim26 ux-tray-26 under the accepted small related tray-cleanup exception; no technical predecessor and no urgent source implementation is displaced. Root continues urgent20/34 qualification. Dock change requires actual reproduction; all original26/native and other ticket gates remain. Two source implementers20/26; no third author. No ticket resolved by this dispatch.
-
 
 ## Parallel source delivery and native-control blocker — 2026-10-15
 
@@ -257,11 +254,9 @@ Old CUA REPL state was explicitly archived by identifiers/hashes after all eight
 
 See ignored current-handoff-latest.md/resume-current.md and exact integration/native receipts. Required G14 still has no alternate host; Chrome native G01 still has no owned public/trusted peer. All sign-in, physical/OEM/assistive/provider and external-owner/CI/publication deferrals remain.
 
-
 ## Non-native core continuation — 2026-10-15
 
 User directed two implementers onto work not blocked by native checks, preserving failed gates and ending harness preparation. Claim27 ux-reset-27 for the accepted core manual transition, using two coordinated contributors (core transition/journal; core startup/recovery integration), each isolated from current integration. One ticket owner and co-delivered output; no new source-only resolution scope. This scheduling direction does not waive earlier native gates, change accepted reset semantics or enable an action. Reset adapters/runtime/native/UI packages28–31 retain original dependencies and qualification. Root will review/integrate/verify the complete core candidate, using approved public action/storage/lifecycle seams.
-
 
 ## Core27 integrated and resolved — 2026-10-15
 
@@ -269,11 +264,9 @@ Two implementers delivered the approved non-native core package. Transition bdd1
 
 No native/harness preparation or runtime/global-setting/clipboard action occurred. Every failed native gate and external/retained deferral is unchanged; required G14 still lacks another host and Chrome native G01 still lacks an owned public/trusted endpoint. Ticket 28 is technically unblocked by 27 but requires actual cross-host durable-store abrupt-stop/reopen qualification; do not claim it as non-native-completable work or waive those gates. Other open consumers retain unresolved predecessors. Primary dirty auth files, historical branches/worktrees/stashes and relay remain preserved. Local-only limits continue.
 
-
 ## Durable storage28 dispatch — 2026-10-15
 
 User explicitly requested continuing28 with two implementers, implementing durable adapters, running available checks and retaining any unqualified native gates. Claim ux-reset-storage-28 after resolved27; two isolated contributors own Electron/Chrome and Android respectively. Current integration before dispatch b86785d14dfa58a9d7f2258decf8016e0155e162. Accepted core/ADR boundaries preserved; no runtime reset activation before29/30 fences/UI. Native/real-store gaps remain required, not converted to passes. Source implementation may integrate while28 remains claimed if actual qualification is unavailable. Root owns shared coordination, both reviews, mandatory merger and fresh integrated verification. Existing work and approvals retained.
-
 
 ## Storage28 implementation integrated; native gates retained — 2026-10-16
 
@@ -283,7 +276,12 @@ Two implementers delivered Electron/Chrome source 3465c9db8d4ef66ad51b8697a3fb7c
 
 Actual hook exposed pre-existing Git fixture environment inheritance. The owned failing run stopped; primary hashes/refs/stashes/historical worktree heads remained preserved. Only introduced core.bare and Fixture local identity settings were restored. Full unchanged tracked hook gates then passed with Git-local variables scrubbed by the owned ignored launcher; source tree unchanged across amendment. Incident/recovery receipt and local reproduction notes retained. No tracked tooling mutation, native runtime/harness, clipboard, account, publication or deployment action.
 
-
 ## Whole-backlog continuation — 2026-10-16
 
 User asks implement-spec until all tickets are done. Refresh28 qualification with two implementers on isolated current integration, targeting actual durable-store process/file recovery. All existing statuses/gates preserved; required G14 environment and native ChromeG01 endpoint remain unavailable. No approval question repeats; no consumer dispatch across unresolved hard predecessors. Root will integrate and qualify each concrete output and keep progressing through newly released frontier.
+
+## Durable storage28 resolved and runtime29 admitted — 2026-10-16
+
+28 resolves at source6c0e26fc3567bda701ea6b2e4b70c80664a0974a/tree09635b5d4995ac5fe1f0230d27b05d86e1ba3965 after actualSQLite9/Chrome8browser+8worker/Android22primitive+9WebView-core cases, mandatory merges, both reviews/storage acceptance audit and fresh146-suite/1,033-test/all-build verification. Native qualification found and fixed durable fallback resurrection in d721565; original failures remain preserved. Owned guests/profiles are closed and Qt clipboard sharing exactly restored. Hash-bound final receipt is ticket28-final-integrated-verification.json. Canonical resolved count is15/35. G41/full reset remains open; no action enabled.
+
+Claim29 ux-reset-runtime-29 after completed28. Two fresh isolated implementers will own common core/Electron/Chrome admission-drain-restart and Android native ingress/continuity/client integration, respectively. Preserve ADR0004/0008, one serialized transition owner and validated same-candidate roll-forward. Acquire reversible admission before intent, retain it on ambiguity, and seal old/native work after acceptance. No user Stop/pref mutation as reset suspension, no unqualified activation, no clipboard erasure, no account/sign-in. Existing test/clipboard-write/guest-only root-firewall authorizations persist; no repeated approval/readiness requests. Root owns native execution, integration and resolution. Required G14/G01 gaps and all older failures/deferrals remain.
