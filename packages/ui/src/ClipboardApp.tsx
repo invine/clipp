@@ -1967,16 +1967,33 @@ export function ClipboardApp({
                   }
                   disabled={
                     !autoSyncKnown ||
-                    autoSyncPending ||
+                    autoSyncLoading ||
                     autoSyncRecoveryRequired ||
-                    sessionState.autoSync.pending ||
                     sessionState.autoSync.recoveryRequired
                   }
-                  onChange={(event) =>
+                  aria-disabled={
+                    autoSyncPending ||
+                    sessionState.autoSync.pending ||
+                    undefined
+                  }
+                  aria-busy={
+                    autoSyncPending ||
+                    sessionState.autoSync.pending ||
+                    undefined
+                  }
+                  onChange={(event) => {
+                    if (autoSyncPending || sessionState.autoSync.pending) {
+                      event.currentTarget.value = autoSyncKnown
+                        ? autoSync
+                          ? "enabled"
+                          : "disabled"
+                        : "";
+                      return;
+                    }
                     void session.saveAutoSync(() =>
                       onSetAutoSync(event.target.value === "enabled")
-                    )
-                  }
+                    );
+                  }}
                 >
                   {!autoSyncKnown && <option value="">Unknown</option>}
                   <option value="enabled">Enabled</option>
@@ -2050,15 +2067,21 @@ export function ClipboardApp({
                     value={appearanceSettings.snapshot?.state.logLevel ?? ""}
                     disabled={
                       !appearanceSettings.snapshot ||
-                      appearanceSettings.pending ||
                       appearanceSettings.recoveryRequired
                     }
-                    onChange={(event) =>
+                    aria-disabled={appearanceSettings.pending || undefined}
+                    aria-busy={appearanceSettings.pending || undefined}
+                    onChange={(event) => {
+                      if (appearanceSettings.pending) {
+                        event.currentTarget.value =
+                          appearanceSettings.snapshot?.state.logLevel ?? "";
+                        return;
+                      }
                       void appearanceSettings.save({
                         logLevel: event.target.value as
                           "debug" | "info" | "warn" | "error",
-                      })
-                    }
+                      });
+                    }}
                   >
                     {!appearanceSettings.snapshot && (
                       <option value="">Unknown</option>
