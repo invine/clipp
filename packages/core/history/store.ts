@@ -67,18 +67,23 @@ export function startHistoryRetentionCleanup(
   intervalMs = 60 * 60 * 1000,
   onError?: (error: unknown | null) => void
 ): HistoryRetentionCleanup {
+  let stopped = false;
   const cleanup = async (): Promise<void> => {
+    if (stopped) return;
     try {
       await history.pruneExpired();
-      onError?.(null);
+      if (!stopped) onError?.(null);
     } catch (error) {
-      onError?.(error);
+      if (!stopped) onError?.(error);
     }
   };
   void cleanup();
   const timer = setInterval(() => void cleanup(), intervalMs);
   return {
-    stop: () => clearInterval(timer),
+    stop: () => {
+      stopped = true;
+      clearInterval(timer);
+    },
     retry: cleanup,
   };
 }

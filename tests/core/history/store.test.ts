@@ -8,14 +8,23 @@ import { InMemoryHistoryBackend } from "../../../packages/core/history/types";
 import { Clip } from "../../../packages/core/models/Clip";
 import { runHistoryBackendConformance } from "./backendConformance";
 
-runHistoryBackendConformance("In-memory", () => ({ backend: new InMemoryHistoryBackend() }));
+runHistoryBackendConformance("In-memory", () => ({
+  backend: new InMemoryHistoryBackend(),
+}));
 
 describe("ClipHistoryStore", () => {
   const history = new MemoryHistoryStore();
   const sender = "me";
 
   function sampleClip(ts: number, id = `c${ts}`): Clip {
-    return { id, type: "text", content: `clip-${id}`, originPeerId: sender, capturedAt: ts, shareExpiresAt: ts + 86_400_000 };
+    return {
+      id,
+      type: "text",
+      content: `clip-${id}`,
+      originPeerId: sender,
+      capturedAt: ts,
+      shareExpiresAt: ts + 86_400_000,
+    };
   }
 
   beforeEach(async () => {
@@ -33,7 +42,10 @@ describe("ClipHistoryStore", () => {
   it("does not use origin capture time as local retention time", async () => {
     const oldTs = Date.now() - RETENTION_MS - 1000;
     const oldClip = sampleClip(oldTs, "old");
-    await history.accept(oldClip, { liveHandled: true, admissionPriority: true });
+    await history.accept(oldClip, {
+      liveHandled: true,
+      admissionPriority: true,
+    });
     await history.pruneExpired();
     const res = await history.getById("old");
     expect(res).not.toBeNull();
@@ -43,14 +55,24 @@ describe("ClipHistoryStore", () => {
     const localHistory = new MemoryHistoryStore();
 
     await expect(localHistory.setRetention(MAX_RETENTION_MS + 1)).resolves.toBe(
-      MAX_RETENTION_MS,
+      MAX_RETENTION_MS
     );
   });
 
   it("query by type and search", async () => {
     const now = Date.now();
-    await history.accept({ ...sampleClip(now + 1, "t1"), type: "text", content: "hello" }, { liveHandled: true, admissionPriority: true });
-    await history.accept({ ...sampleClip(now + 2, "u1"), type: "url", content: "https://openai.com" }, { liveHandled: true, admissionPriority: true });
+    await history.accept(
+      { ...sampleClip(now + 1, "t1"), type: "text", content: "hello" },
+      { liveHandled: true, admissionPriority: true }
+    );
+    await history.accept(
+      {
+        ...sampleClip(now + 2, "u1"),
+        type: "url",
+        content: "https://openai.com",
+      },
+      { liveHandled: true, admissionPriority: true }
+    );
     const results = await history.query({ search: "openai" });
     expect(results.length).toBe(1);
     expect(results[0].clip.type).toBe("url");
@@ -76,11 +98,13 @@ describe("ClipHistoryStore", () => {
       shareExpiresAt: 86_401_000,
     };
     expect((await history.accept(clip)).kind).toBe("newly-stored");
-    expect((await history.accept(clip, { liveHandled: true }))).toMatchObject({
+    expect(await history.accept(clip, { liveHandled: true })).toMatchObject({
       kind: "exact-duplicate",
       liveHandled: true,
     });
-    expect((await history.accept({ ...clip, content: "conflict" }))).toMatchObject({
+    expect(
+      await history.accept({ ...clip, content: "conflict" })
+    ).toMatchObject({
       kind: "immutable-conflict",
       clip: expect.objectContaining({ content: "first" }),
     });
@@ -123,7 +147,9 @@ describe("ClipHistoryStore", () => {
     await history.remove(clip.id);
 
     await expect(history.getById(clip.id)).resolves.toBeNull();
-    await expect(history.accept(clip)).resolves.toMatchObject({ kind: "locally-suppressed" });
+    await expect(history.accept(clip)).resolves.toMatchObject({
+      kind: "locally-suppressed",
+    });
   });
 
   it("keeps pinned Clips through retention, then atomically applies policy on unpin", async () => {
@@ -138,11 +164,15 @@ describe("ClipHistoryStore", () => {
     now += 1_001;
 
     await localHistory.pruneExpired();
-    await expect(localHistory.getById(clip.id)).resolves.toMatchObject({ pinned: true });
+    await expect(localHistory.getById(clip.id)).resolves.toMatchObject({
+      pinned: true,
+    });
 
     await localHistory.setPinned(clip.id, false);
     await expect(localHistory.getById(clip.id)).resolves.toBeNull();
-    await expect(localHistory.accept(clip)).resolves.toMatchObject({ kind: "locally-suppressed" });
+    await expect(localHistory.accept(clip)).resolves.toMatchObject({
+      kind: "locally-suppressed",
+    });
   });
 
   it("sets durable local pin state through the shared history contract", async () => {
@@ -151,8 +181,12 @@ describe("ClipHistoryStore", () => {
     const clip = sampleClip(Date.now(), "set-pin");
     await firstRuntime.accept(clip);
 
-    await expect(firstRuntime.setPinned(clip.id, true)).resolves.toEqual([clip.id]);
-    await expect(new MemoryHistoryStore(backend).pinnedIds()).resolves.toEqual([clip.id]);
+    await expect(firstRuntime.setPinned(clip.id, true)).resolves.toEqual([
+      clip.id,
+    ]);
+    await expect(new MemoryHistoryStore(backend).pinnedIds()).resolves.toEqual([
+      clip.id,
+    ]);
     await expect(firstRuntime.setPinned(clip.id, false)).resolves.toEqual([]);
   });
 
@@ -167,11 +201,17 @@ describe("ClipHistoryStore", () => {
     const pinned = sampleClip(now, "session-pin");
     await session.accept(pinned);
 
-    await expect(session.setPinned(pinned.id, true)).resolves.toEqual([pinned.id]);
-    await expect(session.setPinned(pinned.id, true)).resolves.toEqual([pinned.id]);
+    await expect(session.setPinned(pinned.id, true)).resolves.toEqual([
+      pinned.id,
+    ]);
+    await expect(session.setPinned(pinned.id, true)).resolves.toEqual([
+      pinned.id,
+    ]);
     now += 101;
     await session.pruneExpired();
-    await expect(session.getById(pinned.id)).resolves.toMatchObject({ pinned: true });
+    await expect(session.getById(pinned.id)).resolves.toMatchObject({
+      pinned: true,
+    });
 
     const restartedSession = new MemoryHistoryStore(backend, {
       now: () => now,
@@ -194,7 +234,7 @@ describe("ClipHistoryStore", () => {
     const cleanup = startHistoryRetentionCleanup(
       { pruneExpired },
       60_000,
-      (error) => errors.push(error),
+      (error) => errors.push(error)
     );
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -204,23 +244,124 @@ describe("ClipHistoryStore", () => {
     cleanup.stop();
   });
 
+  it.each(["success", "failure"])(
+    "retires a stopped owner's late cleanup %s notification",
+    async (outcome) => {
+      const oldError = new Error("previous cleanup failed");
+      const currentError =
+        outcome === "success" ? new Error("current cleanup failed") : null;
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve, reject) => {
+        finish = outcome === "success" ? resolve : () => reject(oldError);
+      });
+      class DeferredCleanupBackend extends InMemoryHistoryBackend {
+        private firstCleanup = true;
+
+        override async applyHistoryMutation(
+          request: Parameters<InMemoryHistoryBackend["applyHistoryMutation"]>[0]
+        ) {
+          if (request.kind === "cleanup") {
+            if (this.firstCleanup) {
+              this.firstCleanup = false;
+              await pending;
+            } else if (currentError) {
+              throw currentError;
+            }
+          }
+          return await super.applyHistoryMutation(request);
+        }
+      }
+      const backend = new DeferredCleanupBackend();
+      const notifications: Array<unknown | null> = [];
+      const report = (error: unknown | null) => notifications.push(error);
+      const previous = startHistoryRetentionCleanup(
+        new MemoryHistoryStore(backend),
+        60_000,
+        report
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      previous.stop();
+      const current = startHistoryRetentionCleanup(
+        new MemoryHistoryStore(backend),
+        60_000,
+        report
+      );
+      try {
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(notifications).toEqual([currentError]);
+
+        finish();
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(notifications).toEqual([currentError]);
+      } finally {
+        current.stop();
+      }
+    }
+  );
+
+  it("does not admit timer or retry cleanup after the owner stops", async () => {
+    jest.useFakeTimers();
+    let now = 10_000;
+    const localHistory = new MemoryHistoryStore(new InMemoryHistoryBackend(), {
+      now: () => now,
+      retentionMs: 1_000,
+    });
+    const clip = sampleClip(now, "retired-cleanup");
+    await localHistory.accept(clip);
+    const notifications: Array<unknown | null> = [];
+    const cleanup = startHistoryRetentionCleanup(
+      localHistory,
+      60_000,
+      (error) => notifications.push(error)
+    );
+    try {
+      await jest.advanceTimersByTimeAsync(0);
+      expect(notifications).toEqual([null]);
+      cleanup.stop();
+      now += 1_001;
+
+      await expect(cleanup.retry()).resolves.toBeUndefined();
+      await jest.advanceTimersByTimeAsync(120_000);
+
+      await expect(localHistory.getById(clip.id)).resolves.not.toBeNull();
+      expect(notifications).toEqual([null]);
+    } finally {
+      cleanup.stop();
+      jest.useRealTimers();
+    }
+  });
+
   it("gives new local Clips capacity priority and suppresses rejected historical imports", async () => {
     const localHistory = new MemoryHistoryStore(new InMemoryHistoryBackend(), {
       maxUnpinnedClips: 1,
       maxUnpinnedBytes: 10_000,
     });
     const shareExpiresAt = Date.now() + 60_000;
-    const retained = { ...sampleClip(20, "00000000-0000-4000-8000-000000000020"), shareExpiresAt };
-    const local = { ...sampleClip(10, "00000000-0000-4000-8000-000000000010"), shareExpiresAt };
-    const historical = { ...sampleClip(5, "00000000-0000-4000-8000-000000000005"), shareExpiresAt };
+    const retained = {
+      ...sampleClip(20, "00000000-0000-4000-8000-000000000020"),
+      shareExpiresAt,
+    };
+    const local = {
+      ...sampleClip(10, "00000000-0000-4000-8000-000000000010"),
+      shareExpiresAt,
+    };
+    const historical = {
+      ...sampleClip(5, "00000000-0000-4000-8000-000000000005"),
+      shareExpiresAt,
+    };
     await localHistory.accept(retained);
 
-    await expect(localHistory.accept(local)).resolves.toMatchObject({ kind: "newly-stored" });
+    await expect(localHistory.accept(local)).resolves.toMatchObject({
+      kind: "newly-stored",
+    });
     await expect(localHistory.getById(retained.id)).resolves.toBeNull();
     await localHistory.importBatch([historical]);
 
     await expect(localHistory.getById(historical.id)).resolves.toBeNull();
-    await expect(localHistory.accept(historical)).resolves.toMatchObject({ kind: "locally-suppressed" });
+    await expect(localHistory.accept(historical)).resolves.toMatchObject({
+      kind: "locally-suppressed",
+    });
   });
 
   it("fails Clear History atomically when the required tombstones exceed capacity", async () => {
@@ -233,15 +374,23 @@ describe("ClipHistoryStore", () => {
     await localHistory.accept(first);
     await localHistory.accept(second);
 
-    await expect(localHistory.clearAll()).rejects.toMatchObject({ code: "suppression_capacity" });
+    await expect(localHistory.clearAll()).rejects.toMatchObject({
+      code: "suppression_capacity",
+    });
     await expect(localHistory.getById(first.id)).resolves.not.toBeNull();
     await expect(localHistory.getById(second.id)).resolves.not.toBeNull();
   });
 
   it("clears all clips", async () => {
     const now = Date.now();
-    await history.accept(sampleClip(now + 4, "c1"), { liveHandled: true, admissionPriority: true });
-    await history.accept(sampleClip(now + 5, "c2"), { liveHandled: true, admissionPriority: true });
+    await history.accept(sampleClip(now + 4, "c1"), {
+      liveHandled: true,
+      admissionPriority: true,
+    });
+    await history.accept(sampleClip(now + 5, "c2"), {
+      liveHandled: true,
+      admissionPriority: true,
+    });
     await history.clearAll();
     const items = await history.query();
     expect(items.length).toBe(0);
