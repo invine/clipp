@@ -12,34 +12,54 @@ export function installChromeManagement(
 ) {
   const callback = <T>(invoke: (done: (value: T) => void) => void) =>
     new Promise<T>((resolve, reject) => {
-      invoke((value) => {
-        const error = api.runtime.lastError;
-        if (error) reject(new Error(error.message));
-        else resolve(value);
-      });
+      let settled = false;
+      const timer = setTimeout(() => {
+        settled = true;
+        reject(new Error("management_host_callback_timeout"));
+      }, 5000);
+      try {
+        invoke((value) => {
+          // Chrome requires lastError to be consumed even after our deadline.
+          const error = api.runtime.lastError;
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (error) reject(new Error(error.message));
+          else resolve(value);
+        });
+      } catch (error) {
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
     });
   // Explicitly restore the trusted-context boundary before reading any mailbox.
-  const storageReady = callback<void>((done) =>
-    api.storage.session.setAccessLevel(
-      { accessLevel: "TRUSTED_CONTEXTS" },
-      done
-    )
-  );
+  let storageReady: Promise<void> | undefined;
+  const trustedStorage = () =>
+    (storageReady ??= callback<void>((done) =>
+      api.storage.session.setAccessLevel(
+        { accessLevel: "TRUSTED_CONTEXTS" },
+        done
+      )
+    ).catch((error) => {
+      storageReady = undefined;
+      throw error;
+    }));
   // A worker can start before any document asks for management status.
-  void storageReady.catch(() => {});
+  void trustedStorage().catch(() => {});
   const coordinator = createChromeManagement({
     extensionId: api.runtime.id,
     popupUrl: api.runtime.getURL("src/popup.html"),
     pageUrl: api.runtime.getURL("src/options.html"),
     read: async () => {
-      await storageReady;
+      await trustedStorage();
       const result = await callback<Record<string, unknown>>((done) =>
         api.storage.session.get(MAILBOX, done)
       );
       return (result[MAILBOX] ?? []) as Handoff[];
     },
     write: async (records) => {
-      await storageReady;
+      await trustedStorage();
       return callback<void>((done) =>
         api.storage.session.set({ [MAILBOX]: records }, done)
       );
@@ -57,8 +77,14 @@ export function installChromeManagement(
           api.tabs.get(id, done)
         );
         return tab.url === api.runtime.getURL("src/options.html");
-      } catch {
-        return false;
+      } catch (error) {
+        // A lost callback or transient host error cannot establish removal.
+        if (
+          error instanceof Error &&
+          error.message === `No tab with id: ${id}.`
+        )
+          return false;
+        throw error;
       }
     },
     canonicalTabs: async () =>
