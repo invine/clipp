@@ -1063,6 +1063,16 @@ const relayMutationOwner = createChromeRelayMutationOwner({
 });
 chrome.runtime.onMessage.addListener(
   function handleRuntimeMessage(msg, sender, sendResponse) {
+    // The management installer owns these callbacks, including reset-time status.
+    if (
+      [
+        "managementNavigate",
+        "managementStatus",
+        "managementRetry",
+        "managementDismiss",
+      ].includes(msg?.type)
+    )
+      return;
     if (!startupResetChecked) {
       void startupResetReady
         .then(() => handleRuntimeMessage(msg, sender, sendResponse))

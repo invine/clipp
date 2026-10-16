@@ -9,6 +9,8 @@ function chromeFixture() {
   let records: Record<string, unknown> = {};
   let connectListener!: (port: chrome.runtime.Port) => void;
   let restrictionError = false;
+  let windowLookups = 0;
+  let holdWindowLookup = false;
   const api = {
     runtime: {
       id: "extension",
@@ -41,6 +43,15 @@ function chromeFixture() {
         },
       },
     },
+    windows: {
+      getLastFocused: (
+        _options: unknown,
+        done: (window: { id: number }) => void
+      ) => {
+        windowLookups++;
+        if (!holdWindowLookup) done({ id: 2 });
+      },
+    },
     tabs: {
       create: (_: unknown, done: (value: unknown) => void) => done({ id: 1 }),
       query: (_: unknown, done: (value: unknown) => void) => done([]),
@@ -52,6 +63,10 @@ function chromeFixture() {
       restrictionError = true;
     },
     records: () => records,
+    windowLookups: () => windowLookups,
+    holdWindowLookup: () => {
+      holdWindowLookup = true;
+    },
     connect: (port: chrome.runtime.Port) => connectListener(port),
     message(value: unknown, dropped = false) {
       let keepAlive: unknown;
@@ -107,6 +122,8 @@ it("navigation waits for reset reconciliation and refuses identity-fenced ingres
     error: "identity_runtime_suspended",
   });
   expect(f.records()).toEqual({});
+  const status = f.message({ type: "managementStatus" });
+  expect(await status.result).toMatchObject({ ok: true, records: [] });
 });
 it("accepted navigation is routed even when the destroyed popup can no longer receive its callback", async () => {
   const f = chromeFixture();
@@ -165,4 +182,67 @@ it("page registration buffers its first ready advertisement during worker admiss
   expect(Object.values(f.records())).toContainEqual([
     expect.objectContaining({ id: "early-page", target: 7 }),
   ]);
+});
+
+it("canonical popup without tab metadata prefers an idle page in the focused Chrome window", async () => {
+  const f = chromeFixture(),
+    coordinator = installChromeManagement(f.api);
+  const register = (id: number, windowId: number) => {
+    let receive!: (value: unknown) => void;
+    f.connect({
+      name: "clipp-management-page-v1",
+      sender: {
+        id: "extension",
+        url: f.api.runtime.getURL("src/options.html"),
+        tab: { id, windowId, url: f.api.runtime.getURL("src/options.html") },
+        frameId: 0,
+      },
+      postMessage: () => {},
+      disconnect: () => {},
+      onMessage: {
+        addListener: (listener: typeof receive) => {
+          receive = listener;
+        },
+      },
+      onDisconnect: { addListener: () => {} },
+    } as unknown as chrome.runtime.Port);
+    receive({ type: "ready", ready: true, idle: true });
+  };
+  register(7, 1);
+  register(8, 2);
+  await Promise.resolve();
+  await coordinator.flush();
+  const request = f.message({
+    type: "managementNavigate",
+    handoff: { id: "popup-window", destination: { kind: "requests" } },
+  });
+  await request.result;
+  await coordinator.flush();
+  expect(Object.values(f.records())).toContainEqual([
+    expect.objectContaining({ id: "popup-window", target: 8 }),
+  ]);
+  expect(f.windowLookups()).toBe(1);
+});
+
+it("missing popup-window callback falls back after its bounded wait without losing acceptance", async () => {
+  jest.useFakeTimers();
+  try {
+    const f = chromeFixture();
+    f.holdWindowLookup();
+    const coordinator = installChromeManagement(f.api);
+    const request = f.message({
+      type: "managementNavigate",
+      handoff: { id: "no-window", destination: { kind: "requests" } },
+    });
+    await jest.advanceTimersByTimeAsync(499);
+    expect(f.records()).toEqual({});
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await request.result).toMatchObject({ ok: true, status: "pending" });
+    await coordinator.flush();
+    expect(Object.values(f.records())).toContainEqual([
+      expect.objectContaining({ id: "no-window", target: 1 }),
+    ]);
+  } finally {
+    jest.useRealTimers();
+  }
 });

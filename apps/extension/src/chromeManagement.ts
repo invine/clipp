@@ -53,6 +53,7 @@ export function createChromeManagement(host: {
   now(): number;
   available?(): boolean;
   canonicalTabs?(): Promise<number[]>;
+  focusedWindow?(): Promise<number | undefined>;
 }) {
   let tail: Promise<unknown> = Promise.resolve();
   let invalidated = false;
@@ -329,7 +330,15 @@ export function createChromeManagement(host: {
     async request(sender: Sender | undefined, value: unknown) {
       if (!trusted(sender))
         return { ok: false, error: "unauthorized_management" };
-      return this.accept(value, sender?.tab?.windowId);
+      let windowId = sender?.tab?.windowId;
+      if (windowId === undefined && sender?.url === host.popupUrl) {
+        try {
+          windowId = await host.focusedWindow?.();
+        } catch {
+          // Window selection is a preference; durable navigation still works without it.
+        }
+      }
+      return this.accept(value, windowId);
     },
     accept(value: unknown, windowId?: number) {
       return serialized(async () => {

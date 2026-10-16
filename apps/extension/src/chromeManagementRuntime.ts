@@ -85,6 +85,22 @@ export function installChromeManagement(
     },
     now: Date.now,
     available: admission.available,
+    focusedWindow: () =>
+      new Promise<number | undefined>((resolve) => {
+        // A popup sender need not carry a tab. One bounded host lookup supplies
+        // the window preference without accepting caller-provided tab identity.
+        const timer = setTimeout(() => resolve(undefined), 500);
+        try {
+          api.windows.getLastFocused({ windowTypes: ["normal"] }, (window) => {
+            clearTimeout(timer);
+            const error = api.runtime.lastError;
+            resolve(error ? undefined : window?.id);
+          });
+        } catch {
+          clearTimeout(timer);
+          resolve(undefined);
+        }
+      }),
   });
   api.runtime.onConnect.addListener((port) => {
     if (port.name === MANAGEMENT_PORT)
