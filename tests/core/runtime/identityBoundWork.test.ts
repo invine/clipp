@@ -307,3 +307,37 @@ it("uncertain reset arriving during identity load restarts after conclusive reje
   expect(workFence.isFenced()).toBe(true);
   lifecycle.dispose();
 });
+
+it("runtime startup admitted before reset remains in the drain and rejects its retired network completion", async () => {
+  const { startIdentityBoundRuntimeServices } =
+    await import("../../../packages/core/runtime/identityInitialization");
+  const workFence = createIdentityBoundWorkFence();
+  let finish!: () => void;
+  let networkStarted!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    networkStarted = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const starting = startIdentityBoundRuntimeServices({
+    workFence,
+    initializeIdentity: async () => ({ networkingEnabled: true }),
+    startLocalServices() {},
+    async startNetworkServices() {
+      networkStarted();
+      await pending;
+    },
+  });
+  await entered;
+  await workFence.acquireFence();
+  let drained = false;
+  const drain = workFence.quiesce().then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+  finish();
+  await expect(starting).rejects.toThrow("identity_runtime_suspended");
+  await drain;
+});

@@ -948,14 +948,19 @@ const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
   start: () =>
     startIdentityBoundRuntimeServices({
+      workFence: identityWork,
       initializeIdentity: async () => {
         await autoSyncReady;
         return identityRotationLifecycle.initialize();
       },
       startLocalServices: async () => {
+        const generation = identityWork.generation();
+        identityWork.assertOpen(generation);
         await autoSyncReady;
+        identityWork.assertOpen(generation);
         clipboardSync.setAutoSync(autoSync);
         await historyPolicyReady;
+        identityWork.assertOpen(generation);
         historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
@@ -981,12 +986,17 @@ const sharedRuntime = createRuntimeOrchestrator({
         clipboardSync.start();
       },
       startNetworkServices: async () => {
+        const generation = identityWork.generation();
+        identityWork.assertOpen(generation);
         offscreenInitializationGate.open();
         await offscreenReady;
+        identityWork.assertOpen(generation);
         await extensionNetwork.start();
+        identityWork.assertOpen(generation);
         membershipReconciler.start();
         historyReconciliation.start();
         await pairingPending.start();
+        identityWork.assertOpen(generation);
       },
       onNetworkingFailure: (error) => {
         log.warn(

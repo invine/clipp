@@ -193,6 +193,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
 }
 
 export async function startIdentityBoundRuntimeServices(options: {
+  workFence?: IdentityBoundWorkFence;
   initializeIdentity():
     | void
     | IdentityBoundRuntimeInitialization
@@ -202,15 +203,23 @@ export async function startIdentityBoundRuntimeServices(options: {
   // eslint-disable-next-line no-unused-vars
   onNetworkingFailure?(error: unknown): void | Promise<void>;
 }): Promise<void> {
+  const generation = options.workFence?.generation();
   const initialization = await options.initializeIdentity();
   if (initialization?.localServicesEnabled === false) return;
-  await options.startLocalServices();
-  if (initialization?.networkingEnabled === false) return;
-  try {
-    await options.startNetworkServices();
-  } catch (error) {
-    await options.onNetworkingFailure?.(error);
-  }
+  const start = async () => {
+    options.workFence?.assertOpen(generation);
+    await options.startLocalServices();
+    options.workFence?.assertOpen(generation);
+    if (initialization?.networkingEnabled === false) return;
+    try {
+      await options.startNetworkServices();
+    } catch (error) {
+      await options.onNetworkingFailure?.(error);
+    }
+    options.workFence?.assertOpen(generation);
+  };
+  if (options.workFence) await options.workFence.run(start);
+  else await start();
 }
 
 export async function stopIdentityBoundRuntimeServices(

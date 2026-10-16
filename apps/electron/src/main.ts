@@ -159,6 +159,7 @@ async function bootstrap() {
       async quiesce() {
         await stopIdentityBoundServicesForRotation();
         await identityWork.quiesce();
+        await stopIdentityBoundServicesForRotation();
         for (const notification of identityNotifications) notification.close();
         identityNotifications.clear();
       },
@@ -406,9 +407,15 @@ async function bootstrap() {
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     if (messagingStarted) return;
+    const startingTransport = transport;
     try {
-      await transport.start();
+      await startingTransport.start();
+      identityWork.assertOpen(generation);
+      if (startingTransport !== transport)
+        throw new Error("identity_runtime_retired");
       messagingStarted = true;
       managedHost = transport.managedRelayHost((connection) => {
         for (const state of managedController.states()) {
@@ -416,15 +423,18 @@ async function bootstrap() {
             void managedController.connectionLost(state.key, connection);
         }
       });
-      void managedController
+      await managedController
         .setConfigurations(managedConfigurations)
         .catch((error) => {
           (log as any).warn("Managed relay startup failed", {
             error: (error as Error).message,
           });
         });
+      identityWork.assertOpen(generation);
     } catch (err) {
       messagingStarted = false;
+      if (identityWork.isFenced() || identityWork.generation() !== generation)
+        await startingTransport.stop();
       throw err;
     }
   }
@@ -702,6 +712,8 @@ async function bootstrap() {
   }
 
   async function startLocalServices() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     historyRetentionCleanup ??= startHistoryRetentionCleanup(
       {
         pruneExpired: async () => {
@@ -729,18 +741,23 @@ async function bootstrap() {
 
     bindTransportHandlers(transport);
     await pairingPending?.start();
-
+    identityWork.assertOpen(generation);
     clipboardSync.start();
   }
 
   async function startNetworkServices() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     await ensureMessagingStarted();
+    identityWork.assertOpen(generation);
     membershipReconciler.start();
     pairedConnections.start();
     historyReconciliation.start();
   }
 
   async function restartMessaging() {
+    const generation = identityWork.generation();
+    identityWork.assertOpen(generation);
     await managedController.stop().catch((error) => {
       (log as any).warn("Managed relay stop failed", {
         error: (error as Error).message,
@@ -755,6 +772,7 @@ async function bootstrap() {
     } catch {
       // ignore stop failures
     }
+    identityWork.assertOpen(generation);
     messagingStarted = false;
     transport = createLibp2pMessagingTransport({
       peerId,
@@ -792,6 +810,7 @@ async function bootstrap() {
     runtimeNetwork.bindCurrent();
     clipboardSync.bindLiveGossip(liveClipGossip);
     await ensureMessagingStarted();
+    identityWork.assertOpen(generation);
     pairedConnections.start();
     historyReconciliation.start();
     await emitState();
@@ -1249,6 +1268,7 @@ async function bootstrap() {
     adapter: runtimeAdapter,
     start: () =>
       startIdentityBoundRuntimeServices({
+        workFence: identityWork,
         initializeIdentity: () => identityRotationLifecycle.initialize(),
         startLocalServices,
         startNetworkServices,
