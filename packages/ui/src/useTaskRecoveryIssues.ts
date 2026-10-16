@@ -79,6 +79,8 @@ export function useTaskRecoveryIssues(
       pairingSubmissionMessage(pairing.result),
       pairing.result.error
     );
+  if (context.pairingImport.error)
+    add("import", "pairing", context.pairingImport.error);
   for (const [key, action] of Object.entries(context.relayActions))
     if (action.result?.error)
       add(

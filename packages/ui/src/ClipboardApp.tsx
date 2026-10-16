@@ -522,6 +522,7 @@ export function ClipboardApp({
       return;
     approvalBusy.current.add(request.deviceId);
     setApprovalsPending([...approvalBusy.current]);
+    const identityId = identity?.deviceId;
     let result: PairingApprovalResult;
     try {
       result = await (accepted ? onAccept(request) : onReject(request));
@@ -530,10 +531,11 @@ export function ClipboardApp({
     }
     if (!result || typeof result.ok !== "boolean")
       result = { ok: false, error: "outcome_unconfirmed", admitted: null };
-    setApprovalFeedback((previous) => ({
-      ...previous,
-      [request.deviceId]: pairingApprovalMessage(result, accepted),
-    }));
+    if (currentIdentity.current === identityId)
+      setApprovalFeedback((previous) => ({
+        ...previous,
+        [request.deviceId]: pairingApprovalMessage(result, accepted),
+      }));
     approvalBusy.current.delete(request.deviceId);
     setApprovalsPending([...approvalBusy.current]);
   }
@@ -640,8 +642,10 @@ export function ClipboardApp({
       identity?.deviceId &&
       previousIdentity.current &&
       identity.deviceId !== previousIdentity.current
-    )
+    ) {
       session.rotateIdentity();
+      setApprovalFeedback({});
+    }
     if (identity?.deviceId) previousIdentity.current = identity.deviceId;
   }, [identity?.deviceId, session]);
   useEffect(() => {
@@ -2745,6 +2749,7 @@ export function ClipboardApp({
         createPortal(
           <TaskDialog
             title="Clip details"
+            focusVersion={sessionState.navigationVersion}
             pending={false}
             originKey={sessionState.tasks.at(-1)?.origin}
             returnLabel="Back to History"
@@ -2784,7 +2789,8 @@ export function ClipboardApp({
         createPortal(
           <TaskDialog
             title="Pairing"
-            pending={pair.pending}
+            focusVersion={sessionState.navigationVersion}
+            pending={pair.pending || sessionState.pairingImport.pending}
             originKey={sessionState.tasks.at(-1)?.origin}
             returnLabel="Close Pairing"
             onDismiss={() => session.close()}
@@ -2838,6 +2844,7 @@ export function ClipboardApp({
         createPortal(
           <TaskDialog
             title="Paste pairing text"
+            focusVersion={sessionState.navigationVersion}
             pending={pair.pending}
             initialFocusKey="pairing-text"
             originKey="pairing-paste"
@@ -2948,6 +2955,7 @@ export function ClipboardApp({
         createPortal(
           <TaskDialog
             title="Pair this device"
+            focusVersion={sessionState.navigationVersion}
             pending={false}
             cancelLabel="Close QR dialog"
             onCancel={closeQr}

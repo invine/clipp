@@ -262,3 +262,114 @@ it("unconfirmed Copy cannot be directly repeated or retried before explicit ackn
   await session.runHistoryAction("copy:clip", action);
   expect(copies).toBe(2);
 });
+it("publishes destination availability as suspended editor work starts and is discarded", () => {
+  const session = createUiSession();
+  const availability: boolean[] = [];
+  session.subscribe(() =>
+    availability.push(session.destinationAvailability().idle)
+  );
+  session.name.begin("local", "Desktop");
+  session.name.change("Retained draft");
+  expect(availability.at(-1)).toBe(false);
+  session.name.cancel();
+  expect(availability.at(-1)).toBe(true);
+});
+it("Identity Rotation invalidates applied handoffs and identity-bound History context", () => {
+  const session = createUiSession();
+  const authority = { ready: true, clipIds: ["old"], requestIds: [] };
+  session.acceptDestination(
+    "old-handoff",
+    { kind: "clip-details", entity: "old" },
+    authority
+  );
+  session.update({
+    search: "old search",
+    sourceFilter: "old-peer",
+    focusKey: "more:old",
+    historyAnchor: { clipId: "old", offset: 20 },
+  });
+  session.rotateIdentity();
+  expect(session.getSnapshot()).toMatchObject({
+    tasks: [],
+    search: "",
+    sourceFilter: "all",
+    focusKey: "workspace",
+    historyAnchor: null,
+  });
+  expect(
+    session.acceptDestination(
+      "old-handoff",
+      { kind: "clip-details", entity: "old" },
+      { ...authority, clipIds: [] }
+    )
+  ).toBe("unavailable");
+});
+it("retains failed Pairing image import across task dismissal and retries through the document owner", async () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "pairing-start" });
+  let available = false;
+  const received: string[] = [];
+  await session.importPairing(
+    async () => {
+      if (!available) throw new Error("No QR code found.");
+      return "target";
+    },
+    async (text) => {
+      received.push(text);
+    }
+  );
+  session.close();
+  expect(session.getSnapshot().pairingImport.error).toBe("No QR code found.");
+  expect(session.destinationAvailability().idle).toBe(false);
+  session.open({ kind: "pairing", origin: "pairing-start" });
+  available = true;
+  await session.retryPairingImport();
+  expect(received).toEqual(["target"]);
+  expect(session.getSnapshot().pairingImport).toEqual({
+    pending: false,
+    error: null,
+  });
+});
+it("late Pairing imports cannot replace newer input or cross Identity Rotation", async () => {
+  const session = createUiSession();
+  let finish!: (text: string) => void;
+  const received: string[] = [];
+  const read = () =>
+    new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+  const submit = async (text: string) => {
+    received.push(text);
+  };
+  const importing = session.importPairing(read, submit);
+  session.pairing.change("newer input");
+  finish("old import");
+  await importing;
+  expect(received).toEqual([]);
+  expect(session.getSnapshot().pairingImport.error).toContain("changed");
+  const next = session.importPairing(read, submit);
+  session.rotateIdentity();
+  finish("former identity target");
+  await next;
+  expect(received).toEqual([]);
+  expect(session.getSnapshot().pairingImport).toEqual({
+    pending: false,
+    error: null,
+  });
+});
+it("matching incoming Pairing requests focus its current subtask while preserving draft and query", () => {
+  const session = createUiSession();
+  const authority = { ready: true, clipIds: [], requestIds: [] };
+  session.acceptDestination("first-pairing", { kind: "pairing" }, authority);
+  session.open({ kind: "paste", origin: "pairing-paste" });
+  session.pairing.change("retained target");
+  session.update({ search: "retained query" });
+  const before = session.getSnapshot().navigationVersion;
+  session.acceptDestination("focus-pairing", { kind: "pairing" }, authority);
+  expect(session.getSnapshot().navigationVersion).toBe((before ?? 0) + 1);
+  expect(session.getSnapshot()).toMatchObject({
+    search: "retained query",
+    tasks: [{ kind: "pairing" }, { kind: "paste" }],
+  });
+  expect(session.pairing.getSnapshot().raw).toBe("retained target");
+});

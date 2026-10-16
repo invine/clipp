@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useSyncExternalStore } from "react";
+import type { UiSession } from "../../../../packages/ui/src/uiSession";
 import jsQR from "jsqr";
 
 export type QRScannerProps = {
   onScan(payload: string): Promise<void>;
   disabled?: boolean;
+  session: UiSession;
 };
 
 function readDataUrl(file: File): Promise<string> {
@@ -25,41 +27,20 @@ function readDataUrl(file: File): Promise<string> {
   });
 }
 
-export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
-  const active = useRef(false);
-  const mounted = useRef(true),
-    disabledRef = useRef(disabled);
-  disabledRef.current = disabled;
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const retryAction = useRef<(() => Promise<string>) | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export const QRScanner = ({
+  onScan,
+  session,
+  disabled = false,
+}: QRScannerProps) => {
+  const {
+    pairingImport: { pending, error },
+  } = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot
+  );
   async function run(action: () => Promise<string>) {
-    if (disabled || active.current) return;
-    retryAction.current = action;
-    active.current = true;
-    setPending(true);
-    setError(null);
-    try {
-      const payload = await action();
-      if (!mounted.current || disabledRef.current) return;
-      await onScan(payload);
-    } catch (failure) {
-      if (!mounted.current) return;
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Unable to import pairing text. Try again."
-      );
-    } finally {
-      active.current = false;
-      if (mounted.current) setPending(false);
-    }
+    if (!disabled) await session.importPairing(action, onScan);
   }
   async function decodeFile(file: File): Promise<string> {
     const url = await readDataUrl(file);
@@ -101,6 +82,7 @@ export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
           disabled={disabled || pending}
           onChange={(event) => {
             const file = event.target.files?.[0];
+            event.target.value = "";
             if (file) void run(() => decodeFile(file));
           }}
         />
@@ -140,7 +122,7 @@ export const QRScanner = ({ onScan, disabled = false }: QRScannerProps) => {
             type="button"
             disabled={disabled || pending}
             onClick={() => {
-              if (retryAction.current) void run(retryAction.current);
+              void session.retryPairingImport();
             }}
           >
             Retry import

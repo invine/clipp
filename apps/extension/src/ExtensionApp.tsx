@@ -158,7 +158,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
     };
     chrome.runtime.onMessage.addListener(handler);
     void consumer.load();
-    const peerTimer = setInterval(refreshPeers, 5000);
+    const peerTimer = setInterval(() => void consumer.load(), 5000);
     return () => {
       chrome.runtime.onMessage.removeListener(handler);
       clearInterval(peerTimer);
@@ -185,26 +185,6 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       captureRef.current = null;
     };
   }, [surface]);
-
-  function refreshDevices() {
-    const readRevision = nameState.revision();
-    chrome.runtime.sendMessage({ type: "getTrustedDevices" }, (resp) => {
-      nameState.readDevices(readRevision, resp?.devices || []);
-    });
-  }
-
-  function refreshPending() {
-    chrome.runtime.sendMessage({ type: "getPendingRequests" }, (resp) => {
-      setPending(resp || []);
-    });
-  }
-
-  function refreshPeers() {
-    chrome.runtime.sendMessage({ type: "getConnectedPeers" }, (resp) => {
-      setPeers(resp?.peers || []);
-      setPeerConnections(resp?.peerConnections || []);
-    });
-  }
 
   async function runHistoryOperation<
     Result extends { ok: true } = { ok: true },
@@ -280,7 +260,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
 
   async function handlePairingText(txt: string) {
     const result = await submitExtensionPairing(chrome.runtime, txt);
-    refreshPending();
+    void consumer.load();
     return result;
   }
 
@@ -290,8 +270,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       device,
       accepted
     );
-    refreshPending();
-    refreshDevices();
+    void consumer.load();
     return result;
   }
 
@@ -321,8 +300,10 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
 
   useEffect(() => {
     authority.current = {
+      identityId: identity?.deviceId,
       ready:
         Boolean(identity) &&
+        Boolean(pairingState) &&
         !recovery.loading &&
         !recovery.unavailable &&
         !recovery.initializationError &&
@@ -346,6 +327,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
     settings.snapshot,
     settings.refreshError,
     pending,
+    pairingState,
   ]);
   useEffect(() => {
     if (surface !== "page") return;
@@ -480,10 +462,15 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
         onPairText={handlePairingText}
         pairingImport={
           <QRScanner
+            session={session}
             disabled={
               !identity || recovery.unavailable || identityRotationRecovery
             }
             onScan={async (text) => {
+              if (!authority.current.ready)
+                throw new Error(
+                  "Pairing is unavailable until Clipp has refreshed its current state. Retry the import after recovery."
+                );
               session.pairing.change(text);
               await session.pairing.submit(handlePairingText);
             }}

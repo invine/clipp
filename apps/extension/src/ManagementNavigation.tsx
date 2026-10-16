@@ -9,25 +9,32 @@ export function navigateManagement(
   destination: UiDestination
 ) {
   return new Promise<{ ok: boolean; status?: string; error?: string }>(
-    (resolve) =>
-      runtime.sendMessage(
-        { type: "managementNavigate", handoff: { id, destination } },
-        (response) => {
-          if (runtime.lastError)
-            resolve({
-              ok: false,
-              error:
-                "Navigation acceptance could not be confirmed. Open Clipp again to check this handoff.",
-            });
-          else
-            resolve(
-              response ?? {
-                ok: false,
-                error: "Navigation acceptance could not be confirmed.",
-              }
-            );
-        }
-      )
+    (resolve) => {
+      const unconfirmed = {
+        ok: false,
+        error:
+          "Navigation acceptance could not be confirmed. Open Clipp again to check this handoff.",
+      };
+      const timer = setTimeout(() => resolve(unconfirmed), 15000);
+      const finish = (response: {
+        ok: boolean;
+        status?: string;
+        error?: string;
+      }) => {
+        clearTimeout(timer);
+        resolve(response);
+      };
+      try {
+        runtime.sendMessage(
+          { type: "managementNavigate", handoff: { id, destination } },
+          (response) => {
+            finish(runtime.lastError ? unconfirmed : (response ?? unconfirmed));
+          }
+        );
+      } catch {
+        finish(unconfirmed);
+      }
+    }
   );
 }
 export function ManagementNavigation({

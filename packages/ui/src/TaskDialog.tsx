@@ -16,6 +16,7 @@ export type TaskDialogProps = {
   className?: string;
   initialFocusKey?: string;
   returnLabel?: string;
+  focusVersion?: number;
 };
 
 export function TaskDialog({
@@ -31,6 +32,7 @@ export function TaskDialog({
   className,
   initialFocusKey,
   returnLabel = "Close",
+  focusVersion,
 }: TaskDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -99,7 +101,7 @@ export function TaskDialog({
           .querySelector<HTMLElement>("[data-session-focus=workspace]")
           ?.focus();
     };
-  }, [originKey, initialFocusKey]);
+  }, [originKey, initialFocusKey, focusVersion]);
 
   useEffect(() => {
     if (

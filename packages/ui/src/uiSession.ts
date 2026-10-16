@@ -41,6 +41,7 @@ export type SessionContext = {
   navigationVersion?: number;
   settingsCategory?: "general" | "appearance" | "clips" | "relays";
   taskNotice: string | null;
+  pairingImport: { pending: boolean; error: string | null };
   historyActions: Record<
     string,
     { pending: boolean; feedback: ClipboardActionFeedback | null }
@@ -79,12 +80,14 @@ export function createUiSession() {
     historyActions: {},
     recoveryAttempts: {},
     taskNotice: null,
+    pairingImport: { pending: false, error: null },
     relayMutationFeedback: {},
     relayActions: {},
   };
   const activity = new Set<string>();
   const appliedDestinations = new Map<string, "applied" | "unavailable">();
   let historyGeneration = 0;
+  let retryPairingImport: (() => Promise<void>) | undefined;
   const historyRetries = new Map<
     string,
     () => Promise<ClipboardActionFeedback | null>
@@ -94,6 +97,9 @@ export function createUiSession() {
     state = { ...state, ...fields };
     listeners.forEach((listener) => listener());
   };
+  // Destination registration must observe editor work even while its task is suspended.
+  for (const owner of [name, alias, relay, pairing, qr])
+    owner.subscribe(() => update({}));
   function dismissTask(task?: SessionTask) {
     if (task?.kind === "device-name") name.dismiss();
     if (task?.kind === "alias") alias.dismiss();
@@ -119,6 +125,8 @@ export function createUiSession() {
       pairing.getSnapshot().raw ||
       pairing.getSnapshot().pending ||
       pairing.getSnapshot().result?.ok === false ||
+      state.pairingImport.pending ||
+      state.pairingImport.error ||
       state.autoSync.pending ||
       Object.values(state.historyActions).some((a) => a.pending) ||
       Object.values(state.relayActions).some((a) => a.pending)
@@ -203,8 +211,7 @@ export function createUiSession() {
           });
         else update({ destination: "devices", showNav: false });
       }
-      if (!matching)
-        update({ navigationVersion: (state.navigationVersion ?? 0) + 1 });
+      update({ navigationVersion: (state.navigationVersion ?? 0) + 1 });
       appliedDestinations.set(id, result);
       if (appliedDestinations.size > 64)
         appliedDestinations.delete(appliedDestinations.keys().next().value!);
@@ -215,6 +222,45 @@ export function createUiSession() {
     relay,
     pairing,
     qr,
+    async importPairing(
+      read: () => Promise<string>,
+      submit: (text: string) => Promise<void>
+    ) {
+      if (state.pairingImport.pending || pairing.getSnapshot().pending) return;
+      const generation = historyGeneration;
+      const originalInput = pairing.getSnapshot().raw;
+      retryPairingImport = () => this.importPairing(read, submit);
+      update({ pairingImport: { pending: true, error: null } });
+      try {
+        const text = await read();
+        if (generation !== historyGeneration) return;
+        if (
+          pairing.getSnapshot().raw !== originalInput ||
+          pairing.getSnapshot().pending
+        )
+          throw new Error(
+            "Pairing input changed while importing. Choose the input again to replace it."
+          );
+        await submit(text);
+        if (generation !== historyGeneration) return;
+        retryPairingImport = undefined;
+        update({ pairingImport: { pending: false, error: null } });
+      } catch (error) {
+        if (generation !== historyGeneration) return;
+        update({
+          pairingImport: {
+            pending: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unable to import pairing text. Try again.",
+          },
+        });
+      }
+    },
+    async retryPairingImport() {
+      await retryPairingImport?.();
+    },
     getSnapshot: () => state,
     subscribe(listener: () => void) {
       listeners.add(listener);
@@ -259,12 +305,20 @@ export function createUiSession() {
       if (task?.kind === "device-name") name.cancel();
       if (task?.kind === "alias") alias.cancel();
       if (task?.kind === "relay") relay.discard();
-      if (task?.kind === "paste" || task?.kind === "pairing") pairing.discard();
+      if (task?.kind === "paste" || task?.kind === "pairing") {
+        pairing.discard();
+        if (!state.pairingImport.pending) {
+          retryPairingImport = undefined;
+          update({ pairingImport: { pending: false, error: null } });
+        }
+      }
       this.back();
     },
     rotateIdentity() {
       historyGeneration++;
       historyRetries.clear();
+      appliedDestinations.clear();
+      retryPairingImport = undefined;
       name.clear();
       alias.clear();
       pairing.discard();
@@ -272,6 +326,13 @@ export function createUiSession() {
       update({
         tasks: state.tasks.filter((task) => task.kind === "relay"),
         historyActions: {},
+        pairingImport: { pending: false, error: null },
+        search: "",
+        sourceFilter: "all",
+        historyAnchor: null,
+        scroll: {},
+        focusKey: "workspace",
+        taskNotice: null,
       });
     },
     async runHistoryAction(
