@@ -184,3 +184,52 @@ it("delayed or failed listener registration leaves the live task intact and cann
   );
   dispose();
 });
+
+it("binds a secure default document owner and acknowledges actual session Back without crypto.randomUUID", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis.crypto,
+    "randomUUID"
+  );
+  Object.defineProperty(globalThis.crypto, "randomUUID", {
+    value: undefined,
+    configurable: true,
+  });
+  try {
+    const session = createUiSession();
+    session.open({ kind: "pairing", origin: "pairing-start" });
+    let deliver!: (event: NativeBackEvent & { owner: string }) => void;
+    let owner = "";
+    const acknowledgments: boolean[] = [];
+    const source: AndroidTaskInputSource = {
+      addListener: async (_name, callback) => {
+        deliver = callback;
+        return { remove: async () => {} };
+      },
+      setReady: async (value) => {
+        if (value.ready) owner = value.owner;
+      },
+      completeBack: async (value) => {
+        acknowledgments.push(value.handled);
+      },
+    };
+    const dispose = bindAndroidHostTaskInput(
+      createHostTaskInput(session),
+      source
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(owner).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    deliver({ owner, sequence: 1, imeVisible: false });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.getSnapshot().tasks).toEqual([]);
+    expect(acknowledgments).toEqual([true]);
+    dispose();
+  } finally {
+    if (descriptor)
+      Object.defineProperty(globalThis.crypto, "randomUUID", descriptor);
+    else Reflect.deleteProperty(globalThis.crypto, "randomUUID");
+  }
+});

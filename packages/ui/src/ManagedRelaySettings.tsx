@@ -57,6 +57,7 @@ export function ManagedRelaySettings({
     session.getSnapshot,
     session.getSnapshot
   );
+  const activeTask = context.tasks[context.tasks.length - 1];
   const editing = draft?.active ? draft.key : null;
   const {
     kind = "managed",
@@ -69,7 +70,8 @@ export function ManagedRelaySettings({
     session.relay.reconcile(configurations);
   }, [session, configurations]);
   useEffect(() => {
-    const task = session.getSnapshot().tasks.at(-1);
+    const tasks = session.getSnapshot().tasks;
+    const task = tasks[tasks.length - 1];
     if (
       draft &&
       task?.kind === "relay" &&
@@ -395,7 +397,7 @@ export function ManagedRelaySettings({
                 title="Relay configuration"
                 pending={busy}
                 initialFocusKey="relay:name"
-                originKey={context.tasks.at(-1)?.origin}
+                originKey={activeTask?.origin}
                 returnLabel="Close relay editor"
                 onDismiss={dismiss}
                 cancelLabel="Cancel relay edit"

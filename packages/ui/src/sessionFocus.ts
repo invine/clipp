@@ -22,9 +22,10 @@ export function findSessionFocus(
 /** Host activation reuses the current task's focus rules and the logical workspace
  * origin. Retained focus is preferred; a disappeared invoker gets a usable fallback. */
 export function restoreSessionFocus(doc: Document, key: string | null): void {
-  const task = [...doc.querySelectorAll<HTMLElement>("[data-task-dialog]")]
-    .filter((element) => element.getClientRects().length > 0)
-    .at(-1);
+  const tasks = [
+    ...doc.querySelectorAll<HTMLElement>("[data-task-dialog]"),
+  ].filter((element) => element.getClientRects().length > 0);
+  const task = tasks[tasks.length - 1];
   const scope = task ?? doc;
   const active = doc.activeElement;
   if (

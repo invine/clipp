@@ -107,11 +107,10 @@ export function TaskDialog({
     const dialog = dialogRef.current;
     if (!dialog) return;
     const recover = () => {
-      const activeTask = [
+      const tasks = [
         ...document.querySelectorAll<HTMLElement>("[data-task-dialog]"),
-      ]
-        .filter((element) => element.getClientRects().length > 0)
-        .at(-1);
+      ].filter((element) => element.getClientRects().length > 0);
+      const activeTask = tasks[tasks.length - 1];
       if (activeTask === dialog) restoreSessionFocus(document, null);
     };
     // Child-owned pending state can disable or remove the focused control

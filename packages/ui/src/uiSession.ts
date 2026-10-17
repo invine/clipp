@@ -285,7 +285,7 @@ export function createUiSession() {
     },
     update,
     open(task: SessionTask) {
-      const current = state.tasks.at(-1);
+      const current = state.tasks[state.tasks.length - 1];
       if (current?.kind === task.kind && current.entity === task.entity) return;
       const subtask =
         (current?.kind === "pairing" &&
@@ -299,7 +299,7 @@ export function createUiSession() {
       });
     },
     back() {
-      const task = state.tasks.at(-1);
+      const task = state.tasks[state.tasks.length - 1];
       dismissTask(task);
       update({
         tasks: state.tasks
@@ -313,16 +313,16 @@ export function createUiSession() {
       });
     },
     complete(kind: SessionTask["kind"], entity?: string) {
-      const task = state.tasks.at(-1);
+      const task = state.tasks[state.tasks.length - 1];
       if (task?.kind === kind && task.entity === entity) this.back();
     },
     close() {
-      const task = state.tasks.at(-1);
+      const task = state.tasks[state.tasks.length - 1];
       state.tasks.forEach(dismissTask);
       update({ tasks: [], focusKey: task?.origin ?? state.focusKey });
     },
     discard() {
-      const task = state.tasks.at(-1);
+      const task = state.tasks[state.tasks.length - 1];
       if (task?.kind === "device-name") name.cancel();
       if (task?.kind === "alias") alias.cancel();
       if (task?.kind === "relay") relay.discard();

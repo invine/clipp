@@ -57,7 +57,9 @@ export function RecoveryIssues({
   route(issue: RecoveryIssue): void;
   routeLabel?(issue: RecoveryIssue): string | undefined;
 }) {
-  const attempts = session.getSnapshot().recoveryAttempts;
+  const context = session.getSnapshot();
+  const attempts = context.recoveryAttempts;
+  const activeTask = context.tasks[context.tasks.length - 1];
   return (
     <TaskDialog
       title={title ?? "Issues and recovery"}
@@ -65,7 +67,7 @@ export function RecoveryIssues({
       cancelLabel="Close"
       onCancel={() => session.close()}
       onDismiss={() => session.close()}
-      originKey={session.getSnapshot().tasks.at(-1)?.origin ?? "issues-summary"}
+      originKey={activeTask?.origin ?? "issues-summary"}
       className="recovery-task"
     >
       {details}

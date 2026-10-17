@@ -1,7 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
-it.each([{ flags: [] }, { flags: ["--theme-write"] }])(
+it.each([
+  { flags: [] },
+  { flags: ["--theme-write"] },
+  { flags: ["--missing-webview-apis"] },
+])(
   "keeps actual Android Auto Sync and feed aligned with an overlapping appearance operation %j",
   ({ flags }) => {
     const result = spawnSync(

@@ -33,6 +33,7 @@ export function OptionsRecovery({
     session.getSnapshot,
     session.getSnapshot
   );
+  const activeTask = context.tasks[context.tasks.length - 1];
   const taskIssues = useTaskRecoveryIssues(
     session,
     preferenceError,
@@ -56,7 +57,7 @@ export function OptionsRecovery({
           </button>
         </div>
       )}
-      {context.tasks.at(-1)?.kind === "issues" && (
+      {activeTask?.kind === "issues" && (
         <RecoveryIssues
           issues={issues}
           session={session}
@@ -78,7 +79,7 @@ export function OptionsRecovery({
           }}
         />
       )}
-      {context.tasks.at(-1)?.kind === "pairing-recovery" && (
+      {activeTask?.kind === "pairing-recovery" && (
         <TaskDialog
           title="Pairing recovery"
           pending={false}
