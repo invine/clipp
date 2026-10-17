@@ -47,6 +47,8 @@ public final class HostTaskInputTest {
     private static final String DRAFT = "native back acceptance draft";
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private ActivityScenario<MainActivity> scenario;
+    private String lastTouchTarget = "none";
+    private String lastTouchSample = "none";
 
     @Before
     public void requireIsolatedPackagedAppAndExplicitNativeInterval() throws Exception {
@@ -161,6 +163,7 @@ public final class HostTaskInputTest {
 
     private void openPairing() throws Exception {
         tapButton("Devices");
+        await("Devices selected by one native tap", "document.querySelector('nav button[aria-current=\"page\"]')?.textContent.trim() === 'Devices'");
         tapButton("Pair this device");
         awaitDialog("Pairing");
         assertForeground();
@@ -183,12 +186,12 @@ public final class HostTaskInputTest {
     }
 
     private void tap(String element) throws Exception {
+        lastTouchTarget = element;
+        await("native geometry and fonts ready", "document.documentElement.dataset.hostGeometry === 'android' && document.fonts.status === 'loaded'");
         await("touch target available", "!!(" + element + ")");
         // Scrolling only locates the public control; no click/focus/value is synthesized.
         evaluate("(() => { const e = " + element + "; e.scrollIntoView({block:'center', inline:'nearest'}); return true; })()");
-        instrumentation.waitForIdleSync();
-        JSONObject bounds = new JSONObject(evaluate("(() => { const e = " + element
-            + "; const r = e.getBoundingClientRect(); return {x:r.x+r.width/2, y:r.y+r.height/2, width:innerWidth, height:innerHeight}; })()"));
+        JSONObject bounds = stableTouchBounds(element);
         double cssX = bounds.getDouble("x"), cssY = bounds.getDouble("y");
         assertTrue("Target must be inside the visible web viewport", cssX > 0 && cssY > 0
             && cssX < bounds.getDouble("width") && cssY < bounds.getDouble("height"));
@@ -216,6 +219,29 @@ public final class HostTaskInputTest {
             up.recycle();
         }
         instrumentation.waitForIdleSync();
+    }
+
+    private JSONObject stableTouchBounds(String element) throws Exception {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        long stableSince = 0;
+        String previous = null;
+        do {
+            // DOM existence precedes React's responsive/native-geometry effects.
+            // Measure until settled, then dispatch exactly one physical tap below.
+            String sample = evaluate("(() => { const e = " + element + "; if (!e) return {ready:false};"
+                + " const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, hit=document.elementFromPoint(x,y);"
+                + " return {x,y,width:innerWidth,height:innerHeight,rect:{x:r.x,y:r.y,width:r.width,height:r.height},"
+                + " shell:document.querySelector('.app-shell')?.className,"
+                + " ready:!e.disabled && !e.closest('[inert], [hidden]') && r.width>0 && r.height>0 && x>0 && y>0 && x<innerWidth && y<innerHeight && !!hit && (hit===e || e.contains(hit))}; })()");
+            lastTouchSample = sample;
+            JSONObject bounds = new JSONObject(sample);
+            long now = SystemClock.uptimeMillis();
+            if (!bounds.optBoolean("ready") || !sample.equals(previous)) stableSince = now;
+            else if (now - stableSince >= 250) return bounds;
+            previous = sample;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        throw new AssertionError("Touch target did not settle: " + timeoutDiagnostics());
     }
 
     private String dialogTitle() {
@@ -264,7 +290,7 @@ public final class HostTaskInputTest {
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < deadline);
         throw new AssertionError("Expected native IME visible=" + visible + ", actual=" + actual.get()
-            + "; run on a device with an enabled software keyboard");
+            + "; run on a device with an enabled software keyboard; " + timeoutDiagnostics());
     }
 
     private void assertForeground() {
@@ -279,7 +305,21 @@ public final class HostTaskInputTest {
             if ("true".equals(evaluate(expression))) return;
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < deadline);
-        throw new AssertionError("Timed out: " + description + "; dialog=" + evaluate(dialogTitle()));
+        throw new AssertionError("Timed out: " + description + "; " + timeoutDiagnostics());
+    }
+
+    private String timeoutDiagnostics() throws Exception {
+        // Failure-only public rendering evidence, bounded to the isolated synthetic app.
+        // No stores, task internals, bridge state, ACKs or clipboard APIs are inspected.
+        String ui = evaluate("(() => { const describe=e=>{if(!e)return null; const r=e.getBoundingClientRect();"
+            + " return {tag:e.tagName,name:(e.getAttribute('aria-label')||e.textContent.trim()).slice(0,160),disabled:!!e.disabled,current:e.getAttribute('aria-current'),"
+            + " inert:!!e.closest('[inert], [hidden]'),rect:{x:r.x,y:r.y,width:r.width,height:r.height}};};"
+            + " return {body:document.body.innerText.slice(0,5000),active:describe(document.activeElement),"
+            + " nav:[...document.querySelectorAll('nav button')].map(describe),"
+            + " controls:[...document.querySelectorAll('button,input,textarea,[role=dialog]')].slice(0,40).map(describe),"
+            + " viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},fonts:document.fonts.status,"
+            + " hostGeometry:document.documentElement.dataset.hostGeometry,hostStyle:document.documentElement.getAttribute('style')}; })()");
+        return "lastTouch=" + lastTouchTarget + ";lastSample=" + lastTouchSample + ";publicUI=" + ui;
     }
 
     private String evaluate(String expression) throws Exception {
