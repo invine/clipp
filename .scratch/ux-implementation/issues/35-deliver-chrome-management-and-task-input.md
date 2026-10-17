@@ -1,7 +1,7 @@
 # Deliver complete Chrome management, secure handoff and task input
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-chrome-management-35
 Priority band: 1
 Blocked by: 02, 03, 06, 07, 08, 32, 33
@@ -142,3 +142,11 @@ All three native runs are closed: owned groups305/5555/53708 and profiles are in
 ## Operator-reported G01/G14 passes — 2026-10-17
 
 The user explicitly directs “record G1 and G14 passed.” Record **G01 PASS — user reported** and **G14 PASS — user reported**, accepted for TT35 manual qualification; these replace the active TT35 blocked dispositions. [Provenance and limits](../tt35-user-reported-gates-20261017.md) record that candidate/host/route/measurement artifacts were not supplied. No agent execution or independent measurement is asserted. Earlier policy rejection, unavailable prerequisites, unchanged-text experiment and all failed/not-run historical evidence remain intact. Broader collectors are not automatically resolved. TT35 stays claimed for the remaining native matrices and cutover requirements.
+
+## Answer
+
+Resolved 2026-10-17 by direct user acceptance: “consider all passed, we'll figure it out later.” [Accepted decision and deferred qualification](../decisions/20261017-tt35-user-acceptance.md) supersedes the earlier native-gate hold for 35 only. The integrated management/handoff/task-input source 61e3de332a76536a288bb812a7623328357dd727 has both source review axes, mandatory integration and fresh152-suite/1,134-test/all-typecheck/all-three-build verification. Current integration before this record is 4c895fe56dc53e04962f12cea7a545eabe28309d; later records are documentation only.
+
+Remaining checks are administratively accepted by the user and deferred for later investigation, not newly executed. G01/G14 retain user-reported PASS provenance. Every prior failure, unrun native matrix, unavailable prerequisite, scoped observed pass and source/candidate binding remains preserved. No new native run, clipboard/global setting operation, source change or popup retirement occurred. Popup cutover execution remains deferred under this decision. Original 11/13/10 and other finding collectors are not automatically resolved; consumer tickets retain their own changed-surface requirements.
+
+Evidence: canonical decision above, prior dated entries in this ticket, and ignored run tt35-layout-final-handoff.json, tt35-user-reported-gates-20261017.json and linked author/merge/Standards/Spec/verify/native/cleanup receipts. Primary dirty files, stashes, existing worktrees/branches and external relay state are preserved.
