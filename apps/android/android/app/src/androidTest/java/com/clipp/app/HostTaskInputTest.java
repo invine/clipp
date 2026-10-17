@@ -3,7 +3,16 @@ package com.clipp.app;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Instrumentation;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.graphics.Rect;
+import android.os.Build;
+import android.view.InputDevice;
+import android.view.MotionEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import androidx.lifecycle.Lifecycle;
 import android.content.Context;
 import android.os.SystemClock;
 import android.util.Log;
@@ -25,6 +34,8 @@ import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Rule;
+import org.junit.rules.TestName;
 import org.junit.runner.RunWith;
 
 /**
@@ -38,6 +49,8 @@ import org.junit.runner.RunWith;
 @SdkSuppress(minSdkVersion = 31)
 public final class HostTaskInputTest {
     private static final long TIMEOUT_MS = 20_000;
+    private static final long CAPTURE_QUIET_MS = 5_000;
+    @Rule public final TestName testName = new TestName();
     private static final String DRAFT = "native back acceptance draft";
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private ActivityScenario<MainActivity> scenario;
@@ -49,6 +62,14 @@ public final class HostTaskInputTest {
         NativeAcceptanceTarget.requireIsolated(target.getPackageName());
         Assume.assumeTrue("Root must opt in with -e hostTaskInputAcceptance true during its native interval",
             "true".equals(InstrumentationRegistry.getArguments().getString("hostTaskInputAcceptance")));
+        if ("guestClipboardFocusLossAndNativeSettingsReturnEstablishBaselinesWithoutDuplicateClips".equals(testName.getMethodName()))
+            requireGuestClipboardInterval();
+        if ("realRejectedDeviceNameSaveRetainsNewerDraftAcrossNativeBackAndThenSaves".equals(testName.getMethodName()))
+            Assume.assumeTrue("Root must separately authorize -e failedDeviceNameAcceptance true",
+                "true".equals(InstrumentationRegistry.getArguments().getString("failedDeviceNameAcceptance")));
+        AccessibilityServiceInfo accessibility = instrumentation.getUiAutomation().getServiceInfo();
+        accessibility.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+        instrumentation.getUiAutomation().setServiceInfo(accessibility);
         JSONObject config;
         try (InputStream stream = target.getAssets().open("capacitor.config.json")) {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -175,6 +196,207 @@ public final class HostTaskInputTest {
         for (int offset = 0; offset < observation.length(); offset += 1000)
             Log.i("ClippStartupIssues", "part=" + (offset / 1000) + ";" + observation.substring(offset, Math.min(offset + 1000, observation.length())));
         assertForeground();
+    }
+
+    @Test
+    public void realRejectedDeviceNameSaveRetainsNewerDraftAcrossNativeBackAndThenSaves() throws Exception {
+        tapButton("Devices");
+        tapButton("Rename this device");
+        awaitDialog("Device Name");
+        replaceDeviceName("   ");
+        tapButton("Save Device Name");
+        await("real client whitespace rejection", "[...document.querySelectorAll('[role=alert]')].some(e=>e.getClientRects().length && e.textContent.trim()==='Device Name must contain 1–64 characters without control or line breaks. Edit and Save again.')");
+        awaitDeviceName("   ");
+        await("rejected name returns editor focus", "document.activeElement?.getAttribute('aria-label')==='Device Name'");
+        String newer = "Native saved name";
+        replaceDeviceName(newer);
+        nativeBack();
+        awaitIme(false);
+        assertStableDialog("Device Name");
+        awaitDeviceName(newer);
+        nativeBack();
+        awaitNoDialog();
+        assertFocusedButton("Rename this device");
+        tapButton("Rename this device");
+        awaitDialog("Device Name");
+        awaitDeviceName(newer);
+        tap("document.querySelector('input[aria-label=\"Device Name\"]')");
+        awaitIme(true);
+        nativeBack();
+        awaitIme(false);
+        tapButton("Save Device Name");
+        awaitNoDialog();
+        assertFocusedButton("Rename this device");
+        await("authoritative saved Device Name visible", "document.querySelector('.peer-item.active .peer-name')?.getAttribute('title') === " + JSONObject.quote(newer));
+        logGeometry("real-rejected-then-saved-device-name");
+    }
+
+    /** Combined focus-loss/return baseline evidence; no private poll/read-attempt oracle. */
+    @Test
+    public void guestClipboardFocusLossAndNativeSettingsReturnEstablishBaselinesWithoutDuplicateClips() throws Exception {
+        String prefix = "native-focus-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String active = prefix + "-active", dialog = prefix + "-dialog", returned = prefix + "-returned";
+        String paused = prefix + "-paused", resumed = prefix + "-resumed";
+        tapButton("Settings");
+        await("applied Auto Sync enabled", "document.querySelector('select#auto-sync')?.value==='enabled' && !document.querySelector('select#auto-sync').disabled");
+        await("background mode initially disabled", "document.body.innerText.includes('Background mode is disabled.')");
+        tapButton("History");
+        // Let the actual focused runtime establish its initial observation baseline.
+        assertHistoryCountForInterval(active, 0, CAPTURE_QUIET_MS);
+        writeGuestClipboard(active);
+        awaitHistoryCount(active, 1);
+
+        tapButton("Settings");
+        tapButton("Enable background mode");
+        awaitNativeOptInDialog();
+        awaitActivityState(true, false);
+        writeGuestClipboard(dialog);
+        // Native JS confirmation may suspend WebView evaluation. Observe native
+        // lifecycle/focus only while held, for >3 actual 1500ms polling intervals.
+        long heldUntil = SystemClock.uptimeMillis() + CAPTURE_QUIET_MS;
+        do {
+            assertActivityState(true, false);
+            SystemClock.sleep(100);
+        } while (SystemClock.uptimeMillis() < heldUntil);
+        tapNativeOptInCancel();
+        awaitActivityState(true, true);
+        await("Cancel preserved disabled background mode", "document.body.innerText.includes('Background mode is disabled.')");
+        tapButton("History");
+        assertHistoryCountForInterval(dialog, 0, CAPTURE_QUIET_MS);
+        assertEquals("Initial foreground Clip must remain single", "1", evaluate(historyCount(active)));
+        writeGuestClipboard(returned);
+        awaitHistoryCount(returned, 1);
+        assertHistoryCountForInterval(returned, 1, CAPTURE_QUIET_MS);
+
+        tapButton("Settings");
+        tapButton("Notification settings");
+        awaitActivityState(false, false);
+        awaitNativeSettings();
+        writeGuestClipboard(paused);
+        SystemClock.sleep(CAPTURE_QUIET_MS);
+        assertActivityState(false, false);
+        nativeBack();
+        awaitActivityState(true, true);
+        tapButton("History");
+        assertHistoryCountForInterval(paused, 0, CAPTURE_QUIET_MS);
+        writeGuestClipboard(resumed);
+        awaitHistoryCount(resumed, 1);
+        assertHistoryCountForInterval(resumed, 1, CAPTURE_QUIET_MS);
+        assertEquals("Earlier real capture must not duplicate after resume", "1", evaluate(historyCount(returned)));
+        Log.i("ClippGuestCapture", "combinedNativeFocusLossAndReturnBaseline=true;externalSettingsPauseResume=true;privatePollAttemptsInspected=false;pollIntervalMs=1500;heldMs=" + CAPTURE_QUIET_MS);
+    }
+
+    private void replaceDeviceName(String value) throws Exception {
+        tap("document.querySelector('input[aria-label=\"Device Name\"]')");
+        awaitIme(true);
+        long keys = SystemClock.uptimeMillis();
+        KeyEvent selectDown = new KeyEvent(keys, keys, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON);
+        KeyEvent selectUp = new KeyEvent(keys, keys, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON);
+        selectDown.setSource(InputDevice.SOURCE_KEYBOARD);
+        selectUp.setSource(InputDevice.SOURCE_KEYBOARD);
+        instrumentation.sendKeySync(selectDown);
+        instrumentation.sendKeySync(selectUp);
+        instrumentation.sendStringSync(value);
+        awaitDeviceName(value);
+    }
+
+    private void awaitDeviceName(String value) throws Exception {
+        await("raw Device Name retained", "document.querySelector('input[aria-label=\"Device Name\"]')?.value === " + JSONObject.quote(value));
+    }
+
+    private String historyCount(String marker) {
+        return "[...document.querySelectorAll('[data-session-scroll=\"history\"] article[data-clip-id] .history-text')].filter(e=>e.getClientRects().length && e.textContent===" + JSONObject.quote(marker) + ").length";
+    }
+
+    private void awaitHistoryCount(String marker, int count) throws Exception {
+        await("actual visible History marker count " + count, historyCount(marker) + " === " + count);
+    }
+
+    private void assertHistoryCountForInterval(String marker, int count, long duration) throws Exception {
+        await("History is the visible destination", "document.querySelector('nav button[aria-current=\"page\"]')?.textContent.trim()==='History'");
+        long deadline = SystemClock.uptimeMillis() + duration;
+        do {
+            assertEquals("Public History must retain exact marker count", String.valueOf(count), evaluate(historyCount(marker)));
+            assertForeground();
+            SystemClock.sleep(100);
+        } while (SystemClock.uptimeMillis() < deadline);
+    }
+
+    private void writeGuestClipboard(String marker) {
+        requireGuestClipboardInterval();
+        ClipboardManager clipboard = (ClipboardManager) instrumentation.getTargetContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("Clipp isolated guest acceptance", marker));
+    }
+
+    private void requireGuestClipboardInterval() {
+        NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
+        Assume.assumeTrue("Root must separately authorize -e guestClipboardAcceptance true with host clipboard integration disabled",
+            "true".equals(InstrumentationRegistry.getArguments().getString("guestClipboardAcceptance")));
+        assertTrue("Guest clipboard qualification refuses physical/operator devices",
+            "ranchu".equals(Build.HARDWARE) || "goldfish".equals(Build.HARDWARE));
+    }
+
+    private void awaitActivityState(boolean resumed, boolean focused) {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        AtomicBoolean focus = new AtomicBoolean();
+        do {
+            scenario.onActivity(activity -> focus.set(activity.hasWindowFocus()));
+            if ((scenario.getState() == Lifecycle.State.RESUMED) == resumed && focus.get() == focused) return;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        assertActivityState(resumed, focused);
+    }
+
+    private void assertActivityState(boolean resumed, boolean focused) {
+        assertEquals("Actual Activity resumed state", resumed, scenario.getState() == Lifecycle.State.RESUMED);
+        AtomicBoolean focus = new AtomicBoolean();
+        scenario.onActivity(activity -> focus.set(activity.hasWindowFocus()));
+        assertEquals("Actual main-window focus", focused, focus.get());
+    }
+
+    private AccessibilityNodeInfo nativeOptInMessage() {
+        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        if (root == null) return null;
+        for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText("Enable experimental background continuity?"))
+            if (node.isVisibleToUser() && instrumentation.getTargetContext().getPackageName().equals(String.valueOf(node.getPackageName()))) return node;
+        return null;
+    }
+
+    private void awaitNativeOptInDialog() {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        while (nativeOptInMessage() == null && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(50);
+        assertTrue("Actual production native confirmation must own focus", nativeOptInMessage() != null);
+    }
+
+    private void tapNativeOptInCancel() {
+        awaitNativeOptInDialog();
+        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        AccessibilityNodeInfo cancel = null;
+        for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByViewId("android:id/button2"))
+            if (node.isVisibleToUser() && node.isEnabled() && instrumentation.getTargetContext().getPackageName().equals(String.valueOf(node.getPackageName()))) cancel = node;
+        assertTrue("Native opt-in Cancel button must be present", cancel != null);
+        Rect bounds = new Rect();
+        cancel.getBoundsInScreen(bounds);
+        assertTrue("Native Cancel must have visible bounds", !bounds.isEmpty());
+        long down = SystemClock.uptimeMillis();
+        for (int action : new int[] { MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP }) {
+            MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, bounds.exactCenterX(), bounds.exactCenterY(), 0);
+            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            try { assertTrue("Android must accept the real Cancel pointer", instrumentation.getUiAutomation().injectInputEvent(event, true)); }
+            finally { event.recycle(); }
+            SystemClock.sleep(40);
+        }
+        instrumentation.waitForIdleSync();
+    }
+
+    private void awaitNativeSettings() {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        do {
+            AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+            if (root != null && "com.android.settings".equals(String.valueOf(root.getPackageName()))) return;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        throw new AssertionError("Actual Android Settings Activity must be foreground before external pause setup");
     }
 
     private void openPairing() throws Exception {
