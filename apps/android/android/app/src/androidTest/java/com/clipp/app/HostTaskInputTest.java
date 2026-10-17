@@ -155,6 +155,28 @@ public final class HostTaskInputTest {
         assertForeground();
     }
 
+    /** Diagnostic observation only: a successful witness is not healthy startup acceptance. */
+    @Test
+    public void recordsRenderedStartupIssueDetailsForRootDiagnosis() throws Exception {
+        Assume.assumeTrue("Root must additionally opt in with -e startupIssuesDiagnostic true",
+            "true".equals(InstrumentationRegistry.getArguments().getString("startupIssuesDiagnostic")));
+        await("actual public startup issue summary", "!!document.querySelector('button.issue-summary')");
+        tap("document.querySelector('button.issue-summary')");
+        awaitDialog("Issues and recovery");
+        await("rendered issue message", "[...document.querySelectorAll('.recovery-issue p')].some(e=>e.getClientRects().length && e.innerText.trim().length>0)");
+        String closedTechnicalDetails = "[...document.querySelectorAll('.recovery-issue details > summary')].find(e=>!e.parentElement.open && e.getClientRects().length)";
+        for (int index = 0; index < 3; index++) {
+            if (!"true".equals(evaluate("!!(" + closedTechnicalDetails + ")"))) break;
+            // Real pointer input opens the public disclosure; no DOM open/click mutation.
+            tap(closedTechnicalDetails);
+        }
+        String observation = input.startupIssueDiagnostics();
+        // Bound every log line below Android's limit even for non-ASCII public text.
+        for (int offset = 0; offset < observation.length(); offset += 1000)
+            Log.i("ClippStartupIssues", "part=" + (offset / 1000) + ";" + observation.substring(offset, Math.min(offset + 1000, observation.length())));
+        assertForeground();
+    }
+
     private void openPairing() throws Exception {
         tapButton("Devices");
         await("Devices selected by one native tap", "document.querySelector('nav button[aria-current=\"page\"]')?.textContent.trim() === 'Devices'");

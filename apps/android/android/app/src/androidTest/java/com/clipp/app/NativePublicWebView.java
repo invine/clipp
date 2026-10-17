@@ -18,6 +18,9 @@ import org.json.JSONTokener;
 /** Public DOM location/witnessing plus physical Android input; never invokes a DOM action. */
 final class NativePublicWebView {
     private static final long TIMEOUT_MS = 20_000;
+    private static final String PUBLIC_ISSUES = "[...document.querySelectorAll('.recovery-issue')].slice(0,3).map(e=>({"
+        + "messages:[...e.querySelectorAll('p')].slice(0,2).map(p=>p.innerText.slice(0,300)),"
+        + "technical:[...e.querySelectorAll('pre')].slice(0,1).map(p=>p.textContent.slice(0,1200))}))";
     private final Instrumentation instrumentation;
     private final ActivityScenario<MainActivity> scenario;
     private String lastTouchTarget = "none";
@@ -102,17 +105,24 @@ final class NativePublicWebView {
         throw new AssertionError("Touch target did not settle: " + timeoutDiagnostics());
     }
 
+    String startupIssueDiagnostics() throws Exception {
+        return evaluate("JSON.stringify({structuredClone:typeof globalThis.structuredClone,issues:" + PUBLIC_ISSUES + "})");
+    }
+
     String timeoutDiagnostics() throws Exception {
-        // Failure-only public rendering evidence, bounded to the isolated synthetic app.
+        // Public rendering evidence for failures or an explicit root diagnostic,
+        // bounded to the isolated synthetic app. Specific issue <pre> content is
+        // public technical detail; body.textContent/inline scripts are never read.
         // No stores, task internals, bridge state, ACKs or clipboard APIs are inspected.
         String ui = evaluate("(() => { const describe=e=>{if(!e)return null; const r=e.getBoundingClientRect();"
             + " return {tag:e.tagName,name:(e.getAttribute('aria-label')||e.textContent.trim()).slice(0,160),disabled:!!e.disabled,current:e.getAttribute('aria-current'),"
             + " inert:!!e.closest('[inert], [hidden], [aria-hidden=\"true\"]'),rect:{x:r.x,y:r.y,width:r.width,height:r.height}};};"
             + " return {body:document.body.innerText.slice(0,5000),active:describe(document.activeElement),"
             + " capabilities:{randomUUID:typeof globalThis.crypto?.randomUUID,getRandomValues:typeof globalThis.crypto?.getRandomValues,"
-            + " arrayAt:typeof Array.prototype.at,objectHasOwn:typeof Object.hasOwn,readyState:document.readyState,href:location.href,"
+            + " arrayAt:typeof Array.prototype.at,objectHasOwn:typeof Object.hasOwn,structuredClone:typeof globalThis.structuredClone,readyState:document.readyState,href:location.href,"
             + " scripts:[...document.scripts].slice(0,12).map(e=>e.src?new URL(e.src).pathname:'inline'),"
             + " resources:performance.getEntriesByType('resource').map(e=>new URL(e.name).pathname).filter(p=>/\\.(js|css)$/.test(p)).slice(0,20)},"
+            + " issues:" + PUBLIC_ISSUES + ","
             + " nav:[...document.querySelectorAll('nav button')].map(describe),"
             + " controls:[...document.querySelectorAll('button,input,textarea,[role=dialog]')].slice(0,40).map(describe),"
             + " viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},fonts:document.fonts.status,"
