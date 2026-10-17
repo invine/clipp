@@ -141,13 +141,33 @@ it("the SQLite runtime drains cached name writes before cleanup and stays sealed
   }
 });
 
-it.each([false, true])(
-  "a conclusively failed SQLite reset preserves the former identity and rebuilds only incomplete startup (services ready: %s)",
-  async (servicesReady) => {
+it.each(
+  [false, true].flatMap((servicesReady) =>
+    (
+      ["journal-write", "eligibility-read", "eligibility-validation"] as const
+    ).map((failure) => ({
+      servicesReady,
+      failure,
+    }))
+  )
+)(
+  "a conclusively failed SQLite reset preserves the former identity and rebuilds only incomplete startup (services ready: $servicesReady, failure: $failure)",
+  async ({ servicesReady, failure }) => {
     const directory = mkdtempSync(join(tmpdir(), "clipp-reset-startup-"));
     const db = openDatabase(join(directory, "runtime.sqlite"));
     try {
-      const storage = new SQLiteKVStore(db);
+      // Fault the persistence boundary once, after provisional admission closes.
+      class InterruptedReadStorage extends SQLiteKVStore {
+        failNextIdentityRead = false;
+        override async get<T>(key: string): Promise<T | undefined> {
+          if (key === "identity" && this.failNextIdentityRead) {
+            this.failNextIdentityRead = false;
+            throw new Error("transient_identity_read_failure");
+          }
+          return super.get<T>(key);
+        }
+      }
+      const storage = new InterruptedReadStorage(db);
       const history = new SQLiteHistoryBackend(db);
       await history.set("former", { content: "retained history" });
       const repository = createKVIdentityRepository({
@@ -163,6 +183,7 @@ it.each([false, true])(
         createdAt: 1,
       });
       const workFence = createIdentityBoundWorkFence();
+      let failNextKeyValidation = false;
       const rotation = createSQLiteIdentityRotationCoordinator({
         db,
         storage,
@@ -171,7 +192,12 @@ it.each([false, true])(
         retry: false,
         shutdown: async () => undefined,
         lifecycle: {
-          acquireFence: workFence.acquireFence,
+          async acquireFence() {
+            const lease = await workFence.acquireFence();
+            storage.failNextIdentityRead = failure === "eligibility-read";
+            failNextKeyValidation = failure === "eligibility-validation";
+            return lease;
+          },
           quiesce: workFence.quiesce,
         },
         generateKeyMaterial: async () => ({
@@ -179,11 +205,18 @@ it.each([false, true])(
           privateKey: "new-private",
           publicKey: "new-public",
         }),
-        deriveKeyMaterial: async (privateKey) => ({
-          peerId: privateKey === "old-private" ? "old" : "new",
-          publicKey: privateKey === "old-private" ? "old-public" : "new-public",
-          privateKey,
-        }),
+        deriveKeyMaterial: async (privateKey) => {
+          if (failNextKeyValidation) {
+            failNextKeyValidation = false;
+            throw new Error("transient_key_validation_failure");
+          }
+          return {
+            peerId: privateKey === "old-private" ? "old" : "new",
+            publicKey:
+              privateKey === "old-private" ? "old-public" : "new-public",
+            privateKey,
+          };
+        },
       });
       const manager = createRuntimeIdentityManager({
         repo: repository,
@@ -225,15 +258,22 @@ it.each([false, true])(
       });
       await entered;
       if (servicesReady) await startup;
-      db.exec(
-        "CREATE TRIGGER fail_reset BEFORE INSERT ON kv WHEN NEW.key = 'manualIdentityReset' BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END;"
-      );
+      if (failure === "journal-write")
+        db.exec(
+          "CREATE TRIGGER fail_reset BEFORE INSERT ON kv WHEN NEW.key = 'manualIdentityReset' BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END;"
+        );
       expect(
         await rotation.beginIdentityReset({
           operationId: "failed-startup-reset",
           reviewedPeerId: "old",
         })
-      ).toEqual({ outcome: "rejected", code: "preparation_failed" });
+      ).toEqual({
+        outcome: "rejected",
+        code:
+          failure === "eligibility-validation"
+            ? "automatic_rotation_pending"
+            : "preparation_failed",
+      });
       finish();
       if (servicesReady) {
         expect(restart).not.toHaveBeenCalled();

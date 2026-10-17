@@ -491,6 +491,8 @@ export function createManualIdentityReset(options: {
         if (!(await eligible()) || signal !== options.automaticSignal()) {
           await fence.release();
           fence = undefined;
+          if (inspected.phase === "idle")
+            publish({ ...inspected, acceptance: "not-accepted" });
           return { outcome: "rejected", code: "automatic_rotation_pending" };
         }
         const journal: Journal = {
@@ -533,8 +535,14 @@ export function createManualIdentityReset(options: {
           };
         }
         try {
-          await fence?.release();
-          fence = undefined;
+          if (fence) {
+            await fence.release();
+            fence = undefined;
+            // No intent write was attempted, but startup may have been retired
+            // by provisional admission. Let its owner rebuild if incomplete.
+            if (inspected.phase === "idle")
+              publish({ ...inspected, acceptance: "not-accepted" });
+          }
         } catch {
           return {
             outcome: "outcome-unconfirmed",

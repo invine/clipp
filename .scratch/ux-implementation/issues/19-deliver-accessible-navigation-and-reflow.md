@@ -72,3 +72,9 @@ Native G13/G14/G15/G25/G27/G28 and affected G38–40 remain required and unrun f
 ## Current Chrome supporting input observation — 2026-10-16
 
 On b415 production full-page Chrome, native typing, Device Name task focus, Escape return focus, retained Search/draft on reopen and actual Save passed specific direct checks. Zoom-in chords enlarged visible text and reset restored layout; exact zoom percentage was not independently read. Evidence: ignored run `ticket35-native-fullpage-b415/observations.json`; complete navigation/reflow, bounds/text/spacing/control/input/focus matrices remain unqualified. This is no whole19 or35 acceptance;19 stays claimed and every earlier failed/unavailable gate remains.
+
+## Incoming Devices focus repair — 2026-10-17
+
+Source `a2c235b7bc3bd7b462092171b2406cff57d20475` repairs an accepted Devices destination retaining the previous logical focus key. The existing UiSession public destination regression fails on the prior source and passes with the named Devices navigation target; the History query remains retained. Pinned Node24 full check and the unchanged actual project hook pass152 suites/1,150 tests. Mandatory fast-forward integration preserves source/tree ancestry; source and integration were clean. Exact source/check/hook/merge evidence is in ignored run `resume19-handoff-20261017.json` and `resume19-merge-20261017.json`. The initial Node26/sandbox check failure remains preserved.
+
+19 remains claimed: these owning-interface tests do not qualify its required current native/text/input/focus/reflow matrices. TT35's separate acceptance remains unchanged. The coordinator's final incremental reviews and integrated routine result are recorded in ignored run `resume19-29-integrated-verification-20261017.json`; no native or finding closure is inferred.
