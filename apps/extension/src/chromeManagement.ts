@@ -167,9 +167,17 @@ export function createChromeManagement(host: {
           await host.write(records);
           return;
         }
+        try {
+          record.beforeCreate = (await host.canonicalTabs?.()) ?? [];
+        } catch {
+          record.status = "failed";
+          record.error =
+            "Available pages could not be checked. Retry this handoff.";
+          await host.write(records);
+          return;
+        }
         record.creating = true;
         record.attempts++;
-        record.beforeCreate = (await host.canonicalTabs?.()) ?? [];
         await host.write(records);
         try {
           const tab = await host.create();

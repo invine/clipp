@@ -480,6 +480,51 @@ it("a missing creation callback retains uncertain creation evidence and releases
   }
 });
 
+it("a missing page-query callback exposes an accepted navigation failure and Retry keeps the original handoff", async () => {
+  jest.useFakeTimers();
+  try {
+    const f = chromeFixture();
+    const query = f.host.tabs.query;
+    let late!: (value: unknown) => void;
+    f.host.tabs.query = (_options, done) => {
+      late = done;
+      f.host.tabs.query = query;
+    };
+    const coordinator = installChromeManagement(f.api);
+    expect(
+      await f.message({
+        type: "managementNavigate",
+        handoff: { id: "query-failed", destination: { kind: "requests" } },
+      }).result
+    ).toMatchObject({ ok: true, status: "pending" });
+    await jest.advanceTimersByTimeAsync(5000);
+    await coordinator.flush();
+    expect(await f.message({ type: "managementStatus" }).result).toMatchObject({
+      ok: true,
+      records: [
+        {
+          id: "query-failed",
+          status: "failed",
+          attempts: 0,
+          error: "Available pages could not be checked. Retry this handoff.",
+        },
+      ],
+    });
+    late([{ id: 99, url: f.api.runtime.getURL("src/options.html") }]);
+    expect(
+      await f.message({ type: "managementRetry", id: "query-failed" }).result
+    ).toEqual({ ok: true });
+    await coordinator.flush();
+    expect(await f.message({ type: "managementStatus" }).result).toMatchObject({
+      records: [
+        { id: "query-failed", status: "pending", target: 1, attempts: 1 },
+      ],
+    });
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 it.each(["tab", "window"])(
   "missing %s activation callback preserves applied delivery and exposes recoverable focus failure",
   async (operation) => {
