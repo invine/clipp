@@ -101,7 +101,14 @@ public final class HostTaskInputTest {
         tapButton("Submit pairing text");
         await("real rejected submission shown", "[...document.querySelectorAll('[role=\"status\"]')].some(e => e.textContent.trim() === 'Invalid pairing payload. Edit the text and try again.')");
         awaitDraft();
+        // Pending Submit loses focus when disabled; task recovery returns to the
+        // editable field. Its real IME must be dismissed before another task Back.
+        await("failed submission returns editor focus", "document.activeElement?.getAttribute('aria-label') === 'Pairing text'");
+        awaitIme(true);
+        nativeBack();
         awaitIme(false);
+        assertStableDialog("Paste pairing text");
+        awaitDraft();
 
         nativeBack();
         awaitDialog("Pairing");
