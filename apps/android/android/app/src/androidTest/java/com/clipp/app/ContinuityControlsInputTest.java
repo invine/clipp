@@ -395,7 +395,13 @@ public final class ContinuityControlsInputTest {
     private void pointer(int action, float x, float y, long down) {
         MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
         event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        try { instrumentation.sendPointerSync(event); } finally { event.recycle(); }
+        try {
+            // Native dialogs and the notification shade can belong to another UID.
+            // UiAutomation injects the genuine OS event; Instrumentation's app-only
+            // sendPointerSync is intentionally retained for production WebView taps.
+            assertTrue("Android must accept the native OS pointer event",
+                instrumentation.getUiAutomation().injectInputEvent(event, true));
+        } finally { event.recycle(); }
     }
 
     private void awaitForeground() {
