@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Assume;
@@ -331,21 +332,29 @@ public final class ContinuityControlsInputTest {
         swipe(display.centerX(), display.top + 1, display.centerX(), display.top + display.height() * .72f);
         AccessibilityNodeInfo title = awaitNative("own continuity notification in SystemUI", node ->
             "com.android.systemui".equals(String.valueOf(node.getPackageName())) && TITLE.equals(String.valueOf(node.getText())));
-        AccessibilityNodeInfo action = findInNotificationAncestors(title, node -> name.equals(String.valueOf(node.getText())));
+        AccessibilityNodeInfo action = findInNotificationAncestors(title, node -> matchesNotificationAction(node, name));
         if (action == null) {
             // Locate the visible expand button only within the card containing our title.
+            String beforeExpansion = notificationCardDiagnostics(title, "beforeExpand", name);
             AccessibilityNodeInfo expand = findInNotificationAncestors(title, node -> node.getViewIdResourceName() != null
                 && node.getViewIdResourceName().endsWith(":id/expand_button"));
-            assertNotNull("SystemUI must expose this notification's expand control before tapping its action", expand);
-            tapNative(expand);
+            assertNotNull("SystemUI must expose this notification's expand control before tapping its action; " + beforeExpansion, expand);
+            String expansion = String.valueOf(expand.getContentDescription());
+            // Actual API34 SystemUI exposes Expand/Collapse on this control. Do
+            // not collapse an already expanded card when actions are settling.
+            if ("Expand".equalsIgnoreCase(expansion)) tapNative(expand);
+            else if (!"Collapse".equalsIgnoreCase(expansion))
+                throw new AssertionError("Unqualified SystemUI expansion label; " + beforeExpansion);
             long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
             do {
                 title = findNative(node -> "com.android.systemui".equals(String.valueOf(node.getPackageName())) && TITLE.equals(String.valueOf(node.getText())));
-                action = findInNotificationAncestors(title, node -> name.equals(String.valueOf(node.getText())));
+                action = findInNotificationAncestors(title, node -> matchesNotificationAction(node, name));
                 if (action != null) break;
                 SystemClock.sleep(50);
             } while (SystemClock.uptimeMillis() < deadline);
-            assertNotNull("Visible action required in our actual SystemUI notification: " + name, action);
+            if (action == null)
+                throw new AssertionError("Visible action required in our actual SystemUI notification: " + name
+                    + ";before=" + beforeExpansion + ";after=" + notificationCardDiagnostics(title, "afterExpandTimeout", name));
         }
         tapNative(action);
         // A service notification action usually leaves the shade open. Dismiss the real
@@ -358,14 +367,68 @@ public final class ContinuityControlsInputTest {
         awaitForeground();
     }
 
+    private boolean matchesNotificationAction(AccessibilityNodeInfo node, String name) {
+        // SystemUI may uppercase visible text while retaining the app-provided
+        // accessibility label. Match that label exactly, with Unicode-aware
+        // case-insensitive visible text as a presentation-only fallback.
+        return name.equals(String.valueOf(node.getContentDescription()))
+            || name.equalsIgnoreCase(String.valueOf(node.getText()));
+    }
+
+    private boolean isNotificationList(AccessibilityNodeInfo node) {
+        return String.valueOf(node.getViewIdResourceName()).endsWith(":id/notification_stack_scroller")
+            || String.valueOf(node.getClassName()).endsWith("NotificationStackScrollLayout");
+    }
+
+    private String notificationCardDiagnostics(AccessibilityNodeInfo title, String phase, String requestedAction) throws Exception {
+        JSONObject observation = new JSONObject().put("phase", phase).put("requestedAction", requestedAction);
+        Notification posted = continuityNotification();
+        observation.put("postedActionTitles", posted == null ? JSONObject.NULL : new JSONArray(actionTitles(posted)));
+        if (title == null) return observation.put("scope", "own title no longer visible; no other native tree inspected").toString();
+        // Prove the subtree belongs to our title before reading text. Never dump
+        // the notification list, SystemUI root, or another application's card.
+        AccessibilityNodeInfo card = title;
+        boolean boundaryFound = false;
+        for (int depth = 0; depth < 12; depth++) {
+            AccessibilityNodeInfo parent = card.getParent();
+            if (parent == null) break;
+            if (isNotificationList(parent)) { boundaryFound = true; break; }
+            card = parent;
+        }
+        if (!boundaryFound) card = title;
+        JSONArray nodes = new JSONArray();
+        describeNotificationTree(card, nodes, 0);
+        return observation.put("scope", boundaryFound ? "own title card below notification list" : "own title only; list boundary unproved")
+            .put("nodes", nodes).put("nodeLimit", 64).put("depthLimit", 12).toString();
+    }
+
+    private void describeNotificationTree(AccessibilityNodeInfo node, JSONArray nodes, int depth) throws Exception {
+        if (node == null || nodes.length() >= 64 || depth > 12) return;
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        nodes.put(new JSONObject().put("depth", depth)
+            .put("text", boundedNativeText(node.getText(), 100))
+            .put("description", boundedNativeText(node.getContentDescription(), 100))
+            .put("id", boundedNativeText(node.getViewIdResourceName(), 160))
+            .put("class", boundedNativeText(node.getClassName(), 100))
+            .put("bounds", bounds.toShortString()).put("visible", node.isVisibleToUser())
+            .put("enabled", node.isEnabled()).put("clickable", node.isClickable()));
+        for (int index = 0; index < node.getChildCount() && nodes.length() < 64; index++)
+            describeNotificationTree(node.getChild(index), nodes, depth + 1);
+    }
+
+    private String boundedNativeText(CharSequence value, int limit) {
+        if (value == null) return "";
+        String text = value.toString();
+        return text.substring(0, Math.min(text.length(), limit));
+    }
+
     private AccessibilityNodeInfo findInNotificationAncestors(AccessibilityNodeInfo title, Predicate<AccessibilityNodeInfo> matches) {
         AccessibilityNodeInfo card = title;
         while (card != null) {
-            String id = String.valueOf(card.getViewIdResourceName());
-            String type = String.valueOf(card.getClassName());
             // Never ascend into the list and accidentally locate another notification's
             // identically named action or expand control.
-            if (id.endsWith(":id/notification_stack_scroller") || type.endsWith("NotificationStackScrollLayout")) return null;
+            if (isNotificationList(card)) return null;
             AccessibilityNodeInfo found = findIn(card, matches);
             if (found != null) return found;
             card = card.getParent();
