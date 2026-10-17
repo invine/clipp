@@ -211,7 +211,12 @@ export function createUiSession() {
               ? `settings:${destination.category}`
               : "destination:settings",
           });
-        else update({ destination: "devices", showNav: false });
+        else
+          update({
+            destination: "devices",
+            showNav: false,
+            focusKey: "destination:devices",
+          });
       }
       update({ navigationVersion: (state.navigationVersion ?? 0) + 1 });
       appliedDestinations.set(id, result);

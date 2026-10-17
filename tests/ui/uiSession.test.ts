@@ -220,6 +220,22 @@ it("destination admission waits for authority, validates vanished Clip and is id
   ).toBe("unavailable");
   expect(session.getSnapshot().search).toBe("later");
 });
+it("an incoming Devices destination focuses its navigation and retains the History query", () => {
+  const session = createUiSession();
+  session.update({ search: "retained query", focusKey: "history-query" });
+  expect(
+    session.acceptDestination(
+      "devices-incoming",
+      { kind: "devices" },
+      { ready: true, clipIds: [], requestIds: [] }
+    )
+  ).toBe("applied");
+  expect(session.getSnapshot()).toMatchObject({
+    destination: "devices",
+    focusKey: "destination:devices",
+    search: "retained query",
+  });
+});
 it("generic page destination never qualifies as matching a different active task or pending operation", () => {
   const session = createUiSession();
   session.update({ destination: "settings" });
