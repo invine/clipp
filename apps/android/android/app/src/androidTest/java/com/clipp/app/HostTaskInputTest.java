@@ -12,6 +12,7 @@ import android.os.Build;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import androidx.lifecycle.Lifecycle;
 import android.content.Context;
 import android.os.SystemClock;
@@ -55,6 +56,7 @@ public final class HostTaskInputTest {
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private ActivityScenario<MainActivity> scenario;
     private NativePublicWebView input;
+    private String guestCaptureEvents = "";
 
     @Before
     public void requireIsolatedPackagedAppAndExplicitNativeInterval() throws Exception {
@@ -68,7 +70,7 @@ public final class HostTaskInputTest {
             Assume.assumeTrue("Root must separately authorize -e failedDeviceNameAcceptance true",
                 "true".equals(InstrumentationRegistry.getArguments().getString("failedDeviceNameAcceptance")));
         AccessibilityServiceInfo accessibility = instrumentation.getUiAutomation().getServiceInfo();
-        accessibility.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+        accessibility.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         instrumentation.getUiAutomation().setServiceInfo(accessibility);
         JSONObject config;
         try (InputStream stream = target.getAssets().open("capacitor.config.json")) {
@@ -277,7 +279,15 @@ public final class HostTaskInputTest {
         assertActivityState(false, false);
         nativeBack();
         awaitActivityState(true, true);
-        tapButton("History");
+        logGuestNativeWindows("external-settings-return-before-history");
+        try {
+            dismissGuestClipboardOverlayIfPresent();
+            tapButton("History");
+        } catch (Exception | AssertionError failure) {
+            logGuestNativeWindows("external-settings-return-history-tap-failed");
+            logGuestCaptureFailure();
+            throw failure;
+        }
         assertHistoryCountForInterval(paused, 0, CAPTURE_QUIET_MS);
         writeGuestClipboard(resumed);
         awaitHistoryCount(resumed, 1);
@@ -316,7 +326,9 @@ public final class HostTaskInputTest {
         await("History is the visible destination", "document.querySelector('nav button[aria-current=\"page\"]')?.textContent.trim()==='History'");
         long deadline = SystemClock.uptimeMillis() + duration;
         do {
-            assertEquals("Public History must retain exact marker count", String.valueOf(count), evaluate(historyCount(marker)));
+            String actual = evaluate(historyCount(marker));
+            if (!String.valueOf(count).equals(actual)) logGuestCaptureFailure();
+            assertEquals("Public History must retain exact marker count", String.valueOf(count), actual);
             assertForeground();
             SystemClock.sleep(100);
         } while (SystemClock.uptimeMillis() < deadline);
@@ -325,7 +337,96 @@ public final class HostTaskInputTest {
     private void writeGuestClipboard(String marker) {
         requireGuestClipboardInterval();
         ClipboardManager clipboard = (ClipboardManager) instrumentation.getTargetContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        guestCaptureEvents += "clipboard-write:" + marker + "@" + System.currentTimeMillis() + ";";
         clipboard.setPrimaryClip(ClipData.newPlainText("Clipp isolated guest acceptance", marker));
+    }
+
+    private void logGuestCaptureFailure() throws Exception {
+        Log.i("ClippGuestCapture", "failureOnlyNativeEvents=" + guestCaptureEvents);
+        Log.i("ClippGuestCapture", "publicHistory=" + evaluate("JSON.stringify([...document.querySelectorAll('[data-session-scroll=\"history\"] article[data-clip-id]')].filter(e=>e.getClientRects().length).slice(0,12).map(e=>({id:e.getAttribute('data-clip-id'),time:e.querySelector('.meta-time')?.textContent?.slice(0,80)})))"));
+    }
+
+    /** Window geometry and native IDs only; no SystemUI clipboard payload text. */
+    private void logGuestNativeWindows(String phase) {
+        requireGuestClipboardInterval();
+        int windows = 0;
+        for (AccessibilityWindowInfo window : instrumentation.getUiAutomation().getWindows()) {
+            if (++windows > 12) break;
+            Rect bounds = new Rect();
+            window.getBoundsInScreen(bounds);
+            AccessibilityNodeInfo root = window.getRoot();
+            String owner = root == null ? "unavailable" : String.valueOf(root.getPackageName());
+            Log.i("ClippGuestWindows", phase + ";window=" + window.getId() + ";type=" + window.getType()
+                + ";layer=" + window.getLayer() + ";active=" + window.isActive() + ";focused=" + window.isFocused()
+                + ";bounds=" + bounds.toShortString() + ";package=" + owner);
+            if (root != null && "com.android.systemui".equals(owner)) logGuestSystemUiNodes(root, 0, new int[] { 0 });
+        }
+    }
+
+    private void logGuestSystemUiNodes(AccessibilityNodeInfo node, int depth, int[] visited) {
+        if (node == null || depth > 10 || visited[0]++ >= 64) return;
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        Log.i("ClippGuestWindows", "depth=" + depth + ";id=" + node.getViewIdResourceName() + ";class=" + node.getClassName()
+            + ";bounds=" + bounds.toShortString() + ";visible=" + node.isVisibleToUser() + ";enabled=" + node.isEnabled()
+            + ";clickable=" + node.isClickable() + ";focused=" + node.isFocused());
+        for (int index = 0; index < node.getChildCount() && visited[0] < 64; index++)
+            logGuestSystemUiNodes(node.getChild(index), depth + 1, visited);
+    }
+
+    private AccessibilityNodeInfo guestClipboardOverlay() {
+        requireGuestClipboardInterval();
+        boolean appObserved = false;
+        AccessibilityNodeInfo overlay = null;
+        int windows = 0;
+        for (AccessibilityWindowInfo window : instrumentation.getUiAutomation().getWindows()) {
+            assertTrue("Native window inventory must remain bounded", ++windows <= 12);
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root == null) continue;
+            String owner = String.valueOf(root.getPackageName());
+            if (instrumentation.getTargetContext().getPackageName().equals(owner)) appObserved = true;
+            if (!"com.android.systemui".equals(owner)) continue;
+            for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByViewId("com.android.systemui:id/clipboard_ui")) {
+                if (!node.isVisibleToUser()) continue;
+                assertTrue("Only one visible SystemUI clipboard overlay is supported", overlay == null);
+                overlay = node;
+            }
+        }
+        assertTrue("Actual app window must witness that native overlay inventory is available", appObserved);
+        return overlay;
+    }
+
+    /** Real OS dismissal of the proven overlay caused by this guest's synthetic write. */
+    private void dismissGuestClipboardOverlayIfPresent() {
+        AccessibilityNodeInfo overlay = guestClipboardOverlay();
+        if (overlay == null) return;
+        AccessibilityNodeInfo dismiss = null;
+        for (AccessibilityNodeInfo node : overlay.findAccessibilityNodeInfosByViewId("com.android.systemui:id/dismiss_button")) {
+            if (!node.isVisibleToUser() || !node.isEnabled() || !node.isClickable()
+                || !"com.android.systemui".equals(String.valueOf(node.getPackageName()))) continue;
+            assertTrue("Clipboard overlay must expose one unambiguous dismiss button", dismiss == null);
+            dismiss = node;
+        }
+        assertTrue("Visible clipboard_ui must expose its real dismiss button", dismiss != null);
+        assertTrue("Observed clipboard dismiss must remain visible before its one physical tap", dismiss.refresh() && dismiss.isVisibleToUser());
+        Rect bounds = new Rect();
+        dismiss.getBoundsInScreen(bounds);
+        assertTrue("Native clipboard dismiss must have visible bounds", !bounds.isEmpty());
+        long down = SystemClock.uptimeMillis();
+        for (int action : new int[] { MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP }) {
+            MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, bounds.exactCenterX(), bounds.exactCenterY(), 0);
+            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            try { assertTrue("Android must accept the real clipboard-overlay dismiss pointer", instrumentation.getUiAutomation().injectInputEvent(event, true)); }
+            finally { event.recycle(); }
+            SystemClock.sleep(40);
+        }
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        while (guestClipboardOverlay() != null) {
+            assertTrue("Real SystemUI clipboard overlay must disappear after one physical dismiss", SystemClock.uptimeMillis() < deadline);
+            SystemClock.sleep(50);
+        }
+        assertActivityState(true, true);
+        Log.i("ClippGuestCapture", "testSetup=physical-dismiss-of-owned-guest-synthetic-clipboard-overlay;clipboardChanged=false");
     }
 
     private void requireGuestClipboardInterval() {
@@ -378,6 +479,7 @@ public final class HostTaskInputTest {
         Rect bounds = new Rect();
         cancel.getBoundsInScreen(bounds);
         assertTrue("Native Cancel must have visible bounds", !bounds.isEmpty());
+        guestCaptureEvents += "native-cancel@" + System.currentTimeMillis() + ";";
         long down = SystemClock.uptimeMillis();
         for (int action : new int[] { MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP }) {
             MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, bounds.exactCenterX(), bounds.exactCenterY(), 0);

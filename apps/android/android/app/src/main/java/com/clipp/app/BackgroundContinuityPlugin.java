@@ -10,9 +10,13 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
+import android.view.View;
+import android.view.ViewTreeObserver;
 
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -33,6 +37,10 @@ import java.nio.charset.StandardCharsets;
 public final class BackgroundContinuityPlugin extends Plugin {
     private static final long SERVICE_START_TIMEOUT_MS = 10_000L;
     private String runtimeGeneration;
+    private boolean activityResumed;
+    private boolean destroyed;
+    private View observedActivityView;
+    private final ViewTreeObserver.OnWindowFocusChangeListener activityFocusListener = focused -> notifyActivityState();
     private boolean admit(PluginCall call) {
         if (!NativeIdentityResetFence.generation().equals(runtimeGeneration) || NativeIdentityResetFence.forContext(getContext()).isBlocked()) {
             call.reject("identity_reset_incomplete_retry_after_setup");
@@ -112,20 +120,39 @@ public final class BackgroundContinuityPlugin extends Plugin {
         filter.addAction(BackgroundContinuityService.ACTION_SERVICE_STOPPED);
         filter.addAction(ExplicitTextIngressStore.ACTION_EXPLICIT_TEXT_QUEUED);
         ContextCompat.registerReceiver(getContext(), eventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        // A native dialog can take window focus without pausing this Activity or
+        // delivering a WebView blur callback. Keep the existing JS eligibility
+        // owner informed of the actual native transition, including lazy load.
+        handler.post(() -> {
+            if (destroyed || getActivity() == null) return;
+            activityResumed = getActivity() instanceof LifecycleOwner
+                && ((LifecycleOwner) getActivity()).getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED);
+            observedActivityView = getActivity().getWindow().getDecorView();
+            observedActivityView.getViewTreeObserver().addOnWindowFocusChangeListener(activityFocusListener);
+            notifyActivityState();
+        });
     }
 
     @Override
     protected void handleOnResume() {
-        notifyActivityState(true);
+        activityResumed = true;
+        notifyActivityState();
     }
 
     @Override
     protected void handleOnPause() {
-        notifyActivityState(false);
+        activityResumed = false;
+        notifyActivityState();
     }
 
     @Override
     protected void handleOnDestroy() {
+        destroyed = true;
+        if (observedActivityView != null) {
+            ViewTreeObserver observer = observedActivityView.getViewTreeObserver();
+            if (observer.isAlive()) observer.removeOnWindowFocusChangeListener(activityFocusListener);
+            observedActivityView = null;
+        }
         PluginCall startCall = takePendingStartCall();
         if (startCall != null) startCall.reject("background_continuity_plugin_destroyed");
         rejectPendingUpdates("background_continuity_plugin_destroyed");
@@ -437,12 +464,14 @@ public final class BackgroundContinuityPlugin extends Plugin {
         } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
-    private void notifyActivityState(boolean resumed) {
-        boolean captureEligible = resumed && getActivity() != null && getActivity().getWindow().getDecorView().hasWindowFocus();
+    private void notifyActivityState() {
+        if (destroyed) return;
+        boolean focused = getActivity() != null && getActivity().getWindow().getDecorView().hasWindowFocus();
+        boolean captureEligible = activityResumed && focused;
         new BackgroundContinuityDiagnostics(getContext()).recordCaptureEligibility(captureEligible);
         JSObject event = new JSObject();
-        event.put("resumed", resumed);
-        event.put("windowFocused", captureEligible);
+        event.put("resumed", activityResumed);
+        event.put("windowFocused", focused);
         notifyListeners("activityState", event, true);
     }
 
