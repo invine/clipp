@@ -5,6 +5,7 @@ it.each([
   { flags: [] },
   { flags: ["--theme-write"] },
   { flags: ["--missing-webview-apis"] },
+  { flags: ["--missing-webview-apis", "--missing-structured-clone"] },
 ])(
   "keeps actual Android Auto Sync and feed aligned with an overlapping appearance operation %j",
   ({ flags }) => {

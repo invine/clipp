@@ -960,3 +960,41 @@ describe("Identity Rotation", () => {
     expect(await storage.get("trustedDevices")).toBeUndefined();
   });
 });
+
+it("keeps ordinary empty-installation startup available without structuredClone", async () => {
+  const storage = new MemoryStorage();
+  const repository = createKVIdentityRepository({ storage, key: "identity" });
+  const coordinator = createIdentityRotationCoordinator({
+    repository,
+    storage,
+    committer: createIdentityRotationCommitter({
+      repository,
+      storage,
+      history: new InMemoryHistoryBackend(),
+    }),
+    initialDeviceName: "Mobile",
+    shutdown: async () => {},
+    generateKeyMaterial: jest.fn(),
+    retry: false,
+  });
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "structuredClone"
+  )!;
+  Object.defineProperty(globalThis, "structuredClone", {
+    value: undefined,
+    configurable: true,
+  });
+  try {
+    await expect(coordinator.recoverOrRotate()).resolves.toEqual({
+      rotated: false,
+      identity: undefined,
+    });
+    await expect(coordinator.reconcileIdentityReset()).resolves.toEqual({
+      phase: "idle",
+    });
+  } finally {
+    Object.defineProperty(globalThis, "structuredClone", descriptor);
+    coordinator.stop();
+  }
+});

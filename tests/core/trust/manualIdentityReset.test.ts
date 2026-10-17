@@ -9,6 +9,10 @@ import {
   type KVStorageBackend,
 } from "../../../packages/core/trust/storage";
 
+// The external test store keeps independent persistence-copy semantics even when
+// the application host lacks the global API. Production snapshots stay real.
+const copyStoredValue = structuredClone;
+
 class Store implements KVStorageBackend {
   values = new Map<string, unknown>();
   unreadable = false;
@@ -18,11 +22,11 @@ class Store implements KVStorageBackend {
 
   async get<T>(key: string): Promise<T | undefined> {
     if (this.unreadable) throw new Error("read failed");
-    return structuredClone(this.values.get(key)) as T | undefined;
+    return copyStoredValue(this.values.get(key)) as T | undefined;
   }
   async set<T>(key: string, value: T): Promise<void> {
     if (this.failSet === key) throw new Error("write failed");
-    this.values.set(key, structuredClone(value));
+    this.values.set(key, copyStoredValue(value));
     if (this.loseSetReply === key) {
       this.unreadable = true;
       throw new Error("reply lost");
@@ -771,4 +775,84 @@ it("isolates reset phases delivered to separate lifecycle observers", async () =
   });
   expect(phases).toContain("accepted");
   expect(phases).toContain("completed");
+});
+
+it("isolates reset receipts, completed records and lifecycle observers without structuredClone", async () => {
+  const f = await setup();
+  const observed: import("../../../packages/core/trust/manualIdentityReset").IdentityResetState[] =
+    [];
+  f.coordinator.onStatusChanged((status) => {
+    if (status.kind !== "manual-reset") return;
+    if (status.state.phase === "idle" || status.state.phase === "completed") {
+      if (status.state.receipt)
+        status.state.receipt.formerPeerId = "observer mutation";
+      if (status.state.completedOperation)
+        status.state.completedOperation.generatedPeerId = "observer mutation";
+    }
+    Object.assign(status.state, { phase: "idle" });
+  });
+  f.coordinator.onStatusChanged((status) => {
+    if (status.kind === "manual-reset" && status.state.phase === "completed")
+      observed.push(status.state);
+  });
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "structuredClone"
+  )!;
+  Object.defineProperty(globalThis, "structuredClone", {
+    value: undefined,
+    configurable: true,
+  });
+  try {
+    const result = await f.coordinator.beginIdentityReset({
+      operationId: "operation-1",
+      reviewedPeerId: "old",
+    });
+    expect(result).toMatchObject({
+      outcome: "completed",
+      state: {
+        phase: "completed",
+        receipt: { formerPeerId: "old", generatedPeerId: "new" },
+        completedOperation: { generatedPeerId: "new" },
+      },
+    });
+    expect(observed).toHaveLength(1);
+    expect(observed[0]).toMatchObject({
+      phase: "completed",
+      receipt: { formerPeerId: "old", generatedPeerId: "new" },
+      completedOperation: { generatedPeerId: "new" },
+    });
+    if (result.outcome === "rejected" || result.state.phase !== "completed")
+      throw new Error("expected completed reset");
+    result.state.receipt!.formerPeerId = "returned mutation";
+    result.state.completedOperation.generatedPeerId = "returned mutation";
+    expect(observed[0]).toMatchObject({
+      receipt: { formerPeerId: "old" },
+      completedOperation: { generatedPeerId: "new" },
+    });
+    const fresh = f.create();
+    const reminder = await fresh.reconcileIdentityReset();
+    expect(reminder).toMatchObject({
+      phase: "idle",
+      receipt: { formerPeerId: "old", generatedPeerId: "new" },
+      completedOperation: { generatedPeerId: "new" },
+    });
+    if (reminder.phase !== "idle") throw new Error("expected idle reminder");
+    reminder.receipt!.generatedPeerId = "returned mutation";
+    reminder.completedOperation!.generatedPeerId = "returned mutation";
+    await expect(fresh.reconcileIdentityReset()).resolves.toMatchObject({
+      phase: "idle",
+      receipt: { generatedPeerId: "new" },
+      completedOperation: { generatedPeerId: "new" },
+    });
+    await expect(
+      fresh.beginIdentityReset({
+        operationId: "operation-2",
+        reviewedPeerId: "new",
+      })
+    ).resolves.toEqual({ outcome: "rejected", code: "reminder_pending" });
+  } finally {
+    Object.defineProperty(globalThis, "structuredClone", descriptor);
+    f.coordinator.stop();
+  }
 });

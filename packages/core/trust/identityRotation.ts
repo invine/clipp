@@ -1,5 +1,6 @@
 import {
   createManualIdentityReset,
+  copyIdentityResetState,
   type IdentityResetPorts,
   type IdentityResetState,
 } from "./manualIdentityReset";
@@ -330,7 +331,11 @@ export function createIdentityRotationCoordinator(options: {
   const publishStatus = (status: IdentityRotationStatus): void => {
     statusListeners.forEach((listener) => {
       try {
-        listener(structuredClone(status));
+        listener(
+          status.kind === "manual-reset"
+            ? { ...status, state: copyIdentityResetState(status.state) }
+            : { ...status }
+        );
       } catch {
         /* Observers cannot change transition acceptance. */
       }

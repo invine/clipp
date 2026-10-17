@@ -15,6 +15,9 @@ const outputArgument = process.argv
 const out = outputArgument ? resolve(outputArgument) : own;
 const themeWrite = process.argv.includes("--theme-write");
 const missingWebViewApis = process.argv.includes("--missing-webview-apis");
+const missingStructuredClone = process.argv.includes(
+  "--missing-structured-clone"
+);
 await mkdir(out, { recursive: true });
 const fixture = join(out, "client.mjs");
 await build({
@@ -73,6 +76,12 @@ if (missingWebViewApis) {
     configurable: true,
   });
 }
+if (missingStructuredClone) {
+  Object.defineProperty(globalThis, "structuredClone", {
+    value: undefined,
+    configurable: true,
+  });
+}
 const { AndroidClient, LocalStorageBackend } = await import(fixture);
 let releaseTheme, announceTheme, announceFalse;
 const themeGate = new Promise((resolve) => {
@@ -122,6 +131,10 @@ const report = {
   clipboard: "inert external boundary",
 };
 try {
+  if (missingStructuredClone) {
+    // The real cold-start guard runs even when no reset action was requested.
+    assert.deepEqual(await client.reconcileIdentityReset(), { phase: "idle" });
+  }
   const appearance = themeWrite
     ? client.setTheme("dark")
     : client.getSettings();

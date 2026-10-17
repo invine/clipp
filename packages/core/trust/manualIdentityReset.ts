@@ -38,6 +38,21 @@ export type IdentityResetState =
       completedOperation: IdentityResetCompletedOperation;
       restartRequired: true;
     };
+/** Public reset state contains scalar fields and two optional record values.
+ * Copy those records explicitly so snapshots stay isolated on older hosts too. */
+export function copyIdentityResetState(
+  value: IdentityResetState
+): IdentityResetState {
+  if (value.phase === "idle" || value.phase === "completed") {
+    const snapshot = { ...value };
+    if (value.receipt) snapshot.receipt = { ...value.receipt };
+    if (value.completedOperation)
+      snapshot.completedOperation = { ...value.completedOperation };
+    return snapshot;
+  }
+  return { ...value };
+}
+
 export type IdentityResetResult =
   | {
       outcome: "rejected";
@@ -103,7 +118,7 @@ export function createManualIdentityReset(options: {
   let state: IdentityResetState = { phase: "idle" };
   const publish = (next: IdentityResetState): IdentityResetState => {
     const previous = state;
-    state = structuredClone(next);
+    state = copyIdentityResetState(next);
     if (
       next.phase !== "idle" ||
       next.acceptance === "not-accepted" ||
@@ -111,8 +126,8 @@ export function createManualIdentityReset(options: {
       next.completedOperation ||
       previous.phase !== "idle"
     )
-      options.publish(structuredClone(next));
-    return structuredClone(next);
+      options.publish(copyIdentityResetState(next));
+    return copyIdentityResetState(next);
   };
   const validId = (value: unknown): value is string =>
     typeof value === "string" &&
@@ -567,7 +582,7 @@ export function createManualIdentityReset(options: {
       return reconcile();
     },
     get state() {
-      return structuredClone(state);
+      return copyIdentityResetState(state);
     },
   };
 }
