@@ -39,6 +39,7 @@ export function createSettingsClient(port: {
   let listener: ((state: SettingsClientState) => void) | undefined;
   let unsubscribe: (() => void) | undefined;
   let refreshId = 0;
+  let ownerGeneration = 0;
   let acceptedVersion = 0;
   const retiredSessions = new Set<string>();
   let retentionFailure: SettingsSnapshot | null = null;
@@ -90,7 +91,9 @@ export function createSettingsClient(port: {
 
   function ensureSubscription() {
     if (unsubscribe) return;
+    const generation = ownerGeneration;
     unsubscribe = port.subscribe((message) => {
+      if (generation !== ownerGeneration) return;
       const event = message as { type?: string; snapshot?: SettingsSnapshot };
       if (event?.type === "settingsState" && event.snapshot)
         apply(event.snapshot);
@@ -154,9 +157,18 @@ export function createSettingsClient(port: {
       await refresh();
     },
     stop: () => {
+      ownerGeneration += 1;
+      refreshId += 1;
       unsubscribe?.();
       unsubscribe = undefined;
       listener = undefined;
+      state = {
+        ...state,
+        pending: false,
+        pendingFields: undefined,
+        refreshing: false,
+        recoveryRequired: state.recoveryRequired || state.pending,
+      };
     },
     refresh,
     save: async (patch: Partial<RuntimeSettings>) => {
@@ -165,6 +177,12 @@ export function createSettingsClient(port: {
           status: "unconfirmed" as const,
           error: "settings_reconciliation_required",
         };
+      const generation = ownerGeneration;
+      const retired = () => generation !== ownerGeneration;
+      const retiredResult = () => ({
+        status: "unconfirmed" as const,
+        error: "settings_owner_stopped",
+      });
       retentionFailure = null;
       state = {
         ...state,
@@ -184,7 +202,9 @@ export function createSettingsClient(port: {
           },
         };
         notify();
+        if (retired()) return;
         await refresh();
+        if (retired()) return;
         state = { ...state, pending: false, pendingFields: undefined };
         notify();
       };
@@ -193,6 +213,7 @@ export function createSettingsClient(port: {
           type: "setSettings",
           settings: patch,
         })) as SettingsWriteResult | undefined;
+        if (retired()) return retiredResult();
         if (!response?.status || !response.snapshot)
           throw new Error("settings_reply_missing");
         if (response.snapshot.sessionId !== state.snapshot?.sessionId) {
@@ -203,6 +224,7 @@ export function createSettingsClient(port: {
           };
         }
         apply(response.snapshot);
+        if (retired()) return retiredResult();
         if (response.status === "unconfirmed") {
           await reconcileUnconfirmed(response.error);
           return response;
@@ -229,6 +251,7 @@ export function createSettingsClient(port: {
         notify();
         return response;
       } catch (error) {
+        if (retired()) return retiredResult();
         await reconcileUnconfirmed((error as Error).message);
         return {
           status: "unconfirmed" as const,
