@@ -240,7 +240,15 @@ it("an active runtime releases proven nonacceptance without restarting its exist
     startLocalRecovery() {},
     publishState() {},
   });
-  await lifecycle.initialize();
+  const { startIdentityBoundRuntimeServices } =
+    await import("../../../packages/core/runtime/identityInitialization");
+  await startIdentityBoundRuntimeServices({
+    workFence,
+    initializeIdentity: () => lifecycle.initialize(),
+    startLocalServices() {},
+    startNetworkServices() {},
+    onServicesStarted: () => lifecycle.servicesStarted(),
+  });
   await workFence.acquireFence();
   status({
     kind: "manual-reset",
@@ -341,3 +349,92 @@ it("runtime startup admitted before reset remains in the drain and rejects its r
   await expect(starting).rejects.toThrow("identity_runtime_suspended");
   await drain;
 });
+
+it.each(
+  [
+    { delayed: "local", restartFails: false },
+    { delayed: "network", restartFails: false },
+    { delayed: "local", restartFails: true },
+    { delayed: "network", restartFails: true },
+  ].flatMap((scenario) =>
+    [false, true].map((previouslyReady) => ({ ...scenario, previouslyReady }))
+  )
+)(
+  "rejected reset during delayed $delayed startup seals the incomplete runtime (restart failure: $restartFails, reused lifecycle: $previouslyReady)",
+  async ({ delayed, restartFails, previouslyReady }) => {
+    const {
+      createRuntimeIdentityRotationLifecycle,
+      startIdentityBoundRuntimeServices,
+    } = await import("../../../packages/core/runtime/identityInitialization");
+    const workFence = createIdentityBoundWorkFence();
+    let status!: (
+      value: import("../../../packages/core/trust/identityRotation").IdentityRotationStatus
+    ) => void;
+    let finish!: () => void;
+    let entered!: () => void;
+    const startingLocal = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pendingLocal = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const restart = jest.fn(() => {
+      if (restartFails) throw new Error("restart_unavailable");
+    });
+    const lifecycle = createRuntimeIdentityRotationLifecycle({
+      workFence,
+      rotation: {
+        recoverOrRotate: async () => ({ rotated: false, identity: undefined }),
+        rotate: async () => {
+          throw new Error("unexpected rotation");
+        },
+        onStatusChanged(listener) {
+          status = listener;
+          return () => {};
+        },
+      },
+      loadIdentity: async () => undefined,
+      restart,
+      startLocalRecovery() {},
+      publishState() {},
+    });
+    if (previouslyReady) {
+      await startIdentityBoundRuntimeServices({
+        workFence,
+        initializeIdentity: () => lifecycle.initialize(),
+        startLocalServices() {},
+        startNetworkServices() {},
+        onServicesStarted: () => lifecycle.servicesStarted(),
+      });
+    }
+    const starting = startIdentityBoundRuntimeServices({
+      workFence,
+      initializeIdentity: () => lifecycle.initialize(),
+      async startLocalServices() {
+        if (delayed === "local") {
+          entered();
+          await pendingLocal;
+        }
+      },
+      async startNetworkServices() {
+        if (delayed === "network") {
+          entered();
+          await pendingLocal;
+        } else throw new Error("retired startup must not network");
+      },
+      onServicesStarted: () => lifecycle.servicesStarted(),
+    });
+    await startingLocal;
+    const provisional = await workFence.acquireFence();
+    await provisional.release();
+    status({
+      kind: "manual-reset",
+      state: { phase: "idle", acceptance: "not-accepted" },
+    });
+    finish();
+    await expect(starting).rejects.toThrow("identity_runtime_suspended");
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(workFence.isFenced()).toBe(true);
+    lifecycle.dispose();
+  }
+);

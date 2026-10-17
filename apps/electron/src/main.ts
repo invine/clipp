@@ -1271,6 +1271,7 @@ async function bootstrap() {
       startIdentityBoundRuntimeServices({
         workFence: identityWork,
         initializeIdentity: () => identityRotationLifecycle.initialize(),
+        onServicesStarted: () => identityRotationLifecycle.servicesStarted(),
         startLocalServices,
         startNetworkServices,
         onNetworkingFailure: (error) => {

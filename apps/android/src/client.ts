@@ -1024,6 +1024,7 @@ export class AndroidClient {
     );
     await startIdentityBoundRuntimeServices({
       workFence: this.workFence,
+      onServicesStarted: () => this.identityRotationLifecycle.servicesStarted(),
       initializeIdentity: async () => {
         const initialized = await this.identityRotationLifecycle.initialize();
         if (initialized.localServicesEnabled !== false)

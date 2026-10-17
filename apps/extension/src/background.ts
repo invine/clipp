@@ -958,6 +958,7 @@ const sharedRuntime = createRuntimeOrchestrator({
   start: () =>
     startIdentityBoundRuntimeServices({
       workFence: identityWork,
+      onServicesStarted: () => identityRotationLifecycle.servicesStarted(),
       initializeIdentity: async () => {
         await autoSyncReady;
         return identityRotationLifecycle.initialize();

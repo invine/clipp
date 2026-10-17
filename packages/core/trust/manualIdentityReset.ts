@@ -106,6 +106,7 @@ export function createManualIdentityReset(options: {
     state = structuredClone(next);
     if (
       next.phase !== "idle" ||
+      next.acceptance === "not-accepted" ||
       next.receipt ||
       next.completedOperation ||
       previous.phase !== "idle"

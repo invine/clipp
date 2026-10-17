@@ -69,7 +69,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   let recovering = false;
   let manualSuspended = false;
   let manualAccepted = false;
-  let ordinaryInitializationCompleted = false;
+  let servicesStarted = false;
   let recoveryReason: IdentityRotationReason | undefined;
   let restartRequested = false;
   let recoveryFence: Promise<{ release(): Promise<void> }> | undefined;
@@ -90,9 +90,13 @@ export function createRuntimeIdentityRotationLifecycle(options: {
   const applyManualState = (state: IdentityResetState): void => {
     if (state.phase === "idle") {
       if (state.acceptance === "not-accepted" && !manualAccepted) {
-        if (!ordinaryInitializationCompleted) {
-          // No ordinary owners were started. A fresh bootstrap rebuilds them;
+        if (!servicesStarted) {
+          // Ordinary service startup is incomplete. A fresh bootstrap rebuilds it;
           // restart failure must not make this suspended process appear ready.
+          if (options.workFence)
+            recoveryFence ??= options.workFence.acquireFence();
+          manualSuspended = true;
+          setRecovering(true);
           try {
             requestRestart();
           } catch {
@@ -151,6 +155,7 @@ export function createRuntimeIdentityRotationLifecycle(options: {
 
   return {
     async initialize(): Promise<IdentityBoundRuntimeInitialization> {
+      servicesStarted = false;
       const result = await options.rotation.recoverOrRotate();
       if (
         !result.rotated &&
@@ -170,13 +175,14 @@ export function createRuntimeIdentityRotationLifecycle(options: {
       setRecovering(Boolean(result.recovery));
       recoveryReason = result.recovery?.reason;
       if (recovering) {
-        ordinaryInitializationCompleted = true;
         return { networkingEnabled: false };
       }
       await options.loadIdentity();
       if (manualSuspended) return suspendedInitialization();
-      ordinaryInitializationCompleted = true;
       return { networkingEnabled: !recovering };
+    },
+    servicesStarted(): void {
+      if (!manualSuspended) servicesStarted = true;
     },
     async rotateRevoked(): Promise<void> {
       const result = await options.rotation.rotate("revoked");
@@ -202,6 +208,7 @@ export async function startIdentityBoundRuntimeServices(options: {
     | Promise<void | IdentityBoundRuntimeInitialization>;
   startLocalServices(): void | Promise<void>;
   startNetworkServices(): void | Promise<void>;
+  onServicesStarted?(): void;
   // eslint-disable-next-line no-unused-vars
   onNetworkingFailure?(error: unknown): void | Promise<void>;
 }): Promise<void> {
@@ -212,13 +219,17 @@ export async function startIdentityBoundRuntimeServices(options: {
     options.workFence?.assertOpen(generation);
     await options.startLocalServices();
     options.workFence?.assertOpen(generation);
-    if (initialization?.networkingEnabled === false) return;
+    if (initialization?.networkingEnabled === false) {
+      options.onServicesStarted?.();
+      return;
+    }
     try {
       await options.startNetworkServices();
     } catch (error) {
       await options.onNetworkingFailure?.(error);
     }
     options.workFence?.assertOpen(generation);
+    options.onServicesStarted?.();
   };
   if (options.workFence) await options.workFence.run(start);
   else await start();
