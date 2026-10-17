@@ -875,3 +875,92 @@ test("a native action that became stale while queued cannot change Auto Sync or 
   );
   expect(fake.autoSync).toEqual([]);
 });
+
+test("connection publication overlapping Stop cannot replace confirmed disabled mode with unknown state", async () => {
+  const fake = createPlatform();
+  let nativeRunning = false;
+  let announceStop!: () => void;
+  const stopEntered = new Promise<void>((resolve) => {
+    announceStop = resolve;
+  });
+  let acknowledgeStop!: () => void;
+  const stopAcknowledgment = new Promise<void>((resolve) => {
+    acknowledgeStop = resolve;
+  });
+  const writeEnabled = fake.platform.writeEnabled;
+  fake.platform.writeEnabled = async (enabled) => {
+    await writeEnabled(enabled);
+    if (!enabled) {
+      // The production native setEnabled(false) stops its companion before
+      // acknowledging the durable preference write to the JS owner.
+      nativeRunning = false;
+      announceStop();
+      await stopAcknowledgment;
+    }
+  };
+  fake.platform.startService = async () => {
+    nativeRunning = true;
+  };
+  fake.platform.readServiceState = async () =>
+    nativeRunning ? "running" : "stopped";
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.initialize();
+  await coordinator.setEnabledFromUser(true);
+  await coordinator.setAutoSync(false);
+  let rejectObsoleteUpdate: ((error: Error) => void) | undefined;
+  fake.platform.updateService = async () => {
+    if (!nativeRunning)
+      await new Promise<void>((_resolve, reject) => {
+        rejectObsoleteUpdate = reject;
+      });
+  };
+
+  const stopping = coordinator.setEnabledFromUser(false);
+  await stopEntered;
+  // AndroidClient concurrently publishes getState while its control is pending.
+  const publication = coordinator.setConnection(0);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  acknowledgeStop();
+  await stopping;
+  rejectObsoleteUpdate?.(new Error("background_continuity_not_running"));
+  await publication;
+
+  expect(coordinator.snapshot()).toMatchObject({
+    backgroundEnabled: false,
+    service: "stopped",
+    autoSync: false,
+    controlStateKnown: true,
+    controlError: null,
+  });
+  expect(fake.enabled()).toBe(false);
+});
+
+test("a current failed connection update stays unknown until an explicit refresh confirms it", async () => {
+  const fake = createPlatform();
+  const coordinator = createAndroidBackgroundContinuityCoordinator(
+    fake.platform
+  );
+  await coordinator.initialize();
+  await coordinator.setEnabledFromUser(true);
+  fake.platform.updateService = async () => {
+    throw new Error("background_continuity_update_failed");
+  };
+  await coordinator.setConnection(1);
+  expect(coordinator.snapshot()).toMatchObject({
+    controlStateKnown: false,
+    controlError:
+      "Background notification state could not be confirmed. Refresh before trying again.",
+    service: "running",
+  });
+  fake.platform.updateService = async () => undefined;
+  await coordinator.setConnection(1);
+  expect(coordinator.snapshot().controlStateKnown).toBe(false);
+  expect(coordinator.snapshot().controlError).not.toBeNull();
+  await coordinator.initialize();
+  expect(coordinator.snapshot()).toMatchObject({
+    controlStateKnown: true,
+    controlError: null,
+  });
+});

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import {
   clipsHaveEqualImmutableFields,
   DEFAULT_CLIP_SHARING_LIFETIME_MS,
@@ -122,8 +123,7 @@ export function createAndroidBackgroundContinuityCoordinator(
   const now = options.now ?? Date.now;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 60_000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 20_000;
-  const makeClipId =
-    options.makeClipId ?? (() => globalThis.crypto.randomUUID());
+  const makeClipId = options.makeClipId ?? uuidv4;
   const schedulePeriodicHeartbeat =
     options.schedulePeriodicHeartbeat ??
     ((tick, everyMs) => {
@@ -521,18 +521,27 @@ export function createAndroidBackgroundContinuityCoordinator(
     async setConnection(
       connectedCount: number
     ): Promise<AndroidBackgroundContinuitySnapshot> {
-      connectedTrustedDeviceCount = Math.max(0, Math.floor(connectedCount));
-      if (connectedTrustedDeviceCount > 0) wasConnected = true;
-      if (runtimeHealthy)
-        connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
-      try {
-        await publishServiceState();
-      } catch {
-        controlStateKnown = false;
-        controlError =
-          "Background notification state could not be confirmed. Refresh before trying again.";
-      }
-      return snapshot();
+      // State publication can overlap a user control in AndroidClient. Keep its
+      // native update on the same queue so a retired service cannot reject late
+      // and replace a confirmed Stop with unknown controls.
+      const publication = controlQueue.then(async () => {
+        connectedTrustedDeviceCount = Math.max(0, Math.floor(connectedCount));
+        if (connectedTrustedDeviceCount > 0) wasConnected = true;
+        if (runtimeHealthy)
+          connection = connectionForHealthyRuntime(connectedTrustedDeviceCount);
+        try {
+          await publishServiceState();
+        } catch {
+          controlStateKnown = false;
+          controlError =
+            "Background notification state could not be confirmed. Refresh before trying again.";
+        }
+      });
+      controlQueue = publication.then(
+        () => undefined,
+        () => undefined
+      );
+      return publication.then(snapshot);
     },
 
     setAutoSync(

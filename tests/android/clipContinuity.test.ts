@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import type { Clip } from "../../packages/core/models/Clip";
 import {
   createAndroidBackgroundContinuityCoordinator,
@@ -423,4 +424,33 @@ test("upgrades a legacy prepared event with its original production lifetime, no
     capturedAt: 1000,
     sharingLifetimeMs: 86400000,
   });
+});
+
+test("default explicit-text Clip IDs stay cryptographic UUIDv4 values when the WebView lacks randomUUID", async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) },
+  });
+  try {
+    const fake = createPlatform();
+    fake.enqueue(
+      { id: "first", text: "first explicit action", source: "send" },
+      { id: "second", text: "second explicit action", source: "process-text" }
+    );
+    const coordinator = createAndroidBackgroundContinuityCoordinator(
+      fake.platform
+    );
+    await coordinator.handleExplicitTextActionsAvailable();
+    expect(fake.completed).toEqual(["first", "second"]);
+    const ids = fake.prepared.map((event) => event.clipId);
+    for (const id of ids)
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+    expect(new Set(ids).size).toBe(2);
+  } finally {
+    if (original) Object.defineProperty(globalThis, "crypto", original);
+    else Reflect.deleteProperty(globalThis, "crypto");
+  }
 });

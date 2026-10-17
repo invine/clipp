@@ -9,6 +9,7 @@ import android.app.Instrumentation;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Rect;
 import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
@@ -42,8 +43,9 @@ import org.junit.runner.RunWith;
  * clipboard interval: launching the real foreground runtime can start normal capture.
  *
  * UI and notification actions use physical Android pointers. DOM/accessibility reads only
- * locate or witness public controls. No bridge, store, service command, PendingIntent.send,
- * preference mutation or permission setup is installed here. A run is not process-restart,
+ * locate or witness public controls. No bridge, store, PendingIntent.send, preference
+ * mutation or permission setup is installed here. A separately guarded host stopService
+ * is genuine service-interruption setup, never a user control. A run is not process-restart,
  * stale-action, rejected-storage, real-recipient or OEM/Doze qualification.
  */
 @RunWith(AndroidJUnit4.class)
@@ -98,7 +100,7 @@ public final class ContinuityControlsInputTest {
     }
 
     @Test
-    public void renderedOptInStartPauseResumeAndStopPreserveBothAutoSyncValuesAfterActivityReopen() throws Exception {
+    public void renderedOptInPauseResumeAndStopPreserveBothAutoSyncValuesAfterActivityReopen() throws Exception {
         Assume.assumeTrue("Run this method in root's allowed notification profile", "allowed".equals(notificationProfile));
         tapButton("Enable background mode");
         tapNativeDialogButton("android:id/button2"); // Cancel the genuine native JS confirm.
@@ -118,16 +120,21 @@ public final class ContinuityControlsInputTest {
         awaitRunning(false);
         tapButton("Resume Auto Sync");
         awaitRunning(true);
-        // Activity finish stops the actual service but retains enabled mode; reopen must
-        // expose Start, without silently starting a new Activity-owned runtime service.
-        reopenSettings();
-        awaitStatus("Background mode is stopped.");
-        awaitAutoSync(true);
-        awaitButton("Start background mode");
-        awaitNotificationAbsent();
-        tapButton("Start background mode");
-        awaitRunning(true);
         stopAndReopen(true);
+    }
+
+    @Test
+    public void hostInterruptedServiceOffersRealStartForBothAutoSyncValues() throws Exception {
+        Assume.assumeTrue("Run this method in root's allowed notification profile", "allowed".equals(notificationProfile));
+        Assume.assumeTrue("Root must separately authorize real service interruption with -e continuityServiceInterruption true",
+            "true".equals(InstrumentationRegistry.getArguments().getString("continuityServiceInterruption")));
+        enable();
+        awaitRunning(true);
+        interruptServiceThenUseRenderedStart(true);
+        tapButton("Pause Auto Sync");
+        awaitRunning(false);
+        interruptServiceThenUseRenderedStart(false);
+        stopAndReopen(false);
     }
 
     @Test
@@ -207,6 +214,28 @@ public final class ContinuityControlsInputTest {
     private void enable() throws Exception {
         tapButton("Enable background mode");
         tapNativeDialogButton("android:id/button1");
+    }
+
+    private void interruptServiceThenUseRenderedStart(boolean autoSync) throws Exception {
+        // External host interruption setup, explicitly distinct from the user-facing
+        // Stop action, which durably disables background mode. No intent action or
+        // private callback is dispatched; Android destroys the actual native service.
+        NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
+        assertEquals("Root-owned interruption setup must be separately opted in", "true",
+            InstrumentationRegistry.getArguments().getString("continuityServiceInterruption"));
+        assertTrue("An actual running companion must receive the host interruption",
+            instrumentation.getTargetContext().stopService(new Intent(
+                instrumentation.getTargetContext(), BackgroundContinuityService.class)));
+        awaitNotificationAbsent();
+        // The public refresh reconciles this external interruption with the current
+        // live Activity. Reopening an enabled app starts its runtime automatically;
+        // it is deliberately not used to fabricate the stopped Start precondition.
+        tapButton("Refresh background state");
+        awaitStatus("Background mode is stopped.");
+        awaitAutoSync(autoSync);
+        awaitButton("Start background mode");
+        tapButton("Start background mode");
+        awaitRunning(autoSync);
     }
 
     private void stopAndReopen(boolean autoSync) throws Exception {
