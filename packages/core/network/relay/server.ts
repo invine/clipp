@@ -1,4 +1,5 @@
 import "../promiseCompat.js";
+import "../abortSignalCompat.js";
 import { noise } from "@chainsafe/libp2p-noise";
 import { mplex } from "@libp2p/mplex";
 import {

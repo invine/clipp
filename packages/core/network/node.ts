@@ -2,6 +2,7 @@
  * libp2p node initialization/config for clipboard network.
  */
 import "./promiseCompat.js";
+import "./abortSignalCompat.js";
 import { createLibp2p } from "libp2p";
 import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { webSockets } from "@libp2p/websockets";
