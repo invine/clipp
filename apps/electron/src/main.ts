@@ -901,7 +901,14 @@ async function bootstrap() {
     return mainWindow;
   }
 
-  function showWindow() {
+  async function showWindow() {
+    if (process.platform === "darwin") {
+      try {
+        await app.dock?.show();
+      } catch (error) {
+        log.warn("Dock icon could not be shown", error);
+      }
+    }
     if (!mainWindow) {
       createWindow();
     } else {
