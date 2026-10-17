@@ -14,6 +14,7 @@ const outputArgument = process.argv
   .find((value) => !value.startsWith("--"));
 const out = outputArgument ? resolve(outputArgument) : own;
 const themeWrite = process.argv.includes("--theme-write");
+const missingWebViewApis = process.argv.includes("--missing-webview-apis");
 await mkdir(out, { recursive: true });
 const fixture = join(out, "client.mjs");
 await build({
@@ -31,6 +32,13 @@ await build({
     {
       name: "inert-system-boundaries",
       setup(builder) {
+        if (missingWebViewApis) {
+          // Resolve the actual browser UUID implementation, including its secure
+          // getRandomValues fallback; no replacement UUID function is injected.
+          builder.onResolve({ filter: /^uuid$/ }, () => ({
+            path: join(repo, "node_modules/uuid/dist/esm-browser/index.js"),
+          }));
+        }
         builder.onResolve(
           { filter: /^@capacitor\/(clipboard|local-notifications)$/ },
           (args) => ({ path: args.path, namespace: "fixture-system" })
@@ -48,6 +56,23 @@ await build({
     },
   ],
 });
+if (missingWebViewApis) {
+  // This isolated child process has the capabilities observed on native WebView91.
+  // Keep its real CSPRNG. Nothing is patched in an app, browser or operator profile.
+  assert.equal(typeof globalThis.crypto.getRandomValues, "function");
+  Object.defineProperty(globalThis.crypto, "randomUUID", {
+    value: undefined,
+    configurable: true,
+  });
+  Object.defineProperty(Array.prototype, "at", {
+    value: undefined,
+    configurable: true,
+  });
+  Object.defineProperty(Object, "hasOwn", {
+    value: undefined,
+    configurable: true,
+  });
+}
 const { AndroidClient, LocalStorageBackend } = await import(fixture);
 let releaseTheme, announceTheme, announceFalse;
 const themeGate = new Promise((resolve) => {
@@ -143,7 +168,7 @@ try {
   );
   assert.equal((await client.getSettings()).snapshot.state.theme, "dark");
   assert.equal(
-    publications.at(-1).state.autoSync,
+    publications[publications.length - 1].state.autoSync,
     false,
     "latest ordered feed agrees with applied Auto Sync"
   );
@@ -152,6 +177,20 @@ try {
   );
   assert.equal((await reopened.getSettings()).snapshot.state.autoSync, false);
   assert.equal((await reopened.getSettings()).snapshot.state.theme, "dark");
+  if (missingWebViewApis) {
+    const reopenedSettings = await reopened.getSettings();
+    assert.match(
+      settings.snapshot.sessionId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    assert.notEqual(
+      reopenedSettings.snapshot.sessionId,
+      settings.snapshot.sessionId
+    );
+    assert.equal(globalThis.crypto.randomUUID, undefined);
+    assert.equal(Array.prototype.at, undefined);
+    assert.equal(Object.hasOwn, undefined);
+  }
   report.pass = true;
 } finally {
   releaseTheme();

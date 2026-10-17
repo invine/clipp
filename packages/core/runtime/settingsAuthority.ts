@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import { RETENTION_MS } from "../history/store";
 import type {
   LocalRetentionState,
@@ -71,7 +72,7 @@ export function createSettingsHandler(options: {
   publish(snapshot: SettingsSnapshot): Promise<void>;
   sessionId?: string;
 }) {
-  const sessionId = options.sessionId ?? crypto.randomUUID();
+  const sessionId = options.sessionId ?? uuidv4();
   const autoSyncPreference = createAutoSyncPreference({
     storage: options.storage,
   });

@@ -485,6 +485,7 @@ export function ClipboardApp({
     session.getSnapshot,
     session.getSnapshot
   );
+  const activeTask = sessionState.tasks[sessionState.tasks.length - 1];
   const { search, timeFilter, sourceFilter, filterMode, showNav } =
     sessionState;
   const setSearch = (search: string) => session.update({ search });
@@ -2364,18 +2365,17 @@ export function ClipboardApp({
           </>
         )}
       </div>
-      {sessionState.tasks.at(-1)?.kind === "issues" && (
+      {activeTask?.kind === "issues" && (
         <RecoveryIssues
           issues={issues}
           session={session}
           title={
-            sessionState.tasks.at(-1)?.entity === "continuity"
+            activeTask?.entity === "continuity"
               ? "Background help and recovery"
               : undefined
           }
           details={
-            sessionState.tasks.at(-1)?.entity === "continuity" &&
-            backgroundContinuity ? (
+            activeTask?.entity === "continuity" && backgroundContinuity ? (
               <BackgroundContinuityHelp
                 state={backgroundContinuity}
                 exportDiagnostics={onExportBackgroundContinuityDiagnostics}
@@ -2777,23 +2777,21 @@ export function ClipboardApp({
         </section>
       </main>
 
-      {sessionState.tasks.at(-1)?.kind === "clip-details" &&
+      {activeTask?.kind === "clip-details" &&
         createPortal(
           <TaskDialog
             title="Clip details"
             focusVersion={sessionState.navigationVersion}
             pending={false}
-            originKey={sessionState.tasks.at(-1)?.origin}
+            originKey={activeTask?.origin}
             returnLabel="Back to History"
             onDismiss={() => session.back()}
             cancelLabel="Close details"
             onCancel={() => session.back()}
           >
             <ClipDetails
-              clip={clips.find(
-                (clip) => clip.id === sessionState.tasks.at(-1)?.entity
-              )}
-              pinned={pinnedSet.has(sessionState.tasks.at(-1)?.entity ?? "")}
+              clip={clips.find((clip) => clip.id === activeTask?.entity)}
+              pinned={pinnedSet.has(activeTask?.entity ?? "")}
               disabled={
                 !identityReady ||
                 historyLoading ||
@@ -2801,12 +2799,12 @@ export function ClipboardApp({
                 Boolean(historyRefreshError)
               }
               actions={sessionState.historyActions}
-              onCopy={() => reuseClip(sessionState.tasks.at(-1)!.entity!)}
+              onCopy={() => reuseClip(activeTask!.entity!)}
               onPin={() => {
-                const id = sessionState.tasks.at(-1)!.entity!;
+                const id = activeTask!.entity!;
                 setPinned(id, !pinnedSet.has(id));
               }}
-              onDelete={() => handleDelete(sessionState.tasks.at(-1)!.entity!)}
+              onDelete={() => handleDelete(activeTask!.entity!)}
               onRetry={(id) => void session.retryHistoryAction(id)}
               onDismiss={(id) => session.dismissHistoryAction(id)}
               onHistory={() => {
@@ -2817,14 +2815,14 @@ export function ClipboardApp({
           </TaskDialog>,
           document.body
         )}
-      {sessionState.tasks.at(-1)?.kind === "pairing" &&
+      {activeTask?.kind === "pairing" &&
         createPortal(
           <TaskDialog
             title="Pairing"
             focusVersion={sessionState.navigationVersion}
-            initialFocusKey={sessionState.tasks.at(-1)?.initialFocusKey}
+            initialFocusKey={activeTask?.initialFocusKey}
             pending={pair.pending || sessionState.pairingImport.pending}
-            originKey={sessionState.tasks.at(-1)?.origin}
+            originKey={activeTask?.origin}
             returnLabel="Close Pairing"
             onDismiss={() => session.close()}
             cancelLabel="Discard pairing input"
@@ -2873,7 +2871,7 @@ export function ClipboardApp({
           </TaskDialog>,
           document.body
         )}
-      {sessionState.tasks.at(-1)?.kind === "paste" &&
+      {activeTask?.kind === "paste" &&
         createPortal(
           <TaskDialog
             title="Paste pairing text"
@@ -2910,11 +2908,10 @@ export function ClipboardApp({
           document.body
         )}
 
-      {(sessionState.tasks.at(-1)?.kind === "device-name" ||
-        sessionState.tasks.at(-1)?.kind === "alias") &&
+      {(activeTask?.kind === "device-name" || activeTask?.kind === "alias") &&
         createPortal(
           (() => {
-            const alias = sessionState.tasks.at(-1)?.kind === "alias";
+            const alias = activeTask?.kind === "alias";
             const owner = alias ? aliasSession : localNameSession;
             const edit = alias ? aliasEdit : localNameEdit;
             const target = devices.find(
@@ -2932,7 +2929,7 @@ export function ClipboardApp({
                 initialFocusKey={
                   alias ? `alias:${edit.targetId}` : "device-name"
                 }
-                originKey={sessionState.tasks.at(-1)?.origin}
+                originKey={activeTask?.origin}
                 returnLabel={alias ? "Close alias editor" : "Close name editor"}
                 cancelLabel={alias ? "Cancel alias edit" : "Cancel name edit"}
                 onDismiss={close}
@@ -2984,7 +2981,7 @@ export function ClipboardApp({
         )}
 
       {qrState.open &&
-        sessionState.tasks.at(-1)?.kind === "qr" &&
+        activeTask?.kind === "qr" &&
         createPortal(
           <TaskDialog
             title="Pair this device"
@@ -3010,7 +3007,7 @@ export function ClipboardApp({
         )}
 
       {clearReviewOpen &&
-        sessionState.tasks.at(-1)?.kind === "clear" &&
+        activeTask?.kind === "clear" &&
         createPortal(
           <ClearHistoryReview
             totalCount={clips.length}

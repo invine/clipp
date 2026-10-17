@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import {
   deriveIdentityKeyMaterial,
   createIdentityManager,
@@ -249,7 +250,7 @@ export async function stopIdentityBoundRuntimeServices(
 
 /** Admission and drain barrier for one cached runtime; durable transition ownership stays in rotation. */
 export function createIdentityBoundWorkFence() {
-  const session = globalThis.crypto.randomUUID();
+  const session = uuidv4();
   let revision = 0;
   let suspended = false;
   let activeFence: { release(): Promise<void> } | undefined;

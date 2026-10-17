@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import {
   Capacitor,
   registerPlugin,
@@ -26,7 +27,7 @@ const nativeInput = registerPlugin<AndroidTaskInputSource>("HostTaskInput");
 export function bindAndroidHostTaskInput(
   input: HostTaskInput,
   source: AndroidTaskInputSource = nativeInput,
-  owner: string = crypto.randomUUID()
+  owner: string = uuidv4()
 ): () => void {
   if (source === nativeInput && Capacitor.getPlatform() !== "android")
     return () => undefined;

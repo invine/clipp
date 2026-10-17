@@ -13,6 +13,7 @@ import {
   ClipboardApp,
   type ClipboardAppProps,
 } from "../../packages/ui/src/ClipboardApp";
+import { createHostTaskInput } from "../../packages/ui/src/hostTaskInput";
 import { createUiSession } from "../../packages/ui/src/uiSession";
 import { createSettingsClient } from "../../packages/core/runtime/settingsClient";
 
@@ -269,4 +270,38 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
   );
   expect(render()).toContain("Auto Sync Save could not be confirmed.");
   client.stop();
+});
+
+it("renders the real workspace and retains nested Pairing draft without Array.at", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, "at")!;
+  Object.defineProperty(Array.prototype, "at", {
+    value: undefined,
+    configurable: true,
+  });
+  try {
+    const session = createUiSession();
+    const render = () =>
+      renderToStaticMarkup(
+        React.createElement(ClipboardApp, { ...props, session })
+      );
+    expect(render()).toContain('aria-label="Clipp destinations"');
+    session.open({ kind: "pairing", origin: "pairing-start" });
+    session.open({ kind: "paste", origin: "pairing-paste" });
+    session.pairing.change("retained native compatibility draft");
+    const input = createHostTaskInput(session);
+    input.setReady(true);
+    expect(await input.back({ sequence: 1, imeVisible: false })).toBe("task");
+    expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+      "pairing",
+    ]);
+    expect(await input.back({ sequence: 2, imeVisible: false })).toBe("task");
+    expect(session.getSnapshot().tasks).toEqual([]);
+    expect(session.pairing.getSnapshot().raw).toBe(
+      "retained native compatibility draft"
+    );
+    expect(render()).toContain('aria-label="Clipp destinations"');
+    input.dispose();
+  } finally {
+    Object.defineProperty(Array.prototype, "at", descriptor);
+  }
 });
