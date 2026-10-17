@@ -387,8 +387,8 @@ public final class BackgroundContinuityPlugin extends Plugin {
             if (!admit(call)) return;
             String actionId = call.getString("actionId");
             String clipId = call.getString("clipId");
-            Long capturedAt = call.getLong("capturedAt");
-            Long sharingLifetimeMs = call.getLong("sharingLifetimeMs");
+            Long capturedAt = safeInteger(call, "capturedAt");
+            Long sharingLifetimeMs = safeInteger(call, "sharingLifetimeMs");
             if (actionId == null || clipId == null || capturedAt == null || sharingLifetimeMs == null || sharingLifetimeMs <= 0 || sharingLifetimeMs > 2592000000L) {
                 call.reject("invalid_explicit_text_action");
                 return;
@@ -400,6 +400,18 @@ public final class BackgroundContinuityPlugin extends Plugin {
             call.resolve();
 
         } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
+    }
+
+    private static Long safeInteger(PluginCall call, String name) {
+        // JSON uses Integer, Long or Double depending on the number's magnitude.
+        // Capacitor's getLong accepts only Long; retain the JS numeric contract
+        // without coercing strings, fractions, non-finite or unsafe values.
+        Object raw = call.getData().opt(name);
+        if (!(raw instanceof Number)) return null;
+        double value = ((Number) raw).doubleValue();
+        if (!Double.isFinite(value) || value != Math.rint(value)
+            || Math.abs(value) > 9007199254740991d) return null;
+        return (long) value;
     }
 
     @PluginMethod
