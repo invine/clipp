@@ -1,11 +1,11 @@
 # Collect Chrome management and secure handoff qualification
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-chrome-collector-11
 Priority band: 1
 Blocked by: 35
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: 2026-10-17 coordinator claim; TT35 acceptance preserved
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -57,3 +57,9 @@ Consume ticket 33's completed common interface and scoped Electron evidence. Res
 ## Host delivery allocation — DRAFT 2026-10-14
 
 Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.
+
+## Dispatch — 2026-10-17
+
+Consume resolved35 under the [explicit user acceptance decision](../decisions/20261017-tt35-user-acceptance.md), without reopening35 or relabeling its deferred checks as agent-observed passes. Integration baseline8c39ee0df3d97fef808c1e3bf28bc2522875ad41. Two isolated implementers own distinct existing source seams: Chrome broker/runtime/management-page delivery, and actual ExtensionApp/navigation/session consumers. Inspect the current implementation against11, repair only concrete missing/incorrect behavior through existing approved public-interface TDD, and collect accurate original17/19/16 evidence limits. No speculative source changes solely to populate this collector.
+
+Root owns canonical collection, broad-check serialization, mandatory merger, independent Standards/Spec and fresh integrated verification. Existing named runtime/coordinator/UiSession/React consumer test seams and prior testing approvals apply; do not ask again. No new harness, native preparation, private introspection, real sign-in, operator profile, transport/security policy change, popup retirement or broad finding closure. Existing live popup management and accepted35 staged delivery remain.11's independent collector scope and all other tickets/deferrals retain their recorded requirements. Primary dirty files/stashes and pre-existing worktrees/branches are preserved. Exact worktree access and ownership: ignored run tt11-dispatch-20261017.json.

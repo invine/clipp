@@ -345,3 +345,7 @@ The user explicitly directs “record G1 and G14 passed.” Record **G01 PASS �
 ## TT35 accepted by user — 2026-10-17
 
 The user directs “consider all passed, we'll figure it out later.” [Accepted TT35 decision](decisions/20261017-tt35-user-acceptance.md) accepts the current integrated deliverable and defers remaining qualification; [35](issues/35-deliver-chrome-management-and-task-input.md#answer) is resolved by this explicit exception. This is administrative acceptance, not an additional native execution or measurement. Earlier failed/not-run cases, actual scoped passes, G01/G14 user-report provenance and candidate bindings remain intact. Complete routing/fault/worker/concurrent, task/action/error/layout/theme and cutover execution can be revisited later. Popup management remains present. Other tickets, collectors and deferrals retain their own scope; no whole-project or release qualification follows.
+
+## TT11 continuation with two implementers — 2026-10-17
+
+Claim11 after resolved35, preserving its accepted exception and historical evidence. Two isolated authors inspect/implement distinct Chrome runtime and actual page/session source seams using existing owning-interface tests. Root owns collector evidence, check/hook serialization, merger, reviews and fresh verification. No new harness or renewed approval request; no popup retirement, real sign-in or unsupported gate promotion. Other claims remain unchanged.
