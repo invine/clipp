@@ -23,6 +23,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.PluginCall;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Assume;
@@ -215,11 +218,53 @@ public final class ClipPolicyInputTest {
         long dispatchedAt = System.currentTimeMillis();
         context.startActivity(intent);
         awaitForeground();
-        String id = cardId(text);
+        String id;
+        try { id = cardId(text); }
+        catch (AssertionError failure) {
+            if ("true".equals(arguments.getString("clipPolicyIngressDiagnostic"))) {
+                try { logReadOnlyIngressDiagnostic(text); }
+                catch (Exception diagnosticFailure) {
+                    failure.addSuppressed(diagnosticFailure);
+                    Log.i(TAG, "READONLY_INGRESS_DIAGNOSTIC unavailable: " + diagnosticFailure.getClass().getSimpleName());
+                }
+            }
+            throw failure;
+        }
         Log.i(TAG, "NATIVE_INTENT_EMITTED " + new JSONObject().put("runId", runId)
             .put("action", action).put("marker", text).put("clipId", id)
             .put("dispatchedAt", dispatchedAt).put("observedAt", System.currentTimeMillis()));
         return id;
+    }
+
+    /** Failure-only observation, additionally opted in by root. Never prepares/drains
+     * a queue or invokes a plugin handler; the original actual-ingress assertion fails. */
+    private void logReadOnlyIngressDiagnostic(String marker) throws Exception {
+        NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
+        String raw = instrumentation.getTargetContext()
+            .getSharedPreferences("clipp_explicit_text_ingress", Context.MODE_PRIVATE)
+            .getString("actions", "[]");
+        JSONArray actions = new JSONArray(raw);
+        JSONArray matching = new JSONArray();
+        for (int index = 0; index < actions.length(); index++) {
+            JSONObject action = actions.getJSONObject(index);
+            if (!marker.equals(action.optString("text"))) continue;
+            JSONObject event = action.optJSONObject("event");
+            JSONObject row = new JSONObject().put("source", action.optString("source"))
+                .put("prepared", event != null);
+            if (event != null) row.put("sharingLifetimeMs", event.opt("sharingLifetimeMs"));
+            matching.put(row);
+        }
+        // Real Android JSON parser + installed Capacitor PluginCall getter. This
+        // is a read-only numeric-container witness, never a bridge/handler call.
+        JSObject numbers = new JSObject("{\"sharingLifetimeMs\":3600000,\"capturedAt\":1700000000000}");
+        PluginCall numericRead = new PluginCall(null, "BackgroundContinuity", "diagnostic", "prepareExplicitTextAction", numbers);
+        JSONObject observation = new JSONObject().put("runId", runId).put("marker", marker)
+            .put("totalActions", actions.length()).put("matching", matching)
+            .put("lifetimeContainer", numbers.opt("sharingLifetimeMs").getClass().getSimpleName())
+            .put("capturedAtContainer", numbers.opt("capturedAt").getClass().getSimpleName())
+            .put("lifetimeGetLongRejected", numericRead.getLong("sharingLifetimeMs") == null)
+            .put("capturedAtGetLongRejected", numericRead.getLong("capturedAt") == null);
+        Log.i(TAG, "READONLY_INGRESS_DIAGNOSTIC " + observation);
     }
 
     private void openSettings() throws Exception {

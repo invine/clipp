@@ -324,7 +324,13 @@ export class AndroidClient {
       this.historyPolicyError = state.cleanupError
         ? "history_cleanup_failed"
         : null;
-      await this.emitState();
+      // A background control may be reading authoritative settings while this
+      // retention operation owns their write queue. Its state projection waits
+      // for that control, so retain the notification without awaiting it here.
+      // The ordered settings reply/feed still acknowledge the applied policy.
+      void this.emitState().catch((error) => {
+        log.warn("Retention state could not be published", error);
+      });
     },
   });
   private readonly historyState = createHistoryStateReader(this.history);
