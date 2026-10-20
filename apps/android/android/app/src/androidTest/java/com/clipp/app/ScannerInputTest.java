@@ -127,14 +127,14 @@ public final class ScannerInputTest {
         String diagnostics = web.evaluate("document.querySelector('details.pairing-diagnostics pre').textContent");
         JSONObject attempt = new JSONObject(diagnostics);
         assertTrue("Decoded payload reaches actual Android Pairing action", attempt.getInt("inputLength") > 0);
-        assertFalse("Public signed target must pass existing payload validation", "invalid".equals(attempt.optString("error")));
+        assertFalse("Actual Pairing invocation has no currently rendered invalid-payload result; running is not terminal validation proof", "invalid".equals(attempt.optString("error")));
         tap("Paste pairing text");
         web.await("public decoded Pairing text", "document.querySelector('textarea[aria-label=\"Pairing text\"]') !== null");
         String payload = web.evaluate("document.querySelector('textarea[aria-label=\"Pairing text\"]').value");
         assertEquals("Actual camera text must match declared public fixture", PAYLOAD_SHA, sha256(payload));
         assertEquals(payload.length(), attempt.getInt("inputLength"));
         Log.i(TAG, "validPublicQr=existing-Pairing-action;payloadSha256=" + sha256(payload)
-            + ";status=" + attempt.getString("status") + ";remotePeerSuccessClaimed=false");
+            + ";status=" + attempt.getString("status") + ";terminalValidationClaimed=false;remotePeerSuccessClaimed=false");
     }
 
     @Test
@@ -148,11 +148,13 @@ public final class ScannerInputTest {
             web.tap(OVERLAY + ".querySelector('button.text-button')");
             awaitReleased("cancel-" + repeat);
             awaitPairing();
+            awaitScanReturn("cancel-" + repeat);
         }
         openBlankCamera();
         nativeBack();
         awaitReleased("native-Back");
         awaitPairing();
+        awaitScanReturn("native-Back");
         nativeBack();
         web.await("next native Back dismisses Pairing parent", "document.querySelector('[role=\"dialog\"]') === null");
         openPairing();
@@ -161,6 +163,7 @@ public final class ScannerInputTest {
         awaitReleased("actual-background");
         externalSettingsBack();
         awaitPairing();
+        awaitScanReturn("background-resume");
         assertEquals("Resume must not reopen capture", "true", web.evaluate(OVERLAY + " === null"));
         camera.awaitAllAvailable();
         assertLiveAndLogCamera("returned-without-capture");
@@ -183,6 +186,7 @@ public final class ScannerInputTest {
         boolean selectedDeny = tapPermissionDenyIfRequested();
         if ("true".equals(prompt)) assertTrue("Prompt profile requires a real system Don't allow selection", selectedDeny);
         web.await("typed denial with Paste recovery", "[...document.querySelectorAll('[role=\"alert\"]')].some(e => e.textContent.includes('Camera permission is required'))");
+        awaitScanReturn("permission-denial");
         assertEquals("Denial is not an active camera", "true", web.evaluate(OVERLAY + " === null"));
         assertEquals("Paste alternative remains reachable", "true", web.evaluate("!!(" + web.button("Paste pairing text") + ")"));
         camera.awaitAllAvailable();
@@ -195,11 +199,13 @@ public final class ScannerInputTest {
         requireCameraGranted();
         externalSettingsBack();
         web.await("passive permission return recheck", "[...document.querySelectorAll('[role=\"alert\"]')].some(e => e.textContent.includes('Camera permission is now allowed'))");
+        awaitScanReturn("permission-return");
         assertEquals("Permission return does not open camera", before, camera.sequence());
         assertEquals("Deliberate Retry required", "true", web.evaluate(OVERLAY + " === null"));
         openBlankCamera();
         web.tap(OVERLAY + ".querySelector('button.text-button')");
         awaitReleased("permission-recovery-deliberate-retry");
+        awaitScanReturn("permission-recovery-cancel");
     }
 
     private void requireFeed(String hash) { assertEquals("Case requires its exact declared root imagefile feed", hash, arguments.getString("scannerCameraImageSha256")); }
@@ -217,12 +223,32 @@ public final class ScannerInputTest {
         tap("Scan QR");
         web.await("actual camera acquired and playing", OVERLAY + "?.innerText.includes('Point the camera at the QR code') && " + OVERLAY + ".querySelector('video').readyState >= 2 && " + OVERLAY + ".querySelector('video').videoWidth > 0");
         camera.awaitAcquiredAfter(before);
+        web.await("scanner owns live public focus", OVERLAY + "?.contains(document.activeElement) && !document.activeElement.closest('[inert]')");
+        logPublicFocus("scanner-ready");
         assertLiveAndLogCamera("camera-acquired");
     }
     private void awaitReleased(String stage) throws Exception {
         web.await("scanner settled after " + stage, OVERLAY + " === null");
         camera.awaitAllAvailable();
         assertLiveAndLogCamera(stage);
+    }
+    private void awaitScanReturn(String stage) throws Exception {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        AtomicBoolean focused = new AtomicBoolean();
+        do {
+            scenario.onActivity(activity -> focused.set(activity.hasWindowFocus()
+                && activity.getLifecycle().getCurrentState() == Lifecycle.State.RESUMED));
+            if (focused.get()) break;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        assertTrue("Focus return witness requires actual resumed app window", focused.get());
+        web.await("Scan QR regains public focus after " + stage,
+            "document.activeElement?.getAttribute('data-session-focus') === 'pairing-scan' && !document.activeElement.disabled && !document.activeElement.closest('[inert]')");
+        logPublicFocus(stage);
+    }
+    private void logPublicFocus(String stage) throws Exception {
+        Log.i(TAG, "publicFocus=" + stage + ";witness=" + web.evaluate("(() => { const e=document.activeElement;return {tag:e?.tagName,name:(e?.getAttribute('aria-label')||e?.textContent||'').slice(0,80),insideScanner:!!(" + OVERLAY + "?.contains(e)),inert:!!e?.closest('[inert]')};})()")
+            + ";hardwareKeyboardOrTalkBackClaimed=false");
     }
     private void assertScannerBounds() throws Exception {
         logGeometry("scanner-bounds", true);

@@ -71,24 +71,122 @@ if (process.argv.includes("--consumer")) {
       "permission return only rechecks, never captures"
     );
     await page.evaluate(() => scannerConsumer.pending());
-    await page.getByRole("button", { name: "Scan QR", exact: true }).click();
+    const scanQr = page.locator("[data-session-focus=pairing-scan]");
+    await scanQr.click();
+    const scanner = page.getByRole("dialog", {
+      name: "Scan pairing QR code",
+      exact: true,
+    });
+    await scanner.waitFor();
+    const cancelCapture = scanner.getByRole("button", {
+      name: "Cancel",
+      exact: true,
+    });
+    await page.waitForFunction(
+      () => document.activeElement?.textContent === "Cancel"
+    );
+    assert.equal(await scanQr.evaluate((e) => !!e.closest("[inert]")), true);
+    await page.keyboard.press("Tab");
+    assert.equal(
+      await cancelCapture.evaluate((e) => e === document.activeElement),
+      true
+    );
+    await page.keyboard.press("Shift+Tab");
+    assert.equal(
+      await cancelCapture.evaluate((e) => e === document.activeElement),
+      true
+    );
+    await page.keyboard.press("Enter");
+    await scanner.waitFor({ state: "detached" });
+    await page
+      .waitForFunction(() => document.activeElement?.textContent === "Scan QR")
+      .catch(async (error) => {
+        console.error(
+          await page.evaluate(() => ({
+            active: document.activeElement?.outerHTML,
+            scan: document.querySelector("[data-session-focus=pairing-scan]")
+              ?.outerHTML,
+            inert: [...document.querySelectorAll("[inert]")].map(
+              (e) => e.tagName + "." + e.className
+            ),
+          }))
+        );
+        throw error;
+      });
+    await page.evaluate(() => scannerConsumer.acquire());
+    await page.waitForFunction(() => scannerConsumer.stats().stops === 1);
+    await page.evaluate(() => scannerConsumer.blank());
+    await scanQr.click();
+    await scanner.waitFor();
+    const scanNow = scanner.getByRole("button", {
+      name: "Scan now",
+      exact: true,
+    });
+    await page.waitForFunction(
+      () => !document.querySelector("#clipp-android-qr-scanner button").disabled
+    );
+    await page.keyboard.press("Tab");
+    assert.equal(
+      await scanNow.evaluate((e) => e === document.activeElement),
+      true
+    );
+    await page.keyboard.press("Shift+Tab");
+    assert.equal(
+      await cancelCapture.evaluate((e) => e === document.activeElement),
+      true
+    );
+    await page.keyboard.press("Escape");
+    await scanner.waitFor({ state: "detached" });
+    await page
+      .waitForFunction(() => document.activeElement?.textContent === "Scan QR")
+      .catch(async (error) => {
+        console.error(
+          await page.evaluate(() => ({
+            active: document.activeElement?.outerHTML,
+            scan: document.querySelector("[data-session-focus=pairing-scan]")
+              ?.outerHTML,
+            inert: [...document.querySelectorAll("[inert]")].map(
+              (e) => e.tagName + "." + e.className
+            ),
+          }))
+        );
+        throw error;
+      });
+    await page.evaluate(() => scannerConsumer.pending());
+    await scanQr.click();
     await page.locator("#clipp-android-qr-scanner").waitFor();
     await page.evaluate(() => scannerConsumer.closeTask());
     await page
       .locator("#clipp-android-qr-scanner")
       .waitFor({ state: "detached" });
     await page.evaluate(() => scannerConsumer.acquire());
-    await page.waitForFunction(() => scannerConsumer.stats().stops === 1);
+    await page.waitForFunction(() => scannerConsumer.stats().stops === 3);
     await page.evaluate(() => scannerConsumer.reopen());
     await page.getByRole("button", { name: "Scan QR", exact: true }).waitFor();
     const stats = await page.evaluate(() => scannerConsumer.stats());
     assert.deepEqual(stats, {
-      requests: 2,
-      stops: 1,
+      requests: 4,
+      stops: 3,
       query: "retained query",
       draft: "retained draft",
     });
     assert.deepEqual(await page.evaluate(() => scannerConsumer.attempts), []);
+    await page.evaluate(() => scannerConsumer.decodeThenClose());
+    await scanQr.click();
+    await page
+      .locator("#clipp-android-qr-scanner")
+      .waitFor({ state: "detached" });
+    await page.waitForFunction(() => scannerConsumer.stats().stops === 4);
+    assert.deepEqual(
+      await page.evaluate(() => scannerConsumer.attempts),
+      [],
+      "closed task ignores queued real decode completion"
+    );
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.stats().draft),
+      "retained draft"
+    );
+    await page.evaluate(() => scannerConsumer.reopen());
     await page.evaluate(() => scannerConsumer.decode());
     await page.getByRole("button", { name: "Scan QR", exact: true }).click();
     await page.waitForFunction(() => scannerConsumer.attempts.length === 1);

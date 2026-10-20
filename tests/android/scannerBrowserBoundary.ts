@@ -4,6 +4,7 @@ export function scannerBrowserBoundary() {
   const elements: Element[] = [];
   const frames = new Map<number, FrameRequestCallback>();
   let nextFrame = 0;
+  let activeElementIndex = -1;
   let visibilityState = "visible";
   let acquire!: (stream: MediaStream) => void;
   let reject!: (error: unknown) => void;
@@ -14,11 +15,59 @@ export function scannerBrowserBoundary() {
     height: 64,
   };
   let imageError: unknown;
+  let frameReads = 0;
   let acquireError: unknown;
   let contextAvailable = true;
   let providerCalls = 0;
   class Element extends EventTarget {
     style = {};
+    inert = false;
+    tabIndex = 0;
+    dataset: Record<string, string> = {};
+    get parentElement() {
+      return this.parent;
+    }
+    get isConnected(): boolean {
+      return this === body || !!this.parent?.isConnected;
+    }
+    getClientRects() {
+      return this.isConnected ? [{}] : [];
+    }
+    closest() {
+      return null;
+    }
+    matches(selector: string) {
+      return selector === ":disabled" && this.disabled;
+    }
+    focus() {
+      activeElementIndex = elements.indexOf(this);
+    }
+    click() {
+      if (!this.disabled) this.dispatchEvent(new Event("click"));
+    }
+    contains(element: Element): boolean {
+      return (
+        this === element ||
+        this.children.some((child) => child.contains(element))
+      );
+    }
+    querySelector(selector: string) {
+      return this.querySelectorAll(selector)[0] ?? null;
+    }
+    querySelectorAll(selector: string): Element[] {
+      return this.children.flatMap((child) => [
+        ...(selector === "[data-task-dialog]"
+          ? child.id === "clipp-android-qr-scanner"
+            ? [child]
+            : []
+          : selector === "[data-session-focus]"
+            ? []
+            : child.tag === "button" && !child.disabled
+              ? [child]
+              : []),
+        ...child.querySelectorAll(selector),
+      ]);
+    }
     className = "";
     id = "";
     textContent = "";
@@ -61,6 +110,7 @@ export function scannerBrowserBoundary() {
       return {
         drawImage() {},
         getImageData() {
+          frameReads++;
           if (imageError) throw imageError;
           return pixels;
         },
@@ -70,12 +120,18 @@ export function scannerBrowserBoundary() {
   const body = new Element("body");
   const document = Object.assign(new EventTarget(), {
     body,
+    contains: (element: Element) => body.contains(element),
+    querySelectorAll: (selector: string) => body.querySelectorAll(selector),
+    querySelector: () => null,
     createElement: (tag: string) => new Element(tag),
     getElementById: (id: string) =>
       elements.find((e) => e.id === id && e.parent) ?? null,
     get visibilityState() {
       return visibilityState;
     },
+  });
+  Object.defineProperty(document, "activeElement", {
+    get: () => elements[activeElementIndex] ?? null,
   });
   Object.defineProperty(document, "visibilityState", {
     get: () => visibilityState,
@@ -95,6 +151,11 @@ export function scannerBrowserBoundary() {
           });
         },
       },
+    },
+    HTMLElement: Element,
+    MutationObserver: class {
+      observe() {}
+      disconnect() {}
     },
     ResizeObserver: class {
       observe() {}
@@ -144,6 +205,12 @@ export function scannerBrowserBoundary() {
         while (parent && parent !== body) parent = parent.parent;
         return parent === body;
       })!,
+    frameNow: () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback(1000);
+    },
+    frameReads: () => frameReads,
     frame: async () => {
       const pending = [...frames.values()];
       frames.clear();

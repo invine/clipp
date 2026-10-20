@@ -231,3 +231,107 @@ it("abort settles while video play is pending and a late play completion cannot 
     browser.restore();
   }
 });
+
+it.each(["abort", "Cancel", "replacement"] as const)(
+  "%s wins after real software decode but before queued result delivery",
+  async (action) => {
+    const code = await createPairingCode(
+      encodePairingTarget({
+        targetPeerId: signedTarget.targetPeerId,
+        signedPeerRecord: new Uint8Array(
+          Buffer.from(signedTarget.signedPeerRecord, "base64")
+        ),
+      })
+    );
+    const image = PNG.sync.read(
+      Buffer.from(code.image!.split(",")[1], "base64")
+    );
+    const browser = scannerBrowserBoundary();
+    const controller = new AbortController();
+    let settlements = 0;
+    let replacement: ReturnType<typeof scanPairingQrWithCamera> | undefined;
+    try {
+      const result = scanPairingQrWithCamera({
+        signal: controller.signal,
+      }).then((value) => {
+        settlements++;
+        return value;
+      });
+      browser.setPixels({
+        data: new Uint8ClampedArray(image.data),
+        width: image.width,
+        height: image.height,
+      });
+      const stopped = browser.acquire();
+      await browser.flush();
+      // Frame decoding is real and synchronous; its Promise continuation has not run.
+      browser.frameNow();
+      expect(browser.frameReads()).toBe(1);
+      if (action === "abort") controller.abort();
+      else if (action === "Cancel") browser.button("Cancel").click();
+      else replacement = scanPairingQrWithCamera();
+      await expect(result).resolves.toEqual({ status: "cancelled" });
+      await browser.flush();
+      expect(settlements).toBe(1);
+      expect(stopped()).toBe(1);
+      expect(browser.frameCount()).toBe(0);
+      if (replacement) {
+        browser.button("Cancel").click();
+        await expect(replacement).resolves.toEqual({ status: "cancelled" });
+        const lateStop = browser.acquire();
+        await browser.flush();
+        expect(lateStop()).toBe(1);
+      }
+      expect(browser.overlayCount()).toBe(0);
+    } finally {
+      controller.abort();
+      browser.button("Cancel")?.click();
+      browser.restore();
+    }
+  }
+);
+
+it("automatic and manual scans share real pending decode and settle once", async () => {
+  const code = await createPairingCode(
+    encodePairingTarget({
+      targetPeerId: signedTarget.targetPeerId,
+      signedPeerRecord: new Uint8Array(
+        Buffer.from(signedTarget.signedPeerRecord, "base64")
+      ),
+    })
+  );
+  const image = PNG.sync.read(Buffer.from(code.image!.split(",")[1], "base64"));
+  const browser = scannerBrowserBoundary();
+  let settlements = 0;
+  try {
+    const result = scanPairingQrWithCamera().then((value) => {
+      settlements++;
+      return value;
+    });
+    browser.setPixels({
+      data: new Uint8ClampedArray(image.data),
+      width: image.width,
+      height: image.height,
+    });
+    const stopped = browser.acquire();
+    await browser.flush();
+    browser.frameNow();
+    browser.button("Scan now").click();
+    const scanned = await result;
+    expect(scanned.status).toBe("scanned");
+    if (scanned.status !== "scanned")
+      throw Error("expected real software decode");
+    expect(decodePairingTarget(scanned.text)?.targetPeerId).toBe(
+      signedTarget.targetPeerId
+    );
+    await browser.flush();
+    expect(browser.frameReads()).toBe(1);
+    expect(settlements).toBe(1);
+    expect(stopped()).toBe(1);
+    expect(browser.overlayCount()).toBe(0);
+    expect(browser.frameCount()).toBe(0);
+  } finally {
+    browser.button("Cancel")?.click();
+    browser.restore();
+  }
+});

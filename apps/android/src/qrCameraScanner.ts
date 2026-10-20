@@ -1,3 +1,4 @@
+import { bindTaskDialogFocus } from "../../../packages/ui/src/taskDialogFocus";
 import jsQR from "jsqr";
 import type {
   PairingScanError,
@@ -38,6 +39,11 @@ function cameraErrorMessage(err: unknown): Error {
 export function createPairingScannerOverlay() {
   const overlay = document.createElement("div");
   overlay.id = SCANNER_ID;
+  overlay.setAttribute("data-task-dialog", "");
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Scan pairing QR code");
+  overlay.tabIndex = -1;
   appendStyles(overlay, {
     position: "fixed",
     left: "var(--clipp-content-left, 0px)",
@@ -151,6 +157,11 @@ export function createPairingScannerOverlay() {
   videoWrap.append(video, frame);
   overlay.append(videoWrap, toolbar);
   document.body.append(overlay);
+  const releaseFocus = bindTaskDialogFocus(overlay, {
+    fallback: cancel,
+    deferredReturnKey: "pairing-scan",
+    onDismiss: () => cancel.click(),
+  });
 
   const fitFrame = () => {
     const rect = videoWrap.getBoundingClientRect();
@@ -168,6 +179,7 @@ export function createPairingScannerOverlay() {
     dispose() {
       observer.disconnect();
       overlay.remove();
+      releaseFocus();
     },
   };
 }

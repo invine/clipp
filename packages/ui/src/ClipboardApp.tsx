@@ -2920,6 +2920,7 @@ export function ClipboardApp({
             {onScanPairingCode && (
               <button
                 type="button"
+                data-session-focus="pairing-scan"
                 disabled={!identityReady || isScanningPairing || pair.pending}
                 onClick={scanPairingCode}
               >

@@ -59,6 +59,16 @@ async function mount() {
     source: CanvasImageSource,
     ...args: number[]
   ) {
+    if (mode === "blank") {
+      this.fillStyle = "white";
+      this.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      return;
+    }
+    if (mode === "decode-then-close") {
+      mode = "decode";
+      // The public task closes before real synchronous decoding delivers its Promise result.
+      queueMicrotask(() => session.close());
+    }
     Reflect.apply(drawImage, this, [
       source instanceof HTMLVideoElement ? image : source,
       ...args,
@@ -100,7 +110,11 @@ async function mount() {
           return Promise.reject(
             new DOMException("fixture permission denial", "NotAllowedError")
           );
-        if (mode === "decode")
+        if (
+          mode === "decode" ||
+          mode === "blank" ||
+          mode === "decode-then-close"
+        )
           return Promise.resolve({
             getTracks: () => [
               {
@@ -197,6 +211,12 @@ async function mount() {
     permissionReads: () => permissionReads,
     decode() {
       mode = "decode";
+    },
+    blank() {
+      mode = "blank";
+    },
+    decodeThenClose() {
+      mode = "decode-then-close";
     },
     pairing: () => session.pairing.getSnapshot(),
     finishSubmission() {
