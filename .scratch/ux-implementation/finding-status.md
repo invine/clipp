@@ -71,3 +71,9 @@ Ticket14 contribution — 2026-10-11: integrated diagnosis `f894142c628c7e374212
 ## Current host contributions — 2026-10-20
 
 Android input[36](issues/36-deliver-android-task-input.md) is complete as a supporting contribution; original13/A03 and other multi-ticket findings stay open. Dock26 has a fixed actual human-reported tray/context/minimize interval plus independent native Quit and reviewed source; latest precise Electron task-focus/wide keyboard failures remain34. E10 still awaits24 reachability and E17's full13/shared host contribution remains open. No finding or TT35 disposition changes here.
+
+## Electron input/tray completion and next frontier — 2026-10-20
+
+[34](issues/34-deliver-android-electron-task-input.md#answer--2026-10-20) and [26](issues/26-simplify-desktop-tray-and-qualify-dock.md#answer--2026-10-20) are resolved at integrated6d9dca7 after reviewed source, mandatory integration, fresh160-suite/1201-test/all-build verification and scoped native/human evidence. Exact ignored completion receipt and independent audit preserve provenance,320/wider ordinary sizes, earlier failures and retained limitations.13 remains original input/finding collector; E10 still awaits24 and E17 its original13/shared-host contribution. This is no blanket finding or G14 closure.
+
+16 is claimed for ux-notifications-16 after all its predecessors resolve;15 continues scanner diagnosis after two timeout intervals with owned guests closed/host sharing exactly restored.29's privileged composition source is integrated/reviewed/routine-verified, while complete native/reset/clipboard acceptance and a deliberate single-owner Android-shell seam remain. At most two active source implementers15/16; no blocked consumer or reset30 activation. Canonical20resolved/9claimed/7open. Other claims, external owners, TT35-only acceptance and original deferrals remain.

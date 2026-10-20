@@ -1,7 +1,7 @@
 # Deliver Electron task input and collect remaining host qualification
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-native-input-34
 Priority band: 1
 Blocked by: 07, 12, 32
@@ -90,3 +90,17 @@ The user clarifies the fresh native failure: “Draft remained, keyboard focus w
 Resume existing ux-native-input-34 in preserved ticket34 worktree/branch codex/ux-34-back-sequence-repair. Inspect and preserve its sole generated Gradle4825 delta and sanitized helper1dbfd; fast-forward from clean-source fa30 to this coordinator tip before editing. Diagnose the actual Electron activation/shared TaskDialog/sessionFocus consumer and establish an owning-interface RED for the observed focus failure before a minimal fix. Preserve meaningful retained focus/selection and user navigation, one document-lived owner and real task/draft state. Do not unconditionally force input focus, add a second manager, mask failure with repeated activation or change the passed Dock contract speculatively. Reuse real consumer tests; external OS boundaries may be inert, private task/controller substitutes do not qualify the caller. Any shared change includes affected live hosts and requalifies the changed Android36 slice.
 
 Root owns native candidate input, exact narrow/wide geometry and final human/controller qualification, check/hook serialization, mandatory merger/reviews. At most two implementers:15 scanner and this34 focus repair. Source author launches no CUA/Electron/SDK/native/clipboard/camera operation. Read ignored electron-input-final-b685-20261020/reported-input-failure-20261020.json and native34-electron-scope-remaining-audit-20261020.md; retain later clarification and every earlier failed/unqualified observation. No whole34/26/finding closure or TT35 exception expansion follows.
+
+## Retained-focus repair integrated — 2026-10-20
+
+Actual passive tray cycles corroborate Device name before hide and Close name editor after return despite focused document/window; the user's retained-draft report remains distinct from focus loss. Source64fb5d7ea68b151d72246a1e9bb7d6080eb6eb42 retains one pre-blur target/task intent in the existing Electron adapter and validates it through the shared focus policy. Newer trusted input, target/task ineligibility, disposal and consume-once semantics prevent stale override. Owning real-consumer regression passes10 cases; required check/actual hook and fresh root verify pass155 suites/1169tests/all3builds. Spec0 actionable; Standards0 breaches and one optional P3 duplicated-lookup note, accepted as maintenance feedback. Exact ignored integrated receipt: `electron34-retained-focus-integrated-verification-20261020.json`.
+
+The fresh “Clipp Focus Fixed 64fb5d7” candidate binds the repaired renderer and uses process-local clipboard memory. Required real tray return, failed Save keyboard recovery and measured minimum/wide/restored keyboard checks remain pending; no source pass substitutes for them.34 and26 remain claimed. Later scanner integrationcb preserves the shared focus-policy bytes and passes the Electron owning harness; no native success follows by implication.
+
+## Answer — 2026-10-20
+
+Scoped output is complete on integrated client6d9dca7448461b03f316083736b28e7cad7896f5/tree17f07b5ad970dc074e9ef9ceb18aec9e83e8aa0b. Fresh root npm run verify passes160 suites/1201tests, all runtime typechecks/all3productionbuilds, lint0errors907warnings. Existing source reviews/mandatory mergers and actual/human native facts are bound in ignored `electron34-26-completion-integrated-verification-20261020.json` (SHA2564f03971cde602506b45a5d1b258ad73d361ff81b784d4dd35b50a4e95cefd0cc); independent `electron34-26-scoped-completion-audit-20261020-human52cc.md` finds no indispensable remaining scoped native gate.
+
+Direct human response “all passed” covers corrected tray-return immediate typing, three-space validation/correction, Escape/Return retained draft and minimum/wider/restored ordinary keyboard access. Passive logs corroborate fixed-return→fixed-returnx, focused controls at320×728 and wider742→740×728; final ordinary outer740×760 is recorded without claiming exact original520 restore. Prior actual Dock/query/task/minimize/restore and independent native-menu Quit remain valid for unchanged window policy. The final owned fixed candidate also exits through actual native app-menu Quit: passive window-closed/will-quit and absent exactPID24576, profile retained inert. Every previous failed input/provider/controller observation and optionalP3 source note remains preserved.
+
+This resolves only the named host/tray output.13 retains collection,15 scanner,16 notifications and17/18/19/later consumers retain their own gates. E10 awaits24 reachability and E17 original13/shared-host contribution; no broad finding, G14/assistive/hardware/clipboard/reset pass or TT35 exception extension follows.

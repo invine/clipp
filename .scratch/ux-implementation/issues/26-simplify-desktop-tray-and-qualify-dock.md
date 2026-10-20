@@ -1,7 +1,7 @@
 # Simplify the desktop tray and qualify Dock behavior
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-tray-26
 Priority band: 3
 Blocked by: none
@@ -74,3 +74,11 @@ Reused the existing passive launcher with only fresh profile/title/output paths 
 The user selected actual tray Open Clipp for owned “Clipp Native edd1b412” and reports “Window returned; Dock icon missing”. Frozen passive evidence corroborates a visible focused window with dockVisible=false; subsequent hide is preserved. Original Electron assets remain byte-identical through7518306. Receipt: ignored `electron-distinct-bundle-edd1b412/tray-reopen-human-20261017.json`. This reproduces the spec's conditional Dock defect and authorizes its bounded repair; inspection activation alone is not used as tray evidence.
 
 Resume existing ux-tray-26 in clean preserved ticket-26 worktree/branch at e5f2407d25a13e3ecd85b8cca27057f52dd590a9; incorporate current integration7518306 before editing. Restore only missing ignored Husky helper/shims from sanitized integration, without npm prepare. Use existing owning main/window/tray seams and meaningful TDD, preserving normal minimize/restore/Quit/session context. No second focus manager or global host setting. Root owns native fixed-candidate qualification, reviews, mandatory merger and resolution. At most two source implementers: ongoing34 acceptance work and resumed26, replacing completed20.26 remains claimed until fixed real tray/Dock and remaining required native checks pass.
+
+## Answer — 2026-10-20
+
+Scoped output is complete on integrated client6d9dca7448461b03f316083736b28e7cad7896f5/tree17f07b5ad970dc074e9ef9ceb18aec9e83e8aa0b. Fresh root npm run verify passes160 suites/1201tests, all runtime typechecks/all3productionbuilds, lint0errors907warnings. Existing source reviews/mandatory mergers and actual/human native facts are bound in ignored `electron34-26-completion-integrated-verification-20261020.json` (SHA2564f03971cde602506b45a5d1b258ad73d361ff81b784d4dd35b50a4e95cefd0cc); independent `electron34-26-scoped-completion-audit-20261020-human52cc.md` finds no indispensable remaining scoped native gate.
+
+Direct human response “all passed” covers corrected tray-return immediate typing, three-space validation/correction, Escape/Return retained draft and minimum/wider/restored ordinary keyboard access. Passive logs corroborate fixed-return→fixed-returnx, focused controls at320×728 and wider742→740×728; final ordinary outer740×760 is recorded without claiming exact original520 restore. Prior actual Dock/query/task/minimize/restore and independent native-menu Quit remain valid for unchanged window policy. The final owned fixed candidate also exits through actual native app-menu Quit: passive window-closed/will-quit and absent exactPID24576, profile retained inert. Every previous failed input/provider/controller observation and optionalP3 source note remains preserved.
+
+This resolves only the named host/tray output.13 retains collection,15 scanner,16 notifications and17/18/19/later consumers retain their own gates. E10 awaits24 reachability and E17 original13/shared-host contribution; no broad finding, G14/assistive/hardware/clipboard/reset pass or TT35 exception extension follows.

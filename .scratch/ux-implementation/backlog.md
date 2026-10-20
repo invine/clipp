@@ -103,3 +103,9 @@ The user directs “consider all passed, we'll figure it out later.” [Accepted
 ## Android input delivery and scanner continuation — 2026-10-20
 
 [36 — Android task input](issues/36-deliver-android-task-input.md) is resolved on reviewed native contribution9d60298. [34](issues/34-deliver-android-electron-task-input.md) retains all Electron input/focus/layout work; current user-reported failures remain. [15](issues/15-repair-android-scanner-lifecycle.md) now consumes resolved36 and is claimed for the diagnosed jsQR/lifecycle remedy.13/16 retain both host dependencies. No broad finding, camera support or TT35 exception is extended.
+
+## Electron input/tray completion and next frontier — 2026-10-20
+
+[34](issues/34-deliver-android-electron-task-input.md#answer--2026-10-20) and [26](issues/26-simplify-desktop-tray-and-qualify-dock.md#answer--2026-10-20) are resolved at integrated6d9dca7 after reviewed source, mandatory integration, fresh160-suite/1201-test/all-build verification and scoped native/human evidence. Exact ignored completion receipt and independent audit preserve provenance,320/wider ordinary sizes, earlier failures and retained limitations.13 remains original input/finding collector; E10 still awaits24 and E17 its original13/shared-host contribution. This is no blanket finding or G14 closure.
+
+16 is claimed for ux-notifications-16 after all its predecessors resolve;15 continues scanner diagnosis after two timeout intervals with owned guests closed/host sharing exactly restored.29's privileged composition source is integrated/reviewed/routine-verified, while complete native/reset/clipboard acceptance and a deliberate single-owner Android-shell seam remain. At most two active source implementers15/16; no blocked consumer or reset30 activation. Canonical20resolved/9claimed/7open. Other claims, external owners, TT35-only acceptance and original deferrals remain.

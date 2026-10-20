@@ -156,3 +156,9 @@ Ticket25 consumes resolved32's common interface and qualified Android controls; 
 ## Android input host allocation — 2026-10-20
 
 Supporting Android input formerly included in34 is delivered by resolved[36](issues/36-deliver-android-task-input.md); all remaining Electron work remains[34](issues/34-deliver-android-electron-task-input.md). Apply this explicit host mapping to every34 supporting input contribution in the register above. Android scanner15 consumes36; original13/A03 and19/E06/C06 collection still require their own full contributions. This creates no new finding and closes none early.
+
+## Electron input/tray completion and next frontier — 2026-10-20
+
+[34](issues/34-deliver-android-electron-task-input.md#answer--2026-10-20) and [26](issues/26-simplify-desktop-tray-and-qualify-dock.md#answer--2026-10-20) are resolved at integrated6d9dca7 after reviewed source, mandatory integration, fresh160-suite/1201-test/all-build verification and scoped native/human evidence. Exact ignored completion receipt and independent audit preserve provenance,320/wider ordinary sizes, earlier failures and retained limitations.13 remains original input/finding collector; E10 still awaits24 and E17 its original13/shared-host contribution. This is no blanket finding or G14 closure.
+
+16 is claimed for ux-notifications-16 after all its predecessors resolve;15 continues scanner diagnosis after two timeout intervals with owned guests closed/host sharing exactly restored.29's privileged composition source is integrated/reviewed/routine-verified, while complete native/reset/clipboard acceptance and a deliberate single-owner Android-shell seam remain. At most two active source implementers15/16; no blocked consumer or reset30 activation. Canonical20resolved/9claimed/7open. Other claims, external owners, TT35-only acceptance and original deferrals remain.
