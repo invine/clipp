@@ -7,6 +7,11 @@ import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Instrumentation;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
+import android.provider.Settings;
 import android.graphics.Rect;
 import android.os.Build;
 import android.view.InputDevice;
@@ -14,6 +19,7 @@ import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
 import android.content.Context;
 import android.os.SystemClock;
 import android.util.Log;
@@ -29,6 +35,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONObject;
 import org.junit.After;
@@ -53,6 +60,7 @@ public final class HostTaskInputTest {
     private static final long CAPTURE_QUIET_MS = 5_000;
     @Rule public final TestName testName = new TestName();
     private static final String DRAFT = "native back acceptance draft";
+    private static final String LIVE_QUERY = "native live document";
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private ActivityScenario<MainActivity> scenario;
     private NativePublicWebView input;
@@ -69,6 +77,12 @@ public final class HostTaskInputTest {
         if ("realRejectedDeviceNameSaveRetainsNewerDraftAcrossNativeBackAndThenSaves".equals(testName.getMethodName()))
             Assume.assumeTrue("Root must separately authorize -e failedDeviceNameAcceptance true",
                 "true".equals(InstrumentationRegistry.getArguments().getString("failedDeviceNameAcceptance")));
+        if (testName.getMethodName().startsWith("liveDocument") || testName.getMethodName().startsWith("rootBack"))
+            Assume.assumeTrue("Root must separately authorize actual host background/return with -e hostLifecycleAcceptance true",
+                "true".equals(InstrumentationRegistry.getArguments().getString("hostLifecycleAcceptance")));
+        if (testName.getMethodName().startsWith("liveDocumentOrientation"))
+            Assume.assumeTrue("Root must separately authorize Activity-only orientation with -e hostOrientationAcceptance true",
+                "true".equals(InstrumentationRegistry.getArguments().getString("hostOrientationAcceptance")));
         AccessibilityServiceInfo accessibility = instrumentation.getUiAutomation().getServiceInfo();
         accessibility.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         instrumentation.getUiAutomation().setServiceInfo(accessibility);
@@ -86,7 +100,14 @@ public final class HostTaskInputTest {
         try (InputStream stream = target.getAssets().open("public/index.html")) {
             assertTrue("Packaged web assets are required", stream.read() != -1);
         }
-        scenario = ActivityScenario.launch(MainActivity.class);
+        if (testName.getMethodName().startsWith("rootBack")) {
+            scenario = ActivityScenario.launch(actualLauncherIntent());
+            scenario.onActivity(activity -> {
+                assertEquals("Root Back qualification must use actual launcher intent", Intent.ACTION_MAIN, activity.getIntent().getAction());
+                assertTrue("Root Back qualification requires launcher category", activity.getIntent().hasCategory(Intent.CATEGORY_LAUNCHER));
+                assertTrue("Actual MainActivity must be the task root", activity.isTaskRoot());
+            });
+        } else scenario = ActivityScenario.launch(MainActivity.class);
         input = new NativePublicWebView(instrumentation, scenario);
         await("production workspace ready", "document.querySelector('nav[aria-label=\"Clipp destinations\"]') !== null");
         assertEquals("https://localhost/", evaluate("location.origin + '/'"));
@@ -176,6 +197,259 @@ public final class HostTaskInputTest {
         // The retained chooser still belongs to its original Devices invoker.
         assertFocusedButton("Pair this device");
         assertForeground();
+    }
+
+    @Test
+    public void rootBackAfterNestedTaskJourneyDelegatesOnceToNormalHostLifecycle() throws Exception {
+        openPairing();
+        tapButton("Paste pairing text");
+        awaitDialog("Paste pairing text");
+        awaitIme(true);
+        instrumentation.sendStringSync(DRAFT);
+        awaitDraft();
+        nativeBack();
+        awaitIme(false);
+        assertStableDialog("Paste pairing text");
+        nativeBack();
+        awaitDialog("Pairing");
+        assertFocusedButton("Paste pairing text");
+        assertStableDialog("Pairing");
+        nativeBack();
+        awaitNoDialog();
+        assertFocusedButton("Pair this device");
+        awaitIme(false);
+        AtomicInteger pauses = new AtomicInteger(), stops = new AtomicInteger(), destroys = new AtomicInteger();
+        AtomicBoolean finishing = new AtomicBoolean();
+        LifecycleEventObserver observer = (owner, event) -> {
+            finishing.set(((MainActivity) owner).isFinishing());
+            if (event == Lifecycle.Event.ON_PAUSE) pauses.incrementAndGet();
+            if (event == Lifecycle.Event.ON_STOP) stops.incrementAndGet();
+            if (event == Lifecycle.Event.ON_DESTROY) destroys.incrementAndGet();
+        };
+        scenario.onActivity(activity -> activity.getLifecycle().addObserver(observer));
+        try {
+            // Exactly one real root key; no dispatcher, bridge callback or moveToState.
+            nativeBack();
+            long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+            while ((stops.get() == 0 || (finishing.get() && destroys.get() == 0))
+                && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(50);
+            assertEquals("One root Back must pause the actual Activity once", 1, pauses.get());
+            assertEquals("One root Back must stop the actual Activity once", 1, stops.get());
+            assertTrue("One root key must not duplicate destruction", destroys.get() <= 1);
+            assertTrue("An actual native finish must settle before its outcome is checked", !finishing.get() || destroys.get() == 1);
+            // On this host both plain AppCompat and its normal AndroidX passthrough
+            // finish the launcher root (native34-root-controls-093d6ba7). Normal
+            // host behavior may destroy the document; live-document preservation
+            // is qualified separately by Settings return and orientation reflow.
+            if (destroys.get() == 0) {
+                scenario.onActivity(activity -> assertTrue("A backgrounded root must remain alive", !activity.isFinishing()));
+                assertActivityState(false, false);
+            } else {
+                assertTrue("Destruction must be the actual normal native finish", finishing.get());
+                assertEquals(Lifecycle.State.DESTROYED, scenario.getState());
+            }
+            Log.i("ClippHostTaskInput", "rootBackKeys=1;actualPause=1;actualStop=1;destroyed=" + destroys.get()
+                + ";finishing=" + finishing.get() + ";state=" + scenario.getState()
+                + ";hostBehavior=normal-Android-root;controlProvenance=native34-root-controls-093d6ba7;privateAcksInspected=false");
+        } finally {
+            if (scenario.getState() != Lifecycle.State.DESTROYED)
+                scenario.onActivity(activity -> activity.getLifecycle().removeObserver(observer));
+        }
+    }
+
+    @Test
+    public void liveDocumentExternalSettingsReturnRetainsTaskDraftQueryScopeFocusAndScroll() throws Exception {
+        String raw = prepareLongLiveDraft();
+        LiveDocument document = liveDocument();
+        double scroll = Double.parseDouble(evaluate("document.querySelector('textarea[aria-label=\"Pairing text\"]').scrollTop"));
+        assertTrue("Genuine typed input must establish nonzero textarea scroll", scroll > 0);
+        // Explicit host setup while the task is open; this is an actual external
+        // Activity, not a fabricated JS lifecycle event or a private UI route.
+        scenario.onActivity(activity -> activity.startActivity(new Intent(Settings.ACTION_SETTINGS)));
+        awaitActivityState(false, false);
+        awaitNativeSettings();
+        nativeExternalSettingsBack();
+        awaitActivityState(true, true);
+        assertSameLiveDocument(document);
+        assertLongLiveDraft(raw);
+        double returnedScroll = Double.parseDouble(evaluate("document.querySelector('textarea[aria-label=\"Pairing text\"]').scrollTop"));
+        assertTrue("Same geometry return must retain actual textarea scroll", Math.abs(returnedScroll - scroll) <= 2);
+        closeLiveDraftWithNativeBack(raw);
+        Log.i("ClippHostTaskInput", "hostSetup=actual-Android-Settings-Activity;sameDocument=true;retainedTaskDraftQueryScopeFocus=true;textareaScrollBefore=" + scroll + ";after=" + returnedScroll);
+    }
+
+    @Test
+    public void liveDocumentOrientationReflowRetainsOpenDraftAndNativeBackOwnership() throws Exception {
+        AtomicInteger original = new AtomicInteger();
+        scenario.onActivity(activity -> {
+            assertEquals("Root must supply the initial portrait profile", Configuration.ORIENTATION_PORTRAIT, activity.getResources().getConfiguration().orientation);
+            original.set(activity.getRequestedOrientation());
+        });
+        String raw = prepareLongLiveDraft();
+        LiveDocument document = liveDocument();
+        assertTrue("Actual typed textarea must be scrolled before reflow", Double.parseDouble(evaluate("document.querySelector('textarea[aria-label=\"Pairing text\"]').scrollTop")) > 0);
+        try {
+            // Activity-owned real orientation request; no global rotation/font setting.
+            Log.i("ClippHostReflow", "phase=request-landscape;uptimeMs=" + SystemClock.uptimeMillis());
+            scenario.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+            awaitNativeOrientation(Configuration.ORIENTATION_LANDSCAPE);
+            awaitReflowReady("landscape");
+            await("actual landscape WebView reflow", "innerWidth > innerHeight");
+            assertSameLiveDocument(document);
+            assertLongLiveDraft(raw);
+            logGeometry("live-task-landscape");
+            Log.i("ClippHostReflow", "phase=request-portrait;uptimeMs=" + SystemClock.uptimeMillis());
+            scenario.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+            awaitNativeOrientation(Configuration.ORIENTATION_PORTRAIT);
+            awaitReflowReady("portrait");
+            await("actual portrait WebView reflow", "innerHeight > innerWidth");
+            assertSameLiveDocument(document);
+            assertLongLiveDraft(raw);
+            logGeometry("live-task-restored-portrait");
+            closeLiveDraftWithNativeBack(raw);
+            // The retained synthetic draft can be reopened; the actual final
+            // task control must be reachable through physical input after reflow.
+            openPairing();
+            tapButton("Paste pairing text");
+            awaitDialog("Paste pairing text");
+            await("raw draft retained after native Back", "document.querySelector('textarea[aria-label=\"Pairing text\"]').value === " + JSONObject.quote(raw));
+            if (nativeImeVisible()) { nativeBack(); awaitIme(false); }
+            tapButton("Discard pairing input");
+            awaitDialog("Pairing");
+            assertFocusedButton("Paste pairing text");
+            nativeBack();
+            awaitNoDialog();
+        } finally {
+            if (scenario.getState() != Lifecycle.State.DESTROYED)
+                scenario.onActivity(activity -> activity.setRequestedOrientation(original.get()));
+        }
+    }
+
+    private static final class LiveDocument {
+        MainActivity activity;
+        WebView webView;
+        String timeOrigin;
+    }
+
+    private Intent actualLauncherIntent() {
+        Context target = instrumentation.getTargetContext();
+        NativeAcceptanceTarget.requireIsolated(target.getPackageName());
+        return Intent.makeMainActivity(new ComponentName(target, MainActivity.class));
+    }
+
+    private LiveDocument liveDocument() throws Exception {
+        LiveDocument result = new LiveDocument();
+        scenario.onActivity(activity -> { result.activity = activity; result.webView = activity.getBridge().getWebView(); });
+        result.timeOrigin = evaluate("performance.timeOrigin");
+        return result;
+    }
+
+    private void assertSameLiveDocument(LiveDocument before) throws Exception {
+        scenario.onActivity(activity -> {
+            assertTrue("Actual Activity identity must survive this live-document journey", activity == before.activity);
+            assertTrue("Actual WebView identity must survive this live-document journey", activity.getBridge().getWebView() == before.webView);
+        });
+        assertEquals("Public document time origin must remain unchanged", before.timeOrigin, evaluate("performance.timeOrigin"));
+    }
+
+    private String prepareLongLiveDraft() throws Exception {
+        tapButton("History");
+        tap("document.querySelector('input[aria-label=\"Search history\"]')");
+        awaitIme(true);
+        instrumentation.sendStringSync(LIVE_QUERY);
+        await("real typed History query", "document.querySelector('input[aria-label=\"Search history\"]').value === " + JSONObject.quote(LIVE_QUERY));
+        nativeBack();
+        awaitIme(false);
+        if ("false".equals(evaluate("(" + button("Filters") + ").getAttribute('aria-expanded')"))) tapButton("Filters");
+        tapButton("Pinned");
+        assertLiveQueryAndScope();
+        openPairing();
+        tapButton("Paste pairing text");
+        awaitDialog("Paste pairing text");
+        awaitIme(true);
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 32; i++) text.append("native retained task draft ");
+        String raw = text.toString();
+        instrumentation.sendStringSync(raw);
+        await("actual long typed raw draft", "document.querySelector('textarea[aria-label=\"Pairing text\"]').value === " + JSONObject.quote(raw));
+        nativeBack();
+        awaitIme(false);
+        assertLongLiveDraft(raw);
+        return raw;
+    }
+
+    private void assertLiveQueryAndScope() throws Exception {
+        await("public History query and Pinned scope retained", "document.querySelector('input[aria-label=\"Search history\"]').value === " + JSONObject.quote(LIVE_QUERY)
+            + " && [...document.querySelectorAll('[aria-label=\"History filters\"] button')].some(e=>e.textContent.trim()==='Pinned' && e.getAttribute('aria-pressed')==='true')");
+    }
+
+    private void assertLongLiveDraft(String raw) throws Exception {
+        awaitDialog("Paste pairing text");
+        await("same live task raw draft and editor focus", "document.querySelector('textarea[aria-label=\"Pairing text\"]').value === " + JSONObject.quote(raw)
+            + " && document.activeElement === document.querySelector('textarea[aria-label=\"Pairing text\"]')");
+        assertLiveQueryAndScope();
+        assertForeground();
+    }
+
+    private void closeLiveDraftWithNativeBack(String raw) throws Exception {
+        if (nativeImeVisible()) { nativeBack(); awaitIme(false); assertLongLiveDraft(raw); }
+        nativeBack();
+        awaitDialog("Pairing");
+        assertFocusedButton("Paste pairing text");
+        assertStableDialog("Pairing");
+        nativeBack();
+        awaitNoDialog();
+        assertFocusedButton("Pair this device");
+        tapButton("History");
+        assertLiveQueryAndScope();
+    }
+
+    private void awaitNativeOrientation(int orientation) {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        AtomicBoolean ready = new AtomicBoolean();
+        do {
+            scenario.onActivity(activity -> {
+                Rect bounds = activity.getWindowManager().getCurrentWindowMetrics().getBounds();
+                ready.set(activity.getResources().getConfiguration().orientation == orientation
+                    && (orientation == Configuration.ORIENTATION_LANDSCAPE ? bounds.width() > bounds.height() : bounds.height() > bounds.width()));
+            });
+            if (ready.get()) return;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        throw new AssertionError("Real native window must change to requested orientation " + orientation);
+    }
+
+    private void awaitReflowReady(String phase) throws Exception {
+        Log.i("ClippHostReflow", "phase=" + phase + "-native-config;uptimeMs=" + SystemClock.uptimeMillis());
+        awaitActivityState(true, true);
+        Log.i("ClippHostReflow", "phase=" + phase + "-native-focused;uptimeMs=" + SystemClock.uptimeMillis());
+        await("actual host geometry and fonts after reflow", "document.documentElement.dataset.hostGeometry==='android' && document.fonts.status==='loaded'");
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS, stableSince = 0;
+        String previous = null;
+        do {
+            AtomicReference<String> nativeBounds = new AtomicReference<>();
+            AtomicBoolean nativeReady = new AtomicBoolean();
+            scenario.onActivity(activity -> {
+                WebView web = activity.getBridge().getWebView();
+                int[] location = new int[2]; web.getLocationOnScreen(location);
+                nativeReady.set(activity.hasWindowFocus() && activity.getLifecycle().getCurrentState() == Lifecycle.State.RESUMED
+                    && web.getWidth() > 0 && web.getHeight() > 0);
+                nativeBounds.set(activity.getWindowManager().getCurrentWindowMetrics().getBounds().toShortString()
+                    + ";web=" + location[0] + "," + location[1] + "," + web.getWidth() + "," + web.getHeight()
+                    + ";focused=" + activity.hasWindowFocus() + ";state=" + activity.getLifecycle().getCurrentState());
+            });
+            String sample = nativeBounds.get() + ";css=" + evaluate("JSON.stringify({width:innerWidth,height:innerHeight,fonts:document.fonts.status,hostStyle:document.documentElement.getAttribute('style')})");
+            long now = SystemClock.uptimeMillis();
+            if (!nativeReady.get() || !sample.equals(previous)) stableSince = now;
+            else if (now - stableSince >= 250) {
+                assertActivityState(true, true);
+                Log.i("ClippHostReflow", "phase=" + phase + "-settled;uptimeMs=" + now + ";" + sample);
+                return;
+            }
+            previous = sample;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        throw new AssertionError("Actual native/WebView geometry must settle after reflow: " + previous);
     }
 
     /** Diagnostic observation only: a successful witness is not healthy startup acceptance. */
@@ -277,7 +551,7 @@ public final class HostTaskInputTest {
         writeGuestClipboard(paused);
         SystemClock.sleep(CAPTURE_QUIET_MS);
         assertActivityState(false, false);
-        nativeBack();
+        nativeExternalSettingsBack();
         awaitActivityState(true, true);
         logGuestNativeWindows("external-settings-return-before-history");
         try {
@@ -398,20 +672,34 @@ public final class HostTaskInputTest {
 
     /** Real OS dismissal of the proven overlay caused by this guest's synthetic write. */
     private void dismissGuestClipboardOverlayIfPresent() {
-        AccessibilityNodeInfo overlay = guestClipboardOverlay();
-        if (overlay == null) return;
-        AccessibilityNodeInfo dismiss = null;
-        for (AccessibilityNodeInfo node : overlay.findAccessibilityNodeInfosByViewId("com.android.systemui:id/dismiss_button")) {
-            if (!node.isVisibleToUser() || !node.isEnabled() || !node.isClickable()
-                || !"com.android.systemui".equals(String.valueOf(node.getPackageName()))) continue;
-            assertTrue("Clipboard overlay must expose one unambiguous dismiss button", dismiss == null);
-            dismiss = node;
-        }
-        assertTrue("Visible clipboard_ui must expose its real dismiss button", dismiss != null);
-        assertTrue("Observed clipboard dismiss must remain visible before its one physical tap", dismiss.refresh() && dismiss.isVisibleToUser());
+        long readyDeadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
         Rect bounds = new Rect();
-        dismiss.getBoundsInScreen(bounds);
-        assertTrue("Native clipboard dismiss must have visible bounds", !bounds.isEmpty());
+        while (true) {
+            // SystemUI may auto-hide this transient overlay while its native
+            // accessibility tree is being read. Never act on a retained node
+            // after the current, app-witnessed window inventory proves absence.
+            AccessibilityNodeInfo overlay = guestClipboardOverlay();
+            if (overlay == null) {
+                assertActivityState(true, true);
+                Log.i("ClippGuestCapture", "testSetup=owned-guest-clipboard-overlay-already-absent;physicalDismisses=0;clipboardChanged=false");
+                return;
+            }
+            AccessibilityNodeInfo dismiss = null;
+            for (AccessibilityNodeInfo node : overlay.findAccessibilityNodeInfosByViewId("com.android.systemui:id/dismiss_button")) {
+                if (!node.isVisibleToUser() || !node.isEnabled() || !node.isClickable()
+                    || !"com.android.systemui".equals(String.valueOf(node.getPackageName()))) continue;
+                assertTrue("Clipboard overlay must expose one unambiguous dismiss button", dismiss == null);
+                dismiss = node;
+            }
+            if (dismiss != null && dismiss.refresh() && dismiss.isVisibleToUser() && dismiss.isEnabled() && dismiss.isClickable()
+                && "com.android.systemui".equals(String.valueOf(dismiss.getPackageName()))) {
+                dismiss.getBoundsInScreen(bounds);
+                if (!bounds.isEmpty()) break;
+            }
+            assertTrue("Persistent clipboard overlay must expose its real usable dismiss button or disappear",
+                SystemClock.uptimeMillis() < readyDeadline);
+            SystemClock.sleep(50);
+        }
         long down = SystemClock.uptimeMillis();
         for (int action : new int[] { MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP }) {
             MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, bounds.exactCenterX(), bounds.exactCenterY(), 0);
@@ -516,6 +804,23 @@ public final class HostTaskInputTest {
         instrumentation.waitForIdleSync();
     }
 
+    private void nativeExternalSettingsBack() {
+        NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
+        assertActivityState(false, false);
+        awaitNativeSettings();
+        // The external Settings window belongs to another UID. Inject one real
+        // OS Back through guest UiAutomation, without granting INJECT_EVENTS or
+        // invoking a product dispatcher/bridge. App-owned Back retains its path.
+        long down = SystemClock.uptimeMillis();
+        for (int action : new int[] { KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP }) {
+            KeyEvent event = new KeyEvent(down, SystemClock.uptimeMillis(), action, KeyEvent.KEYCODE_BACK, 0);
+            event.setSource(InputDevice.SOURCE_KEYBOARD);
+            assertTrue("Android must accept the real external-Settings Back key", instrumentation.getUiAutomation().injectInputEvent(event, true));
+            SystemClock.sleep(40);
+        }
+        awaitActivityState(true, true);
+    }
+
     private String button(String name) { return input.button(name); }
 
     private void tapButton(String name) throws Exception { tap(button(name)); }
@@ -569,6 +874,16 @@ public final class HostTaskInputTest {
         } while (SystemClock.uptimeMillis() < deadline);
         throw new AssertionError("Expected native IME visible=" + visible + ", actual=" + actual.get()
             + "; run on a device with an enabled software keyboard; " + timeoutDiagnostics());
+    }
+
+    private boolean nativeImeVisible() {
+        AtomicReference<Boolean> visible = new AtomicReference<>();
+        scenario.onActivity(activity -> {
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(activity.getBridge().getWebView());
+            assertTrue("Actual native IME insets must be available", insets != null);
+            visible.set(insets.isVisible(WindowInsetsCompat.Type.ime()));
+        });
+        return Boolean.TRUE.equals(visible.get());
     }
 
     private void assertForeground() {

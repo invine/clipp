@@ -4,10 +4,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Instrumentation;
+import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.webkit.WebView;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.test.core.app.ActivityScenario;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +28,10 @@ final class NativePublicWebView {
     private final ActivityScenario<MainActivity> scenario;
     private String lastTouchTarget = "none";
     private String lastTouchSample = "none";
+    private String lastNativeTouchBefore = "none";
+    private String lastNativeTouchAfter = "none";
+    private String lastNativeTouchSettled = "none";
+    private String lastTouchDispatch = "none";
 
     NativePublicWebView(Instrumentation instrumentation, ActivityScenario<MainActivity> scenario) {
         this.instrumentation = instrumentation;
@@ -47,6 +54,7 @@ final class NativePublicWebView {
     }
 
     void tap(String element) throws Exception {
+        NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
         lastTouchTarget = element;
         await("native geometry and fonts ready", "document.documentElement.dataset.hostGeometry === 'android' && document.fonts.status === 'loaded'");
         await("touch target available", "!!(" + element + ")");
@@ -57,6 +65,9 @@ final class NativePublicWebView {
         assertTrue("Target must be inside the visible web viewport", cssX > 0 && cssY > 0
             && cssX < bounds.getDouble("width") && cssY < bounds.getDouble("height"));
         float[] point = new float[2];
+        lastNativeTouchAfter = "pending";
+        lastNativeTouchSettled = "pending";
+        lastTouchDispatch = "not-sent";
         scenario.onActivity(activity -> {
             WebView web = activity.getBridge().getWebView();
             int[] location = new int[2];
@@ -66,20 +77,70 @@ final class NativePublicWebView {
             point[1] = location[1] + (float) cssY * scale;
             assertTrue("Touch target must be inside the actual native WebView",
                 point[1] > location[1] && point[1] < location[1] + web.getHeight());
+            assertTrue("Physical pointer requires the actual foreground app window",
+                activity.hasWindowFocus() && activity.getLifecycle().getCurrentState() == androidx.lifecycle.Lifecycle.State.RESUMED);
+            lastNativeTouchBefore = nativeTouchGeometry(activity, point);
         });
+        android.view.accessibility.AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        assertTrue("Physical pointer requires the isolated app as active native window", root != null
+            && instrumentation.getTargetContext().getPackageName().equals(String.valueOf(root.getPackageName())));
         long downTime = SystemClock.uptimeMillis();
         MotionEvent down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, point[0], point[1], 0);
-        MotionEvent up = MotionEvent.obtain(downTime, downTime + 40, MotionEvent.ACTION_UP, point[0], point[1], 0);
+        MotionEvent up = null;
         down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         try {
-            instrumentation.sendPointerSync(down);
-            instrumentation.sendPointerSync(up);
+            long downSent = SystemClock.uptimeMillis();
+            lastTouchDispatch = "down-sent;up-pending;downEventTime=" + downTime + ";downSent=" + downSent;
+            // Instrumentation.sendPointerSync can return while this host drops
+            // the gesture's UP. Use genuine OS input with explicit acceptance,
+            // guarded above to the actual isolated foreground app window.
+            boolean downAccepted = instrumentation.getUiAutomation().injectInputEvent(down, true);
+            long downReturned = SystemClock.uptimeMillis();
+            String downTiming = ";transport=UiAutomation;downEventTime=" + downTime + ";downSent=" + downSent + ";downReturned=" + downReturned
+                + ";downAccepted=" + downAccepted;
+            lastTouchDispatch = "down-complete;up-pending" + downTiming;
+            assertTrue("Android must accept the one physical DOWN: " + lastTouchDispatch, downAccepted);
+            // MotionEvent eventTime describes when that event actually occurred.
+            // Hold one real short gesture, then create UP from current uptime;
+            // precreating a future UP timestamp does not hold the physical input.
+            long remainingHold = downTime + 40 - SystemClock.uptimeMillis();
+            if (remainingHold > 0) SystemClock.sleep(remainingHold);
+            long upTime = SystemClock.uptimeMillis();
+            up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, point[0], point[1], 0);
+            up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            long upSent = SystemClock.uptimeMillis();
+            lastTouchDispatch = "down-complete;up-sent" + downTiming + ";upEventTime=" + upTime + ";upSent=" + upSent;
+            boolean upAccepted = instrumentation.getUiAutomation().injectInputEvent(up, true);
+            lastTouchDispatch = "down-complete;up-complete" + downTiming + ";upEventTime=" + upTime
+                + ";upSent=" + upSent + ";upReturned=" + SystemClock.uptimeMillis()
+                + ";upAccepted=" + upAccepted;
+            assertTrue("Android must accept the one physical UP: " + lastTouchDispatch, upAccepted);
         } finally {
             down.recycle();
-            up.recycle();
+            if (up != null) up.recycle();
+            scenario.onActivity(activity -> lastNativeTouchAfter = nativeTouchGeometry(activity, point));
         }
         instrumentation.waitForIdleSync();
+        scenario.onActivity(activity -> lastNativeTouchSettled = nativeTouchGeometry(activity, point));
+    }
+
+    /** Failure diagnostics only: read actual native geometry without changing input. */
+    private String nativeTouchGeometry(MainActivity activity, float[] point) {
+        WebView web = activity.getBridge().getWebView();
+        int[] location = new int[2];
+        web.getLocationOnScreen(location);
+        Rect visible = new Rect();
+        web.getWindowVisibleDisplayFrame(visible);
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(web);
+        return "uptimeMs=" + SystemClock.uptimeMillis() + ";pointPx=" + point[0] + "," + point[1]
+            + ";webOriginPx=" + location[0] + "," + location[1] + ";webSizePx=" + web.getWidth() + "x" + web.getHeight()
+            + ";windowPx=" + activity.getWindowManager().getCurrentWindowMetrics().getBounds().toShortString()
+            + ";visibleFramePx=" + visible.toShortString() + ";density=" + activity.getResources().getDisplayMetrics().density
+            + ";fontScale=" + activity.getResources().getConfiguration().fontScale + ";textZoomPercent=" + web.getSettings().getTextZoom()
+            + ";focused=" + activity.hasWindowFocus() + ";lifecycle=" + activity.getLifecycle().getCurrentState()
+            + ";imeVisible=" + (insets == null ? "unknown" : insets.isVisible(WindowInsetsCompat.Type.ime()))
+            + ";imePx=" + (insets == null ? "unknown" : insets.getInsets(WindowInsetsCompat.Type.ime()))
+            + ";barsPx=" + (insets == null ? "unknown" : insets.getInsets(WindowInsetsCompat.Type.systemBars()));
     }
 
     private JSONObject stableTouchBounds(String element) throws Exception {
@@ -127,7 +188,9 @@ final class NativePublicWebView {
             + " controls:[...document.querySelectorAll('button,input,textarea,[role=dialog]')].slice(0,40).map(describe),"
             + " viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},fonts:document.fonts.status,"
             + " hostGeometry:document.documentElement.dataset.hostGeometry,hostStyle:document.documentElement.getAttribute('style')}; })()");
-        return "lastTouch=" + lastTouchTarget + ";lastSample=" + lastTouchSample + ";publicUI=" + ui;
+        return "lastTouch=" + lastTouchTarget + ";lastSample=" + lastTouchSample + ";dispatch=" + lastTouchDispatch
+            + ";nativeBefore=" + lastNativeTouchBefore + ";nativeAfter=" + lastNativeTouchAfter
+            + ";nativeSettled=" + lastNativeTouchSettled + ";publicUI=" + ui;
     }
 
     String evaluate(String expression) throws Exception {
