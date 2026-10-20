@@ -1,4 +1,4 @@
-# Deliver Android and Electron task input against existing tasks
+# Deliver Electron task input and collect remaining host qualification
 
 Type: implementation
 Status: claimed
@@ -10,7 +10,7 @@ Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
 
-One Android native Back or Electron activation/input reaches the existing shared UiSession/task owner once, with meaningful focus entry and return on the integrated candidate.
+Electron activation/input reaches the existing shared UiSession/task owner once, with meaningful focus entry and return. The independently completed Android input output is [36](36-deliver-android-task-input.md); every remaining Electron gate stays here.
 
 ## Work and boundaries
 
@@ -76,3 +76,17 @@ Exact ignored evidence: `native34-instrumentation-integrated-verification-202610
 Integrated5c81eb8 observes real decor-window focus and samples actual resumed state on lazy native load, repairing the confirmed clipboard capture while an unfocused confirmation owns input. Required checks/hooks, merger and both review axes pass; exact native focus verification is in ignored `native34-native-focus-integrated-verification-20261017.json`. Later ec638 startup/settings cycle and751 numeric admission repairs remain separately source-bound.
 
 Recorded native journeys cover supported API/input/QR scopes, actual extreme geometry and same-document external Settings return. Exact short340×350/font2 Save remains failed. Strong root-Back assumptions await ordinary AppCompat control comparison; orientation focus readiness and API31 external-return input corrections await native execution. Frozen acceptance-only source receipt `native34-host-lifecycle-controls-source-ready-20261017-7518306-3611f2e.json` makes no pass claim. Electron distinct-bundle native keyboard/editor/Pairing, fullscreen/maximize and measured geometry observations are scoped in its ignored evidence; later controller failures and207.36% versus OS-text-only distinction remain.34 stays claimed; no host split or scanner qualification follows.
+
+## Android host allocation and current Electron failures — 2026-10-20
+
+The coordinator applies the approved cross-runtime refinement: [36](36-deliver-android-task-input.md) now owns and resolves the complete reviewed Android input/IME/root/focus/capture/document-lived output, with exact evidence and no omitted Android gate. Android descriptions above are retained original scope/history; current Android consumer qualification remains with36 and its consumers. This residual34 owns every original remaining Electron activation/readiness, keyboard/focus/context and affected layout gate. Shared bridge compatibility and original13/19 collection remain unchanged.
+
+The fixed b685 tray/Dock interval has user-reported retained context/minimize/restore and separate root native Quit proof. A later precise input interval reports tray-return focus/draft failure and wide/restored keyboard failure. Public AX currently shows retained `native-returnx` and focus on Close name editor; root is collecting exact failure details, not inferring success or a source cause. Minimum Electron audit `native34-electron-scope-remaining-audit-20261020.md` and ignored `electron-input-final-b685-20261020/` retain these failures.34 remains claimed. No extension of TT35's user acceptance or silent native waiver follows.
+
+## Electron focus continuation dispatch — 2026-10-20
+
+The user clarifies the fresh native failure: “Draft remained, keyboard focus wrong”, after reporting tray-return and wide/restored failure. Retained draft is not draft loss. Passive current interval has only measured520×760 outer/520×728 content at zoom1; the requested320/wide geometry was not independently observed, so those remain unqualified. Public AX shows raw native-returnx with focus on Close name editor. Keep these facts distinct; neither derives a source cause or a native pass.
+
+Resume existing ux-native-input-34 in preserved ticket34 worktree/branch codex/ux-34-back-sequence-repair. Inspect and preserve its sole generated Gradle4825 delta and sanitized helper1dbfd; fast-forward from clean-source fa30 to this coordinator tip before editing. Diagnose the actual Electron activation/shared TaskDialog/sessionFocus consumer and establish an owning-interface RED for the observed focus failure before a minimal fix. Preserve meaningful retained focus/selection and user navigation, one document-lived owner and real task/draft state. Do not unconditionally force input focus, add a second manager, mask failure with repeated activation or change the passed Dock contract speculatively. Reuse real consumer tests; external OS boundaries may be inert, private task/controller substitutes do not qualify the caller. Any shared change includes affected live hosts and requalifies the changed Android36 slice.
+
+Root owns native candidate input, exact narrow/wide geometry and final human/controller qualification, check/hook serialization, mandatory merger/reviews. At most two implementers:15 scanner and this34 focus repair. Source author launches no CUA/Electron/SDK/native/clipboard/camera operation. Read ignored electron-input-final-b685-20261020/reported-input-failure-20261020.json and native34-electron-scope-remaining-audit-20261020.md; retain later clarification and every earlier failed/unqualified observation. No whole34/26/finding closure or TT35 exception expansion follows.

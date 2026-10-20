@@ -152,3 +152,7 @@ Ticket25 consumes resolved32's common interface and qualified Android controls; 
 ## Continuity25 scoped completion — 2026-10-17
 
 [25](issues/25-repair-android-continuity-controls.md#answer--2026-10-17) supplies reviewed applied-state controls, separate Stop preserving Auto Sync, actual Settings/SystemUI actions and native font2.0/reopen/blocked-return/Start evidence on the recorded840/886 candidate. Independent `native25-final-coverage-audit-20261017.md` maps source fault/rapid/stale evidence and unchanged native service receipts. A06 remains Open for17/24; A04/A05 and notification/native collectors retain all other contributions.16 owns unobserved regrant/channel recovery;34 owns the observed native focus-loss clipboard failure and remaining input/QR/Electron gates. Original failed, external and retained qualifications are preserved.
+
+## Android input host allocation — 2026-10-20
+
+Supporting Android input formerly included in34 is delivered by resolved[36](issues/36-deliver-android-task-input.md); all remaining Electron work remains[34](issues/34-deliver-android-electron-task-input.md). Apply this explicit host mapping to every34 supporting input contribution in the register above. Android scanner15 consumes36; original13/A03 and19/E06/C06 collection still require their own full contributions. This creates no new finding and closes none early.

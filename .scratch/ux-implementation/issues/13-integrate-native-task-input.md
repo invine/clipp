@@ -4,7 +4,7 @@ Type: implementation
 Status: open
 Assignee: none
 Priority band: 1
-Blocked by: 34, 35
+Blocked by: 34, 35, 36
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -54,3 +54,7 @@ Coordinator records the fresh baseline/claim, accepted decision assessment, isol
 ## Host delivery allocation — DRAFT 2026-10-14
 
 Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.
+
+## Host dependency allocation — 2026-10-20
+
+Consume resolved[36](36-deliver-android-task-input.md) for Android and retain[34](34-deliver-android-electron-task-input.md) for all remaining Electron requirements. Existing Chrome35 and every original collector/native gate remain unchanged.

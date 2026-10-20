@@ -99,3 +99,7 @@ The user directs “consider all passed, we'll figure it out later.” [Accepted
 ## Continuity control decision — 2026-10-17
 
 [Android continuity25](issues/25-repair-android-continuity-controls.md#answer--2026-10-17) is resolved for its reviewed source and actual native control scope at77b84d13. Current production840 plus exact886 native selector passes all four real continuity journeys at native font2.0, including physical notification actions, both Auto Sync values, Stop/reopen, blocked Settings return and separately guarded service-interruption Start. The independent final coverage audit identifies no missing25 gate. A06/17/24 collection,16/G03 regrant/channel recovery, retained export/chooser/OEM limits and34's native clipboard/input/QR/Electron failures remain. No unqualified consumer is released.
+
+## Android input delivery and scanner continuation — 2026-10-20
+
+[36 — Android task input](issues/36-deliver-android-task-input.md) is resolved on reviewed native contribution9d60298. [34](issues/34-deliver-android-electron-task-input.md) retains all Electron input/focus/layout work; current user-reported failures remain. [15](issues/15-repair-android-scanner-lifecycle.md) now consumes resolved36 and is claimed for the diagnosed jsQR/lifecycle remedy.13/16 retain both host dependencies. No broad finding, camera support or TT35 exception is extended.

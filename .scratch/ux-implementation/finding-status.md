@@ -67,3 +67,7 @@ Run: `ux-implementation-20261010`. This ledger records finding/addition closure 
 The current run does not change External or Retained qualifications in [validation coverage](validation-coverage.md). A ticket resolution never implies release readiness.
 
 Ticket14 contribution — 2026-10-11: integrated diagnosis `f894142c628c7e37421256ecf7ca6a7205e13772` reproduced unsafe API35/AOSP WebView124 provider initialization/probing and demonstrated accepted public native pixels through jsQR. A08 remains Open: ticket15 owns the remedy, actual camera/lifecycle and supporting qualification; unavailable physical/intended-provider and manifest claims are not inferred from this diagnosis.
+
+## Current host contributions — 2026-10-20
+
+Android input[36](issues/36-deliver-android-task-input.md) is complete as a supporting contribution; original13/A03 and other multi-ticket findings stay open. Dock26 has a fixed actual human-reported tray/context/minimize interval plus independent native Quit and reviewed source; latest precise Electron task-focus/wide keyboard failures remain34. E10 still awaits24 reachability and E17's full13/shared host contribution remains open. No finding or TT35 disposition changes here.
