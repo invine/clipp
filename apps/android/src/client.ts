@@ -232,6 +232,48 @@ function logPairing(
 }
 
 export class AndroidClient {
+  /** The constructing host owns reset controls; App receives only the client. */
+  static createRuntime() {
+    const client = new AndroidClient();
+    let stopped: Promise<void> | undefined;
+    return {
+      client,
+      start: () => client.start(),
+      publicState: () => client.getState(),
+      identityReset: {
+        begin: async (
+          request: Parameters<
+            typeof client.identityRotation.beginIdentityReset
+          >[0]
+        ) => {
+          if (stopped) throw new Error("identity_runtime_stopped");
+          return client.identityRotation.beginIdentityReset(request);
+        },
+        reconcile: client.identityRotation.reconcileIdentityReset,
+        resume: async (
+          request: Parameters<
+            typeof client.identityRotation.resumeIdentityReset
+          >[0]
+        ) => {
+          if (stopped) throw new Error("identity_runtime_stopped");
+          return client.identityRotation.resumeIdentityReset(request);
+        },
+      },
+      stop: () =>
+        (stopped ??= (async () => {
+          await client.workFence.acquireFence();
+          try {
+            await client.identityRotation.reconcileIdentityReset();
+          } finally {
+            await client.workFence.acquireFence();
+            await client.stopIdentityBoundServices();
+            await client.workFence.quiesce();
+            await client.stop();
+          }
+        })()),
+    };
+  }
+
   private readonly identityResetRuntime = createAndroidIdentityResetRuntime({
     suspend: async () => {
       await this.stopIdentityBoundServices(true);
@@ -1635,6 +1677,10 @@ export class AndroidClient {
   }
 }
 
+export function createAndroidRuntime() {
+  return AndroidClient.createRuntime();
+}
+
 export function createAndroidClient() {
-  return new AndroidClient();
+  return createAndroidRuntime().client;
 }

@@ -15,6 +15,9 @@ const repo = fileURLToPath(new URL("../..", import.meta.url));
 await mkdir(join(repo, ".local"), { recursive: true });
 const directory = await mkdtemp(join(repo, ".local", "main-window-"));
 const require = createRequire(import.meta.url);
+const resetMode = process.argv[2] === "reset";
+let restartAttempts = 0;
+let clipboardText = "";
 let networkDenied = false;
 let startupPublished = false;
 const denyNetwork = () => {
@@ -57,7 +60,8 @@ Object.assign(app, {
     if (!prevented) onProcessQuit();
   },
   relaunch() {
-    throw Error("unexpected_relaunch");
+    restartAttempts++;
+    throw Error(resetMode ? "fixture_relaunch_failed" : "unexpected_relaunch");
   },
   exit() {
     throw Error("unexpected_exit");
@@ -144,7 +148,12 @@ globalThis.windowBoundary = {
     shouldUseDarkColors: false,
   }),
   ipcMain: { handle: (name, callback) => handlers.set(name, callback) },
-  clipboard: { readText: () => "", writeText() {} },
+  clipboard: {
+    readText: () => clipboardText,
+    writeText: (value) => {
+      clipboardText = value;
+    },
+  },
   safeStorage: { isEncryptionAvailable: () => false },
   shell: { openExternal: denyNetwork },
   Notification: class {
@@ -155,7 +164,7 @@ globalThis.windowBoundary = {
 };
 const waitFor = async (condition, description) => {
   const end = Date.now() + 5000;
-  while (!condition()) {
+  while (!(await condition())) {
     assert.ok(Date.now() < end, description);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -163,7 +172,14 @@ const waitFor = async (condition, description) => {
 let failed = false;
 try {
   await build({
-    entryPoints: [join(repo, "apps/electron/src/main.ts")],
+    entryPoints: [
+      join(
+        repo,
+        resetMode
+          ? "apps/electron/src/electronRuntime.ts"
+          : "apps/electron/src/main.ts"
+      ),
+    ],
     bundle: true,
     platform: "node",
     packages: "external",
@@ -189,11 +205,52 @@ try {
       },
     ],
   });
-  await import(join(directory, "main.mjs"));
+  const entry = await import(join(directory, "main.mjs"));
+  const owner = resetMode ? await entry.startElectronRuntime() : undefined;
+  if (owner) await owner.ready;
   await waitFor(
     () => menu && windows[0]?.visible,
     "actual main did not install a ready window and tray"
   );
+  if (owner) {
+    assert.equal(
+      await entry.startElectronRuntime(),
+      owner,
+      "one process must retain one production owner"
+    );
+    const initial = await owner.publicState();
+    assert.ok(initial.identity?.deviceId);
+    await handlers.get("clipp:set-settings")(
+      {},
+      { autoSync: false, theme: "dark" }
+    );
+    clipboardText = "synthetic pre-reset capture";
+    await waitFor(
+      async () => (await owner.publicState()).clips.length === 1,
+      "ordinary capture was not saved"
+    );
+    const result = await owner.identityReset.begin({
+      operationId: "electron-owning-reset",
+      reviewedPeerId: initial.identity.deviceId,
+    });
+    assert.equal(result.outcome, "completed");
+    assert.equal(restartAttempts, 1);
+    assert.equal((await owner.identityReset.reconcile()).phase, "completed");
+    const sealed = await owner.publicState();
+    assert.equal(sealed.identity, null);
+    assert.deepEqual(sealed.clips, []);
+    assert.throws(
+      () => handlers.get("clipp:set-settings")({}, { theme: "light" }),
+      /identity_runtime_suspended/
+    );
+    assert.equal(clipboardText, "synthetic pre-reset capture");
+    await owner.stop();
+    console.log(
+      "actual Electron composition reset remains sealed after rejected OS relaunch (source adapters only)"
+    );
+    rmSync(directory, { recursive: true, force: true });
+    process.exit(0);
+  }
   await waitFor(
     () => startupPublished,
     "actual startup did not publish after the unavailable network boundary"

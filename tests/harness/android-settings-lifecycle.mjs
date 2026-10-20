@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 // Actual AndroidClient/settings/retention/History/continuity owners. Only native
 // Capacitor/Preferences/clipboard/DOM storage OS boundaries are inert. No native
 // profile, SDK, host clipboard or private application fields are accessed.
@@ -21,9 +22,35 @@ const retentionPersisted = new Promise((resolve) => {
   announceRetention = resolve;
 });
 const events = new Map();
+const rejectionMode = process.argv[2] === "stop-rejection";
+const resetMode = process.argv[2] === "reset" || rejectionMode;
+let releaseResetWrite, announceResetWrite;
+const resetWriteGate = new Promise((resolve) => {
+  releaseResetWrite = resolve;
+});
+const resetWriteStarted = new Promise((resolve) => {
+  announceResetWrite = resolve;
+});
+let nativeFenced = false;
+let restartAttempts = 0;
+if (resetMode) {
+  const require = createRequire(import.meta.url);
+  const denyNetwork = () => {
+    throw Error("fixture_network_unavailable");
+  };
+  require("node:net").Server.prototype.listen = denyNetwork;
+  require("node:net").Socket.prototype.connect = denyNetwork;
+  require("node:dgram").createSocket = denyNetwork;
+  syncBuiltinESMExports();
+}
 globalThis.cycleNative = {
   get: async ({ key }) => ({ value: values.get(key) ?? null }),
   set: async ({ key, value }) => {
+    if (rejectionMode && key === "clipp-android:manualIdentityReset") {
+      announceResetWrite();
+      await resetWriteGate;
+      throw Error("fixture_intent_write_rejected");
+    }
     values.set(key, value);
     if (blockRetention && key === "clipp-android:localRetentionMs") {
       announceRetention();
@@ -34,11 +61,18 @@ globalThis.cycleNative = {
     values.delete(key);
   },
   openRuntime: async () => {},
-  acquireFence: async () => {},
-  releaseFence: async () => {},
+  acquireFence: async () => {
+    nativeFenced = true;
+  },
+  releaseFence: async () => {
+    nativeFenced = false;
+  },
   clearNativeQueues: async () => {},
   verifyNativeQueues: async () => {},
-  restartRuntime: async () => {},
+  restartRuntime: async () => {
+    restartAttempts++;
+    throw Error("fixture_recreate_failed");
+  },
 };
 globalThis.cycleContinuity = {
   getPlatformInfo: async () => ({
@@ -79,7 +113,7 @@ const mode = process.argv[2] ?? "overlap";
 try {
   await build({
     stdin: {
-      contents: `export {AndroidClient} from '${repo}/apps/android/src/client';export {LocalStorageBackend} from '${repo}/apps/android/src/storage';`,
+      contents: `export {AndroidClient, createAndroidRuntime} from '${repo}/apps/android/src/client';export {LocalStorageBackend} from '${repo}/apps/android/src/storage';`,
       loader: "ts",
       resolveDir: repo,
     },
@@ -93,37 +127,44 @@ try {
         name: "inert-os-boundaries",
         setup(builder) {
           builder.onResolve(
-            { filter: /^@capacitor\/(core|clipboard|local-notifications)$/ },
+            {
+              filter:
+                /^@capacitor\/(core|clipboard|local-notifications|preferences)$/,
+            },
             (args) => ({ path: args.path, namespace: "system" })
           );
           builder.onLoad({ filter: /.*/, namespace: "system" }, (args) => ({
             loader: "js",
             contents: args.path.endsWith("core")
               ? `export const Capacitor={getPlatform:()=>"android",isNativePlatform:()=>true};export const registerPlugin=name=>name==="BackgroundContinuity"?globalThis.cycleContinuity:name==="IdentityResetStorage"?globalThis.cycleNative:{addListener:async()=>({remove:async()=>{}})};`
-              : args.path.endsWith("clipboard")
-                ? `export const Clipboard={read:async()=>({value:""}),write:async()=>{}};`
-                : `export const LocalNotifications={addListener:async()=>({remove:async()=>{}}),schedule:async()=>{},cancel:async()=>{},checkPermissions:async()=>({display:"denied"})};`,
+              : args.path.endsWith("preferences")
+                ? `export const Preferences=globalThis.cycleNative;`
+                : args.path.endsWith("clipboard")
+                  ? `export const Clipboard={read:async()=>({value:""}),write:async()=>{}};`
+                  : `export const LocalNotifications={addListener:async()=>({remove:async()=>{}}),schedule:async()=>{},cancel:async()=>{},checkPermissions:async()=>({display:"denied"})};`,
           }));
         },
       },
     ],
   });
-  const { AndroidClient, LocalStorageBackend } = await import(
-    join(own, "client.mjs")
-  );
-  client = new AndroidClient(
-    new LocalStorageBackend("clipp-android:", globalThis.cycleNative, {
-      native: globalThis.cycleNative,
-      isNative: () => true,
-    })
-  );
+  const { AndroidClient, LocalStorageBackend, createAndroidRuntime } =
+    await import(join(own, "client.mjs"));
+  const owner = resetMode ? createAndroidRuntime() : undefined;
+  client =
+    owner?.client ??
+    new AndroidClient(
+      new LocalStorageBackend("clipp-android:", globalThis.cycleNative, {
+        native: globalThis.cycleNative,
+        isNative: () => true,
+      })
+    );
   const settingsUpdates = [];
   client.onSettingsUpdate((snapshot) => settingsUpdates.push(snapshot));
   if (mode !== "cold") await client.getSettings();
   let startupTimeout;
   try {
     await Promise.race([
-      client.start(),
+      owner ? owner.start() : client.start(),
       new Promise((_, reject) => {
         startupTimeout = setTimeout(
           () =>
@@ -143,7 +184,62 @@ try {
   assert.ok(ready.identity);
   assert.equal(ready.identityRotationRecovery, false);
   console.log("healthy actual AndroidClient startup completed");
-  if (mode === "cold") {
+  if (owner) {
+    await client.setSettings({ autoSync: false, theme: "dark" });
+    const identity = (await owner.publicState()).identity;
+    assert.ok(identity?.deviceId);
+    if (rejectionMode) {
+      const request = {
+        operationId: "android-owning-rejected-reset",
+        reviewedPeerId: identity.deviceId,
+      };
+      const begin = owner.identityReset.begin(request);
+      await resetWriteStarted;
+      const stop = owner.stop();
+      releaseResetWrite();
+      assert.equal((await begin).outcome, "rejected");
+      await stop;
+      assert.throws(() => owner.start(), /identity_runtime_suspended/);
+      await assert.rejects(
+        owner.identityReset.begin(request),
+        /identity_runtime_stopped/
+      );
+      await assert.rejects(
+        owner.identityReset.resume({ operationId: request.operationId }),
+        /identity_runtime_stopped/
+      );
+      assert.equal((await owner.identityReset.reconcile()).phase, "idle");
+      assert.equal(restartAttempts, 0);
+      console.log(
+        "terminal owning stop survives in-flight reset rejection (source adapters only)"
+      );
+      await rm(own, { recursive: true, force: true });
+      process.exit(0);
+    }
+    const result = await owner.identityReset.begin({
+      operationId: "android-owning-reset",
+      reviewedPeerId: identity.deviceId,
+    });
+    assert.equal(result.outcome, "completed");
+    assert.equal(nativeFenced, true);
+    assert.equal(restartAttempts, 1);
+    assert.equal((await owner.identityReset.reconcile()).phase, "completed");
+    const sealed = await owner.publicState();
+    assert.equal(sealed.identity, null);
+    assert.deepEqual(sealed.clips, []);
+    await assert.rejects(
+      client.setSettings({ theme: "light" }),
+      /identity_runtime_suspended/
+    );
+    assert.equal(
+      JSON.parse((await cycleNative.get({ key: "clipp-android:theme" })).value),
+      "dark"
+    );
+    await owner.stop();
+    console.log(
+      "actual Android composition reset remains sealed after rejected native recreate (source adapters only)"
+    );
+  } else if (mode === "cold") {
     await client.stop();
     client = null;
     console.log(JSON.stringify({ pass: true, mode, actualNativeHost: false }));
@@ -198,6 +294,7 @@ try {
   console.error(error.stack ?? error);
 } finally {
   releaseRetention();
+  releaseResetWrite();
   await rm(own, { recursive: true, force: true });
   // A regression failure can leave the real owner's queues blocked. Do not wait
   // for blocked teardown; only this isolated child's inert OS state is retired.

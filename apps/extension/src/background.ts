@@ -1662,9 +1662,49 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Kick off offscreen + clipboard
-void sharedRuntime
-  .start()
+// One owning composition per worker incarnation. Product pages retain only their
+// existing authenticated message interface; these controls never cross it.
+const ready = sharedRuntime.start();
+let stopped: Promise<void> | undefined;
+export const chromeRuntime = {
+  ready,
+  publicState: () => runtimeAdapter.publicState.read(),
+  identityReset: {
+    begin: async (
+      request: Parameters<typeof identityRotation.beginIdentityReset>[0]
+    ) => {
+      if (stopped) throw new Error("identity_runtime_stopped");
+      return identityRotation.beginIdentityReset(request);
+    },
+    reconcile: identityRotation.reconcileIdentityReset,
+    resume: async (
+      request: Parameters<typeof identityRotation.resumeIdentityReset>[0]
+    ) => {
+      if (stopped) throw new Error("identity_runtime_stopped");
+      return identityRotation.resumeIdentityReset(request);
+    },
+  },
+  stop: () =>
+    (stopped ??= (async () => {
+      await identityWork.acquireFence();
+      try {
+        await identityRotation.reconcileIdentityReset();
+      } finally {
+        await identityWork.acquireFence();
+        await identityRotationShutdown();
+        await identityWork.quiesce();
+        await identityRotationShutdown();
+        await Promise.allSettled(
+          [offscreenCreateFlight, offscreenInitFlight].filter(Boolean)
+        );
+        await stopOffscreenDocument(true);
+        await sharedRuntime.stop();
+      }
+    })()),
+};
+
+// Observe errors without converting failed readiness into success for callers.
+void ready
   .then(() => {
     log.info("Background services started (offscreen networking)");
   })
