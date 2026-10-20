@@ -96,7 +96,9 @@ public final class ScannerInputTest {
         info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         instrumentation.getUiAutomation().setServiceInfo(info);
         camera = new CameraWitness(context);
+        logStage("cameraWitness.available.enter");
         camera.awaitAllAvailable();
+        logStage("cameraWitness.available.exit");
         scenario = ActivityScenario.launch(MainActivity.class);
         scenario.onActivity(activity -> originalWebView = activity.getBridge().getWebView());
         web = new NativePublicWebView(instrumentation, scenario);
@@ -107,8 +109,18 @@ public final class ScannerInputTest {
 
     @After
     public void closeOnlyAfterLiveAssertions() {
-        if (camera != null) camera.close();
-        if (scenario != null) scenario.close();
+        logStage("after.enter");
+        if (camera != null) {
+            logStage("after.cameraClose.enter");
+            camera.close();
+            logStage("after.cameraClose.exit");
+        }
+        if (scenario != null) {
+            logStage("after.scenarioClose.enter");
+            scenario.close();
+            logStage("after.scenarioClose.exit");
+        }
+        logStage("after.exit");
     }
 
     @Test
@@ -117,10 +129,16 @@ public final class ScannerInputTest {
         requireCameraGranted();
         openPairing();
         long before = camera.sequence();
+        logStage("scanTap.enter");
         tap("Scan QR");
+        logStage("scanTap.exit");
+        logStage("cameraWitness.acquired.enter");
         camera.awaitAcquiredAfter(before);
+        logStage("cameraWitness.acquired.exit");
         web.await("software scanner returns to Pairing", OVERLAY + " === null");
+        logStage("cameraWitness.available.enter");
         camera.awaitAllAvailable();
+        logStage("cameraWitness.available.exit");
         assertLiveAndLogCamera("valid-scan-release");
         awaitPublicAttempt();
         web.tap("document.querySelector('details.pairing-diagnostics > summary')");
@@ -165,7 +183,9 @@ public final class ScannerInputTest {
         awaitPairing();
         awaitScanReturn("background-resume");
         assertEquals("Resume must not reopen capture", "true", web.evaluate(OVERLAY + " === null"));
+        logStage("cameraWitness.available.enter");
         camera.awaitAllAvailable();
+        logStage("cameraWitness.available.exit");
         assertLiveAndLogCamera("returned-without-capture");
     }
 
@@ -182,14 +202,18 @@ public final class ScannerInputTest {
         String prompt = arguments.getString("scannerPermissionPromptRequired", "");
         assertTrue("Root must explicitly distinguish prompt selection from already-denied profile", "true".equals(prompt) || "false".equals(prompt));
         openPairing();
+        logStage("scanTap.enter");
         tap("Scan QR");
+        logStage("scanTap.exit");
         boolean selectedDeny = tapPermissionDenyIfRequested();
         if ("true".equals(prompt)) assertTrue("Prompt profile requires a real system Don't allow selection", selectedDeny);
         web.await("typed denial with Paste recovery", "[...document.querySelectorAll('[role=\"alert\"]')].some(e => e.textContent.includes('Camera permission is required'))");
         awaitScanReturn("permission-denial");
         assertEquals("Denial is not an active camera", "true", web.evaluate(OVERLAY + " === null"));
         assertEquals("Paste alternative remains reachable", "true", web.evaluate("!!(" + web.button("Paste pairing text") + ")"));
+        logStage("cameraWitness.available.enter");
         camera.awaitAllAvailable();
+        logStage("cameraWitness.available.exit");
         long before = camera.sequence();
         openActualSettings();
         Log.i(TAG, "READY_PERMISSION_GRANT " + nonce);
@@ -208,6 +232,9 @@ public final class ScannerInputTest {
         awaitScanReturn("permission-recovery-cancel");
     }
 
+    private void logStage(String label) {
+        Log.i(TAG, "SC15_STAGE " + label + ";rootNonce=" + nonce + ";uptimeMs=" + SystemClock.uptimeMillis());
+    }
     private void requireFeed(String hash) { assertEquals("Case requires its exact declared root imagefile feed", hash, arguments.getString("scannerCameraImageSha256")); }
     private void requireCameraGranted() { assertEquals("Root must grant only the assigned isolated CAMERA permission", PackageManager.PERMISSION_GRANTED, ContextCompat.checkSelfPermission(instrumentation.getTargetContext(), Manifest.permission.CAMERA)); }
     private void tap(String name) throws Exception { web.tap(web.button(name)); }
@@ -220,16 +247,26 @@ public final class ScannerInputTest {
     private void awaitPairing() throws Exception { web.await("Pairing parent retained", "[...document.querySelectorAll('[role=\"dialog\"]')].some(e => document.getElementById(e.getAttribute('aria-labelledby'))?.textContent.trim() === 'Pairing')"); }
     private void openBlankCamera() throws Exception {
         long before = camera.sequence();
+        logStage("scanTap.enter");
         tap("Scan QR");
+        logStage("scanTap.exit");
+        logStage("publicVideoReady.enter");
         web.await("actual camera acquired and playing", OVERLAY + "?.innerText.includes('Point the camera at the QR code') && " + OVERLAY + ".querySelector('video').readyState >= 2 && " + OVERLAY + ".querySelector('video').videoWidth > 0");
+        logStage("publicVideoReady.exit");
+        logStage("cameraWitness.acquired.enter");
         camera.awaitAcquiredAfter(before);
+        logStage("cameraWitness.acquired.exit");
+        logStage("scannerFocus.enter");
         web.await("scanner owns live public focus", OVERLAY + "?.contains(document.activeElement) && !document.activeElement.closest('[inert]')");
+        logStage("scannerFocus.exit");
         logPublicFocus("scanner-ready");
         assertLiveAndLogCamera("camera-acquired");
     }
     private void awaitReleased(String stage) throws Exception {
         web.await("scanner settled after " + stage, OVERLAY + " === null");
+        logStage("cameraWitness.available.enter");
         camera.awaitAllAvailable();
+        logStage("cameraWitness.available.exit");
         assertLiveAndLogCamera(stage);
     }
     private void awaitScanReturn(String stage) throws Exception {
@@ -327,10 +364,15 @@ public final class ScannerInputTest {
             assertSame("Same production WebView must remain live", originalWebView, activity.getBridge().getWebView());
         });
         logGeometry(stage, false);
+        logStage("cameraDump.open.enter");
         try (ParcelFileDescriptor fd = instrumentation.getUiAutomation().executeShellCommand("dumpsys media.camera");
              InputStream stream = new ParcelFileDescriptor.AutoCloseInputStream(fd)) {
+            logStage("cameraDump.open.exit");
             StringBuilder selected = new StringBuilder();
-            for (String line : read(stream).split("\\n")) {
+            logStage("cameraDump.read.enter");
+            String service = read(stream);
+            logStage("cameraDump.read.exit");
+            for (String line : service.split("\\n")) {
                 if (line.contains("Camera ID") || line.contains("CameraDeviceClient") || line.contains("Client(s)")
                     || line.contains("com.clipp.app.acceptance")) selected.append(line).append(";");
                 if (selected.length() > 6000) break;

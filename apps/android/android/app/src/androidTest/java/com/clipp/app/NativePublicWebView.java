@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import android.app.Instrumentation;
 import android.graphics.Rect;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.webkit.WebView;
@@ -110,7 +111,9 @@ final class NativePublicWebView {
             up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
             long upSent = SystemClock.uptimeMillis();
             lastTouchDispatch = "down-complete;up-sent" + downTiming + ";upEventTime=" + upTime + ";upSent=" + upSent;
+            Log.i("ClippNativeInputStage", "tap.up.enter;uptimeMs=" + SystemClock.uptimeMillis());
             boolean upAccepted = instrumentation.getUiAutomation().injectInputEvent(up, true);
+            Log.i("ClippNativeInputStage", "tap.up.exit;accepted=" + upAccepted + ";uptimeMs=" + SystemClock.uptimeMillis());
             lastTouchDispatch = "down-complete;up-complete" + downTiming + ";upEventTime=" + upTime
                 + ";upSent=" + upSent + ";upReturned=" + SystemClock.uptimeMillis()
                 + ";upAccepted=" + upAccepted;
@@ -118,9 +121,13 @@ final class NativePublicWebView {
         } finally {
             down.recycle();
             if (up != null) up.recycle();
+            Log.i("ClippNativeInputStage", "tap.nativeAfter.enter;uptimeMs=" + SystemClock.uptimeMillis());
             scenario.onActivity(activity -> lastNativeTouchAfter = nativeTouchGeometry(activity, point));
+            Log.i("ClippNativeInputStage", "tap.nativeAfter.exit;uptimeMs=" + SystemClock.uptimeMillis());
         }
+        Log.i("ClippNativeInputStage", "tap.idle.enter;uptimeMs=" + SystemClock.uptimeMillis());
         instrumentation.waitForIdleSync();
+        Log.i("ClippNativeInputStage", "tap.idle.exit;uptimeMs=" + SystemClock.uptimeMillis());
         scenario.onActivity(activity -> lastNativeTouchSettled = nativeTouchGeometry(activity, point));
     }
 
