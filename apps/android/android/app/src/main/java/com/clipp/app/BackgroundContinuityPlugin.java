@@ -381,6 +381,19 @@ public final class BackgroundContinuityPlugin extends Plugin {
         } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
     }
 
+    /** Passive OS permission state only; never requests permission or opens capture. */
+    @PluginMethod
+    public void getCameraPermission(PluginCall call) {
+        String state = "unknown";
+        try {
+            state = ContextCompat.checkSelfPermission(getContext(), android.Manifest.permission.CAMERA)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED ? "granted" : "denied";
+        } catch (Exception ignored) { }
+        JSObject result = new JSObject();
+        result.put("state", state);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void prepareExplicitTextAction(PluginCall call) {
         try {

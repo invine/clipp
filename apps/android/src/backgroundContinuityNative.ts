@@ -1,4 +1,5 @@
 import { isSharingLifetime } from "../../../packages/core/runtime/settingsAuthority";
+import type { CameraPermissionState } from "../../../packages/ui/src/pairingScan";
 import {
   Capacitor,
   registerPlugin,
@@ -25,6 +26,7 @@ type NativePlatformInfo = AndroidBackgroundDiagnosticStatus & {
 };
 
 type NativeBackgroundContinuityPlugin = {
+  getCameraPermission(): Promise<{ state: CameraPermissionState }>;
   getPlatformInfo(): Promise<NativePlatformInfo>;
   setEnabled(options: { enabled: boolean }): Promise<void>;
   start(options: { autoSync: boolean | null }): Promise<void>;
@@ -68,6 +70,7 @@ const NativeBackgroundContinuity =
   registerPlugin<NativeBackgroundContinuityPlugin>("BackgroundContinuity");
 
 export type AndroidBackgroundNative = {
+  cameraPermission?(): Promise<CameraPermissionState>;
   apiLevel(): Promise<number | undefined>;
   userStopped(): Promise<boolean>;
   enabled(): Promise<boolean>;
@@ -159,6 +162,17 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
   };
 
   return {
+    async cameraPermission() {
+      if (!isNativeAndroid()) return "unknown";
+      try {
+        const result = await NativeBackgroundContinuity.getCameraPermission();
+        return result.state === "granted" || result.state === "denied"
+          ? result.state
+          : "unknown";
+      } catch {
+        return "unknown";
+      }
+    },
     async apiLevel() {
       return (await info())?.apiLevel;
     },

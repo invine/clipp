@@ -81,7 +81,7 @@ window.clippScannerDiagnosis={events,async run(trial){
    if(!navigator.mediaDevices?.getUserMedia)throw new Error('media_api_unavailable');
    const media=navigator.mediaDevices;const original=media.getUserMedia;
    media.getUserMedia=()=>{mark('media-sentinel-reached',{fixture:'request intercepted before permission or acquisition'});return Promise.reject(new DOMException('diagnostic sentinel','NotAllowedError'));};
-   try{mark('scanner-entry-before');await scanPairingQrWithCamera();return mark('scanner-returned');}catch(error){return mark('scanner-rejected',{message:error.message});}finally{media.getUserMedia=original;}
+   try{mark('scanner-entry-before');const result=await scanPairingQrWithCamera();if(result.status==='failed')return mark('scanner-rejected',{message:result.error});return mark('scanner-returned',{status:result.status});}catch(error){return mark('scanner-rejected',{message:error.message});}finally{media.getUserMedia=original;}
   }
   throw new Error('unknown_trial');
  }catch(error){return mark('javascript-error',{name:error.name,message:error.message});}

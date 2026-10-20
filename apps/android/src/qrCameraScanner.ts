@@ -1,7 +1,12 @@
 import jsQR from "jsqr";
+import type {
+  PairingScanError,
+  PairingScanResult,
+} from "../../../packages/ui/src/pairingScan";
 
 const SCANNER_ID = "clipp-android-qr-scanner";
 const AUTO_SCAN_INTERVAL_MS = 220;
+let activeCapture: (() => void) | undefined;
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
@@ -27,20 +32,6 @@ function cameraErrorMessage(err: unknown): Error {
     }
   }
   return err instanceof Error ? err : new Error("camera_unavailable");
-}
-
-type QrBarcodeDetector = {
-  detect(source: HTMLCanvasElement): Promise<Array<{ rawValue: string }>>;
-};
-
-function createBarcodeDetector(): QrBarcodeDetector | null {
-  const detector = (globalThis as any).BarcodeDetector;
-  if (!detector) return null;
-  try {
-    return new detector({ formats: ["qr_code"] });
-  } catch {
-    return null;
-  }
 }
 
 /** Geometry-only scanner surface. Construction never touches a decoder, camera or permission. */
@@ -181,9 +172,14 @@ export function createPairingScannerOverlay() {
   };
 }
 
-export async function scanPairingQrWithCamera(): Promise<string | null> {
+export async function scanPairingQrWithCamera({
+  signal,
+}: { signal?: AbortSignal } = {}): Promise<PairingScanResult> {
+  if (signal?.aborted) return { status: "cancelled" };
+  activeCapture?.();
+  if (document.visibilityState === "hidden") return { status: "cancelled" };
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("camera_unavailable");
+    return { status: "failed", error: "camera_unavailable" };
   }
 
   document.getElementById(SCANNER_ID)?.remove();
@@ -192,13 +188,12 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
   let frameId = 0;
   let settled = false;
 
-  return new Promise<string | null>((resolve, reject) => {
+  return new Promise<PairingScanResult>((resolve) => {
     const { video, status, scanNow, cancel, dispose } =
       createPairingScannerOverlay();
 
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { willReadFrequently: true });
-    const barcodeDetector = createBarcodeDetector();
     let lastAutoScanAt = 0;
     let decodeTask: Promise<string | null> | null = null;
 
@@ -208,28 +203,54 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
     }
 
     function cleanup() {
+      if (activeCapture === cancelCapture) activeCapture = undefined;
+      signal?.removeEventListener("abort", cancelCapture);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("pagehide", cancelCapture);
       if (frameId) cancelAnimationFrame(frameId);
       stopStream(stream);
+      video.pause();
+      video.srcObject = null;
       dispose();
+    }
+
+    function cancelCapture() {
+      finish(null);
+    }
+    function visibilityChanged() {
+      if (document.visibilityState === "hidden") cancelCapture();
     }
 
     function finish(value: string | null) {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(value);
+      resolve(
+        value === null
+          ? { status: "cancelled" }
+          : { status: "scanned", text: value }
+      );
     }
 
-    function fail(err: unknown) {
+    function fail(err: unknown, code?: PairingScanError) {
       if (settled) return;
       settled = true;
       cleanup();
-      reject(cameraErrorMessage(err));
+      const message = cameraErrorMessage(err).message;
+      resolve({
+        status: "failed",
+        error:
+          code ??
+          (message === "camera_permission_denied" ||
+          message === "camera_not_found"
+            ? message
+            : "camera_unavailable"),
+      });
     }
 
     function drawVideoFrame(maxWidth: number): boolean {
       if (!context) {
-        fail(new Error("canvas_unavailable"));
+        fail(new Error("canvas_unavailable"), "camera_decode_failed");
         return false;
       }
 
@@ -284,23 +305,10 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
       return readQrFromImageData(centerFrame);
     }
 
-    async function readQrWithNativeDetector(): Promise<string | null> {
-      if (!barcodeDetector || !canvas.width || !canvas.height) return null;
-      try {
-        const codes = await barcodeDetector.detect(canvas);
-        return codes.find((code) => code.rawValue)?.rawValue || null;
-      } catch {
-        return null;
-      }
-    }
-
     async function decodeCurrentFrame(manual: boolean): Promise<string | null> {
       if (decodeTask) return decodeTask;
       decodeTask = (async () => {
         if (!drawVideoFrame(manual ? 1600 : 1100)) return null;
-
-        const nativeResult = await readQrWithNativeDetector();
-        if (nativeResult) return nativeResult;
 
         return readQrWithJsQr();
       })().finally(() => {
@@ -314,18 +322,20 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
 
       if (now - lastAutoScanAt >= AUTO_SCAN_INTERVAL_MS) {
         lastAutoScanAt = now;
-        void decodeCurrentFrame(false).then((result) => {
-          if (result) {
-            finish(result);
-          }
-        });
+        void decodeCurrentFrame(false)
+          .then((result) => {
+            if (result) {
+              finish(result);
+            }
+          })
+          .catch((error) => fail(error, "camera_decode_failed"));
       }
 
-      frameId = requestAnimationFrame(scanFrame);
+      if (!settled) frameId = requestAnimationFrame(scanFrame);
     }
 
     async function scanNowFromCamera() {
-      if (scanNow.disabled) return;
+      if (settled || scanNow.disabled) return;
       setScanNowEnabled(false);
       status.textContent = "Scanning photo";
       try {
@@ -336,38 +346,48 @@ export async function scanPairingQrWithCamera(): Promise<string | null> {
         }
         status.textContent =
           "No QR found. Hold it inside the square and try again.";
+      } catch (error) {
+        fail(error, "camera_decode_failed");
       } finally {
         if (!settled) setScanNowEnabled(true);
       }
     }
 
-    cancel.addEventListener("click", () => finish(null));
+    activeCapture = cancelCapture;
+    signal?.addEventListener("abort", cancelCapture, { once: true });
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("pagehide", cancelCapture);
+    cancel.addEventListener("click", cancelCapture);
     scanNow.addEventListener("click", () => {
       void scanNowFromCamera();
     });
 
-    navigator.mediaDevices
-      .getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      })
-      .then(async (nextStream) => {
-        if (settled) {
-          stopStream(nextStream);
-          return;
-        }
-        stream = nextStream;
-        video.srcObject = stream;
-        await video.play();
-        if (settled) return;
-        status.textContent = "Point the camera at the QR code";
-        setScanNowEnabled(true);
-        frameId = requestAnimationFrame(scanFrame);
-      })
-      .catch(fail);
+    try {
+      navigator.mediaDevices
+        .getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        })
+        .then(async (nextStream) => {
+          if (settled) {
+            stopStream(nextStream);
+            return;
+          }
+          stream = nextStream;
+          video.srcObject = stream;
+          await video.play();
+          if (settled) return;
+          status.textContent = "Point the camera at the QR code";
+          setScanNowEnabled(true);
+          frameId = requestAnimationFrame(scanFrame);
+        })
+        .catch(fail);
+    } catch (error) {
+      fail(error);
+    }
   });
 }

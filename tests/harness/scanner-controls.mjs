@@ -10,6 +10,114 @@ const out = process.argv[2]
   ? resolve(process.argv[2])
   : await mkdtemp(join(tmpdir(), "clipp-scanner-controls-"));
 await mkdir(out, { recursive: true });
+if (process.argv.includes("--consumer")) {
+  // Source-only mounted consumer: fresh headless context, every network request
+  // blocked and clipboard/media/provider boundaries inert in the fixture.
+  await build({
+    entryPoints: [join(repo, "tests/fixtures/pairingScanConsumer.tsx")],
+    define: {
+      PUBLIC_SIGNED_TARGET: await readFile(
+        join(repo, "tests/core/pairing/fixtures/signed-qr-target.json"),
+        "utf8"
+      ),
+    },
+    bundle: true,
+    platform: "browser",
+    format: "iife",
+    target: ["chrome91"],
+    loader: { ".png": "dataurl" },
+    outfile: join(out, "consumer.js"),
+  });
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ permissions: [] });
+  const page = await context.newPage();
+  page.setDefaultTimeout(3000);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/*", (route) => route.abort());
+  try {
+    await page.setContent('<!doctype html><div id="root"></div>');
+    await page.addScriptTag({ path: join(out, "consumer.js") });
+    await page.getByRole("button", { name: "Scan QR", exact: true }).click();
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "Camera permission is required" })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Paste pairing text", exact: true })
+        .count(),
+      1
+    );
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Scan QR", exact: true })
+        .isEnabled(),
+      true
+    );
+    await page.evaluate(() => scannerConsumer.permissionReturn("unknown"));
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "Camera permission could not be confirmed" })
+      .waitFor();
+    await page.evaluate(() => scannerConsumer.permissionReturn());
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "Camera permission is now allowed" })
+      .waitFor();
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.stats().requests),
+      1,
+      "permission return only rechecks, never captures"
+    );
+    await page.evaluate(() => scannerConsumer.pending());
+    await page.getByRole("button", { name: "Scan QR", exact: true }).click();
+    await page.locator("#clipp-android-qr-scanner").waitFor();
+    await page.evaluate(() => scannerConsumer.closeTask());
+    await page
+      .locator("#clipp-android-qr-scanner")
+      .waitFor({ state: "detached" });
+    await page.evaluate(() => scannerConsumer.acquire());
+    await page.waitForFunction(() => scannerConsumer.stats().stops === 1);
+    await page.evaluate(() => scannerConsumer.reopen());
+    await page.getByRole("button", { name: "Scan QR", exact: true }).waitFor();
+    const stats = await page.evaluate(() => scannerConsumer.stats());
+    assert.deepEqual(stats, {
+      requests: 2,
+      stops: 1,
+      query: "retained query",
+      draft: "retained draft",
+    });
+    assert.deepEqual(await page.evaluate(() => scannerConsumer.attempts), []);
+    await page.evaluate(() => scannerConsumer.decode());
+    await page.getByRole("button", { name: "Scan QR", exact: true }).click();
+    await page.waitForFunction(() => scannerConsumer.attempts.length === 1);
+    await page
+      .locator("#clipp-android-qr-scanner")
+      .waitFor({ state: "detached" });
+    await page.evaluate(() => scannerConsumer.closeTask());
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.pairing().pending),
+      true
+    );
+    await page.evaluate(() => scannerConsumer.finishSubmission());
+    await page.waitForFunction(() => !scannerConsumer.pairing().pending);
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.pairing().result.error),
+      "outcome_unconfirmed"
+    );
+    assert.equal(await page.evaluate(() => scannerConsumer.attempts.length), 1);
+    assert.deepEqual(errors, []);
+    await page.evaluate(() => scannerConsumer.dispose());
+    await writeFile(
+      join(out, "consumer-result.json"),
+      JSON.stringify({ pass: true, sourceOnly: true, stats })
+    );
+  } finally {
+    await browser.close();
+  }
+  process.exit(0);
+}
 const label = "rendered";
 await build({
   stdin: {
@@ -113,17 +221,15 @@ try {
       const overlay = page.locator("#clipp-android-qr-scanner"),
         scan = overlay.getByRole("button", { name: "Scan now", exact: true }),
         cancel = overlay.getByRole("button", { name: "Cancel", exact: true });
-      const targets = await overlay
-        .getByRole("button")
-        .evaluateAll((es) =>
-          es.map((e) => ({
-            name: e.textContent,
-            disabled: e.disabled,
-            rect: e.getBoundingClientRect().toJSON(),
-            color: getComputedStyle(e).color,
-            background: getComputedStyle(e).backgroundColor,
-          }))
-        );
+      const targets = await overlay.getByRole("button").evaluateAll((es) =>
+        es.map((e) => ({
+          name: e.textContent,
+          disabled: e.disabled,
+          rect: e.getBoundingClientRect().toJSON(),
+          color: getComputedStyle(e).color,
+          background: getComputedStyle(e).backgroundColor,
+        }))
+      );
       for (const target of targets) {
         assert.ok(
           target.rect.width >= 71.9 && target.rect.height >= 71.9,

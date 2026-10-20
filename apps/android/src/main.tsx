@@ -22,7 +22,8 @@ import {
   bindHostOverlayKeyboard,
 } from "../../../packages/ui/src/hostTaskInput";
 import { bindAndroidHostTaskInput } from "./hostTaskInputNative";
-import { scanPairingQrWithCamera } from "./qrCameraScanner";
+import { createAndroidPairingScanner } from "./pairingScannerHost";
+import type { PairingScanOptions } from "../../../packages/ui/src/pairingScan";
 
 const initialState: AndroidAppState = {
   clips: [],
@@ -46,6 +47,11 @@ const initialState: AndroidAppState = {
 function App() {
   const session = useMemo(() => createUiSession(), []);
   const taskInput = useMemo(() => createHostTaskInput(session), [session]);
+  const pairingScanner = useMemo(
+    () => createAndroidPairingScanner(taskInput),
+    [taskInput]
+  );
+  useEffect(() => () => pairingScanner.dispose(), [pairingScanner]);
   useEffect(() => {
     const unbindNative = bindAndroidHostTaskInput(taskInput);
     const unbindKeyboard = bindHostOverlayKeyboard(taskInput, document);
@@ -102,24 +108,8 @@ function App() {
     return await client.pairFromText(txt);
   }
 
-  async function handleScanPairingCode(): Promise<string | null> {
-    // Scanner cancellation/late decode safety is unqualified until ticket 15.
-    // Consume native Back while this existing scanner is active; never dismiss its parent.
-    const releaseOverlay = taskInput.registerOverlay({});
-    try {
-      return await scanPairingQrWithCamera();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message === "camera_permission_denied"
-          ? "Camera permission is required to scan pairing QR codes."
-          : err instanceof Error && err.message === "camera_not_found"
-            ? "No camera was found on this device."
-            : "Unable to open the camera.";
-      alert(message);
-      return null;
-    } finally {
-      releaseOverlay();
-    }
+  function handleScanPairingCode(options: PairingScanOptions) {
+    return pairingScanner.scan(options);
   }
 
   return (
@@ -194,6 +184,7 @@ function App() {
         onReject={(dev) => client.rejectRequest(dev)}
         onPairText={handlePairText}
         onScanPairingCode={handleScanPairingCode}
+        scanCameraPermission={pairingScanner.permission}
         onRequestPairingCode={() => client.getPairingCode()}
         onCopyPairingText={(text) => client.copyPairingText(text)}
         onReuseClip={(id) => client.reuseClip(id)}

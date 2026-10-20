@@ -1,4 +1,12 @@
 import type { HostTaskInput } from "./hostTaskInput";
+import {
+  pairingScanErrorMessage,
+  type PairingScanError,
+  type PairingScanOptions,
+  type PairingScanResult,
+  type PairingCameraPermission,
+  type CameraPermissionState,
+} from "./pairingScan";
 import { ClipDetails } from "./ClipDetails";
 import {
   BackgroundContinuityControls,
@@ -360,7 +368,8 @@ export type ClipboardAppProps = {
   onReject(dev: PendingRequest): Promise<PairingApprovalResult>;
   onPairText(txt: string): Promise<PairingSubmissionResult>;
   pairingDiagnostics?: React.ReactNode;
-  onScanPairingCode?(): Promise<string | null> | string | null;
+  onScanPairingCode?(options: PairingScanOptions): Promise<PairingScanResult>;
+  scanCameraPermission?: PairingCameraPermission;
   onRequestPairingCode(): Promise<PairingCode | null>;
   onCopyPairingText(text: string): Promise<PayloadCopyResult>;
   onReuseClip(id: string): ReuseClipOutcome | Promise<ReuseClipOutcome>;
@@ -447,6 +456,7 @@ export function ClipboardApp({
   pairingDiagnostics,
   pairingImport,
   onScanPairingCode,
+  scanCameraPermission,
   onRequestPairingCode,
   onCopyPairingText,
   onReuseClip,
@@ -541,6 +551,40 @@ export function ClipboardApp({
     setApprovalsPending([...approvalBusy.current]);
   }
   const [isScanningPairing, setIsScanningPairing] = useState(false);
+  const [scanError, setScanError] = useState<PairingScanError | null>(null);
+  const [cameraPermission, setCameraPermission] =
+    useState<CameraPermissionState>("unknown");
+  useEffect(() => {
+    if (scanError !== "camera_permission_denied" || !scanCameraPermission)
+      return;
+    let live = true,
+      revision = 0;
+    const read = () => {
+      const current = ++revision;
+      void scanCameraPermission
+        .read()
+        .catch(() => "unknown" as const)
+        .then((state) => {
+          if (live && revision === current) setCameraPermission(state);
+        });
+    };
+    read();
+    const unsubscribe = scanCameraPermission.subscribeReturn(read);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [scanError, scanCameraPermission]);
+  const activeScan = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      const capture = activeScan.current;
+      activeScan.current = null;
+      capture?.abort();
+    },
+    []
+  );
+  useEffect(() => () => activeScan.current?.abort(), [identity?.deviceId]);
   const { task: qrTask, state: qrState } = usePairingCodeTask(
     identity ? `${identity.deviceId}:${identity.deviceName}` : null,
     session.qr
@@ -1343,22 +1387,46 @@ export function ClipboardApp({
     if (
       !identityReady ||
       !onScanPairingCode ||
-      isScanningPairing ||
+      activeScan.current ||
       pair.pending
     )
       return;
+    const task =
+      session.getSnapshot().tasks[session.getSnapshot().tasks.length - 1];
+    if (task?.kind !== "pairing") return;
+    const identityId = currentIdentity.current;
+    const capture = new AbortController();
+    activeScan.current = capture;
+    const unsubscribe = session.subscribe(() => {
+      const tasks = session.getSnapshot().tasks;
+      if (tasks[tasks.length - 1] !== task) capture.abort();
+    });
+    setScanError(null);
+    setCameraPermission("unknown");
     setIsScanningPairing(true);
     try {
-      const scanned = await onScanPairingCode();
-      const trimmed = scanned?.trim();
+      const scanned = await onScanPairingCode({ signal: capture.signal });
+      if (capture.signal.aborted || currentIdentity.current !== identityId)
+        return;
+      if (scanned.status === "cancelled") return;
+      if (scanned.status === "failed") {
+        setScanError(scanned.error);
+        return;
+      }
+      const trimmed = scanned.text.trim();
       if (trimmed) {
         pairingTask.change(trimmed);
         await pairingTask.submit(onPairText);
       }
-    } catch (err) {
-      console.warn("Pairing QR scan failed", err);
+    } catch {
+      if (!capture.signal.aborted && currentIdentity.current === identityId)
+        setScanError("camera_unavailable");
     } finally {
-      setIsScanningPairing(false);
+      unsubscribe();
+      if (activeScan.current === capture) {
+        activeScan.current = null;
+        setIsScanningPairing(false);
+      }
     }
   }
 
@@ -2857,6 +2925,18 @@ export function ClipboardApp({
               >
                 {isScanningPairing ? "Scanning…" : "Scan QR"}
               </button>
+            )}
+            {scanError && (
+              <p role="alert">
+                {scanError === "camera_permission_denied" &&
+                cameraPermission === "granted"
+                  ? "Camera permission is now allowed. Choose Scan QR to try again, or paste pairing text."
+                  : scanError === "camera_permission_denied" &&
+                      scanCameraPermission &&
+                      cameraPermission === "unknown"
+                    ? "Camera permission could not be confirmed. Check Camera in Android Settings, then choose Scan QR to try again, or paste pairing text."
+                    : pairingScanErrorMessage(scanError)}
+              </p>
             )}
             {pairingImport}
             {pair.result && (
