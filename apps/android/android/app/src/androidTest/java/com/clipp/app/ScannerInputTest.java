@@ -51,6 +51,7 @@ import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.junit.runners.model.MultipleFailureException;
 
 /** Root-assigned real camera interval only. Never a host webcam/operator package.
  * The declared imagefile feed is virtual-camera evidence, not physical/OEM support.
@@ -100,27 +101,34 @@ public final class ScannerInputTest {
         camera.awaitAllAvailable();
         logStage("cameraWitness.available.exit");
         scenario = ActivityScenario.launch(MainActivity.class);
-        scenario.onActivity(activity -> originalWebView = activity.getBridge().getWebView());
         web = new NativePublicWebView(instrumentation, scenario);
+        web.onActivity(activity -> originalWebView = activity.getBridge().getWebView());
         web.await("packaged workspace ready", "document.querySelector('nav[aria-label=\"Clipp destinations\"]') !== null");
         assertEquals("https://localhost/", web.evaluate("location.origin + '/'"));
         Log.i(TAG, "declaredImageSha256=" + feed + ";rootNonce=" + nonce);
     }
 
     @After
-    public void closeOnlyAfterLiveAssertions() {
+    public void closeOnlyAfterLiveAssertions() throws Exception {
+        List<Throwable> failures = new ArrayList<>();
         logStage("after.enter");
         if (camera != null) {
             logStage("after.cameraClose.enter");
-            camera.close();
+            try { camera.close(); }
+            catch (Throwable error) { failures.add(error); }
             logStage("after.cameraClose.exit");
         }
         if (scenario != null) {
             logStage("after.scenarioClose.enter");
-            scenario.close();
+            try {
+                if (web != null) web.closeActivity();
+                else NativePublicWebView.closeScenarioBounded(scenario);
+            } catch (Throwable error) { failures.add(error); }
             logStage("after.scenarioClose.exit");
         }
         logStage("after.exit");
+        // JUnit also retains a failing test body; cleanup errors cannot replace it or become PASS.
+        MultipleFailureException.assertEmpty(failures);
     }
 
     @Test
@@ -273,7 +281,7 @@ public final class ScannerInputTest {
         long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
         AtomicBoolean focused = new AtomicBoolean();
         do {
-            scenario.onActivity(activity -> focused.set(activity.hasWindowFocus()
+            web.onActivity(activity -> focused.set(activity.hasWindowFocus()
                 && activity.getLifecycle().getCurrentState() == Lifecycle.State.RESUMED));
             if (focused.get()) break;
             SystemClock.sleep(50);
@@ -290,15 +298,15 @@ public final class ScannerInputTest {
     private void assertScannerBounds() throws Exception {
         logGeometry("scanner-bounds", true);
     }
-    private void nativeBack() { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); instrumentation.waitForIdleSync(); }
+    private void nativeBack() { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); web.onActivity(activity -> {}); }
     private void openActualSettings() {
-        scenario.onActivity(activity -> activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        web.onActivity(activity -> activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.fromParts("package", instrumentation.getTargetContext().getPackageName(), null))));
         long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
         do {
             AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
             AtomicBoolean paused = new AtomicBoolean();
-            scenario.onActivity(activity -> paused.set(!activity.hasWindowFocus() && activity.getLifecycle().getCurrentState() != Lifecycle.State.RESUMED));
+            web.onActivity(activity -> paused.set(!activity.hasWindowFocus() && activity.getLifecycle().getCurrentState() != Lifecycle.State.RESUMED));
             if (paused.get() && root != null && "com.android.settings".equals(String.valueOf(root.getPackageName()))) return;
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < deadline);
@@ -358,7 +366,7 @@ public final class ScannerInputTest {
         fail("Decoded camera payload did not reach public existing Pairing diagnostics");
     }
     private void assertLiveAndLogCamera(String stage) throws Exception {
-        scenario.onActivity(activity -> {
+        web.onActivity(activity -> {
             assertFalse("Release witness must precede Activity destruction", activity.isDestroyed());
             assertFalse(activity.isFinishing());
             assertSame("Same production WebView must remain live", originalWebView, activity.getBridge().getWebView());
@@ -390,7 +398,7 @@ public final class ScannerInputTest {
             for (int i = 0; i < controls.length(); i++) bounded.add(controls.getJSONObject(i));
         }
         JSONObject viewport = css.getJSONObject("viewport");
-        scenario.onActivity(activity -> {
+        web.onActivity(activity -> {
             WebView view = activity.getBridge().getWebView();
             int[] webLocation = new int[2], decorLocation = new int[2];
             view.getLocationOnScreen(webLocation);

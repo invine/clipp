@@ -3,8 +3,11 @@ package com.clipp.app;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import android.app.Activity;
 import android.app.Instrumentation;
 import android.graphics.Rect;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputDevice;
@@ -13,9 +16,17 @@ import android.webkit.WebView;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.test.core.app.ActivityScenario;
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
+import androidx.test.runner.lifecycle.Stage;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.runners.model.MultipleFailureException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -27,6 +38,9 @@ final class NativePublicWebView {
         + "technical:[...e.querySelectorAll('pre')].slice(0,1).map(p=>p.textContent.slice(0,1200))}))";
     private final Instrumentation instrumentation;
     private final ActivityScenario<MainActivity> scenario;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private Integer ownedTaskId;
+    private static final long UI_TIMEOUT_MS = 5_000;
     private String lastTouchTarget = "none";
     private String lastTouchSample = "none";
     private String lastNativeTouchBefore = "none";
@@ -35,6 +49,7 @@ final class NativePublicWebView {
     private String lastTouchDispatch = "none";
 
     NativePublicWebView(Instrumentation instrumentation, ActivityScenario<MainActivity> scenario) {
+        NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
         this.instrumentation = instrumentation;
         this.scenario = scenario;
     }
@@ -69,7 +84,7 @@ final class NativePublicWebView {
         lastNativeTouchAfter = "pending";
         lastNativeTouchSettled = "pending";
         lastTouchDispatch = "not-sent";
-        scenario.onActivity(activity -> {
+        onActivity(activity -> {
             WebView web = activity.getBridge().getWebView();
             int[] location = new int[2];
             web.getLocationOnScreen(location);
@@ -122,13 +137,12 @@ final class NativePublicWebView {
             down.recycle();
             if (up != null) up.recycle();
             Log.i("ClippNativeInputStage", "tap.nativeAfter.enter;uptimeMs=" + SystemClock.uptimeMillis());
-            scenario.onActivity(activity -> lastNativeTouchAfter = nativeTouchGeometry(activity, point));
+            onActivity(activity -> lastNativeTouchAfter = nativeTouchGeometry(activity, point));
             Log.i("ClippNativeInputStage", "tap.nativeAfter.exit;uptimeMs=" + SystemClock.uptimeMillis());
         }
-        Log.i("ClippNativeInputStage", "tap.idle.enter;uptimeMs=" + SystemClock.uptimeMillis());
-        instrumentation.waitForIdleSync();
-        Log.i("ClippNativeInputStage", "tap.idle.exit;uptimeMs=" + SystemClock.uptimeMillis());
-        scenario.onActivity(activity -> lastNativeTouchSettled = nativeTouchGeometry(activity, point));
+        Log.i("ClippNativeInputStage", "tap.mainPost.enter;uptimeMs=" + SystemClock.uptimeMillis());
+        onActivity(activity -> lastNativeTouchSettled = nativeTouchGeometry(activity, point));
+        Log.i("ClippNativeInputStage", "tap.mainPost.exit;uptimeMs=" + SystemClock.uptimeMillis());
     }
 
     /** Failure diagnostics only: read actual native geometry without changing input. */
@@ -200,15 +214,124 @@ final class NativePublicWebView {
             + ";nativeSettled=" + lastNativeTouchSettled + ";publicUI=" + ui;
     }
 
-    String evaluate(String expression) throws Exception {
-        CountDownLatch complete = new CountDownLatch(1);
-        AtomicReference<String> result = new AtomicReference<>();
-        scenario.onActivity(activity -> activity.getBridge().getWebView().evaluateJavascript(
-            expression, value -> { result.set(value); complete.countDown(); }));
-        assertTrue("WebView evaluation timed out", complete.await(5, TimeUnit.SECONDS));
-        assertNotNull("WebView returned no evaluation result", result.get());
-        Object decoded = new JSONTokener(result.get()).nextValue();
-        return String.valueOf(decoded);
+    /** Dispatch a native/public observation without requiring a live video UI to become globally idle. */
+    void onActivity(ActivityScenario.ActivityAction<MainActivity> action) {
+        onActivity(action, SystemClock.uptimeMillis() + UI_TIMEOUT_MS);
     }
 
+    private void onActivity(ActivityScenario.ActivityAction<MainActivity> action, long deadline) {
+        assertTrue("Bounded native observations must be requested off the UI thread",
+            Looper.myLooper() != Looper.getMainLooper());
+        CountDownLatch complete = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicBoolean active = new AtomicBoolean(true);
+        Runnable dispatch = () -> {
+            if (!active.get()) return;
+            try {
+                assertTrue("Native UI dispatch deadline expired", SystemClock.uptimeMillis() < deadline);
+                MainActivity activity = currentActivity();
+                if (active.get()) action.perform(activity);
+            } catch (Throwable error) {
+                failure.set(error);
+            } finally { complete.countDown(); }
+        };
+        Log.i("ClippNativeInputStage", "observation.uiPost.enter;uptimeMs=" + SystemClock.uptimeMillis());
+        assertTrue("Main Looper rejected native observation", main.post(dispatch));
+        boolean completed;
+        try {
+            completed = complete.await(Math.max(0, deadline - SystemClock.uptimeMillis()), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Native UI observation interrupted", error);
+        } finally {
+            active.set(false);
+            main.removeCallbacks(dispatch);
+        }
+        assertTrue("Native UI observation did not complete within its deadline", completed);
+        rethrow(failure.get());
+        Log.i("ClippNativeInputStage", "observation.uiPost.exit;uptimeMs=" + SystemClock.uptimeMillis());
+    }
+
+    /** Resolve afresh on the UI thread: Activity recreation replaces the owner and WebView. */
+    private MainActivity currentActivity() {
+        assertTrue("Resolve native lifecycle ownership only on the UI thread", Looper.myLooper() == Looper.getMainLooper());
+        Set<MainActivity> owners = new HashSet<>();
+        for (Stage stage : Stage.values()) {
+            if (stage == Stage.DESTROYED || stage == Stage.PRE_ON_CREATE) continue;
+            for (Activity candidate : ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(stage)) {
+                if (candidate.getClass() == MainActivity.class
+                    && instrumentation.getTargetContext().getPackageName().equals(candidate.getPackageName())
+                    && !candidate.isDestroyed() && !candidate.isFinishing()) owners.add((MainActivity) candidate);
+            }
+        }
+        assertTrue("Expected one live isolated MainActivity owner; found " + owners.size(), owners.size() == 1);
+        MainActivity owner = owners.iterator().next();
+        if (ownedTaskId == null) ownedTaskId = owner.getTaskId();
+        assertTrue("Native observation must retain its actual task owner", ownedTaskId >= 0 && ownedTaskId == owner.getTaskId());
+        assertNotNull("Actual Activity bridge required", owner.getBridge());
+        assertNotNull("Actual Activity-owned WebView required", owner.getBridge().getWebView());
+        return owner;
+    }
+
+    String evaluate(String expression) throws Exception {
+        long deadline = SystemClock.uptimeMillis() + UI_TIMEOUT_MS;
+        CountDownLatch complete = new CountDownLatch(1);
+        AtomicReference<String> result = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicBoolean active = new AtomicBoolean(true);
+        try {
+            onActivity(activity -> {
+                WebView view = activity.getBridge().getWebView();
+                view.evaluateJavascript(expression, value -> {
+                    if (!active.get()) return;
+                    try {
+                        assertTrue("Public WebView result belongs to an obsolete Activity", currentActivity() == activity
+                            && activity.getBridge().getWebView() == view);
+                        result.set(value);
+                    } catch (Throwable error) { failure.set(error); }
+                    finally { complete.countDown(); }
+                });
+            }, deadline);
+            assertTrue("WebView evaluation timed out within shared UI/callback deadline",
+                complete.await(Math.max(0, deadline - SystemClock.uptimeMillis()), TimeUnit.MILLISECONDS));
+            rethrow(failure.get());
+            assertNotNull("WebView returned no evaluation result", result.get());
+            Object decoded = new JSONTokener(result.get()).nextValue();
+            return String.valueOf(decoded);
+        } finally { active.set(false); }
+    }
+
+    /** @After only: live camera release must already have been asserted by the test. */
+    void closeActivity() throws Exception {
+        List<Throwable> failures = new ArrayList<>();
+        try { onActivity(MainActivity::finish); }
+        catch (Throwable error) { failures.add(error); }
+        try { closeScenarioBounded(scenario); }
+        catch (Throwable error) { failures.add(error); }
+        MultipleFailureException.assertEmpty(failures);
+    }
+
+    static void closeScenarioBounded(ActivityScenario<MainActivity> ownedScenario) throws Exception {
+        CountDownLatch complete = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        // Retain this exact scenario only. A late worker never resolves/closes a new current app owner.
+        Thread worker = new Thread(() -> {
+            try { ownedScenario.close(); }
+            catch (Throwable error) { failure.set(error); }
+            finally { complete.countDown(); }
+        }, "clipp-owned-scenario-cleanup");
+        worker.setDaemon(true);
+        worker.start();
+        boolean completed = complete.await(UI_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        if (!completed) worker.interrupt();
+        assertTrue("Owned ActivityScenario cleanup unfinished after bounded wait", completed);
+        rethrow(failure.get());
+    }
+
+    private static void rethrow(Throwable error) {
+        if (error == null) return;
+        if (error instanceof Error) throw (Error) error;
+        if (error instanceof RuntimeException) throw (RuntimeException) error;
+        throw new AssertionError("Native observation failed", error);
+    }
 }
