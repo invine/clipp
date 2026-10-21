@@ -90,13 +90,17 @@ final class ScannerPublicWitness implements Application.ActivityLifecycleCallbac
         try {
             result.put("rootNonce", nonce).put("declaredSyntheticImageSha256", feed).put("anchors", anchors);
             result.put("nativeTrace", nativeSnapshot()).put("nativeDropped", nativeDropped);
-            AtomicBoolean resumed = new AtomicBoolean();
-            if (web != null) web.onActivity(activity -> resumed.set(activity.getLifecycle().getCurrentState() == Lifecycle.State.RESUMED));
-            if (!installed || !resumed.get()) {
-                result.put("publicDom", installed ? "unavailable-owner-not-resumed" : "observer-not-installed");
-                result.put("frame", new JSONObject().put("status", "unavailable-no-resumed-observer"));
+            AtomicBoolean visibleStarted = new AtomicBoolean();
+            if (web != null) web.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                visibleStarted.set(activity.getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)
+                    && decor.getWindowVisibility() == View.VISIBLE && decor.isShown());
+            });
+            if (!installed || !visibleStarted.get()) {
+                result.put("publicDom", installed ? "unavailable-owner-not-visible-started" : "observer-not-installed");
+                result.put("frame", new JSONObject().put("status", "unavailable-no-visible-started-observer"));
             } else {
-                JSONObject dom = new JSONObject(web.evaluate("(() => { const w=" + BUFFER + "; if(!w) return {unavailable:'observer-lost'};"
+                JSONObject dom = new JSONObject(web.evaluateVisible("(() => { const w=" + BUFFER + "; if(!w) return {unavailable:'observer-lost'};"
                     + " const s=w.read(); const {base64,...frame}=s.frame; return {trace:s.trace,dropped:s.dropped,frame}; })()"));
                 result.put("publicDom", dom);
                 JSONObject frame = dom.optJSONObject("frame");
@@ -111,7 +115,7 @@ final class ScannerPublicWitness implements Application.ActivityLifecycleCallbac
                     }
                 }
                 // Only test observer listeners are removed. No product/media state changes.
-                web.evaluate(BUFFER + "?.stop(); true");
+                web.evaluateVisible(BUFFER + "?.stop(); true");
             }
         } catch (Throwable error) {
             failures.add(error);
@@ -139,14 +143,14 @@ final class ScannerPublicWitness implements Application.ActivityLifecycleCallbac
 
     private void saveFrame(NativePublicWebView web, JSONObject frame) throws Exception {
         int width = frame.getInt("width"), height = frame.getInt("height"), size = frame.getInt("bytes");
-        if (width < 1 || width > 1920 || height < 1 || height > 1080 || size < 1 || size > MAX_PNG_BYTES)
+        if (width < 1 || height < 1 || Math.max(width, height) > 1920 || Math.min(width, height) > 1080 || size < 1 || size > MAX_PNG_BYTES)
             throw new AssertionError("Unqualified intrinsic frame bounds");
         int length = 4 * ((size + 2) / 3);
         long deadline = SystemClock.uptimeMillis() + 15_000;
         StringBuilder encoded = new StringBuilder(length);
         for (int start = 0; start < length; start += 32768) {
             if (SystemClock.uptimeMillis() >= deadline) throw new AssertionError("Exact frame export exceeded 15-second budget");
-            String chunk = web.evaluate(BUFFER + ".read().frame.base64.slice(" + start + "," + Math.min(length, start + 32768) + ")");
+            String chunk = web.evaluateVisible(BUFFER + ".read().frame.base64.slice(" + start + "," + Math.min(length, start + 32768) + ")");
             if (chunk.length() != Math.min(32768, length - start)) throw new AssertionError("Incomplete exact frame chunk");
             encoded.append(chunk);
         }

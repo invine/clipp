@@ -273,7 +273,12 @@ final class NativePublicWebView {
         return owner;
     }
 
-    String evaluate(String expression) throws Exception {
+    String evaluate(String expression) throws Exception { return evaluate(expression, false); }
+
+    /** Read-only diagnostics may observe a visible permission-paused owner, never a stopped/hidden owner. */
+    String evaluateVisible(String expression) throws Exception { return evaluate(expression, true); }
+
+    private String evaluate(String expression, boolean requireVisibleStarted) throws Exception {
         long deadline = SystemClock.uptimeMillis() + UI_TIMEOUT_MS;
         CountDownLatch complete = new CountDownLatch(1);
         AtomicReference<String> result = new AtomicReference<>();
@@ -282,6 +287,12 @@ final class NativePublicWebView {
         try {
             onActivity(activity -> {
                 WebView view = activity.getBridge().getWebView();
+                if (requireVisibleStarted) {
+                    android.view.View decor = activity.getWindow().getDecorView();
+                    assertTrue("Read-only diagnostic requires the exact still-visible STARTED owner",
+                        activity.getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                        && decor.getWindowVisibility() == android.view.View.VISIBLE && decor.isShown());
+                }
                 view.evaluateJavascript(expression, value -> {
                     if (!active.get()) return;
                     try {

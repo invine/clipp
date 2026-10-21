@@ -41,6 +41,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
     private static final long SERVICE_START_TIMEOUT_MS = 10_000L;
     private String runtimeGeneration;
     private boolean activityResumed;
+    private boolean activityStarted;
     private boolean destroyed;
     private View observedActivityView;
     private final ViewTreeObserver.OnWindowFocusChangeListener activityFocusListener = focused -> notifyActivityState();
@@ -123,17 +124,31 @@ public final class BackgroundContinuityPlugin extends Plugin {
         filter.addAction(BackgroundContinuityService.ACTION_SERVICE_STOPPED);
         filter.addAction(ExplicitTextIngressStore.ACTION_EXPLICIT_TEXT_QUEUED);
         ContextCompat.registerReceiver(getContext(), eventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
-        // A native dialog can take window focus without pausing this Activity or
-        // delivering a WebView blur callback. Keep the existing JS eligibility
-        // owner informed of the actual native transition, including lazy load.
+        // Permission UI can pause a still-visible STARTED Activity; other native
+        // dialogs only take focus. Publish both lifecycle fields and actual focus
+        // through the existing owner, including when this plugin loads lazily.
         handler.post(() -> {
             if (destroyed || getActivity() == null) return;
-            activityResumed = getActivity() instanceof LifecycleOwner
-                && ((LifecycleOwner) getActivity()).getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED);
+            Lifecycle.State state = getActivity() instanceof LifecycleOwner
+                ? ((LifecycleOwner) getActivity()).getLifecycle().getCurrentState() : Lifecycle.State.INITIALIZED;
+            activityStarted = state.isAtLeast(Lifecycle.State.STARTED);
+            activityResumed = state.isAtLeast(Lifecycle.State.RESUMED);
             observedActivityView = getActivity().getWindow().getDecorView();
             observedActivityView.getViewTreeObserver().addOnWindowFocusChangeListener(activityFocusListener);
             notifyActivityState();
         });
+    }
+
+    @Override
+    protected void handleOnStart() {
+        activityStarted = true;
+        notifyActivityState();
+    }
+
+    @Override
+    protected void handleOnStop() {
+        activityStarted = false;
+        notifyActivityState();
     }
 
     @Override
@@ -530,6 +545,7 @@ public final class BackgroundContinuityPlugin extends Plugin {
         boolean captureEligible = activityResumed && focused;
         new BackgroundContinuityDiagnostics(getContext()).recordCaptureEligibility(captureEligible);
         JSObject event = new JSObject();
+        event.put("started", activityStarted);
         event.put("resumed", activityResumed);
         event.put("windowFocused", focused);
         notifyListeners("activityState", event, true);

@@ -101,6 +101,7 @@ async function mount() {
     requests = 0,
     stops = 0;
   let acquire: (() => void) | undefined;
+  let rejectAcquisition: ((error: unknown) => void) | undefined;
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: {
@@ -124,7 +125,8 @@ async function mount() {
               },
             ],
           });
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
+          rejectAcquisition = reject;
           acquire = () =>
             resolve({
               getTracks: () => [
@@ -207,6 +209,19 @@ async function mount() {
       cameraPermission = state;
       for (const callback of returnListeners)
         callback({ resumed: true, windowFocused: true });
+    },
+    nativeState(event: {
+      started: boolean;
+      resumed: boolean;
+      windowFocused: boolean;
+    }) {
+      for (const callback of returnListeners) callback(event);
+    },
+    rejectPermission() {
+      cameraPermission = "denied";
+      rejectAcquisition?.(
+        new DOMException("fixture permission denial", "NotAllowedError")
+      );
     },
     permissionReads: () => permissionReads,
     decode() {

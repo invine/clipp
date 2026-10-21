@@ -206,6 +206,98 @@ if (process.argv.includes("--consumer")) {
     );
     assert.equal(await page.evaluate(() => scannerConsumer.attempts.length), 1);
     assert.deepEqual(errors, []);
+    // Captured native sequence is paused-but-STARTED/visible, then focus loss.
+    // Drive the actual host + scanner + mounted consumer, controlling only media.
+    await page.evaluate(() => {
+      scannerConsumer.reopen();
+      scannerConsumer.pending();
+    });
+    await scanQr.click();
+    await scanner.waitFor();
+    await page.evaluate(() => {
+      scannerConsumer.nativeState({
+        started: true,
+        resumed: false,
+        windowFocused: true,
+      });
+      scannerConsumer.nativeState({
+        started: true,
+        resumed: false,
+        windowFocused: false,
+      });
+    });
+    assert.equal(
+      await scanner.count(),
+      1,
+      "visible permission pause must not silently dismiss capture"
+    );
+    await page.evaluate(() => scannerConsumer.rejectPermission());
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "Camera permission is required" })
+      .waitFor();
+    await scanner.waitFor({ state: "detached" });
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Paste pairing text", exact: true })
+        .count(),
+      1
+    );
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.stats().query),
+      "retained query"
+    );
+    const afterDenial = await page.evaluate(() => scannerConsumer.stats());
+    await page.evaluate(() => scannerConsumer.permissionReturn());
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "Camera permission is now allowed" })
+      .waitFor();
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.stats().requests),
+      afterDenial.requests,
+      "resume rechecks permission without automatic capture"
+    );
+    await page.evaluate(() => scannerConsumer.pending());
+    await scanQr.click();
+    await scanner.waitFor();
+    await page.evaluate(() => {
+      scannerConsumer.nativeState({
+        started: true,
+        resumed: false,
+        windowFocused: false,
+      });
+      scannerConsumer.nativeState({
+        started: false,
+        resumed: false,
+        windowFocused: false,
+      });
+    });
+    await scanner.waitFor({ state: "detached" });
+    const afterStop = await page.evaluate(() => scannerConsumer.stats());
+    await page.evaluate(() => scannerConsumer.acquire());
+    await page.waitForFunction(
+      (stops) => scannerConsumer.stats().stops === stops + 1,
+      afterStop.stops
+    );
+    await page.evaluate(() =>
+      scannerConsumer.nativeState({
+        started: true,
+        resumed: true,
+        windowFocused: true,
+      })
+    );
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.stats().requests),
+      afterStop.requests,
+      "true Stop followed by Resume cannot reopen capture"
+    );
+    assert.equal(await page.locator("#clipp-android-qr-scanner").count(), 0);
+    assert.equal(
+      await page.evaluate(() => scannerConsumer.attempts.length),
+      1,
+      "denial and late background acquisition never submit Pairing"
+    );
     await page.evaluate(() => scannerConsumer.dispose());
     await writeFile(
       join(out, "consumer-result.json"),

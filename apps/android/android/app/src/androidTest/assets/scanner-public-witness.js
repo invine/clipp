@@ -44,7 +44,7 @@
     const width = video.videoWidth,
       height = video.videoHeight;
     if (!width || !height) return;
-    if (width > 1920 || height > 1080) {
+    if (Math.max(width, height) > 1920 || Math.min(width, height) > 1080) {
       frame = { status: "unqualified-dimensions", width, height };
       return;
     }

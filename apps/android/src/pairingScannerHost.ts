@@ -70,7 +70,14 @@ export function createAndroidPairingScanner(
       // listener registration is delayed; a late handle removes itself.
       const capture = native
         .on("activityState", (event) => {
-          if (event.resumed === false) controller.abort();
+          // Android permission UI can pause a still-visible STARTED Activity.
+          // Actual Stop loses capture ownership. Older bridges without this
+          // field retain their conservative pause cancellation behavior.
+          if (
+            event.started === false ||
+            (typeof event.started !== "boolean" && event.resumed === false)
+          )
+            controller.abort();
         })
         .then((remove) => {
           if (controller.signal.aborted) {

@@ -139,3 +139,94 @@ it("replacement releases only the aborted scan's registration and native subscri
     browser.restore();
   }
 });
+
+it("captured native STARTED permission pause retains acquisition until typed denial, independently of focus", async () => {
+  const browser = scannerBrowserBoundary();
+  let activity!: (event: Record<string, unknown>) => void;
+  const input = createHostTaskInput(createUiSession());
+  const host = createAndroidPairingScanner(input, {
+    on: async (_event, callback) => {
+      activity = callback;
+      return () => {};
+    },
+  });
+  try {
+    const result = host.scan({ signal: new AbortController().signal });
+    await browser.flush();
+    // Actual a270 witness: paused while STARTED/visible, then focus lost;
+    // a permission rejection is controlled at the external media seam only.
+    activity({ started: true, resumed: false, windowFocused: true });
+    activity({ started: true, resumed: false, windowFocused: false });
+    await browser.flush();
+    expect(browser.overlayCount()).toBe(1);
+    expect(input.hasOverlay()).toBe(true);
+    browser.reject(new DOMException("permission denied", "NotAllowedError"));
+    expect(await result).toEqual({
+      status: "failed",
+      error: "camera_permission_denied",
+    });
+    expect(browser.overlayCount()).toBe(0);
+    expect(input.hasOverlay()).toBe(false);
+  } finally {
+    host.dispose();
+    browser.restore();
+  }
+});
+
+it("native Stop during acquisition cancels promptly, disposes a late stream, and never reopens on Start/Resume", async () => {
+  const browser = scannerBrowserBoundary();
+  let activity!: (event: Record<string, unknown>) => void;
+  const host = createAndroidPairingScanner(
+    createHostTaskInput(createUiSession()),
+    {
+      on: async (_event, callback) => {
+        activity = callback;
+        return () => {};
+      },
+    }
+  );
+  try {
+    const result = host.scan({ signal: new AbortController().signal });
+    await browser.flush();
+    activity({ started: true, resumed: false, windowFocused: false });
+    activity({ started: false, resumed: false, windowFocused: false });
+    expect(await result).toEqual({ status: "cancelled" });
+    const stopped = browser.acquire();
+    await browser.flush();
+    expect(stopped()).toBe(1);
+    activity({ started: true, resumed: false, windowFocused: false });
+    activity({ started: true, resumed: true, windowFocused: true });
+    await browser.flush();
+    expect(browser.overlayCount()).toBe(0);
+    expect(browser.frameCount()).toBe(0);
+  } finally {
+    host.dispose();
+    browser.restore();
+  }
+});
+
+it("a retained initial STARTED-but-paused event during listener registration does not pre-cancel permission acquisition", async () => {
+  const browser = scannerBrowserBoundary();
+  const host = createAndroidPairingScanner(
+    createHostTaskInput(createUiSession()),
+    {
+      on: async (_event, callback) => {
+        callback({ started: true, resumed: false, windowFocused: false });
+        return () => {};
+      },
+    }
+  );
+  try {
+    const result = host.scan({ signal: new AbortController().signal });
+    await browser.flush();
+    expect(browser.overlayCount()).toBe(1);
+    browser.reject(new DOMException("permission denied", "NotAllowedError"));
+    expect(await result).toEqual({
+      status: "failed",
+      error: "camera_permission_denied",
+    });
+  } finally {
+    host.dispose();
+    browser.restore();
+  }
+});

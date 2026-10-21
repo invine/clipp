@@ -354,8 +354,8 @@ public final class ScannerInputTest {
                             SystemClock.sleep(40);
                         }
                         logStage("permissionDeny.touch.exit");
-                        Log.i(TAG, "permissionDenial=actual-system-deny-control;actualSystemSelection=true");
-                        return true;
+                        Log.i(TAG, "permissionDenial=physical-input-accepted;actualSystemSelection=false;choice=UNCONFIRMED");
+                        return confirmPermissionDenyReturned();
                     }
                 } else if (instrumentation.getTargetContext().getPackageName().equals(pkg)) {
                     // A previously denied WebView request may already have settled.
@@ -369,6 +369,36 @@ public final class ScannerInputTest {
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < deadline);
         fail("No actual permission denial control/result appeared");
+        return false;
+    }
+    private boolean confirmPermissionDenyReturned() {
+        long deadline = SystemClock.uptimeMillis() + TIMEOUT_MS;
+        do {
+            AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+            if (root != null && instrumentation.getTargetContext().getPackageName().equals(String.valueOf(root.getPackageName()))) {
+                AtomicBoolean returned = new AtomicBoolean();
+                web.onActivity(activity -> returned.set(activity.hasWindowFocus()
+                    && activity.getLifecycle().getCurrentState() == Lifecycle.State.RESUMED));
+                if (returned.get() && ContextCompat.checkSelfPermission(instrumentation.getTargetContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED) {
+                    logStage("permissionDeny.confirmedReturn");
+                    Log.i(TAG, "permissionDenial=permission-window-return-and-camera-denied;actualSystemSelection=true");
+                    return true;
+                }
+            }
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        String pkg = root == null ? "unavailable" : String.valueOf(root.getPackageName());
+        List<String> controls = new ArrayList<>();
+        if (root != null && pkg.endsWith("permissioncontroller")) {
+            for (String id : new String[] { "permission_deny_button", "permission_allow_foreground_only_button", "permission_allow_one_time_button" }) {
+                for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByViewId(pkg + ":id/" + id)) {
+                    if (node.isVisibleToUser()) controls.add(id + ":" + String.valueOf(node.getText()).substring(0, Math.min(80, String.valueOf(node.getText()).length())));
+                }
+            }
+        }
+        Log.i(TAG, "permissionDenial=physical-input-accepted;actualSystemSelection=false;choice=UNCONFIRMED;activePackage=" + pkg + ";publicControls=" + controls);
+        fail("Single physical Deny input was accepted, but permission-window return/MainActivity resume was not confirmed; choice remains UNCONFIRMED");
         return false;
     }
     private void awaitPublicAttempt() throws Exception {

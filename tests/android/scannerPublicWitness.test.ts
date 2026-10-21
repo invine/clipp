@@ -3,17 +3,18 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { PNG } from "pngjs";
 
-const syntheticPng = (() => {
-  const pixels = new PNG({ width: 640, height: 480 });
+function syntheticPng(width: number, height: number) {
+  const pixels = new PNG({ width, height });
   for (let offset = 0; offset < pixels.data.length; offset += 4) {
     pixels.data[offset] = 255;
     pixels.data[offset + 3] = 128;
   }
   return "data:image/png;base64," + PNG.sync.write(pixels).toString("base64");
-})();
+}
+const landscapePng = syntheticPng(640, 480);
 
 function publicWitness(encodedOverride?: string) {
-  const encoded = encodedOverride ?? syntheticPng;
+  const encoded = encodedOverride ?? landscapePng;
   let mutation = () => {};
   let overlay = false;
   let alerts: string[] = [];
@@ -192,4 +193,53 @@ it("leaves a fast disappearing scanner explicitly without a fabricated video fra
   page.document.dispatchEvent(new Event("loadeddata"));
   expect(page.draw).toHaveLength(0);
   expect(page.witness.read().frame.status).toBe("no-ready-public-video");
+});
+
+it("preserves a delivered 720 by 1280 portrait frame without rotation or rescaling", () => {
+  const page = publicWitness(syntheticPng(720, 1280));
+  page.video.videoWidth = 720;
+  page.video.videoHeight = 1280;
+  page.video.readyState = 2;
+  page.update(true);
+  const frame = page.witness.read().frame;
+  expect(frame).toMatchObject({ status: "captured", width: 720, height: 1280 });
+  expect(page.draw).toEqual([[page.video, 0, 0]]);
+  const pixels = PNG.sync.read(Buffer.from(frame.base64!, "base64"));
+  expect([pixels.width, pixels.height]).toEqual([720, 1280]);
+  expect([...pixels.data.subarray(0, 4)]).toEqual([255, 0, 0, 128]);
+});
+
+it.each([
+  [1920, 1080],
+  [1080, 1920],
+])("accepts exact frame edge bounds %i by %i", (width, height) => {
+  const page = publicWitness();
+  Object.assign(page.video, {
+    videoWidth: width,
+    videoHeight: height,
+    readyState: 2,
+  });
+  page.update(true);
+  expect(page.witness.read().frame).toMatchObject({
+    status: "captured",
+    width,
+    height,
+  });
+});
+
+it.each([
+  [1081, 1920],
+  [1920, 1081],
+  [1921, 720],
+  [720, 1921],
+])("withholds excess edge bounds %i by %i", (width, height) => {
+  const page = publicWitness();
+  Object.assign(page.video, {
+    videoWidth: width,
+    videoHeight: height,
+    readyState: 2,
+  });
+  page.update(true);
+  expect(page.witness.read().frame.status).toBe("unqualified-dimensions");
+  expect(page.draw).toHaveLength(0);
 });
