@@ -79,6 +79,9 @@ const report = {
   nativeHost: false,
   seam: "production popup.tsx/ExtensionApp surface=popup; public Chrome ports simulated",
   viewport: { width: 480, height: 556 },
+  additionalShortHeightsCss: [519, 520, 521],
+  shortHeightBasis:
+    "approximate native image/source mapping only; native CSS viewport and DPR were not inspected",
   clipboard: "in-memory before production entry; no host clipboard",
   actualToolbarQualification: false,
   historyFixture: {
@@ -392,6 +395,12 @@ const sampleFocus = () => {
       inside,
       clipsX,
       clipsY,
+      overflowX: css.overflowX,
+      overflowY: css.overflowY,
+      scrollPaddingBlockStart: css.scrollPaddingBlockStart,
+      scrollPaddingBlockEnd: css.scrollPaddingBlockEnd,
+      fontSize: css.fontSize,
+      sessionScroll: parent.getAttribute("data-session-scroll"),
       scrollTop: parent.scrollTop,
       scrollLeft: parent.scrollLeft,
       scrollHeight: parent.scrollHeight,
@@ -571,7 +580,18 @@ try {
     { default: 16, minimum: 0 },
   ];
   for (const [index, font] of profiles.entries()) {
-    for (const origin of ["aboutblank", "extension"]) {
+    const scenarios = [
+      { origin: "aboutblank", height: 556 },
+      { origin: "extension", height: 556 },
+      ...(index === 0
+        ? [519, 520, 521].map((height) => ({ origin: "extension", height }))
+        : index === 3
+          ? [{ origin: "extension", height: 520 }]
+          : []),
+    ];
+    for (const { origin, height } of scenarios) {
+      const viewport = { width: 480, height };
+      const caseSuffix = height === 556 ? "" : `-h${height}`;
       assert.equal(overallExpired, false);
       const prefs = await bounded(
         helper.evaluate((value) => ownedFontFixture.set(value), font)
@@ -581,6 +601,8 @@ try {
       // A reopened production popup owns a fresh document. setContent alone keeps
       // the old navigator and React effects, so never reuse a previous fixture page.
       const page = await context.newPage();
+      if (height !== report.viewport.height)
+        await bounded(page.setViewportSize(viewport));
       page.on("pageerror", (error) => report.errors.push(error.message));
       page.on("console", (message) => {
         if (message.type() === "error")
@@ -603,6 +625,8 @@ try {
       const observation = {
         origin,
         font,
+        viewport,
+        fontPhase: index === 3 ? "restored" : "initial",
         actualPreferences: prefs,
         journey: [],
       };
@@ -769,7 +793,7 @@ try {
       await page.screenshot({
         path: join(
           out,
-          `focus-${origin}-${index}-${font.default}-${font.minimum}.png`
+          `focus-${origin}-${index}-${font.default}-${font.minimum}${caseSuffix}.png`
         ),
       });
       Object.assign(observation, { frames, before });
@@ -777,7 +801,10 @@ try {
       if (!before.controlInside || !before.outlineInside) {
         await page.mouse.move(
           240,
-          Math.min(546, Math.max(10, before.rect.top + before.rect.height / 2))
+          Math.min(
+            height - 10,
+            Math.max(10, before.rect.top + before.rect.height / 2)
+          )
         );
         await page.mouse.wheel(0, 120);
         await bounded(
@@ -790,7 +817,7 @@ try {
         );
         observation.afterOneWheel = await bounded(page.evaluate(sampleFocus));
         await page.screenshot({
-          path: join(out, `recovered-${origin}-${index}.png`),
+          path: join(out, `recovered-${origin}-${index}${caseSuffix}.png`),
         });
       }
       await page.close();
@@ -799,10 +826,38 @@ try {
   assert.equal(report.errors.length, 0, JSON.stringify(report.errors));
   assert.deepEqual(report.consoleErrors, []);
   assert.deepEqual(report.failedRequests, []);
+  assert.equal(
+    report.cases.length,
+    12,
+    "eight original and four short cases required"
+  );
   for (const observation of report.cases) {
     const m = observation.before;
     assert.equal(m.viewport.width, 480);
-    assert.equal(m.viewport.height, 556);
+    assert.equal(m.viewport.height, observation.viewport.height);
+    assert.equal(
+      observation.traversal.length,
+      8,
+      "unchanged final-control Tab route"
+    );
+    if (observation.viewport.height !== 556) {
+      assert.equal(observation.origin, "extension");
+      for (const frame of observation.frames) {
+        assert.match(frame.classes, /\bworkspace-narrow\b/);
+        assert.doesNotMatch(frame.classes, /\bworkspace-cramped\b/);
+        const owner = frame.ancestors.find(
+          (ancestor) => ancestor.sessionScroll === "settings"
+        );
+        assert.ok(owner, "actual Settings scroll ancestor required");
+        assert.match(owner.className, /\bdestination-pane\b/);
+        assert.equal(owner.overflowY, "auto");
+        assert.ok(owner.scrollHeight > owner.clientHeight);
+        assert.ok(
+          Math.abs(owner.inside.bottom - frame.bounds.bottom) <= 0.5,
+          "Settings destination pane must be the limiting vertical clip owner"
+        );
+      }
+    }
     if (observation.origin === "aboutblank") {
       assert.equal(m.document.url, "about:blank");
       assert.equal(parseFloat(m.rootFont), observation.font.default);

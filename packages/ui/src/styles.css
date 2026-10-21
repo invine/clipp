@@ -2065,6 +2065,9 @@ html[data-host-geometry="android"] .android-host {
   overflow: auto;
   min-height: 0;
 }
+.app-shell:not(.workspace-cramped) .destination-pane {
+  scroll-padding-block: var(--md-spacing-sm);
+}
 .app-shell:not(.workspace-cramped) .history-grid {
   height: auto;
   overflow: visible;
