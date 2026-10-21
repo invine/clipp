@@ -305,3 +305,81 @@ it("renders the real workspace and retains nested Pairing draft without Array.at
     Object.defineProperty(Array.prototype, "at", descriptor);
   }
 });
+
+it("notification Requests rendering offers a return route while the originating Pairing draft is retained", () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.pairing.change("retained input");
+  session.acceptDestination(
+    "notification-1",
+    { kind: "requests", entity: "expired" },
+    { ready: true, clipIds: [], requestIds: [] },
+    "notification"
+  );
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, session })
+  );
+  expect(output).toContain("Back to previous task");
+  expect(output).toContain(
+    "This Request is no longer available. Open Requests."
+  );
+  expect(output).toContain("Pending requests");
+  expect(session.pairing.getSnapshot().raw).toBe("retained input");
+});
+
+it("Settings exposes separate blocked request-channel recovery without pretending permission is Pairing success", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      notificationControls: {
+        state: { app: "available", channel: "blocked", displayError: null },
+        pending: false,
+        error: false,
+        refresh: async () => undefined,
+        openSettings: async () => undefined,
+      },
+    })
+  );
+  expect(output).toContain("App notifications: Allowed");
+  expect(output).toContain("Request channel: Blocked");
+  expect(output).toContain("Open notification settings");
+  expect(output).toContain("Refresh notification availability");
+});
+
+it("a distinct notification removes the rendered Issues modal from Requests and Back restores it", () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.pairing.change("retained original input");
+  const authority = { ready: true, clipIds: [], requestIds: [] };
+  session.acceptDestination(
+    "selection-a",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.open({ kind: "issues", origin: "issues-summary" });
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, { ...props, session })
+    );
+  expect(render()).toContain('aria-modal="true"');
+  session.acceptDestination(
+    "selection-b",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  expect(render()).toContain("Pending requests");
+  expect(render()).not.toContain('aria-modal="true"');
+  expect(render()).toContain("Back to previous task");
+  session.back();
+  expect(render()).toContain('aria-modal="true"');
+  expect(render()).toContain("Issues and recovery");
+  session.back();
+  session.back();
+  expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("pairing");
+  expect(session.pairing.getSnapshot().raw).toBe("retained original input");
+});

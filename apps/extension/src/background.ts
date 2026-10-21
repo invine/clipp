@@ -48,6 +48,7 @@ import {
   createIdentityBoundWorkFence,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNotificationSelection,
+  createRuntimeNotificationStatus,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
@@ -702,6 +703,27 @@ const historyReconciliation = createHistoryReconciliation({
   autoSync,
 });
 const notificationSelection = createRuntimeNotificationSelection();
+const notificationStatus = createRuntimeNotificationStatus({
+  inspect: async () => ({
+    app: !chrome.notifications?.getPermissionLevel
+      ? "unknown"
+      : (await new Promise<string>((resolve, reject) =>
+            chrome.notifications.getPermissionLevel((level) => {
+              const error = chrome.runtime.lastError;
+              if (error) reject(new Error(error.message));
+              else resolve(level);
+            })
+          )) === "granted"
+        ? "available"
+        : "blocked",
+    channel: "not-applicable",
+  }),
+  openSettings: async () => {
+    await chrome.tabs.create({
+      url: "chrome://settings/content/notifications",
+    });
+  },
+});
 let membershipReconciler: ReturnType<typeof createMembershipReconciler>;
 let identityRotationRecovery = false;
 let identityRotationLifecycle: ReturnType<
@@ -722,6 +744,7 @@ const identityRotation = createChromeIdentityRotationCoordinator({
             await identityRotationShutdown();
             await identityWork.quiesce();
             await clipboard.discardPending?.();
+            notificationSelection.clear();
             const notifications = chrome.notifications?.getAll
               ? await new Promise<object>((resolve) =>
                   chrome.notifications.getAll(resolve)
@@ -791,18 +814,39 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
       return identityWork.run(async () => {
         identityWork.assertOpen();
         if (!chrome.notifications?.create) return;
-        await chrome.notifications.create(message.id, {
-          type: "basic",
-          iconUrl: chrome.runtime.getURL("icon-128.png"),
-          title: message.title,
-          message: message.body,
-        });
+        try {
+          await chrome.notifications.create(
+            message.instance ? `${message.id}:${message.instance}` : message.id,
+            {
+              type: "basic",
+              iconUrl: chrome.runtime.getURL("icon-128.png"),
+              title: message.title,
+              message: message.body,
+            }
+          );
+          notificationStatus.shown();
+        } catch (error) {
+          notificationStatus.failed(error);
+          throw error;
+        }
       });
     },
     async dismiss(id) {
-      if (chrome.notifications?.clear) await chrome.notifications.clear(id);
+      if (!chrome.notifications?.clear) return;
+      await chrome.notifications.clear(id);
+      if (chrome.notifications.getAll) {
+        const all = await new Promise<object>((resolve) =>
+          chrome.notifications.getAll(resolve)
+        );
+        await Promise.all(
+          Object.keys(all)
+            .filter((key) => key.startsWith(`${id}:`))
+            .map((key) => chrome.notifications.clear(key))
+        );
+      }
     },
     onSelect: notificationSelection.onSelect,
+    clearSelections: notificationSelection.clear,
   },
   lifecycle: {
     onShutdown(handler) {
@@ -810,14 +854,30 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
       chrome.runtime.onSuspend?.addListener(listener);
       return () => chrome.runtime.onSuspend?.removeListener(listener);
     },
-    openApprovalView() {
-      const id = crypto.randomUUID();
-      void managementNavigation
-        .accept({ id, destination: { kind: "requests" } })
-        .then((result) => {
-          if (result.ok) return managementNavigation.route(id);
-        })
-        .catch(() => {});
+    async openApprovalView(selection) {
+      // Canonical management IDs are bounded opaque identifiers. Hash the
+      // notification instance so worker wake preserves duplicate identity.
+      const id = selection
+        ? [
+            ...new Uint8Array(
+              await crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(selection.id)
+              )
+            ),
+          ]
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join("")
+        : crypto.randomUUID();
+      const result = await managementNavigation.accept({
+        id,
+        destination: {
+          kind: "requests",
+          ...(selection?.requestId ? { entity: selection.requestId } : {}),
+        },
+      });
+      if (!result.ok) throw new Error("notification_destination_unavailable");
+      await managementNavigation.route(id);
     },
   },
   network: extensionNetwork,
@@ -951,7 +1011,11 @@ extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
 });
 chrome.notifications?.onClicked?.addListener((id) => {
   if (identityWork.isFenced()) return;
-  notificationSelection.emit(id);
+  const separator = id.lastIndexOf(":");
+  notificationSelection.emit(
+    separator === -1 ? id : id.slice(0, separator),
+    separator === -1 ? undefined : id.slice(separator + 1)
+  );
 });
 const sharedRuntime = createRuntimeOrchestrator({
   adapter: runtimeAdapter,
@@ -1008,11 +1072,14 @@ const sharedRuntime = createRuntimeOrchestrator({
         await pairingPending.start();
         identityWork.assertOpen(generation);
       },
-      onNetworkingFailure: (error) => {
+      onNetworkingFailure: async (error) => {
         log.warn(
           "Extension networking failed to start; local capture remains active",
           error
         );
+        // Durable pending Requests and native selection remain local capabilities
+        // when the offscreen network cannot start.
+        if (!identityWork.isFenced()) await pairingPending.start();
       },
     }),
   stop: async () => {
@@ -1197,6 +1264,29 @@ chrome.runtime.onMessage.addListener(
         return false;
       }
       sendResponse({ sessionId: pairingSessions.snapshot().sessionId });
+      return true;
+    }
+    if (
+      ["getNotificationAvailability", "openNotificationSettings"].includes(
+        msg.type
+      )
+    ) {
+      if (
+        !authorizedRelayUi(sender, chrome.runtime.id, POPUP_URL, OPTIONS_URL)
+      ) {
+        sendResponse({ ok: false, error: "notification_ui_unauthorized" });
+        return false;
+      }
+      const action =
+        msg.type === "openNotificationSettings"
+          ? notificationStatus.openSettings().then(() => ({ ok: true }))
+          : notificationStatus.refresh().then((state) => ({ ok: true, state }));
+      void action.then(sendResponse).catch(() =>
+        sendResponse({
+          ok: false,
+          error: "notification_settings_unavailable",
+        })
+      );
       return true;
     }
     if (msg.type === "getRuntimeState") {

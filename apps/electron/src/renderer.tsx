@@ -1,3 +1,5 @@
+import { useNotificationAvailability } from "../../../packages/ui/src/useNotificationAvailability";
+import { useNotificationRequests } from "../../../packages/ui/src/useNotificationRequests";
 import { useRuntimeSettings } from "../../../packages/ui/src/useRuntimeSettings";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
@@ -72,6 +74,7 @@ const initialState: AppState = {
 const App = () => {
   const session = useMemo(() => createUiSession(), []);
   useEffect(() => bindElectronHostTaskInput(window.clipp, session), [session]);
+  const notificationControls = useNotificationAvailability(window.clipp);
   const appearanceSettings = useRuntimeSettings({
     send: (message) => {
       if (!window.clipp) throw new Error("bridge_unavailable");
@@ -128,6 +131,17 @@ const App = () => {
     };
   }, [consumer]);
 
+  useNotificationRequests(window.clipp, session, {
+    ready:
+      !recovery.loading &&
+      !recovery.unavailable &&
+      !!state.pairingState &&
+      !!state.identity &&
+      !state.identityRotationRecovery,
+    clipIds: state.clips.map((clip) => clip.id),
+    requestIds: state.pending.map((request) => request.deviceId),
+  });
+
   async function handlePairText(txt: string) {
     return await window.clipp.pairFromText(txt);
   }
@@ -136,6 +150,7 @@ const App = () => {
     <div className="electron-host">
       <ClipboardApp
         session={session}
+        notificationControls={notificationControls}
         appearanceSettings={appearanceSettings}
         clips={state.clips}
         devices={state.devices}

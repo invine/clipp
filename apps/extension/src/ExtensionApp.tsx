@@ -1,3 +1,5 @@
+import { useNotificationAvailability } from "../../../packages/ui/src/useNotificationAvailability";
+import type { RuntimeNotificationAvailability } from "../../../packages/core/runtime/notifications";
 import { reuseExtensionClip } from "./reuseActions";
 /// <reference types="chrome" />
 import { QRScanner } from "./components/QRScanner";
@@ -66,6 +68,23 @@ function identityRotationNoticeReason(
 
 export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
   const [session] = useState(createUiSession);
+  const [notificationBridge] = useState(() => ({
+    async getNotificationAvailability(): Promise<RuntimeNotificationAvailability> {
+      const response = await chrome.runtime.sendMessage({
+        type: "getNotificationAvailability",
+      });
+      if (!response?.ok || !response.state)
+        throw new Error("notification_availability_unavailable");
+      return response.state;
+    },
+    async openNotificationSettings() {
+      const response = await chrome.runtime.sendMessage({
+        type: "openNotificationSettings",
+      });
+      if (!response?.ok) throw new Error("notification_settings_unavailable");
+    },
+  }));
+  const notificationControls = useNotificationAvailability(notificationBridge);
   const ownerAlive = useRef(true);
   useEffect(() => {
     ownerAlive.current = true;
@@ -356,6 +375,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       />
       <ClipboardApp
         session={session}
+        notificationControls={notificationControls}
         clips={history.snapshot?.clips ?? []}
         devices={devices}
         pending={pending}

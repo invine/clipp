@@ -77,6 +77,14 @@ export function createNameEditSession() {
           draft.state.raw !== draft.base
       ),
     getSnapshot: () => snapshot,
+    /** Re-present retained work without changing its authoritative base. */
+    resume(targetId: string) {
+      const draft = drafts.get(targetId);
+      if (!draft) return false;
+      draft.state = { ...draft.state, active: true };
+      publish(draft.state);
+      return true;
+    },
     getErrors: () => errors,
     subscribe: (listener: () => void) => {
       listeners.add(listener);

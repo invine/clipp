@@ -1,4 +1,7 @@
-import type { MessageHandler, MessagingTransport } from "../messaging/transport";
+import type {
+  MessageHandler,
+  MessagingTransport,
+} from "../messaging/transport";
 import {
   createRuntimeNotificationSelection,
   createSerializedRuntimeApplicationState,
@@ -20,7 +23,11 @@ export type RuntimeObservations<PublicState> = {
   clipboardWrites: string[];
   notifications: RuntimeNotification[];
   dismissedNotifications: string[];
-  protocolTraffic: Array<{ protocol: string; target: string; data: Uint8Array }>;
+  protocolTraffic: Array<{
+    protocol: string;
+    target: string;
+    data: Uint8Array;
+  }>;
   publicStates: PublicState[];
   approvalViewsOpened: number;
 };
@@ -32,11 +39,18 @@ export type RuntimeHarnessOptions<Identity, ApplicationState, PublicState> = {
   initialClipboardText?: string;
   now?: number;
   getPublicState(
-    context: Pick<RuntimeContext<Identity, ApplicationState, PublicState>, "identity" | "state" | "capabilities">
+    context: Pick<
+      RuntimeContext<Identity, ApplicationState, PublicState>,
+      "identity" | "state" | "capabilities"
+    >
   ): PublicState | Promise<PublicState>;
 };
 
-export function createRuntimeConformanceHarness<Identity, ApplicationState, PublicState>(
+export function createRuntimeConformanceHarness<
+  Identity,
+  ApplicationState,
+  PublicState,
+>(
   options: RuntimeHarnessOptions<Identity, ApplicationState, PublicState>,
   durable: DurableState<Identity, ApplicationState> = {
     identity: options.initialIdentity,
@@ -65,11 +79,18 @@ export function createRuntimeConformanceHarness<Identity, ApplicationState, Publ
     async start() {},
     async stop() {},
     async send(protocol, target, data) {
-      observed.protocolTraffic.push({ protocol, target, data: Uint8Array.from(data) });
+      observed.protocolTraffic.push({
+        protocol,
+        target,
+        data: Uint8Array.from(data),
+      });
     },
     async connect() {},
     onMessage(protocol, handler) {
-      messageHandlers.set(protocol, [...(messageHandlers.get(protocol) ?? []), handler]);
+      messageHandlers.set(protocol, [
+        ...(messageHandlers.get(protocol) ?? []),
+        handler,
+      ]);
     },
     onPeerConnected() {},
     onPeerDisconnected() {},
@@ -169,24 +190,29 @@ export function createRuntimeConformanceHarness<Identity, ApplicationState, Publ
       for (const handler of [...shutdownHandlers]) await handler();
     },
     async selectNotification(id: string) {
-      notificationSelection.emit(id);
-      await Promise.resolve();
+      await notificationSelection.emit(id);
     },
     receiveProtocol(protocol: string, from: string, data: Uint8Array) {
-      messageHandlers.get(protocol)?.forEach((handler) => handler(from, Uint8Array.from(data)));
+      messageHandlers
+        .get(protocol)
+        ?.forEach((handler) => handler(from, Uint8Array.from(data)));
     },
     advanceTimeBy(milliseconds: number) {
       const target = clockNow + milliseconds;
       let next = [...timers.entries()]
         .filter(([, timer]) => timer.at <= target)
-        .sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
+        .sort(
+          (left, right) => left[1].at - right[1].at || left[0] - right[0]
+        )[0];
       while (next) {
         timers.delete(next[0]);
         clockNow = next[1].at;
         next[1].handler();
         next = [...timers.entries()]
           .filter(([, timer]) => timer.at <= target)
-          .sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
+          .sort(
+            (left, right) => left[1].at - right[1].at || left[0] - right[0]
+          )[0];
       }
       clockNow = target;
     },

@@ -143,6 +143,9 @@ try {
       update: async () => {},
       showExplicitTextFeedback: async () => {},
     };
+    const assertCallback = (callback) => {
+      if (!callback) throw Error("notification_callback_not_registered");
+    };
     globalThis.shellPlatform = {
       preferences,
       clipboard: {
@@ -190,6 +193,20 @@ try {
           },
         },
         ManagedRelay: { addListener },
+      },
+      selectNotification: (id, instance) => {
+        const callback = [...subscriptions].find(
+          (s) => s.name === "localNotificationActionPerformed"
+        )?.callback;
+        assertCallback(callback);
+        callback({
+          notification: {
+            extra: {
+              runtimeNotificationId: id,
+              runtimeNotificationInstance: instance,
+            },
+          },
+        });
       },
       releaseStartup: release,
       stats: () => ({
@@ -243,12 +260,39 @@ try {
     false,
     "the host awaits actual startup begun by the mounted shell"
   );
+  await page
+    .getByRole("textbox", { name: "Search history" })
+    .fill("retained query");
+  await page.evaluate(() => {
+    shellPlatform.selectNotification("pairing-request-expired", "old-envelope");
+    shellPlatform.selectNotification("pairing-request-expired", "old-envelope");
+  });
+  assert.equal(
+    await page.getByRole("button", { name: "Back to previous task" }).count(),
+    0,
+    "selection before startup cannot navigate before current authority is ready"
+  );
   await page.evaluate(() => shellPlatform.releaseStartup());
   await page.waitForFunction(() => hostStartFinished);
   await page.waitForFunction(
     async () => !!(await shellHost.publicState()).identity
   );
-  await page.getByText("No history yet.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Back to previous task" }).waitFor();
+  await page.getByRole("heading", { name: "Requests", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Back to previous task" }).click();
+  assert.equal(
+    await page.getByRole("textbox", { name: "Search history" }).inputValue(),
+    "retained query"
+  );
+  await page.evaluate(() =>
+    shellPlatform.selectNotification("pairing-request-expired", "old-envelope")
+  );
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  assert.equal(
+    await page.getByRole("button", { name: "Back to previous task" }).count(),
+    0,
+    "the delayed duplicate cannot resurrect the handled selection"
+  );
   assert.equal(
     await page.evaluate(() => shellPlatform.stats().opens),
     1,

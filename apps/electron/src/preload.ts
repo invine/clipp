@@ -63,6 +63,29 @@ type AppState = {
 };
 
 const api = {
+  getNotificationAvailability: (): Promise<
+    import("../../../packages/core/runtime/notifications").RuntimeNotificationAvailability
+  > => ipcRenderer.invoke("clipp:notification-availability"),
+  onNotificationAvailabilityChanged: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("clipp:notification-availability-changed", handler);
+    return () =>
+      ipcRenderer.removeListener(
+        "clipp:notification-availability-changed",
+        handler
+      );
+  },
+  getApprovalEntries: (): Promise<
+    import("../../../packages/core/runtime/contract").RuntimeApprovalSelection[]
+  > => ipcRenderer.invoke("clipp:approval-entries"),
+  acknowledgeApprovalEntry: (id: string): Promise<void> =>
+    ipcRenderer.invoke("clipp:acknowledge-approval-entry", id),
+  onApprovalEntriesChanged: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("clipp:approval-entries-changed", handler);
+    return () =>
+      ipcRenderer.removeListener("clipp:approval-entries-changed", handler);
+  },
   setTaskInputReady: (owner: string, ready: boolean): Promise<void> =>
     ipcRenderer.invoke("clipp:task-input-ready", { owner, ready }),
   onTaskActivation: (listener: () => void) => {

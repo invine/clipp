@@ -1,3 +1,4 @@
+import type { RuntimeNotificationAvailability } from "../../../packages/core/runtime/notifications";
 import { isSharingLifetime } from "../../../packages/core/runtime/settingsAuthority";
 import type { CameraPermissionState } from "../../../packages/ui/src/pairingScan";
 import {
@@ -26,6 +27,10 @@ type NativePlatformInfo = AndroidBackgroundDiagnosticStatus & {
 };
 
 type NativeBackgroundContinuityPlugin = {
+  getPairingNotificationAvailability(): Promise<
+    Omit<RuntimeNotificationAvailability, "displayError">
+  >;
+  openPairingNotificationSettings(): Promise<void>;
   getCameraPermission(): Promise<{ state: CameraPermissionState }>;
   getPlatformInfo(): Promise<NativePlatformInfo>;
   setEnabled(options: { enabled: boolean }): Promise<void>;
@@ -70,6 +75,10 @@ const NativeBackgroundContinuity =
   registerPlugin<NativeBackgroundContinuityPlugin>("BackgroundContinuity");
 
 export type AndroidBackgroundNative = {
+  pairingNotificationAvailability?(): Promise<
+    Omit<RuntimeNotificationAvailability, "displayError">
+  >;
+  openPairingNotificationSettings?(): Promise<void>;
   cameraPermission?(): Promise<CameraPermissionState>;
   apiLevel(): Promise<number | undefined>;
   userStopped(): Promise<boolean>;
@@ -197,6 +206,16 @@ export function createAndroidBackgroundNative(): AndroidBackgroundNative {
     },
     async serviceState() {
       return (await info())?.serviceRunning ? "running" : "stopped";
+    },
+    async pairingNotificationAvailability() {
+      if (!isNativeAndroid())
+        return { app: "unsupported", channel: "not-applicable" };
+      return NativeBackgroundContinuity.getPairingNotificationAvailability();
+    },
+    async openPairingNotificationSettings() {
+      if (!isNativeAndroid())
+        throw new Error("notification_settings_unavailable");
+      await NativeBackgroundContinuity.openPairingNotificationSettings();
     },
     async notificationAvailability() {
       return (await info())?.notificationAvailability ?? "blocked";

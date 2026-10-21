@@ -1,3 +1,4 @@
+import { createRuntimeNotificationSelection } from "../../../packages/core/runtime/notifications";
 import {
   createKVPendingTrustRequestStore,
   createPendingTrustRequestCoordinator as createCorePendingTrustRequestCoordinator,
@@ -40,6 +41,367 @@ function createPendingTrustRequestCoordinator(
 }
 
 describe("pending Trust Requests", () => {
+  it("publishes the saved Request when native notification display fails", async () => {
+    const store = createKVPendingTrustRequestStore({
+      storage: {
+        get: async () => undefined,
+        set: async () => undefined,
+        remove: async () => undefined,
+      },
+      key: "pending",
+    });
+    const records: Awaited<ReturnType<typeof store.list>> = [];
+    const changed = jest.fn();
+    const opened = jest.fn();
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => records,
+        save: async (request) => {
+          records.push(request);
+        },
+        remove: async () => undefined,
+      },
+      notifications: {
+        show: async () => {
+          throw new Error("native_display_failed");
+        },
+        dismiss: async () => undefined,
+        onSelect: () => () => undefined,
+      },
+      lifecycle: { openApprovalView: opened },
+      clock: {
+        now: () => 1000,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+      onChanged: changed,
+    });
+    const frame = encodePairingFrame({
+      kind: "request",
+      envelope: encodeTrustRequestEnvelope({
+        signedPayload: encodeTrustRequestPayload({
+          initiatorPeerId,
+          targetPeerId,
+          deviceName: "Mobile",
+          nameRevision: 1n,
+          issuedAtUnixMs: 1000n,
+        }),
+        signature: new Uint8Array([1]),
+      }),
+    });
+    await expect(coordinator.receive(initiatorPeerId, frame)).resolves.toBe(
+      true
+    );
+    expect(changed).toHaveBeenLastCalledWith([
+      expect.objectContaining({ initiatorPeerId, deviceName: "Mobile" }),
+    ]);
+    expect(opened).not.toHaveBeenCalled();
+  });
+
+  it("waits for startup reconciliation and coalesces stale notification selection", async () => {
+    const selection = createRuntimeNotificationSelection();
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const events: string[] = [];
+    const opened = jest.fn(() => {
+      events.push("opened");
+    });
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => {
+          await ready;
+          return [];
+        },
+        save: async () => undefined,
+        remove: async () => undefined,
+      },
+      notifications: {
+        show: async () => undefined,
+        dismiss: async () => undefined,
+        onSelect: selection.onSelect,
+      },
+      lifecycle: { openApprovalView: opened },
+      clock: {
+        now: () => 1000,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+      onChanged: () => {
+        events.push("reconciled");
+      },
+    });
+    selection.emit(`pairing-request-${initiatorPeerId}`, "old-envelope");
+    const starting = coordinator.start();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(opened).not.toHaveBeenCalled();
+    release();
+    await starting;
+    // Native callbacks are asynchronous; observe their public lifecycle effect.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events).toEqual(["reconciled", "reconciled", "opened"]);
+    expect(opened).toHaveBeenCalledWith({
+      id: `notification:pairing-request-${initiatorPeerId}:old-envelope`,
+    });
+    selection.emit(`pairing-request-${initiatorPeerId}`, "old-envelope");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(opened).toHaveBeenCalledTimes(1);
+    await coordinator.stop();
+  });
+
+  it("distinguishes a new notification from an old selection for the same peer", async () => {
+    const selection = createRuntimeNotificationSelection();
+    const records: import("../../../packages/core/pairing/pending").PendingTrustRequest[] =
+      [];
+    const shown: import("../../../packages/core/runtime/contract").RuntimeNotification[] =
+      [];
+    const opened = jest.fn();
+    let now = 1000;
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => records,
+        save: async (request) => {
+          records.push(request);
+        },
+        remove: async (peerId) => {
+          const index = records.findIndex(
+            (request) => request.initiatorPeerId === peerId
+          );
+          if (index !== -1) records.splice(index, 1);
+        },
+      },
+      notifications: {
+        show: async (message) => {
+          shown.push(message);
+        },
+        dismiss: async () => undefined,
+        onSelect: selection.onSelect,
+      },
+      lifecycle: { openApprovalView: opened },
+      clock: {
+        now: () => now,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+    });
+    const frame = (issuedAtUnixMs: bigint) =>
+      encodePairingFrame({
+        kind: "request",
+        envelope: encodeTrustRequestEnvelope({
+          signedPayload: encodeTrustRequestPayload({
+            initiatorPeerId,
+            targetPeerId,
+            deviceName: "Mobile",
+            nameRevision: 1n,
+            issuedAtUnixMs,
+          }),
+          signature: new Uint8Array([1]),
+        }),
+      });
+    await coordinator.start();
+    await coordinator.receive(initiatorPeerId, frame(1000n));
+    expect(opened).not.toHaveBeenCalled();
+    await selection.emit(shown[0].id, shown[0].instance);
+    expect(opened).toHaveBeenLastCalledWith({
+      id: `notification:${shown[0].id}:${shown[0].instance}`,
+      requestId: initiatorPeerId,
+    });
+    await coordinator.expire(initiatorPeerId);
+    now = 2000;
+    await coordinator.receive(initiatorPeerId, frame(2000n));
+    expect(shown[1].instance).not.toBe(shown[0].instance);
+    await selection.emit(shown[0].id, shown[0].instance);
+    expect(opened).toHaveBeenCalledTimes(1);
+    await selection.emit(shown[1].id, shown[1].instance);
+    expect(opened).toHaveBeenCalledTimes(2);
+    expect(opened).toHaveBeenLastCalledWith({
+      id: `notification:${shown[1].id}:${shown[1].instance}`,
+      requestId: initiatorPeerId,
+    });
+    now = 800000;
+    await selection.emit(shown[1].id, "stale-unseen-instance");
+    expect(opened).toHaveBeenLastCalledWith({
+      id: `notification:${shown[1].id}:stale-unseen-instance`,
+    });
+    expect(await coordinator.list()).toEqual([]);
+    await coordinator.stop();
+  });
+
+  it("does not hold reconciled startup or selection behind an unfinished native display", async () => {
+    const selection = createRuntimeNotificationSelection();
+    let releaseDisplay!: () => void, displayStarted!: () => void;
+    const display = new Promise<void>((resolve) => {
+      releaseDisplay = resolve;
+    });
+    const displaying = new Promise<void>((resolve) => {
+      displayStarted = resolve;
+    });
+    const requestEnvelope = encodeTrustRequestEnvelope({
+      signedPayload: encodeTrustRequestPayload({
+        initiatorPeerId,
+        targetPeerId,
+        deviceName: "Mobile",
+        nameRevision: 1n,
+        issuedAtUnixMs: 1000n,
+      }),
+      signature: new Uint8Array([1]),
+    });
+    const request = {
+      initiatorPeerId,
+      deviceName: "Mobile",
+      nameRevision: 1n,
+      requestEnvelope,
+      expiresAtUnixMs: 721000n,
+    };
+    const opened = jest.fn();
+    const changed = jest.fn();
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => [request],
+        save: async () => undefined,
+        remove: async () => undefined,
+      },
+      notifications: {
+        show: async () => {
+          displayStarted();
+          await display;
+        },
+        dismiss: async () => undefined,
+        onSelect: selection.onSelect,
+      },
+      lifecycle: { openApprovalView: opened },
+      clock: {
+        now: () => 1000,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+      onChanged: changed,
+    });
+    let ready = false;
+    const starting = coordinator.start().then(() => {
+      ready = true;
+    });
+    await displaying;
+    const selected = selection.emit(`pairing-request-${initiatorPeerId}`);
+    await new Promise((resolve) => setImmediate(resolve));
+    try {
+      expect(ready).toBe(true);
+      await selected;
+      expect(changed).toHaveBeenCalled();
+      expect(opened).toHaveBeenCalledTimes(1);
+    } finally {
+      let stopped = false;
+      const stopping = coordinator.stop().then(() => {
+        stopped = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      try {
+        expect(stopped).toBe(false);
+      } finally {
+        releaseDisplay();
+        await starting;
+        await selected;
+        await stopping;
+      }
+    }
+  });
+
+  it("accepts and publishes a received Request without waiting for native display completion", async () => {
+    const selection = createRuntimeNotificationSelection();
+    const records: import("../../../packages/core/pairing/pending").PendingTrustRequest[] =
+      [];
+    let releaseDisplay!: () => void, displayStarted!: () => void;
+    const display = new Promise<void>((resolve) => {
+      releaseDisplay = resolve;
+    });
+    const displaying = new Promise<void>((resolve) => {
+      displayStarted = resolve;
+    });
+    const notificationEvents: string[] = [];
+    const opened = jest.fn();
+    const changed = jest.fn();
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () => records,
+        save: async (request) => {
+          records.push(request);
+        },
+        remove: async () => {
+          records.splice(0);
+        },
+      },
+      notifications: {
+        show: async () => {
+          displayStarted();
+          await display;
+          notificationEvents.push("show-finished");
+        },
+        dismiss: async () => {
+          notificationEvents.push("dismissed");
+        },
+        onSelect: selection.onSelect,
+      },
+      lifecycle: { openApprovalView: opened },
+      clock: {
+        now: () => 1000,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+      onChanged: changed,
+    });
+    await coordinator.start();
+    let received = false;
+    const receiving = coordinator
+      .receive(
+        initiatorPeerId,
+        encodePairingFrame({
+          kind: "request",
+          envelope: encodeTrustRequestEnvelope({
+            signedPayload: encodeTrustRequestPayload({
+              initiatorPeerId,
+              targetPeerId,
+              deviceName: "Mobile",
+              nameRevision: 1n,
+              issuedAtUnixMs: 1000n,
+            }),
+            signature: new Uint8Array([1]),
+          }),
+        })
+      )
+      .then(() => {
+        received = true;
+      });
+    await displaying;
+    await new Promise((resolve) => setImmediate(resolve));
+    try {
+      expect(received).toBe(true);
+      expect(changed).toHaveBeenLastCalledWith([
+        expect.objectContaining({ initiatorPeerId }),
+      ]);
+      await selection.emit(`pairing-request-${initiatorPeerId}`);
+      expect(opened).toHaveBeenCalledTimes(1);
+      await coordinator.expire(initiatorPeerId);
+      expect(changed).toHaveBeenLastCalledWith([]);
+    } finally {
+      releaseDisplay();
+      await receiving;
+      await coordinator.stop();
+    }
+    expect(notificationEvents).toEqual(["show-finished", "dismissed"]);
+  });
+
   it("unsubscribes notification selection when stopped", async () => {
     let selectionHandler: ((id: string) => void | Promise<void>) | undefined;
     let approvalViewsOpened = 0;
@@ -80,6 +442,49 @@ describe("pending Trust Requests", () => {
     await coordinator.stop();
     await selectionHandler?.(`pairing-request-${initiatorPeerId}`);
     expect(approvalViewsOpened).toBe(1);
+  });
+
+  it("publishes authoritative expiry even when the OS cannot dismiss the notification", async () => {
+    let present = true;
+    const changed = jest.fn();
+    const coordinator = createPendingTrustRequestCoordinator({
+      localPeerId: async () => targetPeerId,
+      store: {
+        list: async () =>
+          present
+            ? [
+                {
+                  initiatorPeerId,
+                  deviceName: "Mobile",
+                  nameRevision: 1n,
+                  requestEnvelope: new Uint8Array([1]),
+                  expiresAtUnixMs: 1n,
+                },
+              ]
+            : [],
+        save: async () => undefined,
+        remove: async () => {
+          present = false;
+        },
+      },
+      notifications: {
+        show: async () => undefined,
+        dismiss: async () => {
+          throw new Error("os_dismiss_failed");
+        },
+        onSelect: () => () => undefined,
+      },
+      lifecycle: { openApprovalView: () => undefined },
+      clock: {
+        now: () => 1000,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+      verify: async () => true,
+      onChanged: changed,
+    });
+    await expect(coordinator.expire(initiatorPeerId)).resolves.toBe(true);
+    expect(changed).toHaveBeenLastCalledWith([]);
   });
 
   it("reports notification cleanup failure when stopped with pending requests", async () => {

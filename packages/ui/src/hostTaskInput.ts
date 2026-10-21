@@ -36,7 +36,8 @@ export function createHostTaskInput(session: UiSession) {
       !disposed &&
       !overlay &&
       !dismissing &&
-      !session.getSnapshot().tasks.length,
+      !session.getSnapshot().tasks.length &&
+      !session.getSnapshot().notificationReturn,
     setReady(value: boolean) {
       ready = value && !disposed;
     },
@@ -62,7 +63,11 @@ export function createHostTaskInput(session: UiSession) {
         await dismissOverlay();
         return "overlay";
       }
-      if (!session.getSnapshot().tasks.length) return "root";
+      if (
+        !session.getSnapshot().tasks.length &&
+        !session.getSnapshot().notificationReturn
+      )
+        return "root";
       session.back();
       return "task";
     },

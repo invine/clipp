@@ -1,3 +1,5 @@
+import { NotificationSettings } from "./NotificationSettings";
+import type { NotificationAvailabilityControls } from "./useNotificationAvailability";
 import type { HostTaskInput } from "./hostTaskInput";
 import {
   pairingScanErrorMessage,
@@ -386,6 +388,7 @@ export type ClipboardAppProps = {
   onSetBackgroundContinuity?(enabled: boolean): Promise<void>;
   onRefreshBackgroundContinuity?(): Promise<unknown>;
   onOpenBackgroundNotificationSettings?(): Promise<void>;
+  notificationControls?: NotificationAvailabilityControls;
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
   onRenameIdentity?(
     name: string,
@@ -472,6 +475,7 @@ export function ClipboardApp({
   onSetBackgroundContinuity,
   onRefreshBackgroundContinuity,
   onOpenBackgroundNotificationSettings,
+  notificationControls,
   onExportBackgroundContinuityDiagnostics,
   onRenameIdentity,
   onRenameDevice,
@@ -806,6 +810,21 @@ export function ClipboardApp({
       message:
         "Clip settings need recovery. Check the currently applied values in Settings. Any completed cleanup remains in effect.",
       diagnostics: clipPreferenceError,
+    });
+  if (
+    notificationControls?.state?.displayError ||
+    notificationControls?.state?.app === "blocked" ||
+    notificationControls?.state?.channel === "blocked" ||
+    notificationControls?.error
+  )
+    issues.push({
+      id: "task:notifications:availability",
+      scope: "task",
+      target: "notifications",
+      code: "notifications",
+      recovering: true,
+      message:
+        "Pairing notifications need attention. Open notification settings; pending Requests remain available in Clipp.",
     });
   if (backgroundContinuity?.controlError)
     issues.push({
@@ -1967,6 +1986,9 @@ export function ClipboardApp({
         )}
         {sessionState.destination === "settings" && (
           <>
+            {notificationControls && (
+              <NotificationSettings controls={notificationControls} />
+            )}
             {appearanceSettings && (
               <>
                 <div tabIndex={-1} data-session-focus="settings:appearance">
@@ -2281,7 +2303,10 @@ export function ClipboardApp({
           setSourceMenuOpen(false);
           return;
         }
-        if (session.getSnapshot().tasks.length) {
+        if (
+          session.getSnapshot().tasks.length ||
+          session.getSnapshot().notificationReturn
+        ) {
           event.preventDefault();
           session.back();
         } else if (showNav) {
@@ -2495,6 +2520,7 @@ export function ClipboardApp({
                           "clip-settings",
                           "settings",
                           "continuity",
+                          "notifications",
                         ].includes(issue.code))
                     ? "settings"
                     : issue.scope === "task" &&
@@ -2505,6 +2531,15 @@ export function ClipboardApp({
             });
           }}
         />
+      )}
+      {sessionState.notificationReturn && !sessionState.tasks.length && (
+        <button
+          className="text-button"
+          type="button"
+          onClick={() => session.back()}
+        >
+          Back to previous task
+        </button>
       )}
       <main
         className="app-main"
@@ -3008,7 +3043,8 @@ export function ClipboardApp({
                 title={title}
                 pending={edit.pending}
                 initialFocusKey={
-                  alias ? `alias:${edit.targetId}` : "device-name"
+                  activeTask?.initialFocusKey ??
+                  (alias ? `alias:${edit.targetId}` : "device-name")
                 }
                 originKey={activeTask?.origin}
                 returnLabel={alias ? "Close alias editor" : "Close name editor"}
@@ -3031,7 +3067,8 @@ export function ClipboardApp({
                   <input
                     aria-label={title}
                     data-session-focus={
-                      alias ? `alias:${edit.targetId}` : "device-name"
+                      activeTask?.initialFocusKey ??
+                      (alias ? `alias:${edit.targetId}` : "device-name")
                     }
                     value={edit.raw}
                     onChange={(event) => owner.change(event.target.value)}

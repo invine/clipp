@@ -4,6 +4,8 @@ import type {
   RelayMutation,
   RelayMutationResult,
 } from "../../core/network/relayMutations";
+/** A retained edit keeps its identity when an Add adopts its saved key. */
+export type RelayEditHandle = { resume(): string | null };
 export type RelayDraft = {
   key: string;
   active: boolean;
@@ -82,6 +84,12 @@ export function createRelayEditSession() {
     draft.state = { ...draft.state, key };
     if (state?.key === previous) state = { ...state, key };
   }
+  function resumeDraft(draft: Draft): string | null {
+    if (drafts.get(draft.state.key) !== draft) return null;
+    draft.state = { ...draft.state, active: true };
+    publish(draft.state);
+    return draft.state.key;
+  }
   return {
     hasWork: () =>
       [...drafts.values()].some(
@@ -92,6 +100,11 @@ export function createRelayEditSession() {
           draft.state.recoveryRequired
       ),
     getSnapshot: () => state,
+    /** Retain the existing edit, never whichever later edit reuses its old key. */
+    retain(key: string): RelayEditHandle | null {
+      const draft = drafts.get(key);
+      return draft ? { resume: () => resumeDraft(draft) } : null;
+    },
     getErrors: () => errors,
     subscribe(listener: () => void) {
       listeners.add(listener);

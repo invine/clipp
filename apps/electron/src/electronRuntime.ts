@@ -1,3 +1,4 @@
+import { createElectronNotifications } from "./notifications";
 import { createElectronTaskActivation } from "./hostTaskActivation.js";
 import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
@@ -58,7 +59,7 @@ import {
 import {
   createElectronRuntimeAdapter,
   createAutoSyncPreference,
-  createClosableRuntimeNotifications,
+  createRuntimeApprovalEntries,
   createRuntimeIdentityManager,
   createIdentityBoundWorkFence,
   createRuntimeIdentityRotationLifecycle,
@@ -139,7 +140,12 @@ async function composeElectronRuntime() {
   const dbPath = path.join(app.getPath("userData"), "clipp.sqlite");
   const db = openDatabase(dbPath);
   const identityWork = createIdentityBoundWorkFence();
-  const identityNotifications = new Set<Notification>();
+  const approvalEntries = createRuntimeApprovalEntries();
+  const electronNotifications = createElectronNotifications(
+    Notification,
+    identityWork
+  );
+  const notificationStatus = electronNotifications.status;
   const handleRuntime: typeof ipcMain.handle = (channel, listener) => {
     ipcMain.handle(channel, (event, ...args) =>
       identityWork.run(() => listener(event, ...args))
@@ -167,8 +173,8 @@ async function composeElectronRuntime() {
         await stopIdentityBoundServicesForRotation();
         await identityWork.quiesce();
         await stopIdentityBoundServicesForRotation();
-        for (const notification of identityNotifications) notification.close();
-        identityNotifications.clear();
+        electronNotifications.closeAll();
+        approvalEntries.clear();
       },
     },
     shutdown: () => stopIdentityBoundServicesForRotation(),
@@ -866,6 +872,26 @@ async function composeElectronRuntime() {
     await restartMessaging();
   }
 
+  notificationStatus.onChanged(() => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed())
+      mainWindow.webContents.send("clipp:notification-availability-changed");
+  });
+  handleRuntime("clipp:notification-availability", () =>
+    notificationStatus.refresh()
+  );
+  approvalEntries.onChanged(() => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed())
+      mainWindow.webContents.send("clipp:approval-entries-changed");
+  });
+  handleRuntime("clipp:approval-entries", () => approvalEntries.read());
+  handleRuntime("clipp:acknowledge-approval-entry", (event, id: unknown) => {
+    if (
+      event.sender === mainWindow?.webContents &&
+      event.senderFrame === mainWindow.webContents.mainFrame &&
+      typeof id === "string"
+    )
+      approvalEntries.acknowledge(id);
+  });
   const taskActivation = createElectronTaskActivation(() => {
     if (!mainWindow || mainWindow.webContents.isDestroyed()) return false;
     mainWindow.webContents.send("clipp:task-activation");
@@ -1133,6 +1159,8 @@ async function composeElectronRuntime() {
 
   async function shutdownServices() {
     quitting = true;
+    approvalEntries.clear();
+    electronNotifications.closeAll();
     managedAuth.cancelAll();
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
@@ -1158,27 +1186,7 @@ async function composeElectronRuntime() {
     }
   }
 
-  const runtimeNotifications = createClosableRuntimeNotifications({
-    create(message, events) {
-      identityWork.assertOpen();
-      if (!Notification.isSupported()) return undefined;
-      const notification = new Notification({
-        title: message.title,
-        body: message.body,
-        silent: false,
-      });
-      identityNotifications.add(notification);
-      notification.on("close", () =>
-        identityNotifications.delete(notification)
-      );
-      notification.on("click", () => {
-        if (!identityWork.isFenced()) events.select();
-      });
-      notification.on("close", events.closed);
-      notification.show();
-      return { close: () => notification.close() };
-    },
-  });
+  const runtimeNotifications = electronNotifications.notifications;
   const runtimeNetwork = createRuntimeNetworkProxy(() => transport);
   const membershipReconciler = createMembershipReconciler({
     transport: runtimeNetwork,
@@ -1235,7 +1243,11 @@ async function composeElectronRuntime() {
           if (runtimeShutdownHandler === handler) runtimeShutdownHandler = null;
         };
       },
-      openApprovalView: () => showWindow(),
+      openApprovalView: (selection) => {
+        if (identityWork.isFenced()) return;
+        approvalEntries.select(selection ?? { id: crypto.randomUUID() });
+        showWindow();
+      },
     },
     network: runtimeNetwork,
     clock: systemRuntimeClock,

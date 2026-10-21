@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import { createAndroidClipboardService as composeAndroidClipboard } from "./clipboardFactory";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference";
 import {
@@ -20,6 +21,8 @@ import {
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
+  createRuntimeApprovalEntries,
+  createRuntimeNotificationStatus,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
@@ -488,7 +491,13 @@ export class AndroidClient {
       (event) => {
         const id = event.notification.extra?.runtimeNotificationId;
         if (typeof id === "string" && !this.workFence.isFenced()) {
-          this.notificationSelection.emit(id);
+          this.notificationSelection.emit(
+            id,
+            typeof event.notification.extra?.runtimeNotificationInstance ===
+              "string"
+              ? event.notification.extra.runtimeNotificationInstance
+              : undefined
+          );
         }
       }
     );
@@ -639,7 +648,61 @@ export class AndroidClient {
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
   private historyRetentionCleanup: HistoryRetentionCleanup | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
+  private readonly approvalEntries = createRuntimeApprovalEntries();
+  async getApprovalEntries() {
+    return this.workFence.isFenced() ? [] : this.approvalEntries.read();
+  }
+  async acknowledgeApprovalEntry(id: string) {
+    this.approvalEntries.acknowledge(id);
+  }
+  onApprovalEntriesChanged(listener: () => void) {
+    return this.approvalEntries.onChanged(listener);
+  }
   private readonly backgroundNative = createAndroidBackgroundNative();
+  private readonly notificationStatus = createRuntimeNotificationStatus({
+    inspect: async () => {
+      if (Capacitor.getPlatform() !== "android")
+        return {
+          app:
+            typeof Notification === "undefined"
+              ? "unsupported"
+              : Notification.permission === "granted"
+                ? "available"
+                : Notification.permission === "denied"
+                  ? "blocked"
+                  : "unknown",
+          channel: "not-applicable",
+        };
+      // Loads the plugin's existing default channel before inspecting it. Never prompts.
+      await LocalNotifications.checkPermissions();
+      return (
+        (await this.backgroundNative.pairingNotificationAvailability?.()) ?? {
+          app: "unknown",
+          channel: "unknown",
+        }
+      );
+    },
+    openSettings: async () => {
+      if (!this.backgroundNative.openPairingNotificationSettings)
+        throw new Error("notification_settings_unavailable");
+      await this.backgroundNative.openPairingNotificationSettings();
+    },
+    requestPermission: async () => {
+      await LocalNotifications.requestPermissions();
+    },
+  });
+  getNotificationAvailability() {
+    return this.notificationStatus.refresh();
+  }
+  openNotificationSettings() {
+    return this.notificationStatus.openSettings();
+  }
+  requestNotificationPermission() {
+    return this.notificationStatus.requestPermission();
+  }
+  onNotificationAvailabilityChanged(listener: () => void) {
+    return this.notificationStatus.onChanged(listener);
+  }
   private androidApiLevel: number | undefined;
   private backgroundEventsBound = false;
   private readonly backgroundContinuity =
@@ -740,13 +803,8 @@ export class AndroidClient {
     notifications: {
       show: async (message) => {
         try {
-          let permission = await LocalNotifications.checkPermissions();
-          if (
-            permission.display === "prompt" ||
-            permission.display === "prompt-with-rationale"
-          ) {
-            permission = await LocalNotifications.requestPermissions();
-          }
+          const permission = await LocalNotifications.checkPermissions();
+          await this.notificationStatus.refresh();
           if (permission.display !== "granted") return;
           this.workFence.assertOpen();
           await this.workFence.run(() =>
@@ -756,13 +814,22 @@ export class AndroidClient {
                   id: nativeNotificationId(message.id),
                   title: message.title,
                   body: message.body,
-                  extra: { runtimeNotificationId: message.id },
+                  channelId: "default",
+                  extra: {
+                    runtimeNotificationId: message.id,
+                    runtimeNotificationInstance: message.instance,
+                  },
                 },
               ],
             })
           );
+          this.notificationStatus.shown();
         } catch (err) {
-          if (typeof Notification === "undefined") {
+          this.notificationStatus.failed(err);
+          if (
+            Capacitor.getPlatform() === "android" ||
+            typeof Notification === "undefined"
+          ) {
             log.warn("Failed to show pairing request notification", err);
             return;
           }
@@ -773,7 +840,7 @@ export class AndroidClient {
           });
           notification.onclick = () => {
             if (!this.workFence.isFenced())
-              this.notificationSelection.emit(message.id);
+              this.notificationSelection.emit(message.id, message.instance);
           };
         }
       },
@@ -783,6 +850,7 @@ export class AndroidClient {
         });
       },
       onSelect: this.notificationSelection.onSelect,
+      clearSelections: this.notificationSelection.clear,
     },
     lifecycle: {
       onShutdown: (handler) => {
@@ -792,7 +860,11 @@ export class AndroidClient {
             this.runtimeShutdownHandler = null;
         };
       },
-      openApprovalView: () => window.focus(),
+      openApprovalView: (selection) => {
+        if (this.workFence.isFenced()) return;
+        this.approvalEntries.select(selection ?? { id: uuidv4() });
+        window.focus();
+      },
     },
     network: createRuntimeNetworkProxy(() => this.transport),
     clock: systemRuntimeClock,
@@ -1175,6 +1247,8 @@ export class AndroidClient {
   }
 
   private async stopIdentityBoundServices(strict = false) {
+    this.approvalEntries.clear();
+    this.notificationSelection.clear();
     this.removeRelayCallback?.();
     this.removeRelayCallback = null;
     const relayStop = this.managedRelays?.stop();

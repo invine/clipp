@@ -39,21 +39,28 @@ export interface RuntimeClipboardAccess {
   writeText(text: string): Promise<void>;
 }
 
+export type RuntimeApprovalSelection = { id: string; requestId?: string };
+
 export type RuntimeNotification = {
+  /** Original request version, carried by the native notification instance. */
+  instance?: string;
   id: string;
   title: string;
   body: string;
 };
 
 export interface RuntimeNotifications {
+  clearSelections?(): void;
   show(notification: RuntimeNotification): Promise<void>;
   dismiss(id: string): Promise<void>;
-  onSelect(handler: (id: string) => void | Promise<void>): () => void;
+  onSelect(
+    handler: (id: string, instance?: string) => void | Promise<void>
+  ): () => void;
 }
 
 export interface RuntimeLifecycle {
   onShutdown(handler: () => void | Promise<void>): () => void;
-  openApprovalView(): void | Promise<void>;
+  openApprovalView(selection?: RuntimeApprovalSelection): void | Promise<void>;
 }
 
 export interface RuntimeClock {

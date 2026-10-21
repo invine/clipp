@@ -152,6 +152,21 @@ export function createPendingTrustRequestCoordinator(options: {
   let startPromise: Promise<void> | undefined;
   let unsubscribeNotificationSelection: (() => void) | undefined;
   let stopped = false;
+  const selectedNotifications = new Set<string>();
+  const notificationWork = new Map<string, Promise<void>>();
+  const enqueueNotification = (
+    peerId: string,
+    operation: () => Promise<void>
+  ) => {
+    const previous = notificationWork.get(peerId) ?? Promise.resolve();
+    const result = previous.then(operation).catch(() => undefined);
+    notificationWork.set(peerId, result);
+    void result.then(() => {
+      if (notificationWork.get(peerId) === result)
+        notificationWork.delete(peerId);
+    });
+    return result;
+  };
   const reportRejected = createPairingRejectionReporter({
     now: () => options.clock.now(),
     emit: options.onRejected,
@@ -239,7 +254,11 @@ export function createPendingTrustRequestCoordinator(options: {
     }
     clearTimer(peerId);
     await options.store.remove(peerId);
-    await options.notifications.dismiss(notificationId(peerId));
+    // Keep native show/cancel ordering without making OS work authoritative for
+    // request removal. A late show must be cancelled before this ID is reused.
+    void enqueueNotification(peerId, () =>
+      options.notifications.dismiss(notificationId(peerId))
+    );
     await publish();
     return true;
   };
@@ -259,13 +278,25 @@ export function createPendingTrustRequestCoordinator(options: {
       )
     );
   };
-  const show = async (request: PendingTrustRequest) => {
-    await options.notifications.show({
-      id: notificationId(request.initiatorPeerId),
-      title: "Pairing request",
-      body: `${request.deviceName} (${request.initiatorPeerId}) wants to pair.`,
-    });
+  const display = async (request: PendingTrustRequest, version?: string) => {
+    try {
+      const instance = version ?? (await requestVersion(request));
+      if (stopped) return;
+      await options.notifications.show({
+        id: notificationId(request.initiatorPeerId),
+        instance,
+        title: "Pairing request",
+        body: `${request.deviceName} (${request.initiatorPeerId}) wants to pair.`,
+      });
+    } catch {
+      // Native display is best effort. It cannot undo a durable pending Request
+      // or prevent its publication through the ordinary Requests destination.
+    }
   };
+  const show = (request: PendingTrustRequest, version?: string) =>
+    enqueueNotification(request.initiatorPeerId, () =>
+      display(request, version)
+    );
   const revalidateStoredRequest = async (
     request: PendingTrustRequest
   ): Promise<PendingTrustRequest | null> => {
@@ -341,11 +372,50 @@ export function createPendingTrustRequestCoordinator(options: {
       if (!startPromise) {
         startPromise = (async () => {
           unsubscribeNotificationSelection = options.notifications.onSelect(
-            (id) => {
-              if (id.startsWith("pairing-request-"))
-                return options.lifecycle.openApprovalView();
+            async (id, instance) => {
+              if (!id.startsWith("pairing-request-")) return;
+              // The callback can precede durable startup revalidation. Selection
+              // must observe current authority, never the notification's old row.
+              await startPromise;
+              await Promise.allSettled([...pendingMutations.values()]);
+              if (stopped) return;
+              const peerId = id.slice("pairing-request-".length);
+              let current = (await list()).find(
+                (request) => request.initiatorPeerId === peerId
+              );
+              if (current && !(await revalidateStoredRequest(current))) {
+                await serializeMutation(peerId, () =>
+                  expirePending(peerId, current)
+                );
+                current = undefined;
+              }
+              await publish();
+              if (stopped) return;
+              const selectionId = `notification:${id}:${instance ?? current?.requestVersion ?? "missing"}`;
+              if (selectedNotifications.has(selectionId)) return;
+              selectedNotifications.add(selectionId);
+              if (selectedNotifications.size > 64)
+                selectedNotifications.delete(
+                  selectedNotifications.values().next().value!
+                );
+              try {
+                await options.lifecycle.openApprovalView({
+                  id: selectionId,
+                  ...(current &&
+                  (!instance || instance === current.requestVersion)
+                    ? { requestId: peerId }
+                    : {}),
+                });
+              } catch (error) {
+                selectedNotifications.delete(selectionId);
+                throw error;
+              }
             }
           );
+          const restored: Array<{
+            request: PendingTrustRequest;
+            version: string;
+          }> = [];
           for (const storedRequest of await options.store.list()) {
             const request = await revalidateStoredRequest(storedRequest);
             if (!request) {
@@ -354,9 +424,11 @@ export function createPendingTrustRequestCoordinator(options: {
             }
             await options.store.save(request);
             scheduleExpiry(request);
-            await show(request);
+            restored.push({ request, version: await requestVersion(request) });
           }
           await publish();
+          for (const { request, version } of restored)
+            void show(request, version);
         })();
       }
       return startPromise;
@@ -451,8 +523,8 @@ export function createPendingTrustRequestCoordinator(options: {
           }
           await options.store.save(request);
           scheduleExpiry(request);
-          if (!existing) await show(request);
           await publish();
+          if (!existing) void show(request, await requestVersion(request));
           return true;
         });
       return startPromise ? startPromise.then(receive) : receive();
@@ -535,11 +607,16 @@ export function createPendingTrustRequestCoordinator(options: {
       serializeMutation(initiatorPeerId, () => expirePending(initiatorPeerId)),
     async stop(): Promise<void> {
       stopped = true;
+      selectedNotifications.clear();
       await startPromise?.catch(() => undefined);
       unsubscribeNotificationSelection?.();
       unsubscribeNotificationSelection = undefined;
+      options.notifications.clearSelections?.();
       expiryTimers.forEach((_timer, peerId) => clearTimer(peerId));
       await Promise.allSettled([...pendingMutations.values()]);
+      // An already admitted native schedule must finish before cancellation;
+      // otherwise it could post a notification after this owner has stopped.
+      await Promise.allSettled([...notificationWork.values()]);
       const requests = await options.store.list();
       await Promise.all(
         requests.map((request) =>

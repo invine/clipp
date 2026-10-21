@@ -1,3 +1,5 @@
+import { useNotificationAvailability } from "../../../packages/ui/src/useNotificationAvailability";
+import { useNotificationRequests } from "../../../packages/ui/src/useNotificationRequests";
 import { useRuntimeSettings } from "../../../packages/ui/src/useRuntimeSettings";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
@@ -62,6 +64,7 @@ export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
   }, [taskInput]);
   useEffect(() => bindAndroidHostGeometry(), []);
   const { client } = runtime;
+  const notificationControls = useNotificationAvailability(client);
   const appearanceSettings = useRuntimeSettings({
     send: (message) =>
       message.type === "getSettings"
@@ -104,6 +107,17 @@ export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
     };
   }, [client, consumer, runtime]);
 
+  useNotificationRequests(client, session, {
+    ready:
+      !recovery.loading &&
+      !recovery.unavailable &&
+      !!state.pairingState &&
+      !!state.identity &&
+      !state.identityRotationRecovery,
+    clipIds: state.clips.map((clip) => clip.id),
+    requestIds: state.pending.map((request) => request.deviceId),
+  });
+
   async function handlePairText(txt: string) {
     return await client.pairFromText(txt);
   }
@@ -117,6 +131,7 @@ export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
       <ClipboardApp
         taskInput={taskInput}
         session={session}
+        notificationControls={notificationControls}
         appearanceSettings={appearanceSettings}
         pairingDiagnostics={
           <PairingDiagnosticsPanel

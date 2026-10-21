@@ -4,7 +4,10 @@ import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
 import { createNameEditSession } from "./nameEditSession";
 import { createPairingSubmission } from "./pairingSubmission";
 import { createPairingCodeTask } from "./pairingCodeTask";
-import { createRelayEditSession } from "./relayEditSession";
+import {
+  createRelayEditSession,
+  type RelayEditHandle,
+} from "./relayEditSession";
 import type { RelayActionResult } from "../../core/network/relayActions";
 export type SessionTask = {
   kind:
@@ -22,7 +25,15 @@ export type SessionTask = {
   origin: string;
   initialFocusKey?: string;
 };
+type NotificationReturn = Pick<
+  SessionContext,
+  "destination" | "focusKey" | "showNav" | "settingsCategory" | "taskNotice"
+> & {
+  tasks: (SessionTask & { relayEdit?: RelayEditHandle | null })[];
+  previous: NotificationReturn | null;
+};
 export type SessionContext = {
+  notificationReturn: NotificationReturn | null;
   search: string;
   timeFilter: "all" | "24h" | "7d" | "30d";
   sourceFilter: string;
@@ -62,6 +73,7 @@ export function createUiSession() {
     pairing = createPairingSubmission(),
     qr = createPairingCodeTask();
   let state: SessionContext = {
+    notificationReturn: null,
     search: "",
     timeFilter: "all",
     sourceFilter: "all",
@@ -147,7 +159,8 @@ export function createUiSession() {
     acceptDestination(
       id: string,
       destination: UiDestination,
-      authority: { ready: boolean; clipIds: string[]; requestIds: string[] }
+      authority: { ready: boolean; clipIds: string[]; requestIds: string[] },
+      source?: "notification"
     ) {
       const previous = appliedDestinations.get(id);
       if (previous) return previous;
@@ -159,7 +172,43 @@ export function createUiSession() {
         (destination.kind === "pairing" ||
           destination.kind === "clip-details") &&
         sameUiDestination(current, destination);
-      if (occupied() && !matching) return "declined" as const;
+      const notification =
+        source === "notification" && destination.kind === "requests";
+      if (occupied() && !matching && !notification) return "declined" as const;
+      if (
+        notification &&
+        (state.destination !== "requests" || state.tasks.length)
+      ) {
+        const {
+          destination,
+          tasks,
+          focusKey,
+          showNav,
+          settingsCategory,
+          taskNotice,
+        } = state;
+        // Suspend presentation only. Drafts and in-flight operations retain their
+        // existing owners, and their completions can still update this context.
+        update({
+          notificationReturn: {
+            previous: state.notificationReturn,
+            destination,
+            tasks: tasks.map((task) =>
+              task.kind === "relay"
+                ? {
+                    ...task,
+                    relayEdit: task.entity ? relay.retain(task.entity) : null,
+                  }
+                : task
+            ),
+            focusKey,
+            showNav,
+            settingsCategory,
+            taskNotice,
+          },
+          tasks: [],
+        });
+      }
       let result: "applied" | "unavailable" = "applied";
       if (!matching) {
         if (destination.kind === "history")
@@ -188,6 +237,7 @@ export function createUiSession() {
         } else if (destination.kind === "requests") {
           update({
             destination: "requests",
+            taskNotice: null,
             showNav: false,
             focusKey: destination.entity
               ? `request:${destination.entity}`
@@ -299,6 +349,40 @@ export function createUiSession() {
       });
     },
     back() {
+      if (!state.tasks.length && state.notificationReturn) {
+        const { previous, ...returning } = state.notificationReturn;
+        const tasks = returning.tasks.flatMap((retained, index) => {
+          const { relayEdit, ...original } = retained;
+          let task = original;
+          if (task.kind === "relay") {
+            const key = relayEdit?.resume();
+            if (!key) return [];
+            task = { ...task, entity: key };
+          }
+          const owner =
+            task.kind === "device-name"
+              ? name
+              : task.kind === "alias"
+                ? alias
+                : null;
+          if (owner && (!task.entity || !owner.resume(task.entity))) return [];
+          return [
+            index === returning.tasks.length - 1
+              ? {
+                  ...task,
+                  initialFocusKey: returning.focusKey ?? task.initialFocusKey,
+                }
+              : task,
+          ];
+        });
+        update({
+          ...returning,
+          tasks,
+          notificationReturn: previous,
+          navigationVersion: (state.navigationVersion ?? 0) + 1,
+        });
+        return;
+      }
       const task = state.tasks[state.tasks.length - 1];
       dismissTask(task);
       update({
@@ -315,6 +399,27 @@ export function createUiSession() {
     complete(kind: SessionTask["kind"], entity?: string) {
       const task = state.tasks[state.tasks.length - 1];
       if (task?.kind === kind && task.entity === entity) this.back();
+      if (state.notificationReturn) {
+        const completeReturn = (
+          context: NotificationReturn
+        ): NotificationReturn => {
+          const tasks = context.tasks;
+          const suspended = tasks[tasks.length - 1];
+          return {
+            ...context,
+            tasks:
+              suspended?.kind === kind && suspended.entity === entity
+                ? tasks.slice(0, -1)
+                : tasks,
+            previous: context.previous
+              ? completeReturn(context.previous)
+              : null,
+          };
+        };
+        update({
+          notificationReturn: completeReturn(state.notificationReturn),
+        });
+      }
     },
     close() {
       const task = state.tasks[state.tasks.length - 1];
@@ -343,6 +448,13 @@ export function createUiSession() {
       historyGeneration++;
       historyRetries.clear();
       appliedDestinations.clear();
+      for (
+        let context = state.notificationReturn;
+        context;
+        context = context.previous
+      )
+        context.tasks.forEach(dismissTask);
+      update({ notificationReturn: null });
       pairingImportOperation = undefined;
       retryPairingImport = undefined;
       name.clear();

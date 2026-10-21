@@ -6,6 +6,7 @@ jest.mock(
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createUiSession } from "../../packages/ui/src/uiSession";
+import { createHostTaskInput } from "../../packages/ui/src/hostTaskInput";
 import { ManagedRelaySettings } from "../../packages/ui/src/ManagedRelaySettings";
 const a = {
   key: "a",
@@ -567,3 +568,537 @@ it("Close retains a pending import, and Discard does not cancel its already subm
     error: null,
   });
 });
+
+it("notification selection opens reconciled Requests and Back restores the pending editor and query", async () => {
+  const session = createUiSession();
+  session.update({
+    destination: "devices",
+    search: "retained query",
+    scroll: { devices: 88 },
+    focusKey: "rename-local",
+  });
+  session.open({
+    kind: "device-name",
+    entity: "local",
+    origin: "rename-local",
+  });
+  session.name.begin("local", "Desktop");
+  session.name.change("unsaved name");
+  let finish!: () => void;
+  const saving = session.name.save(async () => {
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    throw new Error("disk_full");
+  });
+  const authority = { ready: false, clipIds: [], requestIds: ["incoming"] };
+  expect(
+    session.acceptDestination(
+      "selected",
+      { kind: "requests", entity: "incoming" },
+      authority,
+      "notification"
+    )
+  ).toBe("waiting");
+  expect(session.getSnapshot().tasks[0]?.kind).toBe("device-name");
+  authority.ready = true;
+  expect(
+    session.acceptDestination(
+      "selected",
+      { kind: "requests", entity: "incoming" },
+      authority,
+      "notification"
+    )
+  ).toBe("applied");
+  expect(session.getSnapshot()).toMatchObject({
+    destination: "requests",
+    tasks: [],
+    search: "retained query",
+  });
+  expect(session.name.getSnapshot()).toMatchObject({
+    raw: "unsaved name",
+    pending: true,
+  });
+  finish();
+  await saving;
+  expect(
+    session.acceptDestination(
+      "selected",
+      { kind: "requests", entity: "incoming" },
+      authority,
+      "notification"
+    )
+  ).toBe("applied");
+  session.back();
+  expect(session.getSnapshot()).toMatchObject({
+    destination: "devices",
+    search: "retained query",
+    scroll: { devices: 88 },
+    tasks: [{ kind: "device-name" }],
+    focusKey: "rename-local",
+  });
+  expect(session.name.getSnapshot()).toMatchObject({
+    raw: "unsaved name",
+    pending: false,
+    error: "disk_full",
+  });
+});
+
+it.each(["issues", "relay"] as const)(
+  "a distinct notification reveals Requests over a newer %s task and retains both return contexts",
+  async (kind) => {
+    const session = createUiSession();
+    session.update({ destination: "devices", search: "retained query" });
+    session.open({
+      kind: "device-name",
+      entity: "local",
+      origin: "rename-local",
+    });
+    session.name.begin("local", "Desktop");
+    session.name.change("original pending name");
+    let finish!: () => void;
+    const saving = session.name.save(async () => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      throw new Error("disk_full");
+    });
+    const authority = {
+      ready: true,
+      clipIds: [],
+      requestIds: ["first", "second"],
+    };
+    session.acceptDestination(
+      "selection-a",
+      { kind: "requests", entity: "first" },
+      authority,
+      "notification"
+    );
+    if (kind === "relay") {
+      session.update({ destination: "settings" });
+      session.open({ kind: "relay", entity: "a", origin: "relay:a" });
+      session.relay.begin(a);
+      session.relay.change("name", "newest relay draft");
+    } else session.open({ kind: "issues", origin: "issues-summary" });
+    // Re-delivery of the handled first selection must not interrupt newer work.
+    session.acceptDestination(
+      "selection-a",
+      { kind: "requests", entity: "first" },
+      authority,
+      "notification"
+    );
+    expect(session.getSnapshot().tasks.at(-1)?.kind).toBe(kind);
+    expect(
+      session.acceptDestination(
+        "selection-b",
+        { kind: "requests", entity: "second" },
+        authority,
+        "notification"
+      )
+    ).toBe("applied");
+    expect(session.getSnapshot()).toMatchObject({
+      destination: "requests",
+      tasks: [],
+      search: "retained query",
+    });
+    finish();
+    await saving;
+    session.back();
+    expect(session.getSnapshot()).toMatchObject({
+      destination: kind === "relay" ? "settings" : "requests",
+      tasks: [{ kind }],
+    });
+    if (kind === "relay")
+      expect(session.relay.getSnapshot()?.raw.name).toBe("newest relay draft");
+    session.back(); // Close the newer task; the original notification return remains.
+    session.back();
+    expect(session.getSnapshot()).toMatchObject({
+      destination: "devices",
+      tasks: [{ kind: "device-name" }],
+      search: "retained query",
+    });
+    expect(session.name.getSnapshot()).toMatchObject({
+      raw: "original pending name",
+      pending: false,
+      error: "disk_full",
+    });
+    // A handled second selection must not resurrect Requests after returning.
+    session.acceptDestination(
+      "selection-b",
+      { kind: "requests", entity: "second" },
+      authority,
+      "notification"
+    );
+    expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("device-name");
+  }
+);
+
+it("an authoritative completion removes an older task suspended by repeated notification entries", () => {
+  const session = createUiSession();
+  session.update({ destination: "devices" });
+  session.open({
+    kind: "device-name",
+    entity: "local",
+    origin: "rename-local",
+  });
+  const authority = { ready: true, clipIds: [], requestIds: [] };
+  session.acceptDestination(
+    "selection-a",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.open({ kind: "issues", origin: "issues-summary" });
+  session.acceptDestination(
+    "selection-b",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.complete("device-name", "local");
+  session.back();
+  expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("issues");
+  session.back();
+  session.back();
+  expect(session.getSnapshot()).toMatchObject({
+    destination: "devices",
+    tasks: [],
+  });
+});
+
+it("Identity Rotation retires every notification return while retaining the relay draft for deliberate reopen", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  session.open({ kind: "relay", entity: "a", origin: "relay:a" });
+  session.relay.begin(a);
+  session.relay.change("name", "retained relay draft");
+  const authority = { ready: true, clipIds: [], requestIds: [] };
+  session.acceptDestination(
+    "selection-a",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.open({ kind: "issues", origin: "issues-summary" });
+  session.acceptDestination(
+    "selection-b",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.rotateIdentity();
+  expect(session.getSnapshot()).toMatchObject({
+    notificationReturn: null,
+    tasks: [],
+  });
+  expect(session.relay.getSnapshot()).toMatchObject({
+    active: false,
+    raw: { name: "retained relay draft" },
+  });
+  session.back();
+  expect(session.getSnapshot().tasks).toEqual([]);
+});
+
+it("a stale second selection reconciles Requests and cannot replay over restored newer work", () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.pairing.change("original retained input");
+  const authority = { ready: true, clipIds: [], requestIds: ["first"] };
+  session.acceptDestination(
+    "selection-a",
+    { kind: "requests", entity: "first" },
+    authority,
+    "notification"
+  );
+  session.open({ kind: "issues", origin: "issues-summary" });
+  expect(
+    session.acceptDestination(
+      "selection-stale",
+      { kind: "requests", entity: "expired" },
+      authority,
+      "notification"
+    )
+  ).toBe("unavailable");
+  expect(session.getSnapshot()).toMatchObject({
+    destination: "requests",
+    tasks: [],
+    taskNotice: "This Request is no longer available. Open Requests.",
+  });
+  session.back();
+  expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("issues");
+  session.acceptDestination(
+    "selection-stale",
+    { kind: "requests", entity: "expired" },
+    authority,
+    "notification"
+  );
+  expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("issues");
+  session.back();
+  session.back();
+  expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("pairing");
+  expect(session.pairing.getSnapshot().raw).toBe("original retained input");
+});
+
+it.each(["alias", "relay"] as const)(
+  "returning through notification entries reactivates the retained %s draft for each task target",
+  (kind) => {
+    const session = createUiSession();
+    session.update({ destination: kind === "alias" ? "devices" : "settings" });
+    const edit = (entity: string, raw: string) => {
+      session.open({ kind, entity, origin: `${kind}:${entity}` });
+      if (kind === "alias") {
+        session.alias.begin(entity, `Reported ${entity}`);
+        session.alias.change(raw);
+      } else {
+        session.relay.begin({ ...a, key: entity, name: `Relay ${entity}` });
+        session.relay.change("name", raw);
+      }
+    };
+    const authority = { ready: true, clipIds: [], requestIds: [] };
+    edit("a", "original target draft");
+    session.acceptDestination(
+      "selection-a",
+      { kind: "requests" },
+      authority,
+      "notification"
+    );
+    edit("b", "newest target draft");
+    session.acceptDestination(
+      "selection-b",
+      { kind: "requests" },
+      authority,
+      "notification"
+    );
+    session.back();
+    if (kind === "alias")
+      expect(session.alias.getSnapshot()).toMatchObject({
+        targetId: "b",
+        raw: "newest target draft",
+        active: true,
+      });
+    else
+      expect(session.relay.getSnapshot()).toMatchObject({
+        key: "b",
+        raw: { name: "newest target draft" },
+        active: true,
+      });
+    session.back();
+    session.back();
+    expect(session.getSnapshot().tasks.at(-1)).toMatchObject({
+      kind,
+      entity: "a",
+    });
+    if (kind === "alias")
+      expect(session.alias.getSnapshot()).toMatchObject({
+        targetId: "a",
+        raw: "original target draft",
+        active: true,
+      });
+    else
+      expect(session.relay.getSnapshot()).toMatchObject({
+        key: "a",
+        raw: { name: "original target draft" },
+        active: true,
+      });
+  }
+);
+
+it("notification return uses the newest same-key draft and refuses a removed retained target", () => {
+  const session = createUiSession();
+  const authority = { ready: true, clipIds: [], requestIds: [] };
+  const edit = (raw: string) => {
+    session.open({ kind: "alias", entity: "a", origin: "alias:a" });
+    session.alias.begin("a", "Reported A");
+    session.alias.change(raw);
+  };
+  edit("original draft");
+  session.acceptDestination(
+    "selection-a",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  edit("newest same-key draft");
+  session.acceptDestination(
+    "selection-b",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.back();
+  expect(session.alias.getSnapshot()).toMatchObject({
+    targetId: "a",
+    raw: "newest same-key draft",
+  });
+  session.back();
+  session.back();
+  expect(session.alias.getSnapshot()).toMatchObject({
+    targetId: "a",
+    raw: "newest same-key draft",
+  });
+  session.acceptDestination(
+    "selection-c",
+    { kind: "requests" },
+    authority,
+    "notification"
+  );
+  session.alias.removeTarget("a");
+  session.back();
+  expect(session.getSnapshot().tasks).toEqual([]);
+  expect(session.alias.getSnapshot().targetId).toBeNull();
+});
+
+it("notification Back restores a pending Add Relay after partial save adopts its authoritative key", async () => {
+  const session = createUiSession();
+  const input = createHostTaskInput(session);
+  input.setReady(true);
+  session.update({ destination: "settings", settingsCategory: "relays" });
+  session.open({ kind: "relay", entity: "new", origin: "relay:add" });
+  session.relay.begin();
+  session.relay.change("name", "Retained Add");
+  session.relay.change("endpoint", "https://retained.example/v1/relay");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let applied = a;
+  const saving = session.relay.save(async (mutation) => {
+    if (mutation.type !== "add" || mutation.configuration.kind !== "managed")
+      throw Error("expected_add");
+    applied = mutation.configuration;
+    await gate;
+    return {
+      status: "partial",
+      configurationApplied: true,
+      configurations: [applied],
+      credentialsRemoved: [],
+      error: "resource_refresh_failed",
+    };
+  });
+  session.acceptDestination(
+    "pending-add",
+    { kind: "requests" },
+    { ready: true, clipIds: [], requestIds: [] },
+    "notification"
+  );
+  expect(session.relay.getSnapshot()).toMatchObject({
+    key: "new",
+    pending: true,
+  });
+  release();
+  await saving;
+  expect(session.relay.getSnapshot()).toMatchObject({
+    key: applied.key,
+    pending: false,
+    raw: { name: "Retained Add" },
+    error: expect.stringContaining("resource_refresh_failed"),
+  });
+  expect(await input.back({ sequence: 1, imeVisible: false })).toBe("task");
+  expect(session.getSnapshot().tasks).toEqual([
+    expect.objectContaining({ kind: "relay", entity: applied.key }),
+  ]);
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(ManagedRelaySettings, {
+        session,
+        configurations: [applied],
+        states: [],
+        onMutate: async () => {
+          throw Error("unexpected_mutation_without_user_save");
+        },
+      })
+    );
+  expect(render()).toContain('value="Retained Add"');
+  expect(render()).toContain("resource_refresh_failed");
+  expect(input.atRoot()).toBe(false);
+  expect(await input.back({ sequence: 2, imeVisible: false })).toBe("task");
+  expect(render()).not.toContain('value="Retained Add"');
+  expect(input.atRoot()).toBe(true);
+  input.dispose();
+});
+
+it.each(["partial", "applied", "completed"] as const)(
+  "an older Add return cannot select a later new editor after key adoption (%s)",
+  async (outcome) => {
+    const session = createUiSession();
+    const authority = { ready: true, clipIds: [], requestIds: [] };
+    session.update({ destination: "settings", settingsCategory: "relays" });
+    session.open({ kind: "relay", entity: "new", origin: "relay:add" });
+    session.relay.begin();
+    session.relay.change("name", "First Add");
+    session.relay.change("endpoint", "https://first.example/v1/relay");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let applied = a;
+    const saving = session.relay.save(async (mutation) => {
+      if (mutation.type !== "add" || mutation.configuration.kind !== "managed")
+        throw Error("expected_add");
+      applied = mutation.configuration;
+      await gate;
+      return {
+        status: outcome === "partial" ? "partial" : "applied",
+        configurations: [applied],
+        configurationApplied: true,
+        credentialsRemoved: [],
+        error: outcome === "partial" ? "refresh_failed" : undefined,
+      };
+    });
+    if (outcome !== "completed")
+      session.relay.change("name", "Newest First Add");
+    session.acceptDestination(
+      "first-add",
+      { kind: "requests" },
+      authority,
+      "notification"
+    );
+    release();
+    await saving;
+    session.open({ kind: "relay", entity: "new", origin: "relay:add" });
+    session.relay.begin();
+    session.relay.change("name", "Separate Second Add");
+    session.acceptDestination(
+      "second-add",
+      { kind: "requests" },
+      authority,
+      "notification"
+    );
+    session.back();
+    expect(session.getSnapshot().tasks.at(-1)).toMatchObject({
+      kind: "relay",
+      entity: "new",
+    });
+    expect(session.relay.getSnapshot()).toMatchObject({
+      raw: { name: "Separate Second Add" },
+      active: true,
+    });
+    session.back();
+    session.back();
+    if (outcome === "completed") {
+      expect(session.getSnapshot().tasks).toEqual([]);
+      expect(session.relay.getSnapshot()).toMatchObject({
+        key: "new",
+        active: false,
+        raw: { name: "Separate Second Add" },
+      });
+    } else {
+      expect(session.getSnapshot().tasks.at(-1)).toMatchObject({
+        kind: "relay",
+        entity: applied.key,
+      });
+      expect(session.relay.getSnapshot()).toMatchObject({
+        key: applied.key,
+        active: true,
+        pending: false,
+        raw: { name: "Newest First Add" },
+        error:
+          outcome === "partial"
+            ? expect.stringContaining("refresh_failed")
+            : null,
+      });
+      session.back();
+      expect(session.relay.getSnapshot()?.active).toBe(false);
+    }
+  }
+);

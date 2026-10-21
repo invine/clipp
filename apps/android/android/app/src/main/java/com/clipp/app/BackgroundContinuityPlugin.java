@@ -1,5 +1,8 @@
 package com.clipp.app;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import androidx.core.app.NotificationManagerCompat;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -296,6 +299,38 @@ public final class BackgroundContinuityPlugin extends Plugin {
             }
 
         } catch (Exception error) { call.reject("identity_reset_native_operation_unavailable"); }
+    }
+
+    // LocalNotifications currently delivers Pairing on its existing "default"
+    // channel. Inspect that channel, independently of the continuity channel.
+    @PluginMethod
+    public void getPairingNotificationAvailability(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("app", NotificationManagerCompat.from(getContext()).areNotificationsEnabled() ? "available" : "blocked");
+        String channelState = "not-applicable";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager manager = getContext().getSystemService(NotificationManager.class);
+            NotificationChannel channel = manager == null ? null : manager.getNotificationChannel("default");
+            channelState = channel == null ? "unknown" : channel.getImportance() == NotificationManager.IMPORTANCE_NONE ? "blocked" : "available";
+        }
+        result.put("channel", channelState);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openPairingNotificationSettings(PluginCall call) {
+        if (getActivity() == null) { call.reject("notification_settings_activity_unavailable"); return; }
+        try {
+            Intent settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && NotificationManagerCompat.from(getContext()).areNotificationsEnabled()) {
+                settings = new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName())
+                    .putExtra(Settings.EXTRA_CHANNEL_ID, "default");
+            }
+            getActivity().startActivity(settings);
+            call.resolve();
+        } catch (RuntimeException error) { call.reject("notification_settings_unavailable", error); }
     }
 
     @PluginMethod
