@@ -67,6 +67,7 @@ public final class ScannerInputTest {
     private static final String TAG = "ClippScannerInput";
     private static final long TIMEOUT_MS = 20_000;
     private static final String VALID_IMAGE = "09e4dc07e4eae66a4eaad4db9a81cf0bf6a29477291058fd61f28f13e28c0288";
+    private static final String CALIBRATED_VALID_IMAGE = "ecd949e77a179235b963983bcd5f3a82e39210623092a62bcffbd3c557e5c6b3";
     private static final String BLANK_IMAGE = "27f5f8b9f7cbddef10dba9b20cf612832cccafea69b0f3b6bd28d15ba438a8bc";
     private static final String PAYLOAD_SHA = "1882e318603180f362ea61ec95e07c38d8e0896fa47f68fc6deb904d6ccb60ae";
     private static final String OVERLAY = "document.getElementById('clipp-android-qr-scanner')";
@@ -89,7 +90,7 @@ public final class ScannerInputTest {
         nonce = arguments.getString("scannerRootNonce", "");
         assertTrue("Root interval nonce required", nonce.matches("[A-Za-z0-9_-]{1,80}"));
         String feed = arguments.getString("scannerCameraImageSha256", "");
-        assertTrue("Root must bind the exact declared synthetic imagefile feed", VALID_IMAGE.equals(feed) || BLANK_IMAGE.equals(feed));
+        assertTrue("Root must bind the exact declared synthetic imagefile feed", VALID_IMAGE.equals(feed) || CALIBRATED_VALID_IMAGE.equals(feed) || BLANK_IMAGE.equals(feed));
         JSONObject config;
         try (InputStream stream = context.getAssets().open("capacitor.config.json")) {
             config = new JSONObject(read(stream));
@@ -145,7 +146,8 @@ public final class ScannerInputTest {
 
     @Test
     public void validPublicQrUsesExistingPairingSubmission() throws Exception {
-        requireFeed(VALID_IMAGE);
+        String feed = arguments.getString("scannerCameraImageSha256", "");
+        assertTrue("Case requires its exact declared root imagefile feed", VALID_IMAGE.equals(feed) || CALIBRATED_VALID_IMAGE.equals(feed));
         requireCameraGranted();
         openPairing();
         long before = camera.sequence();
