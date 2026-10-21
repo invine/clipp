@@ -3,7 +3,10 @@ package com.clipp.app;
 import static org.junit.Assert.*;
 
 import android.app.Instrumentation;
+import android.app.KeyguardManager;
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationChannelGroup;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.os.Bundle;
@@ -27,6 +30,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.json.JSONArray;
@@ -108,12 +112,18 @@ public final class NotificationRequestsTest {
         StatusBarNotification posted = awaitOwnPeerNotification();
         Log.i(TAG, "posted-metadata nonce=" + nonce + " package=" + safeMetadata(posted.getPackageName())
             + " id=" + posted.getId() + " channel=" + safeMetadata(posted.getNotification().getChannelId()));
+        logOwnNotificationEligibility("posted", posted);
         assertEquals("Pairing channel, not continuity", "default", posted.getNotification().getChannelId());
         assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
         assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
             "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
         expandNotificationsWithCompletionWitness();
-        tapActualPeerNotification();
+        try {
+            tapActualPeerNotification();
+        } catch (AssertionError | RuntimeException failure) {
+            logOwnNotificationEligibility("row-failure", posted);
+            throw failure;
+        }
         String card = "[...document.querySelectorAll('.pending-card')].find(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
         web.await("actual authoritative Requests after OS selection", "document.querySelector('h1')?.textContent === 'Requests' && !!(" + card + ") && !document.querySelector('[role=dialog][aria-modal=true]')");
         web.await("current request remains unadmitted", "[...(" + card + ").querySelectorAll('button')].some(e => e.textContent.trim() === 'Accept' && !e.disabled)");
@@ -260,9 +270,239 @@ public final class NotificationRequestsTest {
         }
     }
 
+    private void logOwnNotificationEligibility(String stage, StatusBarNotification expected) {
+        JSONObject metadata = new JSONObject();
+        try {
+            Context context = instrumentation.getTargetContext();
+            NotificationManager manager = context.getSystemService(NotificationManager.class);
+            StatusBarNotification[] active = manager.getActiveNotifications();
+            StatusBarNotification current = null;
+            for (StatusBarNotification item : active) {
+                if (item.getId() == expected.getId()
+                        && item.getPackageName().equals(expected.getPackageName())
+                        && java.util.Objects.equals(item.getTag(), expected.getTag())) current = item;
+            }
+            metadata.put("package", safeMetadata(expected.getPackageName()));
+            metadata.put("id", expected.getId());
+            metadata.put("channel", safeMetadata(expected.getNotification().getChannelId()));
+            metadata.put("sameOwnNotificationActive", current != null);
+            metadata.put("ownActiveCount", active.length);
+            metadata.put("appEnabled", manager.areNotificationsEnabled());
+            metadata.put("appImportance", manager.getImportance());
+            metadata.put("interruptionFilter", manager.getCurrentInterruptionFilter());
+            NotificationChannel channel = manager.getNotificationChannel(expected.getNotification().getChannelId());
+            metadata.put("channelExists", channel != null);
+            if (channel != null) {
+                metadata.put("channelImportance", channel.getImportance());
+                metadata.put("channelLockscreenVisibility", channel.getLockscreenVisibility());
+                String groupId = channel.getGroup();
+                metadata.put("channelGroupPresent", groupId != null);
+                if (groupId != null) {
+                    NotificationChannelGroup group = manager.getNotificationChannelGroup(groupId);
+                    metadata.put("channelGroupFound", group != null);
+                    metadata.put("channelGroupBlocked", group == null ? JSONObject.NULL : group.isBlocked());
+                }
+            }
+            KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+            metadata.put("keyguardLocked", keyguard.isKeyguardLocked());
+            metadata.put("deviceLocked", keyguard.isDeviceLocked());
+            if (current != null) {
+                Notification notification = current.getNotification();
+                metadata.put("flags", notification.flags);
+                metadata.put("groupSummary", (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0);
+                metadata.put("ongoing", current.isOngoing());
+                metadata.put("clearable", current.isClearable());
+                metadata.put("visibility", notification.visibility);
+                metadata.put("priority", notification.priority);
+                metadata.put("isGroup", current.isGroup());
+                metadata.put("groupPresent", notification.getGroup() != null);
+                metadata.put("publicVersionPresent", notification.publicVersion != null);
+                metadata.put("contentIntentPresent", notification.contentIntent != null);
+                CharSequence title = notification.extras.getCharSequence(Notification.EXTRA_TITLE, "");
+                metadata.put("ownTitleMatches", "Pairing request".contentEquals(title == null ? "" : title));
+                String body = notification.extras.getString(Notification.EXTRA_TEXT, "");
+                metadata.put("ownBodyContainsSyntheticPeerName", body.contains(peerName));
+                metadata.put("ownBodyContainsSyntheticPeerId", body.contains(peerId));
+            }
+            metadata.put("observation", "complete");
+        } catch (Exception error) {
+            try {
+                metadata.put("observation", "UNKNOWN");
+                metadata.put("errorClass", safeMetadata(error.getClass().getSimpleName()));
+            } catch (Exception ignored) { /* JSONObject contains only safe primitive metadata. */ }
+        }
+        Log.i(TAG, "own-eligibility nonce=" + nonce + " stage=" + stage + " metadata=" + metadata);
+    }
+
+    // Only these literal resource identifiers enter the aggregate output. Exploratory
+    // SystemUI IDs are presence probes, not assumed guest structure or selectors.
+    private static final String[] CENSUS_IDS = {
+        "com.android.systemui:id/legacy_window_root",
+        "android:id/notification_header", "android:id/notification_top_line",
+        "android:id/notification_main_column", "android:id/notification_headerless_view_row",
+        "android:id/notification_headerless_view_column", "android:id/app_name_text",
+        "android:id/title", "android:id/text", "android:id/big_text",
+        "android:id/expand_button", "android:id/expand_button_touch_container",
+        "com.android.systemui:id/notification_stack_scroller",
+        "com.android.systemui:id/notification_panel",
+        "com.android.systemui:id/notification_container_parent",
+        "com.android.systemui:id/notification_children_container"
+    };
+
+    private interface CensusRead<T> { T read(); }
+
+    private static final class CensusBudget {
+        final long end;
+        int visited;
+        boolean timeCapped, nodeCapped, depthCapped, childCapped;
+        CensusBudget(long rowEnd) { end = Math.min(rowEnd, SystemClock.uptimeMillis() + 100); }
+        void check() {
+            if (SystemClock.uptimeMillis() >= end) {
+                timeCapped = true;
+                throw new CensusLimit();
+            }
+        }
+        <T> T read(CensusRead<T> operation) {
+            check();
+            T value = operation.read();
+            // A framework call cannot be interrupted by this guard. If it returns
+            // after the shared deadline, its result cannot establish completeness.
+            try {
+                check();
+                return value;
+            } catch (CensusLimit limit) {
+                if (value instanceof AccessibilityNodeInfo) ((AccessibilityNodeInfo) value).recycle();
+                throw limit;
+            }
+        }
+    }
+
+    private static final class CensusLimit extends RuntimeException {}
+
+    private static int censusId(String id) {
+        for (int index = 0; index < CENSUS_IDS.length; index++) if (CENSUS_IDS[index].equals(id)) return index;
+        return -1;
+    }
+
+    private JSONObject censusNodeMetadata(AccessibilityNodeInfo node, CensusBudget budget) throws Exception {
+        JSONObject metadata = new JSONObject();
+        String id = budget.read(node::getViewIdResourceName);
+        metadata.put("resourceId", censusId(id) < 0 ? "<other>" : id);
+        String packageName = String.valueOf(budget.read(node::getPackageName));
+        metadata.put("package", packageName.equals("com.android.systemui") || packageName.equals("android")
+            || packageName.equals("com.clipp.app.acceptance") ? packageName : "<other>");
+        String className = String.valueOf(budget.read(node::getClassName));
+        metadata.put("class", className.startsWith("android.") || className.startsWith("com.android.systemui.")
+            || className.startsWith("com.android.internal.") ? safeMetadata(className) : "<other>");
+        metadata.put("visible", budget.read(node::isVisibleToUser));
+        metadata.put("enabled", budget.read(node::isEnabled));
+        metadata.put("clickable", budget.read(node::isClickable));
+        metadata.put("actionMask", budget.read(node::getActions));
+        return metadata;
+    }
+
+    private void visitCensusNode(AccessibilityNodeInfo node, int depth, String ownPackage,
+            CensusBudget budget, int[][] counts, List<AccessibilityNodeInfo> path,
+            JSONArray ownedChains, int[] comparisons) throws Exception {
+        budget.check();
+        if (budget.visited == 128) { budget.nodeCapped = true; throw new CensusLimit(); }
+        budget.visited++;
+        path.add(node);
+        try {
+            String id = budget.read(node::getViewIdResourceName);
+            int known = censusId(id);
+            String packageName = String.valueOf(budget.read(node::getPackageName));
+            boolean own = ownPackage.equals(packageName);
+            if (known >= 0) {
+                counts[known][0]++;
+                if (budget.read(node::isVisibleToUser)) counts[known][1]++;
+                if (budget.read(node::isEnabled)) counts[known][2]++;
+                if (budget.read(node::isClickable)) counts[known][3]++;
+            }
+            boolean ownAnchor = own && known >= 0;
+            if (ownAnchor) comparisons[4]++;
+            if ("android:id/app_name_text".equals(id)) {
+                // Compare the fixed app-header field, never log a label or description.
+                CharSequence label = budget.read(node::getText);
+                if ("Clipp".contentEquals(label == null ? "" : label)) comparisons[0]++;
+            }
+            if ("android:id/title".equals(id)) {
+                CharSequence title = budget.read(node::getText);
+                if ("Pairing request".contentEquals(title == null ? "" : title)) comparisons[1]++;
+            }
+            if (own && ("android:id/text".equals(id) || "android:id/big_text".equals(id))) {
+                CharSequence value = budget.read(node::getText);
+                comparisons[5]++;
+                String text = value == null ? "" : value.toString();
+                if (text.contains(peerName)) comparisons[2]++;
+                if (text.contains(peerId)) comparisons[3]++;
+            }
+            if (ownAnchor && ownedChains.length() < 4) {
+                JSONArray chain = new JSONArray();
+                for (int index = path.size() - 1; index >= Math.max(0, path.size() - 6); index--) {
+                    chain.put(censusNodeMetadata(path.get(index), budget));
+                }
+                ownedChains.put(chain);
+            }
+            int children = budget.read(node::getChildCount);
+            if (depth == 10) { if (children > 0) budget.depthCapped = true; return; }
+            if (children > 16) budget.childCapped = true;
+            for (int index = 0; index < Math.min(16, children); index++) {
+                if (budget.visited == 128) { budget.nodeCapped = true; throw new CensusLimit(); }
+                final int childIndex = index;
+                AccessibilityNodeInfo child = budget.read(() -> node.getChild(childIndex));
+                if (child != null) try {
+                    visitCensusNode(child, depth + 1, ownPackage, budget, counts, path, ownedChains, comparisons);
+                } finally {
+                    // Always release acquired nodes, even after the observation deadline.
+                    child.recycle();
+                }
+            }
+        } finally {
+            path.remove(path.size() - 1);
+        }
+    }
+
+    private void logSystemUiCensus(AccessibilityNodeInfo root, long rowEnd, String stage) {
+        CensusBudget budget = new CensusBudget(rowEnd);
+        int[][] counts = new int[CENSUS_IDS.length][4];
+        JSONArray ownedChains = new JSONArray();
+        int[] comparisons = new int[6];
+        String errorClass = "none";
+        try {
+            Context context = budget.read(instrumentation::getTargetContext);
+            String ownPackage = budget.read(context::getPackageName);
+            visitCensusNode(root, 0, ownPackage, budget, counts, new ArrayList<>(), ownedChains, comparisons);
+        } catch (CensusLimit limit) {
+            // Bounds are diagnostic UNKNOWN, never evidence of an absent owned row.
+        } catch (Exception error) {
+            errorClass = safeMetadata(error.getClass().getSimpleName());
+        }
+        Log.i(TAG, "systemui-census nonce=" + nonce + " stage=" + stage
+            + " observation=" + (budget.timeCapped || budget.nodeCapped || budget.depthCapped
+                || budget.childCapped || !"none".equals(errorClass) ? "UNKNOWN" : "complete")
+            + " visited=" + budget.visited + " timeCapped=" + budget.timeCapped
+            + " nodeCapped=" + budget.nodeCapped + " depthCapped=" + budget.depthCapped
+            + " childCapped=" + budget.childCapped + " errorClass=" + errorClass
+            + " exactOwnLabelHeaders=" + comparisons[0] + " exactRequestTitleNodes=" + comparisons[1]
+            + " ownBodyPeerNameNodes=" + comparisons[2] + " ownBodyPeerIdNodes=" + comparisons[3]
+            + " ownBodyComparedNodes=" + comparisons[5] + " ownedPackageAnchorCount=" + comparisons[4]
+            + " ownedAnchorChains=" + ownedChains.length() + " anchorDetailsCapped=" + (comparisons[4] > 4));
+        for (int index = 0; index < CENSUS_IDS.length; index++) {
+            Log.i(TAG, "systemui-container nonce=" + nonce + " stage=" + stage + " id=" + CENSUS_IDS[index]
+                + " count=" + counts[index][0] + " visible=" + counts[index][1]
+                + " enabled=" + counts[index][2] + " clickable=" + counts[index][3]);
+        }
+        for (int index = 0; index < ownedChains.length(); index++) {
+            Log.i(TAG, "systemui-owned-anchor nonce=" + nonce + " stage=" + stage
+                + " anchorIndex=" + index + " metadata=" + ownedChains.optJSONArray(index));
+        }
+    }
+
     private void tapActualPeerNotification() {
         long end = SystemClock.uptimeMillis() + 5000;
         int emitted = 0;
+        int censusCount = 0;
         String previous = null;
         String latest = "{\"unobserved\":true}";
         do {
@@ -298,12 +538,20 @@ public final class NotificationRequestsTest {
                         }
                     }
                 }
+                // Passive reads follow the original eligible-click path and share its
+                // deadline; there is no expansion, alternative selector or extra wait.
+                if (systemUi && (censusCount == 0 || (censusCount == 1 && end - SystemClock.uptimeMillis() <= 150))) {
+                    logSystemUiCensus(root, end, censusCount == 0 ? "first-systemui" : "last-available");
+                    censusCount++;
+                }
             } finally {
                 for (AccessibilityNodeInfo text : matches) text.recycle();
                 if (root != null) root.recycle();
             }
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < end);
+        if (censusCount < 2) Log.i(TAG, "systemui-census nonce=" + nonce
+            + " stage=final-failure observation=UNKNOWN reason=no-remaining-row-budget snapshots=" + censusCount);
         logPeerRowSnapshot("final-failure", latest);
         throw new AssertionError("Actual visible SystemUI peer notification row required");
     }
