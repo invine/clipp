@@ -2000,13 +2000,13 @@ html[data-host-geometry="android"] .android-host {
 }
 .workspace-controls,
 .workspace-navigation {
-  display: flex;
-  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   min-width: 0;
 }
 .workspace-controls {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
 }
 .workspace-controls .search-field {
@@ -2016,8 +2016,11 @@ html[data-host-geometry="android"] .android-host {
 .workspace-controls .send-control {
   flex: 0 1 auto;
 }
+.workspace-navigation {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+}
 .workspace-navigation button {
-  flex: 1 1 auto;
   padding: 0.5rem;
   border: 1px solid var(--clipp-border);
   border-radius: 0.5rem;

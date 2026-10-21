@@ -7,12 +7,16 @@ import {
   writeFile,
   readFile,
   access,
+  realpath,
+  stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { resolve, join } from "node:path";
+import { resolve, join, isAbsolute } from "node:path";
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { checkNavigationTargetStability } from "./navigation-target-stability.mjs";
 const measureNativeControl = (element, profile) => {
   const rect = element.getBoundingClientRect();
   const cssWidth = document.documentElement.getBoundingClientRect().width;
@@ -29,7 +33,50 @@ const measureNativeControl = (element, profile) => {
     },
   };
 };
-const repo = fileURLToPath(new URL("../..", import.meta.url));
+const harnessRoot = await realpath(
+  fileURLToPath(new URL("../..", import.meta.url))
+);
+const sourceRootArgs = process.argv
+  .slice(2)
+  .filter((value) => value.startsWith("--source-root"));
+assert.ok(sourceRootArgs.length <= 1, "at most one local source-root override");
+let repo = harnessRoot;
+if (sourceRootArgs.length) {
+  assert.match(sourceRootArgs[0], /^--source-root=.+$/);
+  const requestedRoot = sourceRootArgs[0].slice("--source-root=".length);
+  assert.ok(
+    isAbsolute(requestedRoot),
+    "source-root must be an absolute local worktree path"
+  );
+  repo = await realpath(requestedRoot);
+  assert.ok((await stat(repo)).isDirectory());
+  await access(join(repo, ".git"));
+  const git = spawnSync("git", ["-C", repo, "rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+    timeout: 5000,
+    maxBuffer: 16384,
+  });
+  assert.equal(
+    git.status,
+    0,
+    "source-root must be a readable local Git worktree"
+  );
+  assert.equal(
+    await realpath(git.stdout.trim()),
+    repo,
+    "source-root must be the worktree root"
+  );
+  for (const file of [
+    "packages/ui/src/ClipboardApp.tsx",
+    "packages/ui/src/uiSession.ts",
+    "packages/ui/src/styles.css",
+    "packages/ui/src/host.css",
+  ])
+    assert.ok(
+      (await stat(join(repo, file))).isFile(),
+      `required source file: ${file}`
+    );
+}
 const out = resolve(process.argv[2]);
 const host =
   process.argv.find((value) => value.startsWith("--host="))?.split("=")[1] ??
@@ -40,6 +87,10 @@ const hostFile =
     ? "apps/extension/src/popup-host.css"
     : `apps/${host}/src/${host}-host.css`;
 const hostClass = host === "chrome" ? "popup-host" : `${host}-host`;
+assert.ok(
+  (await stat(join(repo, hostFile))).isFile(),
+  "selected host stylesheet required"
+);
 // popup.tsx owns an inline full-size wrapper; other hosts supply it in host CSS.
 const hostSizing =
   host === "chrome" ? 'style={{width:"100%",height:"100%"}}' : "";
@@ -59,6 +110,8 @@ await build({
 const profile = await mkdtemp(join(tmpdir(), "clipp-navigation-fixture-"));
 const report = {
   nativeHost: false,
+  sourceRoot: repo,
+  harnessRoot,
   renderedHostStyles: host,
   sourceSeam: "actual ClipboardApp + provided UiSession + TaskDialog",
   clipboard: "memory boundary before app source",
@@ -70,6 +123,8 @@ const report = {
   sourceHashes: Object.fromEntries(
     await Promise.all(
       [
+        "tests/harness/workspace-navigation.mjs",
+        "tests/harness/navigation-target-stability.mjs",
         "packages/ui/src/ClipboardApp.tsx",
         "packages/ui/src/TaskDialog.tsx",
         "packages/ui/src/sessionFocus.ts",
@@ -89,7 +144,11 @@ const report = {
       ].map(async (file) => [
         file,
         createHash("sha256")
-          .update(await readFile(join(repo, file)))
+          .update(
+            await readFile(
+              join(file.startsWith("tests/harness/") ? harnessRoot : repo, file)
+            )
+          )
           .digest("hex"),
       ])
     )
@@ -135,31 +194,35 @@ try {
   await page.addScriptTag({ path: join(out, "consumer.js") });
   const nav = page.getByRole("navigation", { name: "Clipp destinations" });
   await nav.waitFor({ timeout: 3000 });
-  for (const name of ["History", "Devices", "Requests", "Settings"])
+  if (process.argv.includes("--navigation-target-stability")) {
+    await checkNavigationTargetStability({ page, nav, report, host });
+  } else {
+    for (const name of ["History", "Devices", "Requests", "Settings"])
+      assert.equal(
+        await nav
+          .getByRole("button", { name: new RegExp("^" + name) })
+          .isVisible(),
+        true,
+        name + " navigation reachable at exact boundary"
+      );
     assert.equal(
-      await nav
-        .getByRole("button", { name: new RegExp("^" + name) })
-        .isVisible(),
-      true,
-      name + " navigation reachable at exact boundary"
+      await page.getByLabel("Search history", { exact: true }).isVisible(),
+      true
     );
-  assert.equal(
-    await page.getByLabel("Search history", { exact: true }).isVisible(),
-    true
-  );
-  await nav.getByRole("button", { name: /^Requests/ }).click();
-  await page.getByRole("button", { name: "Accept", exact: true }).click();
-  await page.waitForFunction(() =>
-    window.fixtureActions.some((value) => value.action === "accept")
-  );
-  assert.equal(
-    await page.getByText("No pending requests.", { exact: true }).isVisible(),
-    true
-  );
-  report.cases.push({
-    label: `${host} initial Requests navigation and actual approval callback`,
-    passed: true,
-  });
+    await nav.getByRole("button", { name: /^Requests/ }).click();
+    await page.getByRole("button", { name: "Accept", exact: true }).click();
+    await page.waitForFunction(() =>
+      window.fixtureActions.some((value) => value.action === "accept")
+    );
+    assert.equal(
+      await page.getByText("No pending requests.", { exact: true }).isVisible(),
+      true
+    );
+    report.cases.push({
+      label: `${host} initial Requests navigation and actual approval callback`,
+      passed: true,
+    });
+  }
   if (process.argv.includes("--auto-sync-recovery")) {
     const query = page.getByLabel("Search history", { exact: true });
     await query.fill("  recovery query  ");
@@ -689,6 +752,17 @@ try {
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "100%";
     });
+    await page.waitForFunction(
+      () => {
+        const root = document.querySelector(".app-shell");
+        return (
+          root.classList.contains("workspace-narrow") &&
+          !root.classList.contains("workspace-cramped")
+        );
+      },
+      null,
+      { timeout: 3000 }
+    );
     await nav.getByRole("button", { name: "History", exact: true }).click();
     const last = page
       .locator(".history-card")
@@ -708,8 +782,13 @@ try {
         ];
         const last = elements.at(-1);
         const rect = last.getBoundingClientRect();
+        const root = document.querySelector(".app-shell");
         return (
-          document.activeElement === last && rect.top >= 0 && rect.bottom <= 350
+          root.classList.contains("workspace-wide") &&
+          root.classList.contains("workspace-cramped") &&
+          document.activeElement === last &&
+          rect.top >= 0 &&
+          rect.bottom <= 350
         );
       },
       {},
@@ -722,30 +801,99 @@ try {
     });
     await nav.getByRole("button", { name: "History", exact: true }).click();
     await last.scrollIntoViewIfNeeded();
-    const visibleText = await page.locator(".history-card").evaluateAll(
-      (elements) =>
-        elements
-          .find((element) => {
-            const rect = element.getBoundingClientRect();
-            return rect.bottom > 0 && rect.top < innerHeight;
-          })
-          .querySelector(".history-text").textContent
-    );
-    await page.setViewportSize({ width: 800, height: 800 });
+    // This journey starts after the real scroll has reached its public session
+    // owner. Resizing while scroll publication is pending is a separate case.
     await page.waitForFunction(
-      (text) => {
-        const item = [...document.querySelectorAll(".history-text")].find(
-          (element) => element.textContent === text
+      () => {
+        const root = document.querySelector(".app-shell");
+        const top = root.getBoundingClientRect().top;
+        const firstVisible = [
+          ...document.querySelectorAll("[data-clip-id]"),
+        ].find((element) => element.getBoundingClientRect().bottom > top);
+        const snapshot = window.fixtureSession.getSnapshot();
+        return (
+          root.classList.contains("workspace-wide") &&
+          root.classList.contains("workspace-cramped") &&
+          Math.abs(
+            (snapshot.scroll["workspace:history"] ?? 0) - root.scrollTop
+          ) < 1 &&
+          snapshot.historyAnchor?.clipId === firstVisible?.dataset.clipId
         );
-        const rect = item.getBoundingClientRect();
-        const pane = document
-          .querySelector(".content-pane")
-          .getBoundingClientRect();
-        return rect.bottom > pane.top && rect.top < pane.bottom;
       },
-      visibleText,
+      null,
       { timeout: 3000 }
     );
+    const measureReflow = (elements, expectedText) => {
+      const item = elements.find((element) => {
+        if (expectedText !== undefined)
+          return (
+            element.querySelector(".history-text").textContent === expectedText
+          );
+        const rect = element.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < innerHeight;
+      });
+      const snapshot = window.fixtureSession.getSnapshot();
+      const root = document.querySelector(".app-shell");
+      const pane = document.querySelector(".content-pane");
+      const measure = (element) => ({
+        rect: element.getBoundingClientRect().toJSON(),
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      });
+      return {
+        atPerformanceMs: performance.now(),
+        text: item?.querySelector(".history-text").textContent,
+        clipId: item?.dataset.clipId,
+        item: item ? measure(item) : null,
+        root: { ...measure(root), classes: root.className },
+        pane: measure(pane),
+        activeFocusKey: document.activeElement?.dataset.sessionFocus ?? null,
+        session: {
+          historyAnchor: snapshot.historyAnchor,
+          scroll: snapshot.scroll,
+          focusKey: snapshot.focusKey,
+          destination: snapshot.destination,
+        },
+      };
+    };
+    // Capture the pre-resize observation in the existing browser task, avoiding
+    // another protocol round-trip that could change scroll-event timing.
+    const beforeReflow = await page
+      .locator(".history-card")
+      .evaluateAll(measureReflow);
+    const visibleText = beforeReflow.text;
+    report.historyReflowObservation = { before: beforeReflow };
+    await page.setViewportSize({ width: 800, height: 800 });
+    try {
+      await page.waitForFunction(
+        (text) => {
+          const item = [...document.querySelectorAll(".history-text")].find(
+            (element) => element.textContent === text
+          );
+          const rect = item.getBoundingClientRect();
+          const root = document.querySelector(".app-shell");
+          const pane = document
+            .querySelector(".content-pane")
+            .getBoundingClientRect();
+          return (
+            root.classList.contains("workspace-narrow") &&
+            !root.classList.contains("workspace-cramped") &&
+            pane.height > 0 &&
+            pane.top >= 0 &&
+            pane.bottom <= innerHeight + 0.5 &&
+            rect.bottom > pane.top &&
+            rect.top < pane.bottom
+          );
+        },
+        visibleText,
+        { timeout: 3000 }
+      );
+    } finally {
+      report.historyReflowObservation.after = await page
+        .locator(".history-card")
+        .evaluateAll(measureReflow, visibleText);
+    }
     report.cases.push({
       label:
         "scrolling without selecting a Clip retains the same visible logical History item across cramped → ordinary reflow",
