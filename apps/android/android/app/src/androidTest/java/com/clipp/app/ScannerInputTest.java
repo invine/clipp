@@ -50,6 +50,8 @@ import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Rule;
+import org.junit.rules.TestName;
 import org.junit.runner.RunWith;
 import org.junit.runners.model.MultipleFailureException;
 
@@ -75,6 +77,8 @@ public final class ScannerInputTest {
     private Bundle arguments;
     private CameraWitness camera;
     private String nonce;
+    private ScannerPublicWitness publicWitness;
+    @Rule public TestName testName = new TestName();
 
     @Before
     public void requireRootAssignedIsolatedPackagedCamera() throws Exception {
@@ -100,11 +104,15 @@ public final class ScannerInputTest {
         logStage("cameraWitness.available.enter");
         camera.awaitAllAvailable();
         logStage("cameraWitness.available.exit");
+        String diagnostic = arguments.getString("scannerPublicWitness", "false");
+        assertTrue("Explicit diagnostic opt-in must be true or false", "true".equals(diagnostic) || "false".equals(diagnostic));
+        if ("true".equals(diagnostic)) publicWitness = new ScannerPublicWitness(instrumentation, nonce, feed, testName.getMethodName());
         scenario = ActivityScenario.launch(MainActivity.class);
         web = new NativePublicWebView(instrumentation, scenario);
         web.onActivity(activity -> originalWebView = activity.getBridge().getWebView());
         web.await("packaged workspace ready", "document.querySelector('nav[aria-label=\"Clipp destinations\"]') !== null");
         assertEquals("https://localhost/", web.evaluate("location.origin + '/'"));
+        if (publicWitness != null) publicWitness.install(web);
         Log.i(TAG, "declaredImageSha256=" + feed + ";rootNonce=" + nonce);
     }
 
@@ -112,6 +120,10 @@ public final class ScannerInputTest {
     public void closeOnlyAfterLiveAssertions() throws Exception {
         List<Throwable> failures = new ArrayList<>();
         logStage("after.enter");
+        if (publicWitness != null) {
+            try { publicWitness.finish(web); }
+            catch (Throwable error) { failures.add(error); }
+        }
         if (camera != null) {
             logStage("after.cameraClose.enter");
             try { camera.close(); }
@@ -332,6 +344,7 @@ public final class ScannerInputTest {
                         if (!node.isVisibleToUser() || !node.isEnabled()) continue;
                         Rect bounds = new Rect(); node.getBoundsInScreen(bounds);
                         assertFalse("Native permission button needs real bounds", bounds.isEmpty());
+                        logStage("permissionDeny.touch.enter");
                         long down = SystemClock.uptimeMillis();
                         for (int action : new int[] { MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP }) {
                             MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, bounds.exactCenterX(), bounds.exactCenterY(), 0);
@@ -340,6 +353,7 @@ public final class ScannerInputTest {
                             finally { event.recycle(); }
                             SystemClock.sleep(40);
                         }
+                        logStage("permissionDeny.touch.exit");
                         Log.i(TAG, "permissionDenial=actual-system-deny-control;actualSystemSelection=true");
                         return true;
                     }
