@@ -43,6 +43,8 @@ final class NativePublicWebView {
     private static final long UI_TIMEOUT_MS = 5_000;
     private String lastTouchTarget = "none";
     private String lastTouchSample = "none";
+    private long lastTouchSampleUptimeMs;
+    private long lastTouchSampleEpochMs;
     private String lastNativeTouchBefore = "none";
     private String lastNativeTouchAfter = "none";
     private String lastNativeTouchSettled = "none";
@@ -177,6 +179,8 @@ final class NativePublicWebView {
                 + " shell:document.querySelector('.app-shell')?.className,"
                 + " ready:!e.disabled && !e.closest('[inert], [hidden], [aria-hidden=\"true\"]') && r.width>0 && r.height>0 && x>0 && y>0 && x<innerWidth && y<innerHeight && !!hit && (hit===e || e.contains(hit))}; })()");
             lastTouchSample = sample;
+            lastTouchSampleUptimeMs = SystemClock.uptimeMillis();
+            lastTouchSampleEpochMs = System.currentTimeMillis();
             JSONObject bounds = new JSONObject(sample);
             long now = SystemClock.uptimeMillis();
             if (!bounds.optBoolean("ready") || !sample.equals(previous)) stableSince = now;
@@ -185,6 +189,16 @@ final class NativePublicWebView {
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < deadline);
         throw new AssertionError("Touch target did not settle: " + timeoutDiagnostics());
+    }
+
+    /** Read-only physical-gesture evidence; excludes generic DOM/content diagnostics. */
+    JSONObject touchTimelineDiagnostics() throws Exception {
+        JSONObject sample = "none".equals(lastTouchSample) ? new JSONObject() : new JSONObject(lastTouchSample);
+        return new JSONObject().put("sample", sample)
+            .put("sampleNativeUptimeMs", lastTouchSampleUptimeMs).put("sampleNativeEpochMs", lastTouchSampleEpochMs)
+            .put("dispatch", lastTouchDispatch).put("nativeBefore", lastNativeTouchBefore)
+            .put("nativeAfter", lastNativeTouchAfter).put("nativeSettled", lastNativeTouchSettled)
+            .put("readNativeUptimeMs", SystemClock.uptimeMillis()).put("readNativeEpochMs", System.currentTimeMillis());
     }
 
     String startupIssueDiagnostics() throws Exception {

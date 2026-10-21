@@ -96,6 +96,7 @@ public final class ResetOwningEntryInputTest {
     private int droppedTrace;
     private String previousTrace = "";
     private boolean cleanupComplete;
+    private String tapGuardReason = "none";
     private int journeyCreated;
     private int journeyDestroyed;
     private int retiredPublicReads;
@@ -472,9 +473,41 @@ public final class ResetOwningEntryInputTest {
     private void tap(String element) throws Exception {
         try { web.tap(element); }
         catch (Exception | AssertionError failure) {
-            // The generic helper's body diagnostics may include rendered content. This
-            // fixture reports only its bounded public progress, including on failure.
-            throw new AssertionError("Physical ordinary UI input unconfirmed: " + failure.getClass().getSimpleName());
+            // Classify only finite source guard literals. Helper timeout diagnostics
+            // may contain rendered content, so never expose its message or cause chain.
+            tapGuardReason = safeTapGuardReason(failure);
+            throw new AssertionError("Physical ordinary UI input unconfirmed: " + failure.getClass().getSimpleName()
+                + ";guard=" + tapGuardReason);
+        }
+    }
+
+    private String safeTapGuardReason(Throwable failure) {
+        if (!(failure instanceof AssertionError)) return "unclassified";
+        String message = failure.getMessage();
+        if (message == null) return "unclassified";
+        switch (message) {
+            case "Target must be inside the visible web viewport": return "viewport-bounds";
+            case "Touch target must be inside the actual native WebView": return "native-webview-bounds";
+            case "Physical pointer requires the actual foreground app window": return "foreground-window";
+            case "Physical pointer requires the isolated app as active native window": return "isolated-active-window";
+            case "Bounded native observations must be requested off the UI thread": return "observation-off-ui-thread";
+            case "Native UI dispatch deadline expired": return "ui-dispatch-deadline";
+            case "Main Looper rejected native observation": return "ui-post-rejected";
+            case "Native UI observation interrupted": return "ui-observation-interrupted";
+            case "Native UI observation did not complete within its deadline": return "ui-observation-deadline";
+            case "Resolve native lifecycle ownership only on the UI thread": return "owner-ui-thread";
+            case "Native observation must retain its actual task owner": return "owner-task";
+            case "Actual Activity bridge required": return "activity-bridge";
+            case "Actual Activity-owned WebView required": return "activity-webview";
+            case "Public WebView result belongs to an obsolete Activity": return "obsolete-activity-result";
+            case "WebView evaluation timed out within shared UI/callback deadline": return "webview-evaluation-deadline";
+            case "WebView returned no evaluation result": return "webview-result-unavailable";
+            default:
+                // These two assertions append dynamic native dispatch diagnostics.
+                // Recognize the literal delimiter, but discard every suffix byte.
+                if (message.startsWith("Android must accept the one physical DOWN: ")) return "physical-down-not-accepted";
+                if (message.startsWith("Android must accept the one physical UP: ")) return "physical-up-not-accepted";
+                return "unclassified";
         }
     }
 
@@ -524,7 +557,7 @@ public final class ResetOwningEntryInputTest {
         if (nonce == null) return;
         try {
             JSONObject witness = new JSONObject().put("version", 1).put("nonce", nonce).put("phase", phase)
-                .put("outcome", result).put("failureClass", failureClass).put("pid", Process.myPid())
+                .put("outcome", result).put("failureClass", failureClass).put("tapGuardReason", tapGuardReason).put("pid", Process.myPid())
                 .put("manifestSha256", manifestSha256).put("indexSha256", indexSha256)
                 .put("publicProgress", lastProgress).put("progressTrace", progressTrace).put("droppedTrace", droppedTrace)
                 .put("journeyCreatedMainActivities", journeyCreated).put("journeyDestroyedMainActivities", journeyDestroyed)

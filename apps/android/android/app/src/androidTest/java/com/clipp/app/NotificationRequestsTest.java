@@ -10,6 +10,10 @@ import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructPollfd;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -21,6 +25,11 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Assume;
@@ -97,11 +106,13 @@ public final class NotificationRequestsTest {
         // then invokes only the peer's bounded public requestIncoming operation.
         Log.i(TAG, "awaiting-genuine-reverse-request nonce=" + nonce);
         StatusBarNotification posted = awaitOwnPeerNotification();
+        Log.i(TAG, "posted-metadata nonce=" + nonce + " package=" + safeMetadata(posted.getPackageName())
+            + " id=" + posted.getId() + " channel=" + safeMetadata(posted.getNotification().getChannelId()));
         assertEquals("Pairing channel, not continuity", "default", posted.getNotification().getChannelId());
         assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
         assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
             "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
-        try (ParcelFileDescriptor ignored = instrumentation.getUiAutomation().executeShellCommand("cmd statusbar expand-notifications")) {}
+        expandNotificationsWithCompletionWitness();
         tapActualPeerNotification();
         String card = "[...document.querySelectorAll('.pending-card')].find(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
         web.await("actual authoritative Requests after OS selection", "document.querySelector('h1')?.textContent === 'Requests' && !!(" + card + ") && !document.querySelector('[role=dialog][aria-modal=true]')");
@@ -124,23 +135,176 @@ public final class NotificationRequestsTest {
         throw new AssertionError("No actual OS notification for the genuine peer request");
     }
 
-    private void tapActualPeerNotification() {
-        long end = SystemClock.uptimeMillis() + 5000;
-        do {
-            AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
-            if (root != null && "com.android.systemui".equals(String.valueOf(root.getPackageName()))) {
-                for (AccessibilityNodeInfo text : root.findAccessibilityNodeInfosByText(peerName)) {
-                    AccessibilityNodeInfo row = text;
-                    while (row != null && !row.isClickable()) row = row.getParent();
-                    if (row != null && row.isVisibleToUser()) {
-                        assertTrue("Actual SystemUI notification click must be accepted",
-                            row.performAction(AccessibilityNodeInfo.ACTION_CLICK));
-                        return;
+    // Observe only this existing shell action's completion. No output body is logged,
+    // and completion does not establish that SystemUI exposed or selected a row.
+    private void expandNotificationsWithCompletionWitness() {
+        final int cap = 4096;
+        long start = SystemClock.uptimeMillis();
+        boolean eof = false;
+        String errorClass = "none";
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try {
+            // UiAutomation executes a command via Runtime.exec(String), which does not
+            // interpret shell quoting. API31's public stdin pipe carries this fixed script.
+            ParcelFileDescriptor[] pipes = instrumentation.getUiAutomation().executeShellCommandRw("sh");
+            try (ParcelFileDescriptor descriptor = pipes[0]; ParcelFileDescriptor input = pipes[1]) {
+                byte[] script = ("cmd statusbar expand-notifications 2>&1\nresult=$?\n"
+                    + "printf '\\nCLIPP_NOTIFICATION16_EXPAND_EXIT=%s\\n' \"$result\"\nexit\n")
+                    .getBytes(StandardCharsets.UTF_8);
+                if (Os.write(input.getFileDescriptor(), script, 0, script.length) != script.length) {
+                    throw new java.io.IOException("Incomplete fixed diagnostic script write");
+                }
+                input.close();
+                StructPollfd poll = new StructPollfd();
+                poll.fd = descriptor.getFileDescriptor();
+                poll.events = (short) (OsConstants.POLLIN | OsConstants.POLLHUP | OsConstants.POLLERR);
+                byte[] buffer = new byte[512];
+                while (SystemClock.uptimeMillis() - start < 2000 && bytes.size() < cap) {
+                    try {
+                        int remaining = (int) Math.max(1, 2000 - (SystemClock.uptimeMillis() - start));
+                        if (Os.poll(new StructPollfd[] { poll }, Math.min(100, remaining)) == 0) continue;
+                        int count = Os.read(poll.fd, buffer, 0, Math.min(buffer.length, cap - bytes.size()));
+                        if (count == 0) { eof = true; break; }
+                        bytes.write(buffer, 0, count);
+                    } catch (ErrnoException error) {
+                        if (error.errno != OsConstants.EINTR && error.errno != OsConstants.EAGAIN) throw error;
                     }
                 }
             }
+        } catch (Exception error) {
+            errorClass = safeMetadata(error.getClass().getSimpleName());
+        }
+        String status = "unobserved";
+        Matcher marker = Pattern.compile("(?:^|\\n)CLIPP_NOTIFICATION16_EXPAND_EXIT=([0-9]{1,3})(?:\\n|$)")
+            .matcher(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+        if (marker.find()) status = marker.group(1);
+        String digest = "unavailable";
+        try {
+            StringBuilder hex = new StringBuilder();
+            for (byte value : MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray())) {
+                hex.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+            }
+            digest = hex.toString();
+        } catch (Exception error) {
+            errorClass = safeMetadata(error.getClass().getSimpleName());
+        }
+        Log.i(TAG, "expand-completion nonce=" + nonce + " eof=" + eof + " status=" + status
+            + " bytes=" + bytes.size() + " capped=" + (bytes.size() == cap)
+            + " elapsedMs=" + (SystemClock.uptimeMillis() - start) + " sha256=" + digest
+            + " errorClass=" + errorClass);
+    }
+
+    private static String safeMetadata(CharSequence value) {
+        if (value == null) return "<null>";
+        String text = value.toString();
+        return text.length() <= 160 && text.matches("[A-Za-z0-9_.$:/-]*") ? text : "<redacted>";
+    }
+
+    private JSONObject nodeMetadata(AccessibilityNodeInfo node) throws Exception {
+        JSONObject result = new JSONObject();
+        result.put("package", safeMetadata(node.getPackageName()));
+        result.put("class", safeMetadata(node.getClassName()));
+        result.put("resourceId", safeMetadata(node.getViewIdResourceName()));
+        result.put("visible", node.isVisibleToUser());
+        result.put("clickable", node.isClickable());
+        result.put("enabled", node.isEnabled());
+        return result;
+    }
+
+    private String peerRowMetadata(AccessibilityNodeInfo root, List<AccessibilityNodeInfo> matches) {
+        try {
+            JSONObject snapshot = new JSONObject();
+            snapshot.put("root", root == null ? JSONObject.NULL : nodeMetadata(root));
+            boolean queried = root != null && "com.android.systemui".equals(String.valueOf(root.getPackageName()));
+            snapshot.put("peerNameQueryPerformed", queried);
+            snapshot.put("peerNameMatchCount", queried ? matches.size() : JSONObject.NULL);
+            JSONArray nodes = new JSONArray();
+            for (int index = 0; index < Math.min(4, matches.size()); index++) {
+                JSONArray chain = new JSONArray();
+                // Copy so diagnostics own every traversed node independently of click selection.
+                AccessibilityNodeInfo node = AccessibilityNodeInfo.obtain(matches.get(index));
+                try {
+                    for (int depth = 0; node != null && depth < 6; depth++) {
+                        chain.put(nodeMetadata(node));
+                        AccessibilityNodeInfo parent = depth < 5 ? node.getParent() : null;
+                        node.recycle();
+                        node = parent;
+                    }
+                } finally {
+                    if (node != null) node.recycle();
+                }
+                nodes.put(chain);
+            }
+            snapshot.put("matchingNodeParentChains", nodes);
+            return snapshot.toString();
+        } catch (Exception error) {
+            return "{\"diagnosticErrorClass\":\"" + safeMetadata(error.getClass().getSimpleName()) + "\"}";
+        }
+    }
+
+    private void logPeerRowSnapshot(String stage, String metadata) {
+        try {
+            JSONObject snapshot = new JSONObject(metadata);
+            JSONArray chains = snapshot.optJSONArray("matchingNodeParentChains");
+            snapshot.remove("matchingNodeParentChains");
+            Log.i(TAG, "peer-row-snapshot nonce=" + nonce + " stage=" + stage + " metadata=" + snapshot);
+            // Separate bounded lines avoid Android log-entry truncation. At most four
+            // match chains, each at most six metadata-only ancestors, per snapshot.
+            if (chains != null) for (int index = 0; index < chains.length(); index++) {
+                Log.i(TAG, "peer-row-chain nonce=" + nonce + " stage=" + stage
+                    + " matchIndex=" + index + " metadata=" + chains.getJSONArray(index));
+            }
+        } catch (Exception error) {
+            Log.i(TAG, "peer-row-snapshot nonce=" + nonce + " stage=" + stage
+                + " diagnosticErrorClass=" + safeMetadata(error.getClass().getSimpleName()));
+        }
+    }
+
+    private void tapActualPeerNotification() {
+        long end = SystemClock.uptimeMillis() + 5000;
+        int emitted = 0;
+        String previous = null;
+        String latest = "{\"unobserved\":true}";
+        do {
+            AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+            List<AccessibilityNodeInfo> matches = java.util.Collections.emptyList();
+            try {
+                boolean systemUi = root != null && "com.android.systemui".equals(String.valueOf(root.getPackageName()));
+                if (systemUi) matches = root.findAccessibilityNodeInfosByText(peerName);
+                latest = peerRowMetadata(root, matches);
+                // Reserve the fourth snapshot for the actual click attempt or final failure.
+                if (emitted < 3 && !latest.equals(previous)) {
+                    logPeerRowSnapshot("observing", latest);
+                    emitted++;
+                    previous = latest;
+                }
+                if (systemUi) {
+                    for (AccessibilityNodeInfo text : matches) {
+                        AccessibilityNodeInfo row = AccessibilityNodeInfo.obtain(text);
+                        try {
+                            while (row != null && !row.isClickable()) {
+                                AccessibilityNodeInfo parent = row.getParent();
+                                row.recycle();
+                                row = parent;
+                            }
+                            if (row != null && row.isVisibleToUser()) {
+                                logPeerRowSnapshot("single-click-attempt", latest);
+                                assertTrue("Actual SystemUI notification click must be accepted",
+                                    row.performAction(AccessibilityNodeInfo.ACTION_CLICK));
+                                return;
+                            }
+                        } finally {
+                            if (row != null) row.recycle();
+                        }
+                    }
+                }
+            } finally {
+                for (AccessibilityNodeInfo text : matches) text.recycle();
+                if (root != null) root.recycle();
+            }
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < end);
+        logPeerRowSnapshot("final-failure", latest);
         throw new AssertionError("Actual visible SystemUI peer notification row required");
     }
 }
