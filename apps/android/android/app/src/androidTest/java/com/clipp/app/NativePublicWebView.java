@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
 import android.app.Instrumentation;
+import android.app.UiAutomation;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,6 +13,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.webkit.WebView;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -28,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.runners.model.MultipleFailureException;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import org.json.JSONTokener;
 
 /** Public DOM location/witnessing plus physical Android input; never invokes a DOM action. */
@@ -49,6 +52,8 @@ final class NativePublicWebView {
     private String lastNativeTouchAfter = "none";
     private String lastNativeTouchSettled = "none";
     private String lastTouchDispatch = "none";
+    private UiAutomation ownedAutomation;
+    private JSONObject lastActiveWindowReadiness = new JSONObject();
 
     NativePublicWebView(Instrumentation instrumentation, ActivityScenario<MainActivity> scenario) {
         NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
@@ -74,6 +79,10 @@ final class NativePublicWebView {
     void tap(String element) throws Exception {
         NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
         lastTouchTarget = element;
+        lastTouchDispatch = "not-sent";
+        // Connect/observe accessibility before locating the final semantic target.
+        // This is an explicit native-window predicate, never a global-idle wait.
+        UiAutomation automation = awaitOwnedNativeWindow();
         await("native geometry and fonts ready", "document.documentElement.dataset.hostGeometry === 'android' && document.fonts.status === 'loaded'");
         await("touch target available", "!!(" + element + ")");
         // Scrolling only locates the public control; no click/focus/value is synthesized.
@@ -99,7 +108,7 @@ final class NativePublicWebView {
                 activity.hasWindowFocus() && activity.getLifecycle().getCurrentState() == androidx.lifecycle.Lifecycle.State.RESUMED);
             lastNativeTouchBefore = nativeTouchGeometry(activity, point);
         });
-        android.view.accessibility.AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        android.view.accessibility.AccessibilityNodeInfo root = automation.getRootInActiveWindow();
         assertTrue("Physical pointer requires the isolated app as active native window", root != null
             && instrumentation.getTargetContext().getPackageName().equals(String.valueOf(root.getPackageName())));
         long downTime = SystemClock.uptimeMillis();
@@ -112,7 +121,7 @@ final class NativePublicWebView {
             // Instrumentation.sendPointerSync can return while this host drops
             // the gesture's UP. Use genuine OS input with explicit acceptance,
             // guarded above to the actual isolated foreground app window.
-            boolean downAccepted = instrumentation.getUiAutomation().injectInputEvent(down, true);
+            boolean downAccepted = automation.injectInputEvent(down, true);
             long downReturned = SystemClock.uptimeMillis();
             String downTiming = ";transport=UiAutomation;downEventTime=" + downTime + ";downSent=" + downSent + ";downReturned=" + downReturned
                 + ";downAccepted=" + downAccepted;
@@ -129,7 +138,7 @@ final class NativePublicWebView {
             long upSent = SystemClock.uptimeMillis();
             lastTouchDispatch = "down-complete;up-sent" + downTiming + ";upEventTime=" + upTime + ";upSent=" + upSent;
             Log.i("ClippNativeInputStage", "tap.up.enter;uptimeMs=" + SystemClock.uptimeMillis());
-            boolean upAccepted = instrumentation.getUiAutomation().injectInputEvent(up, true);
+            boolean upAccepted = automation.injectInputEvent(up, true);
             Log.i("ClippNativeInputStage", "tap.up.exit;accepted=" + upAccepted + ";uptimeMs=" + SystemClock.uptimeMillis());
             lastTouchDispatch = "down-complete;up-complete" + downTiming + ";upEventTime=" + upTime
                 + ";upSent=" + upSent + ";upReturned=" + SystemClock.uptimeMillis()
@@ -145,6 +154,145 @@ final class NativePublicWebView {
         Log.i("ClippNativeInputStage", "tap.mainPost.enter;uptimeMs=" + SystemClock.uptimeMillis());
         onActivity(activity -> lastNativeTouchSettled = nativeTouchGeometry(activity, point));
         Log.i("ClippNativeInputStage", "tap.mainPost.exit;uptimeMs=" + SystemClock.uptimeMillis());
+    }
+
+    /** An owned foreground window is a semantic precondition, before DOM measurement.
+     * Instrumentation may lazily connect UiAutomation for 60s on API35. The
+     * parent waits only the shared 5s budget; a blocked observation worker is
+     * explicitly unfinished and must be retired by root-owned process cleanup.
+     */
+    private UiAutomation awaitOwnedNativeWindow() throws Exception {
+        long deadline = SystemClock.uptimeMillis() + UI_TIMEOUT_MS;
+        AtomicBoolean active = new AtomicBoolean(true);
+        CountDownLatch complete = new CountDownLatch(1);
+        WindowReadinessTrace trace = new WindowReadinessTrace(active, deadline);
+        JSONObject first = windowSample("not-observed", null, null);
+        onActivity(activity -> addNativeWindowState(first, activity), deadline);
+        trace.record(first);
+        UiAutomation cached = ownedAutomation;
+        Thread worker = new Thread(() -> {
+            try {
+                if (!observing(active, deadline)) return;
+                UiAutomation automation = cached != null ? cached : instrumentation.getUiAutomation();
+                if (!observing(active, deadline)) return;
+                if (automation == null) {
+                    JSONObject sample = windowSample("automation-unavailable", null, null);
+                    if (!observing(active, deadline)) return;
+                    onActivity(activity -> { if (observing(active, deadline)) addNativeWindowState(sample, activity); }, deadline);
+                    trace.record(sample);
+                    return;
+                }
+                while (observing(active, deadline)) {
+                    AccessibilityNodeInfo root = automation.getRootInActiveWindow();
+                    JSONObject sample;
+                    try {
+                        if (!observing(active, deadline)) return;
+                        sample = windowSample(root == null ? "null" : "present",
+                            root == null ? null : root.getPackageName(), root == null ? null : root.getClassName());
+                    } finally { if (root != null) root.recycle(); }
+                    if (!observing(active, deadline)) return;
+                    onActivity(activity -> { if (observing(active, deadline)) addNativeWindowState(sample, activity); }, deadline);
+                    if (!observing(active, deadline)) return;
+                    trace.record(sample);
+                    if (instrumentation.getTargetContext().getPackageName().equals(sample.optString("rootPackage"))
+                        && sample.optBoolean("focused") && "RESUMED".equals(sample.optString("lifecycle"))) {
+                        trace.markReady(automation);
+                        return;
+                    }
+                    // Poll only while the exact owned-window predicate is false.
+                    long remaining = deadline - SystemClock.uptimeMillis();
+                    if (remaining > 0) Thread.sleep(Math.min(50, remaining));
+                }
+            } catch (Throwable error) {
+                trace.markFailure(error);
+                if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+            } finally { complete.countDown(); }
+        }, "clipp-owned-window-observer");
+        worker.setDaemon(true);
+        worker.start();
+        boolean completed = false;
+        try {
+            completed = complete.await(Math.max(0, deadline - SystemClock.uptimeMillis()), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Owned active-window observation interrupted", error);
+        } finally {
+            lastActiveWindowReadiness = trace.finish(completed, worker.isAlive());
+            if (!completed) worker.interrupt();
+            Log.i("ClippNativeInputStage", "ownedWindow=" + lastActiveWindowReadiness);
+        }
+        assertTrue("Owned active-window observer unfinished after shared 5s budget: " + lastActiveWindowReadiness, completed);
+        rethrow(trace.failure);
+        assertTrue("Owned native-window readiness deadline expired: " + lastActiveWindowReadiness,
+            SystemClock.uptimeMillis() <= deadline);
+        assertNotNull("Owned focused RESUMED app root not observed: " + lastActiveWindowReadiness, trace.ready);
+        ownedAutomation = trace.ready;
+        return ownedAutomation;
+    }
+
+    private static boolean observing(AtomicBoolean active, long deadline) {
+        return active.get() && SystemClock.uptimeMillis() < deadline;
+    }
+
+    private static JSONObject windowSample(String status, CharSequence packageName, CharSequence className) throws Exception {
+        return new JSONObject().put("rootStatus", status).put("rootPackage", boundedMetadata(packageName))
+            .put("rootClass", boundedMetadata(className)).put("uptimeMs", SystemClock.uptimeMillis())
+            .put("epochMs", System.currentTimeMillis());
+    }
+
+    private static Object boundedMetadata(CharSequence value) {
+        return value == null ? JSONObject.NULL : value.subSequence(0, Math.min(128, value.length())).toString();
+    }
+
+    private static void addNativeWindowState(JSONObject sample, MainActivity activity) {
+        try {
+            sample.put("focused", activity.hasWindowFocus()).put("lifecycle", activity.getLifecycle().getCurrentState().name())
+                .put("nativeObservedUptimeMs", SystemClock.uptimeMillis());
+        } catch (Exception error) { throw new AssertionError("Owned native-window metadata unavailable", error); }
+    }
+
+    /** First/change/final metadata only; no accessibility text, children or hierarchy. */
+    private static final class WindowReadinessTrace {
+        private final AtomicBoolean active;
+        private final long deadline;
+        private UiAutomation ready;
+        private Throwable failure;
+        private final JSONArray samples = new JSONArray();
+        private JSONObject last;
+        private String previous;
+        private int dropped;
+
+        WindowReadinessTrace(AtomicBoolean active, long deadline) { this.active = active; this.deadline = deadline; }
+
+        synchronized void markReady(UiAutomation automation) {
+            if (observing(active, deadline)) ready = automation;
+        }
+
+        synchronized void markFailure(Throwable error) {
+            if (observing(active, deadline)) failure = error;
+        }
+
+        synchronized void record(JSONObject sample) throws Exception {
+            if (!observing(active, deadline)) return;
+            String signature = new JSONObject().put("rootStatus", sample.opt("rootStatus"))
+                .put("rootPackage", sample.opt("rootPackage")).put("rootClass", sample.opt("rootClass"))
+                .put("focused", sample.opt("focused")).put("lifecycle", sample.opt("lifecycle")).toString();
+            JSONObject copy = new JSONObject(sample.toString());
+            if (!observing(active, deadline)) return;
+            last = copy;
+            if (signature.equals(previous)) return;
+            previous = signature;
+            if (samples.length() < 15) samples.put(new JSONObject(sample.toString()).put("event", samples.length() == 0 ? "first" : "change"));
+            else dropped++;
+        }
+
+        synchronized JSONObject finish(boolean completed, boolean workerAlive) throws Exception {
+            active.set(false);
+            if (last != null) samples.put(new JSONObject(last.toString()).put("event", "final"));
+            return new JSONObject().put("samples", samples).put("droppedChanges", dropped)
+                .put("workerCompleted", completed).put("workerUnfinished", !completed).put("workerAliveAtReturn", workerAlive)
+                .put("deadlineUptimeMs", deadline).put("finishedUptimeMs", SystemClock.uptimeMillis());
+        }
     }
 
     /** Failure diagnostics only: read actual native geometry without changing input. */
@@ -195,6 +343,7 @@ final class NativePublicWebView {
     JSONObject touchTimelineDiagnostics() throws Exception {
         JSONObject sample = "none".equals(lastTouchSample) ? new JSONObject() : new JSONObject(lastTouchSample);
         return new JSONObject().put("sample", sample)
+            .put("activeWindowReadiness", lastActiveWindowReadiness)
             .put("sampleNativeUptimeMs", lastTouchSampleUptimeMs).put("sampleNativeEpochMs", lastTouchSampleEpochMs)
             .put("dispatch", lastTouchDispatch).put("nativeBefore", lastNativeTouchBefore)
             .put("nativeAfter", lastNativeTouchAfter).put("nativeSettled", lastNativeTouchSettled)
@@ -224,6 +373,7 @@ final class NativePublicWebView {
             + " viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},fonts:document.fonts.status,"
             + " hostGeometry:document.documentElement.dataset.hostGeometry,hostStyle:document.documentElement.getAttribute('style')}; })()");
         return "lastTouch=" + lastTouchTarget + ";lastSample=" + lastTouchSample + ";dispatch=" + lastTouchDispatch
+            + ";activeWindowReadiness=" + lastActiveWindowReadiness
             + ";nativeBefore=" + lastNativeTouchBefore + ";nativeAfter=" + lastNativeTouchAfter
             + ";nativeSettled=" + lastNativeTouchSettled + ";publicUI=" + ui;
     }
