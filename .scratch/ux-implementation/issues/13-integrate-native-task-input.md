@@ -1,11 +1,11 @@
 # Collect native task input and focus qualification
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-input-collector-13
 Priority band: 1
 Blocked by: 34, 35, 36
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX run ux-implementation-20261010; coordinator native qualification collection
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -58,3 +58,9 @@ Proposed under the approved cross-runtime refinement and existing-task/functiona
 ## Host dependency allocation — 2026-10-20
 
 Consume resolved[36](36-deliver-android-task-input.md) for Android and retain[34](34-deliver-android-electron-task-input.md) for all remaining Electron requirements. Existing Chrome35 and every original collector/native gate remain unchanged.
+
+## Dispatch assessment — 2026-10-21
+
+Predecessors34/35/36 are resolved. Coordinator claim `ux-input-collector-13` consumes their completed input outputs, preserving every original finding and later consumer contribution. The read-only ignored `scoped13-frontier-acceptance-audit-20261020.md` identifies one missing actual Chrome reverse-Tab containment/current-owner observation. Root will perform a bounded current canonical full-page keyboard interval, map the common TaskDialog focus owner to the popup, and retain the actual uninspected popup dismissal evidence. No new product source change or speculative input fix is assigned.
+
+Native13 collection preserves one document-lived UiSession, logical focus and retained drafts, truthful settings/actions and ADR0012. No private product command, operator-profile mutation, host clipboard, account/sign-in, global display change or native Android/Electron campaign is implied. Source races and prior scoped native observations remain separately labelled. No15/19 hard dependency or whole A03 closure is created. Root owns serialized resources and final two-axis coverage review before resolution.

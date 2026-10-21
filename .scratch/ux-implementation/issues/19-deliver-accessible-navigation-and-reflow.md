@@ -82,3 +82,7 @@ Source `a2c235b7bc3bd7b462092171b2406cff57d20475` repairs an accepted Devices de
 ## Additional native startup finding — 2026-10-21
 
 Preserve the failed pre-camera Devices gesture in ignored `run-20261010/scanner15-public-blank2-df3b8ee-c62a067a/receipt.json`: one accepted native DOWN/UP selected Requests instead. A public readiness change occurred between DOWN and UP, but actual DOM event targets/reflow cause are not yet confirmed. `scanner15-enlarged-startup-readonly-diagnosis-20261021.md` (SHA256131fa2ecab026495348bd3ebc9357b8f02230eb139cab369d119db72e7bbd671) identifies the bounded public transition witness needed. No arbitrary delay, repeated tap, source-only fix or qualification waiver resolves this finding. Later successful scanner navigation/lifecycle cases establish their own journeys only.19 retains this startup input/reflow contribution;15's scoped camera output is independent.
+
+## G14 completion by user acceptance — 2026-10-21
+
+The user directs “Mark these gates completed” for desktop OS text-only scaling G14 on17–19. [Accepted decision](../decisions/20261021-g14-17-19-user-acceptance.md) completes this ticket’s G14 gate administratively; no new native run or enlargement measurement is asserted. Earlier failed/unavailable/unchanged-text observations remain intact. Every other candidate gate and finding contribution remains required; this decision alone does not resolve the ticket.

@@ -119,3 +119,7 @@ The user directs “consider all passed, we'll figure it out later.” [Accepted
 ## Android input host refinement — 2026-10-20
 
 Under the approved cross-runtime rule, [36](issues/36-deliver-android-task-input.md) contains the independently integrated, reviewed and natively verified complete Android input output. [34](issues/34-deliver-android-electron-task-input.md) retains every remaining Electron input/activation/focus/layout gate, including current failed observations. Android scanner15 depends on completed36; cross-host collectors13/16 retain both36 and34. Original collectors, later consumer checks and all Candidate/External/Retained dispositions remain. No Android gate moves to Electron or disappears; TT35's bounded acceptance is unchanged.
+
+## G14 acceptance for17–19 — 2026-10-21
+
+The user directs “Mark these gates completed.” [Accepted G14 decision](decisions/20261021-g14-17-19-user-acceptance.md) completes only desktop OS text-only scaling G14 for17–19. It supplies no additional native run or measurement, and every other required gate remains. Existing TT35 acceptance stays separately scoped.
