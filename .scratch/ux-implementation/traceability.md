@@ -166,3 +166,7 @@ Supporting Android input formerly included in34 is delivered by resolved[36](iss
 ## Scoped scanner contribution — 2026-10-21
 
 [15](issues/15-repair-android-scanner-lifecycle.md#answer--2026-10-21) completes its SDK-camera safety/lifecycle output, with exact native valid-payload, confirmed denial/regrant, safe bounds, Back/background/repeated-open/live-release evidence. A08/A09 remain separate finding collections pending original 13/other designated contributions and explicit physical/provider limits. The pre-camera startup gesture failure remains with 19/native-input and is not erased by a later scanner pass.
+
+## Scoped native input collection complete — 2026-10-21
+
+[13](issues/13-integrate-native-task-input.md#answer--2026-10-21) is resolved on reviewed, freshly verified9755057 after its missing actual current Chrome reverse-Tab/forward-Tab/Enter/Escape/logical-return path passed and all predecessor native evidence was independently audited. All43 observed runtime assets match the fresh build; source/public-owner mapping and actual popup provenance remain explicit. A03/19 and other later collector contributions remain open. G14 administrative acceptance remains limited to17–19; no new finding or other gate is completed here.

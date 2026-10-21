@@ -238,3 +238,7 @@ Owned guest closure and exact host clipboard-sharing restoration are recorded. S
 ## G14 decision — 2026-10-21
 
 [Direct user acceptance](decisions/20261021-g14-17-19-user-acceptance.md) completes G14 administratively for17–19 and supersedes their dated G14-blocked dispositions. This does not change G13, G36/G38/G39/G40, other consumers, ticket/finding status or the provenance of any actual measurement.
+
+## Scoped native input collection complete — 2026-10-21
+
+[13](issues/13-integrate-native-task-input.md#answer--2026-10-21) is resolved on reviewed, freshly verified9755057 after its missing actual current Chrome reverse-Tab/forward-Tab/Enter/Escape/logical-return path passed and all predecessor native evidence was independently audited. All43 observed runtime assets match the fresh build; source/public-owner mapping and actual popup provenance remain explicit. A03/19 and other later collector contributions remain open. G14 administrative acceptance remains limited to17–19; no new finding or other gate is completed here.

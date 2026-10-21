@@ -1,7 +1,7 @@
 # Collect native task input and focus qualification
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-input-collector-13
 Priority band: 1
 Blocked by: 34, 35, 36
@@ -64,3 +64,13 @@ Consume resolved[36](36-deliver-android-task-input.md) for Android and retain[34
 Predecessors34/35/36 are resolved. Coordinator claim `ux-input-collector-13` consumes their completed input outputs, preserving every original finding and later consumer contribution. The read-only ignored `scoped13-frontier-acceptance-audit-20261020.md` identifies one missing actual Chrome reverse-Tab containment/current-owner observation. Root will perform a bounded current canonical full-page keyboard interval, map the common TaskDialog focus owner to the popup, and retain the actual uninspected popup dismissal evidence. No new product source change or speculative input fix is assigned.
 
 Native13 collection preserves one document-lived UiSession, logical focus and retained drafts, truthful settings/actions and ADR0012. No private product command, operator-profile mutation, host clipboard, account/sign-in, global display change or native Android/Electron campaign is implied. Source races and prior scoped native observations remain separately labelled. No15/19 hard dependency or whole A03 closure is created. Root owns serialized resources and final two-axis coverage review before resolution.
+
+## Answer — 2026-10-21
+
+Resolved for the original scoped native task-input/focus adapter collection on integrated `97550575192a03b99e9de9f9578286b454c45e03`, tree `3eef7cc979562ec01a1c996451d5e877667c78d6`. Completed34/36 supply their exact Electron/Android native input, nested Back, focus, displayed-QR and lifecycle contributions; prior actual uninspected Chrome35 input and host/task dismissal remain scoped to their original candidates.
+
+The missing current Chrome reverse-keyboard path now passes through genuine canonical full-page Chrome for Testing143 native CUA input: Device Name field→Shift-Tab→first Close→Shift-Tab→last Cancel, forward Tab→Close, Enter→logical Rename invoker; reopening focuses the field, Escape retains the actual raw draft and returns focus, and final Cancel remains keyboard reachable. Both Chrome entries mount the same current TaskDialog/bindTaskDialogFocus owner without a surface-specific containment branch. This renews the representative shared focus path; no fresh popup reverse-Tab or dismissal is claimed, and the separately observed genuine popup dismissal remains its original contribution.
+
+Ignored run `native13-owned-fullpage-20261021/observations.json` records exact observed native AX focus/value transitions, screenshot provenance, eight current source hashes,43 runtime assets and natural main exit0/owned-group absence/profile removal. Initial extension-registration navigation failure, native capture/typing limits and quit-observation timeout remain preserved. Final source-bound Spec and Standards audits report zero gaps and verify all predecessor references. Fresh root verification on9755057 passes169 suites/1,269 tests, all four typechecks and all three builds with zero lint errors; all43 actual native Chrome assets exactly match that fresh build. SDK packaging/provenance also confirms the current normal runtime/test APKs, without inventing a new native input run.
+
+Evidence: ignored `scoped13-native-completion-spec-audit-20261021.md`, `scoped13-native-completion-standards-audit-20261021.md`, `integrated-9755057-verification-20261021.json` and current APK provenance. The sandbox-rejected verification attempt and independently checked cleanup are preserved; the corrected fresh run passed without product changes. This closes13’s own adapter output only. A03 still requires19’s navigation/reflow contribution;15 scanner,17 controls,18 themes,19 geometry/navigation and later consumers retain their own scoped/finding obligations. No G14, clipboard, camera, complete layout or broader finding closure is inferred from this result.

@@ -113,3 +113,7 @@ The user directs “consider all passed, we'll figure it out later.” [Accepted
 ## G14 acceptance and native input collection — 2026-10-21
 
 [Accepted user decision](decisions/20261021-g14-17-19-user-acceptance.md) completes G14 administratively for17–19 only, preserving all actual failed/unavailable/unchanged-text evidence and every other gate.17/18/19 remain claimed. [13](issues/13-integrate-native-task-input.md#dispatch-assessment--2026-10-21) is claimed by `ux-input-collector-13` after resolved34/35/36 for the minimal missing current Chrome reverse-keyboard evidence and scoped collection. No new ticket or finding is resolved.
+
+## Scoped native input collection complete — 2026-10-21
+
+[13](issues/13-integrate-native-task-input.md#answer--2026-10-21) is resolved on reviewed, freshly verified9755057 after its missing actual current Chrome reverse-Tab/forward-Tab/Enter/Escape/logical-return path passed and all predecessor native evidence was independently audited. All43 observed runtime assets match the fresh build; source/public-owner mapping and actual popup provenance remain explicit. A03/19 and other later collector contributions remain open. G14 administrative acceptance remains limited to17–19; no new finding or other gate is completed here.
