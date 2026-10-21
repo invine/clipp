@@ -195,6 +195,7 @@ try {
       console.log(
         JSON.stringify({ pass: true, mode, actualNativeHost: false })
       );
+      await rm(own, { recursive: true, force: true });
       process.exit(0);
     }
     // Observe rejection immediately so the host keeps both public starts owned.
@@ -238,6 +239,7 @@ try {
     await owner.stop();
     assert.throws(() => owner.start(), /identity_runtime_suspended/);
     console.log(JSON.stringify({ pass: true, mode, actualNativeHost: false }));
+    await rm(own, { recursive: true, force: true });
     process.exit(0);
   }
   if (mode !== "cold") await client.getSettings();
