@@ -78,6 +78,8 @@ export type Libp2pMessagingOptions = {
   dcutrRetries?: number;
   enableTcp?: boolean;
   enableWebSocketListener?: boolean;
+  nativeListenInterface?: "127.0.0.1";
+  enableMdns?: boolean;
   enableRelayReservations?: boolean;
   dialTimeoutMs?: number;
   enableRendezvous?: boolean;
@@ -195,6 +197,8 @@ class Libp2pMessagingTransport implements MessagingTransport {
       dcutrRetries: this.opts.dcutrRetries,
       enableTcp: this.opts.enableTcp,
       enableWebSocketListener: this.opts.enableWebSocketListener,
+      nativeListenInterface: this.opts.nativeListenInterface,
+      enableMdns: this.opts.enableMdns,
       // RelayLifecycle owns reservation listening after the host starts.
       enableRelayReservations: false,
       allowInsecureBrowserDials: this.opts.allowInsecureBrowserDials,
