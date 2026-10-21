@@ -1211,6 +1211,9 @@ export class AndroidClient {
         await this.pairingPending.start();
         this.clipboardSync.start();
         await this.setBackgroundActivityState();
+        // A retained resume can drain before capture starts and consume the
+        // resume transition. Retry durable ingress now that capture is ready.
+        await this.backgroundContinuity.handleExplicitTextActionsAvailable();
         this.backgroundContinuity.startRuntimeHeartbeat();
       },
       startNetworkServices: async () => {
