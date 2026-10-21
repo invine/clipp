@@ -76,7 +76,7 @@ final class ScannerPublicWitness implements Application.ActivityLifecycleCallbac
             }
             script = bytes.toString(StandardCharsets.UTF_8.name());
         }
-        JSONObject browser = new JSONObject(web.evaluate(script));
+        JSONObject browser = new JSONObject(web.evaluateVisible(script));
         anchors.put("installNativeUptimeBeforeMs", before);
         anchors.put("installNativeUptimeAfterMs", SystemClock.uptimeMillis());
         anchors.put("browser", browser);
