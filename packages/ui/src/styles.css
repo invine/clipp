@@ -2093,6 +2093,7 @@ html[data-host-geometry="android"] .android-host {
 .app-shell.workspace-cramped {
   display: block;
   overflow: auto;
+  scroll-padding-block: var(--md-spacing-sm);
 }
 .workspace-cramped .app-main,
 .workspace-cramped .destination-pane,
