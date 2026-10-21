@@ -1,5 +1,40 @@
 apply plugin: 'com.android.application'
 
+
+// Opt-in web-root overlay only: retain production MainActivity and every native adapter.
+def runtimeResetAssets = null
+if (project.hasProperty("clippRuntimeResetAssets") && !project.hasProperty("clippRuntimeResetAcceptance"))
+    throw new GradleException("Owning reset assets require clippRuntimeResetAcceptance")
+if (project.hasProperty("clippRuntimeResetAcceptance")) {
+    if (!project.hasProperty("clippAcceptance") || project.hasProperty("clippIdentityResetAcceptance"))
+        throw new GradleException("Owning reset requires normal isolated acceptance, excluding storage-only fixtures")
+    if (!project.hasProperty("clippRuntimeResetAssets"))
+        throw new GradleException("Reviewed fresh owning reset assets required")
+    def supplied = new File(project.property("clippRuntimeResetAssets").toString())
+    def repo = new File(rootProject.projectDir, "../../..").canonicalFile
+    def parent = new File(repo, ".local")
+    def assets = supplied.canonicalFile
+    def owned = assets.parentFile
+    if (!supplied.isAbsolute() || supplied.absoluteFile != assets || parent.absoluteFile != parent.canonicalFile ||
+        !parent.isDirectory() || assets.name != "assets" || owned.parentFile != parent ||
+        !(owned.name ==~ /reset-owning-acceptance-[A-Za-z0-9]+/) || !assets.isDirectory())
+        throw new GradleException("Unsafe owning reset assets path")
+    def receiptFile = new File(owned, "receipt.json")
+    def manifestFile = new File(owned, "manifest.json")
+    def indexFile = new File(assets, "public/index.html")
+    for (def required : [receiptFile, manifestFile, indexFile]) {
+        if (!required.isFile() || required.absoluteFile != required.canonicalFile)
+            throw new GradleException("Complete fresh owning reset build receipt required")
+    }
+    def receipt = new groovy.json.JsonSlurper().parse(receiptFile)
+    def sha = { file -> java.security.MessageDigest.getInstance("SHA-256").digest(file.bytes).encodeHex().toString() }
+    if (receipt.version != 1 || receipt.kind != "clipp-runtime-reset-owning" ||
+        receipt.applicationId != "com.clipp.app.acceptance" || receipt.assetDirectory != assets.path ||
+        receipt.manifestSha256 != sha(manifestFile) || receipt.indexSha256 != sha(indexFile))
+        throw new GradleException("Owning reset assets do not match their build receipt")
+    runtimeResetAssets = assets
+}
+
 android {
     namespace "com.clipp.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -43,6 +78,12 @@ android {
             }
             androidTest.java.srcDir 'src/identityResetAcceptanceAndroidTest/java'
         }
+    }
+    if (runtimeResetAssets != null) {
+        sourceSets {
+            acceptance.assets.srcDir runtimeResetAssets
+        }
+        // Final APK asset/root/class verification is still required by the native coordinator.
     }
     testOptions {
         managedDevices {

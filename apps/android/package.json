@@ -20,7 +20,8 @@
     "test:native:instrumentation:api36": "cd android && ./gradlew -I ../scripts/native-acceptance.init.gradle -PclippAcceptance :app:clippApi36AcceptanceAndroidTest",
     "test:native:instrumentation:connected": "node scripts/verify-api-31-emulator.mjs && cd android && ./gradlew -I ../scripts/native-acceptance.init.gradle -PclippAcceptance :app:connectedAcceptanceAndroidTest",
     "build:native:release": "cd android && ./gradlew :app:assembleRelease",
-    "test:native:source": "node scripts/test-host-task-input-source.mjs"
+    "test:native:source": "node scripts/test-host-task-input-source.mjs",
+    "build:reset-owning-acceptance": "node scripts/build-reset-owning-acceptance.mjs"
   },
   "dependencies": {
     "@capacitor/clipboard": "^7.0.2",
