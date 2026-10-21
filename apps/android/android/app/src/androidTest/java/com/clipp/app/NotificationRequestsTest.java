@@ -3,6 +3,8 @@ package com.clipp.app;
 import static org.junit.Assert.*;
 
 import android.app.Instrumentation;
+import android.app.UiAutomation;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -31,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.json.JSONArray;
@@ -334,175 +337,269 @@ public final class NotificationRequestsTest {
         Log.i(TAG, "own-eligibility nonce=" + nonce + " stage=" + stage + " metadata=" + metadata);
     }
 
-    // Only these literal resource identifiers enter the aggregate output. Exploratory
-    // SystemUI IDs are presence probes, not assumed guest structure or selectors.
-    private static final String[] CENSUS_IDS = {
-        "com.android.systemui:id/legacy_window_root",
-        "android:id/notification_header", "android:id/notification_top_line",
-        "android:id/notification_main_column", "android:id/notification_headerless_view_row",
-        "android:id/notification_headerless_view_column", "android:id/app_name_text",
-        "android:id/title", "android:id/text", "android:id/big_text",
+    // Fixed public-query identifiers only. They describe candidates, never a new
+    // notification selector; the original exact-peer click path remains below.
+    private static final String TEMPLATE_ID = "android:id/status_bar_latest_event_content";
+    private static final String[] TARGET_IDS = {
+        TEMPLATE_ID, "android:id/title", "android:id/text", "android:id/big_text",
+        "android:id/app_name_text", "android:id/notification_header",
+        "android:id/notification_top_line", "android:id/notification_main_column",
+        "android:id/notification_headerless_view_row", "android:id/notification_headerless_view_column",
         "android:id/expand_button", "android:id/expand_button_touch_container",
-        "com.android.systemui:id/notification_stack_scroller",
-        "com.android.systemui:id/notification_panel",
-        "com.android.systemui:id/notification_container_parent",
-        "com.android.systemui:id/notification_children_container"
+        "com.android.systemui:id/legacy_window_root", "com.android.systemui:id/notification_stack_scroller",
+        "com.android.systemui:id/notification_panel", "com.android.systemui:id/notification_container_parent"
     };
 
-    private interface CensusRead<T> { T read(); }
+    private interface ProbeRead<T> { T read(); }
+    private static final class ProbeLimit extends RuntimeException {}
 
-    private static final class CensusBudget {
-        final long end;
-        int visited;
-        boolean timeCapped, nodeCapped, depthCapped, childCapped;
-        CensusBudget(long rowEnd) { end = Math.min(rowEnd, SystemClock.uptimeMillis() + 100); }
-        void check() {
-            if (SystemClock.uptimeMillis() >= end) {
-                timeCapped = true;
-                throw new CensusLimit();
-            }
+    private static final class TargetProbe {
+        final long start, end;
+        final List<List<AccessibilityNodeInfo>> queryResults = new ArrayList<>();
+        final List<AccessibilityNodeInfo> parents = new ArrayList<>();
+        int queries;
+        boolean timeCapped, queryCapped, resultCapped, ancestryCapped, bodyCapped, capabilityMissing, scopeUnknown;
+        String cleanupErrorClass = "none";
+        TargetProbe(long rowEnd) {
+            start = SystemClock.uptimeMillis();
+            end = Math.min(rowEnd, start + 100);
         }
-        <T> T read(CensusRead<T> operation) {
+        void check() {
+            if (SystemClock.uptimeMillis() >= end) { timeCapped = true; throw new ProbeLimit(); }
+        }
+        <T> T read(ProbeRead<T> operation) {
             check();
             T value = operation.read();
-            // A framework call cannot be interrupted by this guard. If it returns
-            // after the shared deadline, its result cannot establish completeness.
-            try {
-                check();
-                return value;
-            } catch (CensusLimit limit) {
-                if (value instanceof AccessibilityNodeInfo) ((AccessibilityNodeInfo) value).recycle();
-                throw limit;
+            // A framework call is not interruptible. A late result is UNKNOWN,
+            // and all acquired nodes remain owned until the unconditional cleanup.
+            check();
+            return value;
+        }
+        List<AccessibilityNodeInfo> query(ProbeRead<List<AccessibilityNodeInfo>> operation) {
+            check();
+            if (queries == 8) { queryCapped = true; throw new ProbeLimit(); }
+            queries++;
+            List<AccessibilityNodeInfo> result = operation.read();
+            queryResults.add(result); // Register every returned node BEFORE checking a late return.
+            check();
+            if (result.size() > 4) { resultCapped = true; throw new ProbeLimit(); }
+            return result;
+        }
+        AccessibilityNodeInfo parent(AccessibilityNodeInfo node) {
+            check();
+            AccessibilityNodeInfo result = node.getParent();
+            if (result != null) parents.add(result);
+            check();
+            return result;
+        }
+        void recycleAll() {
+            // Cleanup is mandatory even after the observation deadline. Identity
+            // dedup avoids recycling the same returned object twice across lists.
+            IdentityHashMap<AccessibilityNodeInfo, Boolean> seen = new IdentityHashMap<>();
+            for (List<AccessibilityNodeInfo> result : queryResults) if (result != null) {
+                for (AccessibilityNodeInfo node : result) if (node != null && seen.put(node, true) == null) recycle(node);
             }
+            for (AccessibilityNodeInfo node : parents) if (seen.put(node, true) == null) recycle(node);
+            if (SystemClock.uptimeMillis() >= end) timeCapped = true;
+        }
+        void recycle(AccessibilityNodeInfo node) {
+            try { node.recycle(); }
+            catch (RuntimeException error) { cleanupErrorClass = safeMetadata(error.getClass().getSimpleName()); }
+        }
+        boolean incomplete() {
+            return timeCapped || queryCapped || resultCapped || ancestryCapped || bodyCapped || capabilityMissing
+                || scopeUnknown || !"none".equals(cleanupErrorClass);
         }
     }
 
-    private static final class CensusLimit extends RuntimeException {}
-
-    private static int censusId(String id) {
-        for (int index = 0; index < CENSUS_IDS.length; index++) if (CENSUS_IDS[index].equals(id)) return index;
-        return -1;
+    private static boolean knownTargetId(String id) {
+        for (String known : TARGET_IDS) if (known.equals(id)) return true;
+        return false;
     }
 
-    private JSONObject censusNodeMetadata(AccessibilityNodeInfo node, CensusBudget budget) throws Exception {
-        JSONObject metadata = new JSONObject();
-        String id = budget.read(node::getViewIdResourceName);
-        metadata.put("resourceId", censusId(id) < 0 ? "<other>" : id);
-        String packageName = String.valueOf(budget.read(node::getPackageName));
-        metadata.put("package", packageName.equals("com.android.systemui") || packageName.equals("android")
-            || packageName.equals("com.clipp.app.acceptance") ? packageName : "<other>");
-        String className = String.valueOf(budget.read(node::getClassName));
-        metadata.put("class", className.startsWith("android.") || className.startsWith("com.android.systemui.")
-            || className.startsWith("com.android.internal.") ? safeMetadata(className) : "<other>");
-        metadata.put("visible", budget.read(node::isVisibleToUser));
-        metadata.put("enabled", budget.read(node::isEnabled));
-        metadata.put("clickable", budget.read(node::isClickable));
-        metadata.put("actionMask", budget.read(node::getActions));
-        return metadata;
+    private static final class CandidateTrace {
+        final String kind;
+        final JSONArray metadata = new JSONArray();
+        CandidateTrace(String kind) { this.kind = kind; }
+        AccessibilityNodeInfo template;
+        boolean targetPackageObserved;
     }
 
-    private void visitCensusNode(AccessibilityNodeInfo node, int depth, String ownPackage,
-            CensusBudget budget, int[][] counts, List<AccessibilityNodeInfo> path,
-            JSONArray ownedChains, int[] comparisons) throws Exception {
-        budget.check();
-        if (budget.visited == 128) { budget.nodeCapped = true; throw new CensusLimit(); }
-        budget.visited++;
-        path.add(node);
-        try {
-            String id = budget.read(node::getViewIdResourceName);
-            int known = censusId(id);
-            String packageName = String.valueOf(budget.read(node::getPackageName));
-            boolean own = ownPackage.equals(packageName);
-            if (known >= 0) {
-                counts[known][0]++;
-                if (budget.read(node::isVisibleToUser)) counts[known][1]++;
-                if (budget.read(node::isEnabled)) counts[known][2]++;
-                if (budget.read(node::isClickable)) counts[known][3]++;
+    private CandidateTrace traceCandidate(AccessibilityNodeInfo anchor, TargetProbe probe, String ownPackage,
+            String kind, List<CandidateTrace> traces) throws Exception {
+        CandidateTrace trace = new CandidateTrace(kind);
+        traces.add(trace); // Preserve completed safe metadata even if a later ancestor call is late.
+        AccessibilityNodeInfo node = anchor;
+        for (int index = 0; node != null && index < 6; index++) {
+            String id = probe.read(node::getViewIdResourceName);
+            String packageName = String.valueOf(probe.read(node::getPackageName));
+            trace.targetPackageObserved |= ownPackage.equals(packageName);
+            String className = String.valueOf(probe.read(node::getClassName));
+            JSONObject metadata = new JSONObject();
+            metadata.put("resourceId", knownTargetId(id) ? id : "<other>");
+            metadata.put("package", packageName.equals(ownPackage) || packageName.equals("com.android.systemui")
+                || packageName.equals("android") ? safeMetadata(packageName) : "<other>");
+            metadata.put("class", className.startsWith("android.") || className.startsWith("com.android.systemui.")
+                || className.startsWith("com.android.internal.") ? safeMetadata(className) : "<other>");
+            metadata.put("visible", probe.read(node::isVisibleToUser));
+            metadata.put("enabled", probe.read(node::isEnabled));
+            metadata.put("clickable", probe.read(node::isClickable));
+            metadata.put("actionMask", probe.read(node::getActions));
+            trace.metadata.put(metadata);
+            if (TEMPLATE_ID.equals(id)) { trace.template = node; return trace; }
+            if (index == 5) { probe.ancestryCapped = true; break; }
+            node = probe.parent(node);
+        }
+        return trace;
+    }
+
+    private void observeTargetedFields(AccessibilityNodeInfo root, TargetProbe probe,
+            JSONObject metadata, List<CandidateTrace> traces) throws Exception {
+        UiAutomation automation = probe.read(instrumentation::getUiAutomation);
+        AccessibilityServiceInfo service = probe.read(automation::getServiceInfo);
+        boolean reportIds = (service.flags & AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS) != 0;
+        metadata.put("reportViewIds", reportIds);
+        metadata.put("includeNotImportantViews", (service.flags & AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS) != 0);
+        if (!reportIds) { probe.capabilityMissing = true; throw new ProbeLimit(); }
+        Context context = probe.read(instrumentation::getTargetContext);
+        String ownPackage = probe.read(context::getPackageName);
+
+        List<AccessibilityNodeInfo> titles = probe.query(() -> root.findAccessibilityNodeInfosByViewId("android:id/title"));
+        metadata.put("titleResults", titles.size());
+        AccessibilityNodeInfo candidateTitle = null;
+        int exactTitles = 0, visibleTitles = 0;
+        for (AccessibilityNodeInfo title : titles) {
+            CharSequence value = probe.read(title::getText);
+            if ("Pairing request".contentEquals(value == null ? "" : value)) {
+                exactTitles++;
+                candidateTitle = title;
+                if (probe.read(title::isVisibleToUser)) visibleTitles++;
             }
-            boolean ownAnchor = own && known >= 0;
-            if (ownAnchor) comparisons[4]++;
-            if ("android:id/app_name_text".equals(id)) {
-                // Compare the fixed app-header field, never log a label or description.
-                CharSequence label = budget.read(node::getText);
-                if ("Clipp".contentEquals(label == null ? "" : label)) comparisons[0]++;
+        }
+        metadata.put("exactRequestTitles", exactTitles);
+        metadata.put("visibleExactRequestTitles", visibleTitles);
+        CandidateTrace titleTrace = null;
+        if (exactTitles == 1) {
+            titleTrace = traceCandidate(candidateTitle, probe, ownPackage, "known-title", traces);
+        }
+
+        // Full synthetic identity only, not a prefix/fuzzy lookup or fallback selector.
+        List<AccessibilityNodeInfo> identities = probe.query(() -> root.findAccessibilityNodeInfosByText(peerId));
+        metadata.put("fullPeerIdQueryResults", identities.size());
+        AccessibilityNodeInfo candidateIdentity = null;
+        int exactIdentities = 0;
+        for (AccessibilityNodeInfo identity : identities) {
+            CharSequence value = probe.read(identity::getText);
+            if (value != null && value.toString().contains(peerId)) {
+                exactIdentities++;
+                candidateIdentity = identity;
             }
-            if ("android:id/title".equals(id)) {
-                CharSequence title = budget.read(node::getText);
-                if ("Pairing request".contentEquals(title == null ? "" : title)) comparisons[1]++;
+        }
+        metadata.put("fullPeerIdTextMatches", exactIdentities);
+        CandidateTrace identityTrace = null;
+        if (exactIdentities == 1) {
+            identityTrace = traceCandidate(candidateIdentity, probe, ownPackage, "full-synthetic-peer-id", traces);
+        }
+        metadata.put("titleTemplateFound", titleTrace != null && titleTrace.template != null);
+        metadata.put("identityTemplateFound", identityTrace != null && identityTrace.template != null);
+        if (titleTrace == null || titleTrace.template == null) {
+            probe.scopeUnknown = true;
+            metadata.put("scopeObservation", "UNKNOWN-no-single-title-template");
+            return;
+        }
+        AccessibilityNodeInfo scope = titleTrace.template;
+        AccessibilityNodeInfo identityTemplate = identityTrace == null ? null : identityTrace.template;
+        boolean identitySameScope = identityTemplate != null && probe.read(() -> scope.equals(identityTemplate));
+        metadata.put("syntheticIdentitySameTemplate", identitySameScope);
+
+        List<AccessibilityNodeInfo> headers = probe.query(() -> scope.findAccessibilityNodeInfosByViewId("android:id/app_name_text"));
+        metadata.put("scopedAppHeaderResults", headers.size());
+        int ownHeaders = 0, visibleOwnHeaders = 0;
+        for (AccessibilityNodeInfo header : headers) {
+            CharSequence value = probe.read(header::getText);
+            if ("Clipp".contentEquals(value == null ? "" : value)) {
+                ownHeaders++;
+                if (probe.read(header::isVisibleToUser)) visibleOwnHeaders++;
             }
-            if (own && ("android:id/text".equals(id) || "android:id/big_text".equals(id))) {
-                CharSequence value = budget.read(node::getText);
-                comparisons[5]++;
+        }
+        metadata.put("scopedExactOwnHeaders", ownHeaders);
+        metadata.put("scopedVisibleOwnHeaders", visibleOwnHeaders);
+        metadata.put("titleChainTargetPackageObserved", titleTrace.targetPackageObserved);
+        // Header/title alone allow this diagnostic comparison, NEVER selection.
+        boolean compareBody = ownHeaders == 1 || identitySameScope || titleTrace.targetPackageObserved;
+        if (!compareBody) probe.scopeUnknown = true;
+        metadata.put("bodyComparisonGuard", compareBody);
+        int bodyCompared = 0;
+        boolean bodyPeerName = false, bodyPeerId = false;
+        if (compareBody) for (String id : new String[] { "android:id/text", "android:id/big_text" }) {
+            List<AccessibilityNodeInfo> bodies = probe.query(() -> scope.findAccessibilityNodeInfosByViewId(id));
+            if (bodyCompared + bodies.size() > 2) { probe.bodyCapped = true; throw new ProbeLimit(); }
+            for (AccessibilityNodeInfo body : bodies) {
+                CharSequence value = probe.read(body::getText);
+                bodyCompared++;
                 String text = value == null ? "" : value.toString();
-                if (text.contains(peerName)) comparisons[2]++;
-                if (text.contains(peerId)) comparisons[3]++;
+                bodyPeerName |= text.contains(peerName);
+                bodyPeerId |= text.contains(peerId);
             }
-            if (ownAnchor && ownedChains.length() < 4) {
-                JSONArray chain = new JSONArray();
-                for (int index = path.size() - 1; index >= Math.max(0, path.size() - 6); index--) {
-                    chain.put(censusNodeMetadata(path.get(index), budget));
-                }
-                ownedChains.put(chain);
+        }
+        metadata.put("bodyComparisonObservation", compareBody ? "queries-complete" : "skipped-no-guard");
+        metadata.put("scopedBodyCompared", bodyCompared);
+        metadata.put("scopedBodyContainsPeerName", bodyPeerName);
+        metadata.put("scopedBodyContainsPeerId", bodyPeerId);
+        boolean identityAndHeader = ownHeaders == 1 && (identitySameScope || (bodyPeerName && bodyPeerId));
+        metadata.put("syntheticIdentityAndHeaderObserved", identityAndHeader);
+        metadata.put("expandMetadataQueried", identityAndHeader);
+        if (identityAndHeader) {
+            List<AccessibilityNodeInfo> controls = probe.query(() -> scope.findAccessibilityNodeInfosByViewId("android:id/expand_button"));
+            metadata.put("scopedExpandResults", controls.size());
+            int visible = 0, enabled = 0, clickable = 0, actionMask = 0;
+            for (AccessibilityNodeInfo control : controls) {
+                if (probe.read(control::isVisibleToUser)) visible++;
+                if (probe.read(control::isEnabled)) enabled++;
+                if (probe.read(control::isClickable)) clickable++;
+                actionMask |= probe.read(control::getActions);
             }
-            int children = budget.read(node::getChildCount);
-            if (depth == 10) { if (children > 0) budget.depthCapped = true; return; }
-            if (children > 16) budget.childCapped = true;
-            for (int index = 0; index < Math.min(16, children); index++) {
-                if (budget.visited == 128) { budget.nodeCapped = true; throw new CensusLimit(); }
-                final int childIndex = index;
-                AccessibilityNodeInfo child = budget.read(() -> node.getChild(childIndex));
-                if (child != null) try {
-                    visitCensusNode(child, depth + 1, ownPackage, budget, counts, path, ownedChains, comparisons);
-                } finally {
-                    // Always release acquired nodes, even after the observation deadline.
-                    child.recycle();
-                }
-            }
-        } finally {
-            path.remove(path.size() - 1);
+            metadata.put("scopedExpandVisible", visible);
+            metadata.put("scopedExpandEnabled", enabled);
+            metadata.put("scopedExpandClickable", clickable);
+            metadata.put("scopedExpandActionMask", actionMask);
         }
     }
 
-    private void logSystemUiCensus(AccessibilityNodeInfo root, long rowEnd, String stage) {
-        CensusBudget budget = new CensusBudget(rowEnd);
-        int[][] counts = new int[CENSUS_IDS.length][4];
-        JSONArray ownedChains = new JSONArray();
-        int[] comparisons = new int[6];
+    private void logTargetedSystemUiProbe(AccessibilityNodeInfo root, long rowEnd, String stage) {
+        TargetProbe probe = new TargetProbe(rowEnd);
+        JSONObject metadata = new JSONObject();
+        List<CandidateTrace> traces = new ArrayList<>();
         String errorClass = "none";
         try {
-            Context context = budget.read(instrumentation::getTargetContext);
-            String ownPackage = budget.read(context::getPackageName);
-            visitCensusNode(root, 0, ownPackage, budget, counts, new ArrayList<>(), ownedChains, comparisons);
-        } catch (CensusLimit limit) {
-            // Bounds are diagnostic UNKNOWN, never evidence of an absent owned row.
+            observeTargetedFields(root, probe, metadata, traces);
+        } catch (ProbeLimit limit) {
+            // Missing capability or any partial/late result is diagnostic UNKNOWN.
         } catch (Exception error) {
             errorClass = safeMetadata(error.getClass().getSimpleName());
+        } finally {
+            probe.recycleAll();
         }
-        Log.i(TAG, "systemui-census nonce=" + nonce + " stage=" + stage
-            + " observation=" + (budget.timeCapped || budget.nodeCapped || budget.depthCapped
-                || budget.childCapped || !"none".equals(errorClass) ? "UNKNOWN" : "complete")
-            + " visited=" + budget.visited + " timeCapped=" + budget.timeCapped
-            + " nodeCapped=" + budget.nodeCapped + " depthCapped=" + budget.depthCapped
-            + " childCapped=" + budget.childCapped + " errorClass=" + errorClass
-            + " exactOwnLabelHeaders=" + comparisons[0] + " exactRequestTitleNodes=" + comparisons[1]
-            + " ownBodyPeerNameNodes=" + comparisons[2] + " ownBodyPeerIdNodes=" + comparisons[3]
-            + " ownBodyComparedNodes=" + comparisons[5] + " ownedPackageAnchorCount=" + comparisons[4]
-            + " ownedAnchorChains=" + ownedChains.length() + " anchorDetailsCapped=" + (comparisons[4] > 4));
-        for (int index = 0; index < CENSUS_IDS.length; index++) {
-            Log.i(TAG, "systemui-container nonce=" + nonce + " stage=" + stage + " id=" + CENSUS_IDS[index]
-                + " count=" + counts[index][0] + " visible=" + counts[index][1]
-                + " enabled=" + counts[index][2] + " clickable=" + counts[index][3]);
-        }
-        for (int index = 0; index < ownedChains.length(); index++) {
-            Log.i(TAG, "systemui-owned-anchor nonce=" + nonce + " stage=" + stage
-                + " anchorIndex=" + index + " metadata=" + ownedChains.optJSONArray(index));
+        Log.i(TAG, "systemui-targeted nonce=" + nonce + " stage=" + stage
+            + " observation=" + (probe.incomplete() || !"none".equals(errorClass) ? "UNKNOWN" : "complete")
+            + " queries=" + probe.queries + " elapsedMs=" + (SystemClock.uptimeMillis() - probe.start)
+            + " timeCapped=" + probe.timeCapped
+            + " queryCapped=" + probe.queryCapped + " resultCapped=" + probe.resultCapped
+            + " ancestryCapped=" + probe.ancestryCapped + " bodyCapped=" + probe.bodyCapped
+            + " capabilityMissing=" + probe.capabilityMissing + " scopeUnknown=" + probe.scopeUnknown
+            + " cleanupErrorClass=" + probe.cleanupErrorClass + " errorClass=" + errorClass
+            + " selectionAuthority=false metadata=" + metadata);
+        for (int index = 0; index < traces.size(); index++) {
+            Log.i(TAG, "systemui-targeted-chain nonce=" + nonce + " stage=" + stage
+                + " candidateIndex=" + index + " kind=" + traces.get(index).kind
+                + " metadata=" + traces.get(index).metadata);
         }
     }
 
     private void tapActualPeerNotification() {
         long end = SystemClock.uptimeMillis() + 5000;
         int emitted = 0;
-        int censusCount = 0;
+        int probeCount = 0;
         String previous = null;
         String latest = "{\"unobserved\":true}";
         do {
@@ -540,9 +637,9 @@ public final class NotificationRequestsTest {
                 }
                 // Passive reads follow the original eligible-click path and share its
                 // deadline; there is no expansion, alternative selector or extra wait.
-                if (systemUi && (censusCount == 0 || (censusCount == 1 && end - SystemClock.uptimeMillis() <= 150))) {
-                    logSystemUiCensus(root, end, censusCount == 0 ? "first-systemui" : "last-available");
-                    censusCount++;
+                if (systemUi && (probeCount == 0 || (probeCount == 1 && end - SystemClock.uptimeMillis() <= 150))) {
+                    logTargetedSystemUiProbe(root, end, probeCount == 0 ? "first-systemui" : "last-available");
+                    probeCount++;
                 }
             } finally {
                 for (AccessibilityNodeInfo text : matches) text.recycle();
@@ -550,8 +647,8 @@ public final class NotificationRequestsTest {
             }
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < end);
-        if (censusCount < 2) Log.i(TAG, "systemui-census nonce=" + nonce
-            + " stage=final-failure observation=UNKNOWN reason=no-remaining-row-budget snapshots=" + censusCount);
+        if (probeCount < 2) Log.i(TAG, "systemui-targeted nonce=" + nonce
+            + " stage=final-failure observation=UNKNOWN reason=no-remaining-row-budget snapshots=" + probeCount);
         logPeerRowSnapshot("final-failure", latest);
         throw new AssertionError("Actual visible SystemUI peer notification row required");
     }
