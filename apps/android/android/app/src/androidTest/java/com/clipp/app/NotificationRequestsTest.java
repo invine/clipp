@@ -28,8 +28,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SdkSuppress;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.ArrayList;
@@ -124,7 +128,16 @@ public final class NotificationRequestsTest {
         try {
             tapActualPeerNotification();
         } catch (AssertionError | RuntimeException failure) {
-            logOwnNotificationEligibility("row-failure", posted);
+            try {
+                holdFailureScreenBeforeActivityCleanup();
+            } catch (Throwable diagnostic) {
+                retainRowFailureDiagnostic(failure, diagnostic, "screen-window");
+            }
+            try {
+                logOwnNotificationEligibility("row-failure", posted);
+            } catch (Throwable diagnostic) {
+                retainRowFailureDiagnostic(failure, diagnostic, "own-eligibility");
+            }
             throw failure;
         }
         String card = "[...document.querySelectorAll('.pending-card')].find(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
@@ -133,6 +146,70 @@ public final class NotificationRequestsTest {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         web.await("normal native Back restores same dirty editor", "!!(" + textarea + ") && " + textarea + ".value === " + JSONObject.quote(draft));
         Log.i(TAG, "genuine-notification-requests-back-pass nonce=" + nonce + " notificationId=" + posted.getId());
+    }
+
+    // Failure observation only: no retry, input, expansion, selector or success authority.
+    // Root may take one bounded screenshot while this finite window remains READY.
+    private void holdFailureScreenBeforeActivityCleanup() throws Exception {
+        Context context = instrumentation.getTargetContext();
+        NativeAcceptanceTarget.requireIsolated(context.getPackageName());
+        File phase = new File(context.getCacheDir(), "notification16-row-failure-" + nonce + ".phase");
+        long started = SystemClock.uptimeMillis();
+        long end = started + 3000;
+        boolean ready = false;
+        try {
+            publishFailureScreenPhase(phase, "READY", true);
+            ready = true;
+            Log.i(TAG, "row-failure-screen-ready nonce=" + nonce
+                + " startedUptimeMs=" + started + " holdDeadlineUptimeMs=" + end + " maximumHoldMs=3000");
+            long remaining;
+            while ((remaining = end - SystemClock.uptimeMillis()) > 0) SystemClock.sleep(Math.min(50, remaining));
+        } finally {
+            if (ready) {
+                // Successful END is required by root before any READY-timed image qualifies.
+                // If this transition fails, stale READY never proves pre-@After timing.
+                publishFailureScreenPhase(phase, "ENDED", false);
+                Log.i(TAG, "row-failure-screen-ended nonce=" + nonce
+                    + " endedUptimeMs=" + SystemClock.uptimeMillis() + " phaseCommitted=true");
+            }
+        }
+    }
+
+    private void publishFailureScreenPhase(File phase, String value, boolean fresh) throws Exception {
+        byte[] bytes = ("N16_SCREEN_V1\n" + nonce + "\n" + value + "\n").getBytes(StandardCharsets.US_ASCII);
+        if (bytes.length > 256) throw new java.io.IOException("Failure phase exceeds byte cap");
+        if (fresh && phase.exists()) throw new java.io.IOException("Failure phase already exists");
+        if (!fresh) {
+            byte[] expected = ("N16_SCREEN_V1\n" + nonce + "\nREADY\n").getBytes(StandardCharsets.US_ASCII);
+            byte[] observed = new byte[257];
+            int used = 0;
+            try (InputStream input = Files.newInputStream(phase.toPath())) {
+                int count;
+                while (used < observed.length && (count = input.read(observed, used, observed.length - used)) != -1) used += count;
+            }
+            if (used != expected.length || !java.util.Arrays.equals(java.util.Arrays.copyOf(observed, used), expected)) {
+                throw new java.io.IOException("Failure phase changed before END");
+            }
+        }
+        File pending = new File(phase.getPath() + ".tmp");
+        boolean created = false;
+        try {
+            Files.createFile(pending.toPath());
+            created = true;
+            Files.write(pending.toPath(), bytes, StandardOpenOption.WRITE);
+            if (fresh) Files.move(pending.toPath(), phase.toPath(), StandardCopyOption.ATOMIC_MOVE);
+            else Files.move(pending.toPath(), phase.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            if (created) Files.deleteIfExists(pending.toPath());
+        }
+    }
+
+    private void retainRowFailureDiagnostic(Throwable original, Throwable diagnostic, String stage) {
+        try { original.addSuppressed(diagnostic); } catch (Throwable ignored) { /* Original failure wins. */ }
+        try {
+            Log.i(TAG, "row-failure-screen-secondary nonce=" + nonce + " stage=" + stage
+                + " errorClass=" + safeMetadata(diagnostic.getClass().getSimpleName()) + " timingAuthority=false");
+        } catch (Throwable ignored) { /* Logging cannot replace the original assertion/runtime failure. */ }
     }
 
     private StatusBarNotification awaitOwnPeerNotification() throws Exception {
