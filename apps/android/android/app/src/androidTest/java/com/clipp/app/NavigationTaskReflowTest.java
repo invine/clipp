@@ -3,8 +3,11 @@ package com.clipp.app;
 import static org.junit.Assert.*;
 
 import android.app.Instrumentation;
+import android.app.UiAutomation;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -12,6 +15,8 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.webkit.WebView;
 import android.widget.TextView;
 import androidx.core.graphics.Insets;
@@ -31,6 +36,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -52,6 +58,10 @@ import org.junit.runners.model.MultipleFailureException;
  * taps and Android supplies text/keys. No product command, fixture props, private owner,
  * store/queue write, synthetic pending request or test global is installed. This method
  * does not qualify reflow profiles, themes, pending entry, scanner, retention or restart.
+ *
+ * The separately invoked completedReflowRetainsHistoryAnchorAndTaskValidation method
+ * additionally requires navigationCompletedReflowAcceptance=true. It covers only one
+ * delivered default-text portrait/landscape/restored crossing, not the remaining matrix.
  */
 @RunWith(AndroidJUnit4.class)
 @SdkSuppress(minSdkVersion = 31)
@@ -81,6 +91,9 @@ public final class NavigationTaskReflowTest {
     private String retainedQuery;
     private String draft;
     private boolean journeyPassed;
+    private boolean completedReflowCase;
+    private JSONObject lastReflowObservation;
+    private JSONObject reflowGesture;
 
     @Before
     public void requireFreshOrdinaryPackagedRootInterval() throws Exception {
@@ -218,6 +231,140 @@ public final class NavigationTaskReflowTest {
         journeyPassed = true;
     }
 
+    @Test
+    public void completedReflowRetainsHistoryAnchorAndTaskValidation() throws Exception {
+        Assume.assumeTrue("Root must additionally own this orientation/scroll interval",
+            "true".equals(InstrumentationRegistry.getArguments().getString("navigationCompletedReflowAcceptance")));
+        completedReflowCase = true;
+        AtomicInteger originalOrientation = new AtomicInteger();
+        web.onActivity(activity -> {
+            assertEquals("Root supplies the initial portrait profile", Configuration.ORIENTATION_PORTRAIT,
+                activity.getResources().getConfiguration().orientation);
+            originalOrientation.set(activity.getRequestedOrientation());
+        });
+        Throwable primary = null;
+        try {
+            List<String> contents = new ArrayList<>();
+            for (int index = 0; index < 8; index++) {
+                String marker = "nav19-reflow-" + nonce + "-clip-" + index;
+                StringBuilder text = new StringBuilder(marker + " ");
+                while (text.length() < 192) text.append("genuine scroll anchor ");
+                text.setLength(192);
+                markers.add(marker);
+                contents.add(text.toString());
+                String id = nativeIngress(Intent.ACTION_SEND, marker, text.toString());
+                ids.add(id);
+                tap(card(id) + ".querySelector('[aria-label=\"Pin Clip\"]')");
+                awaitUi("real captured Clip pinned", card(id) + ".querySelector('[aria-label=\"Pin Clip\"]').getAttribute('aria-pressed') === 'true'");
+            }
+            assertEquals("Distinct native events retain distinct UUIDs", 8, new HashSet<>(ids).size());
+            assertMarkerAssociations(8);
+            chooseScope("Pinned");
+            retainedQuery = "nav19-reflow-" + nonce;
+            replaceText(QUERY, retainedQuery);
+            hideIme();
+            assertQueryAndScope();
+            awaitUi("multiple real filtered matches", CARDS + ".length === 8 && " + selectedDestination("history"));
+            JSONObject beforeScroll = reflowObservation();
+            assertFalse("Initial History must use the ordinary inner scroller",
+                beforeScroll.getJSONObject("public").getString("classes").contains("workspace-cramped"));
+            assertEquals("Ordinary History owns the actual delivered scroll", "history",
+                beforeScroll.getJSONObject("public").getJSONObject("history").getString("key"));
+            swipeHistoryOnce(beforeScroll);
+            JSONObject scrolled = awaitCompletedHistoryScroll(beforeScroll);
+            JSONArray visible = scrolled.getJSONObject("public").getJSONObject("history").getJSONArray("visible");
+            assertTrue("A meaningful visible native-ingress anchor is required", visible.length() > 0);
+            selectedId = visible.getJSONObject(0).getString("id");
+            int selectedIndex = ids.indexOf(selectedId);
+            assertTrue("Anchor belongs to this genuine ingress interval", selectedIndex >= 0);
+            selectedMarker = markers.get(selectedIndex);
+            assertHistoryAnchor();
+            observeReflow("completed-scroll-before-landscape", reflowObservation());
+            JSONObject portrait = reflowObservation();
+            emit("stage=request-landscape;nonce=" + nonce);
+            checkDeadline();
+            web.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+            JSONObject landscape = awaitCompletedReflow(Configuration.ORIENTATION_LANDSCAPE, true, portrait);
+            assertEquals("Cramped workspace owns the actual delivered scroll", "workspace",
+                landscape.getJSONObject("public").getJSONObject("history").getString("key"));
+            assertSameDocument();
+            assertHistoryAnchor();
+            assertQueryAndScope();
+            assertWorkspaceControls();
+            assertNoHorizontalPageHunting();
+            observeReflow("completed-landscape-anchor-retained", landscape);
+
+            // Exercise the anchor's real final menu action without Copy or deletion.
+            tap(card(selectedId) + ".querySelector('[aria-label=\"More Clip actions\"]')");
+            tap(web.button("View Clip details"));
+            awaitUi("full details retain the same real Clip association",
+                "document.querySelector('.clip-details-content')?.textContent === " + JSONObject.quote(contents.get(selectedIndex))
+                + " && [...document.querySelectorAll('.clip-details dd')].some(e => e.textContent === " + JSONObject.quote(selectedId) + ")");
+            tap(web.button("Close details"));
+            awaitUi("details returns to its real card action", "!document.querySelector('.clip-details-content') && document.activeElement?.getAttribute('data-session-focus') === " + JSONObject.quote("more:" + selectedId));
+            openDestination("devices");
+            tap(web.button("Rename this device"));
+            awaitUi("real Name editor", "!!(" + NAME + ")");
+            String originalName = web.evaluate(NAME + ".value");
+            StringBuilder whitespace = new StringBuilder();
+            while (whitespace.length() < 64) whitespace.append(' ');
+            draft = whitespace.toString();
+            replaceText(NAME, draft);
+            hideIme();
+            tap(web.button("Save Device Name"));
+            awaitNameValidation();
+            awaitIme(true);
+            nativeBack();
+            awaitIme(false);
+            awaitNameValidation();
+            assertQueryAndScope();
+            JSONObject invalidLandscape = reflowObservation();
+            observeReflow("real-name-validation-before-portrait", invalidLandscape);
+            emit("stage=request-restored-portrait;nonce=" + nonce);
+            checkDeadline();
+            web.onActivity(activity -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+            JSONObject restored = awaitCompletedReflow(Configuration.ORIENTATION_PORTRAIT, false, invalidLandscape);
+            assertSameDocument();
+            awaitNameValidation();
+            assertQueryAndScope();
+            assertEquals("Reverse reflow retains the current destination", "true", web.evaluate(selectedDestination("devices")));
+            assertNoHorizontalPageHunting();
+            observeReflow("completed-portrait-retains-raw-error-focus", restored);
+            tap(web.button("Close name editor"));
+            awaitUi("Close restores Devices invoker", "!(" + NAME + ") && document.activeElement === (" + web.button("Rename this device") + ")");
+            tap(web.button("Rename this device"));
+            assertRetainedName();
+            tap(web.button("Cancel name edit"));
+            awaitUi("Cancel restores Devices invoker", "!(" + NAME + ") && document.activeElement === (" + web.button("Rename this device") + ")");
+            tap(web.button("Rename this device"));
+            awaitUi("Cancel discarded only the raw Name draft", "(" + NAME + ")?.value === " + JSONObject.quote(originalName)
+                + " && document.activeElement === (" + NAME + ")");
+            tap(web.button("Close name editor"));
+            awaitUi("final Close returns logically", "!(" + NAME + ") && document.activeElement === (" + web.button("Rename this device") + ")");
+            openDestination("history");
+            assertQueryAndScope();
+            assertMarkerAssociations(8);
+            assertSameDocument();
+            observeReflow("completed-reflow-task-return", reflowObservation());
+            checkDeadline();
+            journeyPassed = true;
+        } catch (Exception | Error failure) {
+            primary = failure;
+            throw failure;
+        } finally {
+            try {
+                if (scenario.getState() != androidx.lifecycle.Lifecycle.State.DESTROYED)
+                    web.onActivity(activity -> {
+                        assertTrue("Restore only the original live Activity orientation policy", activity == owner);
+                        activity.setRequestedOrientation(originalOrientation.get());
+                    });
+            } catch (Throwable cleanup) {
+                if (primary != null) primary.addSuppressed(cleanup);
+                else throw new AssertionError("Owned orientation policy restoration failed", cleanup);
+            }
+        }
+    }
+
     private String nativeIngress(String action, String marker, String text) throws Exception {
         checkDeadline();
         assertTrue("Bounded synthetic ingress only", text.length() <= 4096 && text.startsWith(marker + " "));
@@ -237,6 +384,208 @@ public final class NavigationTaskReflowTest {
             .put("chars", text.length()).put("textSha256", sha(text.getBytes(StandardCharsets.UTF_8)))
             .put("dispatchedUptimeMs", dispatched).put("observedUptimeMs", SystemClock.uptimeMillis()));
         return id;
+    }
+
+    private JSONObject reflowObservation() throws Exception {
+        checkDeadline();
+        String publicRead = "(() => {const root=document.querySelector('.app-shell'),history=document.querySelector('[data-session-scroll=\"history\"]'),cards=" + CARDS + ";"
+            + "let scroller=null;if(history&&!history.hidden){for(let e=cards[0];e;e=e.parentElement){const s=getComputedStyle(e);if(/auto|scroll/.test(s.overflowY)&&e.scrollHeight>e.clientHeight+1){scroller=e;break;}}}"
+            + "let frame=null;if(scroller){const r=scroller.getBoundingClientRect();frame={left:Math.max(0,r.left+scroller.clientLeft),top:Math.max(0,r.top+scroller.clientTop),right:Math.min(innerWidth,r.left+scroller.clientLeft+scroller.clientWidth),bottom:Math.min(innerHeight,r.top+scroller.clientTop+scroller.clientHeight)};"
+            + "for(let e=scroller.parentElement;e;e=e.parentElement){const r=e.getBoundingClientRect(),s=getComputedStyle(e);if(/hidden|clip|auto|scroll/.test(s.overflowX)){frame.left=Math.max(frame.left,r.left+e.clientLeft);frame.right=Math.min(frame.right,r.left+e.clientLeft+e.clientWidth);}if(/hidden|clip|auto|scroll/.test(s.overflowY)){frame.top=Math.max(frame.top,r.top+e.clientTop);frame.bottom=Math.min(frame.bottom,r.top+e.clientTop+e.clientHeight);}}}"
+            + "const entries=cards.map(e=>{const r=e.getBoundingClientRect();return {id:e.dataset.clipId,preview:e.querySelector('.history-text')?.textContent,pinned:e.querySelector('[aria-label=\"Pin Clip\"]')?.getAttribute('aria-pressed'),rect:r.toJSON(),visible:!!frame&&Math.min(r.bottom,frame.bottom)-Math.max(r.top,frame.top)>=Math.min(24,r.height)&&Math.min(r.right,frame.right)-Math.max(r.left,frame.left)>=24};});"
+            + "const name=" + NAME + ",dialog=document.querySelector('[data-task-dialog]');return {timeOrigin:String(performance.timeOrigin),viewport:{width:innerWidth,height:innerHeight},classes:root.className,fonts:document.fonts.status,contentCss:{width:parseFloat(document.documentElement.style.getPropertyValue('--clipp-content-width')),height:parseFloat(document.documentElement.style.getPropertyValue('--clipp-content-height'))},query:(" + QUERY + ")?.value,destination:document.querySelector('nav [aria-current=\"page\"]')?.getAttribute('data-session-focus'),"
+            + "history:scroller?{key:scroller.dataset.sessionScroll,classes:scroller.className,frame,scrollTop:scroller.scrollTop,scrollHeight:scroller.scrollHeight,clientHeight:scroller.clientHeight,cards:entries,visible:entries.filter(e=>e.visible)}:null,name:name?{raw:name.value,focused:document.activeElement===name}:null,alerts:dialog?[...dialog.querySelectorAll('[role=alert]')].filter(e=>e.getClientRects().length).map(e=>e.textContent):[]};})()";
+        JSONObject result = new JSONObject().put("public", new JSONObject(web.evaluate(publicRead)))
+            .put("native", nativeGeometry());
+        web.onActivity(activity -> {
+            try {
+                result.getJSONObject("native").put("orientation", activity.getResources().getConfiguration().orientation)
+                    .put("sameActivity", activity == owner).put("sameWebView", activity.getBridge().getWebView() == ownerWebView);
+            } catch (Exception error) { throw new AssertionError("Native reflow identity observation failed", error); }
+        });
+        checkDeadline();
+        lastReflowObservation = result;
+        return result;
+    }
+
+    private JSONObject awaitCompletedHistoryScroll(JSONObject before) throws Exception {
+        long end = Math.min(deadline, SystemClock.uptimeMillis() + UI_TIMEOUT_MS), stableSince = 0;
+        double original = before.getJSONObject("public").getJSONObject("history").getDouble("scrollTop");
+        String previous = null;
+        do {
+            checkObservationDeadline(end, "completed native History scroll");
+            JSONObject sample = reflowObservation(), history = sample.getJSONObject("public").optJSONObject("history");
+            checkObservationDeadline(end, "completed native History scroll");
+            String current = sample.toString();
+            long now = SystemClock.uptimeMillis();
+            boolean moved = history != null && Math.abs(history.getDouble("scrollTop") - original) > 8
+                && history.getJSONArray("visible").length() > 0;
+            if (!moved || !current.equals(previous)) stableSince = now;
+            else if (now - stableSince >= 250) return sample;
+            previous = current;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < end);
+        throw new AssertionError("One actual native swipe must change and settle scroll with a visible UUID anchor");
+    }
+
+    private JSONObject awaitCompletedReflow(int orientation, boolean cramped, JSONObject before) throws Exception {
+        long end = Math.min(deadline, SystemClock.uptimeMillis() + UI_TIMEOUT_MS), stableSince = 0;
+        String previous = null;
+        do {
+            checkObservationDeadline(end, "completed orientation reflow");
+            JSONObject sample = reflowObservation(), nativeState = sample.getJSONObject("native"), ui = sample.getJSONObject("public");
+            checkObservationDeadline(end, "completed orientation reflow");
+            JSONObject window = nativeState.getJSONObject("windowPx"), view = nativeState.getJSONObject("webViewPx");
+            JSONObject oldWindow = before.getJSONObject("native").getJSONObject("windowPx");
+            JSONObject oldView = before.getJSONObject("native").getJSONObject("webViewPx");
+            JSONObject viewport = ui.getJSONObject("viewport"), oldViewport = before.getJSONObject("public").getJSONObject("viewport");
+            boolean landscape = orientation == Configuration.ORIENTATION_LANDSCAPE;
+            boolean ready = nativeState.getInt("orientation") == orientation && nativeState.getBoolean("focused")
+                && nativeState.getBoolean("sameActivity") && nativeState.getBoolean("sameWebView") && !nativeState.getBoolean("imeVisible")
+                && (landscape ? window.getInt("width") > window.getInt("height") : window.getInt("height") > window.getInt("width"))
+                && window.getInt("width") != oldWindow.getInt("width") && window.getInt("height") != oldWindow.getInt("height")
+                && view.getInt("width") != oldView.getInt("width") && view.getInt("height") != oldView.getInt("height")
+                && viewport.getDouble("width") != oldViewport.getDouble("width") && viewport.getDouble("height") != oldViewport.getDouble("height")
+                && ui.getJSONObject("contentCss").getDouble("width") > 0 && ui.getJSONObject("contentCss").getDouble("height") > 0
+                && ui.getJSONObject("contentCss").getDouble("width") != before.getJSONObject("public").getJSONObject("contentCss").getDouble("width")
+                && ui.getJSONObject("contentCss").getDouble("height") != before.getJSONObject("public").getJSONObject("contentCss").getDouble("height")
+                && ui.getString("classes").contains("workspace-cramped") == cramped
+                && "loaded".equals(ui.getString("fonts")) && documentTimeOrigin.equals(ui.getString("timeOrigin"));
+            String current = sample.toString();
+            long now = SystemClock.uptimeMillis();
+            if (!ready || !current.equals(previous)) stableSince = now;
+            else if (now - stableSince >= 250) return sample;
+            previous = current;
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < end);
+        throw new AssertionError("Native dimensions, live document and intended responsive layout did not complete orientation " + orientation);
+    }
+
+    private void assertHistoryAnchor() throws Exception {
+        JSONObject sample = reflowObservation(), history = sample.getJSONObject("public").getJSONObject("history");
+        assertEquals("History remains the selected destination", "destination:history", sample.getJSONObject("public").getString("destination"));
+        boolean found = false;
+        JSONArray visible = history.getJSONArray("visible");
+        for (int index = 0; index < visible.length(); index++) {
+            JSONObject clip = visible.getJSONObject(index);
+            if (selectedId.equals(clip.getString("id"))) {
+                assertTrue("Visible UUID retains its public marker association", clip.getString("preview").startsWith(selectedMarker + " "));
+                assertEquals("Visible anchor remains Pinned", "true", clip.getString("pinned"));
+                found = true;
+            }
+        }
+        assertTrue("The actual scrolled semantic Clip anchor remains meaningfully visible after completed layout", found);
+    }
+
+    private void awaitNameValidation() throws Exception {
+        awaitUi("actual invalid raw Name, validation and editor focus retained",
+            "(" + NAME + ")?.value === " + JSONObject.quote(draft) + " && document.activeElement === (" + NAME + ")"
+            + " && [...document.querySelectorAll('[data-task-dialog] [role=alert]')].some(e => e.getClientRects().length && e.textContent.trim() === 'Device Name must contain 1–64 characters without control or line breaks. Edit and Save again.')");
+    }
+
+    private void observeReflow(String stage, JSONObject sample) throws Exception {
+        observe(stage);
+        trace.getJSONObject(trace.length() - 1).put("completedReflow", sample);
+    }
+
+    private void requireSwipeOwner(UiAutomation automation) throws Exception {
+        NativeAcceptanceTarget.requireIsolated(target.getPackageName());
+        web.onActivity(activity -> assertTrue("Native swipe remains in the exact foreground Activity/WebView",
+            activity == owner && activity.getBridge().getWebView() == ownerWebView && activity.hasWindowFocus()
+                && activity.getLifecycle().getCurrentState() == androidx.lifecycle.Lifecycle.State.RESUMED));
+        AccessibilityNodeInfo active = automation.getRootInActiveWindow();
+        try {
+            assertTrue("Native swipe requires the actual isolated app window", active != null
+                && target.getPackageName().equals(String.valueOf(active.getPackageName())));
+        } finally { if (active != null) active.recycle(); }
+    }
+
+    private boolean swipeEvent(UiAutomation automation, int action, long down, float x, float y) {
+        MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
+        event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        try { return automation.injectInputEvent(event, true); }
+        finally { event.recycle(); }
+    }
+
+    private void swipeHistoryOnce(JSONObject observation) throws Exception {
+        JSONObject history = observation.getJSONObject("public").getJSONObject("history"), frame = history.getJSONObject("frame");
+        assertTrue("Delivered History must actually scroll", history.getInt("scrollHeight") > history.getInt("clientHeight") + 8);
+        assertTrue("Visible scroll owner must contain a meaningful physical swipe", frame.getDouble("bottom") - frame.getDouble("top") >= 96
+            && frame.getDouble("right") - frame.getDouble("left") >= 96);
+        double startFraction = history.getDouble("scrollTop") < (history.getInt("scrollHeight") - history.getInt("clientHeight")) / 2.0 ? 0.8 : 0.2;
+        float[] points = new float[3];
+        web.onActivity(activity -> {
+            try {
+                WebView view = activity.getBridge().getWebView();
+                int[] location = new int[2]; view.getLocationOnScreen(location);
+                float scale = (float) (view.getWidth() / observation.getJSONObject("public").getJSONObject("viewport").getDouble("width"));
+                points[0] = location[0] + (float) ((frame.getDouble("left") + frame.getDouble("right")) / 2) * scale;
+                points[1] = location[1] + (float) (frame.getDouble("top") + (frame.getDouble("bottom") - frame.getDouble("top")) * startFraction) * scale;
+                points[2] = location[1] + (float) (frame.getDouble("top") + (frame.getDouble("bottom") - frame.getDouble("top")) * (1 - startFraction)) * scale;
+                WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(view);
+                assertNotNull("Native swipe safe geometry is required", insets);
+                Insets safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.ime());
+                Rect window = activity.getWindowManager().getCurrentWindowMetrics().getBounds();
+                assertTrue("Both swipe endpoints must stay inside the visible native safe area",
+                    points[0] > Math.max(location[0], window.left + safe.left) && points[0] < Math.min(location[0] + view.getWidth(), window.right - safe.right)
+                    && Math.min(points[1], points[2]) > Math.max(location[1], window.top + safe.top)
+                    && Math.max(points[1], points[2]) < Math.min(location[1] + view.getHeight(), window.bottom - safe.bottom));
+            } catch (Exception error) { throw new AssertionError("Native swipe geometry unavailable", error); }
+        });
+        UiAutomation automation = instrumentation.getUiAutomation();
+        long end = Math.min(deadline, SystemClock.uptimeMillis() + 2000), moveEnd = end - 250, down = SystemClock.uptimeMillis();
+        boolean downSent = false, terminalAccepted = false;
+        Throwable primary = null;
+        JSONArray moves = new JSONArray();
+        reflowGesture = new JSONObject().put("deadlineUptimeMs", end).put("xPx", points[0]).put("startYPx", points[1]).put("endYPx", points[2]).put("events", moves);
+        try {
+            checkObservationDeadline(moveEnd, "native History swipe DOWN");
+            JSONObject current = reflowObservation();
+            assertEquals("The delivered visible History owner must remain unchanged before DOWN", frame.toString(),
+                current.getJSONObject("public").getJSONObject("history").getJSONObject("frame").toString());
+            assertEquals("The native viewport must still match the located swipe", observation.getJSONObject("public").getJSONObject("viewport").toString(),
+                current.getJSONObject("public").getJSONObject("viewport").toString());
+            assertEquals("The native WebView must still match the located swipe", observation.getJSONObject("native").getJSONObject("webViewPx").toString(),
+                current.getJSONObject("native").getJSONObject("webViewPx").toString());
+            assertEquals("The native window must still match the located swipe", observation.getJSONObject("native").getJSONObject("windowPx").toString(),
+                current.getJSONObject("native").getJSONObject("windowPx").toString());
+            requireSwipeOwner(automation);
+            checkObservationDeadline(moveEnd, "native History swipe DOWN");
+            downSent = true;
+            boolean accepted = swipeEvent(automation, MotionEvent.ACTION_DOWN, down, points[0], points[1]);
+            moves.put(new JSONObject().put("action", "DOWN").put("accepted", accepted));
+            assertTrue("Actual native DOWN must be accepted", accepted);
+            for (int step = 1; step <= 8; step++) {
+                checkObservationDeadline(moveEnd, "native History swipe MOVE");
+                accepted = swipeEvent(automation, MotionEvent.ACTION_MOVE, down, points[0], points[1] + (points[2] - points[1]) * step / 8);
+                moves.put(new JSONObject().put("action", "MOVE").put("accepted", accepted));
+                checkObservationDeadline(moveEnd, "native History swipe MOVE");
+                assertTrue("Each actual native MOVE must be accepted", accepted);
+            }
+            requireSwipeOwner(automation);
+            checkObservationDeadline(end, "native History swipe UP");
+            terminalAccepted = swipeEvent(automation, MotionEvent.ACTION_UP, down, points[0], points[2]);
+            moves.put(new JSONObject().put("action", "UP").put("accepted", terminalAccepted));
+            checkObservationDeadline(end, "native History swipe UP");
+            assertTrue("Actual native UP must complete the gesture", terminalAccepted);
+        } catch (Exception | Error failure) {
+            primary = failure;
+            throw failure;
+        } finally {
+            if (downSent && !terminalAccepted) {
+                try {
+                    requireSwipeOwner(automation);
+                    checkObservationDeadline(end, "native History swipe cancellation");
+                    terminalAccepted = swipeEvent(automation, MotionEvent.ACTION_CANCEL, down, points[0], points[2]);
+                    moves.put(new JSONObject().put("action", "CANCEL").put("accepted", terminalAccepted));
+                    assertTrue("Failed native gesture must be cancelled", terminalAccepted);
+                } catch (Throwable cleanup) {
+                    if (primary != null) primary.addSuppressed(cleanup);
+                    else throw new AssertionError("Owned swipe cancellation unconfirmed", cleanup);
+                }
+            }
+            reflowGesture.put("terminalAccepted", terminalAccepted).put("finishedUptimeMs", SystemClock.uptimeMillis());
+        }
     }
 
     private void assertMarkerAssociations(int expected) throws Exception {
@@ -441,9 +790,16 @@ public final class NavigationTaskReflowTest {
         }
         try {
             JSONObject receipt = new JSONObject().put("rootNonce", nonce).put("profile", "ordinary-default")
-                .put("scope", "N1-only-genuine-ingress-navigation-search-filter-retained-name")
+                .put("scope", completedReflowCase ? "N3-only-completed-default-orientation-history-anchor-and-name-validation"
+                    : "N1-only-genuine-ingress-navigation-search-filter-retained-name")
                 .put("journeyPassed", journeyPassed).put("activityCleanupComplete", cleanupComplete)
-                .put("nativeInput", "unchanged NativePublicWebView guarded DOWN/UP plus Android text/keys")
+                .put("n1JourneyPassed", !completedReflowCase && journeyPassed)
+                .put("completedReflowJourneyPassed", completedReflowCase && journeyPassed)
+                .put("completedReflow", completedReflowCase ? new JSONObject()
+                    .put("lastObservation", lastReflowObservation).put("nativeSwipe", reflowGesture) : JSONObject.NULL)
+                .put("nativeInput", completedReflowCase
+                    ? "unchanged NativePublicWebView guarded DOWN/UP, one owned touchscreen swipe plus Android text/keys and orientation"
+                    : "unchanged NativePublicWebView guarded DOWN/UP plus Android text/keys")
                 .put("ingress", ingress).put("trace", trace).put("copyPerformed", false)
                 .put("rootJUnitAndGuestCleanupStillRequired", true);
             byte[] bytes = receipt.toString().getBytes(StandardCharsets.UTF_8);
