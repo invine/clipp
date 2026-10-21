@@ -22,7 +22,19 @@ const retentionPersisted = new Promise((resolve) => {
   announceRetention = resolve;
 });
 const events = new Map();
-const rejectionMode = process.argv[2] === "stop-rejection";
+const mode = process.argv[2] ?? "overlap";
+const startupMode = ["start-overlap", "start-failure", "stop-startup"].includes(
+  mode
+);
+let startupFailure = mode === "start-failure";
+let releaseStartup, announceStartup;
+const startupGate = new Promise((resolve) => {
+  releaseStartup = resolve;
+});
+const startupEntered = new Promise((resolve) => {
+  announceStartup = resolve;
+});
+const rejectionMode = mode === "stop-rejection";
 const resetMode = process.argv[2] === "reset" || rejectionMode;
 let releaseResetWrite, announceResetWrite;
 const resetWriteGate = new Promise((resolve) => {
@@ -33,7 +45,7 @@ const resetWriteStarted = new Promise((resolve) => {
 });
 let nativeFenced = false;
 let restartAttempts = 0;
-if (resetMode) {
+if (resetMode || startupMode) {
   const require = createRequire(import.meta.url);
   const denyNetwork = () => {
     throw Error("fixture_network_unavailable");
@@ -44,7 +56,14 @@ if (resetMode) {
   syncBuiltinESMExports();
 }
 globalThis.cycleNative = {
-  get: async ({ key }) => ({ value: values.get(key) ?? null }),
+  get: async ({ key }) => {
+    if (startupMode && key === "clipp-android:sharingLifetimeMs") {
+      announceStartup();
+      await startupGate;
+      if (startupFailure) throw Error("fixture_startup_read_failed");
+    }
+    return { value: values.get(key) ?? null };
+  },
   set: async ({ key, value }) => {
     if (rejectionMode && key === "clipp-android:manualIdentityReset") {
       announceResetWrite();
@@ -109,7 +128,6 @@ globalThis.document = Object.assign(new EventTarget(), {
 });
 let client;
 let failed = false;
-const mode = process.argv[2] ?? "overlap";
 try {
   await build({
     stdin: {
@@ -149,7 +167,7 @@ try {
   });
   const { AndroidClient, LocalStorageBackend, createAndroidRuntime } =
     await import(join(own, "client.mjs"));
-  const owner = resetMode ? createAndroidRuntime() : undefined;
+  const owner = resetMode || startupMode ? createAndroidRuntime() : undefined;
   client =
     owner?.client ??
     new AndroidClient(
@@ -160,6 +178,68 @@ try {
     );
   const settingsUpdates = [];
   client.onSettingsUpdate((snapshot) => settingsUpdates.push(snapshot));
+  if (startupMode) {
+    const publications = [];
+    const unsubscribe = client.onUpdate((state) => publications.push(state));
+    const first = owner.start();
+    if (mode === "stop-startup") {
+      const result = Promise.allSettled([first]);
+      await startupEntered;
+      const stop = owner.stop();
+      assert.throws(() => owner.start(), /identity_runtime_suspended/);
+      releaseStartup();
+      await stop;
+      assert.equal((await result)[0].status, "rejected");
+      assert.equal((await owner.publicState()).identity, null);
+      assert.throws(() => owner.start(), /identity_runtime_suspended/);
+      console.log(
+        JSON.stringify({ pass: true, mode, actualNativeHost: false })
+      );
+      process.exit(0);
+    }
+    // Observe rejection immediately so the host keeps both public starts owned.
+    const outcomes = [first];
+    await startupEntered;
+    let secondSettled = false;
+    const second = owner.start().finally(() => {
+      secondSettled = true;
+    });
+    outcomes.push(second);
+    const settled = Promise.allSettled(outcomes);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      secondSettled,
+      false,
+      "an overlapping owning start must await real startup readiness"
+    );
+    releaseStartup();
+    const results = await settled;
+    if (startupFailure) {
+      assert.deepEqual(
+        results.map((result) => result.status),
+        ["rejected", "rejected"],
+        "a failed real startup cannot satisfy either awaiting host"
+      );
+      assert.equal((await owner.publicState()).identity, null);
+      startupFailure = false;
+      await owner.start();
+    } else {
+      assert.deepEqual(
+        results.map((result) => result.status),
+        ["fulfilled", "fulfilled"]
+      );
+    }
+    assert.ok((await owner.publicState()).identity);
+    assert.ok(
+      publications.some((state) => state.identity),
+      "the subscribed public feed observes real startup publication"
+    );
+    unsubscribe();
+    await owner.stop();
+    assert.throws(() => owner.start(), /identity_runtime_suspended/);
+    console.log(JSON.stringify({ pass: true, mode, actualNativeHost: false }));
+    process.exit(0);
+  }
   if (mode !== "cold") await client.getSettings();
   let startupTimeout;
   try {
@@ -295,6 +375,7 @@ try {
 } finally {
   releaseRetention();
   releaseResetWrite();
+  releaseStartup();
   await rm(own, { recursive: true, force: true });
   // A regression failure can leave the real owner's queues blocked. Do not wait
   // for blocked teardown; only this isolated child's inert OS state is retired.

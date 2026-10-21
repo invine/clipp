@@ -34,3 +34,39 @@ it("terminal owning stop stays sealed when an admitted reset is conclusively rej
     }
   );
 });
+
+it("overlapping owning Android starts await the same real startup readiness", () => {
+  execFileSync(
+    process.execPath,
+    ["tests/harness/android-settings-lifecycle.mjs", "start-overlap"],
+    {
+      cwd: process.cwd(),
+      stdio: "pipe",
+      timeout: 20_000,
+    }
+  );
+});
+
+it("failed owning Android startup rejects every awaiting host and remains retryable until terminal stop", () => {
+  execFileSync(
+    process.execPath,
+    ["tests/harness/android-settings-lifecycle.mjs", "start-failure"],
+    {
+      cwd: process.cwd(),
+      stdio: "pipe",
+      timeout: 20_000,
+    }
+  );
+});
+
+it("terminal owning Android stop drains and retires an incomplete startup", () => {
+  execFileSync(
+    process.execPath,
+    ["tests/harness/android-settings-lifecycle.mjs", "stop-startup"],
+    {
+      cwd: process.cwd(),
+      stdio: "pipe",
+      timeout: 20_000,
+    }
+  );
+});

@@ -236,9 +236,16 @@ export class AndroidClient {
   static createRuntime() {
     const client = new AndroidClient();
     let stopped: Promise<void> | undefined;
+    let starting: Promise<void> | undefined;
     return {
       client,
-      start: () => client.start(),
+      start: () => {
+        if (stopped) throw new Error("identity_runtime_suspended");
+        client.workFence.assertOpen();
+        return (starting ??= client.start().finally(() => {
+          starting = undefined;
+        }));
+      },
       publicState: () => client.getState(),
       identityReset: {
         begin: async (
