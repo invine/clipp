@@ -1,5 +1,6 @@
 import { build } from "esbuild";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -15,7 +16,10 @@ const repo = fileURLToPath(new URL("../..", import.meta.url));
 await mkdir(join(repo, ".local"), { recursive: true });
 const directory = await mkdtemp(join(repo, ".local", "main-window-"));
 const require = createRequire(import.meta.url);
-const resetMode = process.argv[2] === "reset";
+const entryMode = process.argv[2]?.startsWith("reset-entry-")
+  ? process.argv[2].slice("reset-entry-".length)
+  : undefined;
+const resetMode = process.argv[2] === "reset" || !!entryMode;
 let restartAttempts = 0;
 let clipboardText = "";
 let networkDenied = false;
@@ -172,14 +176,24 @@ const waitFor = async (condition, description) => {
 let failed = false;
 try {
   await build({
-    entryPoints: [
-      join(
-        repo,
-        resetMode
-          ? "apps/electron/src/electronRuntime.ts"
-          : "apps/electron/src/main.ts"
-      ),
-    ],
+    ...(entryMode
+      ? {
+          stdin: {
+            contents: `export {startElectronRuntime} from "./apps/electron/src/electronRuntime.ts"; export {startElectronResetOwningAcceptance} from "./apps/electron/src/resetOwningAcceptance.ts";`,
+            resolveDir: repo,
+            loader: "ts",
+          },
+        }
+      : {
+          entryPoints: [
+            join(
+              repo,
+              resetMode
+                ? "apps/electron/src/electronRuntime.ts"
+                : "apps/electron/src/main.ts"
+            ),
+          ],
+        }),
     bundle: true,
     platform: "node",
     packages: "external",
@@ -206,6 +220,17 @@ try {
     ],
   });
   const entry = await import(join(directory, "main.mjs"));
+  if (entryMode === "invalid") {
+    await assert.rejects(
+      entry.startElectronResetOwningAcceptance('{"command":"reset"}', () => {}),
+      /invalid_manifest/
+    );
+    assert.equal(windows.length, 0);
+    assert.equal(handlers.size, 0);
+    console.log("invalid owning entry input starts no production owner");
+    rmSync(directory, { recursive: true, force: true });
+    process.exit(0);
+  }
   const owner = resetMode ? await entry.startElectronRuntime() : undefined;
   if (owner) await owner.ready;
   await waitFor(
@@ -222,13 +247,119 @@ try {
     assert.ok(initial.identity?.deviceId);
     await handlers.get("clipp:set-settings")(
       {},
-      { autoSync: false, theme: "dark" }
+      {
+        autoSync: false,
+        theme: "dark",
+        ...(entryMode ? { localRetentionMs: 604800000 } : {}),
+      }
     );
-    clipboardText = "synthetic pre-reset capture";
+    if (entryMode === "settings") {
+      const saved = await handlers.get("clipp:get-settings")({});
+      assert.equal(saved.snapshot.state.autoSync, false);
+      assert.equal(
+        (await owner.publicState()).autoSync,
+        false,
+        "generic settings must update the same live Auto Sync owner as public state"
+      );
+      await owner.stop();
+      rmSync(directory, { recursive: true, force: true });
+      process.exit(0);
+    }
+    clipboardText = entryMode
+      ? "clipp-reset-before"
+      : "synthetic pre-reset capture";
     await waitFor(
       async () => (await owner.publicState()).clips.length === 1,
       "ordinary capture was not saved"
     );
+    if (entryMode) {
+      const state = await owner.publicState();
+      await handlers.get("clipp:set-pin")(
+        {},
+        { id: state.clips[0].id, pinned: true }
+      );
+      const common = {
+        version: 1,
+        caseId: "electron29-source",
+        deadlineUnixMs: Date.now() + 10000,
+      };
+      const manifest =
+        entryMode === "preflight"
+          ? { ...common, mode: "observe-preflight" }
+          : {
+              ...common,
+              mode: entryMode === "replay" ? "observe-replay" : "execute",
+              operationId: "electron-owning-reset",
+              reviewedPeerId:
+                entryMode === "mismatch"
+                  ? "another-peer"
+                  : initial.identity.deviceId,
+              expected: {
+                autoSync: false,
+                localRetentionMs: 604800000,
+                markers: ["clipp-reset-before"],
+                nextMarker: "clipp-reset-after",
+                pinnedCount: 1,
+                configurationSha256: createHash("sha256")
+                  .update(JSON.stringify(state.managedRelayConfigurations))
+                  .digest("hex"),
+              },
+            };
+      const records = [];
+      const starting = entry.startElectronResetOwningAcceptance(
+        JSON.stringify(manifest),
+        (row) => records.push(row)
+      );
+      if (entryMode === "mismatch" || entryMode === "replay") {
+        await assert.rejects(
+          starting,
+          entryMode === "mismatch"
+            ? /preflight_mismatch/
+            : /replay_history_not_empty/
+        );
+        assert.equal(restartAttempts, 0);
+        assert.equal(
+          records.some((row) => row.stage === "begin-requested"),
+          false
+        );
+      } else {
+        const observer = await starting;
+        if (entryMode === "preflight") {
+          assert.ok(
+            records.some(
+              (row) =>
+                row.stage === "preflight-observation" &&
+                row.currentPeerId === initial.identity.deviceId &&
+                row.clipCount === 1 &&
+                row.pinnedCount === 1
+            )
+          );
+          assert.equal(restartAttempts, 0);
+        } else {
+          assert.equal(entryMode, "execute");
+          assert.equal(restartAttempts, 1);
+          assert.ok(
+            records.some(
+              (row) =>
+                row.stage === "begin-returned" &&
+                row.outcome === "completed" &&
+                row.restartRequired === true
+            )
+          );
+          // The entry already retired its former owner; the ordinary reset mode
+          // below covers durable reconcile before its SQLite connection closes.
+          assert.equal(clipboardText, "clipp-reset-before");
+        }
+        await observer.stop();
+      }
+      console.log(
+        "owning entry source case " +
+          entryMode +
+          " (inert OS boundaries; no native qualification)"
+      );
+      rmSync(directory, { recursive: true, force: true });
+      process.exit(0);
+    }
     const result = await owner.identityReset.begin({
       operationId: "electron-owning-reset",
       reviewedPeerId: initial.identity.deviceId,

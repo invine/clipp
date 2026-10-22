@@ -8,6 +8,14 @@ import {
   createSQLiteIdentityRotationCoordinator,
 } from "../../apps/electron/src/storage";
 import { createKVIdentityRepository } from "../../packages/core/trust/storage";
+import { createElectronManagedRelayAuth } from "../../apps/electron/src/managedRelayAuth";
+import { loadManagedRelayConfigurations } from "../../packages/core/network/managedRelays";
+
+jest.mock(
+  "@multiformats/multiaddr",
+  () => ({ multiaddr: (address: string) => ({ toString: () => address }) }),
+  { virtual: true }
+);
 
 it("the SQLite owner durably resets History and identity while preserving settings after reopening", async () => {
   const dir = mkdtempSync(join(tmpdir(), "clipp-reset-"));
@@ -38,11 +46,63 @@ it("the SQLite owner durably resets History and identity while preserving settin
       localRetentionMs: 1000,
       sharingLifetimeMs: 2000,
       backgroundMode: true,
-      managedRelayConfigurations: [{ id: "saved" }],
+      managedRelayConfigurations: [
+        {
+          key: "saved",
+          name: "Saved relay",
+          kind: "managed",
+          discoveryUrl: "https://relay.example/v1/relay",
+        },
+      ],
     }))
       await storage.set(key, value);
     await storage.set("autoSync", false);
-    await storage.set("managedRelayCredentials", { token: "keep" });
+    // Exercise the actual auth-owned encoded key, not a similarly named row.
+    // Protection/token exchange are synthetic OS/network boundaries only.
+    const endpoint = "https://relay.example/v1/relay";
+    const createAuth = () =>
+      createElectronManagedRelayAuth({
+        storage: {
+          get: async (key) => (await storage.get<string>(key)) ?? null,
+          set: (key, value) => storage.set(key, value),
+          delete: (key) => storage.remove(key),
+        },
+        protection: {
+          isEncryptionAvailable: () => true,
+          getSelectedStorageBackend: () => "fixture-protected",
+          encryptString: (value) => Buffer.from(`protected:${value}`),
+          decryptString: (value) => {
+            const text = value.toString();
+            if (!text.startsWith("protected:")) throw new Error("unreadable");
+            return text.slice("protected:".length);
+          },
+        },
+        openExternal: async () => {
+          throw new Error("unexpected_login");
+        },
+        postToken: async (_url, params) => {
+          expect(params.get("grant_type")).toBe("refresh_token");
+          expect(params.get("refresh_token")).toBe(
+            "synthetic-refresh-before-reset"
+          );
+          return {
+            access_token: "synthetic-access-after-reopen",
+            refresh_token: "synthetic-refresh-after-reopen",
+            token_type: "Bearer",
+            expires_in: 900,
+          };
+        },
+      });
+    await createAuth().acceptTokens(endpoint, {
+      access_token: "synthetic-access-before-reset",
+      refresh_token: "synthetic-refresh-before-reset",
+      token_type: "Bearer",
+      expires_in: 900,
+    });
+    const credentialKey =
+      "managedRelayRefresh:https%3A%2F%2Frelay.example%2Fv1%2Frelay";
+    const savedCredential = await storage.get<string>(credentialKey);
+    expect(savedCredential).toBeDefined();
     await history.set("old", { content: "pinned old history" });
     const owner = createSQLiteIdentityRotationCoordinator({
       db,
@@ -104,13 +164,25 @@ it("the SQLite owner durably resets History and identity while preserving settin
     expect(await storage.get("localRetentionMs")).toBe(1000);
     expect(await storage.get("sharingLifetimeMs")).toBe(2000);
     expect(await storage.get("backgroundMode")).toBe(true);
-    expect(await storage.get("managedRelayConfigurations")).toEqual([
-      { id: "saved" },
+    expect(
+      await loadManagedRelayConfigurations({
+        readNewModel: () => storage.get("managedRelayConfigurations"),
+        writeNewModel: (values) =>
+          storage.set("managedRelayConfigurations", values),
+      })
+    ).toEqual([
+      {
+        key: "saved",
+        name: "Saved relay",
+        kind: "managed",
+        discoveryUrl: "https://relay.example/v1/relay",
+      },
     ]);
     expect(await storage.get("autoSync")).toBe(false);
-    expect(await storage.get("managedRelayCredentials")).toEqual({
-      token: "keep",
-    });
+    expect(await storage.get(credentialKey)).toBe(savedCredential);
+    expect(await createAuth().accessToken(endpoint)).toBe(
+      "synthetic-access-after-reopen"
+    );
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
