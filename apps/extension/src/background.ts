@@ -1,4 +1,8 @@
 import { prepareChromeIdentityRuntime } from "./identityRuntimeRecovery";
+import {
+  copyIdentityResetState,
+  type IdentityResetState,
+} from "../../../packages/core/trust/manualIdentityReset";
 import { installChromeManagement } from "./chromeManagementRuntime";
 import { MANAGEMENT_PORT } from "./chromeManagement";
 import { observeExtensionClipboard } from "./clipboardObservation";
@@ -124,6 +128,7 @@ let historyPolicyError: "history_cleanup_failed" | null = null;
 let historyRetentionCleanup: HistoryRetentionCleanup | undefined;
 let resetClipboardBaselineRequired = false;
 let startupResetChecked = false;
+let startupResetState: IdentityResetState | undefined;
 const resetStorage = new ChromeStorageBackend();
 const storage = identityWork.protect(resetStorage);
 // This runs before eager preferences, History maintenance, UI requests or offscreen wake.
@@ -133,6 +138,7 @@ const startupResetReady = Promise.resolve().then(async () => {
     workFence: identityWork,
     retireOffscreen: () => stopOffscreenDocument(true),
   });
+  startupResetState = copyIdentityResetState(state);
   if (state.phase === "idle" && state.completedOperation)
     resetClipboardBaselineRequired =
       (await identityRepo.get())?.deviceId ===
@@ -767,6 +773,10 @@ const identityRotation = createChromeIdentityRotationCoordinator({
     prepare: () => clipboardSync.prepareIdentityRotationCleanup(),
   },
   shutdown: () => identityRotationShutdown(),
+});
+identityRotation.onStatusChanged((status) => {
+  if (status.kind === "manual-reset")
+    startupResetState = copyIdentityResetState(status.state);
 });
 async function identityRotationShutdown() {
   await stopIdentityBoundRuntimeServices([
@@ -1759,6 +1769,23 @@ let stopped: Promise<void> | undefined;
 export const chromeRuntime = {
   ready,
   publicState: () => runtimeAdapter.publicState.read(),
+  // Privileged composition witness only; never added to product page messages.
+  owningObservation: async () => {
+    if (stopped) throw new Error("identity_runtime_stopped");
+    await ready;
+    if (stopped) throw new Error("identity_runtime_stopped");
+    const resetState = startupResetState;
+    if (!resetState) throw new Error("identity_reset_observation_unavailable");
+    const state = await runtimeAdapter.publicState.read();
+    if (stopped) throw new Error("identity_runtime_stopped");
+    if (startupResetState !== resetState)
+      throw new Error("identity_reset_observation_changed");
+    return {
+      ...state,
+      localRetentionMs,
+      identityResetState: copyIdentityResetState(resetState),
+    };
+  },
   identityReset: {
     begin: async (
       request: Parameters<typeof identityRotation.beginIdentityReset>[0]

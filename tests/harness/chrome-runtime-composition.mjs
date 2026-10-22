@@ -19,6 +19,7 @@ const event = () => {
     removeListener: (listener) => listeners.delete(listener),
   };
 };
+let storageMutations = 0;
 const area = () => {
   const values = new Map();
   return {
@@ -32,12 +33,14 @@ const area = () => {
       return Promise.resolve(result);
     },
     set(items, callback) {
+      storageMutations++;
       for (const [key, value] of Object.entries(items))
         values.set(key, structuredClone(value));
       callback?.();
       return Promise.resolve();
     },
     remove(key, callback) {
+      storageMutations++;
       values.delete(key);
       callback?.();
       return Promise.resolve();
@@ -130,17 +133,46 @@ try {
     "production worker must deliberately return its owning composition"
   );
   await owner.ready;
+  assert.equal(
+    typeof owner.owningObservation,
+    "function",
+    "the privileged owner must expose a readonly public reset witness"
+  );
+  const beforeInitialRead = storageMutations;
+  const initialObservation = await owner.owningObservation();
+  assert.equal(initialObservation.identityResetState.phase, "idle");
+  initialObservation.identityResetState.phase = "caller-mutated";
+  assert.equal(
+    (await owner.owningObservation()).identityResetState.phase,
+    "idle"
+  );
+  assert.equal(
+    storageMutations,
+    beforeInitialRead,
+    "owner observation must not write storage"
+  );
   const initial = await owner.publicState();
   assert.ok(initial.identity?.deviceId);
   await ask({
     type: "setSettings",
-    settings: { autoSync: false, theme: "dark" },
+    settings: { autoSync: false, theme: "dark", localRetentionMs: 3_600_000 },
   });
   await ask({
     type: "shareClip",
     clip: { content: "synthetic pre-reset Clip" },
   });
   assert.equal((await owner.publicState()).clips.length, 1);
+  const beforeAppliedRead = storageMutations;
+  const applied = await owner.owningObservation();
+  assert.equal(applied.identity.deviceId, initial.identity.deviceId);
+  assert.equal(applied.autoSync, false);
+  assert.equal(
+    applied.localRetentionMs,
+    3_600_000,
+    "witness reports applied retention"
+  );
+  assert.equal(applied.clips.length, 1, "witness reuses actual public History");
+  assert.equal(storageMutations, beforeAppliedRead);
   const generation = lastGeneration;
   const result = await owner.identityReset.begin({
     operationId: "chrome-owning-reset",
@@ -149,6 +181,54 @@ try {
   assert.equal(result.outcome, "completed");
   assert.equal(reloads, 1);
   assert.equal(offscreen, false);
+  const beforeCompletedRead = storageMutations;
+  const completed = await owner.owningObservation();
+  assert.equal(completed.identityResetState.phase, "completed");
+  assert.equal(
+    completed.identityResetState.receipt.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    completed.identityResetState.receipt.formerPeerId,
+    initial.identity.deviceId
+  );
+  assert.notEqual(
+    completed.identityResetState.receipt.generatedPeerId,
+    initial.identity.deviceId
+  );
+  assert.equal(
+    completed.identityResetState.completedOperation.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(completed.localRetentionMs, 3_600_000);
+  assert.equal(
+    completed.identity,
+    null,
+    "retired owner remains publicly sealed"
+  );
+  assert.deepEqual(completed.clips, []);
+  completed.identityResetState.receipt.operationId = "caller-mutated";
+  completed.identityResetState.completedOperation.operationId =
+    "caller-mutated";
+  const retained = await owner.owningObservation();
+  assert.equal(
+    retained.identityResetState.receipt.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    retained.identityResetState.completedOperation.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    storageMutations,
+    beforeCompletedRead,
+    "completed witness must not reconcile or rewrite reset state"
+  );
+  assert.equal(
+    reloads,
+    1,
+    "reading the witness cannot request another restart"
+  );
   assert.equal((await owner.identityReset.reconcile()).phase, "completed");
   assert.equal((await owner.publicState()).identity, null);
   assert.deepEqual((await owner.publicState()).clips, []);
@@ -167,6 +247,64 @@ try {
   );
   assert.deepEqual(stale, { ok: false, error: "identity_runtime_retired" });
   await owner.stop();
+  const afterStop = storageMutations;
+  await assert.rejects(owner.owningObservation(), /identity_runtime_stopped/);
+  assert.equal(storageMutations, afterStop);
+  // Fresh production owner over the durable state created by the actual first
+  // owner reset; no private seed or synthetic receipt installs this state.
+  const { chromeRuntime: reopened } = await import(
+    join(own, "background.mjs") + "?actual-owning-incarnation=2"
+  );
+  await reopened.ready;
+  const beforeStartupRead = storageMutations;
+  const startup = await reopened.owningObservation();
+  assert.equal(startup.identityResetState.phase, "idle");
+  assert.equal(
+    startup.identityResetState.receipt.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    startup.identityResetState.receipt.formerPeerId,
+    initial.identity.deviceId
+  );
+  assert.equal(
+    startup.identityResetState.receipt.generatedPeerId,
+    startup.identity.deviceId
+  );
+  assert.equal(
+    startup.identityResetState.completedOperation.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    startup.identityResetState.completedOperation.generatedPeerId,
+    startup.identity.deviceId
+  );
+  assert.equal(startup.localRetentionMs, 3_600_000);
+  assert.equal(startup.autoSync, false);
+  assert.deepEqual(startup.clips, []);
+  startup.identityResetState.receipt.operationId = "caller-mutated-startup";
+  startup.identityResetState.completedOperation.operationId =
+    "caller-mutated-startup";
+  const startupAgain = await reopened.owningObservation();
+  assert.equal(
+    startupAgain.identityResetState.receipt.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    startupAgain.identityResetState.completedOperation.operationId,
+    "chrome-owning-reset"
+  );
+  assert.equal(
+    storageMutations,
+    beforeStartupRead,
+    "fresh-owner reads cannot reconcile or write startup state"
+  );
+  assert.equal(
+    reloads,
+    1,
+    "fresh-owner observation must not restart the completed identity again"
+  );
+  await reopened.stop();
   console.log(
     "actual Chrome composition reset remains sealed after rejected OS reload (source adapters only)"
   );
