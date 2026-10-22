@@ -440,6 +440,8 @@ public final class NavigationTaskReflowTest {
             JSONObject oldView = before.getJSONObject("native").getJSONObject("webViewPx");
             JSONObject viewport = ui.getJSONObject("viewport"), oldViewport = before.getJSONObject("public").getJSONObject("viewport");
             boolean landscape = orientation == Configuration.ORIENTATION_LANDSCAPE;
+            double expectedTimeOrigin = Double.parseDouble(documentTimeOrigin);
+            double observedTimeOrigin = Double.parseDouble(ui.getString("timeOrigin"));
             boolean ready = nativeState.getInt("orientation") == orientation && nativeState.getBoolean("focused")
                 && nativeState.getBoolean("sameActivity") && nativeState.getBoolean("sameWebView") && !nativeState.getBoolean("imeVisible")
                 && (landscape ? window.getInt("width") > window.getInt("height") : window.getInt("height") > window.getInt("width"))
@@ -450,7 +452,8 @@ public final class NavigationTaskReflowTest {
                 && ui.getJSONObject("contentCss").getDouble("width") != before.getJSONObject("public").getJSONObject("contentCss").getDouble("width")
                 && ui.getJSONObject("contentCss").getDouble("height") != before.getJSONObject("public").getJSONObject("contentCss").getDouble("height")
                 && ui.getString("classes").contains("workspace-cramped") == cramped
-                && "loaded".equals(ui.getString("fonts")) && documentTimeOrigin.equals(ui.getString("timeOrigin"));
+                && "loaded".equals(ui.getString("fonts")) && Double.isFinite(expectedTimeOrigin)
+                && Double.isFinite(observedTimeOrigin) && Double.compare(expectedTimeOrigin, observedTimeOrigin) == 0;
             String current = sample.toString();
             long now = SystemClock.uptimeMillis();
             if (!ready || !current.equals(previous)) stableSince = now;
