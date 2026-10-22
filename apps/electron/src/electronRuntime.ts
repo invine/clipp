@@ -78,7 +78,10 @@ import {
   type HistoryRetentionCleanup,
 } from "../../../packages/core/history/store.js";
 import { createHistoryStateReader } from "../../../packages/core/history/state.js";
-import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine.js";
+import {
+  createLibp2pMessagingTransport,
+  type Libp2pMessagingOptions,
+} from "../../../packages/core/network/engine.js";
 import {
   ManagedRelayController,
   loadManagedRelayConfigurations,
@@ -116,12 +119,37 @@ const preloadPath = path.join(__dirnameFallback, "preload.js");
 
 let runtime: ReturnType<typeof composeElectronRuntime> | undefined;
 
-/** One owner for this main process, including failed/recovery startup. */
-export function startElectronRuntime() {
-  return (runtime ??= composeElectronRuntime());
+export type ElectronStartupTransportOptions = Readonly<
+  Pick<
+    Libp2pMessagingOptions,
+    | "nativeListenInterface"
+    | "enableWebSocketListener"
+    | "enableMdns"
+    | "enableTcp"
+    | "enableWebRTCDirect"
+    | "enableDCUtR"
+  >
+>;
+
+/** The first caller owns this process's immutable startup transport choice. */
+export function startElectronRuntime(
+  options: ElectronStartupTransportOptions = {}
+) {
+  return (runtime ??= composeElectronRuntime(
+    Object.freeze({
+      nativeListenInterface: options.nativeListenInterface,
+      enableWebSocketListener: options.enableWebSocketListener,
+      enableMdns: options.enableMdns,
+      enableTcp: options.enableTcp ?? true,
+      enableWebRTCDirect: options.enableWebRTCDirect ?? true,
+      enableDCUtR: options.enableDCUtR ?? true,
+    })
+  ));
 }
 
-async function composeElectronRuntime() {
+async function composeElectronRuntime(
+  startupTransport: ElectronStartupTransportOptions
+) {
   const acceptance = electronRelayAcceptance(
     process.env,
     app.getPath("userData"),
@@ -412,9 +440,7 @@ async function composeElectronRuntime() {
     privateKey,
     relayAddresses,
     relayOnly,
-    enableWebRTCDirect: true,
-    enableDCUtR: true,
-    enableTcp: true,
+    ...startupTransport,
     signedPeerRecordPersistence,
     isPeerKnown: async (remotePeerId) =>
       (await identitySvc.membershipStatus(remotePeerId)) === "active",
@@ -834,9 +860,7 @@ async function composeElectronRuntime() {
       privateKey,
       relayAddresses,
       relayOnly,
-      enableWebRTCDirect: true,
-      enableDCUtR: true,
-      enableTcp: true,
+      ...startupTransport,
       signedPeerRecordPersistence,
       isPeerKnown: async (remotePeerId) =>
         (await identitySvc.membershipStatus(remotePeerId)) === "active",

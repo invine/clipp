@@ -19,18 +19,27 @@ const require = createRequire(import.meta.url);
 const entryMode = process.argv[2]?.startsWith("reset-entry-")
   ? process.argv[2].slice("reset-entry-".length)
   : undefined;
-const resetMode = process.argv[2] === "reset" || !!entryMode;
+const transportMode = process.argv[2]?.startsWith("transport-")
+  ? process.argv[2].slice("transport-".length)
+  : undefined;
+const resetMode = process.argv[2] === "reset" || !!entryMode || !!transportMode;
 let restartAttempts = 0;
 let clipboardText = "";
 let networkDenied = false;
 let startupPublished = false;
-const denyNetwork = () => {
+const deniedNetworkOperations = [];
+const denyNetwork = (operation = "external") => {
   networkDenied = true;
+  deniedNetworkOperations.push(operation);
   throw Error("fixture_network_unavailable");
 };
-require("node:net").Server.prototype.listen = denyNetwork;
-require("node:net").Socket.prototype.connect = denyNetwork;
-require("node:dgram").createSocket = denyNetwork;
+const listenAttempts = [];
+require("node:net").Server.prototype.listen = function (...args) {
+  listenAttempts.push(args[0]);
+  return denyNetwork("listen");
+};
+require("node:net").Socket.prototype.connect = () => denyNetwork("connect");
+require("node:dgram").createSocket = () => denyNetwork("datagram");
 syncBuiltinESMExports();
 const app = new EventEmitter();
 let dockVisible = true;
@@ -231,7 +240,31 @@ try {
     rmSync(directory, { recursive: true, force: true });
     process.exit(0);
   }
-  const owner = resetMode ? await entry.startElectronRuntime() : undefined;
+  const startupTransport = {
+    nativeListenInterface: "127.0.0.1",
+    enableWebSocketListener: transportMode !== "disabled",
+    enableMdns: false,
+    enableTcp: false,
+    enableWebRTCDirect: false,
+    enableDCUtR: false,
+  };
+  const starting = resetMode
+    ? transportMode && transportMode !== "default"
+      ? entry.startElectronRuntime(startupTransport)
+      : entry.startElectronRuntime()
+    : undefined;
+  if (transportMode) {
+    // Mutation before asynchronous identity loading settles must not change the
+    // first owner's startup choice. Later callers cannot reconfigure that owner.
+    startupTransport.nativeListenInterface = undefined;
+    startupTransport.enableTcp = true;
+    assert.equal(
+      entry.startElectronRuntime({ enableWebSocketListener: false }),
+      starting,
+      "later startup options must retain the first owner"
+    );
+  }
+  const owner = await starting;
   if (owner) await owner.ready;
   await waitFor(
     () => menu && windows[0]?.visible,
@@ -245,6 +278,70 @@ try {
     );
     const initial = await owner.publicState();
     assert.ok(initial.identity?.deviceId);
+    if (transportMode) {
+      assert.deepEqual(
+        initial.managedRelayConfigurations,
+        [],
+        "the isolated counterpart requires fresh empty managed relay settings"
+      );
+      const assertListeners = () => {
+        if (transportMode === "disabled") {
+          assert.deepEqual(
+            deniedNetworkOperations,
+            [],
+            "explicitly disabled discovery/listeners must not try an OS socket"
+          );
+          assert.deepEqual(listenAttempts, []);
+          return;
+        }
+        if (transportMode === "default") {
+          assert.ok(deniedNetworkOperations.length > 0);
+          assert.ok(
+            deniedNetworkOperations.every(
+              (operation) => operation === "datagram"
+            ),
+            "no-argument startup retains ordinary LAN discovery"
+          );
+          assert.equal(
+            listenAttempts.length,
+            0,
+            "denied ordinary discovery stops startup before listening"
+          );
+          return;
+        }
+        assert.ok(
+          listenAttempts.length > 0,
+          `real transport must reach the denied listener boundary; observed ${JSON.stringify(deniedNetworkOperations)}`
+        );
+        assert.ok(
+          listenAttempts.every(
+            (options) =>
+              options.host ===
+              (transportMode === "loopback" ? "127.0.0.1" : "0.0.0.0")
+          ),
+          "the startup owner must retain its selected listener interface"
+        );
+      };
+      assertListeners();
+      if (transportMode === "default") {
+        const beforeRetry = deniedNetworkOperations.length;
+        await assert.rejects(
+          handlers.get("clipp:open-qr-window")({}),
+          /fixture_network_unavailable|no valid addresses/i
+        );
+        assert.ok(
+          deniedNetworkOperations.length > beforeRetry,
+          "public QR retry must retry actual transport startup"
+        );
+      }
+      assertListeners();
+      await owner.stop();
+      console.log(
+        `actual Electron ${transportMode} startup retains its first immutable transport choice; sockets denied`
+      );
+      rmSync(directory, { recursive: true, force: true });
+      process.exit(0);
+    }
     await handlers.get("clipp:set-settings")(
       {},
       {
