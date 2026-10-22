@@ -11,14 +11,34 @@ import {
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
+import {
+  selectCampaign,
+  navigateDestination,
+  collectHistoryRecovery,
+  validateRecoveryPalette,
+  allowFixtureDocument,
+} from "./persistedThemeRecovery.mjs";
+
+import { createControlledElectronStartupBridge } from "./persistedThemeElectronBridge.mjs";
 
 // Isolated browser acceptance through production Electron/Chrome entries and
 // the shared Android-facing consumer. OS/native appearance is not qualified.
 const repo = fileURLToPath(new URL("../..", import.meta.url));
+const campaign = selectCampaign(process.argv.slice(3));
+assert.ok(process.argv[2], "fresh owned output directory is required");
 const out = resolve(process.argv[2]);
+const buildArtifacts = ["authority.mjs"];
 await mkdir(out, { recursive: true });
+const fixtureDocument = join(out, "fixture.html");
+const fixtureDocumentUrl = pathToFileURL(fixtureDocument).href;
+await writeFile(
+  fixtureDocument,
+  '<!doctype html><html><head><meta name="color-scheme" content="light dark"></head><body><div id="root"></div></body></html>',
+  { flag: "wx" }
+);
+buildArtifacts.push("fixture.html");
 await build({
   entryPoints: [join(repo, "packages/core/runtime/settingsAuthority.ts")],
   bundle: true,
@@ -112,13 +132,15 @@ window.fixtureNotify=message=>{for(const listener of window.fixtureListeners)lis
 window.chrome={runtime:{id:'fixture',getURL:value=>'chrome-extension://fixture/'+value,onMessage:{addListener:listener=>window.fixtureListeners.add(listener),removeListener:listener=>window.fixtureListeners.delete(listener)},sendMessage:(message,callback)=>{window.fixtureMessages.push(message);const result=window.fixtureRequest(message);if(callback)result.then(callback,()=>callback(undefined));return result;}},tabs:{create:()=>{}}};
 window.fixturePort={send:message=>window.fixtureRequest(message),subscribe:listener=>{window.fixtureListeners.add(listener);return()=>window.fixtureListeners.delete(listener);}};
 window.clipp={getSettings:()=>window.fixtureRequest({type:'getSettings'}),setTheme:theme=>window.fixtureRequest({type:'setSettings',settings:{theme}}),onSettingsUpdate:listener=>{const wrapped=message=>{if(message.type==='settingsState')listener(message.snapshot);};window.fixtureListeners.add(wrapped);return()=>window.fixtureListeners.delete(wrapped);},getState:async()=>({...${JSON.stringify(runtime)},...(window.fixtureHistoryUnavailable?{historyUnavailable:true}:{})}),getRuntimeAuthority:async()=>'runtime-fixture',getInitializationError:async()=>null,onUpdate:()=>()=>{},onLog:()=>()=>{},refreshManagedRelays:async()=>[],setAutoSync:async()=>({status:'applied'}),refreshAutoSync:async()=>true};
+Object.assign(window.clipp,(${createControlledElectronStartupBridge.toString()})({request:message=>window.fixtureRequest(message),subscribe:window.fixturePort.subscribe}));
 `;
 const entries = {
   electron: "apps/electron/src/renderer.tsx",
   popup: "apps/extension/src/popup.tsx",
   options: "apps/extension/src/options.tsx",
 };
-for (const [name, entry] of Object.entries(entries))
+for (const [name, entry] of Object.entries(entries)) {
+  if (campaign === "history-retry" && name !== "electron") continue;
   await build({
     entryPoints: [join(repo, entry)],
     bundle: true,
@@ -127,18 +149,25 @@ for (const [name, entry] of Object.entries(entries))
     loader: { ".png": "dataurl" },
     outfile: join(out, name + ".js"),
   });
-await build({
-  stdin: {
-    contents: `import React from 'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/apps/android/src/android-host.css';window.fixtureSession=createUiSession();function App(){const appearanceSettings=useRuntimeSettings(window.fixturePort);return <div className="android-host"><ClipboardApp session={window.fixtureSession} appearanceSettings={appearanceSettings} {...${JSON.stringify(runtime)}} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async()=>({status:'accepted'})} onReject={async()=>({status:'rejected'})} onPairText={async()=>({status:'invalid-input'})} onRequestPairingCode={async()=>({text:'fixture'})} onCopyPairingText={async()=>({status:'copied'})} onReuseClip={async()=> 'complete'} onShareNow={()=>{}} onSetPinned={()=>{}} onClearAll={()=>{}} onMutateManagedRelay={async()=>({status:'rejected',error:'fixture-only'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
-    loader: "tsx",
-    resolveDir: repo,
-  },
-  bundle: true,
-  format: "iife",
-  loader: { ".png": "dataurl" },
-  outfile: join(out, "android-shared.js"),
-});
+  buildArtifacts.push(name + ".js", name + ".css");
+}
+if (campaign === "full") {
+  await build({
+    stdin: {
+      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/apps/android/src/android-host.css';window.fixtureSession=createUiSession();function App(){const appearanceSettings=useRuntimeSettings(window.fixturePort);return <div className="android-host"><ClipboardApp session={window.fixtureSession} appearanceSettings={appearanceSettings} {...${JSON.stringify(runtime)}} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async()=>({status:'accepted'})} onReject={async()=>({status:'rejected'})} onPairText={async()=>({status:'invalid-input'})} onRequestPairingCode={async()=>({text:'fixture'})} onCopyPairingText={async()=>({status:'copied'})} onReuseClip={async()=> 'complete'} onShareNow={()=>{}} onSetPinned={()=>{}} onClearAll={()=>{}} onMutateManagedRelay={async()=>({status:'rejected',error:'fixture-only'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
+      loader: "tsx",
+      resolveDir: repo,
+    },
+    bundle: true,
+    format: "iife",
+    loader: { ".png": "dataurl" },
+    outfile: join(out, "android-shared.js"),
+  });
+  buildArtifacts.push("android-shared.js", "android-shared.css");
+}
 const report = {
+  campaign,
+  documentPrerequisites: [],
   actualNativeHost: false,
   appearance: "Playwright emulated color scheme",
   clipboard: "memory API installed before entry",
@@ -154,7 +183,15 @@ const context = await chromium.launchPersistentContext(profile, {
   viewport: { width: 1000, height: 800 },
   colorScheme: "light",
 });
-await context.route("**/*", (route) => route.abort());
+await context.route("**/*", (route) =>
+  allowFixtureDocument(
+    route.request().url(),
+    route.request().isNavigationRequest(),
+    fixtureDocumentUrl
+  )
+    ? route.continue()
+    : route.abort()
+);
 async function open(name, historyUnavailable = false, missingBridge = false) {
   const page = await context.newPage();
   pages.add(page);
@@ -162,8 +199,27 @@ async function open(name, historyUnavailable = false, missingBridge = false) {
   page.on("pageerror", (error) =>
     report.errors.push({ name, error: error.message })
   );
-  await page.setContent(
-    '<!doctype html><html><head><meta name="color-scheme" content="light dark"></head><body><div id="root"></div></body></html>'
+  await page.goto(fixtureDocumentUrl);
+  const documentPrerequisite = await page.evaluate(() => ({
+    url: location.href,
+    isSecureContext,
+    randomUUIDType: typeof crypto.randomUUID,
+  }));
+  report.documentPrerequisites.push({ name, ...documentPrerequisite });
+  assert.equal(
+    documentPrerequisite.url,
+    fixtureDocumentUrl,
+    "exact owned file document URL"
+  );
+  assert.equal(
+    documentPrerequisite.isSecureContext,
+    true,
+    "actual secure document context"
+  );
+  assert.equal(
+    documentPrerequisite.randomUUIDType,
+    "function",
+    "standard crypto.randomUUID availability"
   );
   await page.addScriptTag({ content: shim });
   await page.evaluate((value) => {
@@ -176,6 +232,7 @@ async function open(name, historyUnavailable = false, missingBridge = false) {
       delete window.clipp;
     });
   await page.addScriptTag({ path: join(out, name + ".js") });
+  await navigateDestination(page, "Settings");
   await page.getByLabel("Appearance", { exact: true }).waitFor();
   if (!missingBridge)
     await page.waitForFunction(
@@ -273,292 +330,328 @@ async function inspect(page, name, mode) {
   return colors;
 }
 try {
-  const opened = {};
-  for (const name of ["electron", "popup", "options", "android-shared"])
-    opened[name] = await open(name);
-  for (const [name, page] of Object.entries(opened))
-    await inspect(page, name, "system-light");
-  const recoveryPage = await open("electron", true);
-  const retry = recoveryPage
-    .locator(".initialization-error")
-    .getByRole("button", { name: "Retry", exact: true });
-  await retry.waitFor();
-  await retry.focus();
-  const recoveryPalette = await retry.evaluate((el) => {
-    const s = getComputedStyle(el);
-    return {
-      text: s.color,
-      background: s.backgroundColor,
-      focus: s.outlineColor,
-      outline: s.outlineWidth,
-      surface: getComputedStyle(el.parentElement).backgroundColor,
-    };
-  });
-  report.historyRecoveryPalette = recoveryPalette;
-  await recoveryPage.screenshot({
-    path: join(out, "electron-light-history-recovery.png"),
-    fullPage: true,
-  });
-  assert.ok(
-    ratio(recoveryPalette.text, recoveryPalette.background) >= 4.5,
-    "Light History-recovery Retry text contrast"
-  );
-  assert.ok(
-    ratio(recoveryPalette.focus, recoveryPalette.surface) >= 3,
-    "Light History-recovery focus contrast"
-  );
-  assert.equal(recoveryPalette.outline, "3px");
-  pages.delete(recoveryPage);
-  await recoveryPage.close();
-  const missingBridge = await open("electron", false, true);
-  await missingBridge
-    .getByRole("alert")
-    .filter({
-      hasText: "Appearance could not be refreshed: bridge_unavailable",
-    })
-    .waitFor();
-  assert.equal(
+  if (campaign === "history-retry") {
+    const recoveryPage = await open("electron", true);
+    for (const mode of ["light", "dark"]) {
+      const sample = await collectHistoryRecovery(
+        recoveryPage,
+        mode,
+        join(out, `electron-${mode}-history-recovery.png`)
+      );
+      report.cases.push({
+        name: "electron-history-retry",
+        ...sample,
+        controlledHistoryUnavailable: true,
+        actualNativeHost: false,
+      });
+      await writeFile(
+        join(out, `electron-${mode}-history-recovery.json`),
+        JSON.stringify(sample, null, 2)
+      );
+      const contrasts = validateRecoveryPalette(sample.colors, mode);
+      report.cases.at(-1).contrasts = contrasts;
+    }
+    assert.equal(report.errors.length, 0, JSON.stringify(report.errors));
+    report.retryPalettesQualified = true;
+    report.clipboard = await recoveryPage.evaluate(
+      () => window.fixtureClipboard
+    );
+    assert.deepEqual(
+      report.clipboard,
+      [],
+      "Retry color sampling does not use clipboard"
+    );
+    pages.delete(recoveryPage);
+    await recoveryPage.close();
+  } else {
+    const opened = {};
+    for (const name of ["electron", "popup", "options", "android-shared"])
+      opened[name] = await open(name);
+    for (const [name, page] of Object.entries(opened))
+      await inspect(page, name, "system-light");
+    const recoveryPage = await open("electron", true);
+    for (const mode of ["light", "dark"]) {
+      const sample = await collectHistoryRecovery(
+        recoveryPage,
+        mode,
+        join(out, `electron-${mode}-history-recovery.png`)
+      );
+      report.cases.push({
+        name: "electron-history-retry",
+        ...sample,
+        controlledHistoryUnavailable: true,
+        actualNativeHost: false,
+      });
+      await writeFile(
+        join(out, `electron-${mode}-history-recovery.json`),
+        JSON.stringify(sample, null, 2)
+      );
+      report.cases.at(-1).contrasts = validateRecoveryPalette(
+        sample.colors,
+        mode
+      );
+      if (mode === "light") report.historyRecoveryPalette = sample.colors;
+    }
+    await owner.write({ theme: "system" });
+    pages.delete(recoveryPage);
+    await recoveryPage.close();
+    const missingBridge = await open("electron", false, true);
     await missingBridge
-      .getByText("Loading appearance…", { exact: true })
-      .count(),
-    0,
-    "missing bridge must end pending load"
-  );
-  assert.equal(
-    await missingBridge.getByLabel("Appearance", { exact: true }).isDisabled(),
-    true
-  );
-  await missingBridge.screenshot({
-    path: join(out, "electron-missing-bridge.png"),
-    fullPage: true,
-  });
-  await missingBridge.evaluate(() => {
-    window.clipp = window.fixtureSavedBridge;
-  });
-  await missingBridge
-    .getByRole("button", { name: "Retry appearance", exact: true })
-    .click();
-  await missingBridge.waitForFunction(
-    () => !document.querySelector('[aria-label="Appearance"]').disabled
-  );
-  await missingBridge
-    .getByRole("button", { name: /issue needs attention/ })
-    .click();
-  const recoveryDialog = missingBridge.getByRole("dialog", {
-    name: "Issues and recovery",
-  });
-  await recoveryDialog
-    .getByRole("button", { name: "Retry", exact: true })
-    .click();
-  await missingBridge.waitForFunction(
-    () => !document.querySelector(".issue-summary")
-  );
-  await recoveryDialog
-    .getByRole("button", { name: "Close", exact: true })
-    .click();
-  await owner.write({ theme: "dark" });
-  await missingBridge.waitForFunction(
-    () => document.querySelector('[aria-label="Appearance"]').value === "dark"
-  );
-  await inspect(missingBridge, "electron", "recovered-bridge-live-dark");
-  report.missingBridgeRecoveredWithLiveSubscription = true;
-  report.runtimeRecoveryStillReachable = true;
-  pages.delete(missingBridge);
-  await missingBridge.close();
-  await owner.write({ theme: "system" });
-  for (const page of Object.values(opened))
-    await page.waitForFunction(
+      .getByRole("alert")
+      .filter({
+        hasText: "Appearance could not be refreshed: bridge_unavailable",
+      })
+      .waitFor();
+    assert.equal(
+      await missingBridge
+        .getByText("Loading appearance…", { exact: true })
+        .count(),
+      0,
+      "missing bridge must end pending load"
+    );
+    assert.equal(
+      await missingBridge
+        .getByLabel("Appearance", { exact: true })
+        .isDisabled(),
+      true
+    );
+    await missingBridge.screenshot({
+      path: join(out, "electron-missing-bridge.png"),
+      fullPage: true,
+    });
+    await missingBridge.evaluate(() => {
+      window.clipp = window.fixtureSavedBridge;
+    });
+    await missingBridge
+      .getByRole("button", { name: "Retry appearance", exact: true })
+      .click();
+    await missingBridge.waitForFunction(
+      () => !document.querySelector('[aria-label="Appearance"]').disabled
+    );
+    await missingBridge
+      .getByRole("button", { name: /issue needs attention/ })
+      .click();
+    const recoveryDialog = missingBridge.getByRole("dialog", {
+      name: "Issues and recovery",
+    });
+    await recoveryDialog
+      .getByRole("button", { name: "Retry", exact: true })
+      .click();
+    await missingBridge.waitForFunction(
+      () => !document.querySelector(".issue-summary")
+    );
+    await recoveryDialog
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+    await owner.write({ theme: "dark" });
+    await missingBridge.waitForFunction(
+      () => document.querySelector('[aria-label="Appearance"]').value === "dark"
+    );
+    await inspect(missingBridge, "electron", "recovered-bridge-live-dark");
+    report.missingBridgeRecoveredWithLiveSubscription = true;
+    report.runtimeRecoveryStillReachable = true;
+    pages.delete(missingBridge);
+    await missingBridge.close();
+    await owner.write({ theme: "system" });
+    for (const page of Object.values(opened))
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[aria-label="Appearance"]').value === "system"
+      );
+
+    const before = writes.length;
+    await Promise.all(
+      Object.values(opened).map((page) =>
+        page.emulateMedia({ colorScheme: "dark" })
+      )
+    );
+    for (const [name, page] of Object.entries(opened)) {
+      await inspect(page, name, "system-dark");
+      assert.equal(
+        await page.getByLabel("Appearance", { exact: true }).inputValue(),
+        "system"
+      );
+    }
+    assert.equal(
+      writes.length,
+      before,
+      "System appearance changes must never persist a preference"
+    );
+    await opened.popup
+      .getByLabel("Appearance", { exact: true })
+      .selectOption("light");
+    for (const [name, page] of Object.entries(opened)) {
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[aria-label="Appearance"]').value === "light"
+      );
+      const light = await inspect(page, name, "explicit-light");
+      assert.equal(light.scheme, "light");
+    }
+    await opened.options
+      .getByRole("checkbox", { name: "Auto Sync", exact: true })
+      .click();
+    await opened.options.waitForFunction(
+      () =>
+        ![...document.querySelectorAll('input[type="checkbox"]')].find((el) =>
+          el.closest("label")?.textContent.includes("Auto Sync")
+        ).checked
+    );
+    assert.equal((await owner.read()).state.theme, "light");
+    assert.equal((await owner.read()).state.autoSync, false);
+    assert.equal(
+      await opened.options
+        .locator(".appearance-settings")
+        .getByText("Appearance saved.")
+        .count(),
+      0,
+      "unrelated save cannot claim Appearance saved"
+    );
+    await opened.options
+      .getByRole("button", { name: "Add relay", exact: true })
+      .click();
+    await opened.options
+      .getByLabel("Name", { exact: true })
+      .fill("Preserved relay draft");
+    await opened.popup
+      .getByLabel("Search history", { exact: true })
+      .fill("Retained query");
+    await opened.electron
+      .getByLabel("Search history", { exact: true })
+      .fill("Desktop query");
+    await opened["android-shared"].evaluate(async () => {
+      window.fixtureSession.pairing.change("Retained pairing draft");
+      await window.fixtureSession.qr.generate(async () => ({
+        text: "fixture-pairing-target",
+      }));
+    });
+    await opened["android-shared"]
+      .getByRole("dialog", { name: "Pair this device" })
+      .waitFor();
+    await inspect(opened["android-shared"], "android-shared", "light-portal");
+    await opened.popup
+      .getByLabel("Appearance", { exact: true })
+      .selectOption("dark");
+    for (const [name, page] of Object.entries(opened)) {
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[aria-label="Appearance"]').value === "dark"
+      );
+      await inspect(page, name, "explicit-dark");
+    }
+    assert.equal(
+      await opened.options.getByLabel("Name", { exact: true }).inputValue(),
+      "Preserved relay draft"
+    );
+    assert.equal(
+      await opened.popup
+        .getByLabel("Search history", { exact: true })
+        .inputValue(),
+      "Retained query"
+    );
+    assert.equal(
+      await opened.electron
+        .getByLabel("Search history", { exact: true })
+        .inputValue(),
+      "Desktop query"
+    );
+    const draftColors = await opened.options
+      .getByLabel("Name", { exact: true })
+      .evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { text: s.color, bg: s.backgroundColor };
+      });
+    assert.ok(ratio(draftColors.text, draftColors.bg) >= 4.5);
+    await Promise.all(
+      Object.values(opened).map((page) =>
+        page.emulateMedia({ colorScheme: "light" })
+      )
+    );
+    for (const [name, page] of Object.entries(opened)) {
+      const dark = await inspect(page, name, "dark-host-light");
+      assert.equal(dark.scheme, "dark");
+    }
+    assert.equal(
+      await opened["android-shared"].evaluate(
+        () => window.fixtureSession.pairing.getSnapshot().raw
+      ),
+      "Retained pairing draft"
+    );
+    await opened["android-shared"]
+      .getByRole("button", { name: "Close QR dialog", exact: true })
+      .click();
+    failWrite = true;
+    await opened.popup
+      .getByLabel("Appearance", { exact: true })
+      .selectOption("light");
+    await opened.popup
+      .getByRole("alert")
+      .filter({ hasText: "Appearance was not saved" })
+      .waitFor();
+    assert.equal(
+      await opened.popup.getByLabel("Appearance", { exact: true }).inputValue(),
+      "dark"
+    );
+    const rejectedPalette = await opened.popup
+      .getByRole("alert")
+      .filter({ hasText: "Appearance was not saved" })
+      .evaluate((el) => ({
+        text: getComputedStyle(el).color,
+        background: getComputedStyle(document.body).backgroundColor,
+      }));
+    assert.ok(
+      ratio(rejectedPalette.text, rejectedPalette.background) >= 4.5,
+      "visible rejection contrast"
+    );
+    await opened.popup.screenshot({
+      path: join(out, "popup-rejected.png"),
+      fullPage: true,
+    });
+    report.rejectedPalette = rejectedPalette;
+    failWrite = false;
+    loseReply = true;
+    await opened.popup
+      .getByLabel("Appearance", { exact: true })
+      .selectOption("light");
+    await opened.popup
+      .getByRole("alert")
+      .filter({ hasText: "Appearance save could not be confirmed" })
+      .waitFor();
+    assert.equal(
+      await opened.popup.getByLabel("Appearance", { exact: true }).inputValue(),
+      "light"
+    );
+    loseReply = false;
+    pages.delete(opened.popup);
+    await opened.popup.close();
+    const reopened = await open("popup");
+    assert.equal(
+      await reopened.getByLabel("Appearance", { exact: true }).inputValue(),
+      "light"
+    );
+    await inspect(reopened, "popup", "reopened-light");
+    await reopened
+      .getByLabel("Appearance", { exact: true })
+      .selectOption("system");
+    await reopened.waitForFunction(
       () =>
         document.querySelector('[aria-label="Appearance"]').value === "system"
     );
-
-  const before = writes.length;
-  await Promise.all(
-    Object.values(opened).map((page) =>
-      page.emulateMedia({ colorScheme: "dark" })
-    )
-  );
-  for (const [name, page] of Object.entries(opened)) {
-    await inspect(page, name, "system-dark");
+    await reopened.emulateMedia({ colorScheme: "dark" });
     assert.equal(
-      await page.getByLabel("Appearance", { exact: true }).inputValue(),
-      "system"
+      (await inspect(reopened, "popup", "system-restored-dark")).scheme,
+      "dark"
     );
+    report.writes = writes;
+    report.sharedDraftAndSearchPreserved = true;
+    report.failedAndUnconfirmedVisible = true;
+    report.reopenedApplied = true;
+    report.clipboard = await reopened.evaluate(() => window.fixtureClipboard);
+    assert.equal(report.errors.length, 0, JSON.stringify(report.errors));
   }
-  assert.equal(
-    writes.length,
-    before,
-    "System appearance changes must never persist a preference"
-  );
-  await opened.popup
-    .getByLabel("Appearance", { exact: true })
-    .selectOption("light");
-  for (const [name, page] of Object.entries(opened)) {
-    await page.waitForFunction(
-      () =>
-        document.querySelector('[aria-label="Appearance"]').value === "light"
-    );
-    const light = await inspect(page, name, "explicit-light");
-    assert.equal(light.scheme, "light");
-  }
-  await opened.options
-    .getByRole("checkbox", { name: "Auto Sync", exact: true })
-    .click();
-  await opened.options.waitForFunction(
-    () =>
-      ![...document.querySelectorAll('input[type="checkbox"]')].find((el) =>
-        el.closest("label")?.textContent.includes("Auto Sync")
-      ).checked
-  );
-  assert.equal((await owner.read()).state.theme, "light");
-  assert.equal((await owner.read()).state.autoSync, false);
-  assert.equal(
-    await opened.options
-      .locator(".appearance-settings")
-      .getByText("Appearance saved.")
-      .count(),
-    0,
-    "unrelated save cannot claim Appearance saved"
-  );
-  await opened.options
-    .getByRole("button", { name: "Add relay", exact: true })
-    .click();
-  await opened.options
-    .getByLabel("Name", { exact: true })
-    .fill("Preserved relay draft");
-  await opened.popup
-    .getByLabel("Search history", { exact: true })
-    .fill("Retained query");
-  await opened.electron
-    .getByLabel("Search history", { exact: true })
-    .fill("Desktop query");
-  await opened["android-shared"].evaluate(async () => {
-    window.fixtureSession.pairing.change("Retained pairing draft");
-    await window.fixtureSession.qr.generate(async () => ({
-      text: "fixture-pairing-target",
-    }));
-  });
-  await opened["android-shared"]
-    .getByRole("dialog", { name: "Pair this device" })
-    .waitFor();
-  await inspect(opened["android-shared"], "android-shared", "light-portal");
-  await opened.popup
-    .getByLabel("Appearance", { exact: true })
-    .selectOption("dark");
-  for (const [name, page] of Object.entries(opened)) {
-    await page.waitForFunction(
-      () => document.querySelector('[aria-label="Appearance"]').value === "dark"
-    );
-    await inspect(page, name, "explicit-dark");
-  }
-  assert.equal(
-    await opened.options.getByLabel("Name", { exact: true }).inputValue(),
-    "Preserved relay draft"
-  );
-  assert.equal(
-    await opened.popup
-      .getByLabel("Search history", { exact: true })
-      .inputValue(),
-    "Retained query"
-  );
-  assert.equal(
-    await opened.electron
-      .getByLabel("Search history", { exact: true })
-      .inputValue(),
-    "Desktop query"
-  );
-  const draftColors = await opened.options
-    .getByLabel("Name", { exact: true })
-    .evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { text: s.color, bg: s.backgroundColor };
-    });
-  assert.ok(ratio(draftColors.text, draftColors.bg) >= 4.5);
-  await Promise.all(
-    Object.values(opened).map((page) =>
-      page.emulateMedia({ colorScheme: "light" })
-    )
-  );
-  for (const [name, page] of Object.entries(opened)) {
-    const dark = await inspect(page, name, "dark-host-light");
-    assert.equal(dark.scheme, "dark");
-  }
-  assert.equal(
-    await opened["android-shared"].evaluate(
-      () => window.fixtureSession.pairing.getSnapshot().raw
-    ),
-    "Retained pairing draft"
-  );
-  await opened["android-shared"]
-    .getByRole("button", { name: "Close QR dialog", exact: true })
-    .click();
-  failWrite = true;
-  await opened.popup
-    .getByLabel("Appearance", { exact: true })
-    .selectOption("light");
-  await opened.popup
-    .getByRole("alert")
-    .filter({ hasText: "Appearance was not saved" })
-    .waitFor();
-  assert.equal(
-    await opened.popup.getByLabel("Appearance", { exact: true }).inputValue(),
-    "dark"
-  );
-  const rejectedPalette = await opened.popup
-    .getByRole("alert")
-    .filter({ hasText: "Appearance was not saved" })
-    .evaluate((el) => ({
-      text: getComputedStyle(el).color,
-      background: getComputedStyle(document.body).backgroundColor,
-    }));
-  assert.ok(
-    ratio(rejectedPalette.text, rejectedPalette.background) >= 4.5,
-    "visible rejection contrast"
-  );
-  await opened.popup.screenshot({
-    path: join(out, "popup-rejected.png"),
-    fullPage: true,
-  });
-  report.rejectedPalette = rejectedPalette;
-  failWrite = false;
-  loseReply = true;
-  await opened.popup
-    .getByLabel("Appearance", { exact: true })
-    .selectOption("light");
-  await opened.popup
-    .getByRole("alert")
-    .filter({ hasText: "Appearance save could not be confirmed" })
-    .waitFor();
-  assert.equal(
-    await opened.popup.getByLabel("Appearance", { exact: true }).inputValue(),
-    "light"
-  );
-  loseReply = false;
-  pages.delete(opened.popup);
-  await opened.popup.close();
-  const reopened = await open("popup");
-  assert.equal(
-    await reopened.getByLabel("Appearance", { exact: true }).inputValue(),
-    "light"
-  );
-  await inspect(reopened, "popup", "reopened-light");
-  await reopened
-    .getByLabel("Appearance", { exact: true })
-    .selectOption("system");
-  await reopened.waitForFunction(
-    () => document.querySelector('[aria-label="Appearance"]').value === "system"
-  );
-  await reopened.emulateMedia({ colorScheme: "dark" });
-  assert.equal(
-    (await inspect(reopened, "popup", "system-restored-dark")).scheme,
-    "dark"
-  );
-  report.writes = writes;
-  report.sharedDraftAndSearchPreserved = true;
-  report.failedAndUnconfirmedVisible = true;
-  report.reopenedApplied = true;
-  report.clipboard = await reopened.evaluate(() => window.fixtureClipboard);
-  assert.equal(report.errors.length, 0, JSON.stringify(report.errors));
+} catch (error) {
+  report.failure = { name: error.name, message: error.message };
+  throw error;
 } finally {
   await context.close();
   await rm(profile, { recursive: true, force: true });
@@ -567,17 +660,7 @@ try {
     () => true
   );
   report.buildHashes = {};
-  for (const name of [
-    "authority.mjs",
-    "electron.js",
-    "electron.css",
-    "popup.js",
-    "popup.css",
-    "options.js",
-    "options.css",
-    "android-shared.js",
-    "android-shared.css",
-  ])
+  for (const name of buildArtifacts)
     report.buildHashes[name] = createHash("sha256")
       .update(await readFile(join(out, name)))
       .digest("hex");
