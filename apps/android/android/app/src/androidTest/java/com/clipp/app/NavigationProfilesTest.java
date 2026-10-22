@@ -17,12 +17,15 @@ import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.Window;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.Display;
 import android.webkit.WebView;
 import android.widget.TextView;
+import androidx.appcompat.view.WindowCallbackWrapper;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -109,6 +112,15 @@ public final class NavigationProfilesTest {
     private final JSONObject closeDiagnostics = new JSONObject();
     private final JSONArray closeSnapshots = new JSONArray();
     private boolean closeDiagnosticUnknown, closeDiagnosticAttempted, closeTapReturned;
+    private boolean closeWindowEnabled, closeWindowInstalled, closeWindowRestored, closeWindowBeforeContinuous, closeWindowAfterContinuous;
+    private volatile boolean closeWindowActive;
+    private volatile boolean closeWindowUnknown;
+    private long closeWindowEnd;
+    private Window closeWindow;
+    private Window.Callback closeWindowOriginal, closeWindowWrapper;
+    private JSONObject closeWindowDiagnostics = new JSONObject();
+    private final List<CloseWindowEvent> closeWindowRecords = new ArrayList<>();
+    private final JSONArray closeWindowHistory = new JSONArray();
     private String generatedQrImage;
     private boolean captureEnabled, captureWorkerClosed;
     private int geometryCaptureIndex;
@@ -130,6 +142,9 @@ public final class NavigationProfilesTest {
         String events = args.getString("navigationProfilesCloseEvents", "false");
         assertTrue("Only explicit passive Close events", events.equals("true") || events.equals("false"));
         closeEventsEnabled = events.equals("true");
+        String window = args.getString("navigationProfilesCloseWindow", "false");
+        assertTrue("Only explicit owned-window Close observation", window.equals("true") || window.equals("false"));
+        closeWindowEnabled = window.equals("true");
         selectedCase = args.getString("navigationProfilesCase", "");
         String method = selectedCase.equals("qr-recovery") ? "generatedQrAndLocalRecoveriesRetainSession"
             : selectedCase.equals("geometry-ime") ? "assignedGeometryAndImeRetainTaskAndFinalControls"
@@ -138,6 +153,8 @@ public final class NavigationProfilesTest {
         assertEquals("One explicitly assigned native method only", method, testName.getMethodName());
         assertTrue("Close diagnostics observe only the geometry case", !closeDiagnosticsEnabled || selectedCase.equals("geometry-ime"));
         assertTrue("Passive Close events require the geometry-only diagnostic path", !closeEventsEnabled || (closeDiagnosticsEnabled && selectedCase.equals("geometry-ime")));
+        assertTrue("Window Close observation requires the same geometry DOM observation", !closeWindowEnabled
+            || (closeDiagnosticsEnabled && closeEventsEnabled && selectedCase.equals("geometry-ime")));
         nonce = args.getString("navigationProfilesRootNonce", "");
         assertTrue("Fresh bounded root nonce", nonce.matches("[A-Za-z0-9_-]{16,64}"));
         closeEventsKey = "__clipp19CloseEvents_" + nonce;
@@ -326,6 +343,7 @@ public final class NavigationProfilesTest {
         closeDiagnosticAttempted = true;
         retainCloseSnapshot("before-tap", Math.min(deadline, SystemClock.uptimeMillis() + 100), null);
         if (closeEventsEnabled) installCloseEvents();
+        if (closeWindowEnabled) installCloseWindow();
         long eventEnd = deadline;
         try {
             tapButton("Close name editor");
@@ -333,6 +351,7 @@ public final class NavigationProfilesTest {
             final long end = Math.min(deadline, SystemClock.uptimeMillis() + OBSERVATION_MS);
             eventEnd = end;
             if (closeEventsEnabled) boundCloseEvents(end);
+            if (closeWindowEnabled) { boundCloseWindow(end); retainCloseWindowHistory("after-tap", end); }
             JSONObject timeline = null;
             try {
                 checkObservation(end);
@@ -352,12 +371,14 @@ public final class NavigationProfilesTest {
                 if (ready) {
                     retainCloseSnapshot("dismissed", end, point);
                     if (closeEventsEnabled) observeCloseEvents("dismissed", end, true);
+                    if (closeWindowEnabled) restoreAndRetainCloseWindow(end);
                     return;
                 }
                 if (!lastRecorded && end - SystemClock.uptimeMillis() <= 200) {
                     lastRecorded = true;
                     retainCloseSnapshot("last-available-dialog-present", end, point);
                     if (closeEventsEnabled) observeCloseEvents("last-available-dialog-present", end, true);
+                    if (closeWindowEnabled) { retainCloseWindowHistory("last-available", end); restoreAndRetainCloseWindow(end); }
                 }
                 SystemClock.sleep(50);
             } while (SystemClock.uptimeMillis() < end);
@@ -365,7 +386,167 @@ public final class NavigationProfilesTest {
         } finally {
             // Cleanup can run after a failed oracle, but cannot turn late data
             // into a complete observation or change that original verdict.
-            if (closeEventsEnabled && !closeEventsRemoved) observeCloseEvents("failure-cleanup", eventEnd, true);
+            try {
+                if (closeEventsEnabled && !closeEventsRemoved) observeCloseEvents("failure-cleanup", eventEnd, true);
+            } finally {
+                if (closeWindowEnabled && !closeWindowRestored) restoreAndRetainCloseWindow(eventEnd);
+            }
+        }
+    }
+
+    /** Test-local app-window arrival probe. It never changes or owns an event. */
+    private static final class CloseWindowEvent {
+        int action, pointers;
+        long downTime, eventTime, observedAt, returnedAt;
+        float rawX, rawY, x, y;
+        boolean touchscreen, inWindow, inWebView, returned, consumed;
+    }
+
+    private boolean sameCloseWindowOwner(MainActivity activity, boolean wrapped) {
+        return activity == owner && activity.getWindow() == closeWindow && activity.getBridge() != null
+            && activity.getBridge().getWebView() == ownerWebView
+            && closeWindow.getCallback() == (wrapped ? closeWindowWrapper : closeWindowOriginal)
+            && !activity.isFinishing() && !activity.isDestroyed();
+    }
+
+    private void retainCloseWindowHistory(String stage, long end) {
+        try {
+            checkObservation(end);
+            if (closeWindowHistory.length() >= 3) { closeWindowUnknown = true; return; }
+            boolean same = sameDocument();
+            JSONObject state = new JSONObject(evaluate("(()=>{const r=document.querySelector('[data-session-scroll=history]');"
+                + "const statuses=r?[...r.querySelectorAll('[role=status]')]:[],alerts=r?[...r.querySelectorAll('.initialization-error span')]:[];"
+                + "return {loadingHistory:statuses.some(e=>e.textContent.trim()==='Loading History…'),"
+                + "unavailableHistory:alerts.some(e=>e.textContent.trim()==='History unavailable.'),"
+                + "refreshFailedHistory:alerts.some(e=>e.textContent.trim()==='History refresh failed. Showing last known Clips.'),"
+                + "historyRegionVisible:!!r&&!r.hidden&&r.getClientRects().length>0}})()"));
+            checkObservation(end);
+            state.put("stage", stage).put("sameDocument", same).put("uptimeMs", SystemClock.uptimeMillis());
+            closeWindowHistory.put(state);
+            if (!same) closeWindowUnknown = true;
+        } catch (Throwable ignored) { closeWindowUnknown = true; }
+    }
+
+    private void installCloseWindow() {
+        try {
+            checkObservation(deadline);
+            web.onActivity(activity -> {
+                if (SystemClock.uptimeMillis() >= deadline || activity != owner || activity.getBridge() == null
+                    || activity.getBridge().getWebView() != ownerWebView) { closeWindowUnknown = true; return; }
+                closeWindow = activity.getWindow();
+                closeWindowOriginal = closeWindow.getCallback();
+                if (closeWindowOriginal == null) { closeWindowUnknown = true; return; }
+                closeWindowBeforeContinuous = sameCloseWindowOwner(activity, false);
+                if (!closeWindowBeforeContinuous) { closeWindowUnknown = true; return; }
+                closeWindowEnd = deadline;
+                closeWindowWrapper = new WindowCallbackWrapper(closeWindowOriginal) {
+                    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+                        CloseWindowEvent row = null;
+                        if (closeWindowActive) {
+                            try {
+                                if (SystemClock.uptimeMillis() >= closeWindowEnd || !sameCloseWindowOwner(owner, true)) closeWindowUnknown = true;
+                                if (closeWindowRecords.size() >= 8) closeWindowUnknown = true;
+                                else {
+                                    row = new CloseWindowEvent();
+                                    row.action = event.getActionMasked(); row.pointers = event.getPointerCount();
+                                    row.downTime = event.getDownTime(); row.eventTime = event.getEventTime();
+                                    row.observedAt = SystemClock.uptimeMillis(); row.touchscreen = event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN);
+                                    row.rawX = event.getRawX(); row.rawY = event.getRawY(); row.x = event.getX(); row.y = event.getY();
+                                    Rect frame = new Rect(); closeWindow.getDecorView().getWindowVisibleDisplayFrame(frame);
+                                    row.inWindow = row.rawX >= frame.left && row.rawX < frame.right && row.rawY >= frame.top && row.rawY < frame.bottom;
+                                    int[] location = new int[2]; ownerWebView.getLocationOnScreen(location);
+                                    row.inWebView = ownerWebView.isShown() && row.rawX >= location[0] && row.rawX < location[0] + ownerWebView.getWidth()
+                                        && row.rawY >= location[1] && row.rawY < location[1] + ownerWebView.getHeight();
+                                    closeWindowRecords.add(row);
+                                    if (closeWindowRecords.size() > 2 || row.pointers != 1 || !row.touchscreen) closeWindowUnknown = true;
+                                }
+                            } catch (Throwable ignored) { closeWindowUnknown = true; }
+                        }
+                        // The original object is delegated exactly once; no copy,
+                        // recycling, mutation, reinjection or alternate dispatch.
+                        try {
+                            boolean consumed = super.dispatchTouchEvent(event);
+                            if (row != null) {
+                                row.consumed = consumed; row.returned = true; row.returnedAt = SystemClock.uptimeMillis();
+                                try { if (row.returnedAt >= closeWindowEnd || !sameCloseWindowOwner(owner, true)) closeWindowUnknown = true; }
+                                catch (Throwable ignored) { closeWindowUnknown = true; }
+                            }
+                            return consumed;
+                        } catch (RuntimeException | Error failure) {
+                            closeWindowUnknown = true;
+                            throw failure;
+                        }
+                    }
+                };
+                closeWindowActive = true;
+                closeWindow.setCallback(closeWindowWrapper);
+                closeWindowInstalled = sameCloseWindowOwner(activity, true);
+                if (!closeWindowInstalled) closeWindowUnknown = true;
+            });
+            checkObservation(deadline);
+            retainCloseWindowHistory("install", deadline);
+        } catch (Throwable ignored) { closeWindowUnknown = true; }
+    }
+
+    private void boundCloseWindow(long end) {
+        try {
+            checkObservation(end);
+            web.onActivity(activity -> {
+                closeWindowEnd = Math.min(closeWindowEnd, end);
+                if (SystemClock.uptimeMillis() >= end || !closeWindowInstalled || !sameCloseWindowOwner(activity, true)) closeWindowUnknown = true;
+            });
+            checkObservation(end);
+        } catch (Throwable ignored) { closeWindowUnknown = true; }
+    }
+
+    private void restoreAndRetainCloseWindow(long end) {
+        final AtomicReference<JSONObject> snapshot = new AtomicReference<>();
+        if (SystemClock.uptimeMillis() >= end) closeWindowUnknown = true;
+        try {
+            web.onActivity(activity -> {
+                closeWindowActive = false;
+                long retired = SystemClock.uptimeMillis();
+                if (retired >= end) closeWindowUnknown = true;
+                closeWindowAfterContinuous = closeWindowInstalled && sameCloseWindowOwner(activity, true);
+                if (closeWindowAfterContinuous) {
+                    closeWindow.setCallback(closeWindowOriginal);
+                    closeWindowRestored = sameCloseWindowOwner(activity, false);
+                } else {
+                    // Never overwrite a replacement callback or a different owner.
+                    closeWindowUnknown = true;
+                }
+                if (!closeWindowRestored) closeWindowUnknown = true;
+                try {
+                    JSONArray rows = new JSONArray();
+                    for (CloseWindowEvent row : closeWindowRecords) {
+                        if (!row.returned) closeWindowUnknown = true;
+                        String action = row.action == MotionEvent.ACTION_DOWN ? "DOWN" : row.action == MotionEvent.ACTION_UP ? "UP"
+                            : row.action == MotionEvent.ACTION_CANCEL ? "CANCEL" : "OTHER";
+                        rows.put(new JSONObject().put("action", action).put("downTimeMs", row.downTime).put("eventTimeMs", row.eventTime)
+                            .put("observedUptimeMs", row.observedAt).put("returnUptimeMs", row.returnedAt).put("pointerCount", row.pointers)
+                            .put("touchscreen", row.touchscreen).put("rawX", row.rawX).put("rawY", row.rawY).put("x", row.x).put("y", row.y)
+                            .put("inOwnedWindow", row.inWindow).put("inOwnedWebView", row.inWebView)
+                            .put("delegateReturned", row.returned).put("delegateConsumed", row.consumed));
+                    }
+                    snapshot.set(new JSONObject().put("version", 1).put("records", rows).put("deadlineUptimeMs", closeWindowEnd)
+                        .put("retiredUptimeMs", retired));
+                } catch (Throwable ignored) { closeWindowUnknown = true; }
+            });
+            if (SystemClock.uptimeMillis() >= end) closeWindowUnknown = true;
+            if (snapshot.get() != null) closeWindowDiagnostics = snapshot.get();
+        } catch (Throwable ignored) { closeWindowUnknown = true; }
+    }
+
+    private void capCloseWindow() throws Exception {
+        if (!closeWindowDiagnostics.has("records")) closeWindowUnknown = true;
+        closeWindowDiagnostics.put("history", closeWindowHistory);
+        closeWindowDiagnostics.put("observation", closeWindowUnknown || !closeWindowInstalled || !closeWindowRestored ? "UNKNOWN" : "complete")
+            .put("installed", closeWindowInstalled).put("beforeContinuous", closeWindowBeforeContinuous)
+            .put("afterContinuous", closeWindowAfterContinuous).put("restored", closeWindowRestored).put("selectionOrInputAuthority", false);
+        if (closeWindowDiagnostics.toString().getBytes(StandardCharsets.UTF_8).length > 4096) {
+            closeWindowUnknown = true;
+            closeWindowDiagnostics = new JSONObject().put("observation", "UNKNOWN").put("cap", true)
+                .put("installed", closeWindowInstalled).put("restored", closeWindowRestored).put("selectionOrInputAuthority", false);
         }
     }
 
@@ -381,7 +562,7 @@ public final class NavigationProfilesTest {
                 + "const identity=()=>({dialogConnected:d.isConnected,sameDialog:(" + DIALOG + ")===d,closeConnected:c.isConnected,sameClose:(" + web.button("Close name editor") + ")===c,timeOriginSame:performance.timeOrigin===origin});"
                 + "const retire=()=>{active=false;for(const [type,fn,capture]of listeners)document.removeEventListener(type,fn,capture);clearTimeout(timer);removed=true};"
                 + "const classify=t=>t===c||c.contains(t)?'CLOSE':t===n?'NAME':t===d?'KNOWN_DIALOG':'OTHER';"
-                + "const observe=(e,phase)=>{if(!active||!d.contains(e.target))return;if(performance.now()>=end){expired=true;retire();return}if(records.length>=16){cap=true;retire();return}"
+                + "const observe=(e,phase)=>{if(!active" + (closeWindowEnabled ? "" : "||!d.contains(e.target)") + ")return;if(performance.now()>=end){expired=true;retire();return}if(records.length>=16){cap=true;retire();return}"
                 + "records.push([e.type,classify(e.target),phase,Math.round(performance.now()-start),e.isTrusted,e.defaultPrevented]);"
                 + "if(e.type==='click'&&phase==='bubble'){if(++clicks>1){cap=true;retire();return}queueMicrotask(()=>{if(!active)return;if(performance.now()>=end){expired=true;retire();return}postClick=identity()})}};"
                 + "for(const type of ['pointerdown','pointerup','pointercancel','click','focusin']){const fn=e=>observe(e,'capture');document.addEventListener(type,fn,{capture:true,passive:true});listeners.push([type,fn,true])}"
@@ -989,6 +1170,7 @@ public final class NavigationProfilesTest {
     public void retainBoundedActualWitnessAndCloseOnlyOwnedActivity() throws Exception {
         if (directory == null) return;
         List<Throwable> failures = new ArrayList<>(); boolean closed = false;
+        if (closeWindowEnabled && closeWindowInstalled && !closeWindowRestored) restoreAndRetainCloseWindow(closeWindowEnd);
         try { retireCaptureWorker(); } catch (Throwable e) { failures.add(e); }
         try { if (scenario != null) { NativePublicWebView.closeScenarioBounded(scenario); closed = true; } } catch (Throwable e) { failures.add(e); }
         try { if (application != null && drawObserver != null) application.unregisterActivityLifecycleCallbacks(drawObserver); } catch (Throwable e) { failures.add(e); }
@@ -1006,6 +1188,7 @@ public final class NavigationProfilesTest {
                 .put("rootJUnitGuestClosureAndProfileEvidenceStillRequired", true);
             if (closeDiagnosticsEnabled) { capCloseDiagnostics(); witness.put("closeTransitionDiagnostics", closeDiagnostics); }
             if (closeEventsEnabled) { capCloseEvents(); witness.put("closeEventDelivery", closeEvents); }
+            if (closeWindowEnabled) { capCloseWindow(); witness.put("closeWindowDispatch", closeWindowDiagnostics); }
             byte[] bytes = witness.toString().getBytes(StandardCharsets.UTF_8); assertTrue("Capped actual public/native witness", bytes.length <= MAX_WITNESS_BYTES);
             File output = new File(directory, "public-witness.json"); assertTrue("Exclusive fresh witness", output.createNewFile());
             try (FileOutputStream stream = new FileOutputStream(output)) { stream.write(bytes); }

@@ -47,6 +47,8 @@ import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
+import org.junit.Rule;
+import org.junit.rules.TestName;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -61,6 +63,12 @@ public final class NotificationRequestsTest {
     private ActivityScenario<MainActivity> scenario;
     private NativePublicWebView web;
     private String nonce, peerId, peerName, target;
+    @Rule public final TestName testName = new TestName();
+    private boolean windowedRootSelection;
+    private long windowedJourneyEnd;
+    private MainActivity windowedOwner;
+    private android.webkit.WebView windowedWebView;
+    private String windowedTimeOrigin;
 
     @Before
     public void requireFreshRootAssignedGenuinePeer() throws Exception {
@@ -69,6 +77,17 @@ public final class NotificationRequestsTest {
         Bundle args = InstrumentationRegistry.getArguments();
         Assume.assumeTrue("Explicit root genuine notification interval required",
             "true".equals(args.getString("notificationGenuinePeerAcceptance")));
+        String windowed = args.getString("notificationWindowedRootSelection", "false");
+        assertTrue("Only explicit separate root CUA selection", windowed.equals("true") || windowed.equals("false"));
+        windowedRootSelection = windowed.equals("true");
+        assertEquals("The root CUA route has its own explicitly assigned method", windowedRootSelection,
+            testName.getMethodName().equals("genuinePeerNotificationWindowedRootSelectionAndBackRestoresDirtyPaste"));
+        if (windowedRootSelection) {
+            for (String diagnostic : new String[]{"notificationWindowCensus", "notificationInteractiveWindowCensus",
+                "notificationLocalNodeComparison", "notificationFixedResourceFields"})
+                assertEquals("Root CUA selection is separate from AX/diagnostic routes", "false", args.getString(diagnostic, "false"));
+            windowedJourneyEnd = SystemClock.uptimeMillis() + 150_000;
+        }
         String localComparison = args.getString("notificationLocalNodeComparison", "false");
         assertTrue("Only explicit local-node diagnostics", localComparison.equals("true") || localComparison.equals("false"));
         assertTrue("Local-node diagnostics require the owned interactive census", !localComparison.equals("true")
@@ -157,6 +176,109 @@ public final class NotificationRequestsTest {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         web.await("normal native Back restores same dirty editor", "!!(" + textarea + ") && " + textarea + ".value === " + JSONObject.quote(draft));
         Log.i(TAG, "genuine-notification-requests-back-pass nonce=" + nonce + " notificationId=" + posted.getId());
+    }
+
+    @Test
+    public void genuinePeerNotificationWindowedRootSelectionAndBackRestoresDirtyPaste() throws Exception {
+        web.onActivity(activity -> { windowedOwner = activity; windowedWebView = activity.getBridge().getWebView(); });
+        windowedTimeOrigin = web.evaluate("performance.timeOrigin");
+        web.tap(web.button("Devices"));
+        web.tap(web.button("Pair this device"));
+        web.tap(web.button("Paste pairing text"));
+        String textarea = "document.querySelector('textarea[aria-label=\"Pairing text\"]')";
+        web.tap(textarea);
+        instrumentation.sendStringSync(target);
+        web.await("actual public target entered", textarea + ".value === " + JSONObject.quote(target));
+        web.tap(web.button("Submit pairing text"));
+        web.await("actual outgoing signed request submitted", "[...document.querySelectorAll('[role=status]')].some(e => e.textContent === 'Request submitted. Waiting for approval.')");
+        String draft = "retained notification draft " + nonce;
+        web.tap(textarea);
+        instrumentation.sendStringSync(draft);
+        web.await("new dirty editor retained", textarea + ".value === " + JSONObject.quote(draft));
+        // Root waits for this public stage AND the peer's verified incoming ID,
+        // then invokes only the peer's bounded public requestIncoming operation.
+        Log.i(TAG, "awaiting-genuine-reverse-request nonce=" + nonce);
+        StatusBarNotification posted = awaitOwnPeerNotification();
+        Log.i(TAG, "posted-metadata nonce=" + nonce + " package=" + safeMetadata(posted.getPackageName())
+            + " id=" + posted.getId() + " channel=" + safeMetadata(posted.getNotification().getChannelId()));
+        logOwnNotificationEligibility("posted", posted);
+        assertEquals("Pairing channel, not continuity", "default", posted.getNotification().getChannelId());
+        assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
+        assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
+            "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
+        expandNotificationsWithCompletionWitness();
+        awaitWindowedRootSelection(posted, textarea, draft);
+        String card = "[...document.querySelectorAll('.pending-card')].find(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
+        web.await("actual authoritative Requests after OS selection", "document.querySelector('h1')?.textContent === 'Requests' && !!(" + card + ") && !document.querySelector('[role=dialog][aria-modal=true]')");
+        web.await("current request remains unadmitted", "[...(" + card + ").querySelectorAll('button')].some(e => e.textContent.trim() === 'Accept' && !e.disabled)");
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        web.await("normal native Back restores same dirty editor", "!!(" + textarea + ") && " + textarea + ".value === " + JSONObject.quote(draft));
+        assertTrue("Original150s method boundary remains authoritative", SystemClock.uptimeMillis() < windowedJourneyEnd);
+        Log.i(TAG, "genuine-windowed-notification-requests-back-pass nonce=" + nonce + " notificationId=" + posted.getId()
+            + " completedUptimeMs=" + SystemClock.uptimeMillis());
+    }
+
+    private void assertWindowedRootOwner() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean same = new java.util.concurrent.atomic.AtomicBoolean();
+        web.onActivity(activity -> same.set(activity == windowedOwner && activity.getBridge() != null
+            && activity.getBridge().getWebView() == windowedWebView && !activity.isFinishing() && !activity.isDestroyed()));
+        assertTrue("Root selection must retain the original normal Activity and WebView", same.get());
+        assertEquals("Root selection must retain the original document", windowedTimeOrigin, web.evaluate("performance.timeOrigin"));
+        assertTrue("Original150s method boundary remains authoritative", SystemClock.uptimeMillis() < windowedJourneyEnd);
+    }
+
+    private void awaitWindowedRootSelection(StatusBarNotification posted, String textarea, String draft) throws Exception {
+        assertTrue("Separate explicit root CUA route required", windowedRootSelection);
+        assertWindowedRootOwner();
+        assertEquals("The original dirty task remains until a real OS selection", draft, web.evaluate(textarea + ".value"));
+        assertEquals("The original task remains until a real OS selection", "Paste pairing text", web.evaluate(
+            "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
+        Context context = instrumentation.getTargetContext();
+        assertEquals("Own delivered notification only", context.getPackageName(), posted.getPackageName());
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        int matching = 0;
+        for (StatusBarNotification current : manager.getActiveNotifications()) {
+            if (current.getId() != posted.getId() || !current.getPackageName().equals(posted.getPackageName())
+                || !java.util.Objects.equals(current.getTag(), posted.getTag())) continue;
+            matching++;
+            Notification notification = current.getNotification();
+            assertEquals("Own Pairing channel remains current", "default", notification.getChannelId());
+            assertEquals("Own Pairing title remains current", "Pairing request", String.valueOf(notification.extras.getCharSequence(Notification.EXTRA_TITLE, "")));
+            String body = notification.extras.getString(Notification.EXTRA_TEXT, "");
+            assertTrue("Own current notification identifies the exact genuine peer", body.contains(peerName) && body.contains(peerId));
+            assertNotNull("Own real notification content route exists", notification.contentIntent);
+        }
+        assertEquals("Exactly the same own notification remains active at readiness", 1, matching);
+        long ready = SystemClock.uptimeMillis();
+        long end = Math.min(windowedJourneyEnd, ready + 60_000);
+        long readyElapsed = SystemClock.elapsedRealtime();
+        long endElapsed = readyElapsed + (end - ready);
+        assertTrue("A bounded original manual selection budget remains", end > ready);
+        JSONObject metadata = new JSONObject().put("kind", "ROOT_NOTIFICATION16_WINDOWED_SELECTION_READY")
+            .put("nonce", nonce).put("package", posted.getPackageName()).put("notificationId", posted.getId())
+            .put("channel", "default").put("peerId", peerId).put("peerName", peerName)
+            .put("appPid", android.os.Process.myPid()).put("appUid", android.os.Process.myUid())
+            .put("task", "Paste pairing text").put("route", "LIVE_CUA_SYSTEMUI_BODY")
+            .put("readyUptimeMs", ready).put("expiresUptimeMs", end).put("maximumManualSelectionMs", 60_000)
+            .put("readyElapsedRealtimeMs", readyElapsed).put("expiresElapsedRealtimeMs", endElapsed);
+        assertTrue("Bounded known readiness fields only", metadata.toString().getBytes(StandardCharsets.UTF_8).length <= 4096);
+        Log.i(TAG, "root-selection-ready nonce=" + nonce + " metadata=" + metadata);
+        String card = "[...document.querySelectorAll('.pending-card')].find(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
+        String actualRequests = "document.querySelector('h1')?.textContent === 'Requests' && !!(" + card + ") && !document.querySelector('[role=dialog][aria-modal=true]')";
+        do {
+            assertTrue("The one manual selection interval never refreshes", SystemClock.uptimeMillis() < end && SystemClock.elapsedRealtime() < endElapsed);
+            assertWindowedRootOwner();
+            boolean selected = "true".equals(web.evaluate(actualRequests));
+            long observed = SystemClock.uptimeMillis();
+            assertTrue("Late public Requests cannot satisfy root selection", observed < end && SystemClock.elapsedRealtime() < endElapsed);
+            if (selected) {
+                Log.i(TAG, "root-selection-observed nonce=" + nonce + " notificationId=" + posted.getId() + " observedUptimeMs=" + observed
+                    + " observedElapsedRealtimeMs=" + SystemClock.elapsedRealtime());
+                return;
+            }
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < end);
+        throw new AssertionError("Actual authoritative Requests required after one live CUA SystemUI body selection");
     }
 
     // Failure observation only: no retry, input, expansion, selector or success authority.
