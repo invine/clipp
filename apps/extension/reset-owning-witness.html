@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clipp reset owning witness</title>
+  </head>
+  <body>
+    <h1>Clipp reset owning witness</h1>
+    <p>
+      Read only. Export every retained chunk before stopping a worker or
+      quitting Chrome. A new incarnation alone does not prove a native restart.
+    </p>
+    <p id="status" role="status">Paused</p>
+    <button id="observe" type="button">Observe once</button>
+    <button id="collect" type="button">Collect</button>
+    <button id="pause" type="button">Pause</button>
+    <button id="previous" type="button">Previous chunk</button>
+    <button id="next" type="button">Next chunk</button>
+    <label for="evidence">Bounded public evidence chunk</label>
+    <textarea
+      id="evidence"
+      readonly
+      rows="24"
+      cols="100"
+      spellcheck="false"
+    ></textarea>
+    <script type="module" src="/src/resetOwningWitness.ts"></script>
+  </body>
+</html>
