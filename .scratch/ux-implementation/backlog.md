@@ -117,3 +117,7 @@ The user directs “consider all passed, we'll figure it out later.” [Accepted
 ## Scoped native input collection complete — 2026-10-21
 
 [13](issues/13-integrate-native-task-input.md#answer--2026-10-21) is resolved on reviewed, freshly verified9755057 after its missing actual current Chrome reverse-Tab/forward-Tab/Enter/Escape/logical-return path passed and all predecessor native evidence was independently audited. All43 observed runtime assets match the fresh build; source/public-owner mapping and actual popup provenance remain explicit. A03/19 and other later collector contributions remain open. G14 administrative acceptance remains limited to17–19; no new finding or other gate is completed here.
+
+## Residual desktop controls complete — 2026-10-22
+
+[17](issues/17-unify-local-assets-and-shared-controls.md#answer--2026-10-22) is resolved after the reviewed nested-focus repair, fresh170-suite/1274-test/all-build verification and independently audited actual cold Electron/canonical Chrome/short-toolbar default, enlarged and restored control evidence. G14 remains administrative acceptance; all earlier failures and narrower provenance are preserved.18/19 and later presentation/finding collectors keep their own gates. The separately audited A08/A09/E17 contributions are collected in finding-status; physical/provider/OEM/assistive limits remain.

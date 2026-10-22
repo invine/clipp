@@ -1,7 +1,7 @@
 # Qualify desktop shared controls and collect cross-surface styling
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-issues-08
 Priority band: 1
 Blocked by: 32
@@ -92,3 +92,13 @@ This closes the bounded enlarged History clipping contribution for that exact ol
 ## G14 completion by user acceptance — 2026-10-21
 
 The user directs “Mark these gates completed” for desktop OS text-only scaling G14 on17–19. [Accepted decision](../decisions/20261021-g14-17-19-user-acceptance.md) completes this ticket’s G14 gate administratively; no new native run or enlargement measurement is asserted. Earlier failed/unavailable/unchanged-text observations remain intact. Every other candidate gate and finding contribution remains required; this decision alone does not resolve the ticket.
+
+## Answer — 2026-10-22
+
+Resolved for the residual desktop asset/control scope. The reviewed nested-scroll focus repair is integrated in `89227f2d435533cc53f337b56778524c0a0941e1` and retained on clean candidate `c690550e50862056dea20c9baac3f8e799856f13` / tree `491ecf40f0ecf20248bbea1eab00802ba8cc7c52`. The current twelve-case owning renderer regression passes; independent Standards and Spec reviews have no outstanding source findings. Fresh integrated `npm run verify` passes 170 suites / 1,274 tests, all four typechecks and all three production builds, with zero lint errors.
+
+Actual cold Electron normal-main/renderer input passed local SVG/branding with before-main Chromium HTTP access denied, raw whitespace validation, full 64-character name access, native forward/reverse keyboard focus, retained draft/logical return and the final Settings control. Actual current Chrome canonical options and genuine toolbar passed local assets, the same native name/error/focus/return contributions, short-window default and enlarged 32px/minimum24px preview/action association and final-control focus, followed by exact16px/minimum0px restoration and a fresh restored final-control check. The qualifying default short History screenshot is `short-default-history-preview-copy-scroll-adjusted.jpg`; the earlier similarly named complete-preview screenshot is preserved as a clipped intermediate and supplies no pass. Both apps quit normally; exact owned process/profile/assets closure and the closed synthetic-marker interval are recorded. The independently audited thirteen actual JPEGs preserve their real format and observation scope.
+
+Exact ignored evidence under `.local/ux-implementation/run-20261010/`: `electron17-cold-c690550-42437041dd4599c713781a97/root-observations-and-closure.json` (SHA2565ff8804d8c6f239eb0cf32c4967e61c781fff6081ee112b0d579fbede94ece74), `native17-owned-toolbar-c690550-f95cf4c8/root-observations-and-closure.json` (7cc0ae538d4116c58e7a8f00f24faa771755898d15b04745c8a1f986b0b5f099), `ticket17-final-scoped-completion-evidence-audit-20261022.md` (1c3b28543c0fa70b479f9f0e4ee1d2bf6ce9e86849a180047c786fdf29638314), and `integrated-c690550-verification-20261022.json` (07b208c1167eedd762ac2e288d7efc2bfa2352a3217589a816bdf19b6005a4b8). Existing 32 Android target/asset and earlier intermediate/default/200% rendered/native contributions are reused under that audit; G14 is completed only through the linked user acceptance.
+
+Earlier failures, omissions and limits remain visible. HTTP denial does not establish native/libp2p network-wide isolation. Theme18, navigation19, compact consumers and broad C15/A11 collection retain their own gates; this foundational resolution supplies no blanket finding closure, account qualification or release claim.

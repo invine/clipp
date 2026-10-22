@@ -437,3 +437,9 @@ Canonical: 21 resolved / 8 claimed / 7 open. At most two implementation authors;
 ## Scoped native input collection complete — 2026-10-21
 
 [13](issues/13-integrate-native-task-input.md#answer--2026-10-21) is resolved on reviewed, freshly verified9755057 after its missing actual current Chrome reverse-Tab/forward-Tab/Enter/Escape/logical-return path passed and all predecessor native evidence was independently audited. All43 observed runtime assets match the fresh build; source/public-owner mapping and actual popup provenance remain explicit. A03/19 and other later collector contributions remain open. G14 administrative acceptance remains limited to17–19; no new finding or other gate is completed here.
+
+## Coordinated residual17 and scoped finding collection — 2026-10-22
+
+Coordinator resolves17 under its Answer after actual current Electron/Chrome residual desktop checks and independent final evidence audit. Source/native receipts remain bound to c690550; the subsequent test-only N3/census integrations do not relabel those executions. Canonical totals after this resolution are23resolved/7claimed/6open.18/19/20/29 and10/11/16 remain claimed; no new consumer is eligible until its remaining predecessors resolve.
+
+Coordinator applies only the previously prepared A08/A09/E17 collection supported by `a08-a09-e17-scoped-finding-collection-audit-20261021.md` (SHA256ef0ede8a2d622382ee69e428b1e969359e9e0159190a27b838bc59d5a53eec24). Existing tested-candidate, human/passive/instrumented and retained hardware/provider/OEM/assistive/API36 limits remain explicit. A03 still belongs to19 and E10 to24. No broader finding, reset action activation, account sign-in or release qualification follows.

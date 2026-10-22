@@ -11,6 +11,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationChannelGroup;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -22,6 +23,7 @@ import android.system.StructPollfd;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -129,7 +131,7 @@ public final class NotificationRequestsTest {
             tapActualPeerNotification();
         } catch (AssertionError | RuntimeException failure) {
             try {
-                holdFailureScreenBeforeActivityCleanup();
+                holdFailureScreenBeforeActivityCleanup(failure);
             } catch (Throwable diagnostic) {
                 retainRowFailureDiagnostic(failure, diagnostic, "screen-window");
             }
@@ -150,7 +152,7 @@ public final class NotificationRequestsTest {
 
     // Failure observation only: no retry, input, expansion, selector or success authority.
     // Root may take one bounded screenshot while this finite window remains READY.
-    private void holdFailureScreenBeforeActivityCleanup() throws Exception {
+    private void holdFailureScreenBeforeActivityCleanup(Throwable original) throws Exception {
         Context context = instrumentation.getTargetContext();
         NativeAcceptanceTarget.requireIsolated(context.getPackageName());
         File phase = new File(context.getCacheDir(), "notification16-row-failure-" + nonce + ".phase");
@@ -162,6 +164,13 @@ public final class NotificationRequestsTest {
             ready = true;
             Log.i(TAG, "row-failure-screen-ready nonce=" + nonce
                 + " startedUptimeMs=" + started + " holdDeadlineUptimeMs=" + end + " maximumHoldMs=3000");
+            try {
+                if ("true".equals(InstrumentationRegistry.getArguments().getString("notificationWindowCensus"))) {
+                    logFailureWindowCensus(original, end);
+                }
+            } catch (Throwable diagnostic) {
+                retainRowFailureDiagnostic(original, diagnostic, "window-census");
+            }
             long remaining;
             while ((remaining = end - SystemClock.uptimeMillis()) > 0) SystemClock.sleep(Math.min(50, remaining));
         } finally {
@@ -173,6 +182,199 @@ public final class NotificationRequestsTest {
                     + " endedUptimeMs=" + SystemClock.uptimeMillis() + " phaseCommitted=true");
             }
         }
+    }
+
+    // Failure-only public observations. No result is returned to the click path.
+    private static final class WindowCensus {
+        final long start = SystemClock.uptimeMillis();
+        final long end;
+        final List<AccessibilityNodeInfo> roots = new ArrayList<>();
+        final List<List<AccessibilityNodeInfo>> results = new ArrayList<>();
+        List<AccessibilityWindowInfo> windows;
+        int queries;
+        boolean timeCapped, windowCapped, rootCapped, resultCapped, capabilityMissing, scopeUnknown;
+        Throwable cleanupFailure;
+        WindowCensus(long holdEnd) { end = Math.min(holdEnd, start + 100); }
+        void check() {
+            if (SystemClock.uptimeMillis() >= end) { timeCapped = true; throw new ProbeLimit(); }
+        }
+        <T> T read(ProbeRead<T> operation) {
+            check();
+            T result = operation.read();
+            check();
+            return result;
+        }
+        AccessibilityNodeInfo root(ProbeRead<AccessibilityNodeInfo> operation) {
+            check();
+            AccessibilityNodeInfo result = operation.read();
+            if (result != null) roots.add(result); // Own late acquisitions before checking time.
+            check();
+            if (result == null) scopeUnknown = true;
+            return result;
+        }
+        List<AccessibilityNodeInfo> query(AccessibilityNodeInfo root, String value) {
+            check();
+            if (queries >= 7) { throw new ProbeLimit(); }
+            queries++;
+            List<AccessibilityNodeInfo> result = root.findAccessibilityNodeInfosByText(value);
+            results.add(result);
+            check();
+            if (result == null) { scopeUnknown = true; throw new ProbeLimit(); }
+            if (result.size() > 4) { resultCapped = true; throw new ProbeLimit(); }
+            return result;
+        }
+        void recycleAll() {
+            IdentityHashMap<AccessibilityNodeInfo, Boolean> nodes = new IdentityHashMap<>();
+            for (List<AccessibilityNodeInfo> list : results) if (list != null) {
+                for (AccessibilityNodeInfo node : list) recycleNode(node, nodes);
+            }
+            for (AccessibilityNodeInfo node : roots) recycleNode(node, nodes);
+            IdentityHashMap<AccessibilityWindowInfo, Boolean> seen = new IdentityHashMap<>();
+            if (windows != null) for (AccessibilityWindowInfo window : windows) {
+                if (window != null && seen.put(window, true) == null) {
+                    try { window.recycle(); }
+                    catch (Throwable failure) { if (cleanupFailure == null) cleanupFailure = failure; }
+                }
+            }
+            if (SystemClock.uptimeMillis() >= end) timeCapped = true;
+        }
+        void recycleNode(AccessibilityNodeInfo node, IdentityHashMap<AccessibilityNodeInfo, Boolean> seen) {
+            if (node != null && seen.put(node, true) == null) {
+                try { node.recycle(); }
+                catch (Throwable failure) { if (cleanupFailure == null) cleanupFailure = failure; }
+            }
+        }
+        boolean incomplete() {
+            return timeCapped || windowCapped || rootCapped || resultCapped || capabilityMissing || scopeUnknown
+                || cleanupFailure != null;
+        }
+    }
+
+    private String censusPackage(AccessibilityNodeInfo root, WindowCensus census, String ownPackage) {
+        String value = String.valueOf(census.read(root::getPackageName));
+        if (ownPackage.equals(value)) return "own";
+        if ("com.android.systemui".equals(value)) return "SystemUI";
+        return "android".equals(value) ? "android" : "other";
+    }
+
+    private JSONObject censusRootMetadata(AccessibilityNodeInfo root, WindowCensus census, String packageKind)
+            throws Exception {
+        JSONObject result = new JSONObject();
+        result.put("windowId", census.read(root::getWindowId));
+        result.put("package", packageKind);
+        String className = String.valueOf(census.read(root::getClassName));
+        result.put("class", className.startsWith("android.") || className.startsWith("com.android.systemui.")
+            || className.startsWith("com.android.internal.") ? safeMetadata(className) : "<other>");
+        String id = census.read(root::getViewIdResourceName);
+        result.put("resourceId", knownTargetId(id) ? id : "<other>");
+        result.put("childCount", census.read(root::getChildCount));
+        result.put("visible", census.read(root::isVisibleToUser));
+        result.put("enabled", census.read(root::isEnabled));
+        return result;
+    }
+
+    private JSONObject censusExactQuery(AccessibilityNodeInfo root, WindowCensus census, String expected,
+            boolean literalTitle) throws Exception {
+        List<AccessibilityNodeInfo> matches = census.query(root, expected);
+        int fullMatches = 0, visible = 0;
+        for (AccessibilityNodeInfo match : matches) {
+            if (match == null) { census.scopeUnknown = true; continue; }
+            CharSequence value = census.read(match::getText);
+            boolean full = value != null && (literalTitle ? expected.contentEquals(value) : value.toString().contains(expected));
+            if (full) {
+                fullMatches++;
+                if (census.read(match::isVisibleToUser)) visible++;
+            }
+        }
+        return new JSONObject().put("results", matches.size()).put("fullMatches", fullMatches).put("visibleFullMatches", visible);
+    }
+
+    private void observeFailureWindows(WindowCensus census, JSONObject metadata) throws Exception {
+        UiAutomation automation = census.read(instrumentation::getUiAutomation);
+        AccessibilityServiceInfo service = census.read(automation::getServiceInfo);
+        if (service == null) { census.capabilityMissing = true; return; }
+        int flags = service.flags;
+        int capabilities = census.read(service::getCapabilities);
+        boolean interactive = (flags & AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS) != 0;
+        boolean content = (capabilities & AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT) != 0;
+        metadata.put("flags", flags).put("capabilities", capabilities).put("retrieveWindowContent", content)
+            .put("reportViewIds", (flags & AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS) != 0)
+            .put("includeNotImportantViews", (flags & AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS) != 0)
+            .put("retrieveInteractiveWindows", interactive);
+        if (!content) { census.capabilityMissing = true; return; }
+        String ownPackage = census.read(() -> instrumentation.getTargetContext().getPackageName());
+        AccessibilityNodeInfo active = census.root(automation::getRootInActiveWindow);
+        int activeId = active == null ? -1 : census.read(active::getWindowId);
+        if (active != null) {
+            String kind = censusPackage(active, census, ownPackage);
+            metadata.put("activeRoot", censusRootMetadata(active, census, kind));
+            if ("SystemUI".equals(kind)) metadata.put("activeLiteralTitle", censusExactQuery(active, census, "Pairing request", true));
+        }
+        // Never enable capabilities or change flags to make this observation succeed.
+        if (!interactive) { census.capabilityMissing = true; return; }
+        census.check();
+        census.windows = automation.getWindows(); // Register the entire list, including any late/over-cap entries.
+        census.check();
+        if (census.windows == null) { census.scopeUnknown = true; return; }
+        if (census.windows.size() > 8) census.windowCapped = true;
+        metadata.put("returnedWindows", census.windows.size());
+        JSONArray windows = new JSONArray();
+        metadata.put("windows", windows);
+        int otherSystemUiRoots = 0;
+        for (int index = 0; index < Math.min(8, census.windows.size()); index++) {
+            census.check();
+            AccessibilityWindowInfo window = census.windows.get(index);
+            if (window == null) { census.scopeUnknown = true; continue; }
+            JSONObject item = new JSONObject();
+            windows.put(item);
+            int id = census.read(window::getId);
+            item.put("id", id).put("type", census.read(window::getType)).put("layer", census.read(window::getLayer))
+                .put("displayId", census.read(window::getDisplayId)).put("activeRootWindow", id == activeId)
+                .put("active", census.read(window::isActive)).put("focused", census.read(window::isFocused))
+                .put("accessibilityFocused", census.read(window::isAccessibilityFocused));
+            Rect bounds = new Rect();
+            census.read(() -> { window.getBoundsInScreen(bounds); return true; });
+            item.put("bounds", new JSONArray().put(bounds.left).put(bounds.top).put(bounds.right).put(bounds.bottom));
+            if (id == activeId) continue;
+            AccessibilityNodeInfo root = census.root(window::getRoot);
+            if (root == null) continue;
+            String kind = censusPackage(root, census, ownPackage);
+            item.put("root", censusRootMetadata(root, census, kind));
+            if (!"SystemUI".equals(kind)) continue;
+            if (++otherSystemUiRoots > 2) { census.rootCapped = true; continue; }
+            item.put("peerName", censusExactQuery(root, census, peerName, false));
+            item.put("fullPeerId", censusExactQuery(root, census, peerId, false));
+            item.put("literalTitle", censusExactQuery(root, census, "Pairing request", true));
+        }
+        if (census.windows.isEmpty()) census.scopeUnknown = true;
+    }
+
+    private void logFailureWindowCensus(Throwable original, long holdEnd) throws Exception {
+        WindowCensus census = new WindowCensus(holdEnd);
+        JSONObject metadata = new JSONObject();
+        Throwable error = null;
+        try {
+            observeFailureWindows(census, metadata);
+        } catch (ProbeLimit limit) {
+            census.scopeUnknown = true;
+        } catch (Throwable failure) {
+            error = failure;
+            retainRowFailureDiagnostic(original, failure, "window-census-read");
+        } finally {
+            census.recycleAll();
+        }
+        if (census.cleanupFailure != null) retainRowFailureDiagnostic(original, census.cleanupFailure, "window-census-recycle");
+        long ended = SystemClock.uptimeMillis();
+        String prefix = "window-census nonce=" + nonce + " selectionAuthority=false startedUptimeMs=" + census.start
+            + " deadlineUptimeMs=" + census.end + " endedUptimeMs=" + ended;
+        String line = prefix + " observation=" + (census.incomplete() || error != null ? "UNKNOWN" : "complete")
+            + " queries=" + census.queries + " timeCapped=" + census.timeCapped + " windowCapped=" + census.windowCapped
+            + " rootCapped=" + census.rootCapped + " resultCapped=" + census.resultCapped
+            + " capabilityMissing=" + census.capabilityMissing + " scopeUnknown=" + census.scopeUnknown
+            + " cleanupError=" + (census.cleanupFailure != null) + " metadata=" + metadata;
+        // One compact entry avoids platform log truncation; total diagnostic output stays below8KiB.
+        if (line.getBytes(StandardCharsets.UTF_8).length > 3900) line = prefix + " observation=UNKNOWN outputCapped=true";
+        Log.i(TAG, line);
     }
 
     private void publishFailureScreenPhase(File phase, String value, boolean fresh) throws Exception {
