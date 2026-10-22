@@ -62,7 +62,9 @@ import org.junit.runners.model.MultipleFailureException;
 /** Selected N4/N5/N7/N8 native consumers, never the whole navigation matrix.
  * Root alone supplies actual guest profiles/geometry/uiMode, normal APK provenance,
  * network isolation and process-stop/reopen. No configuration/OS/DOM mutation is
- * performed here. DOM expressions only observe public controls; the unchanged
+ * performed here. An explicit geometry-only probe installs bounded passive listeners
+ * with nonce-owned test metadata; it never changes product state or input.
+ * Other DOM expressions only observe public controls; the unchanged
  * NativePublicWebView locates/scrolls controls and sends guarded physical input.
  * QR image evidence is NOT decoding/scanning qualification. Theme reopen is a
  * separately invoked new document; it asserts no destroyed-document draft survival.
@@ -100,7 +102,10 @@ public final class NavigationProfilesTest {
     private String nonce, selectedCase, timeOrigin, query, pairingRaw;
     private long deadline;
     private boolean passed;
-    private boolean closeDiagnosticsEnabled;
+    private boolean closeDiagnosticsEnabled, closeEventsEnabled;
+    private JSONObject closeEvents = new JSONObject();
+    private boolean closeEventsInstalled, closeEventsRemoved, closeEventsUnknown;
+    private String closeEventsKey;
     private final JSONObject closeDiagnostics = new JSONObject();
     private final JSONArray closeSnapshots = new JSONArray();
     private boolean closeDiagnosticUnknown, closeDiagnosticAttempted, closeTapReturned;
@@ -122,6 +127,9 @@ public final class NavigationProfilesTest {
         String closeDiagnostic = args.getString("navigationProfilesCloseDiagnostics", "false");
         assertTrue("Only explicit Close diagnostics", closeDiagnostic.equals("true") || closeDiagnostic.equals("false"));
         closeDiagnosticsEnabled = closeDiagnostic.equals("true");
+        String events = args.getString("navigationProfilesCloseEvents", "false");
+        assertTrue("Only explicit passive Close events", events.equals("true") || events.equals("false"));
+        closeEventsEnabled = events.equals("true");
         selectedCase = args.getString("navigationProfilesCase", "");
         String method = selectedCase.equals("qr-recovery") ? "generatedQrAndLocalRecoveriesRetainSession"
             : selectedCase.equals("geometry-ime") ? "assignedGeometryAndImeRetainTaskAndFinalControls"
@@ -129,8 +137,10 @@ public final class NavigationProfilesTest {
             : selectedCase.equals("theme-reopen") ? "persistedExplicitPaletteRestoresInNewOrdinaryDocument" : "";
         assertEquals("One explicitly assigned native method only", method, testName.getMethodName());
         assertTrue("Close diagnostics observe only the geometry case", !closeDiagnosticsEnabled || selectedCase.equals("geometry-ime"));
+        assertTrue("Passive Close events require the geometry-only diagnostic path", !closeEventsEnabled || (closeDiagnosticsEnabled && selectedCase.equals("geometry-ime")));
         nonce = args.getString("navigationProfilesRootNonce", "");
         assertTrue("Fresh bounded root nonce", nonce.matches("[A-Za-z0-9_-]{16,64}"));
+        closeEventsKey = "__clipp19CloseEvents_" + nonce;
         String raw = args.getString("navigationProfilesContract", "");
         assertTrue("Capped root profile JSON required", raw.getBytes(StandardCharsets.UTF_8).length <= 8192 && !raw.isEmpty());
         contract = new JSONObject(raw);
@@ -310,39 +320,121 @@ public final class NavigationProfilesTest {
     }
 
     // Opt-in observations only. Original one tap and the same absolute20s
-    // absence oracle remain authoritative; no trace stages, listener or PNG.
+    // absence oracle remain authoritative; no trace stages or PNG. The separate
+    // passive event opt-in never changes the input or absence predicate.
     private void closeNameWithDiagnostics() throws Exception {
         closeDiagnosticAttempted = true;
         retainCloseSnapshot("before-tap", Math.min(deadline, SystemClock.uptimeMillis() + 100), null);
-        tapButton("Close name editor");
-        closeTapReturned = true;
-        final long end = Math.min(deadline, SystemClock.uptimeMillis() + OBSERVATION_MS);
-        JSONObject timeline = null;
+        if (closeEventsEnabled) installCloseEvents();
+        long eventEnd = deadline;
+        try {
+            tapButton("Close name editor");
+            closeTapReturned = true;
+            final long end = Math.min(deadline, SystemClock.uptimeMillis() + OBSERVATION_MS);
+            eventEnd = end;
+            if (closeEventsEnabled) boundCloseEvents(end);
+            JSONObject timeline = null;
+            try {
+                checkObservation(end);
+                timeline = web.touchTimelineDiagnostics();
+                checkObservation(end);
+                closeDiagnostics.put("physicalTouch", timeline);
+                capCloseDiagnostics();
+            } catch (Throwable failure) { closeDiagnosticFailure("touch-timeline", failure); }
+            JSONObject point = timeline == null ? null : timeline.optJSONObject("sample");
+            retainCloseSnapshot("after-tap", end, point);
+            if (closeEventsEnabled) observeCloseEvents("after-tap", end, false);
+            boolean lastRecorded = false;
+            do {
+                checkObservation(end);
+                boolean ready = "true".equals(evaluate("!(" + DIALOG + ")"));
+                checkObservation(end);
+                if (ready) {
+                    retainCloseSnapshot("dismissed", end, point);
+                    if (closeEventsEnabled) observeCloseEvents("dismissed", end, true);
+                    return;
+                }
+                if (!lastRecorded && end - SystemClock.uptimeMillis() <= 200) {
+                    lastRecorded = true;
+                    retainCloseSnapshot("last-available-dialog-present", end, point);
+                    if (closeEventsEnabled) observeCloseEvents("last-available-dialog-present", end, true);
+                }
+                SystemClock.sleep(50);
+            } while (SystemClock.uptimeMillis() < end);
+            throw new AssertionError("Public condition unmet: task dismissed one level to workspace");
+        } finally {
+            // Cleanup can run after a failed oracle, but cannot turn late data
+            // into a complete observation or change that original verdict.
+            if (closeEventsEnabled && !closeEventsRemoved) observeCloseEvents("failure-cleanup", eventEnd, true);
+        }
+    }
+
+    /** One explicit test-local passive observer; it never dispatches or cancels input.
+     * Original node references are retained only in this nonce-owned JS closure.
+     * No event text, values, keys, arbitrary selectors or React/session state. */
+    private void installCloseEvents() {
+        try {
+            checkObservation(deadline);
+            String script = "(()=>{const key=" + JSONObject.quote(closeEventsKey) + ",d=" + DIALOG + ",c=" + web.button("Close name editor") + ",n=" + NAME + ";"
+                + "if(Object.prototype.hasOwnProperty.call(window,key)||!d||!c||!n||document.getElementById(d.getAttribute('aria-labelledby'))?.textContent.trim()!=='Device Name')return {installed:false};"
+                + "const origin=performance.timeOrigin,start=performance.now(),records=[],continuity=[],listeners=[];let active=true,removed=false,cap=false,expired=false,clicks=0,postClick=null,timer,end=performance.now()+" + Math.max(0, deadline - SystemClock.uptimeMillis()) + ";"
+                + "const identity=()=>({dialogConnected:d.isConnected,sameDialog:(" + DIALOG + ")===d,closeConnected:c.isConnected,sameClose:(" + web.button("Close name editor") + ")===c,timeOriginSame:performance.timeOrigin===origin});"
+                + "const retire=()=>{active=false;for(const [type,fn,capture]of listeners)document.removeEventListener(type,fn,capture);clearTimeout(timer);removed=true};"
+                + "const classify=t=>t===c||c.contains(t)?'CLOSE':t===n?'NAME':t===d?'KNOWN_DIALOG':'OTHER';"
+                + "const observe=(e,phase)=>{if(!active||!d.contains(e.target))return;if(performance.now()>=end){expired=true;retire();return}if(records.length>=16){cap=true;retire();return}"
+                + "records.push([e.type,classify(e.target),phase,Math.round(performance.now()-start),e.isTrusted,e.defaultPrevented]);"
+                + "if(e.type==='click'&&phase==='bubble'){if(++clicks>1){cap=true;retire();return}queueMicrotask(()=>{if(!active)return;if(performance.now()>=end){expired=true;retire();return}postClick=identity()})}};"
+                + "for(const type of ['pointerdown','pointerup','pointercancel','click','focusin']){const fn=e=>observe(e,'capture');document.addEventListener(type,fn,{capture:true,passive:true});listeners.push([type,fn,true])}"
+                + "const click=e=>observe(e,'bubble');document.addEventListener('click',click,{passive:true});listeners.push(['click',click,false]);"
+                + "const arm=()=>{clearTimeout(timer);timer=setTimeout(()=>{expired=true;retire()},Math.max(0,end-performance.now()))};arm();"
+                + "const snapshot=(stage,stop)=>{if(stop)retire();if(continuity.length>=3)cap=true;else continuity.push({stage,...identity()});const result={version:1,installed:true,removed,active,cap,expired,records,continuity,postClick};if(stop)delete window[key];result.propertyAbsent=!Object.prototype.hasOwnProperty.call(window,key);return result};"
+                + "Object.defineProperty(window,key,{configurable:true,value:{bound(ms){if(!active)return false;end=Math.min(end,performance.now()+ms);arm();return true},snapshot}});return {installed:true,...identity()}})()";
+            JSONObject installed = new JSONObject(evaluate(script));
+            closeEventsInstalled = installed.optBoolean("installed");
+            closeEvents.put("installation", installed);
+            if (!closeEventsInstalled || !installed.optBoolean("sameDialog") || !installed.optBoolean("sameClose") || !installed.optBoolean("timeOriginSame")) closeEventsUnknown = true;
+            checkObservation(deadline);
+        } catch (Throwable failure) { closeEventFailure("install", failure); }
+    }
+
+    private void boundCloseEvents(long end) {
         try {
             checkObservation(end);
-            timeline = web.touchTimelineDiagnostics();
+            if (!closeEventsInstalled || !sameDocument()) throw new IllegalStateException();
+            boolean bounded = "true".equals(evaluate("window[" + JSONObject.quote(closeEventsKey) + "]?.bound(" + Math.max(0, end - SystemClock.uptimeMillis()) + ")===true"));
             checkObservation(end);
-            closeDiagnostics.put("physicalTouch", timeline);
-            capCloseDiagnostics();
-        } catch (Throwable failure) { closeDiagnosticFailure("touch-timeline", failure); }
-        JSONObject point = timeline == null ? null : timeline.optJSONObject("sample");
-        retainCloseSnapshot("after-tap", end, point);
-        boolean lastRecorded = false;
-        do {
-            checkObservation(end);
-            boolean ready = "true".equals(evaluate("!(" + DIALOG + ")"));
-            checkObservation(end);
-            if (ready) {
-                retainCloseSnapshot("dismissed", end, point);
-                return;
-            }
-            if (!lastRecorded && end - SystemClock.uptimeMillis() <= 200) {
-                lastRecorded = true;
-                retainCloseSnapshot("last-available-dialog-present", end, point);
-            }
-            SystemClock.sleep(50);
-        } while (SystemClock.uptimeMillis() < end);
-        throw new AssertionError("Public condition unmet: task dismissed one level to workspace");
+            if (!bounded) throw new IllegalStateException();
+        } catch (Throwable failure) { closeEventFailure("bound", failure); }
+    }
+
+    private void observeCloseEvents(String stage, long end, boolean remove) {
+        boolean late = SystemClock.uptimeMillis() >= end;
+        try {
+            if ((!closeEventsInstalled && !remove) || !sameDocument()) throw new IllegalStateException();
+            JSONObject observed = new JSONObject(evaluate("window[" + JSONObject.quote(closeEventsKey) + "]?.snapshot(" + JSONObject.quote(stage) + "," + remove + ")??{installed:false,removed:false}"));
+            closeEventsRemoved = observed.optBoolean("removed") && observed.optBoolean("propertyAbsent");
+            if (!sameDocument()) throw new IllegalStateException();
+            closeEvents.put("actual", observed);
+            if (!observed.optBoolean("installed") || observed.optBoolean("cap") || observed.optBoolean("expired") || (remove && !closeEventsRemoved)) closeEventsUnknown = true;
+            if (late || SystemClock.uptimeMillis() >= end) closeEventsUnknown = true;
+            capCloseEvents();
+        } catch (Throwable failure) { closeEventFailure(stage, failure); }
+    }
+
+    private void closeEventFailure(String stage, Throwable failure) {
+        closeEventsUnknown = true;
+        try { closeEvents.put("errorStage", stage).put("errorClass", failure.getClass().getSimpleName()); }
+        catch (Exception ignored) { }
+    }
+
+    private void capCloseEvents() throws Exception {
+        closeEvents.put("observation", closeEventsUnknown || !closeEventsInstalled || !closeEventsRemoved ? "UNKNOWN" : "complete")
+            .put("selectionOrInputAuthority", false);
+        if (closeEvents.toString().getBytes(StandardCharsets.UTF_8).length > 2048) {
+            closeEventsUnknown = true;
+            closeEvents = new JSONObject().put("observation", "UNKNOWN").put("cap", true)
+                .put("installed", closeEventsInstalled).put("removed", closeEventsRemoved).put("selectionOrInputAuthority", false);
+        }
     }
 
     private void retainCloseSnapshot(String stage, long end, JSONObject storedPoint) {
@@ -913,6 +1005,7 @@ public final class NavigationProfilesTest {
                 .put("destroyedDocumentDraftSurvivalClaimed", false).put("navMode", "root assignment/readback only; not inferred from native inset height")
                 .put("rootJUnitGuestClosureAndProfileEvidenceStillRequired", true);
             if (closeDiagnosticsEnabled) { capCloseDiagnostics(); witness.put("closeTransitionDiagnostics", closeDiagnostics); }
+            if (closeEventsEnabled) { capCloseEvents(); witness.put("closeEventDelivery", closeEvents); }
             byte[] bytes = witness.toString().getBytes(StandardCharsets.UTF_8); assertTrue("Capped actual public/native witness", bytes.length <= MAX_WITNESS_BYTES);
             File output = new File(directory, "public-witness.json"); assertTrue("Exclusive fresh witness", output.createNewFile());
             try (FileOutputStream stream = new FileOutputStream(output)) { stream.write(bytes); }

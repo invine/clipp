@@ -73,6 +73,11 @@ public final class NotificationRequestsTest {
         assertTrue("Only explicit local-node diagnostics", localComparison.equals("true") || localComparison.equals("false"));
         assertTrue("Local-node diagnostics require the owned interactive census", !localComparison.equals("true")
             || ("true".equals(args.getString("notificationWindowCensus")) && "true".equals(args.getString("notificationInteractiveWindowCensus"))));
+        String fixedFields = args.getString("notificationFixedResourceFields", "false");
+        assertTrue("Only explicit fixed-field diagnostics", fixedFields.equals("true") || fixedFields.equals("false"));
+        assertTrue("Fixed fields require a separate owned interactive census mode", !fixedFields.equals("true")
+            || (!localComparison.equals("true") && "true".equals(args.getString("notificationWindowCensus"))
+                && "true".equals(args.getString("notificationInteractiveWindowCensus"))));
         nonce = args.getString("notificationRootNonce", "");
         peerId = args.getString("notificationPeerId", "");
         peerName = args.getString("notificationPeerName", "");
@@ -562,13 +567,91 @@ public final class NotificationRequestsTest {
         census.check();
     }
 
+    /** Fixed field retrieval only; the original capped walk remains unchanged. */
+    private void observeFixedResourceFields(WindowCensus census, JSONObject metadata) throws Exception {
+        UiAutomation automation = census.read(instrumentation::getUiAutomation);
+        AccessibilityServiceInfo service = census.read(automation::getServiceInfo);
+        if (service == null || !census.serviceObserved || service.flags != census.expectedFlags
+                || service.getCapabilities() != census.originalCapabilities) {
+            census.serviceDrift = true; throw new ProbeLimit();
+        }
+        int required = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        if ((service.flags & required) != required
+                || (service.getCapabilities() & AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT) == 0) {
+            census.capabilityMissing = true; return;
+        }
+        AccessibilityNodeInfo root = census.root(automation::getRootInActiveWindow);
+        if (root == null) return;
+        JSONObject before = localRootOwner(root, census);
+        metadata.put("mode", "fixed-resource-field-differential").put("ownerBefore", before);
+        metadata.put("remoteTitle", localRemoteQuery(root, census, "Pairing request"));
+        metadata.put("remoteName", localRemoteQuery(root, census, peerName));
+        metadata.put("remotePeerId", localRemoteQuery(root, census, peerId));
+        String containerId = "com.android.systemui:id/notification_stack_scroller";
+        List<AccessibilityNodeInfo> containers = census.queryId(root, containerId);
+        metadata.put("containerResults", containers.size());
+        if (containers.size() != 1 || containers.get(0) == null) { census.scopeUnknown = true; return; }
+        AccessibilityNodeInfo container = containers.get(0);
+        int window = census.read(root::getWindowId);
+        String ownPackage = instrumentation.getTargetContext().getPackageName();
+        if (!"SystemUI".equals(censusPackage(container, census, ownPackage)) || census.read(container::getWindowId) != window
+                || !containerId.equals(census.read(container::getViewIdResourceName)) || !census.read(container::isVisibleToUser)) {
+            census.scopeUnknown = true; return;
+        }
+        JSONObject totals = new JSONObject(), queries = new JSONObject(); JSONArray matches = new JSONArray();
+        List<AccessibilityNodeInfo> seen = new ArrayList<>();
+        metadata.put("fixedKnownMatchCounts", totals).put("fixedKnownMatches", matches).put("fixedQueryResults", queries);
+        for (String id : new String[]{"android:id/title", "android:id/text", "android:id/big_text"}) {
+            List<AccessibilityNodeInfo> fields = census.queryId(container, id);
+            queries.put(id, fields.size());
+            for (AccessibilityNodeInfo field : fields) {
+                if (field == null) { census.scopeUnknown = true; throw new ProbeLimit(); }
+                for (AccessibilityNodeInfo prior : seen) if (census.read(() -> prior.equals(field))) {
+                    census.scopeUnknown = true; throw new ProbeLimit();
+                }
+                seen.add(field);
+                String kind = censusPackage(field, census, ownPackage);
+                if (!(kind.equals("SystemUI") || kind.equals("android") || kind.equals("own"))
+                        || census.read(field::getWindowId) != window || !id.equals(census.read(field::getViewIdResourceName))) {
+                    census.scopeUnknown = true; throw new ProbeLimit();
+                }
+                JSONObject known = localKnownFields(field, census);
+                boolean visible = census.read(field::isVisibleToUser), matched = false;
+                for (String key : new String[]{"titleText", "nameText", "peerIdText", "titleDescription", "nameDescription", "peerIdDescription"}) {
+                    if (known.getBoolean(key)) {
+                        totals.put(key, totals.optInt(key) + 1); matched = true;
+                        if (visible) totals.put(key + "Visible", totals.optInt(key + "Visible") + 1);
+                    }
+                }
+                if (!matched) continue; // Never emit unmatched text/description or its derived metadata.
+                if (matches.length() >= 4) { census.resultCapped = true; throw new ProbeLimit(); }
+                String className = String.valueOf(census.read(field::getClassName));
+                JSONObject item = new JSONObject().put("windowId", window).put("package", kind).put("resourceId", id)
+                    .put("class", className.startsWith("android.") || className.startsWith("com.android.systemui.")
+                        || className.startsWith("com.android.internal.") ? safeMetadata(className) : "<other>")
+                    .put("visible", visible).put("enabled", census.read(field::isEnabled)).put("knownMatches", known);
+                matches.put(item);
+            }
+        }
+        AccessibilityNodeInfo afterRoot = census.root(automation::getRootInActiveWindow);
+        if (afterRoot == null) return;
+        JSONObject after = localRootOwner(afterRoot, census);
+        metadata.put("ownerAfter", after).put("ownerUnchanged", before.toString().equals(after.toString()))
+            .put("zeroMeaning", "only-these-fixed-fields-no-global-absence-claim");
+        if (!before.toString().equals(after.toString())) census.scopeUnknown = true;
+        census.check();
+    }
+
     private void logFailureWindowCensus(Throwable original, long holdEnd) throws Exception {
         WindowCensus census = new WindowCensus(holdEnd);
         JSONObject metadata = new JSONObject();
         Throwable error = null;
         try {
             beginInteractiveWindowObservation(census);
-            if ("true".equals(InstrumentationRegistry.getArguments().getString("notificationLocalNodeComparison")))
+            if ("true".equals(InstrumentationRegistry.getArguments().getString("notificationFixedResourceFields")))
+                observeFixedResourceFields(census, metadata);
+            else if ("true".equals(InstrumentationRegistry.getArguments().getString("notificationLocalNodeComparison")))
                 observeLocalNodeComparison(census, metadata);
             else observeFailureWindows(census, metadata);
         } catch (ProbeLimit limit) {
