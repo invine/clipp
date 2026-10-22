@@ -262,11 +262,15 @@ async function composeElectronRuntime() {
   });
   let sharingLifetimeMs = DEFAULT_CLIP_SHARING_LIFETIME_MS;
   let autoSync = await autoSyncPreference.load();
+  // Initial settings load precedes the live sync manager; later generic settings
+  // reconciliation must update that same manager, including its public state.
+  let applyLiveAutoSync: ((enabled: boolean) => void) | undefined;
   const settingsHandler = createSettingsHandler({
     storage: kvStore,
     retention: retentionPreference,
     applyAutoSync: (enabled) => {
       autoSync = enabled;
+      applyLiveAutoSync?.(enabled);
     },
     applyLogLevel: () => {},
     applySharingLifetime: (value) => {
@@ -600,6 +604,7 @@ async function composeElectronRuntime() {
     autoSync,
     onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
+  applyLiveAutoSync = (enabled) => clipboardSync.setAutoSync(enabled);
   prepareIdentityRotationCleanup = () =>
     clipboardSync.prepareIdentityRotationCleanup();
 
