@@ -194,6 +194,11 @@ public final class NotificationRequestsTest {
         int queries;
         boolean timeCapped, windowCapped, rootCapped, resultCapped, capabilityMissing, scopeUnknown;
         Throwable cleanupFailure;
+        UiAutomation configuredAutomation;
+        int originalFlags, originalCapabilities, expectedFlags;
+        boolean serviceObserved, flagWriteAttempted, serviceDrift, serviceRestored;
+        Throwable serviceFailure;
+        final JSONObject serviceMetadata = new JSONObject();
         WindowCensus(long holdEnd) { end = Math.min(holdEnd, start + 100); }
         void check() {
             if (SystemClock.uptimeMillis() >= end) { timeCapped = true; throw new ProbeLimit(); }
@@ -246,7 +251,78 @@ public final class NotificationRequestsTest {
         }
         boolean incomplete() {
             return timeCapped || windowCapped || rootCapped || resultCapped || capabilityMissing || scopeUnknown
-                || cleanupFailure != null;
+                || cleanupFailure != null || serviceDrift || serviceFailure != null || (serviceObserved && !serviceRestored);
+        }
+    }
+
+    private void beginInteractiveWindowObservation(WindowCensus census) throws Exception {
+        // Separate opt-in: the original already-enabled-only census remains available.
+        if (!"true".equals(InstrumentationRegistry.getArguments().getString("notificationInteractiveWindowCensus"))) return;
+        census.configuredAutomation = census.read(instrumentation::getUiAutomation);
+        AccessibilityServiceInfo service = census.read(census.configuredAutomation::getServiceInfo);
+        if (service == null) { census.capabilityMissing = true; return; }
+        census.originalFlags = service.flags;
+        census.originalCapabilities = service.getCapabilities();
+        census.expectedFlags = service.flags | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        census.serviceObserved = true;
+        census.serviceMetadata.put("beforeFlags", census.originalFlags).put("beforeCapabilities", census.originalCapabilities)
+            .put("expectedDuringFlags", census.expectedFlags).put("ownedBit", AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS);
+        census.check();
+        if ((census.originalCapabilities & AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT) == 0) {
+            census.capabilityMissing = true; return; // No service capability is granted.
+        }
+        // Re-read immediately before the one owned-bit write; never adopt a changed baseline.
+        AccessibilityServiceInfo current = census.read(census.configuredAutomation::getServiceInfo);
+        if (current == null || current.flags != census.originalFlags || current.getCapabilities() != census.originalCapabilities) {
+            census.serviceDrift = true;
+            throw new IllegalStateException("UiAutomation service changed before owned-bit observation");
+        }
+        if (current.flags != census.expectedFlags) {
+            current.flags = census.expectedFlags;
+            census.flagWriteAttempted = true; // Restoration owns even a throwing/late setServiceInfo call.
+            census.configuredAutomation.setServiceInfo(current);
+            census.check();
+        }
+        AccessibilityServiceInfo during = census.configuredAutomation.getServiceInfo();
+        if (during != null) census.serviceMetadata.put("duringFlags", during.flags).put("duringCapabilities", during.getCapabilities());
+        census.check();
+        if (during == null || during.flags != census.expectedFlags || during.getCapabilities() != census.originalCapabilities) {
+            census.serviceDrift = true;
+            throw new IllegalStateException("UiAutomation owned-bit readback did not match");
+        }
+        census.serviceMetadata.put("duringVerified", true);
+    }
+
+    private void restoreInteractiveWindowObservation(WindowCensus census) {
+        if (!census.serviceObserved) return;
+        // Cleanup cannot be skipped by the observation deadline. Preserve changed
+        // unowned bits rather than clobbering them; any drift remains UNKNOWN.
+        try {
+            AccessibilityServiceInfo current = census.configuredAutomation.getServiceInfo();
+            if (current == null) throw new IllegalStateException("UiAutomation service unavailable for restoration");
+            int bit = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            census.serviceMetadata.put("restoreEntryFlags", current.flags).put("restoreEntryCapabilities", current.getCapabilities());
+            if ((current.flags & ~bit) != (census.originalFlags & ~bit) || current.getCapabilities() != census.originalCapabilities) {
+                census.serviceDrift = true;
+            }
+            int restoredFlags = (current.flags & ~bit) | (census.originalFlags & bit);
+            if (current.flags != restoredFlags) {
+                current.flags = restoredFlags;
+                census.configuredAutomation.setServiceInfo(current);
+            }
+            AccessibilityServiceInfo after = census.configuredAutomation.getServiceInfo();
+            if (after != null) census.serviceMetadata.put("afterFlags", after.flags).put("afterCapabilities", after.getCapabilities());
+            census.serviceRestored = after != null && after.flags == census.originalFlags
+                && after.getCapabilities() == census.originalCapabilities;
+            if (!census.serviceRestored || census.serviceDrift) throw new IllegalStateException("UiAutomation restoration or unowned state is unconfirmed");
+        } catch (Throwable failure) {
+            census.serviceFailure = failure;
+        } finally {
+            if (SystemClock.uptimeMillis() >= census.end) census.timeCapped = true;
+            try {
+                census.serviceMetadata.put("writeAttempted", census.flagWriteAttempted).put("restoredVerified", census.serviceRestored)
+                    .put("unownedStateDrift", census.serviceDrift).put("restoreError", census.serviceFailure != null);
+            } catch (Throwable failure) { if (census.serviceFailure == null) census.serviceFailure = failure; }
         }
     }
 
@@ -295,6 +371,10 @@ public final class NotificationRequestsTest {
         if (service == null) { census.capabilityMissing = true; return; }
         int flags = service.flags;
         int capabilities = census.read(service::getCapabilities);
+        if (census.serviceObserved && (flags != census.expectedFlags || capabilities != census.originalCapabilities)) {
+            census.serviceDrift = true;
+            throw new IllegalStateException("UiAutomation service changed during owned-bit observation");
+        }
         boolean interactive = (flags & AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS) != 0;
         boolean content = (capabilities & AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT) != 0;
         metadata.put("flags", flags).put("capabilities", capabilities).put("retrieveWindowContent", content)
@@ -310,7 +390,8 @@ public final class NotificationRequestsTest {
             metadata.put("activeRoot", censusRootMetadata(active, census, kind));
             if ("SystemUI".equals(kind)) metadata.put("activeLiteralTitle", censusExactQuery(active, census, "Pairing request", true));
         }
-        // Never enable capabilities or change flags to make this observation succeed.
+        // The original census never enables capabilities; only the separately
+        // opted-in wrapper may temporarily own the interactive-window flag.
         if (!interactive) { census.capabilityMissing = true; return; }
         census.check();
         census.windows = automation.getWindows(); // Register the entire list, including any late/over-cap entries.
@@ -354,6 +435,7 @@ public final class NotificationRequestsTest {
         JSONObject metadata = new JSONObject();
         Throwable error = null;
         try {
+            beginInteractiveWindowObservation(census);
             observeFailureWindows(census, metadata);
         } catch (ProbeLimit limit) {
             census.scopeUnknown = true;
@@ -361,8 +443,10 @@ public final class NotificationRequestsTest {
             error = failure;
             retainRowFailureDiagnostic(original, failure, "window-census-read");
         } finally {
-            census.recycleAll();
+            try { restoreInteractiveWindowObservation(census); }
+            finally { census.recycleAll(); }
         }
+        if (census.serviceFailure != null) retainRowFailureDiagnostic(original, census.serviceFailure, "window-census-service-restore");
         if (census.cleanupFailure != null) retainRowFailureDiagnostic(original, census.cleanupFailure, "window-census-recycle");
         long ended = SystemClock.uptimeMillis();
         String prefix = "window-census nonce=" + nonce + " selectionAuthority=false startedUptimeMs=" + census.start
@@ -371,9 +455,9 @@ public final class NotificationRequestsTest {
             + " queries=" + census.queries + " timeCapped=" + census.timeCapped + " windowCapped=" + census.windowCapped
             + " rootCapped=" + census.rootCapped + " resultCapped=" + census.resultCapped
             + " capabilityMissing=" + census.capabilityMissing + " scopeUnknown=" + census.scopeUnknown
-            + " cleanupError=" + (census.cleanupFailure != null) + " metadata=" + metadata;
+            + " cleanupError=" + (census.cleanupFailure != null) + " service=" + census.serviceMetadata + " metadata=" + metadata;
         // One compact entry avoids platform log truncation; total diagnostic output stays below8KiB.
-        if (line.getBytes(StandardCharsets.UTF_8).length > 3900) line = prefix + " observation=UNKNOWN outputCapped=true";
+        if (line.getBytes(StandardCharsets.UTF_8).length > 3900) line = prefix + " observation=UNKNOWN outputCapped=true service=" + census.serviceMetadata;
         Log.i(TAG, line);
     }
 

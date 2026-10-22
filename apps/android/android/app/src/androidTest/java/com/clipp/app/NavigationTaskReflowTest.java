@@ -94,6 +94,9 @@ public final class NavigationTaskReflowTest {
     private boolean completedReflowCase;
     private JSONObject lastReflowObservation;
     private JSONObject reflowGesture;
+    private JSONObject swipeDiagnostics, latestSwipePoll;
+    private JSONArray swipeEventTimings, swipePollStates;
+    private String pendingSwipePointRead, previousSwipePoll;
 
     @Before
     public void requireFreshOrdinaryPackagedRootInterval() throws Exception {
@@ -395,7 +398,15 @@ public final class NavigationTaskReflowTest {
             + "const entries=cards.map(e=>{const r=e.getBoundingClientRect();return {id:e.dataset.clipId,preview:e.querySelector('.history-text')?.textContent,pinned:e.querySelector('[aria-label=\"Pin Clip\"]')?.getAttribute('aria-pressed'),rect:r.toJSON(),visible:!!frame&&Math.min(r.bottom,frame.bottom)-Math.max(r.top,frame.top)>=Math.min(24,r.height)&&Math.min(r.right,frame.right)-Math.max(r.left,frame.left)>=24};});"
             + "const name=" + NAME + ",dialog=document.querySelector('[data-task-dialog]');return {timeOrigin:String(performance.timeOrigin),viewport:{width:innerWidth,height:innerHeight},classes:root.className,fonts:document.fonts.status,contentCss:{width:parseFloat(document.documentElement.style.getPropertyValue('--clipp-content-width')),height:parseFloat(document.documentElement.style.getPropertyValue('--clipp-content-height'))},query:(" + QUERY + ")?.value,destination:document.querySelector('nav [aria-current=\"page\"]')?.getAttribute('data-session-focus'),"
             + "history:scroller?{key:scroller.dataset.sessionScroll,classes:scroller.className,frame,scrollTop:scroller.scrollTop,scrollHeight:scroller.scrollHeight,clientHeight:scroller.clientHeight,cards:entries,visible:entries.filter(e=>e.visible)}:null,name:name?{raw:name.value,focused:document.activeElement===name}:null,alerts:dialog?[...dialog.querySelectorAll('[role=alert]')].filter(e=>e.getClientRects().length).map(e=>e.textContent):[]};})()";
-        JSONObject result = new JSONObject().put("public", new JSONObject(web.evaluate(publicRead)))
+        if (pendingSwipePointRead != null) publicRead = publicRead.replace("return {timeOrigin:String(performance.timeOrigin)",
+            "return {swipePointHit:" + pendingSwipePointRead + ",timeOrigin:String(performance.timeOrigin)");
+        JSONObject publicState = new JSONObject(web.evaluate(publicRead));
+        if (pendingSwipePointRead != null) {
+            Object hit = publicState.remove("swipePointHit");
+            try { swipeDiagnostics.put("pointHit", hit == null ? JSONObject.NULL : hit); }
+            catch (Throwable diagnostic) { noteSwipeDiagnosticError(diagnostic); }
+        }
+        JSONObject result = new JSONObject().put("public", publicState)
             .put("native", nativeGeometry());
         web.onActivity(activity -> {
             try {
@@ -412,9 +423,10 @@ public final class NavigationTaskReflowTest {
         long end = Math.min(deadline, SystemClock.uptimeMillis() + UI_TIMEOUT_MS), stableSince = 0;
         double original = before.getJSONObject("public").getJSONObject("history").getDouble("scrollTop");
         String previous = null;
-        do {
+        try { do {
             checkObservationDeadline(end, "completed native History scroll");
             JSONObject sample = reflowObservation(), history = sample.getJSONObject("public").optJSONObject("history");
+            recordSwipePoll(sample, end);
             checkObservationDeadline(end, "completed native History scroll");
             String current = sample.toString();
             long now = SystemClock.uptimeMillis();
@@ -426,6 +438,7 @@ public final class NavigationTaskReflowTest {
             SystemClock.sleep(50);
         } while (SystemClock.uptimeMillis() < end);
         throw new AssertionError("One actual native swipe must change and settle scroll with a visible UUID anchor");
+        } finally { finishSwipePolls(); }
     }
 
     private JSONObject awaitCompletedReflow(int orientation, boolean cramped, JSONObject before) throws Exception {
@@ -491,6 +504,94 @@ public final class NavigationTaskReflowTest {
         trace.getJSONObject(trace.length() - 1).put("completedReflow", sample);
     }
 
+    private void noteSwipeDiagnosticError(Throwable failure) {
+        try {
+            if (swipeDiagnostics != null) swipeDiagnostics.put("errorClass", failure.getClass().getSimpleName());
+        } catch (Throwable ignored) { /* Diagnostic failure cannot replace the original journey verdict. */ }
+    }
+
+    private void recordSwipePoll(JSONObject sample, long observationEnd) {
+        try {
+            JSONObject ui = sample.getJSONObject("public"), nativeState = sample.getJSONObject("native");
+            JSONObject history = ui.optJSONObject("history");
+            JSONArray visible = new JSONArray();
+            if (history != null) {
+                JSONArray values = history.getJSONArray("visible");
+                if (values.length() > 8) swipeDiagnostics.put("pollCapped", true);
+                for (int index = 0; index < Math.min(8, values.length()); index++) visible.put(values.getJSONObject(index).getString("id"));
+            }
+            JSONObject compact = new JSONObject().put("history", history == null ? JSONObject.NULL : new JSONObject()
+                .put("key", history.getString("key")).put("frame", history.getJSONObject("frame"))
+                .put("scrollTop", history.getDouble("scrollTop")).put("scrollHeight", history.getInt("scrollHeight"))
+                .put("clientHeight", history.getInt("clientHeight")).put("visibleIds", visible)
+                .put("firstCardRect", history.getJSONArray("cards").length() == 0 ? JSONObject.NULL
+                    : history.getJSONArray("cards").getJSONObject(0).getJSONObject("rect")))
+                .put("viewport", ui.getJSONObject("viewport")).put("classes", ui.getString("classes"))
+                .put("sameActivity", nativeState.getBoolean("sameActivity")).put("sameWebView", nativeState.getBoolean("sameWebView"))
+                .put("focused", nativeState.getBoolean("focused")).put("imeVisible", nativeState.getBoolean("imeVisible"));
+            String state = compact.toString();
+            compact.put("observedUptimeMs", SystemClock.uptimeMillis()).put("observationDeadlineUptimeMs", observationEnd);
+            if (compact.getLong("observedUptimeMs") >= observationEnd) swipeDiagnostics.put("pollLate", true);
+            latestSwipePoll = compact;
+            if (!state.equals(previousSwipePoll)) {
+                if (swipePollStates.length() < 7) swipePollStates.put(compact); // Reserve the eighth slot for final state.
+                else swipeDiagnostics.put("pollCapped", true);
+                previousSwipePoll = state;
+            }
+        } catch (Throwable failure) { noteSwipeDiagnosticError(failure); }
+    }
+
+    private void finishSwipePolls() {
+        try { if (latestSwipePoll != null) swipePollStates.put(latestSwipePoll); }
+        catch (Throwable failure) { noteSwipeDiagnosticError(failure); }
+    }
+
+    private void recordSwipeTiming(int action, long down, long eventTime, long entered, long exited,
+            boolean returned, boolean accepted) {
+        try {
+            if (swipeEventTimings.length() >= 10) { swipeDiagnostics.put("eventTimingCapped", true); return; }
+            swipeEventTimings.put(new JSONObject().put("action", action).put("downTimeMs", down).put("eventTimeMs", eventTime)
+                .put("injectEnteredUptimeMs", entered).put("injectExitedUptimeMs", exited)
+                .put("returned", returned).put("accepted", accepted));
+        } catch (Throwable failure) { noteSwipeDiagnosticError(failure); }
+    }
+
+    private JSONObject boundedSwipeDiagnostics() throws Exception {
+        if (swipeDiagnostics == null) return new JSONObject().put("version", 1).put("verdictAuthority", false)
+            .put("observation", "UNKNOWN").put("reason", "swipe-not-reached");
+        boolean incomplete = swipeDiagnostics.getBoolean("pollCapped") || swipeDiagnostics.getBoolean("eventTimingCapped")
+            || swipeDiagnostics.getBoolean("pollLate")
+            || !"none".equals(swipeDiagnostics.getString("errorClass")) || swipeDiagnostics.isNull("preDown")
+            || swipeDiagnostics.isNull("pointHit") || swipeEventTimings.length() != 10 || swipePollStates.length() == 0;
+        JSONObject hit = swipeDiagnostics.optJSONObject("pointHit");
+        if (hit != null) incomplete |= hit.optBoolean("ancestorCapped", true) || hit.optBoolean("error", true)
+            || !hit.optBoolean("reachedHistoryOwner", false);
+        swipeDiagnostics.put("observation", incomplete ? "UNKNOWN" : "complete");
+        if (swipeDiagnostics.toString().getBytes(StandardCharsets.UTF_8).length > 16384) {
+            swipeDiagnostics.put("observation", "UNKNOWN").put("payloadCapped", true)
+                .put("preDown", JSONObject.NULL).put("pointHit", JSONObject.NULL)
+                .put("pollStates", new JSONArray()).put("eventTimings", new JSONArray());
+        }
+        return swipeDiagnostics;
+    }
+
+    private String swipePointRead(JSONObject frame, double fraction) throws Exception {
+        // Use the already located physical gesture's original CSS start point.
+        double x = (frame.getDouble("left") + frame.getDouble("right")) / 2;
+        double y = frame.getDouble("top") + (frame.getDouble("bottom") - frame.getDouble("top")) * fraction;
+        return "(()=>{const x=" + x + ",y=" + y + ";try{const rows=[];let e=document.elementFromPoint(x,y),reached=false;"
+            + "for(let i=0;e&&i<6;i++){const s=getComputedStyle(e),r=e.getBoundingClientRect(),role=e.getAttribute('role'),key=e.dataset.sessionScroll;"
+            + "rows.push({tag:['DIV','SECTION','HEADER','BUTTON','INPUT','SPAN','P','MAIN','NAV'].includes(e.tagName)?e.tagName:'other',"
+            + "role:['button','textbox','menu','menuitem','list','listitem','dialog','region','navigation','group'].includes(role)?role:'other',"
+            + "scrollKey:['history','history-clips','workspace'].includes(key)?key:'other',rect:r.toJSON(),"
+            + "overflowY:['auto','scroll','visible','hidden','clip'].includes(s.overflowY)?s.overflowY:'other',"
+            + "touchAction:['auto','none','pan-x','pan-y','manipulation','pan-x pan-y'].includes(s.touchAction)?s.touchAction:'other',"
+            + "pointerEvents:['auto','none'].includes(s.pointerEvents)?s.pointerEvents:'other'});"
+            + "if(e===scroller){reached=true;break;}e=e.parentElement;}"
+            + "return {x,y,ancestors:rows,reachedHistoryOwner:reached,ancestorCapped:!reached&&!!e&&rows.length===6,error:false};"
+            + "}catch(_){return {x,y,ancestors:[],reachedHistoryOwner:false,ancestorCapped:false,error:true};}})()";
+    }
+
     private void requireSwipeOwner(UiAutomation automation) throws Exception {
         NativeAcceptanceTarget.requireIsolated(target.getPackageName());
         web.onActivity(activity -> assertTrue("Native swipe remains in the exact foreground Activity/WebView",
@@ -504,14 +605,26 @@ public final class NavigationTaskReflowTest {
     }
 
     private boolean swipeEvent(UiAutomation automation, int action, long down, float x, float y) {
-        MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
+        long eventTime = SystemClock.uptimeMillis();
+        MotionEvent event = MotionEvent.obtain(down, eventTime, action, x, y, 0);
         event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        try { return automation.injectInputEvent(event, true); }
-        finally { event.recycle(); }
+        boolean returned = false, accepted = false;
+        long entered = SystemClock.uptimeMillis();
+        try { accepted = automation.injectInputEvent(event, true); returned = true; return accepted; }
+        finally {
+            long exited = SystemClock.uptimeMillis();
+            event.recycle();
+            recordSwipeTiming(action, down, eventTime, entered, exited, returned, accepted);
+        }
     }
 
     private void swipeHistoryOnce(JSONObject observation) throws Exception {
         JSONObject history = observation.getJSONObject("public").getJSONObject("history"), frame = history.getJSONObject("frame");
+        swipeEventTimings = new JSONArray(); swipePollStates = new JSONArray();
+        swipeDiagnostics = new JSONObject().put("version", 1).put("verdictAuthority", false).put("observation", "UNKNOWN")
+            .put("payloadCapped", false).put("pollCapped", false).put("pollLate", false).put("eventTimingCapped", false).put("errorClass", "none")
+            .put("preDown", JSONObject.NULL).put("pointHit", JSONObject.NULL)
+            .put("eventTimings", swipeEventTimings).put("pollStates", swipePollStates);
         assertTrue("Delivered History must actually scroll", history.getInt("scrollHeight") > history.getInt("clientHeight") + 8);
         assertTrue("Visible scroll owner must contain a meaningful physical swipe", frame.getDouble("bottom") - frame.getDouble("top") >= 96
             && frame.getDouble("right") - frame.getDouble("left") >= 96);
@@ -543,7 +656,13 @@ public final class NavigationTaskReflowTest {
         reflowGesture = new JSONObject().put("deadlineUptimeMs", end).put("xPx", points[0]).put("startYPx", points[1]).put("endYPx", points[2]).put("events", moves);
         try {
             checkObservationDeadline(moveEnd, "native History swipe DOWN");
-            JSONObject current = reflowObservation();
+            JSONObject current;
+            try {
+                pendingSwipePointRead = swipePointRead(frame, startFraction);
+                current = reflowObservation(); // Same original pre-DOWN read; the hit test adds no round trip.
+            } finally { pendingSwipePointRead = null; }
+            try { swipeDiagnostics.put("preDown", current); }
+            catch (Throwable diagnostic) { noteSwipeDiagnosticError(diagnostic); }
             assertEquals("The delivered visible History owner must remain unchanged before DOWN", frame.toString(),
                 current.getJSONObject("public").getJSONObject("history").getJSONObject("frame").toString());
             assertEquals("The native viewport must still match the located swipe", observation.getJSONObject("public").getJSONObject("viewport").toString(),
@@ -799,7 +918,8 @@ public final class NavigationTaskReflowTest {
                 .put("n1JourneyPassed", !completedReflowCase && journeyPassed)
                 .put("completedReflowJourneyPassed", completedReflowCase && journeyPassed)
                 .put("completedReflow", completedReflowCase ? new JSONObject()
-                    .put("lastObservation", lastReflowObservation).put("nativeSwipe", reflowGesture) : JSONObject.NULL)
+                    .put("lastObservation", lastReflowObservation).put("nativeSwipe", reflowGesture)
+                    .put("swipeDiagnostics", boundedSwipeDiagnostics()) : JSONObject.NULL)
                 .put("nativeInput", completedReflowCase
                     ? "unchanged NativePublicWebView guarded DOWN/UP, one owned touchscreen swipe plus Android text/keys and orientation"
                     : "unchanged NativePublicWebView guarded DOWN/UP plus Android text/keys")
