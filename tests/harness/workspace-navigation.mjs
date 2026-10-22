@@ -17,6 +17,11 @@ import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { checkNavigationTargetStability } from "./navigation-target-stability.mjs";
+import {
+  exactBoundariesSelected,
+  checkExactWorkspaceBoundaries,
+} from "./workspace-boundary-selection.mjs";
+const exactBoundaries = exactBoundariesSelected(process.argv.slice(2));
 const measureNativeControl = (element, profile) => {
   const rect = element.getBoundingClientRect();
   const cssWidth = document.documentElement.getBoundingClientRect().width;
@@ -125,6 +130,7 @@ const report = {
       [
         "tests/harness/workspace-navigation.mjs",
         "tests/harness/navigation-target-stability.mjs",
+        "tests/harness/workspace-boundary-selection.mjs",
         "packages/ui/src/ClipboardApp.tsx",
         "packages/ui/src/TaskDialog.tsx",
         "packages/ui/src/sessionFocus.ts",
@@ -223,6 +229,8 @@ try {
       passed: true,
     });
   }
+  if (exactBoundaries)
+    await checkExactWorkspaceBoundaries({ page, nav, report, out });
   if (process.argv.includes("--auto-sync-recovery")) {
     const query = page.getByLabel("Search history", { exact: true });
     await query.fill("  recovery query  ");
