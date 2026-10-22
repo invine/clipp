@@ -13,6 +13,8 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.InputDevice;
@@ -20,6 +22,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Window;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.Display;
@@ -51,6 +54,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -121,6 +125,8 @@ public final class NavigationProfilesTest {
     private JSONObject closeWindowDiagnostics = new JSONObject();
     private final List<CloseWindowEvent> closeWindowRecords = new ArrayList<>();
     private final JSONArray closeWindowHistory = new JSONArray();
+    private boolean closeOwnedLayersEnabled, closeOwnedLayersAttempted;
+    private JSONObject closeOwnedLayers;
     private boolean closeStockEnabled;
     private volatile boolean closeStockUnknown;
     private final JSONArray closeStockSamples = new JSONArray();
@@ -152,6 +158,9 @@ public final class NavigationProfilesTest {
         String stock = args.getString("navigationProfilesCloseStockState", "false");
         assertTrue("Only explicit passive stock WebView state", stock.equals("true") || stock.equals("false"));
         closeStockEnabled = stock.equals("true");
+        String layers = args.getString("navigationProfilesCloseOwnedLayers", "false");
+        assertTrue("Only explicit passive owned-layer context", layers.equals("true") || layers.equals("false"));
+        closeOwnedLayersEnabled = layers.equals("true");
         selectedCase = args.getString("navigationProfilesCase", "");
         String method = selectedCase.equals("qr-recovery") ? "generatedQrAndLocalRecoveriesRetainSession"
             : selectedCase.equals("geometry-ime") ? "assignedGeometryAndImeRetainTaskAndFinalControls"
@@ -164,6 +173,8 @@ public final class NavigationProfilesTest {
             || (closeDiagnosticsEnabled && closeEventsEnabled && selectedCase.equals("geometry-ime")));
         assertTrue("Stock state requires the geometry-only owned Window observation", !closeStockEnabled
             || (closeWindowEnabled && selectedCase.equals("geometry-ime")));
+        assertTrue("Owned layers require the geometry-only stock/Window observation", !closeOwnedLayersEnabled
+            || (closeStockEnabled && selectedCase.equals("geometry-ime")));
         nonce = args.getString("navigationProfilesRootNonce", "");
         assertTrue("Fresh bounded root nonce", nonce.matches("[A-Za-z0-9_-]{16,64}"));
         closeEventsKey = "__clipp19CloseEvents_" + nonce;
@@ -701,8 +712,210 @@ public final class NavigationProfilesTest {
         }
     }
 
+
+    private static final class OwnedLayersUnknown extends RuntimeException {
+        final String reason;
+        OwnedLayersUnknown(String reason) { this.reason = reason; }
+    }
+
+    private void ownedLayersWithin(long end, AtomicBoolean active) {
+        if (!active.get() || SystemClock.uptimeMillis() >= end) throw new OwnedLayersUnknown("LATE");
+    }
+
+    private boolean sameOwnedLayersOwner(Window window, View decor) {
+        return owner != null && owner.getWindow() == window && window.peekDecorView() == decor
+            && owner.getBridge() != null && owner.getBridge().getWebView() == ownerWebView
+            && !owner.isFinishing() && !owner.isDestroyed() && owner.hasWindowFocus()
+            && ownerWebView.isAttachedToWindow() && decor != null && decor.isAttachedToWindow()
+            && ownerWebView.getWindowToken() != null && ownerWebView.getWindowToken() == decor.getWindowToken();
+    }
+
+    private String ownedLayerClass(View view, View decor) {
+        if (view == decor) return "DECOR";
+        if (view == ownerWebView) return "WEBVIEW";
+        String name = view.getClass().getName();
+        if (name.equals("androidx.appcompat.widget.ActionBarContainer")) return "ACTION_BAR_CONTAINER";
+        if (name.equals("androidx.appcompat.widget.Toolbar") || name.equals("android.widget.Toolbar")) return "TOOLBAR";
+        if (name.equals("androidx.appcompat.widget.ContentFrameLayout")) return "CONTENT";
+        if (name.equals("android.widget.FrameLayout")) return "FRAME";
+        if (name.equals("android.widget.LinearLayout")) return "LINEAR";
+        if (name.equals("android.widget.TextView") || name.equals("androidx.appcompat.widget.AppCompatTextView")) return "TEXT";
+        if (name.equals("androidx.coordinatorlayout.widget.CoordinatorLayout")) return "COORDINATOR";
+        return "OTHER";
+    }
+
+    private String ownedLayerId(View view) {
+        if (view == ownerWebView) return "WEBVIEW";
+        int id = view.getId();
+        if (id == android.R.id.content) return "CONTENT";
+        if (id == android.R.id.title) return "TITLE";
+        if (id == androidx.appcompat.R.id.action_bar) return "ACTION_BAR";
+        if (id == androidx.appcompat.R.id.action_bar_container) return "ACTION_BAR_CONTAINER";
+        if (id == androidx.appcompat.R.id.action_context_bar) return "ACTION_CONTEXT_BAR";
+        if (id == androidx.appcompat.R.id.decor_content_parent) return "DECOR_CONTENT_PARENT";
+        if (id == androidx.appcompat.R.id.action_bar_activity_content) return "ACTION_BAR_ACTIVITY_CONTENT";
+        return "OTHER";
+    }
+
+    private void walkOwnedLayers(View view, View decor, int parent, int child, int depth,
+                                 JSONArray rows, long end, AtomicBoolean active) throws Exception {
+        ownedLayersWithin(end, active);
+        if (depth > 8 || rows.length() >= 32) throw new OwnedLayersUnknown("CAP");
+        int index = rows.length();
+        int[] position = new int[2]; view.getLocationOnScreen(position);
+        Rect visible = new Rect(); boolean shownRect = view.getGlobalVisibleRect(visible);
+        rows.put(new JSONArray().put(index).put(parent).put(child).put(depth).put(ownedLayerClass(view, decor))
+            .put(view.getId()).put(ownedLayerId(view))
+            .put(new JSONArray().put(position[0]).put(position[1]).put(view.getWidth()).put(view.getHeight()))
+            .put(shownRect ? new JSONArray().put(visible.left).put(visible.top).put(visible.width()).put(visible.height()) : JSONObject.NULL)
+            .put(view.getVisibility()).put(view.isShown()).put(view.getAlpha()).put(view.getElevation())
+            .put(view.getTranslationZ()).put(view == ownerWebView));
+        ownedLayersWithin(end, active);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            int count = group.getChildCount();
+            for (int i = 0; i < count; i++) {
+                ownedLayersWithin(end, active);
+                if (depth >= 8 || rows.length() >= 32) throw new OwnedLayersUnknown("CAP");
+                walkOwnedLayers(group.getChildAt(i), decor, index, i, depth + 1, rows, end, active);
+            }
+        }
+    }
+
+    private String ownedHeaderView(JSONArray rows, boolean complete) throws Exception {
+        if (!complete) return "UNKNOWN";
+        boolean present = false;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONArray row = rows.getJSONArray(i);
+            if (row.getString(4).matches("ACTION_BAR_CONTAINER|TOOLBAR")
+                || row.getString(6).matches("ACTION_BAR|ACTION_BAR_CONTAINER|ACTION_CONTEXT_BAR")) {
+                present = true;
+                if (row.getInt(9) == View.VISIBLE && row.getBoolean(10) && row.getDouble(11) > 0 && !row.isNull(8)
+                    && row.getJSONArray(8).getDouble(2) > 0 && row.getJSONArray(8).getDouble(3) > 0) return "VISIBLE";
+            }
+        }
+        return present ? "PRESENT" : "NO_KNOWN_VIEW";
+    }
+
+    private JSONObject ownedLayersEnvelope(boolean attempted, long started, long end) throws Exception {
+        return new JSONObject().put("version", 1).put("stage", "before-tap").put("attempted", attempted)
+            .put("observation", "UNKNOWN").put("reason", attempted ? "ERROR" : "NOT_ATTEMPTED")
+            .put("startedUptimeMs", started).put("deadlineUptimeMs", end).put("endedUptimeMs", started)
+            .put("native", JSONObject.NULL).put("dom", JSONObject.NULL).put("selectionOrInputAuthority", false);
+    }
+
+    private void retainCloseOwnedLayers(long end) {
+        if (closeOwnedLayersAttempted) return;
+        closeOwnedLayersAttempted = true;
+        long started = SystemClock.uptimeMillis();
+        AtomicBoolean active = new AtomicBoolean(true);
+        CountDownLatch complete = new CountDownLatch(1);
+        AtomicReference<JSONObject> measuredNative = new AtomicReference<>(), measuredDom = new AtomicReference<>();
+        AtomicReference<Throwable> problem = new AtomicReference<>();
+        Handler main = new Handler(Looper.getMainLooper());
+        Runnable observe = () -> {
+            if (!active.get()) return;
+            JSONArray rows = new JSONArray(); JSONObject nativeState = null;
+            try {
+                ownedLayersWithin(end, active);
+                Window window = owner.getWindow(); View decor = window.peekDecorView();
+                nativeState = new JSONObject().put("startedUptimeMs", SystemClock.uptimeMillis())
+                    .put("endedUptimeMs", SystemClock.uptimeMillis()).put("ownerVerified", false).put("tokenVerified", false)
+                    .put("rowsComplete", false).put("webViewFound", false).put("headerView", "UNKNOWN")
+                    .put("frameworkFeatures", JSONObject.NULL).put("rows", rows);
+                if (!sameOwnedLayersOwner(window, decor)) throw new OwnedLayersUnknown("OWNER");
+                nativeState.put("ownerVerified", true).put("tokenVerified", true)
+                    .put("frameworkFeatures", new JSONArray().put(window.hasFeature(Window.FEATURE_ACTION_BAR))
+                        .put(window.hasFeature(Window.FEATURE_ACTION_BAR_OVERLAY)));
+                walkOwnedLayers(decor, decor, -1, 0, 0, rows, end, active);
+                ownedLayersWithin(end, active);
+                if (!sameOwnedLayersOwner(window, decor)) throw new OwnedLayersUnknown("OWNER");
+                int found = 0;
+                for (int i = 0; i < rows.length(); i++) if (rows.getJSONArray(i).getBoolean(14)) found++;
+                nativeState.put("webViewFound", found == 1).put("rowsComplete", true)
+                    .put("headerView", ownedHeaderView(rows, true)).put("endedUptimeMs", SystemClock.uptimeMillis());
+                if (found != 1) throw new OwnedLayersUnknown("OWNER");
+                ownedLayersWithin(end, active); measuredNative.set(nativeState);
+                long domStarted = SystemClock.uptimeMillis();
+                String expression = "(()=>{const d=" + DIALOG + ",c=" + web.button("Close name editor") + ",a=document.querySelector('.app-bar'),"
+                    + "b=d?.closest('.task-dialog-backdrop'),h=d?.querySelector('.task-dialog-header'),t=d?document.getElementById(d.getAttribute('aria-labelledby')):null;"
+                    + "const pick=(v,allowed)=>allowed.includes(v)?v:'OTHER';"
+                    + "const layer=(kind,e)=>{if(!e)return[kind,false,null,'MISSING','MISSING',null,'MISSING',null,'MISSING',false,false];"
+                    + "const r=e.getBoundingClientRect(),s=getComputedStyle(e);return[kind,e.isConnected,[r.x,r.y,r.width,r.height],"
+                    + "pick(s.display,['block','flex','grid','none','inline','inline-block','inline-flex','contents']),"
+                    + "pick(s.visibility,['visible','hidden','collapse']),Number(s.opacity),pick(s.position,['static','relative','absolute','fixed','sticky']),"
+                    + "s.zIndex==='auto'?null:Number(s.zIndex),pick(s.pointerEvents,['auto','none']),s.transform==='none',!!e.getClientRects().length]};"
+                    + "const r=c?.getBoundingClientRect(),hit=r?document.elementFromPoint(r.x+r.width/2,r.y+r.height/2):null;"
+                    + "const known=!hit?'OTHER':!!c&&(hit===c||c.contains(hit))?'CLOSE':hit===t?'TITLE':hit===h?'HEADER':hit===d?'DIALOG':hit===b?'BACKDROP':!!a&&!!hit&&a.contains(hit)?'APP_BAR':'OTHER';"
+                    + "return{sameDocument:String(performance.timeOrigin)===" + JSONObject.quote(timeOrigin) + ",viewportWidth:innerWidth,centerHit:known,"
+                    + "layers:[layer('APP_BAR',a),layer('BACKDROP',b),layer('DIALOG',d),layer('HEADER',h),layer('TITLE',t),layer('CLOSE',c)]}})()";
+                ownerWebView.evaluateJavascript(expression, raw -> {
+                    if (!active.get()) return;
+                    try {
+                        ownedLayersWithin(end, active);
+                        if (!sameOwnedLayersOwner(window, decor)) throw new OwnedLayersUnknown("OWNER");
+                        JSONObject dom = new JSONObject(raw).put("startedUptimeMs", domStarted).put("endedUptimeMs", SystemClock.uptimeMillis());
+                        if (!dom.getBoolean("sameDocument") || !dom.getJSONArray("layers").getJSONArray(2).getBoolean(1)
+                            || !dom.getJSONArray("layers").getJSONArray(5).getBoolean(1)) throw new OwnedLayersUnknown("OWNER");
+                        ownedLayersWithin(end, active); measuredDom.set(dom);
+                    } catch (Throwable error) { if (active.get()) problem.set(error); }
+                    finally { complete.countDown(); }
+                });
+            } catch (Throwable error) {
+                if (active.get()) {
+                    try {
+                        if (nativeState != null) {
+                            boolean found = false;
+                            for (int i = 0; i < rows.length(); i++) if (rows.getJSONArray(i).getBoolean(14)) found = true;
+                            nativeState.put("rowsComplete", false).put("headerView", "UNKNOWN")
+                                .put("webViewFound", found).put("endedUptimeMs", SystemClock.uptimeMillis());
+                            measuredNative.set(nativeState);
+                        }
+                    } catch (Throwable ignored) { }
+                    problem.set(error); complete.countDown();
+                }
+            }
+        };
+        try {
+            closeOwnedLayers = ownedLayersEnvelope(true, started, end);
+            ownedLayersWithin(end, active);
+            if (!main.post(observe)) throw new OwnedLayersUnknown("ERROR");
+            if (!complete.await(Math.max(0, end - SystemClock.uptimeMillis()), TimeUnit.MILLISECONDS)) throw new OwnedLayersUnknown("LATE");
+            ownedLayersWithin(end, active);
+            if (problem.get() != null) throw problem.get();
+            if (measuredNative.get() == null || measuredDom.get() == null) throw new OwnedLayersUnknown("ERROR");
+            closeOwnedLayers.put("observation", "complete").put("reason", "NONE");
+        } catch (Throwable error) {
+            if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+            try { if (closeOwnedLayers != null) closeOwnedLayers.put("observation", "UNKNOWN")
+                .put("reason", error instanceof OwnedLayersUnknown ? ((OwnedLayersUnknown) error).reason : "ERROR"); }
+            catch (Throwable ignored) { }
+        } finally {
+            active.set(false); main.removeCallbacks(observe);
+            try {
+                if (closeOwnedLayers != null) {
+                    closeOwnedLayers.put("native", measuredNative.get() == null ? JSONObject.NULL : measuredNative.get())
+                        .put("dom", measuredDom.get() == null ? JSONObject.NULL : measuredDom.get()).put("endedUptimeMs", SystemClock.uptimeMillis());
+                    if (SystemClock.uptimeMillis() >= end) closeOwnedLayers.put("observation", "UNKNOWN").put("reason", "LATE");
+                    capCloseOwnedLayers();
+                }
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private void capCloseOwnedLayers() throws Exception {
+        if (closeOwnedLayers == null) closeOwnedLayers = ownedLayersEnvelope(false, 0, 0);
+        if (closeOwnedLayers.toString().getBytes(StandardCharsets.UTF_8).length > 8192) {
+            JSONObject capped = ownedLayersEnvelope(closeOwnedLayersAttempted,
+                closeOwnedLayers.getLong("startedUptimeMs"), closeOwnedLayers.getLong("deadlineUptimeMs"));
+            capped.put("endedUptimeMs", closeOwnedLayers.getLong("endedUptimeMs")).put("reason", "CAP");
+            closeOwnedLayers = capped;
+        }
+    }
+
     private void retainCloseSnapshot(String stage, long end, JSONObject storedPoint) {
         if (closeSnapshots.length() >= 3) { closeDiagnosticFailure(stage, new IllegalStateException()); return; }
+        if (closeOwnedLayersEnabled && stage.equals("before-tap")) retainCloseOwnedLayers(end);
         JSONObject sample = new JSONObject();
         try {
             checkObservation(end);
@@ -1274,6 +1487,7 @@ public final class NavigationProfilesTest {
             if (closeEventsEnabled) { capCloseEvents(); witness.put("closeEventDelivery", closeEvents); }
             if (closeWindowEnabled) { capCloseWindow(); witness.put("closeWindowDispatch", closeWindowDiagnostics); }
             if (closeStockEnabled) { capCloseStockState(); witness.put("closeStockState", closeStockDiagnostics); }
+            if (closeOwnedLayersEnabled) { capCloseOwnedLayers(); witness.put("closeOwnedLayers", closeOwnedLayers); }
             byte[] bytes = witness.toString().getBytes(StandardCharsets.UTF_8); assertTrue("Capped actual public/native witness", bytes.length <= MAX_WITNESS_BYTES);
             File output = new File(directory, "public-witness.json"); assertTrue("Exclusive fresh witness", output.createNewFile());
             try (FileOutputStream stream = new FileOutputStream(output)) { stream.write(bytes); }
