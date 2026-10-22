@@ -286,19 +286,19 @@ public final class NavigationProfilesTest {
         requireNight(profiles.getJSONObject(0), false);
         requireNight(profiles.getJSONObject(1), true);
         requireNight(profiles.getJSONObject(2), false);
-        setAppearance("system"); prepareQueryScope(); createNameError(); assertPalette("system", false); observe("system-light-task");
+        setAppearance("system"); prepareQueryScope(); createNameError(); assertPalette("system", false); prepareThemeNameCapture(); observe("system-light-task");
         captureStage("system-light-task", NAME, false);
         externalCheckpoint("system-dark", profiles.getJSONObject(1));
         awaitAssignedProfile(profiles.getJSONObject(1));
-        reestablishThemeTaskAfterPossibleRecreation(); assertPalette("system", true); observe("system-dark-task");
+        reestablishThemeTaskAfterPossibleRecreation(); assertPalette("system", true); prepareThemeNameCapture(); observe("system-dark-task");
         captureStage("system-dark-task", NAME, false);
         closeNameRetaining(); setAppearance("light"); prepareQueryScope(); createNameError();
-        assertPalette("light", true); observe("explicit-light-under-native-dark");
+        assertPalette("light", true); prepareThemeNameCapture(); observe("explicit-light-under-native-dark");
         captureStage("explicit-light-under-native-dark", NAME, false);
         closeNameRetaining(); setAppearance("dark"); prepareQueryScope(); createNameError(); assertPalette("dark", true);
         externalCheckpoint("system-light-explicit-dark", profiles.getJSONObject(2));
         awaitAssignedProfile(profiles.getJSONObject(2)); reestablishThemeTaskAfterPossibleRecreation();
-        assertPalette("dark", false); assertImeFieldAndFinalActions(); observe("explicit-dark-under-native-light-retained-or-new-task");
+        assertPalette("dark", false); assertImeFieldAndFinalActions(); prepareThemeNameCapture(); observe("explicit-dark-under-native-light-retained-or-new-task");
         captureStage("explicit-dark-under-native-light", NAME, false);
         closeNameRetaining();
         // Root now independently stops the process and reopens with the SAME application data.
@@ -317,7 +317,7 @@ public final class NavigationProfilesTest {
         assertNotNull("Initial native draw observation required", firstDraw.get());
         destination("settings"); awaitUi("authoritative persisted choice", "(" + APPEARANCE + ")?.value==='dark'&&!(" + APPEARANCE + ").disabled");
         prepareQueryScope(); createNameError(); assertPalette("dark", false); assertImeFieldAndFinalActions();
-        captureStage("local-name-error", NAME, false);
+        prepareThemeNameCapture(); captureStage("local-name-error", NAME, false);
         observe("reopened-dark-native-task-no-draft-continuity-claim"); closeNameRetaining(); completeJourney();
     }
 
@@ -987,6 +987,11 @@ public final class NavigationProfilesTest {
         awaitUi("actual persisted Appearance selection", "(" + APPEARANCE + ")?.value===" + JSONObject.quote(value)
             + "&&!(" + APPEARANCE + ").hasAttribute('aria-busy')&&document.documentElement.dataset.clippTheme===" + JSONObject.quote(value));
         assertPalette(value, nativeGeometry().getBoolean("systemDark"));
+    }
+
+    private void prepareThemeNameCapture() throws Exception {
+        if (!captureEnabled) return;
+        tap(NAME); awaitIme(true); awaitRawFocused(NAME, "   ");
     }
 
     private void assertPalette(String preference, boolean systemDark) throws Exception {
