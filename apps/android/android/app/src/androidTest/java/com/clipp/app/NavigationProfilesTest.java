@@ -121,6 +121,10 @@ public final class NavigationProfilesTest {
     private JSONObject closeWindowDiagnostics = new JSONObject();
     private final List<CloseWindowEvent> closeWindowRecords = new ArrayList<>();
     private final JSONArray closeWindowHistory = new JSONArray();
+    private boolean closeStockEnabled;
+    private volatile boolean closeStockUnknown;
+    private final JSONArray closeStockSamples = new JSONArray();
+    private JSONObject closeStockDiagnostics = new JSONObject();
     private String generatedQrImage;
     private boolean captureEnabled, captureWorkerClosed;
     private int geometryCaptureIndex;
@@ -145,6 +149,9 @@ public final class NavigationProfilesTest {
         String window = args.getString("navigationProfilesCloseWindow", "false");
         assertTrue("Only explicit owned-window Close observation", window.equals("true") || window.equals("false"));
         closeWindowEnabled = window.equals("true");
+        String stock = args.getString("navigationProfilesCloseStockState", "false");
+        assertTrue("Only explicit passive stock WebView state", stock.equals("true") || stock.equals("false"));
+        closeStockEnabled = stock.equals("true");
         selectedCase = args.getString("navigationProfilesCase", "");
         String method = selectedCase.equals("qr-recovery") ? "generatedQrAndLocalRecoveriesRetainSession"
             : selectedCase.equals("geometry-ime") ? "assignedGeometryAndImeRetainTaskAndFinalControls"
@@ -155,6 +162,8 @@ public final class NavigationProfilesTest {
         assertTrue("Passive Close events require the geometry-only diagnostic path", !closeEventsEnabled || (closeDiagnosticsEnabled && selectedCase.equals("geometry-ime")));
         assertTrue("Window Close observation requires the same geometry DOM observation", !closeWindowEnabled
             || (closeDiagnosticsEnabled && closeEventsEnabled && selectedCase.equals("geometry-ime")));
+        assertTrue("Stock state requires the geometry-only owned Window observation", !closeStockEnabled
+            || (closeWindowEnabled && selectedCase.equals("geometry-ime")));
         nonce = args.getString("navigationProfilesRootNonce", "");
         assertTrue("Fresh bounded root nonce", nonce.matches("[A-Za-z0-9_-]{16,64}"));
         closeEventsKey = "__clipp19CloseEvents_" + nonce;
@@ -462,6 +471,11 @@ public final class NavigationProfilesTest {
                                 }
                             } catch (Throwable ignored) { closeWindowUnknown = true; }
                         }
+                        if (closeStockEnabled && closeWindowActive && row != null) {
+                            if (row.action == MotionEvent.ACTION_DOWN) retainCloseStockState("pre-DOWN", event);
+                            else if (row.action == MotionEvent.ACTION_UP) retainCloseStockState("pre-UP", event);
+                            else closeStockUnknown = true;
+                        }
                         // The original object is delegated exactly once; no copy,
                         // recycling, mutation, reinjection or alternate dispatch.
                         try {
@@ -470,6 +484,10 @@ public final class NavigationProfilesTest {
                                 row.consumed = consumed; row.returned = true; row.returnedAt = SystemClock.uptimeMillis();
                                 try { if (row.returnedAt >= closeWindowEnd || !sameCloseWindowOwner(owner, true)) closeWindowUnknown = true; }
                                 catch (Throwable ignored) { closeWindowUnknown = true; }
+                            }
+                            if (closeStockEnabled && closeWindowActive && row != null) {
+                                if (row.action == MotionEvent.ACTION_DOWN) retainCloseStockState("post-DOWN", event);
+                                else if (row.action == MotionEvent.ACTION_UP) retainCloseStockState("post-UP", event);
                             }
                             return consumed;
                         } catch (RuntimeException | Error failure) {
@@ -482,6 +500,7 @@ public final class NavigationProfilesTest {
                 closeWindow.setCallback(closeWindowWrapper);
                 closeWindowInstalled = sameCloseWindowOwner(activity, true);
                 if (!closeWindowInstalled) closeWindowUnknown = true;
+                if (closeStockEnabled) retainCloseStockState("install", null);
             });
             checkObservation(deadline);
             retainCloseWindowHistory("install", deadline);
@@ -504,6 +523,7 @@ public final class NavigationProfilesTest {
         if (SystemClock.uptimeMillis() >= end) closeWindowUnknown = true;
         try {
             web.onActivity(activity -> {
+                if (closeStockEnabled) retainCloseStockState("last-available", null);
                 closeWindowActive = false;
                 long retired = SystemClock.uptimeMillis();
                 if (retired >= end) closeWindowUnknown = true;
@@ -547,6 +567,69 @@ public final class NavigationProfilesTest {
             closeWindowUnknown = true;
             closeWindowDiagnostics = new JSONObject().put("observation", "UNKNOWN").put("cap", true)
                 .put("installed", closeWindowInstalled).put("restored", closeWindowRestored).put("selectionOrInputAuthority", false);
+        }
+    }
+
+    /** Primitive stock API observations only, on the existing callback's UI thread.
+     * No dispatch/focus/input call, tree walk, provider hook or JavaScript occurs here.
+     * HitTestResult is the current cursor TYPE, never an arbitrary-point hit test. */
+    private void retainCloseStockState(String stage, MotionEvent event) {
+        try {
+            long started = SystemClock.uptimeMillis();
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()
+                || started >= closeWindowEnd || !sameCloseWindowOwner(owner, true)
+                || closeStockSamples.length() >= 6) { closeStockUnknown = true; return; }
+            View focused = closeWindow.getDecorView().findFocus();
+            // Only the already-known direct parent/decor are classified; no tree traversal.
+            String focus = focused == null ? "NONE" : focused == ownerWebView ? "WEBVIEW"
+                : focused == ownerWebView.getParent() || focused == closeWindow.getDecorView() ? "ANCESTOR" : "OTHER";
+            WebView.HitTestResult hit = ownerWebView.getHitTestResult();
+            if (hit == null) { closeStockUnknown = true; return; }
+            String hitType = hit.getType() == WebView.HitTestResult.EDIT_TEXT_TYPE ? "EDIT"
+                : hit.getType() == WebView.HitTestResult.UNKNOWN_TYPE ? "UNKNOWN" : "OTHER";
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(ownerWebView);
+            if (insets == null) { closeStockUnknown = true; return; }
+            JSONObject state = new JSONObject().put("stage", stage).put("startedUptimeMs", started)
+                .put("scroll", new JSONArray().put(ownerWebView.getScrollX()).put(ownerWebView.getScrollY()))
+                .put("scale", new JSONArray().put(ownerWebView.getScaleX()).put(ownerWebView.getScaleY()))
+                .put("translation", new JSONArray().put(ownerWebView.getTranslationX()).put(ownerWebView.getTranslationY()))
+                .put("matrixIdentity", ownerWebView.getMatrix().isIdentity()).put("focused", ownerWebView.isFocused())
+                .put("hasFocus", ownerWebView.hasFocus()).put("touchMode", ownerWebView.isInTouchMode())
+                .put("enabled", ownerWebView.isEnabled()).put("shown", ownerWebView.isShown())
+                .put("attached", ownerWebView.isAttachedToWindow()).put("windowFocused", ownerWebView.hasWindowFocus())
+                .put("filterObscured", ownerWebView.getFilterTouchesWhenObscured())
+                .put("imeVisible", insets.isVisible(WindowInsetsCompat.Type.ime())).put("focus", focus).put("hitType", hitType)
+                .put("event", event == null ? JSONObject.NULL : new JSONArray().put(event.getFlags())
+                    .put(event.getToolType(0)).put(event.getSource()).put(event.getDeviceId()));
+            long ended = SystemClock.uptimeMillis();
+            if (ended >= closeWindowEnd || !sameCloseWindowOwner(owner, true)) { closeStockUnknown = true; return; }
+            state.put("endedUptimeMs", ended);
+            closeStockSamples.put(state);
+        } catch (Throwable ignored) { closeStockUnknown = true; }
+    }
+
+    private void capCloseStockState() throws Exception {
+        String[] stages = {"install", "pre-DOWN", "post-DOWN", "pre-UP", "post-UP", "last-available"};
+        boolean complete = !closeStockUnknown && !closeWindowUnknown && closeWindowInstalled && closeWindowRestored
+            && closeWindowBeforeContinuous && closeWindowAfterContinuous && closeStockSamples.length() == stages.length;
+        for (int i = 0; i < closeStockSamples.length(); i++) {
+            JSONObject state = closeStockSamples.getJSONObject(i);
+            if (!stages[i].equals(state.getString("stage")) || state.getLong("endedUptimeMs") >= closeWindowEnd) complete = false;
+        }
+        if (complete) {
+            for (int i : new int[]{1, 3}) {
+                if (!closeStockSamples.getJSONObject(i).getJSONArray("event").toString()
+                    .equals(closeStockSamples.getJSONObject(i + 1).getJSONArray("event").toString())) complete = false;
+            }
+        }
+        closeStockDiagnostics = new JSONObject().put("version", 1).put("samples", closeStockSamples)
+            .put("deadlineUptimeMs", closeWindowEnd).put("observation", complete ? "complete" : "UNKNOWN")
+            .put("selectionOrInputAuthority", false);
+        if (closeStockDiagnostics.toString().getBytes(StandardCharsets.UTF_8).length > 4096) {
+            closeStockUnknown = true;
+            closeStockDiagnostics = new JSONObject().put("version", 1).put("samples", new JSONArray())
+                .put("deadlineUptimeMs", closeWindowEnd).put("observation", "UNKNOWN").put("cap", true)
+                .put("selectionOrInputAuthority", false);
         }
     }
 
@@ -641,7 +724,8 @@ public final class NavigationProfilesTest {
                 + "const hit=(x,y)=>{if(x===null||y===null)return null;const h=document.elementFromPoint(x,y);return {close:!!c&&!!h&&(h===c||c.contains(h)),kind:known(h)}};const r=c?.getBoundingClientRect(),v=visualViewport;"
                 + "return {dialog:d?{knownTitle:document.getElementById(d.getAttribute('aria-labelledby'))?.textContent.trim()==='Device Name',rect:box(d),scrollTop:d.scrollTop,clientHeight:d.clientHeight,scrollHeight:d.scrollHeight}:null,"
                 + "field:control(n),close:control(c),save:control(s),cancel:control(k),focus:known(a),knownDraft:n?.value==='   ',draftLength:n?.value.length??null,knownError:d?.querySelector('[role=alert]')?.textContent.trim()===" + JSONObject.quote(NAME_ERROR) + ","
-                + "storedPointHit:hit(" + x + "," + y + "),currentCenterHit:r?hit(r.x+r.width/2,r.y+r.height/2):null,viewport:{width:innerWidth,height:innerHeight},visualViewport:v?{width:v.width,height:v.height,offsetLeft:v.offsetLeft,offsetTop:v.offsetTop,scale:v.scale}:null}})()";
+                + "storedPointHit:hit(" + x + "," + y + "),currentCenterHit:r?hit(r.x+r.width/2,r.y+r.height/2):null,viewport:{width:innerWidth,height:innerHeight},visualViewport:v?{width:v.width,height:v.height,offsetLeft:v.offsetLeft,offsetTop:v.offsetTop,scale:v.scale}:null"
+                + (closeStockEnabled ? ",stockScroll:{x:scrollX,y:scrollY,pageLeft:v?.pageLeft??null,pageTop:v?.pageTop??null}" : "") + "}})()";
             sample.put("public", new JSONObject(evaluate(expression))); checkObservation(end);
             sample.put("endedUptimeMs", SystemClock.uptimeMillis()).put("observation", "complete");
         } catch (Throwable failure) {
@@ -1189,6 +1273,7 @@ public final class NavigationProfilesTest {
             if (closeDiagnosticsEnabled) { capCloseDiagnostics(); witness.put("closeTransitionDiagnostics", closeDiagnostics); }
             if (closeEventsEnabled) { capCloseEvents(); witness.put("closeEventDelivery", closeEvents); }
             if (closeWindowEnabled) { capCloseWindow(); witness.put("closeWindowDispatch", closeWindowDiagnostics); }
+            if (closeStockEnabled) { capCloseStockState(); witness.put("closeStockState", closeStockDiagnostics); }
             byte[] bytes = witness.toString().getBytes(StandardCharsets.UTF_8); assertTrue("Capped actual public/native witness", bytes.length <= MAX_WITNESS_BYTES);
             File output = new File(directory, "public-witness.json"); assertTrue("Exclusive fresh witness", output.createNewFile());
             try (FileOutputStream stream = new FileOutputStream(output)) { stream.write(bytes); }
