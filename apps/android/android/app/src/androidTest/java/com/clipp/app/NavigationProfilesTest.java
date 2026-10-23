@@ -244,7 +244,16 @@ public final class NavigationProfilesTest {
         tapButton("Show my QR"); awaitDialog("Pair this device");
         nativeBack(); awaitDialog("Pairing"); assertFocusedButton("Show my QR");
         nativeBack(); awaitNoDialog(); assertFocusedButton("Pair this device"); assertQueryScope();
-        createNameError(); if (captureEnabled) { awaitIme(true); awaitRawFocused(NAME, "   "); } captureStage("local-name-error", NAME, false); closeNameRetaining();
+        createNameError();
+        if (captureEnabled) {
+            awaitIme(true); awaitRawFocused(NAME, "   ");
+            checkDeadline();
+            assertEquals("QR Name capture reveal keeps the raw field focused", "true",
+                evaluate("(() => { const e = " + NAME + "; if (!e || document.activeElement !== e) return false; e.scrollIntoView({block:'center', inline:'nearest'}); return document.activeElement === e; })()"));
+            checkDeadline();
+            awaitRawFocused(NAME, "   ");
+        }
+        captureStage("local-name-error", NAME, false); closeNameRetaining();
         openPairing(); tapButton("Paste pairing text"); awaitDialog("Paste pairing text");
         replaceText(PAIR, pairingRaw); hideIme();
         tapButton("Submit pairing text");
