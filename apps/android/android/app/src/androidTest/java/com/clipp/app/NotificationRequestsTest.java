@@ -66,6 +66,7 @@ public final class NotificationRequestsTest {
     @Rule public final TestName testName = new TestName();
     private boolean windowedRootSelection;
     private boolean systemUiObservationOnly;
+    private boolean systemUiReadiness;
     private long windowedJourneyEnd;
     private MainActivity windowedOwner;
     private android.webkit.WebView windowedWebView;
@@ -101,6 +102,10 @@ public final class NotificationRequestsTest {
                 assertEquals("Passive traversal is separate from prior AX diagnostics", "false", args.getString(diagnostic, "false"));
             windowedJourneyEnd = SystemClock.uptimeMillis() + 150_000;
         }
+        String readiness=args.getString("notificationSystemUiReadiness","false");
+        assertTrue("Only explicit passive readiness",readiness.equals("true")||readiness.equals("false"));
+        systemUiReadiness=readiness.equals("true");
+        assertTrue("Readiness is separate passive diagnostic only",!systemUiReadiness||systemUiObservationOnly);
         String localComparison = args.getString("notificationLocalNodeComparison", "false");
         assertTrue("Only explicit local-node diagnostics", localComparison.equals("true") || localComparison.equals("false"));
         assertTrue("Local-node diagnostics require the owned interactive census", !localComparison.equals("true")
@@ -259,8 +264,8 @@ public final class NotificationRequestsTest {
         assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
         assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
             "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
-        expandNotificationsWithCompletionWitness();
-        observeSystemUiNotification(posted, textarea, draft);
+        if(systemUiReadiness)observeSystemUiNotificationWithReadiness(posted,textarea,draft);
+        else {expandNotificationsWithCompletionWitness();observeSystemUiNotification(posted,textarea,draft);}
     }
 
     private static String observationSha256(byte[] bytes) throws Exception {
@@ -322,6 +327,127 @@ public final class NotificationRequestsTest {
             + " complete=" + wire.getBoolean("complete") + " reason=" + wire.getInt("reason") + " publishedUptimeMs=" + SystemClock.uptimeMillis() + " publishedElapsedRealtimeMs=" + SystemClock.elapsedRealtime() + " inputCount=0 selectionAuthority=false");
     }
 
+    private static final class ExpandReadinessCompletion {
+        final boolean eof,capped,success;final long elapsed;
+        ExpandReadinessCompletion(boolean eof,boolean capped,boolean success,long elapsed){this.eof=eof;this.capped=capped;this.success=success;this.elapsed=elapsed;}
+    }
+    private ExpandReadinessCompletion readinessExpansion;
+
+    private void awaitSystemUiReadiness(SystemUiObservationPorts ports,NotificationSystemUiReadiness.Budget budget) throws Exception {
+        assertTrue("Separate passive readiness only",systemUiReadiness&&systemUiObservationOnly&&!windowedRootSelection);
+        NotificationSystemUiObservation.Clock clock=new NotificationSystemUiObservation.Clock(){public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}};
+        NotificationSystemUiObservation.Guard guard=new NotificationSystemUiObservation.Guard(clock,budget.preparationEnd,budget.preparationEndElapsed);
+        final int[] originalBounds=new int[4];
+        NotificationSystemUiReadiness.EventGate eventGate=null;boolean ready=false,idle=false;int candidate=-1,windowCount=0;String failure="none";
+        JSONObject metadata=new JSONObject().put("kind","NOTIFICATION16_SYSTEMUI_READINESS_ONLY").put("selectionAuthority",false).put("inputCount",0)
+            .put("readyUptimeMs",budget.start).put("expiresUptimeMs",budget.end).put("readyElapsedRealtimeMs",budget.startElapsed).put("expiresElapsedRealtimeMs",budget.endElapsed)
+            .put("preparationEndUptimeMs",budget.preparationEnd).put("preparationEndElapsedRealtimeMs",budget.preparationEndElapsed);
+        try {
+            budget.checkPreparation();
+            web.onActivity(activity->{assertTrue("Same original Activity during readiness",activity==windowedOwner);android.view.View decor=activity.getWindow().getDecorView();int[] at=new int[2];decor.getLocationOnScreen(at);originalBounds[0]=at[0];originalBounds[1]=at[1];originalBounds[2]=at[0]+decor.getWidth();originalBounds[3]=at[1]+decor.getHeight();});
+            budget.checkPreparation();ports.begin(guard);
+            long timeout=budget.eventTimeout(),actionStart=SystemClock.uptimeMillis();
+            final NotificationSystemUiReadiness.EventGate gate=new NotificationSystemUiReadiness.EventGate(budget,actionStart);eventGate=gate;
+            android.view.accessibility.AccessibilityEvent received=null;
+            try {
+                received=ports.automation.executeAndWaitForEvent(()->expandNotificationsWithCompletionWitness(),value->{
+                    // Normal sentinel return lets the public API recycle its queued events.
+                    if(!gate.beforeRead())return true;
+                    try {
+                        int type=guard.read(value::getEventType);long at=guard.read(value::getEventTime);int window=guard.read(value::getWindowId);CharSequence pkg=guard.read(value::getPackageName);
+                        int kind=type==android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED?1:type==android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED?2:0;
+                        return gate.accept(kind,window,pkg!=null&&"com.android.systemui".contentEquals(pkg),at);
+                    }catch(NotificationSystemUiObservation.Limit limit){gate.stopReason=limit.reason==1?1:3;return true;}
+                },timeout);
+            } catch(java.util.concurrent.TimeoutException ignored){throw new NotificationSystemUiReadiness.Limit(7);}
+            finally{if(received!=null)received.recycle();}
+            budget.checkPreparation();if(gate.stopReason!=0)throw new NotificationSystemUiReadiness.Limit(gate.stopReason);
+            if(readinessExpansion==null||!readinessExpansion.eof||readinessExpansion.capped||!readinessExpansion.success)throw new NotificationSystemUiReadiness.Limit(8);
+            long idleTimeout=budget.idleTimeout();
+            try{ports.automation.waitForIdle(100,idleTimeout);}catch(java.util.concurrent.TimeoutException ignored){throw new NotificationSystemUiReadiness.Limit(9);}
+            budget.checkPreparation();idle=true;
+            List<Object> windows=ports.windows(guard);if(windows==null||windows.isEmpty()||windows.size()>8)throw new NotificationSystemUiReadiness.Limit(4);
+            windowCount=windows.size();List<int[]> rows=new ArrayList<>();
+            for(Object window:windows){
+                guard.check();if(window==null)throw new NotificationSystemUiReadiness.Limit(10);int[] info=ports.window(window,guard);Object root=ports.root(window,guard);
+                if(root==null)throw new NotificationSystemUiReadiness.Limit(10);int[] identity=ports.rootIdentity(root,guard);android.view.accessibility.AccessibilityNodeInfo node=(android.view.accessibility.AccessibilityNodeInfo)root;Rect bounds=new Rect();
+                guard.read(()->{node.getBoundsInScreen(bounds);return true;});boolean visible=guard.read(node::isVisibleToUser);
+                rows.add(new int[]{info[0],info[1],info[3],info[4],info[5],identity[1],info[6],info[7],info[8],info[9],identity[0],identity[1],bounds.left,bounds.top,bounds.right,bounds.bottom,visible?1:0});
+            }
+            candidate=NotificationSystemUiReadiness.requireWindow(originalBounds,rows,gate.event);budget.checkPreparation();budget.checkReady();ready=true;
+        } catch(NotificationSystemUiReadiness.Limit limit){failure="UNKNOWN_"+limit.reason;}
+        catch(NotificationSystemUiObservation.Limit limit){failure="UNKNOWN_OBSERVATION_"+limit.reason;}
+        catch(Throwable ignored){failure="UNKNOWN_PLATFORM";}
+        finally {
+            if(!ready){boolean restored=ports.close();metadata.put("restoredAfterReadinessFailure",restored);}
+            metadata.put("complete",ready).put("reason",failure).put("eventCount",eventGate==null?0:eventGate.count).put("acceptedEventKind",eventGate==null?0:eventGate.event[0]).put("acceptedEventWindowId",eventGate==null?-1:eventGate.event[1])
+                .put("acceptedEventPackageMatches",eventGate!=null&&eventGate.event[2]==1).put("acceptedEventUptimeMs",eventGate==null?-1:eventGate.eventTime).put("idleObserved",idle).put("windowCount",windowCount).put("candidateWindowId",candidate)
+                .put("finishedUptimeMs",SystemClock.uptimeMillis()).put("finishedElapsedRealtimeMs",SystemClock.elapsedRealtime()).put("metadataReadOperations",guard.reads)
+                .put("originalWindowBounds",new JSONArray().put(originalBounds[0]).put(originalBounds[1]).put(originalBounds[2]).put(originalBounds[3]))
+                .put("expandEof",readinessExpansion!=null&&readinessExpansion.eof).put("expandCapped",readinessExpansion!=null&&readinessExpansion.capped)
+                .put("expandSuccess",readinessExpansion!=null&&readinessExpansion.success).put("expandElapsedMs",readinessExpansion==null?-1:readinessExpansion.elapsed);
+            assertTrue("Bounded fixed readiness metadata",metadata.toString().getBytes(StandardCharsets.UTF_8).length<=2048);
+            Log.i(TAG,"systemui-readiness nonce="+nonce+" metadata="+metadata);
+        }
+        assertTrue("Actual bounded SystemUI readiness required before one passive census",ready);
+    }
+
+    private void observeSystemUiNotificationWithReadiness(StatusBarNotification posted, String textarea, String draft) throws Exception {
+        assertTrue("Separate passive SystemUI route required", systemUiObservationOnly && !windowedRootSelection);
+        assertWindowedRootOwner();
+        assertEquals("Observation alone retains original dirty task", draft, web.evaluate(textarea + ".value"));
+        assertEquals("Observation starts in retained Paste task", "Paste pairing text", web.evaluate(
+            "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
+        NotificationSystemUiReadiness.Budget budget=new NotificationSystemUiReadiness.Budget(new NotificationSystemUiReadiness.Clock() {
+            public long uptime(){return SystemClock.uptimeMillis();}
+            public long elapsed(){return SystemClock.elapsedRealtime();}
+        },windowedJourneyEnd);
+        long ready=budget.start,readyElapsed=budget.startElapsed,end=budget.end,endElapsed=budget.endElapsed;
+        JSONObject metadata = new JSONObject().put("kind", "NOTIFICATION16_SYSTEMUI_OBSERVATION_READY")
+            .put("nonce", nonce).put("package", posted.getPackageName()).put("notificationId", posted.getId())
+            .put("channel", "default").put("peerId", peerId).put("peerName", peerName)
+            .put("appPid", android.os.Process.myPid()).put("appUid", android.os.Process.myUid())
+            .put("route", "UIAUTOMATION_PASSIVE_SYSTEMUI_TREE").put("readyUptimeMs", ready).put("expiresUptimeMs", end)
+            .put("readyElapsedRealtimeMs", readyElapsed).put("expiresElapsedRealtimeMs", endElapsed)
+            .put("maximumReadyMs", 60_000).put("maximumObservationMs", 5000).put("selectionAuthority", false);
+        byte[] readyBytes = metadata.toString().getBytes(StandardCharsets.UTF_8);
+        assertTrue("Known bounded readiness only", readyBytes.length <= 4096 && end > ready);
+        Log.i(TAG, "systemui-observation-ready nonce=" + nonce + " metadata=" + metadata);
+        SystemUiObservationPorts ports = new SystemUiObservationPorts(posted);
+        awaitSystemUiReadiness(ports,budget);
+        NotificationSystemUiObservation.Result result = NotificationSystemUiObservation.observe(ports,
+            new NotificationSystemUiObservation.Clock() {
+                public long uptime() { return SystemClock.uptimeMillis(); }
+                public long elapsed() { return SystemClock.elapsedRealtime(); }
+            }, end, endElapsed);
+        JSONObject wire = new JSONObject().put("kind", "NOTIFICATION16_SYSTEMUI_PASSIVE_OBSERVATION_V1")
+            .put("nonce", nonce).put("readySha256", observationSha256(readyBytes)).put("selectionAuthority", false)
+            .put("inputCount", 0).put("atomicSnapshot", false).put("ticket16Qualified", false)
+            .put("complete", result.complete).put("reason", result.reason).put("readOperations", result.reads)
+            .put("startedUptimeMs", result.start).put("startedElapsedRealtimeMs", result.startElapsed)
+            .put("deadlineUptimeMs", result.end).put("deadlineElapsedRealtimeMs", result.endElapsed)
+            .put("finishedUptimeMs", result.finished).put("finishedElapsedRealtimeMs", result.finishedElapsed)
+            .put("notificationBefore", result.notificationBefore).put("notificationAfter", result.notificationAfter)
+            .put("restored", result.restored).put("service", ports.serviceMetadata);
+        JSONArray windows = new JSONArray(), nodes = new JSONArray();
+        for (int[] row : result.windows) { JSONArray item = new JSONArray(); for (int value : row) item.put(value); windows.put(item); }
+        for (int[] row : result.nodes) { JSONArray item = new JSONArray(); for (int value : row) item.put(value); nodes.put(item); }
+        wire.put("windows", windows).put("nodes", nodes);
+        byte[] bytes = wire.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 65536) {
+            wire.remove("windows"); wire.remove("nodes");
+            wire.put("complete", false).put("reason", 12).put("windowRowsDropped", result.windows.size()).put("nodeRowsDropped", result.nodes.size());
+            bytes = wire.toString().getBytes(StandardCharsets.UTF_8);
+        }
+        assertTrue("Fixed observation wire is bounded", bytes.length <= 65536);
+        String name = "notification16-systemui-observation-" + nonce + ".json";
+        File destination = new File(instrumentation.getTargetContext().getCacheDir(), name);
+        Files.write(destination.toPath(), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        assertTrue("Original150s observation method remains finite", SystemClock.uptimeMillis()<windowedJourneyEnd);
+        Log.i(TAG, "systemui-observation-wire nonce=" + nonce + " name=" + name + " bytes=" + bytes.length + " sha256=" + observationSha256(bytes)
+            + " complete=" + wire.getBoolean("complete") + " reason=" + wire.getInt("reason") + " publishedUptimeMs=" + SystemClock.uptimeMillis() + " publishedElapsedRealtimeMs=" + SystemClock.elapsedRealtime() + " inputCount=0 selectionAuthority=false");
+    }
+
     private final class SystemUiObservationPorts implements NotificationSystemUiObservation.Ports {
         final StatusBarNotification expected;
         final List<AccessibilityNodeInfo> acquiredNodes = new ArrayList<>();
@@ -332,6 +458,11 @@ public final class NotificationRequestsTest {
         boolean baselineObserved;
         SystemUiObservationPorts(StatusBarNotification expected) { this.expected=expected; }
         public void begin(NotificationSystemUiObservation.Guard guard) {
+            if(systemUiReadiness&&baselineObserved){
+                AccessibilityServiceInfo current=guard.read(automation::getServiceInfo);
+                if(current==null||current.flags!=duringFlags||guard.read(current::getCapabilities)!=originalCapabilities)throw new NotificationSystemUiObservation.Limit(9);
+                return; // Preserve the one original pre-readiness ownership baseline.
+            }
             automation=guard.read(instrumentation::getUiAutomation);
             AccessibilityServiceInfo service=guard.read(automation::getServiceInfo);
             if(service==null)throw new NotificationSystemUiObservation.Limit(9);
@@ -1130,6 +1261,7 @@ public final class NotificationRequestsTest {
         } catch (Exception error) {
             errorClass = safeMetadata(error.getClass().getSimpleName());
         }
+        if(systemUiReadiness)readinessExpansion=new ExpandReadinessCompletion(eof,bytes.size()==cap,"0".equals(status),SystemClock.uptimeMillis()-start);
         Log.i(TAG, "expand-completion nonce=" + nonce + " eof=" + eof + " status=" + status
             + " bytes=" + bytes.size() + " capped=" + (bytes.size() == cap)
             + " elapsedMs=" + (SystemClock.uptimeMillis() - start) + " sha256=" + digest
