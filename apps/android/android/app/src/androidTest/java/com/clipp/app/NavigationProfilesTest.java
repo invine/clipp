@@ -116,6 +116,11 @@ public final class NavigationProfilesTest {
     private final JSONObject closeDiagnostics = new JSONObject();
     private final JSONArray closeSnapshots = new JSONArray();
     private boolean closeDiagnosticUnknown, closeDiagnosticAttempted, closeTapReturned;
+    private JSONObject finalCancelDiagnostics = new JSONObject();
+    private String finalCancelKey;
+    private long finalCancelObservationEnd;
+    private boolean finalCancelAttempted, finalCancelInstalled, finalCancelRemoved, finalCancelUnknown, finalCancelTapReturned;
+    private final JSONArray finalCancelNativeSnapshots = new JSONArray();
     private boolean closeWindowEnabled, closeWindowInstalled, closeWindowRestored, closeWindowBeforeContinuous, closeWindowAfterContinuous;
     private volatile boolean closeWindowActive;
     private volatile boolean closeWindowUnknown;
@@ -239,7 +244,7 @@ public final class NavigationProfilesTest {
         tapButton("Show my QR"); awaitDialog("Pair this device");
         nativeBack(); awaitDialog("Pairing"); assertFocusedButton("Show my QR");
         nativeBack(); awaitNoDialog(); assertFocusedButton("Pair this device"); assertQueryScope();
-        createNameError(); captureStage("local-name-error", NAME, false); closeNameRetaining();
+        createNameError(); prepareThemeNameCapture(); captureStage("local-name-error", NAME, false); closeNameRetaining();
         openPairing(); tapButton("Paste pairing text"); awaitDialog("Paste pairing text");
         replaceText(PAIR, pairingRaw); hideIme();
         tapButton("Submit pairing text");
@@ -277,7 +282,9 @@ public final class NavigationProfilesTest {
         else { tapButton("Close name editor"); awaitNoDialog(); }
         tapButton("Rename this device"); awaitDialog("Device Name"); awaitRawFocused(NAME, "   "); assertNameError();
         if (nativeImeVisible()) hideIme();
-        tapButton("Cancel name edit"); awaitNoDialog(); assertQueryScope(); assertSameDocument();
+        if (closeDiagnosticsEnabled) cancelNameWithDiagnostics();
+        else { tapButton("Cancel name edit"); awaitNoDialog(); }
+        assertQueryScope(); assertSameDocument();
         observe("assigned-geometry-final-action"); completeJourney();
     }
 
@@ -411,6 +418,160 @@ public final class NavigationProfilesTest {
                 if (closeEventsEnabled && !closeEventsRemoved) observeCloseEvents("failure-cleanup", eventEnd, true);
             } finally {
                 if (closeWindowEnabled && !closeWindowRestored) restoreAndRetainCloseWindow(eventEnd);
+            }
+        }
+    }
+
+    /** Passive final-Cancel evidence is separate from the retired first-Close observer.
+     * One original native tap and its original absolute20s absence oracle remain. */
+    private void cancelNameWithDiagnostics() throws Exception {
+        finalCancelAttempted = true;
+        finalCancelKey = "__clipp19FinalCancel_" + nonce;
+        installFinalCancelEvents();
+        long end = deadline;
+        try {
+            tapButton("Cancel name edit");
+            finalCancelTapReturned = true;
+            end = Math.min(deadline, SystemClock.uptimeMillis() + OBSERVATION_MS);
+            retainFinalCancelTouch(end);
+            observeFinalCancel("after-tap", end, false);
+            boolean last = false;
+            do {
+                checkObservation(end);
+                boolean absent = "true".equals(evaluate("!(" + DIALOG + ")"));
+                checkObservation(end);
+                if (absent) { observeFinalCancel("dismissed", end, true); return; }
+                if (!last && end - SystemClock.uptimeMillis() <= 200) {
+                    last = true; observeFinalCancel("last-available", end, true);
+                }
+                SystemClock.sleep(50);
+            } while (SystemClock.uptimeMillis() < end);
+            throw new AssertionError("Public condition unmet: task dismissed one level to workspace");
+        } finally {
+            if (!finalCancelDiagnostics.has("physicalTouch")) retainFinalCancelTouch(end);
+            if (!finalCancelRemoved) observeFinalCancel("failure-cleanup", end, true);
+            capFinalCancelDiagnostics();
+        }
+    }
+
+    private void installFinalCancelEvents() {
+        long end = Math.min(deadline, SystemClock.uptimeMillis() + 100);
+        long eventEnd = finalCancelObservationEnd = Math.min(deadline, SystemClock.uptimeMillis() + OBSERVATION_MS);
+        try {
+            checkObservation(end);
+            String script = "(()=>{const key=" + JSONObject.quote(finalCancelKey) + ",d=" + DIALOG + ",c=" + web.button("Cancel name edit") + ",n=" + NAME + ";"
+                + "if(Object.prototype.hasOwnProperty.call(window,key)||!d||!c||!n||document.getElementById(d.getAttribute('aria-labelledby'))?.textContent.trim()!=='Device Name')return {installed:false};"
+                + "const origin=performance.timeOrigin,start=performance.now(),records=[],states=[],listeners=[];let active=true,removed=false,cap=false,expired=false,timer,end=performance.now()+" + Math.max(0, eventEnd - SystemClock.uptimeMillis()) + ";"
+                + "const state=stage=>({stage,sameDocument:performance.timeOrigin===origin,originalDialogConnected:d.isConnected,sameDialog:(" + DIALOG + ")===d,noDialog:!(" + DIALOG + "),rawMatches:(" + NAME + ")?.value==='   ',queryMatches:(" + QUERY + ")?.value===" + JSONObject.quote(query) + ",pinnedMatches:(()=>{const a=[...document.querySelectorAll('[aria-label=\"History filters\"] button[aria-pressed=true]')];return a.length===1&&a[0].textContent.trim()==='Pinned'})(),focusName:document.activeElement===n,focusCancel:document.activeElement===c});"
+                + "const retire=()=>{active=false;for(const[type,fn]of listeners)document.removeEventListener(type,fn,true);clearTimeout(timer);removed=true};"
+                + "const arm=()=>{clearTimeout(timer);timer=setTimeout(()=>{expired=true;retire()},Math.max(0,end-performance.now()))};"
+                + "let controller=null;try{for(const type of ['pointerdown','pointerup','pointercancel','click']){const fn=e=>{if(!active)return;if(performance.now()>=end){expired=true;retire();return}if(records.length>=8){cap=true;retire();return}records.push([e.type,e.target===c||c.contains(e.target)?'CANCEL':'OTHER',Math.round(performance.now()-start),e.isTrusted])};document.addEventListener(type,fn,{capture:true,passive:true});listeners.push([type,fn])}"
+                + "const cached=owned=>({version:1,installed:true,removed,active,cap,expired,records,states,propertyOwned:owned,propertyAbsent:!Object.prototype.hasOwnProperty.call(window,key)});"
+                + "controller={owner:key,cleanup(){retire();const owned=Object.getOwnPropertyDescriptor(window,key)?.value===controller;if(owned)delete window[key];return cached(owned)},snapshot(stage,ms,stop){end=Math.min(end,performance.now()+ms);if(performance.now()>=end){expired=true;return controller.cleanup()}arm();if(states.length>=3)cap=true;else states.push(state(stage));if(stop)return controller.cleanup();return cached(Object.getOwnPropertyDescriptor(window,key)?.value===controller)}};"
+                + "Object.defineProperty(window,key,{configurable:true,value:controller});arm();return {installed:true,actual:controller.snapshot('before-tap',Math.max(0,end-performance.now()),false)}}catch{retire();if(controller&&Object.getOwnPropertyDescriptor(window,key)?.value===controller)delete window[key];return {installed:false,removed}}})()";
+            JSONObject installed = new JSONObject(evaluate(script));
+            finalCancelInstalled = installed.optBoolean("installed");
+            if (finalCancelInstalled) finalCancelDiagnostics.put("actual", installed.getJSONObject("actual"));
+            if (SystemClock.uptimeMillis() >= end) { finalCancelUnknown = true; return; }
+            if (!finalCancelInstalled || !sameDocument()) finalCancelUnknown = true;
+            if (SystemClock.uptimeMillis() >= end) { finalCancelUnknown = true; return; }
+            retainFinalCancelNative("before-tap", end);
+            checkObservation(end);
+        } catch (Throwable ignored) { finalCancelUnknown = true; }
+    }
+
+    private void retainFinalCancelTouch(long end) {
+        end = Math.min(end, finalCancelObservationEnd);
+        boolean late = SystemClock.uptimeMillis() >= end;
+        try {
+            // Existing bounded helper records only: this reads no new UI/native state.
+            finalCancelDiagnostics.put("physicalTouch", projectFinalCancelTouch(web.touchTimelineDiagnostics()));
+            late = late || SystemClock.uptimeMillis() >= end;
+            finalCancelDiagnostics.put("touchTimelineLate", late);
+            if (late) finalCancelUnknown = true;
+        } catch (Throwable ignored) { finalCancelUnknown = true; }
+    }
+
+    private JSONObject projectFinalCancelTouch(JSONObject original) throws Exception {
+        JSONObject projected = new JSONObject(), sample = new JSONObject();
+        JSONObject input = original.optJSONObject("sample");
+        if (input != null) {
+            for (String key : new String[]{"x", "y", "width", "height", "ready"})
+                if (input.has(key)) sample.put(key, input.get(key));
+            JSONObject rect = input.optJSONObject("rect");
+            if (rect != null) { JSONObject box = new JSONObject(); for (String key : new String[]{"x", "y", "width", "height"}) if (rect.has(key)) box.put(key, rect.get(key)); sample.put("rect", box); }
+        }
+        if (sample.toString().getBytes(StandardCharsets.UTF_8).length <= 320) projected.put("sample", sample);
+        else { finalCancelUnknown = true; projected.put("sample", new JSONObject().put("cap", true)); }
+        for (String key : new String[]{"dispatch", "nativeBefore", "nativeAfter"}) {
+            String value = original.optString(key, "UNKNOWN"); int cap = key.equals("dispatch") ? 384 : 512;
+            if (value.getBytes(StandardCharsets.UTF_8).length > cap) { finalCancelUnknown = true; value = "UNKNOWN_FIELD_CAP"; }
+            projected.put(key, value);
+        }
+        for (String key : new String[]{"sampleNativeUptimeMs", "readNativeUptimeMs"}) if (original.has(key)) projected.put(key, original.get(key));
+        projected.put("nativePointMayBePriorGesture", !finalCancelTapReturned);
+        return projected;
+    }
+
+    private void retainFinalCancelNative(String stage, long end) {
+        end = Math.min(end, finalCancelObservationEnd);
+        try {
+            checkObservation(end);
+            if (finalCancelNativeSnapshots.length() >= 3) throw new IllegalStateException();
+            JSONObject actual = nativeGeometry(); checkObservation(end);
+            finalCancelNativeSnapshots.put(new JSONObject().put("stage", stage).put("uptimeMs", SystemClock.uptimeMillis())
+                .put("imeVisible", actual.getBoolean("imeVisible")).put("imePx", actual.getJSONObject("imePx")));
+            checkObservation(end);
+        } catch (Throwable ignored) { finalCancelUnknown = true; }
+    }
+
+    private void observeFinalCancel(String stage, long end, boolean remove) {
+        end = Math.min(end, finalCancelObservationEnd);
+        boolean late = SystemClock.uptimeMillis() >= end;
+        if (late) { finalCancelUnknown = true; cleanupFinalCancelCached(); return; }
+        retainFinalCancelNative(stage, end);
+        if (SystemClock.uptimeMillis() >= end) { finalCancelUnknown = true; cleanupFinalCancelCached(); return; }
+        try {
+            if (!finalCancelInstalled) throw new IllegalStateException();
+            JSONObject actual = new JSONObject(evaluate("window[" + JSONObject.quote(finalCancelKey) + "]?.snapshot(" + JSONObject.quote(stage) + "," + Math.max(0, end - SystemClock.uptimeMillis()) + "," + remove + ")??{installed:false,removed:false}"));
+            finalCancelRemoved = actual.optBoolean("removed") && actual.optBoolean("propertyAbsent");
+            finalCancelDiagnostics.put("actual", actual);
+            if (!actual.optBoolean("installed") || !actual.optBoolean("propertyOwned") || actual.optBoolean("cap") || actual.optBoolean("expired") || (remove && !finalCancelRemoved)) finalCancelUnknown = true;
+            if (late || SystemClock.uptimeMillis() >= end) finalCancelUnknown = true;
+            capFinalCancelDiagnostics();
+        } catch (Throwable ignored) { finalCancelUnknown = true; }
+    }
+
+    /** Expired observations may only retire the nonce observer and recover cached data. */
+    private void cleanupFinalCancelCached() {
+        finalCancelUnknown = true;
+        try {
+            JSONObject actual = new JSONObject(web.evaluate("(()=>{const o=Object.getOwnPropertyDescriptor(window," + JSONObject.quote(finalCancelKey) + ")?.value;return o?.owner===" + JSONObject.quote(finalCancelKey) + "?o.cleanup():{installed:false,removed:false}})()"));
+            finalCancelRemoved = actual.optBoolean("removed") && actual.optBoolean("propertyAbsent");
+            finalCancelDiagnostics.put("actual", actual);
+        } catch (Throwable ignored) { }
+    }
+
+    private void capFinalCancelDiagnostics() throws Exception {
+        finalCancelDiagnostics.put("attempted", finalCancelAttempted).put("tapReturned", finalCancelTapReturned).put("nativeSnapshots", finalCancelNativeSnapshots)
+            .put("observation", finalCancelUnknown || !finalCancelInstalled || !finalCancelRemoved || !finalCancelTapReturned ? "UNKNOWN" : "complete")
+            .put("selectionOrInputAuthority", false).put("screenshotClaimed", false);
+        if (finalCancelDiagnostics.toString().getBytes(StandardCharsets.UTF_8).length > 4096) {
+            finalCancelUnknown = true;
+            JSONObject touch = finalCancelDiagnostics.optJSONObject("physicalTouch"), actual = finalCancelDiagnostics.optJSONObject("actual");
+            finalCancelDiagnostics = new JSONObject().put("observation", "UNKNOWN").put("cap", true).put("attempted", finalCancelAttempted)
+                .put("installed", finalCancelInstalled).put("removed", finalCancelRemoved).put("tapReturned", finalCancelTapReturned).put("selectionOrInputAuthority", false).put("screenshotClaimed", false);
+            if (touch != null) finalCancelDiagnostics.put("physicalTouch", touch);
+            if (finalCancelNativeSnapshots.length() > 0) finalCancelDiagnostics.put("lastNativeSnapshot", finalCancelNativeSnapshots.get(finalCancelNativeSnapshots.length() - 1));
+            if (actual != null) {
+                JSONArray records = actual.optJSONArray("records"), states = actual.optJSONArray("states");
+                if (records != null) finalCancelDiagnostics.put("eventRecords", records);
+                if (states != null && states.length() > 0) finalCancelDiagnostics.put("lastPublicState", states.get(states.length() - 1));
+            }
+            if (finalCancelDiagnostics.toString().getBytes(StandardCharsets.UTF_8).length > 4096) {
+                finalCancelDiagnostics = new JSONObject().put("observation", "UNKNOWN").put("cap", true).put("attempted", finalCancelAttempted)
+                    .put("tapReturned", finalCancelTapReturned).put("selectionOrInputAuthority", false).put("screenshotClaimed", false);
+                if (touch != null && touch.toString().getBytes(StandardCharsets.UTF_8).length <= 2304) finalCancelDiagnostics.put("physicalTouch", touch);
             }
         }
     }
@@ -1501,6 +1662,7 @@ public final class NavigationProfilesTest {
                 .put("destroyedDocumentDraftSurvivalClaimed", false).put("navMode", "root assignment/readback only; not inferred from native inset height")
                 .put("rootJUnitGuestClosureAndProfileEvidenceStillRequired", true);
             if (closeDiagnosticsEnabled) { capCloseDiagnostics(); witness.put("closeTransitionDiagnostics", closeDiagnostics); }
+            if (closeDiagnosticsEnabled) { capFinalCancelDiagnostics(); witness.put("finalCancelDiagnostics", finalCancelDiagnostics); }
             if (closeEventsEnabled) { capCloseEvents(); witness.put("closeEventDelivery", closeEvents); }
             if (closeWindowEnabled) { capCloseWindow(); witness.put("closeWindowDispatch", closeWindowDiagnostics); }
             if (closeStockEnabled) { capCloseStockState(); witness.put("closeStockState", closeStockDiagnostics); }
