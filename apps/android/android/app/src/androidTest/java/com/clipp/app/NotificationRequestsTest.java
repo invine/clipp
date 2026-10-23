@@ -67,6 +67,7 @@ public final class NotificationRequestsTest {
     private boolean windowedRootSelection;
     private boolean systemUiObservationOnly;
     private boolean systemUiReadiness;
+    private boolean nativeBodySelection;
     private long windowedJourneyEnd;
     private MainActivity windowedOwner;
     private android.webkit.WebView windowedWebView;
@@ -102,10 +103,22 @@ public final class NotificationRequestsTest {
                 assertEquals("Passive traversal is separate from prior AX diagnostics", "false", args.getString(diagnostic, "false"));
             windowedJourneyEnd = SystemClock.uptimeMillis() + 150_000;
         }
+        String bodyRoute=args.getString("notificationNativeBodySelection","false");
+        assertTrue("Only explicit native body route",bodyRoute.equals("true")||bodyRoute.equals("false"));
+        nativeBodySelection=bodyRoute.equals("true");
+        assertEquals("Native body selection has a distinct assigned method",nativeBodySelection,
+            testName.getMethodName().equals("genuinePeerNotificationNativeBodyAndBackRestoresDirtyPaste"));
+        if(nativeBodySelection){
+            assertFalse("Native body route never consumes CUA or passive proof",windowedRootSelection||systemUiObservationOnly);
+            for(String diagnostic:new String[]{"notificationWindowCensus","notificationInteractiveWindowCensus","notificationLocalNodeComparison","notificationFixedResourceFields"})
+                assertEquals("Native body route is separate from old diagnostics","false",args.getString(diagnostic,"false"));
+            assertEquals("Existing bounded preparation required","true",args.getString("notificationSystemUiReadiness","false"));
+            windowedJourneyEnd=SystemClock.uptimeMillis()+150_000;
+        }
         String readiness=args.getString("notificationSystemUiReadiness","false");
         assertTrue("Only explicit passive readiness",readiness.equals("true")||readiness.equals("false"));
         systemUiReadiness=readiness.equals("true");
-        assertTrue("Readiness is separate passive diagnostic only",!systemUiReadiness||systemUiObservationOnly);
+        assertTrue("Readiness route must be explicitly exclusive",!systemUiReadiness||NotificationSystemUiBodySelection.readinessRoute(systemUiReadiness,systemUiObservationOnly,nativeBodySelection,windowedRootSelection));
         String localComparison = args.getString("notificationLocalNodeComparison", "false");
         assertTrue("Only explicit local-node diagnostics", localComparison.equals("true") || localComparison.equals("false"));
         assertTrue("Local-node diagnostics require the owned interactive census", !localComparison.equals("true")
@@ -237,6 +250,46 @@ public final class NotificationRequestsTest {
     }
 
     @Test
+    public void genuinePeerNotificationNativeBodyAndBackRestoresDirtyPaste() throws Exception {
+        web.onActivity(activity -> { windowedOwner = activity; windowedWebView = activity.getBridge().getWebView(); });
+        windowedTimeOrigin = web.evaluate("performance.timeOrigin");
+        web.tap(web.button("Devices"));
+        web.tap(web.button("Pair this device"));
+        web.tap(web.button("Paste pairing text"));
+        String textarea = "document.querySelector('textarea[aria-label=\"Pairing text\"]')";
+        web.tap(textarea);
+        instrumentation.sendStringSync(target);
+        web.await("actual public target entered", textarea + ".value === " + JSONObject.quote(target));
+        web.tap(web.button("Submit pairing text"));
+        web.await("actual outgoing signed request submitted", "[...document.querySelectorAll('[role=status]')].some(e => e.textContent === 'Request submitted. Waiting for approval.')");
+        String draft = "retained notification draft " + nonce;
+        web.tap(textarea);
+        instrumentation.sendStringSync(draft);
+        web.await("new dirty editor retained", textarea + ".value === " + JSONObject.quote(draft));
+        // Root waits for this public stage AND the peer's verified incoming ID,
+        // then invokes only the peer's bounded public requestIncoming operation.
+        Log.i(TAG, "awaiting-genuine-reverse-request nonce=" + nonce);
+        StatusBarNotification posted = awaitOwnPeerNotification();
+        Log.i(TAG, "posted-metadata nonce=" + nonce + " package=" + safeMetadata(posted.getPackageName())
+            + " id=" + posted.getId() + " channel=" + safeMetadata(posted.getNotification().getChannelId()));
+        logOwnNotificationEligibility("posted", posted);
+        assertEquals("Pairing channel, not continuity", "default", posted.getNotification().getChannelId());
+        assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
+        assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
+            "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
+        selectCurrentNativeNotificationBody(posted, textarea, draft);
+        String card = "[...document.querySelectorAll('.pending-card')].find(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
+        web.await("actual authoritative Requests after OS selection", "document.querySelector('h1')?.textContent === 'Requests' && !!(" + card + ") && !document.querySelector('[role=dialog][aria-modal=true]')");
+        web.await("current request remains unadmitted", "[...(" + card + ").querySelectorAll('button')].some(e => e.textContent.trim() === 'Accept' && !e.disabled)");
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        web.await("normal native Back restores same dirty editor", "!!(" + textarea + ") && " + textarea + ".value === " + JSONObject.quote(draft));
+        assertTrue("Original150s method boundary remains authoritative", SystemClock.uptimeMillis() < windowedJourneyEnd);
+        assertWindowedRootOwner();
+        Log.i(TAG, "genuine-native-body-notification-requests-back-pass nonce=" + nonce + " notificationId=" + posted.getId()
+            + " completedUptimeMs=" + SystemClock.uptimeMillis());
+    }
+
+    @Test
     public void genuinePeerNotificationSystemUiObservationOnly() throws Exception {
         web.onActivity(activity -> { windowedOwner = activity; windowedWebView = activity.getBridge().getWebView(); });
         windowedTimeOrigin = web.evaluate("performance.timeOrigin");
@@ -334,7 +387,7 @@ public final class NotificationRequestsTest {
     private ExpandReadinessCompletion readinessExpansion;
 
     private void awaitSystemUiReadiness(SystemUiObservationPorts ports,NotificationSystemUiReadiness.Budget budget) throws Exception {
-        assertTrue("Separate passive readiness only",systemUiReadiness&&systemUiObservationOnly&&!windowedRootSelection);
+        assertTrue("Separate supported readiness route required",NotificationSystemUiBodySelection.readinessRoute(systemUiReadiness,systemUiObservationOnly,nativeBodySelection,windowedRootSelection));
         NotificationSystemUiObservation.Clock clock=new NotificationSystemUiObservation.Clock(){public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}};
         NotificationSystemUiObservation.Guard guard=new NotificationSystemUiObservation.Guard(clock,budget.preparationEnd,budget.preparationEndElapsed);
         final int[] originalBounds=new int[4];
@@ -375,6 +428,7 @@ public final class NotificationRequestsTest {
                 rows.add(new int[]{info[0],info[1],info[3],info[4],info[5],identity[1],info[6],info[7],info[8],info[9],identity[0],identity[1],bounds.left,bounds.top,bounds.right,bounds.bottom,visible?1:0});
             }
             candidate=NotificationSystemUiReadiness.requireWindow(originalBounds,rows,gate.event);budget.checkPreparation();budget.checkReady();ready=true;
+            if(nativeBodySelection)ports.nativeBodyReadyWindow=candidate;
         } catch(NotificationSystemUiReadiness.Limit limit){failure="UNKNOWN_"+limit.reason;}
         catch(NotificationSystemUiObservation.Limit limit){failure="UNKNOWN_OBSERVATION_"+limit.reason;}
         catch(Throwable ignored){failure="UNKNOWN_PLATFORM";}
@@ -448,6 +502,134 @@ public final class NotificationRequestsTest {
             + " complete=" + wire.getBoolean("complete") + " reason=" + wire.getInt("reason") + " publishedUptimeMs=" + SystemClock.uptimeMillis() + " publishedElapsedRealtimeMs=" + SystemClock.elapsedRealtime() + " inputCount=0 selectionAuthority=false");
     }
 
+    private void selectCurrentNativeNotificationBody(StatusBarNotification posted,String textarea,String draft) throws Exception {
+        assertTrue("Distinct actual native body route required",nativeBodySelection&&systemUiReadiness&&!systemUiObservationOnly&&!windowedRootSelection);
+        assertWindowedRootOwner();
+        assertEquals("Arrival retains dirty editor until native selection",draft,web.evaluate(textarea+".value"));
+        NotificationSystemUiReadiness.Budget budget=new NotificationSystemUiReadiness.Budget(new NotificationSystemUiReadiness.Clock(){
+            public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}
+        },windowedJourneyEnd);
+        JSONObject ready=new JSONObject().put("kind","NOTIFICATION16_TARGETED_NATIVE_BODY_READY_V1").put("nonce",nonce)
+            .put("package",posted.getPackageName()).put("notificationId",posted.getId()).put("channel","default").put("peerId",peerId).put("peerName",peerName)
+            .put("appPid",android.os.Process.myPid()).put("appUid",android.os.Process.myUid()).put("route","UIAUTOMATION_TARGETED_NATIVE_BODY")
+            .put("readyUptimeMs",budget.start).put("expiresUptimeMs",budget.end).put("readyElapsedRealtimeMs",budget.startElapsed)
+            .put("expiresElapsedRealtimeMs",budget.endElapsed).put("maximumReadyMs",60000).put("maximumObservationMs",5000).put("selectionAuthority",true);
+        byte[] readyBytes=ready.toString().getBytes(StandardCharsets.UTF_8);assertTrue("Bounded native readiness",readyBytes.length<=4096);
+        Log.i(TAG,"native-body-ready nonce="+nonce+" metadata="+ready);
+        SystemUiObservationPorts baseline=new SystemUiObservationPorts(posted);
+        NativeBodyPorts ports=null;NotificationSystemUiBodySelection.Result result=null;
+        try{
+            awaitSystemUiReadiness(baseline,budget);
+            ports=new NativeBodyPorts(baseline,budget);
+            result=NotificationSystemUiBodySelection.run(ports,new NotificationSystemUiBodySelection.Clock(){
+                public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}
+            },peerId,peerName,ports.guard.end,ports.guard.endElapsed);
+        }finally{
+            if(result==null){
+                boolean restored=false;try{restored=ports==null?baseline.close():ports.close();}catch(Throwable cleanupFailure){/* Keep the original preparation failure authoritative. */}
+                Log.i(TAG,"native-body-preparation-cleanup nonce="+nonce+" restored="+restored+" selectionQualified=false");
+            }
+        }
+        JSONObject wire=new JSONObject().put("kind","NOTIFICATION16_TARGETED_NATIVE_BODY_ACTION_V1").put("nonce",nonce)
+            .put("readySha256",observationSha256(readyBytes)).put("complete",result.complete).put("reason",result.reason)
+            .put("selectionAuthority",true).put("atomicSnapshot",false).put("ticket16Qualified",false)
+            .put("startedUptimeMs",result.start).put("startedElapsedRealtimeMs",result.startElapsed).put("deadlineUptimeMs",result.end)
+            .put("deadlineElapsedRealtimeMs",result.endElapsed).put("finishedUptimeMs",result.finished).put("finishedElapsedRealtimeMs",result.finishedElapsed)
+            .put("windowId",result.window).put("x",result.x).put("y",result.y).put("queries",result.queries)
+            .put("notificationBefore",result.beforeCurrent).put("notificationBeforeAction",result.afterCurrent).put("proofRechecked",result.proofRechecked).put("restored",result.restored)
+            .put("windowBounds",result.windowBounds==null?JSONObject.NULL:new JSONArray(result.windowBounds)).put("templateBounds",result.templateBounds==null?JSONObject.NULL:new JSONArray(result.templateBounds)).put("bodyBounds",result.bodyBounds==null?JSONObject.NULL:new JSONArray(result.bodyBounds))
+            .put("allReturnedNodeHandlesDisposed",ports.ledger.complete&&baseline.serviceMetadata.optBoolean("allAcquiredRecycled",false)).put("allReturnedWindowHandlesDisposed",ports.windowDisposalComplete&&baseline.serviceMetadata.optBoolean("allAcquiredRecycled",false))
+            .put("service",baseline.serviceMetadata).put("gesture",ports.gesture);
+        byte[] bytes=wire.toString().getBytes(StandardCharsets.UTF_8);assertTrue("Fixed body action wire bounded2KiB",bytes.length<=2048);
+        String name="notification16-native-body-"+nonce+".json";
+        Files.write(new File(instrumentation.getTargetContext().getCacheDir(),name).toPath(),bytes,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE);
+        Log.i(TAG,"native-body-wire nonce="+nonce+" name="+name+" bytes="+bytes.length+" sha256="+observationSha256(bytes)
+            +" complete="+result.complete+" reason="+result.reason+" publishedUptimeMs="+SystemClock.uptimeMillis()+" publishedElapsedRealtimeMs="+SystemClock.elapsedRealtime());
+        assertTrue("Positive current body and genuine native gesture required; UNKNOWN is not selection",result.complete);
+        budget.checkReady();
+    }
+
+    private final class NativeBodyPorts implements NotificationSystemUiBodySelection.Ports {
+        final SystemUiObservationPorts base;final NotificationSystemUiObservation.Guard guard;
+        final NotificationSystemUiBodySelection.Ledger ledger=new NotificationSystemUiBodySelection.Ledger();
+        final JSONObject gesture=new JSONObject();boolean windowDisposalComplete=true,closed;
+        NativeBodyPorts(SystemUiObservationPorts base,NotificationSystemUiReadiness.Budget budget){
+            this.base=base;require((base.originalFlags&AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS)!=0,4);long now=SystemClock.uptimeMillis(),elapsed=SystemClock.elapsedRealtime();
+            guard=new NotificationSystemUiObservation.Guard(new NotificationSystemUiObservation.Clock(){public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}},Math.min(budget.end,now+5000),Math.min(budget.endElapsed,elapsed+5000));
+            ledger.own(base.acquiredNodes);
+        }
+        void require(boolean value,int reason){NotificationSystemUiBodySelection.require(value,reason);}
+        public boolean current(){guard.check();return base.currentNotification(guard);}
+        public NotificationSystemUiBodySelection.Owner owner(){
+            List<AccessibilityWindowInfo> windows=guard.read(()->{
+                List<AccessibilityWindowInfo> values=base.automation.getWindows();
+                if(values!=null){List<AccessibilityWindowInfo> owned=new ArrayList<>();for(int i=0;i<Math.min(8,values.size());i++)owned.add(values.get(i));base.acquiredWindows.add(owned);if(values.size()>8)windowDisposalComplete=false;}
+                return values;
+            });
+            require(windows!=null&&!windows.isEmpty()&&windows.size()<=8,3);
+            Object root=null;int[] selected=null;
+            for(AccessibilityWindowInfo window:windows){
+                require(window!=null,4);int[] row=base.window(window,guard);
+                require(row[3]==0&&row[0]>=0&&row[8]>row[6]&&row[9]>row[7],4);
+                if(row[4]==0&&row[5]==0)continue;
+                require(root==null&&row[1]==3&&row[4]==1&&row[5]==1&&row[0]==base.nativeBodyReadyWindow,6);
+                require(ledger.remaining()>0,3);root=base.root(window,guard);require(root!=null,4);ledger.own(java.util.Collections.singletonList(root));
+                int[] identity=base.rootIdentity(root,guard);require(identity[0]==row[0]&&identity[1]==2,4);
+                AccessibilityNodeInfo node=(AccessibilityNodeInfo)root;Rect bounds=new Rect();guard.read(()->{node.getBoundsInScreen(bounds);return true;});
+                require(guard.read(node::isVisibleToUser)&&bounds.left==row[6]&&bounds.top==row[7]&&bounds.right==row[8]&&bounds.bottom==row[9],4);
+                selected=row;
+            }
+            require(root!=null&&selected!=null,7);
+            return new NotificationSystemUiBodySelection.Owner(root,selected[0],new int[]{selected[6],selected[7],selected[8],selected[9]});
+        }
+        public List<Object> query(Object raw,String value,boolean resource){
+            AccessibilityNodeInfo node=(AccessibilityNodeInfo)raw;
+            return guard.read(()->{
+                List<AccessibilityNodeInfo> values=resource?node.findAccessibilityNodeInfosByViewId(value):node.findAccessibilityNodeInfosByText(value);
+                List<Object> owned=ledger.own(values);for(Object handle:owned)if(handle!=null)base.acquiredNodes.add((AccessibilityNodeInfo)handle);
+                if(values==null)return null;
+                // Do not retain or enumerate excess result handles beyond the fixed ledger.
+                if(values.size()>4)throw new NotificationSystemUiBodySelection.Limit(3);
+                return owned;
+            });
+        }
+        public NotificationSystemUiBodySelection.Node node(Object raw,boolean refresh){
+            AccessibilityNodeInfo node=(AccessibilityNodeInfo)raw;if(refresh)require(guard.read(node::refresh),10);
+            int window=guard.read(node::getWindowId),pkg=base.packageKind(guard.read(node::getPackageName));
+            String resource=guard.read(node::getViewIdResourceName);CharSequence text=guard.read(node::getText),cls=guard.read(node::getClassName);
+            require(text==null||text.length()<=8192,4);require(resource==null||resource.length()<=256,4);
+            Rect bounds=new Rect();guard.read(()->{node.getBoundsInScreen(bounds);return true;});
+            boolean visible=guard.read(node::isVisibleToUser),enabled=guard.read(node::isEnabled);
+            return new NotificationSystemUiBodySelection.Node(window,pkg,resource==null?"":resource,text==null?"":text.toString(),"android.widget.TextView".contentEquals(cls==null?"":cls),visible,enabled,new int[]{bounds.left,bounds.top,bounds.right,bounds.bottom});
+        }
+        public Object parent(Object raw){
+            require(ledger.remaining()>0,3);return guard.read(()->{
+                AccessibilityNodeInfo value=((AccessibilityNodeInfo)raw).getParent();
+                if(value!=null){ledger.own(java.util.Collections.singletonList(value));base.acquiredNodes.add(value);}return value;
+            });
+        }
+        public boolean same(Object a,Object b){return a!=null&&a.equals(b);}
+        public NotificationSystemUiBodySelection.Touch touch(int x,int y){
+            guard.check();long downAt=SystemClock.uptimeMillis(),downReturned=-1,upAt=-1,upReturned=-1;boolean down=false,up=false,downAttempted=false;
+            android.view.MotionEvent first=android.view.MotionEvent.obtain(downAt,downAt,android.view.MotionEvent.ACTION_DOWN,x,y,0),last=null;
+            first.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            try{
+                try{gesture.put("downAttempted",true).put("downAt",downAt);downAttempted=true;down=base.automation.injectInputEvent(first,true);downReturned=SystemClock.uptimeMillis();gesture.put("downAccepted",down).put("downReturned",downReturned);}
+                finally{
+                    // Complete the one already-started gesture even if DOWN returned late/uncertain.
+                    // A late completion remains UNKNOWN; it is never a second tap or deadline renewal.
+                    if(downAttempted){upAt=SystemClock.uptimeMillis();last=android.view.MotionEvent.obtain(downAt,upAt,android.view.MotionEvent.ACTION_UP,x,y,0);last.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                    gesture.put("upAttempted",true).put("upAt",upAt);up=base.automation.injectInputEvent(last,true);upReturned=SystemClock.uptimeMillis();gesture.put("upAccepted",up).put("upReturned",upReturned);}
+                }
+                return new NotificationSystemUiBodySelection.Touch(down,up,downAt,downReturned,upAt,upReturned);
+            }catch(Exception failure){throw new NotificationSystemUiBodySelection.Limit(13);}
+            finally{first.recycle();if(last!=null)last.recycle();}
+        }
+        public boolean close(){
+            if(closed)return false;closed=true;boolean restored=base.close();return restored&&ledger.complete&&windowDisposalComplete;
+        }
+    }
+
     private final class SystemUiObservationPorts implements NotificationSystemUiObservation.Ports {
         final StatusBarNotification expected;
         final List<AccessibilityNodeInfo> acquiredNodes = new ArrayList<>();
@@ -456,6 +638,7 @@ public final class NotificationRequestsTest {
         UiAutomation automation;
         int originalFlags, originalCapabilities, duringFlags;
         boolean baselineObserved;
+        int nativeBodyReadyWindow=-1;
         SystemUiObservationPorts(StatusBarNotification expected) { this.expected=expected; }
         public void begin(NotificationSystemUiObservation.Guard guard) {
             if(systemUiReadiness&&baselineObserved){
