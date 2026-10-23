@@ -92,6 +92,8 @@ public final class NavigationTaskReflowTest {
     private String draft;
     private boolean journeyPassed;
     private boolean completedReflowCase;
+    private boolean manualPendingCase;
+    private JSONObject manualPending;
     private JSONObject lastReflowObservation;
     private JSONObject reflowGesture;
     private JSONObject swipeDiagnostics, latestSwipePoll;
@@ -230,6 +232,85 @@ public final class NavigationTaskReflowTest {
         assertNoHorizontalPageHunting();
         assertSameDocument();
         observe("close-reopen-retains-draft-query-scope-focus");
+        checkDeadline();
+        journeyPassed = true;
+    }
+
+    /** N6: genuine pending entry through ordinary public navigation, never notification selection. */
+    @Test
+    public void genuineManualRequestsRetainDirtyPasteAndNormalTaskBack() throws Exception {
+        Bundle arguments = InstrumentationRegistry.getArguments();
+        Assume.assumeTrue("Separate root-owned genuine manual pending interval required",
+            "true".equals(arguments.getString("navigationManualPendingAcceptance")));
+        manualPendingCase = true;
+        deadline = Math.min(deadline, SystemClock.uptimeMillis() + 150_000);
+        String peerId = arguments.getString("navigationManualPeerId", "");
+        String peerName = arguments.getString("navigationManualPeerName", "");
+        String signedTarget = arguments.getString("navigationManualPeerTarget", "");
+        assertTrue("Actual genuine actor Peer ID required", peerId.matches("[A-Za-z0-9]{32,128}"));
+        assertEquals("Actor name binds this root nonce", "Notif " + nonce.substring(0, 16), peerName);
+        assertTrue("Only the actual public signed actor target", signedTarget.startsWith("clipp:pair:") && signedTarget.length() <= 65536);
+        manualPending = new JSONObject().put("peerId", peerId).put("peerName", peerName)
+            .put("entry", "MANUAL_PUBLIC_REQUESTS").put("notificationSelected", false)
+            .put("notificationAvailabilityObserved", androidx.core.app.NotificationManagerCompat.from(target).areNotificationsEnabled());
+        String textarea = "document.querySelector('textarea[aria-label=\"Pairing text\"]')";
+        String dialogTitle = "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()";
+        String badge = "document.querySelector('nav[aria-label=\"Clipp destinations\"] [data-session-focus=\"destination:requests\"] [aria-label=\"active requests\"]')";
+        openDestination("devices");
+        tap(web.button("Pair this device"));
+        tap(web.button("Paste pairing text"));
+        replaceText(textarea, signedTarget);
+        tap(web.button("Submit pairing text"));
+        awaitUi("actual outgoing signed request submitted", "[...document.querySelectorAll('[role=status]')].some(e => e.textContent === 'Request submitted. Waiting for approval.')");
+        awaitUi("actual outgoing request contributes a public badge", "!!(" + badge + ") && /^\\s*\\([1-9][0-9]*\\)\\s*$/.test((" + badge + ").textContent)");
+        int beforeIncoming = Integer.parseInt(web.evaluate("(" + badge + ").textContent.replace(/[^0-9]/g,'')"));
+        String raw = "  retained manual draft " + nonce + "  ";
+        replaceText(textarea, raw);
+        assertSameDocument();
+        observe("n6-dirty-paste-before-genuine-arrival");
+        // Root sends requestIncoming once only after this public stage AND the real actor's verified incoming state.
+        emit("n6-awaiting-genuine-reverse-request nonce=" + nonce);
+        awaitUi("genuine incoming changes the existing public request count", "!!(" + badge + ") && Number((" + badge + ").textContent.replace(/[^0-9]/g,'')) > " + beforeIncoming);
+        assertEquals("Arrival alone retains exact raw draft", raw, web.evaluate(textarea + ".value"));
+        assertEquals("Arrival alone retains the actual task", "Paste pairing text", web.evaluate(dialogTitle));
+        assertSameDocument();
+        manualPending.put("badgeBeforeIncoming", beforeIncoming).put("badgeAfterIncoming",
+            Integer.parseInt(web.evaluate("(" + badge + ").textContent.replace(/[^0-9]/g,'')")));
+        observe("n6-genuine-arrival-retains-dirty-task");
+        hideIme();
+        tap(web.button("Back to Pairing"));
+        awaitUi("public task return retains Pairing", dialogTitle + " === 'Pairing'");
+        tap(web.button("Close Pairing"));
+        awaitUi("public Close dismisses without Discard", "!document.querySelector('[role=dialog][aria-modal=true]')");
+        openDestination("history");
+        awaitUi("Requests discovery badge is visible outside Devices", "!!(" + badge + ") && (" + badge + ").getClientRects().length > 0 && Number((" + badge + ").textContent.replace(/[^0-9]/g,'')) > " + beforeIncoming);
+        openDestination("requests");
+        String card = "[...document.querySelectorAll('.pending-card')].filter(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
+        awaitUi("one current exact genuine incoming Peer ID", card + ".length === 1 && " + card + "[0].querySelector('.peer-name')?.getAttribute('title') === " + JSONObject.quote(peerName));
+        awaitUi("current incoming request has enabled Accept without admitting it", "[..." + card + "[0].querySelectorAll('button')].filter(e => e.textContent.trim() === 'Accept' && !e.disabled).length === 1");
+        assertSameDocument();
+        observe("n6-manual-current-peer-enabled-accept");
+        // Manual Requests has no notification-return context. Reopen via ordinary Devices controls.
+        openDestination("devices");
+        tap(web.button("Pair this device"));
+        tap(web.button("Paste pairing text"));
+        awaitUi("public reopen retains exact raw draft and editor focus", textarea + ".value === " + JSONObject.quote(raw) + " && document.activeElement === (" + textarea + ")");
+        tap(textarea);
+        awaitIme(true);
+        nativeBack();
+        awaitIme(false);
+        awaitUi("IME-first Back keeps dirty Paste", dialogTitle + " === 'Paste pairing text' && " + textarea + ".value === " + JSONObject.quote(raw));
+        nativeBack();
+        awaitUi("normal task Back returns one level to Pairing", dialogTitle + " === 'Pairing' && document.activeElement === (" + web.button("Paste pairing text") + ")");
+        tap(web.button("Paste pairing text"));
+        awaitUi("task Back and public reopen retain raw text and focus", textarea + ".value === " + JSONObject.quote(raw) + " && document.activeElement === (" + textarea + ")");
+        assertSameDocument();
+        observe("n6-public-reopen-normal-task-back-retained-raw-focus");
+        manualPending.put("rawDraftLength", raw.length()).put("rawDraftSha256", sha(raw.getBytes(StandardCharsets.UTF_8)))
+            .put("publicCloseWithoutDiscard", true).put("requestsOutsideDevices", true)
+            .put("currentExactPeerEnabledAccept", true).put("acceptInvoked", false)
+            .put("publicReopenRawAndFocus", true).put("normalTaskBack", true)
+            .put("sameActivityWebViewDocument", true).put("automaticRequestsRootBackClaimed", false);
         checkDeadline();
         journeyPassed = true;
     }
@@ -912,10 +993,11 @@ public final class NavigationTaskReflowTest {
         }
         try {
             JSONObject receipt = new JSONObject().put("rootNonce", nonce).put("profile", "ordinary-default")
-                .put("scope", completedReflowCase ? "N3-only-completed-default-orientation-history-anchor-and-name-validation"
+                .put("scope", manualPendingCase ? "N6-only-genuine-manual-requests-retained-dirty-paste-normal-task-back"
+                    : completedReflowCase ? "N3-only-completed-default-orientation-history-anchor-and-name-validation"
                     : "N1-only-genuine-ingress-navigation-search-filter-retained-name")
                 .put("journeyPassed", journeyPassed).put("activityCleanupComplete", cleanupComplete)
-                .put("n1JourneyPassed", !completedReflowCase && journeyPassed)
+                .put("n1JourneyPassed", !completedReflowCase && !manualPendingCase && journeyPassed)
                 .put("completedReflowJourneyPassed", completedReflowCase && journeyPassed)
                 .put("completedReflow", completedReflowCase ? new JSONObject()
                     .put("lastObservation", lastReflowObservation).put("nativeSwipe", reflowGesture)
@@ -925,6 +1007,7 @@ public final class NavigationTaskReflowTest {
                     : "unchanged NativePublicWebView guarded DOWN/UP plus Android text/keys")
                 .put("ingress", ingress).put("trace", trace).put("copyPerformed", false)
                 .put("rootJUnitAndGuestCleanupStillRequired", true);
+            if (manualPendingCase) receipt.put("manualPendingJourneyPassed", journeyPassed).put("manualPending", manualPending);
             byte[] bytes = receipt.toString().getBytes(StandardCharsets.UTF_8);
             assertTrue("Complete N1 public artifact byte cap", bytes.length <= MAX_WITNESS_BYTES);
             File file = new File(directory, "public-witness.json");
