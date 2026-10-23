@@ -233,6 +233,7 @@ public final class NavigationProfilesTest {
         tapButton("Copy pairing text");
         awaitUi("actual guest Copy confirmed", "[...document.querySelectorAll('[role=status]')].some(e=>e.textContent.trim()==='Pairing text copied. Paste it on your other device to start Pairing.')");
         assertReachable(web.button("Close QR dialog"), true);
+        revealFocusedQrCloseForCapture();
         captureStage("qr-copy-final-close", web.button("Close QR dialog"), true);
         tapButton("Close QR dialog"); awaitDialog("Pairing");
         tapButton("Show my QR"); awaitDialog("Pair this device");
@@ -1076,6 +1077,17 @@ public final class NavigationProfilesTest {
             measured.getString("ownerOverflow").matches("auto|scroll") && measured.getInt("ownerClientHeight") > 0
                 && measured.getInt("ownerScrollHeight") > measured.getInt("ownerClientHeight"));
         assertEquals("QR never requires horizontal page hunting", "true", evaluate("document.documentElement.scrollWidth<=document.documentElement.clientWidth&&document.body.scrollWidth<=innerWidth"));
+    }
+
+    /** Native Tab proves reachability first; this only locates its already focused
+     * public QR Close target wholly within the scroll owner for the strict capture. */
+    private void revealFocusedQrCloseForCapture() throws Exception {
+        if (!captureEnabled) return;
+        checkDeadline();
+        String close = web.button("Close QR dialog");
+        assertEquals("QR capture reveal keeps the Close control focused by native Tab", "true",
+            evaluate("(() => { const e = " + close + "; if (!e || document.activeElement !== e) return false; e.scrollIntoView({block:'center', inline:'nearest'}); return document.activeElement === e; })()"));
+        checkDeadline();
     }
 
     private void assertReachable(String element, boolean mayScroll) throws Exception {
