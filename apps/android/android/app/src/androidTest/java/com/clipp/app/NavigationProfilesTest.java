@@ -244,7 +244,7 @@ public final class NavigationProfilesTest {
         tapButton("Show my QR"); awaitDialog("Pair this device");
         nativeBack(); awaitDialog("Pairing"); assertFocusedButton("Show my QR");
         nativeBack(); awaitNoDialog(); assertFocusedButton("Pair this device"); assertQueryScope();
-        createNameError(); prepareThemeNameCapture(); captureStage("local-name-error", NAME, false); closeNameRetaining();
+        createNameError(); if (captureEnabled) { awaitIme(true); awaitRawFocused(NAME, "   "); } captureStage("local-name-error", NAME, false); closeNameRetaining();
         openPairing(); tapButton("Paste pairing text"); awaitDialog("Paste pairing text");
         replaceText(PAIR, pairingRaw); hideIme();
         tapButton("Submit pairing text");
@@ -281,7 +281,7 @@ public final class NavigationProfilesTest {
         if (closeDiagnosticsEnabled) closeNameWithDiagnostics();
         else { tapButton("Close name editor"); awaitNoDialog(); }
         tapButton("Rename this device"); awaitDialog("Device Name"); awaitRawFocused(NAME, "   "); assertNameError();
-        if (nativeImeVisible()) hideIme();
+        awaitIme(true); if (nativeImeVisible()) hideIme();
         if (closeDiagnosticsEnabled) cancelNameWithDiagnostics();
         else { tapButton("Cancel name edit"); awaitNoDialog(); }
         assertQueryScope(); assertSameDocument();
