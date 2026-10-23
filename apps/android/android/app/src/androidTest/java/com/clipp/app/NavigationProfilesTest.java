@@ -235,7 +235,7 @@ public final class NavigationProfilesTest {
         assertReachable(web.button("Close QR dialog"), true);
         revealFocusedQrCloseForCapture();
         captureStage("qr-copy-final-close", web.button("Close QR dialog"), true);
-        tapButton("Close QR dialog"); awaitDialog("Pairing");
+        assertFocusedButton("Close QR dialog"); key(KeyEvent.KEYCODE_ENTER); awaitDialog("Pairing");
         tapButton("Show my QR"); awaitDialog("Pair this device");
         nativeBack(); awaitDialog("Pairing"); assertFocusedButton("Show my QR");
         nativeBack(); awaitNoDialog(); assertFocusedButton("Pair this device"); assertQueryScope();
