@@ -65,6 +65,7 @@ public final class NotificationRequestsTest {
     private String nonce, peerId, peerName, target;
     @Rule public final TestName testName = new TestName();
     private boolean windowedRootSelection;
+    private boolean systemUiObservationOnly;
     private long windowedJourneyEnd;
     private MainActivity windowedOwner;
     private android.webkit.WebView windowedWebView;
@@ -86,6 +87,18 @@ public final class NotificationRequestsTest {
             for (String diagnostic : new String[]{"notificationWindowCensus", "notificationInteractiveWindowCensus",
                 "notificationLocalNodeComparison", "notificationFixedResourceFields"})
                 assertEquals("Root CUA selection is separate from AX/diagnostic routes", "false", args.getString(diagnostic, "false"));
+            windowedJourneyEnd = SystemClock.uptimeMillis() + 150_000;
+        }
+        String passive = args.getString("notificationSystemUiObservationOnly", "false");
+        assertTrue("Only explicit passive SystemUI observation", passive.equals("true") || passive.equals("false"));
+        systemUiObservationOnly = passive.equals("true");
+        assertEquals("Passive observation has its own diagnostic method", systemUiObservationOnly,
+            testName.getMethodName().equals("genuinePeerNotificationSystemUiObservationOnly"));
+        if (systemUiObservationOnly) {
+            assertFalse("Passive observation is separate from CUA selection", windowedRootSelection);
+            for (String diagnostic : new String[]{"notificationWindowCensus", "notificationInteractiveWindowCensus",
+                "notificationLocalNodeComparison", "notificationFixedResourceFields"})
+                assertEquals("Passive traversal is separate from prior AX diagnostics", "false", args.getString(diagnostic, "false"));
             windowedJourneyEnd = SystemClock.uptimeMillis() + 150_000;
         }
         String localComparison = args.getString("notificationLocalNodeComparison", "false");
@@ -216,6 +229,220 @@ public final class NotificationRequestsTest {
         assertTrue("Original150s method boundary remains authoritative", SystemClock.uptimeMillis() < windowedJourneyEnd);
         Log.i(TAG, "genuine-windowed-notification-requests-back-pass nonce=" + nonce + " notificationId=" + posted.getId()
             + " completedUptimeMs=" + SystemClock.uptimeMillis());
+    }
+
+    @Test
+    public void genuinePeerNotificationSystemUiObservationOnly() throws Exception {
+        web.onActivity(activity -> { windowedOwner = activity; windowedWebView = activity.getBridge().getWebView(); });
+        windowedTimeOrigin = web.evaluate("performance.timeOrigin");
+        web.tap(web.button("Devices"));
+        web.tap(web.button("Pair this device"));
+        web.tap(web.button("Paste pairing text"));
+        String textarea = "document.querySelector('textarea[aria-label=\"Pairing text\"]')";
+        web.tap(textarea);
+        instrumentation.sendStringSync(target);
+        web.await("actual public target entered", textarea + ".value === " + JSONObject.quote(target));
+        web.tap(web.button("Submit pairing text"));
+        web.await("actual outgoing signed request submitted", "[...document.querySelectorAll('[role=status]')].some(e => e.textContent === 'Request submitted. Waiting for approval.')");
+        String draft = "retained notification draft " + nonce;
+        web.tap(textarea);
+        instrumentation.sendStringSync(draft);
+        web.await("new dirty editor retained", textarea + ".value === " + JSONObject.quote(draft));
+        // Root waits for this public stage AND the peer's verified incoming ID,
+        // then invokes only the peer's bounded public requestIncoming operation.
+        Log.i(TAG, "awaiting-genuine-reverse-request nonce=" + nonce);
+        StatusBarNotification posted = awaitOwnPeerNotification();
+        Log.i(TAG, "posted-metadata nonce=" + nonce + " package=" + safeMetadata(posted.getPackageName())
+            + " id=" + posted.getId() + " channel=" + safeMetadata(posted.getNotification().getChannelId()));
+        logOwnNotificationEligibility("posted", posted);
+        assertEquals("Pairing channel, not continuity", "default", posted.getNotification().getChannelId());
+        assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
+        assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
+            "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
+        expandNotificationsWithCompletionWitness();
+        observeSystemUiNotification(posted, textarea, draft);
+    }
+
+    private static String observationSha256(byte[] bytes) throws Exception {
+        StringBuilder text=new StringBuilder();
+        for(byte value:MessageDigest.getInstance("SHA-256").digest(bytes))text.append(String.format("%02x",value&255));
+        return text.toString();
+    }
+
+    /** A separately opted-in passive census, never an alternate notification selector. */
+    private void observeSystemUiNotification(StatusBarNotification posted, String textarea, String draft) throws Exception {
+        assertTrue("Separate passive SystemUI route required", systemUiObservationOnly && !windowedRootSelection);
+        assertWindowedRootOwner();
+        assertEquals("Observation alone retains original dirty task", draft, web.evaluate(textarea + ".value"));
+        assertEquals("Observation starts in retained Paste task", "Paste pairing text", web.evaluate(
+            "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
+        long ready = SystemClock.uptimeMillis(), readyElapsed = SystemClock.elapsedRealtime();
+        long end = Math.min(windowedJourneyEnd, ready + 60_000), endElapsed = readyElapsed + (end - ready);
+        JSONObject metadata = new JSONObject().put("kind", "NOTIFICATION16_SYSTEMUI_OBSERVATION_READY")
+            .put("nonce", nonce).put("package", posted.getPackageName()).put("notificationId", posted.getId())
+            .put("channel", "default").put("peerId", peerId).put("peerName", peerName)
+            .put("appPid", android.os.Process.myPid()).put("appUid", android.os.Process.myUid())
+            .put("route", "UIAUTOMATION_PASSIVE_SYSTEMUI_TREE").put("readyUptimeMs", ready).put("expiresUptimeMs", end)
+            .put("readyElapsedRealtimeMs", readyElapsed).put("expiresElapsedRealtimeMs", endElapsed)
+            .put("maximumReadyMs", 60_000).put("maximumObservationMs", 5000).put("selectionAuthority", false);
+        byte[] readyBytes = metadata.toString().getBytes(StandardCharsets.UTF_8);
+        assertTrue("Known bounded readiness only", readyBytes.length <= 4096 && end > ready);
+        Log.i(TAG, "systemui-observation-ready nonce=" + nonce + " metadata=" + metadata);
+        SystemUiObservationPorts ports = new SystemUiObservationPorts(posted);
+        NotificationSystemUiObservation.Result result = NotificationSystemUiObservation.observe(ports,
+            new NotificationSystemUiObservation.Clock() {
+                public long uptime() { return SystemClock.uptimeMillis(); }
+                public long elapsed() { return SystemClock.elapsedRealtime(); }
+            }, end, endElapsed);
+        JSONObject wire = new JSONObject().put("kind", "NOTIFICATION16_SYSTEMUI_PASSIVE_OBSERVATION_V1")
+            .put("nonce", nonce).put("readySha256", observationSha256(readyBytes)).put("selectionAuthority", false)
+            .put("inputCount", 0).put("atomicSnapshot", false).put("ticket16Qualified", false)
+            .put("complete", result.complete).put("reason", result.reason).put("readOperations", result.reads)
+            .put("startedUptimeMs", result.start).put("startedElapsedRealtimeMs", result.startElapsed)
+            .put("deadlineUptimeMs", result.end).put("deadlineElapsedRealtimeMs", result.endElapsed)
+            .put("finishedUptimeMs", result.finished).put("finishedElapsedRealtimeMs", result.finishedElapsed)
+            .put("notificationBefore", result.notificationBefore).put("notificationAfter", result.notificationAfter)
+            .put("restored", result.restored).put("service", ports.serviceMetadata);
+        JSONArray windows = new JSONArray(), nodes = new JSONArray();
+        for (int[] row : result.windows) { JSONArray item = new JSONArray(); for (int value : row) item.put(value); windows.put(item); }
+        for (int[] row : result.nodes) { JSONArray item = new JSONArray(); for (int value : row) item.put(value); nodes.put(item); }
+        wire.put("windows", windows).put("nodes", nodes);
+        byte[] bytes = wire.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 65536) {
+            wire.remove("windows"); wire.remove("nodes");
+            wire.put("complete", false).put("reason", 12).put("windowRowsDropped", result.windows.size()).put("nodeRowsDropped", result.nodes.size());
+            bytes = wire.toString().getBytes(StandardCharsets.UTF_8);
+        }
+        assertTrue("Fixed observation wire is bounded", bytes.length <= 65536);
+        String name = "notification16-systemui-observation-" + nonce + ".json";
+        File destination = new File(instrumentation.getTargetContext().getCacheDir(), name);
+        Files.write(destination.toPath(), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        assertTrue("Original150s observation method remains finite", SystemClock.uptimeMillis()<windowedJourneyEnd);
+        Log.i(TAG, "systemui-observation-wire nonce=" + nonce + " name=" + name + " bytes=" + bytes.length + " sha256=" + observationSha256(bytes)
+            + " complete=" + wire.getBoolean("complete") + " reason=" + wire.getInt("reason") + " publishedUptimeMs=" + SystemClock.uptimeMillis() + " publishedElapsedRealtimeMs=" + SystemClock.elapsedRealtime() + " inputCount=0 selectionAuthority=false");
+    }
+
+    private final class SystemUiObservationPorts implements NotificationSystemUiObservation.Ports {
+        final StatusBarNotification expected;
+        final List<AccessibilityNodeInfo> acquiredNodes = new ArrayList<>();
+        final List<List<AccessibilityWindowInfo>> acquiredWindows = new ArrayList<>();
+        final JSONObject serviceMetadata = new JSONObject();
+        UiAutomation automation;
+        int originalFlags, originalCapabilities, duringFlags;
+        boolean baselineObserved;
+        SystemUiObservationPorts(StatusBarNotification expected) { this.expected=expected; }
+        public void begin(NotificationSystemUiObservation.Guard guard) {
+            automation=guard.read(instrumentation::getUiAutomation);
+            AccessibilityServiceInfo service=guard.read(automation::getServiceInfo);
+            if(service==null)throw new NotificationSystemUiObservation.Limit(9);
+            originalFlags=service.flags;originalCapabilities=guard.read(service::getCapabilities);baselineObserved=true;
+            duringFlags=originalFlags|AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            try { serviceMetadata.put("beforeFlags",originalFlags).put("duringFlags",duringFlags).put("capabilities",originalCapabilities); }
+            catch(Exception failure){throw new NotificationSystemUiObservation.Limit(13);}
+            if((originalCapabilities&AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT)==0)throw new NotificationSystemUiObservation.Limit(9);
+            AccessibilityServiceInfo current=guard.read(automation::getServiceInfo);
+            if(current==null || current.flags!=originalFlags || guard.read(current::getCapabilities)!=originalCapabilities)throw new NotificationSystemUiObservation.Limit(9);
+            if(current.flags!=duringFlags)guard.read(()->{current.flags=duringFlags;automation.setServiceInfo(current);return true;});
+            AccessibilityServiceInfo during=guard.read(automation::getServiceInfo);
+            if(during==null || during.flags!=duringFlags || guard.read(during::getCapabilities)!=originalCapabilities)throw new NotificationSystemUiObservation.Limit(9);
+        }
+        public boolean currentNotification(NotificationSystemUiObservation.Guard guard) {
+            Context context=instrumentation.getTargetContext();
+            NotificationManager manager=context.getSystemService(NotificationManager.class);
+            StatusBarNotification[] all=guard.read(manager::getActiveNotifications);
+            if(all==null || all.length>32)return false;
+            int matches=0;
+            for(StatusBarNotification item:all) {
+                guard.check();
+                if(guard.read(item::getId)!=expected.getId() || !guard.read(item::getPackageName).equals(expected.getPackageName())
+                    || !java.util.Objects.equals(guard.read(item::getTag),expected.getTag()))continue;
+                matches++;
+                Notification current=guard.read(item::getNotification);
+                CharSequence title=guard.read(()->current.extras.getCharSequence(Notification.EXTRA_TITLE,""));
+                CharSequence body=guard.read(()->current.extras.getCharSequence(Notification.EXTRA_TEXT,""));
+                if(!"default".equals(guard.read(current::getChannelId)) || !"Pairing request".contentEquals(title==null?"":title)
+                    || body==null || body.length()>8192 || !body.toString().contains(peerName) || !body.toString().contains(peerId)
+                    || current.contentIntent==null || !current.contentIntent.equals(expected.getNotification().contentIntent)
+                    || guard.read(item::getPostTime)!=expected.getPostTime() || !guard.read(item::getKey).equals(expected.getKey()))return false;
+            }
+            return matches==1;
+        }
+        public List<Object> windows(NotificationSystemUiObservation.Guard guard) {
+            List<AccessibilityWindowInfo> values=guard.read(()->{List<AccessibilityWindowInfo> list=automation.getWindows();acquiredWindows.add(list);return list;});
+            if(values==null)return null;
+            return new ArrayList<Object>(values);
+        }
+        public int[] window(Object raw,NotificationSystemUiObservation.Guard guard) {
+            AccessibilityWindowInfo window=(AccessibilityWindowInfo)raw;Rect bounds=new Rect();
+            int id=guard.read(window::getId),type=guard.read(window::getType),layer=guard.read(window::getLayer),display=guard.read(window::getDisplayId);
+            boolean active=guard.read(window::isActive),focused=guard.read(window::isFocused);
+            guard.read(()->{window.getBoundsInScreen(bounds);return true;});
+            return new int[]{id,type,layer,display,active?1:0,focused?1:0,bounds.left,bounds.top,bounds.right,bounds.bottom};
+        }
+        public Object root(Object raw,NotificationSystemUiObservation.Guard guard) {
+            return guard.read(()->{AccessibilityNodeInfo value=((AccessibilityWindowInfo)raw).getRoot();if(value!=null)acquiredNodes.add(value);return value;});
+        }
+        int packageKind(CharSequence value) {
+            if(value==null)return 0;String name=value.toString();
+            return name.equals(instrumentation.getTargetContext().getPackageName())?1:name.equals("com.android.systemui")?2:name.equals("android")?3:0;
+        }
+        public int[] rootIdentity(Object raw,NotificationSystemUiObservation.Guard guard) {
+            AccessibilityNodeInfo node=(AccessibilityNodeInfo)raw;
+            return new int[]{guard.read(node::getWindowId),packageKind(guard.read(node::getPackageName))};
+        }
+        int classKind(CharSequence value) {
+            String name=value==null?"":value.toString();
+            if(name.equals("android.view.View"))return 1;
+            if(name.equals("android.widget.TextView"))return 2;
+            if(name.equals("android.widget.Button")||name.equals("android.widget.ImageButton"))return 3;
+            if(name.equals("android.widget.FrameLayout")||name.equals("android.widget.LinearLayout")||name.equals("android.widget.RelativeLayout"))return 4;
+            if(name.equals("android.widget.ScrollView")||name.equals("android.widget.HorizontalScrollView")||name.equals("androidx.recyclerview.widget.RecyclerView"))return 5;
+            return name.equals("android.widget.ImageView")?6:0;
+        }
+        int resourceKind(String value) {
+            if(value==null)return 0;
+            for(int i=0;i<TARGET_IDS.length;i++)if(value.equals(TARGET_IDS[i]))return i+1;
+            return value.equals("android:id/actions")?17:value.equals("android:id/action0")?18:value.equals("android:id/action_container")?19:0;
+        }
+        int knownBits(CharSequence text,CharSequence description) {
+            if((text!=null&&text.length()>8192)||(description!=null&&description.length()>8192))throw new NotificationSystemUiObservation.Limit(8);
+            return (knownLiteral(text,"Pairing request",true)?1:0)|(knownLiteral(text,peerName,false)?2:0)|(knownLiteral(text,peerId,false)?4:0)
+                |(knownLiteral(description,"Pairing request",true)?8:0)|(knownLiteral(description,peerName,false)?16:0)|(knownLiteral(description,peerId,false)?32:0);
+        }
+        public NotificationSystemUiObservation.Node node(Object raw,NotificationSystemUiObservation.Guard guard) {
+            AccessibilityNodeInfo node=(AccessibilityNodeInfo)raw;Rect bounds=new Rect();
+            int window=guard.read(node::getWindowId),pkg=packageKind(guard.read(node::getPackageName));
+            int cls=classKind(guard.read(node::getClassName)),resource=resourceKind(guard.read(node::getViewIdResourceName));
+            guard.read(()->{node.getBoundsInScreen(bounds);return true;});
+            int flags=(guard.read(node::isVisibleToUser)?1:0)|(guard.read(node::isEnabled)?2:0)|(guard.read(node::isClickable)?4:0)
+                |((guard.read(node::getActions)&AccessibilityNodeInfo.ACTION_CLICK)!=0?8:0);
+            int matches=knownBits(guard.read(node::getText),guard.read(node::getContentDescription)),children=guard.read(node::getChildCount);
+            return new NotificationSystemUiObservation.Node(window,pkg,cls,resource,new int[]{bounds.left,bounds.top,bounds.right,bounds.bottom},flags,matches,children);
+        }
+        public Object child(Object raw,int index,NotificationSystemUiObservation.Guard guard) {
+            return guard.read(()->{AccessibilityNodeInfo value=((AccessibilityNodeInfo)raw).getChild(index);if(value!=null)acquiredNodes.add(value);return value;});
+        }
+        public boolean close() {
+            boolean restored=!baselineObserved,recycled=true;
+            // Deadline-independent cleanup owns only this already-scoped service bit.
+            if(baselineObserved)try {
+                AccessibilityServiceInfo current=automation.getServiceInfo();
+                if(current==null)throw new IllegalStateException();
+                int bit=AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+                boolean drift=(current.flags&~bit)!=(originalFlags&~bit)||current.getCapabilities()!=originalCapabilities;
+                int flags=(current.flags&~bit)|(originalFlags&bit);
+                if(current.flags!=flags){current.flags=flags;automation.setServiceInfo(current);}
+                AccessibilityServiceInfo after=automation.getServiceInfo();
+                restored=!drift&&after!=null&&after.flags==originalFlags&&after.getCapabilities()==originalCapabilities;
+                serviceMetadata.put("afterFlags",after==null?-1:after.flags).put("restored",restored).put("unownedDrift",drift);
+            }catch(Throwable failure){restored=false;}
+            IdentityHashMap<AccessibilityNodeInfo,Boolean> seen=new IdentityHashMap<>();
+            for(AccessibilityNodeInfo node:acquiredNodes)if(node!=null&&seen.put(node,true)==null)try{node.recycle();}catch(Throwable failure){recycled=false;}
+            IdentityHashMap<AccessibilityWindowInfo,Boolean> windows=new IdentityHashMap<>();
+            for(List<AccessibilityWindowInfo> list:acquiredWindows)if(list!=null)for(AccessibilityWindowInfo window:list)if(window!=null&&windows.put(window,true)==null)try{window.recycle();}catch(Throwable failure){recycled=false;}
+            try{serviceMetadata.put("allAcquiredRecycled",recycled);}catch(Throwable failure){recycled=false;}
+            return restored&&recycled;
+        }
     }
 
     private void assertWindowedRootOwner() throws Exception {
