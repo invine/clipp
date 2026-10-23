@@ -94,6 +94,7 @@ public final class NavigationProfilesTest {
     @Rule public final TestName testName = new TestName();
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private final JSONArray trace = new JSONArray();
+    private JSONObject issuesTabDiagnostic;
     private final AtomicReference<JSONObject> firstDraw = new AtomicReference<>();
     private final AtomicReference<String> firstDrawError = new AtomicReference<>();
     private ActivityScenario<MainActivity> scenario;
@@ -264,7 +265,7 @@ public final class NavigationProfilesTest {
         nativeBack(); awaitDialog("Pairing"); nativeBack(); awaitNoDialog();
         openIssues();
         assertTrue("Both genuine local recoveries stay discoverable", "true".equals(evaluate("!!(" + web.button("Open Device Name") + ")&&!!(" + web.button("Open Pairing") + ")")));
-        assertReachable(web.button("Open Pairing"), true); observe("both-local-recoveries");
+        assertIssuesPairingReachable(); observe("both-local-recoveries");
         tapButton("Open Device Name"); awaitDialog("Device Name"); awaitRawFocused(NAME, "   ");
         assertNameError(); if (nativeImeVisible()) hideIme();
         assertReachable(web.button("Cancel name edit"), true); tapButton("Cancel name edit"); awaitNoDialog();
@@ -1314,6 +1315,58 @@ public final class NavigationProfilesTest {
         checkObservation(end);
     }
 
+    private static final String QR_ISSUES_TAB_DIAGNOSTIC =
+        "(() => {\n" +
+        "  if (window.__clippQrIssuesTabDiagnostic) throw Error('diagnostic already armed');\n" +
+        "  const end = performance.now() + __REMAINING_MS__;\n" +
+        "  const state = {reads:[],keys:[],focus:[],dropped:0,retired:false};\n" +
+        "  let active = true, assigned = null, timer;\n" +
+        "  const dialogs = () => [...document.querySelectorAll('[data-task-dialog]')].filter(e => e.getClientRects().length);\n" +
+        "  const controls = d => d ? [...d.querySelectorAll('button,[href],input,textarea,select,[tabindex]')].slice(0,128) : [];\n" +
+        "  const describe = (e,d,list) => e ? {tag:['BUTTON','INPUT','TEXTAREA','SELECT','A','DIV','BODY'].includes(e.tagName)?e.tagName:'OTHER',role:e===assigned?'assigned':e.matches('[data-task-return]')?'task-return':'other',ordinal:list.indexOf(e),connected:e.isConnected===true,disabled:e.disabled===true,tabIndex:Number.isInteger(e.tabIndex)&&Math.abs(e.tabIndex)<32768?e.tabIndex:null,visible:!!e.getClientRects().length,blocked:!!e.closest('[inert],[hidden],[aria-hidden=\"true\"]'),inside:!!d&&d.contains(e)} : null;\n" +
+        "  const retain = (name,row,cap) => { if(state[name].length>=cap){state.dropped++;return;}state[name].push(row);if(JSON.stringify(state).length>12000){state[name].pop();state.dropped++;} };\n" +
+        "  const dispose = () => { if(!active)return;active=false;for(const [type,fn] of listeners)document.removeEventListener(type,fn,true);clearTimeout(timer);state.retired=true; };\n" +
+        "  const fresh = () => { if(!active)return false;if(performance.now()>=end){dispose();return false;}return true; };\n" +
+        "  const relation = e => {const ds=dialogs(),d=ds.at(-1);return {at:Math.floor(performance.now()),assigned:e===assigned,inside:!!d&&d.contains(e),documentFocused:document.hasFocus(),dialogCount:Math.min(ds.length,128)};};\n" +
+        "  const key = e => {if(!fresh()||e.key!=='Tab')return;retain('keys',{...relation(e.target),type:e.type==='keyup'?'up':'down',shift:e.shiftKey===true,repeat:e.repeat===true,defaultPreventedAtCapture:e.defaultPrevented===true,trusted:e.isTrusted===true},48);};\n" +
+        "  const focus = e => {if(fresh())retain('focus',relation(e.target),32);};\n" +
+        "  const listeners = [['keydown',key],['keyup',key],['focusin',focus]];\n" +
+        "  for(const [type,fn] of listeners)document.addEventListener(type,fn,{capture:true,passive:true});\n" +
+        "  timer=setTimeout(dispose,Math.max(0,end-performance.now()));\n" +
+        "  const snapshot = () => JSON.parse(JSON.stringify(state));\n" +
+        "  window.__clippQrIssuesTabDiagnostic = {\n" +
+        "    read(target) { assigned=target;const matches=document.activeElement===target;if(fresh()){const ds=dialogs(),d=ds.at(-1),list=controls(d);retain('reads',{at:Math.floor(performance.now()),matches,documentFocused:document.hasFocus(),dialogCount:Math.min(ds.length,128),controlCount:list.length,target:describe(target,d,list),active:describe(document.activeElement,d,list)},24);}return {matches,diagnostic:snapshot()}; },\n" +
+        "    finish() {dispose();return snapshot();}\n" +
+        "  };\n" +
+        "  return true;\n" +
+        "})()\n";
+
+    /** Passive metadata only for the full QR Issues route; all other reachability calls stay unchanged. */
+    private void assertIssuesPairingReachable() throws Exception {
+        String element = web.button("Open Pairing");
+        issuesTabDiagnostic = new JSONObject();
+        boolean reached = false;
+        try {
+            checkDeadline();
+            assertEquals("Passive Issues Tab recorder armed", "true", evaluate(QR_ISSUES_TAB_DIAGNOSTIC.replace("__REMAINING_MS__", Long.toString(Math.max(0, deadline - SystemClock.uptimeMillis())))));
+            for (int i = 0; i < 24; i++) {
+                checkDeadline();
+                JSONObject sample = new JSONObject(evaluate("window.__clippQrIssuesTabDiagnostic.read(" + element + ")"));
+                issuesTabDiagnostic = sample.getJSONObject("diagnostic");
+                if (sample.getBoolean("matches")) { reached = true; break; }
+                key(KeyEvent.KEYCODE_TAB);
+            }
+            if (!reached) throw new AssertionError("Actual native Tab could not reach the assigned public final control");
+            assertReachable(element, false);
+        } finally {
+            // A late cached read cannot qualify focus. Document teardown owns retirement if the journey expired.
+            if (SystemClock.uptimeMillis() < deadline) {
+                try { issuesTabDiagnostic = new JSONObject(evaluate("window.__clippQrIssuesTabDiagnostic.finish()")); }
+                catch (Throwable diagnosticError) { issuesTabDiagnostic.put("finishUnavailable", true); }
+            } else issuesTabDiagnostic.put("finishNotReadAfterDeadline", true);
+        }
+    }
+
     private void focusWithNativeTab(String element) throws Exception {
         for (int i = 0; i < 24; i++) {
             checkDeadline();
@@ -1670,6 +1723,7 @@ public final class NavigationProfilesTest {
                 .put("rootProcessRestartAndDataContinuityProofStillRequired", selectedCase.startsWith("theme"))
                 .put("destroyedDocumentDraftSurvivalClaimed", false).put("navMode", "root assignment/readback only; not inferred from native inset height")
                 .put("rootJUnitGuestClosureAndProfileEvidenceStillRequired", true);
+            if (issuesTabDiagnostic != null) witness.put("issuesTabDiagnostic", issuesTabDiagnostic);
             if (closeDiagnosticsEnabled) { capCloseDiagnostics(); witness.put("closeTransitionDiagnostics", closeDiagnostics); }
             if (closeDiagnosticsEnabled) { capFinalCancelDiagnostics(); witness.put("finalCancelDiagnostics", finalCancelDiagnostics); }
             if (closeEventsEnabled) { capCloseEvents(); witness.put("closeEventDelivery", closeEvents); }
