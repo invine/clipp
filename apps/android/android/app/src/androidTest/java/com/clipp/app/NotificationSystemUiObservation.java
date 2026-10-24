@@ -131,4 +131,61 @@ final class NotificationSystemUiObservation {
         }
         return result;
     }
+
+    /** Separate known-text observation. No input/selection action exists on this port. */
+    interface KnownTextPorts {
+        boolean current();
+        KnownOwner owner();
+        List<Object> query(Object root,int kind);
+        Node node(Object handle);
+        boolean same(Object a,Object b);
+        boolean close();
+    }
+    static final class KnownOwner {
+        final Object root;final int window;final int[] bounds;
+        KnownOwner(Object root,int window,int[] bounds){this.root=root;this.window=window;this.bounds=bounds;}
+    }
+    static final class KnownTextResult {
+        final int[] counts={-1,-1};final List<int[]> nodes=new ArrayList<>();
+        final long start,startElapsed,end,endElapsed;
+        long finished,finishedElapsed;int reason,reads,window=-1;int[] bounds;
+        boolean notificationBefore,notificationAfter,restored,complete;
+        KnownTextResult(long start,long startElapsed,long end,long endElapsed){this.start=start;this.startElapsed=startElapsed;this.end=end;this.endElapsed=endElapsed;}
+    }
+    private static boolean knownRect(int[] r){return r!=null&&r.length==4&&r[2]>=r[0]&&r[3]>=r[1];}
+    static KnownTextResult runKnownText(KnownTextPorts ports,Clock clock,long readyEnd,long readyEndElapsed){
+        long start=clock.uptime(),elapsed=clock.elapsed();
+        KnownTextResult r=new KnownTextResult(start,elapsed,Math.min(readyEnd,start+5000),Math.min(readyEndElapsed,elapsed+5000));
+        Guard guard=new Guard(clock,r.end,r.endElapsed);
+        try{
+            r.notificationBefore=guard.read(ports::current);if(!r.notificationBefore)throw new Limit(10);
+            KnownOwner owner=guard.read(ports::owner);
+            if(owner==null||owner.root==null||owner.window<0||!knownRect(owner.bounds)||owner.bounds[2]<=owner.bounds[0]||owner.bounds[3]<=owner.bounds[1])throw new Limit(8);
+            r.window=owner.window;r.bounds=owner.bounds.clone();
+            for(int kind=1;kind<=2;kind++){
+                final int fixedKind=kind;
+                List<Object> values=guard.read(()->ports.query(owner.root,fixedKind));
+                if(values==null)throw new Limit(7);
+                r.counts[kind-1]=values.size();if(values.size()>4)throw new Limit(3);
+                for(int index=0;index<values.size();index++){
+                    Object handle=values.get(index);if(handle==null)throw new Limit(7);
+                    Node node=guard.read(()->ports.node(handle));
+                    if(node==null||node.window!=owner.window||(node.packageKind!=2&&node.packageKind!=3)||node.classKind<0||node.classKind>6||node.resourceKind<0||node.resourceKind>19||node.flags<0||node.flags>15||node.matches<0||node.matches>63||!knownRect(node.bounds))throw new Limit(8);
+                    r.nodes.add(new int[]{kind,index,node.window,node.packageKind,node.classKind,node.resourceKind,node.flags,node.matches,node.bounds[0],node.bounds[1],node.bounds[2],node.bounds[3]});
+                }
+            }
+            KnownOwner after=guard.read(ports::owner);
+            if(after==null||after.window!=owner.window||!ports.same(owner.root,after.root)||!Arrays.equals(r.bounds,after.bounds))throw new Limit(11);
+            r.notificationAfter=guard.read(ports::current);if(!r.notificationAfter)throw new Limit(10);guard.check();
+        }catch(Limit limit){r.reason=limit.reason;}
+        catch(Throwable failure){r.reason=13;}
+        finally{
+            try{r.restored=ports.close();}catch(Throwable failure){r.restored=false;}
+            r.finished=clock.uptime();r.finishedElapsed=clock.elapsed();r.reads=guard.reads;
+            if(!r.restored&&r.reason==0)r.reason=9;
+            if((r.finished>=r.end||r.finishedElapsed>=r.endElapsed)&&r.reason==0)r.reason=1;
+            r.complete=r.reason==0&&r.notificationBefore&&r.notificationAfter&&r.restored;
+        }
+        return r;
+    }
 }

@@ -66,6 +66,7 @@ public final class NotificationRequestsTest {
     @Rule public final TestName testName = new TestName();
     private boolean windowedRootSelection;
     private boolean systemUiObservationOnly;
+    private boolean systemUiKnownTextOnly;
     private boolean systemUiReadiness;
     private boolean nativeBodySelection;
     private long windowedJourneyEnd;
@@ -94,8 +95,14 @@ public final class NotificationRequestsTest {
         String passive = args.getString("notificationSystemUiObservationOnly", "false");
         assertTrue("Only explicit passive SystemUI observation", passive.equals("true") || passive.equals("false"));
         systemUiObservationOnly = passive.equals("true");
+        String knownText=args.getString("notificationSystemUiKnownTextOnly","false");
+        assertTrue("Only explicit separate known-text diagnostic",knownText.equals("true")||knownText.equals("false"));
+        systemUiKnownTextOnly=knownText.equals("true");
+        assertEquals("Known-text observation has its own diagnostic method",systemUiKnownTextOnly,
+            testName.getMethodName().equals("genuinePeerNotificationSystemUiKnownTextOnly"));
+        if(systemUiKnownTextOnly)assertEquals("Known-text observation requires original readiness","true",args.getString("notificationSystemUiReadiness","false"));
         assertEquals("Passive observation has its own diagnostic method", systemUiObservationOnly,
-            testName.getMethodName().equals("genuinePeerNotificationSystemUiObservationOnly"));
+            testName.getMethodName().equals("genuinePeerNotificationSystemUiObservationOnly")||systemUiKnownTextOnly);
         if (systemUiObservationOnly) {
             assertFalse("Passive observation is separate from CUA selection", windowedRootSelection);
             for (String diagnostic : new String[]{"notificationWindowCensus", "notificationInteractiveWindowCensus",
@@ -317,8 +324,76 @@ public final class NotificationRequestsTest {
         assertEquals("Arrival alone cannot replace dirty editor", draft, web.evaluate(textarea + ".value"));
         assertEquals("Arrival keeps the task visible", "Paste pairing text", web.evaluate(
             "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()"));
-        if(systemUiReadiness)observeSystemUiNotificationWithReadiness(posted,textarea,draft);
+        if(systemUiKnownTextOnly)observeSystemUiKnownText(posted,textarea,draft);
+        else if(systemUiReadiness)observeSystemUiNotificationWithReadiness(posted,textarea,draft);
         else {expandNotificationsWithCompletionWitness();observeSystemUiNotification(posted,textarea,draft);}
+    }
+
+    @Test
+    public void genuinePeerNotificationSystemUiKnownTextOnly() throws Exception {
+        genuinePeerNotificationSystemUiObservationOnly();
+    }
+
+    /** Separate two-query diagnostic: no selection proof or action can be produced. */
+    private void observeSystemUiKnownText(StatusBarNotification posted,String textarea,String draft) throws Exception {
+        assertTrue("Separate known-text diagnostic only",systemUiKnownTextOnly&&systemUiObservationOnly&&systemUiReadiness&&!nativeBodySelection&&!windowedRootSelection);
+        assertWindowedRootOwner();
+        assertEquals("Known-text observation retains dirty task",draft,web.evaluate(textarea+".value"));
+        NotificationSystemUiReadiness.Budget budget=new NotificationSystemUiReadiness.Budget(new NotificationSystemUiReadiness.Clock(){
+            public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}
+        },windowedJourneyEnd);
+        JSONObject ready=new JSONObject().put("kind","NOTIFICATION16_KNOWN_TEXT_READY_V1").put("nonce",nonce)
+            .put("package",posted.getPackageName()).put("notificationId",posted.getId()).put("channel","default")
+            .put("peerId",peerId).put("peerName",peerName).put("appPid",android.os.Process.myPid()).put("appUid",android.os.Process.myUid())
+            .put("route","UIAUTOMATION_PASSIVE_KNOWN_TEXT").put("readyUptimeMs",budget.start).put("expiresUptimeMs",budget.end)
+            .put("readyElapsedRealtimeMs",budget.startElapsed).put("expiresElapsedRealtimeMs",budget.endElapsed)
+            .put("maximumReadyMs",60000).put("maximumObservationMs",5000).put("selectionAuthority",false).put("nativeBodyQualified",false);
+        byte[] readyBytes=ready.toString().getBytes(StandardCharsets.UTF_8);assertTrue("Bounded known-text readiness",readyBytes.length<=4096);
+        Log.i(TAG,"systemui-known-text-ready nonce="+nonce+" metadata="+ready);
+        SystemUiObservationPorts baseline=new SystemUiObservationPorts(posted);NativeBodyPorts scoped=null;
+        NotificationSystemUiObservation.KnownTextResult result=null;
+        try{
+            awaitSystemUiReadiness(baseline,budget);
+            scoped=new NativeBodyPorts(baseline,budget);
+            final NativeBodyPorts owned=scoped;
+            result=NotificationSystemUiObservation.runKnownText(new NotificationSystemUiObservation.KnownTextPorts(){
+                public boolean current(){return owned.current();}
+                public NotificationSystemUiObservation.KnownOwner owner(){
+                    NotificationSystemUiBodySelection.Owner value=owned.owner();
+                    return new NotificationSystemUiObservation.KnownOwner(value.root,value.window,value.bounds);
+                }
+                public List<Object> query(Object root,int kind){
+                    NotificationSystemUiBodySelection.require(kind==1||kind==2,4);
+                    return owned.query(root,kind==1?peerId:peerName,false);
+                }
+                public NotificationSystemUiObservation.Node node(Object handle){return baseline.node(handle,owned.guard);}
+                public boolean same(Object a,Object b){return owned.same(a,b);}
+                public boolean close(){return owned.close();}
+            },new NotificationSystemUiObservation.Clock(){
+                public long uptime(){return SystemClock.uptimeMillis();}public long elapsed(){return SystemClock.elapsedRealtime();}
+            },scoped.guard.end,scoped.guard.endElapsed);
+        }finally{
+            if(result==null){boolean restored=false;try{restored=scoped==null?baseline.close():scoped.close();}catch(Throwable failure){/* Original preparation failure remains authoritative. */}
+                Log.i(TAG,"systemui-known-text-preparation-cleanup nonce="+nonce+" restored="+restored+" selectionAuthority=false nativeBodyQualified=false");}
+        }
+        JSONObject wire=new JSONObject().put("kind","NOTIFICATION16_SYSTEMUI_KNOWN_TEXT_V1").put("nonce",nonce)
+            .put("readySha256",observationSha256(readyBytes)).put("selectionAuthority",false).put("nativeBodyQualified",false)
+            .put("ticket16Qualified",false).put("inputCount",0).put("atomicSnapshot",false).put("complete",result.complete).put("reason",result.reason)
+            .put("readOperations",result.reads).put("startedUptimeMs",result.start).put("startedElapsedRealtimeMs",result.startElapsed)
+            .put("deadlineUptimeMs",result.end).put("deadlineElapsedRealtimeMs",result.endElapsed)
+            .put("finishedUptimeMs",result.finished).put("finishedElapsedRealtimeMs",result.finishedElapsed)
+            .put("notificationBefore",result.notificationBefore).put("notificationAfter",result.notificationAfter)
+            .put("restored",result.restored).put("windowId",result.window).put("windowBounds",result.bounds==null?JSONObject.NULL:new JSONArray(result.bounds))
+            .put("queryCounts",new JSONArray(result.counts)).put("service",baseline.serviceMetadata);
+        JSONArray rows=new JSONArray();for(int[] row:result.nodes)rows.put(new JSONArray(row));wire.put("rows",rows);
+        byte[] bytes=wire.toString().getBytes(StandardCharsets.UTF_8);assertTrue("Fixed known-text wire bounded4KiB",bytes.length<=4096);
+        String name="notification16-known-text-"+nonce+".json";
+        Files.write(new File(instrumentation.getTargetContext().getCacheDir(),name).toPath(),bytes,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE);
+        Log.i(TAG,"systemui-known-text-wire nonce="+nonce+" name="+name+" bytes="+bytes.length+" sha256="+observationSha256(bytes)
+            +" complete="+result.complete+" reason="+result.reason+" inputCount=0 selectionAuthority=false nativeBodyQualified=false");
+        assertTrue("Original150s known-text observation remains finite",SystemClock.uptimeMillis()<windowedJourneyEnd);
+        assertTrue("Known-text diagnostic itself must complete; zero matches never authorize selection",result.complete);
+        budget.checkReady();
     }
 
     private static String observationSha256(byte[] bytes) throws Exception {
@@ -429,6 +504,7 @@ public final class NotificationRequestsTest {
             }
             candidate=NotificationSystemUiReadiness.requireWindow(originalBounds,rows,gate.event);budget.checkPreparation();budget.checkReady();ready=true;
             if(nativeBodySelection)ports.nativeBodyReadyWindow=candidate;
+            else if(systemUiKnownTextOnly)ports.nativeBodyReadyWindow=candidate;
         } catch(NotificationSystemUiReadiness.Limit limit){failure="UNKNOWN_"+limit.reason;}
         catch(NotificationSystemUiObservation.Limit limit){failure="UNKNOWN_OBSERVATION_"+limit.reason;}
         catch(Throwable ignored){failure="UNKNOWN_PLATFORM";}
