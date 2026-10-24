@@ -1,4 +1,11 @@
 /** Input for the separately selected main-process owning acceptance entry. */
+export type SyntheticClipFact = Readonly<{
+  id: string;
+  originPeerId: string;
+  capturedAt: number;
+  shareExpiresAt: number;
+  pinned: boolean;
+}>;
 type Common = Readonly<{
   version: 1;
   caseId: string;
@@ -6,13 +13,15 @@ type Common = Readonly<{
 }>;
 export type ElectronResetOwningManifest = Common &
   (
-    | Readonly<{ mode: "observe-preflight" }>
+    | Readonly<{ mode: "observe-preflight"; markers: readonly string[] }>
     | Readonly<{
         mode: "execute" | "observe-replay";
         operationId: string;
         reviewedPeerId: string;
         expected: Readonly<{
           autoSync: boolean;
+          sharingLifetimeMs: number;
+          syntheticClips: readonly SyntheticClipFact[];
           localRetentionMs: number;
           markers: readonly string[];
           nextMarker: string;
@@ -54,6 +63,38 @@ function marker(value: unknown): value is string {
     !/[\x00-\x1f\x7f]/.test(value)
   );
 }
+export function isSyntheticClipFact(
+  value: unknown
+): value is SyntheticClipFact {
+  return (
+    record(value) &&
+    exact(value, [
+      "id",
+      "originPeerId",
+      "capturedAt",
+      "shareExpiresAt",
+      "pinned",
+    ]) &&
+    id(value.id) &&
+    id(value.originPeerId, 512) &&
+    integer(value.capturedAt, 0, Number.MAX_SAFE_INTEGER) &&
+    integer(
+      value.shareExpiresAt,
+      value.capturedAt + 1,
+      Math.min(Number.MAX_SAFE_INTEGER, value.capturedAt + 2592000000)
+    ) &&
+    typeof value.pinned === "boolean"
+  );
+}
+function markers(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= 8 &&
+    value.every(marker) &&
+    new Set(value).size === value.length
+  );
+}
 export function parseElectronResetOwningManifest(
   text: string,
   now = Date.now()
@@ -79,8 +120,16 @@ export function parseElectronResetOwningManifest(
     caseId: value.caseId,
     deadlineUnixMs: value.deadlineUnixMs,
   };
-  if (value.mode === "observe-preflight" && exact(value, commonKeys)) {
-    return Object.freeze({ ...common, mode: value.mode });
+  if (
+    value.mode === "observe-preflight" &&
+    exact(value, [...commonKeys, "markers"]) &&
+    markers(value.markers)
+  ) {
+    return Object.freeze({
+      ...common,
+      mode: value.mode,
+      markers: Object.freeze([...value.markers]),
+    });
   }
   if (
     (value.mode !== "execute" && value.mode !== "observe-replay") ||
@@ -99,6 +148,8 @@ export function parseElectronResetOwningManifest(
     !record(e) ||
     !exact(e, [
       "autoSync",
+      "sharingLifetimeMs",
+      "syntheticClips",
       "localRetentionMs",
       "markers",
       "nextMarker",
@@ -106,15 +157,21 @@ export function parseElectronResetOwningManifest(
       "configurationSha256",
     ]) ||
     typeof e.autoSync !== "boolean" ||
+    !integer(e.sharingLifetimeMs, 1, 2592000000) ||
+    !Array.isArray(e.syntheticClips) ||
+    !e.syntheticClips.every(isSyntheticClipFact) ||
     !integer(e.localRetentionMs, 0, 315360000000) ||
     !integer(e.pinnedCount, 0, 8) ||
     typeof e.configurationSha256 !== "string" ||
     !/^[0-9a-f]{64}$/.test(e.configurationSha256) ||
-    !Array.isArray(e.markers) ||
-    e.markers.length < 1 ||
-    e.markers.length > 8 ||
-    !e.markers.every(marker) ||
-    new Set(e.markers).size !== e.markers.length ||
+    !markers(e.markers) ||
+    e.syntheticClips.length !== e.markers.length ||
+    new Set(e.syntheticClips.map((clip) => clip.id)).size !==
+      e.syntheticClips.length ||
+    !e.syntheticClips.every(
+      (clip) => clip.originPeerId === value.reviewedPeerId
+    ) ||
+    e.syntheticClips.filter((clip) => clip.pinned).length !== e.pinnedCount ||
     !marker(e.nextMarker) ||
     e.markers.includes(e.nextMarker)
   )
@@ -126,6 +183,18 @@ export function parseElectronResetOwningManifest(
     reviewedPeerId: value.reviewedPeerId,
     expected: Object.freeze({
       autoSync: e.autoSync,
+      sharingLifetimeMs: e.sharingLifetimeMs,
+      syntheticClips: Object.freeze(
+        e.syntheticClips.map((clip) =>
+          Object.freeze({
+            id: clip.id,
+            originPeerId: clip.originPeerId,
+            capturedAt: clip.capturedAt,
+            shareExpiresAt: clip.shareExpiresAt,
+            pinned: clip.pinned,
+          })
+        )
+      ),
       localRetentionMs: e.localRetentionMs,
       markers: Object.freeze([...e.markers]),
       nextMarker: e.nextMarker,

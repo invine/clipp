@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { parseElectronResetOwningManifest } from "./resetOwningManifest.js";
+import {
+  isSyntheticClipFact,
+  parseElectronResetOwningManifest,
+} from "./resetOwningManifest.js";
 
 type Progress = Readonly<Record<string, string | number | boolean>>;
 
@@ -108,6 +111,80 @@ export async function startElectronResetOwningAcceptance(
       (initial.clips.length !== 0 || initial.pinnedIds.length !== 0)
     )
       throw new Error("replay_history_not_empty");
+    const markers =
+      manifest.mode === "observe-preflight"
+        ? manifest.markers
+        : manifest.expected.markers;
+    let projectionId = 0;
+    let previousProjection = "";
+    const project = (state: Awaited<ReturnType<Owner["publicState"]>>) => {
+      if (
+        !Number.isSafeInteger(state.sharingLifetimeMs) ||
+        state.sharingLifetimeMs < 1 ||
+        state.sharingLifetimeMs > 2592000000
+      )
+        throw new Error("synthetic_projection_unavailable");
+      const facts = markers.map((marker) => {
+        const matching = state.clips.filter((clip) => clip.content === marker);
+        if (matching.length > 1)
+          throw new Error("synthetic_projection_ambiguous");
+        if (!matching.length) return null;
+        const clip = matching[0];
+        const fact = {
+          id: clip.id,
+          originPeerId: clip.originPeerId,
+          capturedAt: clip.capturedAt,
+          shareExpiresAt: clip.shareExpiresAt,
+          pinned: state.pinnedIds.some((id) => id === clip.id),
+        };
+        if (
+          !isSyntheticClipFact(fact) ||
+          fact.originPeerId !== state.identity!.deviceId
+        )
+          throw new Error("synthetic_projection_unavailable");
+        return fact;
+      });
+      const ids = facts.flatMap((fact) => (fact ? [fact.id] : []));
+      if (new Set(ids).size !== ids.length)
+        throw new Error("synthetic_projection_ambiguous");
+      return facts;
+    };
+    const publishProjection = (
+      state: Awaited<ReturnType<Owner["publicState"]>>,
+      facts: ReturnType<typeof project>
+    ) => {
+      const fingerprint = JSON.stringify([
+        state.localRetentionMs,
+        state.sharingLifetimeMs,
+        facts,
+      ]);
+      if (fingerprint !== previousProjection) {
+        const next = projectionId + 1;
+        for (let index = 0; index < facts.length; index++) {
+          const fact = facts[index];
+          if (
+            fact &&
+            !publish("synthetic-clip", {
+              projectionId: next,
+              markerIndex: index,
+              clipId: fact.id,
+              originPeerId: fact.originPeerId,
+              capturedAt: fact.capturedAt,
+              shareExpiresAt: fact.shareExpiresAt,
+              pinned: fact.pinned,
+            })
+          )
+            throw new Error("observation_unavailable");
+        }
+        projectionId = next;
+        previousProjection = fingerprint;
+      }
+      return {
+        syntheticProjectionId: projectionId,
+        syntheticClipCount: facts.filter((fact) => fact !== null).length,
+        sharingLifetimeMs: state.sharingLifetimeMs,
+      };
+    };
     const observation = async () => {
       if (!current() || observing) return;
       observing = true;
@@ -154,6 +231,9 @@ export async function startElectronResetOwningAcceptance(
               ? "replay-observation"
               : "preflight-observation",
             {
+              ...(manifest.mode === "observe-preflight"
+                ? publishProjection(state, project(state))
+                : {}),
               currentPeerId: generatedPeerId,
               clipCount: state.clips.length,
               pinnedCount: state.pinnedIds.length,
@@ -220,6 +300,22 @@ export async function startElectronResetOwningAcceptance(
         )
       )
         throw new Error("preflight_mismatch");
+      const facts = project(initial);
+      if (
+        initial.sharingLifetimeMs !== manifest.expected.sharingLifetimeMs ||
+        JSON.stringify(facts) !==
+          JSON.stringify(manifest.expected.syntheticClips)
+      )
+        throw new Error("preflight_mismatch");
+      insistCurrent();
+      if (
+        !publish("pre-reset-matched", {
+          ...publishProjection(initial, facts),
+          currentPeerId: initial.identity!.deviceId,
+          localRetentionMs: initial.localRetentionMs,
+        })
+      )
+        throw new Error("observation_unavailable");
       insistCurrent();
       if (
         !publish("begin-requested", {

@@ -347,7 +347,9 @@ try {
       {
         autoSync: false,
         theme: "dark",
-        ...(entryMode ? { localRetentionMs: 604800000 } : {}),
+        ...(entryMode
+          ? { localRetentionMs: 604800000, sharingLifetimeMs: 3600000 }
+          : {}),
       }
     );
     if (entryMode === "settings") {
@@ -357,6 +359,12 @@ try {
         (await owner.publicState()).autoSync,
         false,
         "generic settings must update the same live Auto Sync owner as public state"
+      );
+      assert.equal(saved.snapshot.state.sharingLifetimeMs, 3600000);
+      assert.equal(
+        (await owner.publicState()).sharingLifetimeMs,
+        3600000,
+        "public state must expose the same applied sharing policy used by the factory"
       );
       await owner.stop();
       rmSync(directory, { recursive: true, force: true });
@@ -380,39 +388,71 @@ try {
         caseId: "electron29-source",
         deadlineUnixMs: Date.now() + 10000,
       };
-      const manifest =
-        entryMode === "preflight"
-          ? { ...common, mode: "observe-preflight" }
-          : {
-              ...common,
-              mode: entryMode === "replay" ? "observe-replay" : "execute",
-              operationId: "electron-owning-reset",
-              reviewedPeerId:
-                entryMode === "mismatch"
-                  ? "another-peer"
-                  : initial.identity.deviceId,
-              expected: {
-                autoSync: false,
-                localRetentionMs: 604800000,
-                markers: ["clipp-reset-before"],
-                nextMarker: "clipp-reset-after",
-                pinnedCount: 1,
-                configurationSha256: createHash("sha256")
-                  .update(JSON.stringify(state.managedRelayConfigurations))
-                  .digest("hex"),
-              },
-            };
+      const manifest = ["preflight", "preflight-policy"].includes(entryMode)
+        ? {
+            ...common,
+            mode: "observe-preflight",
+            markers: ["clipp-reset-before"],
+          }
+        : {
+            ...common,
+            mode: entryMode === "replay" ? "observe-replay" : "execute",
+            operationId: "electron-owning-reset",
+            reviewedPeerId:
+              entryMode === "mismatch"
+                ? "another-peer"
+                : initial.identity.deviceId,
+            expected: {
+              autoSync: false,
+              sharingLifetimeMs:
+                entryMode === "policy-mismatch" ? 86400000 : 3600000,
+              syntheticClips: [
+                {
+                  id:
+                    entryMode === "metadata-mismatch"
+                      ? "different-clip"
+                      : state.clips[0].id,
+                  originPeerId:
+                    entryMode === "mismatch"
+                      ? "another-peer"
+                      : initial.identity.deviceId,
+                  capturedAt: state.clips[0].capturedAt,
+                  shareExpiresAt: state.clips[0].shareExpiresAt,
+                  pinned: true,
+                },
+              ],
+              localRetentionMs: 604800000,
+              markers: ["clipp-reset-before"],
+              nextMarker: "clipp-reset-after",
+              pinnedCount: 1,
+              configurationSha256: createHash("sha256")
+                .update(JSON.stringify(state.managedRelayConfigurations))
+                .digest("hex"),
+            },
+          };
+      if (entryMode === "metadata-missing")
+        delete manifest.expected.syntheticClips;
       const records = [];
       const starting = entry.startElectronResetOwningAcceptance(
         JSON.stringify(manifest),
         (row) => records.push(row)
       );
-      if (entryMode === "mismatch" || entryMode === "replay") {
+      if (
+        [
+          "mismatch",
+          "replay",
+          "metadata-mismatch",
+          "metadata-missing",
+          "policy-mismatch",
+        ].includes(entryMode)
+      ) {
         await assert.rejects(
           starting,
-          entryMode === "mismatch"
-            ? /preflight_mismatch/
-            : /replay_history_not_empty/
+          entryMode === "metadata-missing"
+            ? /invalid_manifest/
+            : entryMode === "replay"
+              ? /replay_history_not_empty/
+              : /preflight_mismatch/
         );
         assert.equal(restartAttempts, 0);
         assert.equal(
@@ -421,7 +461,7 @@ try {
         );
       } else {
         const observer = await starting;
-        if (entryMode === "preflight") {
+        if (["preflight", "preflight-policy"].includes(entryMode)) {
           assert.ok(
             records.some(
               (row) =>
@@ -432,9 +472,66 @@ try {
             )
           );
           assert.equal(restartAttempts, 0);
+          if (entryMode === "preflight-policy") {
+            const clip = state.clips[0];
+            const projected = records.filter(
+              (row) => row.stage === "synthetic-clip"
+            );
+            assert.equal(projected.length, 1);
+            assert.equal(projected[0].clipId, clip.id);
+            assert.equal(projected[0].originPeerId, initial.identity.deviceId);
+            assert.equal(projected[0].capturedAt, clip.capturedAt);
+            assert.equal(
+              projected[0].shareExpiresAt,
+              clip.capturedAt + 3600000
+            );
+            assert.equal(projected[0].pinned, true);
+            assert.ok(
+              records.some(
+                (row) =>
+                  row.stage === "preflight-observation" &&
+                  row.sharingLifetimeMs === 3600000 &&
+                  row.syntheticClipCount === 1 &&
+                  row.syntheticProjectionId === projected[0].projectionId
+              )
+            );
+            assert.ok(
+              records.every(
+                (row) => !JSON.stringify(row).includes("clipp-reset-before")
+              ),
+              "evidence must not serialize raw clipboard content"
+            );
+            console.log(
+              "SOURCE_PROJECTION_WIRE=" +
+                JSON.stringify(
+                  records.map((row) => ({
+                    atUnixMs: Date.now(),
+                    kind: "owning-progress",
+                    clipboardReads: 0,
+                    clipboardWrites: 0,
+                    ...row,
+                  }))
+                )
+            );
+          }
         } else {
           assert.equal(entryMode, "execute");
           assert.equal(restartAttempts, 1);
+          const matched = records.findIndex(
+            (row) => row.stage === "pre-reset-matched"
+          );
+          const begin = records.findIndex(
+            (row) => row.stage === "begin-requested"
+          );
+          assert.ok(
+            matched >= 0 && matched < begin,
+            "persisted facts must match before any real reset begin"
+          );
+          assert.equal(records[matched].sharingLifetimeMs, 3600000);
+          assert.equal(
+            records.find((row) => row.stage === "synthetic-clip").clipId,
+            state.clips[0].id
+          );
           assert.ok(
             records.some(
               (row) =>

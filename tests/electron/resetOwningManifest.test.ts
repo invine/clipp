@@ -10,6 +10,16 @@ const manifest = {
   reviewedPeerId: "former-peer",
   expected: {
     autoSync: false,
+    sharingLifetimeMs: 3600000,
+    syntheticClips: [
+      {
+        id: "clip-one",
+        originPeerId: "former-peer",
+        capturedAt: now - 1000,
+        shareExpiresAt: now + 3599000,
+        pinned: true,
+      },
+    ],
     localRetentionMs: 604800000,
     markers: ["clipp-reset-before"],
     nextMarker: "clipp-reset-after",
@@ -53,3 +63,63 @@ it.each([
     parseElectronResetOwningManifest(JSON.stringify(value), now)
   ).toThrow("invalid_manifest");
 });
+
+it("requires the exact bounded synthetic allowlist on preflight", () => {
+  const value = {
+    version: 1,
+    mode: "observe-preflight",
+    caseId: "case",
+    deadlineUnixMs: now + 1,
+    markers: ["clipp-reset-public"],
+  };
+  expect(
+    parseElectronResetOwningManifest(JSON.stringify(value), now).mode
+  ).toBe("observe-preflight");
+  const { markers: ignored, ...missing } = value;
+  void ignored;
+  expect(() =>
+    parseElectronResetOwningManifest(JSON.stringify(missing), now)
+  ).toThrow("invalid_manifest");
+});
+it.each([
+  { ...manifest.expected, sharingLifetimeMs: 0 },
+  { ...manifest.expected, syntheticClips: [] },
+  {
+    ...manifest.expected,
+    syntheticClips: [
+      { ...manifest.expected.syntheticClips[0], originPeerId: "foreign" },
+    ],
+  },
+  {
+    ...manifest.expected,
+    syntheticClips: [
+      { ...manifest.expected.syntheticClips[0], content: "forbidden" },
+    ],
+  },
+  {
+    ...manifest.expected,
+    syntheticClips: [
+      { ...manifest.expected.syntheticClips[0], capturedAt: 0.5 },
+    ],
+  },
+  {
+    ...manifest.expected,
+    syntheticClips: [
+      { ...manifest.expected.syntheticClips[0], shareExpiresAt: now - 1001 },
+    ],
+  },
+  {
+    ...manifest.expected,
+    syntheticClips: [{ ...manifest.expected.syntheticClips[0], pinned: false }],
+  },
+])(
+  "refuses incomplete, foreign or unsafe persisted metadata %#",
+  (expected) => {
+    expect(() =>
+      parseElectronResetOwningManifest(
+        JSON.stringify({ ...manifest, expected }),
+        now
+      )
+    ).toThrow("invalid_manifest");
+  }
+);

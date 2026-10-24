@@ -723,6 +723,7 @@ async function composeElectronRuntime(
       historyUnavailable: historyProjection.historyUnavailable,
       historyRefreshError: historyProjection.historyRefreshError,
       localRetentionMs,
+      sharingLifetimeMs,
       autoSync: clipboardSync.isAutoSync(),
       clipboardHistoryError,
       historyPolicyError,
