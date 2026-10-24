@@ -530,6 +530,7 @@ public final class NotificationRequestsTest {
                 Log.i(TAG,"native-body-preparation-cleanup nonce="+nonce+" restored="+restored+" selectionQualified=false");
             }
         }
+        logFirstIdentityQuery(result,readyBytes);
         JSONObject wire=new JSONObject().put("kind","NOTIFICATION16_TARGETED_NATIVE_BODY_ACTION_V1").put("nonce",nonce)
             .put("readySha256",observationSha256(readyBytes)).put("complete",result.complete).put("reason",result.reason)
             .put("selectionAuthority",true).put("atomicSnapshot",false).put("ticket16Qualified",false)
@@ -547,6 +548,26 @@ public final class NotificationRequestsTest {
             +" complete="+result.complete+" reason="+result.reason+" publishedUptimeMs="+SystemClock.uptimeMillis()+" publishedElapsedRealtimeMs="+SystemClock.elapsedRealtime());
         assertTrue("Positive current body and genuine native gesture required; UNKNOWN is not selection",result.complete);
         budget.checkReady();
+    }
+
+    private void logFirstIdentityQuery(NotificationSystemUiBodySelection.Result result,byte[] readyBytes) {
+        try{
+            NotificationSystemUiBodySelection.FirstIdentityQuery query=result.firstIdentity;
+            StringBuilder line=new StringBuilder("native-body-first-identity-query {\"kind\":\"NOTIFICATION16_FIRST_IDENTITY_QUERY_DIAGNOSTIC_V1\",\"nonce\":\"")
+                .append(nonce).append("\",\"readySha256\":\"").append(observationSha256(readyBytes))
+                .append("\",\"queryKind\":").append(query.queryKind).append(",\"returnedCount\":").append(query.returnedCount)
+                .append(",\"processedCount\":").append(query.processedCount).append(",\"rows\":[");
+            for(int index=0;index<4;index++){
+                if(index>0)line.append(',');
+                line.append('[').append(query.textView[index]).append(',').append(query.token[index]).append(']');
+            }
+            line.append("],\"selectionAuthority\":false}");
+            if(line.toString().getBytes(StandardCharsets.UTF_8).length<=512)Log.i(TAG,line.toString());
+            else Log.i(TAG,"native-body-first-identity-query unavailable=CAP selectionAuthority=false");
+        }catch(Exception unavailable){
+            // A diagnostic must not replace the original action wire or journey result.
+            Log.i(TAG,"native-body-first-identity-query unavailable=SERIALIZATION selectionAuthority=false");
+        }
     }
 
     private final class NativeBodyPorts implements NotificationSystemUiBodySelection.Ports {

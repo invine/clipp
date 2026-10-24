@@ -44,7 +44,13 @@ final class NotificationSystemUiBodySelection {
         final boolean down,up;final long downAt,downReturned,upAt,upReturned;
         Touch(boolean down,boolean up,long downAt,long downReturned,long upAt,long upReturned){this.down=down;this.up=up;this.downAt=downAt;this.downReturned=downReturned;this.upAt=upAt;this.upReturned=upReturned;}
     }
+    static final class FirstIdentityQuery {
+        // -1: not evaluated; returnedCount -2: the already observed return was null.
+        int queryKind,returnedCount=-1,processedCount;
+        final int[] textView={-1,-1,-1,-1},token={-1,-1,-1,-1};
+    }
     static final class Result {
+        final FirstIdentityQuery firstIdentity=new FirstIdentityQuery();
         int reason,window=-1,x,y,queries;boolean complete,restored,beforeCurrent,afterCurrent,proofRechecked;
         int[] windowBounds,templateBounds,bodyBounds;
         long start,startElapsed,end,endElapsed,finished,finishedElapsed;Touch touch;
@@ -65,7 +71,9 @@ final class NotificationSystemUiBodySelection {
         List<Object> query(Object root,String text,boolean resource){
             require(result.queries<8,2);result.queries++;
             List<Object> values=read(()->ports.query(root,text,resource));
-            require(values!=null&&values.size()<=4,3);return values;
+            int count=values==null?-2:values.size();
+            if(result.queries==1)result.firstIdentity.returnedCount=count;
+            require(values!=null&&count<=4,3);return values;
         }
         Node node(Object handle){
             require(handle!=null,4);Node value=read(()->ports.node(handle,false));
@@ -82,10 +90,17 @@ final class NotificationSystemUiBodySelection {
             throw new Limit(5);
         }
         Object identity(String needle){
+            boolean first=result.queries==0;
+            if(first)result.firstIdentity.queryKind=1;
             List<Object> values=query(owner.root,needle,false);Object found=null;
             for(Object value:values){
-                Node n=node(value);
-                if(!n.textView||!token(n.text,needle))continue;
+                int index=first?result.firstIdentity.processedCount++:-1;
+                Node n=node(value);boolean textView=n.textView;
+                if(first)result.firstIdentity.textView[index]=textView?1:0;
+                if(!textView)continue;
+                boolean matched=token(n.text,needle);
+                if(first)result.firstIdentity.token[index]=matched?1:0;
+                if(!matched)continue;
                 require(n.visible&&n.enabled&&area(n.bounds)&&inside(n.bounds,owner.bounds),4);
                 require(found==null,6);Object body=template(value,n.bounds);
                 if(template==null)template=body;else require(ports.same(template,body),6);
