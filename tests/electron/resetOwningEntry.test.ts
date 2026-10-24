@@ -12,6 +12,20 @@ it.each([
   ["refuses missing admitted Clip facts before reset", "metadata-missing"],
   ["refuses changed applied sharing policy before reset", "policy-mismatch"],
   ["reports a completed reset with restart still required", "execute"],
+  [
+    "matches the public saved name after SQLite owner reconstruction",
+    "saved-name",
+  ],
+  ["refuses a stale saved name before reset", "name-mismatch"],
+  ["refuses a stale saved name revision before reset", "revision-mismatch"],
+  [
+    "reconstructs Desktop revision zero with the saved sharing lifetime",
+    "replay-persisted",
+  ],
+  [
+    "refuses a changed reconstructed sharing lifetime",
+    "replay-policy-mismatch",
+  ],
   ["refuses unreset History on replay", "replay"],
   ["starts no owner for invalid input", "invalid"],
 ])("the opt-in Electron owning entry %s", (_description, mode) => {

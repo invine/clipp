@@ -1,3 +1,5 @@
+import { normalizeDeviceName } from "../../../packages/core/pairing/presentation.js";
+
 /** Input for the separately selected main-process owning acceptance entry. */
 export type SyntheticClipFact = Readonly<{
   id: string;
@@ -19,6 +21,8 @@ export type ElectronResetOwningManifest = Common &
         operationId: string;
         reviewedPeerId: string;
         expected: Readonly<{
+          deviceName: string;
+          nameRevision: number;
           autoSync: boolean;
           sharingLifetimeMs: number;
           syntheticClips: readonly SyntheticClipFact[];
@@ -147,6 +151,8 @@ export function parseElectronResetOwningManifest(
   if (
     !record(e) ||
     !exact(e, [
+      "deviceName",
+      "nameRevision",
       "autoSync",
       "sharingLifetimeMs",
       "syntheticClips",
@@ -156,6 +162,9 @@ export function parseElectronResetOwningManifest(
       "pinnedCount",
       "configurationSha256",
     ]) ||
+    typeof e.deviceName !== "string" ||
+    normalizeDeviceName(e.deviceName) !== e.deviceName ||
+    !integer(e.nameRevision, 1, Number.MAX_SAFE_INTEGER) ||
     typeof e.autoSync !== "boolean" ||
     !integer(e.sharingLifetimeMs, 1, 2592000000) ||
     !Array.isArray(e.syntheticClips) ||
@@ -182,6 +191,8 @@ export function parseElectronResetOwningManifest(
     operationId: value.operationId,
     reviewedPeerId: value.reviewedPeerId,
     expected: Object.freeze({
+      deviceName: e.deviceName,
+      nameRevision: e.nameRevision,
       autoSync: e.autoSync,
       sharingLifetimeMs: e.sharingLifetimeMs,
       syntheticClips: Object.freeze(

@@ -9,6 +9,8 @@ const manifest = {
   operationId: "electron29-operation",
   reviewedPeerId: "former-peer",
   expected: {
+    deviceName: "Saved Desktop",
+    nameRevision: 2,
     autoSync: false,
     sharingLifetimeMs: 3600000,
     syntheticClips: [
@@ -35,6 +37,8 @@ it("freezes the immutable owning input without accepting runtime commands", () =
   expect(Object.isFrozen(value)).toBe(true);
   if (value.mode !== "observe-preflight") {
     expect(Object.isFrozen(value.expected)).toBe(true);
+    expect(value.expected.deviceName).toBe("Saved Desktop");
+    expect(value.expected.nameRevision).toBe(2);
     expect(Object.isFrozen(value.expected.markers)).toBe(true);
   }
 });
@@ -123,3 +127,48 @@ it.each([
     ).toThrow("invalid_manifest");
   }
 );
+
+it.each([
+  { ...manifest.expected, deviceName: undefined },
+  { ...manifest.expected, deviceName: "" },
+  { ...manifest.expected, deviceName: " Saved Desktop" },
+  { ...manifest.expected, deviceName: "e\u0301" },
+  { ...manifest.expected, deviceName: "line\nname" },
+  { ...manifest.expected, deviceName: "a".repeat(65) },
+  { ...manifest.expected, nameRevision: undefined },
+  { ...manifest.expected, nameRevision: 0 },
+  { ...manifest.expected, nameRevision: 1.5 },
+  { ...manifest.expected, nameRevision: Number.MAX_SAFE_INTEGER + 1 },
+])(
+  "rejects missing or noncanonical saved names and revisions %#",
+  (expected) => {
+    expect(() =>
+      parseElectronResetOwningManifest(
+        JSON.stringify({ ...manifest, expected }),
+        now
+      )
+    ).toThrow("invalid_manifest");
+  }
+);
+
+it("retains normalized internal spaces and bounded Unicode names", () => {
+  const value = parseElectronResetOwningManifest(
+    JSON.stringify({
+      ...manifest,
+      expected: { ...manifest.expected, deviceName: "é Saved Desktop" },
+    }),
+    now
+  );
+  expect(value.mode !== "observe-preflight" && value.expected.deviceName).toBe(
+    "é Saved Desktop"
+  );
+});
+
+it("retains the aggregate input cap with saved name evidence", () => {
+  expect(() =>
+    parseElectronResetOwningManifest(
+      JSON.stringify(manifest) + " ".repeat(8192),
+      now
+    )
+  ).toThrow("invalid_manifest");
+});

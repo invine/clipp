@@ -228,7 +228,7 @@ try {
       },
     ],
   });
-  const entry = await import(join(directory, "main.mjs"));
+  let entry = await import(join(directory, "main.mjs"));
   if (entryMode === "invalid") {
     await assert.rejects(
       entry.startElectronResetOwningAcceptance('{"command":"reset"}', () => {}),
@@ -264,7 +264,7 @@ try {
       "later startup options must retain the first owner"
     );
   }
-  const owner = await starting;
+  let owner = await starting;
   if (owner) await owner.ready;
   await waitFor(
     () => menu && windows[0]?.visible,
@@ -378,11 +378,86 @@ try {
       "ordinary capture was not saved"
     );
     if (entryMode) {
+      await handlers.get("clipp:rename-identity")(
+        {},
+        {
+          name: "Saved Desktop First",
+          expectedDeviceId: initial.identity.deviceId,
+        }
+      );
+      const savedIdentity = await handlers.get("clipp:rename-identity")(
+        {},
+        {
+          name: "Saved Desktop",
+          expectedDeviceId: initial.identity.deviceId,
+        }
+      );
+      assert.equal(savedIdentity.deviceName, "Saved Desktop");
+      assert.equal(savedIdentity.nameRevision, 2);
       const state = await owner.publicState();
+      assert.equal(state.identity.deviceName, savedIdentity.deviceName);
+      assert.equal(state.identity.nameRevision, savedIdentity.nameRevision);
       await handlers.get("clipp:set-pin")(
         {},
         { id: state.clips[0].id, pinned: true }
       );
+      if (
+        [
+          "saved-name",
+          "name-mismatch",
+          "revision-mismatch",
+          "replay-persisted",
+          "replay-policy-mismatch",
+        ].includes(entryMode)
+      ) {
+        await owner.stop();
+        entry = await import(
+          join(directory, "main.mjs") + "?saved-name-reopen"
+        );
+        owner = await entry.startElectronRuntime();
+        await owner.ready;
+        const reopened = await owner.publicState();
+        assert.equal(reopened.identity.deviceName, "Saved Desktop");
+        assert.equal(reopened.identity.nameRevision, 2);
+        assert.equal(reopened.identity.deviceId, initial.identity.deviceId);
+        assert.equal(reopened.clips[0].id, state.clips[0].id);
+        assert.deepEqual(reopened.pinnedIds, [state.clips[0].id]);
+      }
+      if (["replay-persisted", "replay-policy-mismatch"].includes(entryMode)) {
+        assert.equal(
+          (
+            await owner.identityReset.begin({
+              operationId: "electron-owning-reset",
+              reviewedPeerId: initial.identity.deviceId,
+            })
+          ).outcome,
+          "completed"
+        );
+        assert.equal(
+          (await owner.identityReset.reconcile()).phase,
+          "completed"
+        );
+        await owner.stop();
+        entry = await import(
+          join(directory, "main.mjs") + "?reset-replay-reopen"
+        );
+        owner = await entry.startElectronRuntime();
+        await owner.ready;
+        const replacement = await owner.publicState();
+        assert.equal(replacement.identity.deviceName, "Desktop");
+        assert.equal(replacement.identity.nameRevision, 0);
+        assert.notEqual(
+          replacement.identity.deviceId,
+          initial.identity.deviceId
+        );
+        assert.deepEqual(replacement.clips, []);
+        assert.equal(replacement.sharingLifetimeMs, 3600000);
+        if (entryMode === "replay-policy-mismatch")
+          await handlers.get("clipp:set-settings")(
+            {},
+            { sharingLifetimeMs: 86400000 }
+          );
+      }
       const common = {
         version: 1,
         caseId: "electron29-source",
@@ -396,13 +471,27 @@ try {
           }
         : {
             ...common,
-            mode: entryMode === "replay" ? "observe-replay" : "execute",
+            mode: [
+              "replay",
+              "replay-persisted",
+              "replay-policy-mismatch",
+            ].includes(entryMode)
+              ? "observe-replay"
+              : "execute",
             operationId: "electron-owning-reset",
             reviewedPeerId:
               entryMode === "mismatch"
                 ? "another-peer"
                 : initial.identity.deviceId,
             expected: {
+              deviceName:
+                entryMode === "name-mismatch"
+                  ? "Stale Desktop"
+                  : savedIdentity.deviceName,
+              nameRevision:
+                entryMode === "revision-mismatch"
+                  ? 1
+                  : savedIdentity.nameRevision,
               autoSync: false,
               sharingLifetimeMs:
                 entryMode === "policy-mismatch" ? 86400000 : 3600000,
@@ -444,6 +533,9 @@ try {
           "metadata-mismatch",
           "metadata-missing",
           "policy-mismatch",
+          "name-mismatch",
+          "revision-mismatch",
+          "replay-policy-mismatch",
         ].includes(entryMode)
       ) {
         await assert.rejects(
@@ -452,9 +544,18 @@ try {
             ? /invalid_manifest/
             : entryMode === "replay"
               ? /replay_history_not_empty/
-              : /preflight_mismatch/
+              : entryMode === "replay-policy-mismatch"
+                ? /observation_unconfirmed/
+                : /preflight_mismatch/
         );
-        assert.equal(restartAttempts, 0);
+        assert.equal(
+          restartAttempts,
+          entryMode === "replay-policy-mismatch" ? 1 : 0
+        );
+        assert.equal(
+          records.some((row) => row.stage === "replay-observation"),
+          false
+        );
         assert.equal(
           records.some((row) => row.stage === "begin-requested"),
           false
@@ -514,8 +615,19 @@ try {
                 )
             );
           }
+        } else if (entryMode === "replay-persisted") {
+          const replay = records.find(
+            (row) => row.stage === "replay-observation"
+          );
+          assert.ok(replay);
+          assert.equal(replay.deviceName, "Desktop");
+          assert.equal(replay.nameRevision, 0);
+          assert.equal(replay.sharingLifetimeMs, 3600000);
+          assert.equal(replay.clipCount, 0);
+          assert.equal(restartAttempts, 1);
+          assert.ok(!records.some((row) => row.stage === "begin-requested"));
         } else {
-          assert.equal(entryMode, "execute");
+          assert.ok(["execute", "saved-name"].includes(entryMode));
           assert.equal(restartAttempts, 1);
           const matched = records.findIndex(
             (row) => row.stage === "pre-reset-matched"
@@ -528,6 +640,8 @@ try {
             "persisted facts must match before any real reset begin"
           );
           assert.equal(records[matched].sharingLifetimeMs, 3600000);
+          assert.equal(records[matched].deviceName, "Saved Desktop");
+          assert.equal(records[matched].nameRevision, 2);
           assert.equal(
             records.find((row) => row.stage === "synthetic-clip").clipId,
             state.clips[0].id

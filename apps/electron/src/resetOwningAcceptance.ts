@@ -206,6 +206,7 @@ export async function startElectronResetOwningAcceptance(
             receipt.generatedPeerId !== generatedPeerId ||
             generatedPeerId === manifest.reviewedPeerId ||
             state.autoSync !== manifest.expected.autoSync ||
+            state.sharingLifetimeMs !== manifest.expected.sharingLifetimeMs ||
             state.localRetentionMs !== manifest.expected.localRetentionMs ||
             configurationSha256(state) !==
               manifest.expected.configurationSha256 ||
@@ -239,6 +240,7 @@ export async function startElectronResetOwningAcceptance(
               pinnedCount: state.pinnedIds.length,
               autoSync: state.autoSync,
               localRetentionMs: state.localRetentionMs,
+              sharingLifetimeMs: state.sharingLifetimeMs,
               configurationCount: state.managedRelayConfigurations.length,
               configurationSha256: configurationSha256(state),
               deviceName: state.identity!.deviceName,
@@ -288,6 +290,9 @@ export async function startElectronResetOwningAcceptance(
         initial.identity!.deviceId !== manifest.reviewedPeerId ||
         initial.identityResetState.phase !== "idle" ||
         initial.identityResetState.receipt ||
+        initial.identity!.deviceName !== manifest.expected.deviceName ||
+        (initial.identity!.nameRevision ?? 0) !==
+          manifest.expected.nameRevision ||
         initial.autoSync !== manifest.expected.autoSync ||
         initial.localRetentionMs !== manifest.expected.localRetentionMs ||
         configurationSha256(initial) !==
@@ -312,6 +317,8 @@ export async function startElectronResetOwningAcceptance(
         !publish("pre-reset-matched", {
           ...publishProjection(initial, facts),
           currentPeerId: initial.identity!.deviceId,
+          deviceName: initial.identity!.deviceName,
+          nameRevision: initial.identity!.nameRevision ?? 0,
           localRetentionMs: initial.localRetentionMs,
         })
       )
