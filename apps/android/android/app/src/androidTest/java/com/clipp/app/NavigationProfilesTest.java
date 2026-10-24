@@ -273,6 +273,7 @@ public final class NavigationProfilesTest {
         tapButton("Paste pairing text"); awaitDialog("Paste pairing text"); awaitRawFocused(PAIR, pairingRaw);
         awaitUi("original Pairing rejection survives Issues recovery beside its field", DIALOG + "?.querySelector('[role=status]')?.textContent.trim()===" + JSONObject.quote(PAIR_ERROR) + "&&(" + PAIR + ")?.closest('[role=dialog]')===(" + DIALOG + ")&&(" + PAIR + ").value===" + JSONObject.quote(pairingRaw) + "&&document.activeElement===(" + PAIR + ")");
         if (nativeImeVisible()) hideIme();
+        assertReachable(web.button("Discard pairing input"), true);
         tapButton("Discard pairing input"); awaitDialog("Pairing"); nativeBack(); awaitNoDialog();
         assertQueryScope(); assertSameDocument(); observe("qr-recovery-final-controls"); completeJourney();
     }
