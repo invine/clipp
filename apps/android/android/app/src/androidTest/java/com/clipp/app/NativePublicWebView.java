@@ -54,6 +54,17 @@ final class NativePublicWebView {
     private String lastTouchDispatch = "none";
     private UiAutomation ownedAutomation;
     private JSONObject lastActiveWindowReadiness = new JSONObject();
+    private String blockedWindowNonce;
+    private long blockedWindowMethodEnd;
+    private final AtomicBoolean blockedWindowAttempted=new AtomicBoolean();
+    private JSONObject firstBlockedWindowEvidence;
+
+    /** Diagnostic-only, selected by the existing exact known-text test method. */
+    void observeFirstBlockedWindow(String nonce,long methodEnd) {
+        assertTrue("Fixed diagnostic nonce",nonce.matches("[A-Za-z0-9_-]{16,64}"));
+        blockedWindowNonce=nonce;blockedWindowMethodEnd=methodEnd;
+    }
+
 
     NativePublicWebView(Instrumentation instrumentation, ActivityScenario<MainActivity> scenario) {
         NativeAcceptanceTarget.requireIsolated(instrumentation.getTargetContext().getPackageName());
@@ -170,6 +181,12 @@ final class NativePublicWebView {
         onActivity(activity -> addNativeWindowState(first, activity), deadline);
         trace.record(first);
         UiAutomation cached = ownedAutomation;
+        AtomicBoolean blockedRootRecycled=new AtomicBoolean();
+        NotificationSystemUiReadiness.BlockedWindowCapture capture=blockedWindowNonce==null?null:
+            new NotificationSystemUiReadiness.BlockedWindowCapture(true,new NotificationSystemUiReadiness.Clock(){
+                public long uptime(){return SystemClock.uptimeMillis();}
+                public long elapsed(){return SystemClock.elapsedRealtime();}
+            },Math.min(deadline,blockedWindowMethodEnd),active::get);
         Thread worker = new Thread(() -> {
             try {
                 if (!observing(active, deadline)) return;
@@ -184,20 +201,27 @@ final class NativePublicWebView {
                 }
                 while (observing(active, deadline)) {
                     AccessibilityNodeInfo root = automation.getRootInActiveWindow();
-                    JSONObject sample;
-                    try {
+                    try(NotificationSystemUiReadiness.RootLease rootLease=new NotificationSystemUiReadiness.RootLease(()->{
+                        if(root!=null){root.recycle();if(capture!=null&&capture.result().attempted)blockedRootRecycled.set(true);}
+                    })) {
+                        JSONObject sample;
+                        try {
+                            if (!observing(active, deadline)) return;
+                            sample = windowSample(root == null ? "null" : "present",
+                                root == null ? null : root.getPackageName(), root == null ? null : root.getClassName());
+                        } finally { if(capture==null)rootLease.close(); }
                         if (!observing(active, deadline)) return;
-                        sample = windowSample(root == null ? "null" : "present",
-                            root == null ? null : root.getPackageName(), root == null ? null : root.getClassName());
-                    } finally { if (root != null) root.recycle(); }
-                    if (!observing(active, deadline)) return;
-                    onActivity(activity -> { if (observing(active, deadline)) addNativeWindowState(sample, activity); }, deadline);
-                    if (!observing(active, deadline)) return;
-                    trace.record(sample);
-                    if (instrumentation.getTargetContext().getPackageName().equals(sample.optString("rootPackage"))
-                        && sample.optBoolean("focused") && "RESUMED".equals(sample.optString("lifecycle"))) {
-                        trace.markReady(automation);
-                        return;
+                        onActivity(activity -> { if (observing(active, deadline)) addNativeWindowState(sample, activity); }, deadline);
+                        if (!observing(active, deadline)) return;
+                        trace.record(sample);
+                        if(capture!=null&&root!=null&&"android".equals(sample.optString("rootPackage"))&&!sample.optBoolean("focused")&&blockedWindowAttempted.compareAndSet(false,true)) {
+                            capture.observe(true,false,root.getWindowId(),blockedWindowPort(root,automation,active,Math.min(deadline,blockedWindowMethodEnd)));
+                        }
+                        if (instrumentation.getTargetContext().getPackageName().equals(sample.optString("rootPackage"))
+                            && sample.optBoolean("focused") && "RESUMED".equals(sample.optString("lifecycle"))) {
+                            trace.markReady(automation);
+                            return;
+                        }
                     }
                     // Poll only while the exact owned-window predicate is false.
                     long remaining = deadline - SystemClock.uptimeMillis();
@@ -218,6 +242,8 @@ final class NativePublicWebView {
             throw new AssertionError("Owned active-window observation interrupted", error);
         } finally {
             lastActiveWindowReadiness = trace.finish(completed, worker.isAlive());
+            if(capture!=null&&capture.result().attempted)firstBlockedWindowEvidence=blockedWindowDescriptor(capture.result(),completed,blockedRootRecycled.get());
+            if(firstBlockedWindowEvidence!=null)lastActiveWindowReadiness.put("firstBlockedWindow",firstBlockedWindowEvidence);
             if (!completed) worker.interrupt();
             Log.i("ClippNativeInputStage", "ownedWindow=" + lastActiveWindowReadiness);
         }
@@ -228,6 +254,53 @@ final class NativePublicWebView {
         assertNotNull("Owned focused RESUMED app root not observed: " + lastActiveWindowReadiness, trace.ready);
         ownedAutomation = trace.ready;
         return ownedAutomation;
+    }
+
+    private NotificationSystemUiReadiness.BlockedWindowCapture.Port blockedWindowPort(AccessibilityNodeInfo root,UiAutomation automation,AtomicBoolean active,long end) {
+        return new NotificationSystemUiReadiness.BlockedWindowCapture.Port(){
+            public NotificationSystemUiReadiness.BlockedWindowCapture.Window window(){
+                android.view.accessibility.AccessibilityWindowInfo value=root.getWindow();
+                if(value==null)return null;
+                return new NotificationSystemUiReadiness.BlockedWindowCapture.Window(){
+                    public int id(){return value.getId();}
+                    public int type(){return value.getType();}
+                    public void close(){value.recycle();}
+                };
+            }
+            public NotificationSystemUiReadiness.BlockedWindowCapture.Pixels screenshot(){
+                android.graphics.Bitmap value=automation.takeScreenshot();
+                if(value==null)return null;
+                return new NotificationSystemUiReadiness.BlockedWindowCapture.Pixels(){
+                    public int width(){return value.getWidth();}
+                    public int height(){return value.getHeight();}
+                    public byte[] png(NotificationSystemUiReadiness.BlockedWindowCapture.Check check,int cap){
+                        java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream(){
+                            public synchronized void write(int b){check.run();if(count>=cap)throw new IllegalStateException("PNG cap");super.write(b);}
+                            public synchronized void write(byte[] b,int off,int len){check.run();if(len>cap-count)throw new IllegalStateException("PNG cap");super.write(b,off,len);}
+                        };
+                        check.run();if(!value.compress(android.graphics.Bitmap.CompressFormat.PNG,100,bytes))throw new IllegalStateException("PNG refused");
+                        check.run();return bytes.toByteArray();
+                    }
+                    public void close(){value.recycle();}
+                };
+            }
+            public void publish(byte[] png){
+                java.io.File target=new java.io.File(instrumentation.getTargetContext().getCacheDir(),"notification16-"+blockedWindowNonce+"-first-window.png");
+                NotificationSystemUiReadiness.publishFirstWindow(target.toPath(),png,
+                    ()->NotificationSystemUiReadiness.require(observing(active,end),2));
+            }
+        };
+    }
+
+    private static JSONObject blockedWindowDescriptor(NotificationSystemUiReadiness.BlockedWindowCapture.Result value,boolean workerCompleted,boolean rootRecycled) throws Exception {
+        boolean complete=value.complete&&workerCompleted&&rootRecycled;
+        JSONObject result=new JSONObject().put("kind","FIRST_ANDROID_ROOT_UNFOCUSED_V1").put("attempted",value.attempted)
+            .put("status",complete?"COMPLETE":"UNKNOWN").put("reason",value.reason==0&&!rootRecycled?7:value.reason).put("windowId",value.windowId).put("windowType",value.windowType)
+            .put("width",value.width).put("height",value.height).put("bytes",value.bytes).put("sha256",value.sha256)
+            .put("startedUptimeMs",value.started).put("finishedUptimeMs",value.finished).put("deadlineUptimeMs",value.end)
+            .put("atomicOwnerFrame",false).put("selectionAuthority",false);
+        assertTrue("Fixed first-window metadata cap",result.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=2048);
+        return result;
     }
 
     private static boolean observing(AtomicBoolean active, long deadline) {

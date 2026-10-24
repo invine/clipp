@@ -157,6 +157,7 @@ public final class NotificationRequestsTest {
             NotificationManagerCompat.from(context).areNotificationsEnabled());
         scenario = ActivityScenario.launch(MainActivity.class);
         web = new NativePublicWebView(instrumentation, scenario);
+        if(systemUiKnownTextOnly)web.observeFirstBlockedWindow(nonce,windowedJourneyEnd);
         web.await("actual workspace ready", "document.querySelector('nav[aria-label=\"Clipp destinations\"]') !== null");
         assertEquals("Ordinary packaged origin required", "https://localhost/", web.evaluate("location.origin + '/'"));
     }

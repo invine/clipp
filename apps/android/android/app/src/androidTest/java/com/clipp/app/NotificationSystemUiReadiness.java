@@ -52,4 +52,89 @@ final class NotificationSystemUiReadiness {
         }
         require(count==1&&matched==event[1],6);return matched;
     }
+    /** Acquired-root lifetime, including returns before any sample is possible. */
+    static final class RootLease implements AutoCloseable {
+        private final Runnable release;private boolean closed;
+        RootLease(Runnable release){this.release=release;}
+        public void close(){if(!closed){closed=true;release.run();}}
+    }
+
+    /** Exclusive private diagnostic file. A refused create never owns cleanup. */
+    static void publishFirstWindow(java.nio.file.Path target,byte[] png,BlockedWindowCapture.Check check) {
+        java.nio.file.Path pending=target.resolveSibling(target.getFileName()+".pending");
+        boolean owned=false,complete=false;
+        try {
+            check.run();require(png!=null&&png.length>0&&png.length<=BlockedWindowCapture.MAX_PNG,5);
+            require(!java.nio.file.Files.exists(target,java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                &&!java.nio.file.Files.exists(pending,java.nio.file.LinkOption.NOFOLLOW_LINKS),6);
+            check.run();
+            try(java.io.OutputStream stream=java.nio.file.Files.newOutputStream(target,java.nio.file.StandardOpenOption.CREATE_NEW,java.nio.file.StandardOpenOption.WRITE)) {
+                owned=true;check.run();stream.write(png);check.run();
+            }
+            check.run();complete=true;
+        } catch(Limit failure){throw failure;}
+          catch(Exception failure){throw new IllegalStateException("Diagnostic PNG publication failed");}
+        finally {
+            if(owned&&!complete)try{java.nio.file.Files.delete(target);}
+            catch(java.io.IOException failure){throw new IllegalStateException("Owned diagnostic cleanup failed");}
+        }
+    }
+
+    /** One advisory image at the already-observed blocked first-window boundary.
+     * Ports own Android handles; this policy never discovers a window or sends input. */
+    static final class BlockedWindowCapture {
+        interface Check { void run(); }
+        interface Window { int id(); int type(); void close(); }
+        interface Pixels { int width(); int height(); byte[] png(Check check,int cap); void close(); }
+        interface Port { Window window(); Pixels screenshot(); void publish(byte[] png); }
+        static final int MAX_PNG=1_048_576;
+        static final long MAX_PIXELS=8_388_608;
+        static final class Result {
+            final boolean attempted,complete;final int reason,windowId,windowType,width,height,bytes;
+            final long started,finished,end;final String sha256;
+            Result(boolean attempted,boolean complete,int reason,int id,int type,int width,int height,int bytes,long started,long finished,long end,String sha256){
+                this.attempted=attempted;this.complete=complete;this.reason=reason;windowId=id;windowType=type;
+                this.width=width;this.height=height;this.bytes=bytes;this.started=started;this.finished=finished;this.end=end;this.sha256=sha256;
+            }
+        }
+        private final boolean enabled;private final Clock clock;private final long end;
+        private final java.util.function.BooleanSupplier active;
+        private final java.util.concurrent.atomic.AtomicBoolean attempted=new java.util.concurrent.atomic.AtomicBoolean();
+        private volatile Result result;
+        BlockedWindowCapture(boolean enabled,Clock clock,long end,java.util.function.BooleanSupplier active){
+            this.enabled=enabled;this.clock=clock;this.end=end;this.active=active;
+            result=new Result(false,false,0,-1,0,0,0,0,0,0,end,"");
+        }
+        private void check(){require(active.getAsBoolean()&&clock.uptime()<end,2);}
+        Result result(){return result;}
+        void observe(boolean androidRoot,boolean ownedFocused,int rootWindowId,Port port){
+            if(!enabled||!androidRoot||ownedFocused||!attempted.compareAndSet(false,true))return;
+            long start=clock.uptime();int reason=3,id=-1,type=0,width=0,height=0;byte[] png=null;String hash="";
+            Window window=null;Pixels pixels=null;boolean closed=true;
+            result=new Result(true,false,2,-1,0,0,0,0,start,0,end,"");
+            try {
+                check();require(rootWindowId>=0,3);
+                window=port.window();check();require(window!=null,3);
+                id=window.id();check();type=window.type();check();require(id==rootWindowId&&type>=1&&type<=6,3);
+                result=new Result(true,false,4,id,type,0,0,0,start,0,end,"");
+                reason=4;pixels=port.screenshot();check();require(pixels!=null,4);
+                width=pixels.width();height=pixels.height();check();
+                require(width>0&&height>0&&(long)width*height<=MAX_PIXELS,4);
+                reason=5;png=pixels.png(this::check,MAX_PNG);check();require(png!=null&&png.length>0&&png.length<=MAX_PNG,5);
+                byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(png);
+                StringBuilder hex=new StringBuilder(64);for(byte b:digest)hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));hash=hex.toString();check();
+                reason=0;
+            } catch(Limit failure){reason=failure.reason;}
+              catch(Exception failure){if(reason==0)reason=5;}
+            finally {
+                if(pixels!=null)try{pixels.close();}catch(RuntimeException failure){closed=false;}
+                if(window!=null)try{window.close();}catch(RuntimeException failure){closed=false;}
+            }
+            if(!closed)reason=7;
+            if(reason==0)try{check();port.publish(png);check();}catch(Limit failure){reason=failure.reason;}catch(RuntimeException failure){reason=6;}
+            long finished=clock.uptime();
+            if(reason==0&&(!active.getAsBoolean()||finished>=end))reason=2;
+            result=new Result(true,reason==0,reason,id,type,width,height,png==null?0:png.length,start,finished,end,hash);
+        }
+    }
 }
