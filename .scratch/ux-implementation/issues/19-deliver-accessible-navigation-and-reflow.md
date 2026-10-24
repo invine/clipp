@@ -1,7 +1,7 @@
 # Deliver accessible navigation and task reflow
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-navigation-19
 Priority band: 1
 Blocked by: 07, 12, 32
@@ -86,3 +86,17 @@ Preserve the failed pre-camera Devices gesture in ignored `run-20261010/scanner1
 ## G14 completion by user acceptance — 2026-10-21
 
 The user directs “Mark these gates completed” for desktop OS text-only scaling G14 on17–19. [Accepted decision](../decisions/20261021-g14-17-19-user-acceptance.md) completes this ticket’s G14 gate administratively; no new native run or enlargement measurement is asserted. Earlier failed/unavailable/unchanged-text observations remain intact. Every other candidate gate and finding contribution remains required; this decision alone does not resolve the ticket.
+
+## Answer — 2026-10-24
+
+Resolved for accessible navigation and task reflow through the bounded composed contribution map, with only the [accepted canonical Chrome Options fullscreen Search-return exclusion](../decisions/20261024-chrome-options-fullscreen-search-return-exclusion.md). Production navigation/source repairs d75cec0 and a2c235b remain integrated. Current clean combined candidate `b9afeb48485ce277a9d75dee71c6fc53c767c045` / tree `08d6f3ca6d7a3b1b67e9cf97fbe8e3ac156dc86a` passes176 suites/1338 tests, all four typechecks and all three production builds (verification5f8726df, independent closure19f6d2e9). Fresh routine verification does not relabel original native executions.
+
+Electron composition covers actual Search/navigation/task input, native selection and retained drafts, validation/correction/dismissal/reentry, tray return, measured native fullscreen/maximize/restore, short/enlarged controls and current control/theme contributions. Exact renderer1099/1100/1101,320/340×350, cramped-height±1/restored and spacing cases compose with genuine native profiles; controlled dimensions do not become native units or a Cartesian native matrix. Original5c81 native facts, completed34/13 input, current17 controls and18 themes retain their source and observation limits. Cropped/off-display images, delayed controller input and SaveUNCONFIRMED remain limited rather than promoted.
+
+Android ae43/3eb1 responsive/native composition plus selected fontScale2 full-QR completiona7344656 and independent audit2228a219 supply full QR/fallback/local recovery and native Back/IME/final-control contributions. The actual full frame has a clear quiet border and independently decoded/signed public payload; a clipped Copy frame and absent error-text pixels are not recast as passes. Original mixed native Tab/touch readiness, scanner15 scope, startup-gesture failure, process/Qt restoration and physical/provider limits remain explicit.
+
+Chrome retains its measured complete-display geometry, query/task/final-control, popup enlargement and actual keyboard/navigation contributions. Only automatic Search focus return after actual fullscreen exit in canonical Options is administratively excluded. Latest a313 still failed for the human with Search `g15-human`; the selected self-tab action was unexercised in its saved three-row/deadline trace. Root observed normal Quit, actual launcher0, complete current absence of17 known PIDs/four groups, and marker release; no historical descendant census or API efficacy is claimed. No further G15 retry or ordinary-input fallback is required.
+
+Exact ignored evidence: `navigation19-electron-composed-completion-readonly-assessment-20261024.md` (SHA256b69930ccc144c17243405b9d7e4e5a20b5a592b227ab05d39961ca6e2cdf3cb5), inputs e6ec0789; `navigation19-currenta3c-full-qr-native-pixels-signature-completion-20261024.json` (a7344656e6a82c916f4522fd84816dcef508565db93ceef96861d04e04a3d813), independent contribution audit2228a219241228558597f1477bdd1e54137251d38fce7c4ac347abfd7855a05b; latest `theme18-chrome-launch-a3134785b45e024373735cba/root-independent-result-and-closure.json` (0534367406935f05287eba01a7f3d98f76da3be6ccddd4f79865f744eb2925b2), full viewer175f2581 and marker closure044701ab. Each contribution retains its own bound revision and native/controlled/human classification. This is full ticket19 completion under the exact accepted exclusion, without applying the proposed37/38 host split or claiming all-host current-native success.
+
+All other required gates and external/retained limits remain. G14 is its separate administrative acceptance. Finding-ledger collection remains explicit and separate: this ticket’s completion records its scoped contributions but closes no broad finding by implication. Later compact21/S2 22/Devices23/Settings24 requalify their changed consumers; no account, relay, transport, hardware/OEM/assistive, reset or release qualification follows.

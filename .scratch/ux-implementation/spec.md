@@ -123,3 +123,7 @@ Under the approved cross-runtime rule, [36](issues/36-deliver-android-task-input
 ## G14 acceptance for17–19 — 2026-10-21
 
 The user directs “Mark these gates completed.” [Accepted G14 decision](decisions/20261021-g14-17-19-user-acceptance.md) completes only desktop OS text-only scaling G14 for17–19. It supplies no additional native run or measurement, and every other required gate remains. Existing TT35 acceptance stays separately scoped.
+
+## Chrome Options fullscreen Search-return exclusion — 2026-10-24
+
+The user explicitly asks to exclude the still-failing automatic Search focus return after actual fullscreen exit in canonical Chrome Options. The [accepted decision](decisions/20261024-chrome-options-fullscreen-search-return-exclusion.md) removes only that named test requirement and preserves it as a known limitation. It is not a native PASS or API-efficacy result. Fullscreen geometry, retained query/task/draft, layout/final controls, other focus/input paths, all other Candidate gates and existing External/Retained dispositions remain unchanged. No more G15 focus retries or ordinary-input fallback are required for this excluded case.

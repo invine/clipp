@@ -1,11 +1,11 @@
 # Present the S2 connection summary
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-summary-22
 Priority band: 2
 Blocked by: 02, 08, 17, 19
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run ux-implementation-20261010; coordinator claim ux-summary-22
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -52,3 +52,9 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 ## Handoff
 
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+
+## Dispatch assessment — 2026-10-24
+
+Coordinator claims `ux-summary-22` after resolved predecessors 02/08/17/19, including completed18/19. Consume their scoped qualified outputs and the exact [Chrome Options fullscreen Search-return exclusion](../decisions/20261024-chrome-options-fullscreen-search-return-exclusion.md); this supplies no broader acceptance for changed compact consumers. Preserve one document-lived UiSession, authoritative Clip/query/action state, honest unknown status and ADR-0012; this dispatch changes no accepted invariant.
+
+Client baseline is clean `b9afeb48485ce277a9d75dee71c6fc53c767c045` / tree `08d6f3ca6d7a3b1b67e9cf97fbe8e3ac156dc86a` before coordinator documentation. The coordinator records the resulting claim commit and inspected isolated branch/worktree before source dispatch. No branch, worktree, implementation, native interval or new test result is asserted by this claim. Root serializes broad/native/clipboard/global-setting operations; at most two source implementers across the run, with other claimed owners idle or blocked as recorded. All ticket verification, finding collection and External/Retained boundaries remain.

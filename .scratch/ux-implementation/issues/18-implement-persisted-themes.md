@@ -1,7 +1,7 @@
 # Implement persisted System, Light and Dark
 
 Type: implementation
-Status: claimed
+Status: resolved
 Assignee: ux-themes-18
 Priority band: 1
 Blocked by: 01, 32
@@ -85,3 +85,15 @@ The author incorporated current29 source before final check/commit. Focused 8 su
 ## G14 completion by user acceptance — 2026-10-21
 
 The user directs “Mark these gates completed” for desktop OS text-only scaling G14 on17–19. [Accepted decision](../decisions/20261021-g14-17-19-user-acceptance.md) completes this ticket’s G14 gate administratively; no new native run or enlargement measurement is asserted. Earlier failed/unavailable/unchanged-text observations remain intact. Every other candidate gate and finding contribution remains required; this decision alone does not resolve the ticket.
+
+## Answer — 2026-10-24
+
+Resolved for installation-local persisted System, Light and Dark. Reviewed source080d71d and its owning settings/storage/real-renderer regressions remain integrated. Original clean candidate `a3c7166fe73e85bdceb7c114ed7e09be39151b47` / tree `05d2261576fe4e367d619930085dfac98dc73c3b` passed175 suites/1313 tests, all four typechecks and all three production builds; its native admissions retain that original binding. Current clean combined candidate `b9afeb48485ce277a9d75dee71c6fc53c767c045` / tree `08d6f3ca6d7a3b1b67e9cf97fbe8e3ac156dc86a` passes176 suites/1338 tests, all four typechecks and all three production builds. Independent current-source continuity confirms all14 theme/Summary roles unchanged; acceptance/test-only changes supply no new native theme execution. The independent completion audit identifies no remaining mandatory ticket18 gap.
+
+Actual Electron native evidence now supplies the remaining live System palette change, explicit Light under OS Dark and explicit Dark under OS Light, with visible whitespace validation, selected field text, focus ring and actions. OS Light is restored. That palette attempt retains its limited helper-identity roster and is not used for reopen. A separate fresh installation saved Dark, quit through the normal app menu, independently closed its exact recorded main/helpers and reopened once from the same profile. Dark and bundled local essentials were visible before any preference change. Both stages ended with normal Quit and complete known-identity closure; no complete historical descendant census is claimed.
+
+Existing source-bound Chrome System/explicit themes and same-installation reopen, the final actual Light-under-OS-Dark slice, current G36 concurrent-view/worker recovery, and Android six-stage live/explicit/reopen plus measured native contrast remain qualified under their original receipts and limits. The audit rehashes13 theme product roles plus the shared Summary role and binds the eight normal Electron asset maps to the actual current admissions and Root closure. No matrix is inferred from class names, an approval, or changed test-only APKs.
+
+Exact ignored evidence under `.local/ux-implementation/run-20261010/`: `theme18-currenta3c7166-residual-completion-readonly-audit-20261024.md` (SHA2568d8bd01cf42444702c0f327addd314b8b3f96122de87ec893b16c0debfcef858), its80-reference bindingsb0fafc6a, palette7f35344c/root receipt6e18f44c, independent saved-Dark createecb89225/reopen-a322c8a5 pair with proof4dd9f1eb and finalclosureff5ca71c, and `integrated-a3c7166-known-text-qr-final-discard-verification-20261024.json` (229f8d1d) with separate original/additive closure3466fbb2/f586f567. Current combined verification is separately bound by `integrated-b9afeb4-notification-saved-name-verification-20261024.json` (SHA2565f8726df1c9b119d47f8a378735c00d4be96a941c587842a325e924378e3feb8), actual session41496 exit0 and independent closure19f6d2e9. The sandbox-loopback EPERM failure88983 remains preserved and is not a product pass. Current source continuity is `theme18-currentb9af-proposal-incremental-review-20261024.md` (189d9c6d), bindings06aee0fc. Earlier failures, unavailable input and limited proofs remain unchanged. HTTP denial is the recorded Chromium boundary, not whole-network isolation.
+
+G14 is complete only through the linked accepted user decision, without a fabricated measurement. Navigation19 consumes only the separately [accepted Chrome Options automatic Search-return exclusion](../decisions/20261024-chrome-options-fullscreen-search-return-exclusion.md); notification16, later compact consumers and broad E13/C05/C15/A11 finding collection retain their own gates. No account, hardware/assistive, external-display, OEM or release qualification follows.

@@ -1,11 +1,11 @@
 # Deliver compact History and full details
 
 Type: implementation
-Status: open
-Assignee: none
+Status: claimed
+Assignee: ux-compact-history-21
 Priority band: 2
 Blocked by: 02, 03, 07, 35, 17, 18, 19
-Dispatch: plan approved; awaiting an authorized execution run
+Dispatch: authorized UX implementation run ux-implementation-20261010; coordinator claim ux-compact-history-21
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
@@ -58,3 +58,9 @@ Coordinator records the fresh baseline/claim, accepted decision assessment, isol
 ## Host delivery allocation — DRAFT 2026-10-14
 
 Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.
+
+## Dispatch assessment — 2026-10-24
+
+Coordinator claims `ux-compact-history-21` after resolved predecessors 02/03/07/35/17/18/19, including completed18/19. Consume their scoped qualified outputs and the exact [Chrome Options fullscreen Search-return exclusion](../decisions/20261024-chrome-options-fullscreen-search-return-exclusion.md); this supplies no broader acceptance for changed compact consumers. Preserve one document-lived UiSession, authoritative Clip/query/action state, honest unknown status and ADR-0012; this dispatch changes no accepted invariant.
+
+Client baseline is clean `b9afeb48485ce277a9d75dee71c6fc53c767c045` / tree `08d6f3ca6d7a3b1b67e9cf97fbe8e3ac156dc86a` before coordinator documentation. The coordinator records the resulting claim commit and inspected isolated branch/worktree before source dispatch. No branch, worktree, implementation, native interval or new test result is asserted by this claim. Root serializes broad/native/clipboard/global-setting operations; at most two source implementers across the run, with other claimed owners idle or blocked as recorded. All ticket verification, finding collection and External/Retained boundaries remain.
