@@ -57,7 +57,7 @@ export function bindTaskDialogFocus(
     if (event.key !== "Tab") return;
     const controls = [
       ...dialog.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])'
       ),
     ].filter(
       (element) =>

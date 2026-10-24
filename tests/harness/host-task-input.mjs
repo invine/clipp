@@ -40,6 +40,8 @@ for (const file of [
   "packages/ui/src/ClipboardApp.tsx",
   "packages/ui/src/uiSession.ts",
   "packages/ui/src/TaskDialog.tsx",
+  "packages/ui/src/taskDialogFocus.ts",
+  "packages/ui/src/RecoveryIssues.tsx",
   "packages/ui/src/sessionFocus.ts",
   "packages/ui/src/hostTaskInput.ts",
   "apps/electron/src/hostTaskInput.ts",
@@ -254,6 +256,59 @@ try {
     "workspace"
   );
   report.cases.push("disappeared invoker returns to workspace");
+  // Real ClipboardApp/RecoveryIssues: the failed public Pairing submission above
+  // creates its own closed Technical details disclosure, never a seeded issue.
+  await page.locator("button.issue-summary").click();
+  const issues = page.getByRole("dialog", {
+    name: "Issues and recovery",
+    exact: true,
+  });
+  await issues.waitFor();
+  const technical = issues.locator("details > summary").first();
+  const openPairing = issues.getByRole("button", {
+    name: "Open Pairing",
+    exact: true,
+  });
+  assert.equal(await technical.evaluate((el) => el.parentElement.open), false);
+  assert.equal(
+    await issues
+      .locator("[data-task-return]")
+      .evaluate((el) => el === document.activeElement),
+    true
+  );
+  await page.keyboard.press("Tab");
+  assert.equal(
+    await technical.evaluate((el) => el === document.activeElement),
+    true,
+    "browser Tab reaches the closed disclosure summary"
+  );
+  await page.keyboard.press("Tab");
+  assert.equal(
+    await openPairing.evaluate((el) => el === document.activeElement),
+    true,
+    "Tab from summary continues to the recovery route instead of wrapping to Close"
+  );
+  await page.keyboard.press("Shift+Tab");
+  assert.equal(
+    await technical.evaluate((el) => el === document.activeElement),
+    true,
+    "reverse Tab also retains the summary in the task order"
+  );
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await pairing.waitFor();
+  await pairing
+    .getByRole("button", { name: "Paste pairing text", exact: true })
+    .click();
+  await paste.waitFor();
+  assert.equal(await field.inputValue(), "retained failed target");
+  await page.keyboard.press("Escape");
+  await pairing.waitFor();
+  await page.keyboard.press("Escape");
+  await pairing.waitFor({ state: "hidden" });
+  report.cases.push(
+    "browser Tab/Shift-Tab crosses the actual Issues Technical details summary and opens retained Pairing input"
+  );
   await nav.getByRole("button", { name: /^History/ }).click();
   const filters = page.getByRole("button", { name: "Filters", exact: true });
   if ((await filters.getAttribute("aria-expanded")) === "false")
