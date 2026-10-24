@@ -221,12 +221,12 @@ export function createUiSession() {
           update({ destination: "devices" });
           this.open({ kind: "pairing", origin: "destination:devices" });
         } else if (destination.kind === "clip-details") {
-          update({ destination: "history" });
+          update({ destination: "history", ...destination.context });
           if (authority.clipIds.includes(destination.entity))
             this.open({
               kind: "clip-details",
               entity: destination.entity,
-              origin: `more:${destination.entity}`,
+              origin: `details:${destination.entity}`,
             });
           else {
             result = "unavailable";

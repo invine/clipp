@@ -134,14 +134,14 @@ export function createManagementNavigationConsumer(
       };
     },
     refresh,
-    open() {
+    open(target?: UiDestination) {
       if (!active || state.pending || uncertainOpen) return;
-      const current = session.destinationAvailability().current;
+      const current = target ?? session.destinationAvailability().current;
       const context = session.getSnapshot();
       const destination: UiDestination =
-        current.kind === "history"
+        current.kind === "history" || current.kind === "clip-details"
           ? {
-              kind: "history",
+              ...current,
               context: {
                 search: context.search,
                 timeFilter: context.timeFilter,

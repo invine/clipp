@@ -390,3 +390,27 @@ it("a missing callback is bounded and a late accepted reply cannot replace its u
     jest.useRealTimers();
   }
 });
+
+it("opens a selected Clip in full-page Clipp without replacing the popup query or task", () => {
+  const fixture = runtimeFixture();
+  const session = createUiSession();
+  session.update({ search: "needle", filterMode: "pinned" });
+  const consumer = createManagementNavigationConsumer(fixture.runtime, session);
+  const stop = consumer.start();
+  fixture.requests[0].reply({ ok: true, records: [] });
+  try {
+    consumer.open({ kind: "clip-details", entity: "selected" });
+    expect(fixture.requests[1].message).toMatchObject({
+      type: "managementNavigate",
+      handoff: { destination: { kind: "clip-details", entity: "selected" } },
+    });
+    expect(session.getSnapshot()).toMatchObject({
+      search: "needle",
+      filterMode: "pinned",
+      tasks: [],
+    });
+    fixture.requests[1].reply({ ok: true });
+  } finally {
+    stop();
+  }
+});

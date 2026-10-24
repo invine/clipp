@@ -1,8 +1,10 @@
 import React from "react";
+import { IconButton } from "./controls";
 import type { Clip } from "./types";
 import type { SessionContext } from "./uiSession";
 export function ClipDetails({
   clip,
+  sourceName,
   pinned,
   disabled,
   actions,
@@ -14,6 +16,7 @@ export function ClipDetails({
   onHistory,
 }: {
   clip?: Clip;
+  sourceName?: string;
   pinned: boolean;
   disabled: boolean;
   actions: SessionContext["historyActions"];
@@ -36,6 +39,12 @@ export function ClipDetails({
   return (
     <div className="clip-details">
       <dl>
+        {sourceName && (
+          <>
+            <dt>Source</dt>
+            <dd>{sourceName}</dd>
+          </>
+        )}
         <dt>Source Peer ID</dt>
         <dd>{clip.originPeerId}</dd>
         <dt>Clip ID</dt>
@@ -46,33 +55,32 @@ export function ClipDetails({
         <dd>{clip.type}</dd>
       </dl>
       <pre className="clip-details-content">{clip.content}</pre>
-      <div className="task-dialog-actions">
-        <button
-          type="button"
+      <div className="task-dialog-actions clip-details-actions">
+        <IconButton
+          icon="copy"
+          label="Copy Clip"
           disabled={
             disabled ||
             actions[`copy:${clip.id}`]?.pending ||
             actions[`copy:${clip.id}`]?.feedback?.requiresAcknowledgement
           }
           onClick={onCopy}
-        >
-          Copy Clip
-        </button>
-        <button
-          type="button"
+        />
+        <IconButton
+          icon="pin"
+          label="Pin Clip"
+          hint={pinned ? "Unpin Clip" : "Pin Clip"}
           aria-pressed={pinned}
           disabled={disabled || actions[`pin:${clip.id}`]?.pending}
           onClick={onPin}
-        >
-          {pinned ? "Unpin Clip" : "Pin Clip"}
-        </button>
-        <button
-          type="button"
+        />
+        <IconButton
+          icon="delete"
+          label="Delete Clip"
+          className="clip-details-delete"
           disabled={disabled || actions[`delete:${clip.id}`]?.pending}
           onClick={onDelete}
-        >
-          Delete Clip
-        </button>
+        />
       </div>
       {Object.entries(actions)
         .filter(([id]) => id.endsWith(`:${clip.id}`))

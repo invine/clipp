@@ -1,15 +1,16 @@
 /** Navigation data only; runtime authorization remains with the host. */
+export type HistoryContext = {
+  search?: string;
+  timeFilter?: "all" | "24h" | "7d" | "30d";
+  sourceFilter?: string;
+  filterMode?: "all" | "pinned";
+};
 export type UiDestination =
   | {
       kind: "history";
-      context?: {
-        search?: string;
-        timeFilter?: "all" | "24h" | "7d" | "30d";
-        sourceFilter?: string;
-        filterMode?: "all" | "pinned";
-      };
+      context?: HistoryContext;
     }
-  | { kind: "clip-details"; entity: string }
+  | { kind: "clip-details"; entity: string; context?: HistoryContext }
   | { kind: "requests"; entity?: string }
   | { kind: "pairing" }
   | { kind: "devices" }
@@ -24,11 +25,13 @@ export function parseUiDestination(value: unknown): UiDestination | null {
   const allowed =
     v.kind === "history"
       ? ["kind", "context"]
-      : v.kind === "clip-details" || v.kind === "requests"
-        ? ["kind", "entity"]
-        : v.kind === "settings"
-          ? ["kind", "category"]
-          : ["kind"];
+      : v.kind === "clip-details"
+        ? ["kind", "entity", "context"]
+        : v.kind === "requests"
+          ? ["kind", "entity"]
+          : v.kind === "settings"
+            ? ["kind", "category"]
+            : ["kind"];
   if (Object.keys(v).some((key) => !allowed.includes(key))) return null;
   if (
     ![

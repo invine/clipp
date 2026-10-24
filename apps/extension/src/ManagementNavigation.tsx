@@ -39,7 +39,7 @@ export function ManagementNavigationView({
         <button
           type="button"
           disabled={pending || openUnconfirmed}
-          onClick={consumer.open}
+          onClick={() => consumer.open()}
         >
           {pending ? "Navigation in progress…" : "Open full-page Clipp"}
         </button>

@@ -58,7 +58,7 @@ it("actual page binder waits for authority then applies once across worker recon
   ready = true;
   refresh();
   expect(session.getSnapshot().tasks).toEqual([
-    { kind: "clip-details", entity: "clip-a", origin: "more:clip-a" },
+    { kind: "clip-details", entity: "clip-a", origin: "details:clip-a" },
   ]);
   expect(first.sent).toContainEqual({
     type: "ready",

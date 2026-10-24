@@ -9,7 +9,8 @@ import {
   connectManagementPage,
   type ManagementAuthority,
 } from "./managementPage";
-import { ManagementNavigation } from "./ManagementNavigation";
+import { ManagementNavigationView } from "./ManagementNavigation";
+import { createManagementNavigationConsumer } from "./managementNavigationConsumer";
 import { createPopupCapture, type PopupCaptureState } from "./popupCapture";
 import {
   createRuntimeUiRecovery,
@@ -110,6 +111,11 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
     []
   );
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const managementNavigation = useMemo(
+    () => createManagementNavigationConsumer(chrome.runtime, session),
+    [session, identity?.deviceId]
+  );
+  useEffect(() => managementNavigation.start(), [managementNavigation]);
   const settings = useSettings();
   const [clipboardHistoryError, setClipboardHistoryError] =
     useState<ClipboardHistoryError | null>(null);
@@ -367,14 +373,18 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       style={{ width: "100%", height: "100%" }}
       className={surface === "popup" ? "popup-host" : "options-host"}
     >
-      <ManagementNavigation
-        key={identity?.deviceId ?? "identity-loading"}
-        runtime={chrome.runtime}
-        session={session}
+      <ManagementNavigationView
+        consumer={managementNavigation}
         surface={surface}
       />
       <ClipboardApp
         session={session}
+        onInspectClip={
+          surface === "popup"
+            ? (id) =>
+                managementNavigation.open({ kind: "clip-details", entity: id })
+            : undefined
+        }
         notificationControls={notificationControls}
         clips={history.snapshot?.clips ?? []}
         devices={devices}

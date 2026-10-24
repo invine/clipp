@@ -60,3 +60,56 @@ it("announces confirmed Copy in the active details task through the existing act
   expect(output).toContain('<div role="status"><p>Copied to clipboard.</p>');
   expect(output).toContain("Dismiss");
 });
+it("uses stable named Copy/Pin icons and a separate named Delete action in details", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipDetails, {
+      clip: {
+        id: "clip",
+        type: "text",
+        content: "full content",
+        originPeerId: "local",
+        capturedAt: 1,
+        shareExpiresAt: 2,
+      },
+      pinned: true,
+      disabled: false,
+      actions: {},
+      onCopy() {},
+      onPin() {},
+      onDelete() {},
+      onRetry() {},
+      onDismiss() {},
+      onHistory() {},
+    })
+  );
+  expect(output).toContain('aria-label="Copy Clip"');
+  expect(output).toContain('aria-label="Pin Clip"');
+  expect(output).toContain('aria-pressed="true"');
+  expect(output).toContain('aria-label="Delete Clip"');
+});
+it("makes the complete source name inspectable beside the exact Peer ID", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipDetails, {
+      clip: {
+        id: "clip",
+        type: "text",
+        content: "full content",
+        originPeerId: "exact-peer-id",
+        capturedAt: 1,
+        shareExpiresAt: 2,
+      },
+      sourceName: "👩🏽‍💻".repeat(40) + " source",
+      pinned: false,
+      disabled: false,
+      actions: {},
+      onCopy() {},
+      onPin() {},
+      onDelete() {},
+      onRetry() {},
+      onDismiss() {},
+      onHistory() {},
+    })
+  );
+  expect(output).toContain("👩🏽‍💻".repeat(40) + " source");
+  expect(output).toContain("exact-peer-id");
+});

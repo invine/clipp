@@ -383,3 +383,49 @@ it("a distinct notification removes the rendered Issues modal from Requests and 
   expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("pairing");
   expect(session.pairing.getSnapshot().raw).toBe("retained original input");
 });
+
+it("History exposes the Clip content as details selection and keeps complete graphemes in its preview", () => {
+  const content = "a".repeat(219) + "👩🏽‍💻" + " ending";
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      clips: [
+        {
+          id: "unicode",
+          type: "text",
+          content,
+          originPeerId: "local",
+          capturedAt: 1,
+          shareExpiresAt: 2,
+        },
+      ],
+    })
+  );
+  expect(output).toContain('aria-label="View Clip details"');
+  expect(output).toContain("a".repeat(219) + "👩🏽‍💻…");
+  expect(output).not.toContain('aria-label="More Clip actions"');
+  expect(output).toContain('aria-label="Copy Clip"');
+  expect(output).toContain('aria-label="Pin Clip"');
+});
+
+it.each(["e\u0301", "👍🏽", "🇦🇪"])(
+  "History preview preserves the final %s grapheme",
+  (grapheme) => {
+    const output = renderToStaticMarkup(
+      React.createElement(ClipboardApp, {
+        ...props,
+        clips: [
+          {
+            id: "unicode",
+            type: "text",
+            content: "a".repeat(219) + grapheme + " tail",
+            originPeerId: "local",
+            capturedAt: 1,
+            shareExpiresAt: 2,
+          },
+        ],
+      })
+    );
+    expect(output).toContain("a".repeat(219) + grapheme + "…");
+  }
+);

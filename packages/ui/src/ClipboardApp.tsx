@@ -1,3 +1,4 @@
+import { shortenPreview, previewGraphemes } from "./previewText";
 import { NotificationSettings } from "./NotificationSettings";
 import type { NotificationAvailabilityControls } from "./useNotificationAvailability";
 import type { HostTaskInput } from "./hostTaskInput";
@@ -116,20 +117,6 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleString();
 }
 
-function truncate(text: string, max = 220): string {
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
-function truncateMiddle(text: string, max = 28): string {
-  if (!text) return "";
-  if (text.length <= max) return text;
-  const available = Math.max(max - 3, 1);
-  const lead = Math.ceil(available / 2);
-  const tail = Math.floor(available / 2);
-  return `${text.slice(0, lead)}...${text.slice(text.length - tail)}`;
-}
-
 function connectionStatusFor(
   connection: PeerConnectionInfo | undefined,
   online: boolean
@@ -179,7 +166,7 @@ function relayDisplayName(address: string, index: number): string {
 
   const p2pIndex = parts.findIndex((part) => part === "p2p");
   const peerId = p2pIndex >= 0 ? parts[p2pIndex + 1] : "";
-  if (peerId) return `Relay ${truncateMiddle(peerId, 12)}`;
+  if (peerId) return `Relay ${shortenPreview(peerId, 12, "middle")}`;
 
   return `Relay ${index + 1}`;
 }
@@ -270,14 +257,20 @@ function MiddleEllipsisText({
       }
 
       // Find the longest middle-ellipsized string that fits the current pixel width.
-      const maxChars = Math.max(1, Math.min(max ?? text.length, text.length));
+      const maxChars = Math.max(
+        1,
+        Math.min(
+          max ?? previewGraphemes(text).length,
+          previewGraphemes(text).length
+        )
+      );
       let low = 1;
       let high = maxChars;
-      let best = truncateMiddle(text, low);
+      let best = shortenPreview(text, low, "middle");
 
       while (low <= high) {
         const mid = Math.floor((low + high) / 2);
-        const candidate = truncateMiddle(text, mid);
+        const candidate = shortenPreview(text, mid, "middle");
         measure.textContent = candidate;
         if (measure.scrollWidth <= containerWidth + 0.5) {
           best = candidate;
@@ -338,6 +331,7 @@ export type ClipboardAppProps = {
   historyUnavailable?: boolean;
   historyRefreshError?: string | null;
   onRetryHistoryRefresh?(): boolean | Promise<boolean>;
+  onInspectClip?(id: string): void;
   localRetentionMs?: number;
   appearanceSettings?: AppearanceSettings;
   autoSync?: boolean;
@@ -428,6 +422,7 @@ export function ClipboardApp({
   historyUnavailable: sourceHistoryUnavailable = false,
   historyRefreshError = null,
   onRetryHistoryRefresh,
+  onInspectClip,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
   appearanceSettings,
   autoSync = true,
@@ -489,7 +484,6 @@ export function ClipboardApp({
   onRetryInitialization,
   onAcknowledgeIdentityRotationNotice,
 }: ClipboardAppProps) {
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const [isCramped, setIsCramped] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
@@ -642,7 +636,7 @@ export function ClipboardApp({
   const [clearNeedsRefresh, setClearNeedsRefresh] = useState(false);
   const [clearRefreshPending, setClearRefreshPending] = useState(false);
   useEffect(() => {
-    const menu = Boolean(openMenuId || timeMenuOpen || sourceMenuOpen);
+    const menu = Boolean(timeMenuOpen || sourceMenuOpen);
     const drawer = showNav && sessionState.tasks.length === 0;
     const guardedClear = clearPending && clearReviewOpen;
     if (!taskInput || (!menu && !drawer && !guardedClear)) return;
@@ -650,7 +644,6 @@ export function ClipboardApp({
     return taskInput.registerOverlay({
       dismiss: () => {
         if (menu) {
-          setOpenMenuId(null);
           setTimeMenuOpen(false);
           setSourceMenuOpen(false);
         } else dismissNav();
@@ -658,7 +651,6 @@ export function ClipboardApp({
     });
   }, [
     taskInput,
-    openMenuId,
     timeMenuOpen,
     sourceMenuOpen,
     showNav,
@@ -896,17 +888,6 @@ export function ClipboardApp({
   const peerCount = peers.length;
 
   useEffect(() => {
-    if (!openMenuId) return;
-    function handleDocClick(e: MouseEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest(".history-menu")) return;
-      setOpenMenuId(null);
-    }
-    document.addEventListener("mousedown", handleDocClick);
-    return () => document.removeEventListener("mousedown", handleDocClick);
-  }, [openMenuId]);
-
-  useEffect(() => {
     function handleDocClick(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
       if (
@@ -1040,7 +1021,6 @@ export function ClipboardApp({
   ]);
 
   function setPinned(id: string, pinned: boolean) {
-    setOpenMenuId(null);
     void session.runHistoryAction(`pin:${id}`, async () => {
       try {
         await onSetPinned(id, pinned);
@@ -2296,9 +2276,8 @@ export function ClipboardApp({
           event.preventDefault();
           return;
         }
-        if (openMenuId || timeMenuOpen || sourceMenuOpen) {
+        if (timeMenuOpen || sourceMenuOpen) {
           event.preventDefault();
-          setOpenMenuId(null);
           setTimeMenuOpen(false);
           setSourceMenuOpen(false);
           return;
@@ -2770,6 +2749,7 @@ export function ClipboardApp({
                   className={`history-card ${removingIds.has(clip.id) ? "leaving" : ""}`}
                   key={clip.id}
                   data-clip-id={clip.id}
+                  aria-labelledby={`clip-preview:${clip.id}`}
                   style={{ position: "relative" }}
                 >
                   <div className="history-card-header">
@@ -2781,68 +2761,30 @@ export function ClipboardApp({
                         text={label}
                       />
                     </div>
-                    <div className="history-actions">
-                      <IconButton
-                        icon="pin"
-                        label="Pin Clip"
-                        data-session-focus={`pin:${clip.id}`}
-                        aria-pressed={pinned}
-                        hint={pinned ? "Unpin Clip" : "Pin Clip"}
-                        onClick={() => setPinned(clip.id, !pinned)}
-                      />
-                      <div className="history-menu">
-                        <button
-                          className="icon-button"
-                          aria-label="More Clip actions"
-                          data-session-focus={`more:${clip.id}`}
-                          title="More"
-                          onClick={() =>
-                            setOpenMenuId(
-                              openMenuId === clip.id ? null : clip.id
-                            )
-                          }
-                        >
-                          <Icon name="more" />
-                        </button>
-                        {openMenuId === clip.id && (
-                          <div className="history-menu-dropdown">
-                            <button
-                              type="button"
-                              className="text-button"
-                              onClick={() => {
-                                setOpenMenuId(null);
-                                session.open({
-                                  kind: "clip-details",
-                                  entity: clip.id,
-                                  origin: `more:${clip.id}`,
-                                });
-                              }}
-                            >
-                              View Clip details
-                            </button>
-                            <button
-                              className="text-button"
-                              style={{
-                                width: "100%",
-                                justifyContent: "flex-start",
-                              }}
-                              onClick={() => {
-                                setOpenMenuId(null);
-                                handleDelete(clip.id);
-                              }}
-                            >
-                              <Icon name="delete" />
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
 
-                  <div className="history-body">
-                    <div className="history-text">{truncate(clip.content)}</div>
-                  </div>
+                  <button
+                    type="button"
+                    className="history-body history-select"
+                    aria-label="View Clip details"
+                    data-session-focus={`details:${clip.id}`}
+                    onClick={() =>
+                      onInspectClip
+                        ? onInspectClip(clip.id)
+                        : session.open({
+                            kind: "clip-details",
+                            entity: clip.id,
+                            origin: `details:${clip.id}`,
+                          })
+                    }
+                  >
+                    <span
+                      id={`clip-preview:${clip.id}`}
+                      className="history-text"
+                    >
+                      {shortenPreview(clip.content, 220)}
+                    </span>
+                  </button>
 
                   <div className="history-meta">
                     <div className="meta-left">
@@ -2857,21 +2799,38 @@ export function ClipboardApp({
                         {clip.type === "url" ? "URL" : "Text"}
                       </div>
                     </div>
-                    <div className="meta-actions">
-                      <IconButton
-                        icon="copy"
-                        label="Copy Clip"
-                        data-session-focus={`copy:${clip.id}`}
-                        disabled={
-                          !identityReady ||
-                          sessionState.historyActions[`copy:${clip.id}`]
-                            ?.pending ||
-                          sessionState.historyActions[`copy:${clip.id}`]
-                            ?.feedback?.requiresAcknowledgement
-                        }
-                        onClick={() => reuseClip(clip.id)}
-                      />
-                    </div>
+                  </div>
+                  <div className="history-actions">
+                    <IconButton
+                      icon="pin"
+                      label="Pin Clip"
+                      data-session-focus={`pin:${clip.id}`}
+                      aria-describedby={`clip-preview:${clip.id}`}
+                      aria-pressed={pinned}
+                      hint={pinned ? "Unpin Clip" : "Pin Clip"}
+                      disabled={
+                        !identityReady ||
+                        historyLoading ||
+                        historyUnavailable ||
+                        Boolean(historyRefreshError) ||
+                        sessionState.historyActions[`pin:${clip.id}`]?.pending
+                      }
+                      onClick={() => setPinned(clip.id, !pinned)}
+                    />
+                    <IconButton
+                      icon="copy"
+                      label="Copy Clip"
+                      data-session-focus={`copy:${clip.id}`}
+                      aria-describedby={`clip-preview:${clip.id}`}
+                      disabled={
+                        !identityReady ||
+                        sessionState.historyActions[`copy:${clip.id}`]
+                          ?.pending ||
+                        sessionState.historyActions[`copy:${clip.id}`]?.feedback
+                          ?.requiresAcknowledgement
+                      }
+                      onClick={() => reuseClip(clip.id)}
+                    />
                   </div>
                 </article>
               );
@@ -2894,6 +2853,10 @@ export function ClipboardApp({
           >
             <ClipDetails
               clip={clips.find((clip) => clip.id === activeTask?.entity)}
+              sourceName={deviceNameMap.get(
+                clips.find((clip) => clip.id === activeTask?.entity)
+                  ?.originPeerId ?? ""
+              )}
               pinned={pinnedSet.has(activeTask?.entity ?? "")}
               disabled={
                 !identityReady ||

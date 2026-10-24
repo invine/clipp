@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { shortenPreview } from "../../../../packages/ui/src/previewText";
 import { useHistory } from "../useHistory";
 
 export const ClipHistoryList = () => {
@@ -48,9 +49,7 @@ export const ClipHistoryList = () => {
             <div className="truncate mb-1">
               {clip.type === "text" ? (
                 <span title={clip.content}>
-                  {clip.content.length > 200
-                    ? clip.content.slice(0, 200) + "…"
-                    : clip.content}
+                  {shortenPreview(clip.content, 200)}
                 </span>
               ) : (
                 <a
