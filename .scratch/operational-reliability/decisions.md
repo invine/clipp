@@ -31,3 +31,7 @@ The initial task authorizes preparation now and local implementation after ticke
 - Implementation/review/qualification: not started.
 
 These operational choices preserve existing product and transport invariants. They do not introduce new product glossary concepts or require an architectural decision record. The compact coverage table is the decision record for this effort.
+
+## Docker Desktop authorization update
+
+On 2026-10-25 in the current chat, the user answered **"Yes, launch Docker Desktop"** to the explicit request to launch the installed application for this effort's disposable PostgreSQL 17/18 tests. Scope: start the local Docker daemon and run this effort's owned disposable database fixtures. Limits: no settings changes or software installation. Source: direct async user reply in chat `01a173ed-a0b9-7ac2-9d50-97985faaaf1d`. No revocation observed. This supersedes the coordinator's earlier conservative delegation restriction on starting Docker; the prior automatic-review rejection remains recorded as historical evidence.

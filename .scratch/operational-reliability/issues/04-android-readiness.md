@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] One exact serial is selected consistently through readiness and instrumentation, with candidate/package provenance.
 - [ ] Boot completion, active WebView/provider version, instrumentation and simple app interaction are established before the matrix.

@@ -1,5 +1,7 @@
 # Operational reliability
 
+**Implementation resumed 2026-10-25** after the user asked to continue from the preserved [handoff](handoff.md). The coordinator reconciled the saved Git state and is integrating the approved ticket graph locally.
+
 **Owning repository:** client (Clipp)  
 **Canonical feature directory:** client:`.scratch/operational-reliability/`  
 **Specification:** [spec.md](spec.md)  
@@ -13,6 +15,19 @@
 Resolve repository-relative references against explicitly selected roots. The relay directory with this feature name is a pointer, not another tracker. Existing [project operations](../../docs/agents/operations.md), [coordination](../../docs/agents/workflow.md), [recovery](../../docs/agents/recovery.md), and [tracker conventions](../../docs/agents/issue-tracker.md) apply. At most two implementation agents may be active in this run.
 
 Design approved in the current chat on 2026-10-25, with the clipboard amendment recorded in [decisions](decisions.md). Testing boundaries and the six-ticket breakdown were approved in the current chat on 2026-10-25 ("I agree"). The numbered issue files are authoritative; implementation follows the run record.
+
+## Approved ticket graph
+
+| Ticket | Deliverable | Blocked by |
+| --- | --- | --- |
+| [01](issues/01-postgresql-pr-coverage.md) | Strict PostgreSQL PR coverage | None |
+| [02](issues/02-electron-readiness.md) | Owned Electron readiness | None |
+| [03](issues/03-chrome-clipboard.md) | Chrome identity and authorized clipboard use | None |
+| [04](issues/04-android-readiness.md) | Android device/WebView/instrumentation readiness | None |
+| [05](issues/05-canonical-ownership.md) | Canonical ownership and decision coverage | None |
+| [06](issues/06-operational-handoff.md) | Operational facts and scoped authorization | 05 |
+
+Ticket status and blocking fields remain authoritative. [Run record](run.md) supplies dispatch and evidence pointers.
 
 ## Preservation and evidence
 

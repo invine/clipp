@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Candidate/build provenance, process/profile/window ownership and harmless focused interaction are checked before product assertions.
 - [ ] Prerequisite, runner, product and unknown failures are distinguishable with retained stage evidence.

@@ -4,7 +4,7 @@
 
 **Blocked by:** [05: Validate canonical effort ownership and decision coverage](05-canonical-ownership.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Deployment context/namespace/release/public endpoint are separate from display name and dated qualification status.
 - [ ] Access records contain source, observed working route, resource scope and recheck instructions without secrets or automatic execution.

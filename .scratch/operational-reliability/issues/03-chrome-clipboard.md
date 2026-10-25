@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Profile/process, loaded extension ID/build/candidate and basic interaction are checked before acceptance assertions.
 - [ ] Explicit authorization reference and overwrite scope permit host clipboard writes without backup or restoration prerequisites; unrelated invocations do not inherit permanent permission.

@@ -1,14 +1,18 @@
 # Operational reliability implementation run
 
-Coordinator: `/root`. Design, testing boundaries and six-ticket graph approved by the user on 2026-10-25. Canonical tickets are in this directory; at most two implementers are active. Local implementation and commits only; publication/deployment require applicable authorization. Clipboard overwrite permission is recorded in [decisions](decisions.md).
+Coordinator: `/root`. The user approved the design, test boundaries, six-ticket graph and sole 05 → 06 dependency on 2026-10-25. Implementation resumed on the user's explicit follow-up. The coordinator owns canonical claims, integration and resolution; no more than two implementers were active at once.
 
-Client baseline: `a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33`. Relay baseline: `2b8ad5da548511a6e3dffffcd99765f057c1b1fe`. Each repository uses `codex/operational-reliability-integration` in its own isolated integration worktree. Primary checkouts and existing worktrees/stashes remain preserved.
+Client and relay use their own `codex/operational-reliability-integration` branches in isolated worktrees. At the time of this handoff, implementation tips are client `9e5c12f54e3a82d3cc476b297a3875ac658f9356` and relay `248eefd006ddef5ea9a7732963f7009e15c930f3`. The coordinator is reconciling the canonical ticket docs and will commit that record separately.
 
-Durable current run ledger and local root/artifact mappings are client:`.local/operational-reliability/run-20261025/ledger.json` and `local.json`. The initial `planning-inventory.json` records existing branches/worktrees/stashes and dirty metadata without private contents. `artifacts/` retains evidence outside disposable worktrees. Historical records remain evidence for their recorded revisions only.
+The authoritative v2 run ledger and local roots/artifact mappings are client:`.local/operational-reliability/run-20261025/ledger.json` and `local.json`. Private receipts, command logs, failed attempts and review artifacts live under the same ignored run directory. Re-run the read-only status command from the integration checkout with explicit ledger and local paths before further coordination. Never infer current Git state from this dated paragraph or an earlier snapshot.
 
-## Dispatch
+## Integrated work and evidence
 
-- 01: claimed by `/root/ticket_01`, relay isolated ticket branch based on relay integration baseline.
-- 05: claimed by `/root/ticket_05`, client isolated ticket branch based on client integration baseline.
+- 01: relay `248eefd006ddef5ea9a7732963f7009e15c930f3`; exact-source local real PostgreSQL 17/18 strict smoke, routine and race profiles passed. Hosted CI was not run. Disposable databases used the retained host-mounted data adapter because Docker VM storage was full.
+- 02: client `0dce87d06fae4b6ccf274ae6d6ed48b070b87a6d`; public fixtures, project check and owned Electron readiness passed. No live relay transfer or provider login was part of this readiness run.
+- 03: client is contained in current integration. Public clipboard contract tests and an owned Chromium acceptance on a clean integration candidate passed. The sanitized receipt records the extension identity/build and D4 clipboard effects; toolbar popup acceptance is not claimed.
+- 04: client is contained in current integration. Public readiness fixtures and project check passed. Native Android evidence is explicitly unavailable because no API 31+ emulator was present; no installation or instrumentation was performed.
+- 05: client `e35794a2c884b75d6893c8e1aa9075dd19e03e16`; v2 ownership/decision coverage and historical v1 support implemented. Its earlier review and checks must be renewed at the current integrated revision before final resolution.
+- 06: client `9e5c12f54e3a82d3cc476b297a3875ac658f9356`; operational record validation, read-only reporting, scoped blockers and unknown/revoked/superseded handling implemented. The coordinator records only user-supported clipboard and Docker authorizations; deployment and access categories remain explicitly unknown.
 
-Each ticket preserves product/transport invariants and changes only the approved operational scope. Implementers use the approved public testing seams and TDD; the coordinator owns canonical claims and resolution. Integration requires merger review and fresh checks; final Standards/Spec review remains outstanding.
+Final whole-effort Standards and Spec review, fresh `npm run verify`, exact-revision evidence updates and canonical ticket resolution remain outstanding. Push, PR, publication, hosted CI, deployment and live relay qualification were not authorized or performed. Preserve all unrelated primary checkout changes and all pre-existing worktrees/stashes.

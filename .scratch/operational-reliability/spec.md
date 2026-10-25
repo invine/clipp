@@ -111,4 +111,4 @@ Testing boundaries below were confirmed by the user on 2026-10-25. Prefer public
 
 ## Further Notes
 
-Use the existing cross-repository coordination rules: one integration branch per participating repository, coordinator-owned claims/integration/resolution, at most two implementers, preserved unrelated work, exact tested/reviewed revisions and durable evidence before worktree cleanup. Independently verifiable tickets and genuine blocking edges will be published after the user approves their breakdown. Ownership and source pointers are in the canonical feature index.
+Use the existing cross-repository coordination rules: one integration branch per participating repository, coordinator-owned claims/integration/resolution, at most two implementers, preserved unrelated work, exact tested/reviewed revisions and durable evidence before worktree cleanup. The user approved the six independently verifiable tickets and sole 05 → 06 blocking edge on 2026-10-25; the numbered issue files are published in the canonical tracker. Ownership and source pointers are in the canonical feature index.
