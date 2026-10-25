@@ -277,6 +277,29 @@ test("persists attempts through the shared native retry policy", async () => {
   }
 });
 
+test("the default diagnostic clock observes Date.now changes after attempt creation", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "clipp-clipboard-live-clock-")
+  );
+  const originalNow = Date.now;
+  let attempt;
+  try {
+    const { beginNativeAttempt } =
+      await import("../../../scripts/native-acceptance-attempts.mjs");
+    attempt = await beginNativeAttempt({
+      output: directory,
+      scenario: "clipboard-live-clock",
+    });
+    const startedAt = Date.parse(attempt.startedAt);
+    Date.now = () => startedAt + 5_000;
+    assert.equal(attempt.remainingMs(20 * 60_000), 20 * 60_000 - 5_000);
+  } finally {
+    Date.now = originalNow;
+    if (attempt) await attempt.finish({ result: "passed", stage: "complete" });
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("diagnostic budget starts with attempt one and is checked mid-run", async () => {
   const directory = await mkdtemp(join(tmpdir(), "clipp-clipboard-deadline-"));
   const originalNow = Date.now;

@@ -26,7 +26,7 @@ export async function beginNativeAttempt({
   change,
   expectation,
   deferDiagnosticClockUntilFailure = false,
-  now = Date.now,
+  now = () => Date.now(),
 }) {
   await mkdir(output, { recursive: true, mode: 0o700 });
   const lockPath = path.join(output, ".attempt.lock");
