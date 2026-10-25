@@ -51,7 +51,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Implementation is integrated on `codex/ux-implementation-integration` at `ccd1f223c1791c3c0f36eddc4db311715d4ecb9b`; final `npm run verify` and combined Standards/Spec review passed for implementation quality. Keep this ticket claimed: the Android native S2 header/panel acceptance has not run. Ticket 21's compact History/details profiles do not qualify S2. No authenticated relay delivery or broader external qualification is inferred. No push, publication or deployment occurred.
 
 ## Dispatch assessment — 2026-10-24
 

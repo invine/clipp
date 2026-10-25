@@ -53,7 +53,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Implementation and the bounded Android History/details acceptance are integrated on `codex/ux-implementation-integration`. The four fresh font-scale/orientation profiles passed on `939c489ac8a3b397b152482e706a84a0b7cb2cc5`; the later `c0e776b`, `b0c06b6`, and `ccd1f22` commits are behavior-preserving lookup/wording cleanups. Final combined candidate `ccd1f223c1791c3c0f36eddc4db311715d4ecb9b` passed `npm run verify`. Standards review found no remaining violations or smells; Spec review found no implementation mismatch. Keep this ticket claimed: actual short Chrome popup handoff and actual Copy/Send failure acceptance remain unqualified. Detailed native evidence and review are in `.local/ux-implementation/run-20261010/ticket21-native-20261025/` and `ticket21-root-integration-20261025.json`. No push, publication or deployment occurred.
 
 ## Host delivery allocation — DRAFT 2026-10-14
 
