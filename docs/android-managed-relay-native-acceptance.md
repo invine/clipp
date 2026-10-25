@@ -39,7 +39,36 @@ adb -s "$CLIPP_TEST_SERIAL" shell am instrument -w \
 ```
 
 Managed-emulator npm instrumentation scripts also select this isolated variant.
-The existing connected-emulator script retains its API 31+ emulator preflight.
+The connected acceptance command requires `CLIPP_TEST_SERIAL`, the exact
+installed acceptance APK in `CLIPP_ANDROID_CANDIDATE_APK`, and an absolute,
+durable `CLIPP_ANDROID_EVIDENCE_DIR`. Build the candidate and its provenance
+sidecar with the following command. Install that APK and its matching test APK
+on the selected API 31+ emulator, then run the readiness-gated test command:
+
+```sh
+npm --workspace apps/android run build:native:acceptance-candidate
+CLIPP_TEST_SERIAL=emulator-5554 \
+CLIPP_ANDROID_CANDIDATE_APK="$PWD/android/app/build/outputs/apk/acceptance/app-acceptance.apk" \
+CLIPP_ANDROID_EVIDENCE_DIR="$HOME/clipp-evidence/android-readiness" \
+npm --workspace apps/android run test:native:instrumentation:connected
+```
+
+Before instrumentation, the readiness gate uses that exact serial for the
+device state, completed boot, API level, installed acceptance package, active
+WebView provider/version, acceptance instrumentation probe, app launch and a
+harmless Tab key interaction. The subsequent Gradle command inherits
+`ANDROID_SERIAL` for the same device. The candidate receipt includes its file
+hash, source revision and dirty state. Do not use an unrelated APK renamed to
+`app-acceptance.apk`; readiness verifies the adjacent provenance sidecar against
+the current source tree and candidate bytes.
+Missing targets, provider/readiness failures and runner failures stop before
+the product test command. The receipt records stage and failure class. Reuse
+the evidence directory for retries: the shared policy permits one initial
+attempt and at most two diagnostic attempts in 20 minutes, each requiring a
+distinct changed hypothesis and expected observation. The preflight does not
+change device settings, probe barcode availability, install/uninstall packages
+or alter user data. Its cleanup status is `not-required`; fixture teardown
+remains the responsibility of instrumentation tests that create fixture data.
 
 For an actual process boundary, run these phases separately. Each method checks
 the isolated package before its fixture; each phase contains only a synthetic

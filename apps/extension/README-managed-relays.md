@@ -184,3 +184,32 @@ transport evidence. Record candidate commit, OS/Chrome version, transport, passe
 failed and not-run gates in the evidence ledger. Registered-ID Google, real
 credential rotation/suspension, both live transport transfers and independent
 configuration behavior remain required before completing ticket 15.
+
+## Chrome clipboard acceptance evidence
+
+Run `npm --workspace apps/extension run test:clipboard` for the effort-scoped
+clipboard acceptance. The command rebuilds the candidate, creates its own
+throwaway Chromium profile, loads only that candidate, identifies the loaded
+extension ID, exercises the extension page and offscreen clipboard path, and
+prints a sanitized receipt with the source revision, build SHA-256 and clipboard
+side effects. It verifies extension-page behavior; it does not qualify Chrome's
+toolbar popup. The runner uses the 2026-10-25 D4 authorization to overwrite the
+host clipboard. It does not read, save, or restore prior clipboard content.
+
+Attempt history is stored outside Git at
+`apps/extension/.local/native-acceptance/chrome-clipboard.json`. After a failed
+initial attempt, a diagnostic rerun must state a changed hypothesis and use the
+same scenario history, for example:
+
+```sh
+npm --workspace apps/extension run build
+CLIPP_DIAGNOSTIC_HYPOTHESIS='service worker was not ready; increase readiness wait' \
+  node apps/extension/scripts/verify-clipboard-io.mjs \
+  --authorization-reference operational-reliability:D4:2026-10-25 \
+  --attempt diagnostic
+```
+
+The runner permits at most two diagnostic attempts within 20 minutes of the
+initial attempt. Cleanup failures are reported and fail the command. Public
+argument and retry-history fixtures can be run with
+`npm --workspace apps/extension run test:clipboard:contract`.
