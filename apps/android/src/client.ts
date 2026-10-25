@@ -125,6 +125,7 @@ export type AndroidAppState = {
   pairingErrors?: PairingError[];
   pairingState?: PairingOutcomeSnapshot;
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
@@ -1368,6 +1369,10 @@ export class AndroidClient {
       pairingErrors: pairingState.errors,
       pairingState,
       peers,
+      connectionStateKnown:
+        Boolean(this.transport) &&
+        !this.identityRotationRecovery &&
+        !this.workFence.isFenced(),
       peerConnections,
       relayConnections,
       identity,

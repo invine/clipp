@@ -1,3 +1,5 @@
+import { projectConnectionSummary } from "../../core/runtime/connectionSummary";
+import { ConnectionStatusButton, ConnectionsPanel } from "./ConnectionSummary";
 import { NotificationSettings } from "./NotificationSettings";
 import type { NotificationAvailabilityControls } from "./useNotificationAvailability";
 import type { HostTaskInput } from "./hostTaskInput";
@@ -132,8 +134,10 @@ function truncateMiddle(text: string, max = 28): string {
 
 function connectionStatusFor(
   connection: PeerConnectionInfo | undefined,
-  online: boolean
+  online: boolean,
+  known: boolean
 ) {
+  if (!known) return { kind: "unknown", title: "Connection status unknown" };
   if (!online) {
     return {
       kind: "offline",
@@ -143,26 +147,24 @@ function connectionStatusFor(
   if (!connection) {
     return {
       kind: "unknown",
-      title: "Online; connection path unknown",
+      title: "Connected · path unknown",
     };
   }
   if (connection.hasDirect) {
     return {
       kind: "direct",
-      title: connection.hasRelay
-        ? "Direct connection active; relay is also available"
-        : "Direct peer connection",
+      title: "Connected · direct",
     };
   }
   if (connection.hasRelay) {
     return {
       kind: "relay",
-      title: "Relayed peer connection",
+      title: "Connected · relay",
     };
   }
   return {
     kind: "unknown",
-    title: "Online; connection path unknown",
+    title: "Connected · path unknown",
   };
 }
 
@@ -330,6 +332,7 @@ export type ClipboardAppProps = {
   onRetryRequests?(): boolean | void | Promise<boolean | void>;
   onDismissPairingOutcome?(targetPeerId: string): Promise<boolean>;
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
@@ -420,6 +423,7 @@ export function ClipboardApp({
   onRetryRequests,
   onDismissPairingOutcome,
   peers,
+  connectionStateKnown = false,
   peerConnections = [],
   relayConnections = [],
   identity,
@@ -893,7 +897,14 @@ export function ClipboardApp({
     if (issue.scope === "runtime") return onAcknowledgeIdentityRotationNotice;
     return undefined;
   }
-  const peerCount = peers.length;
+  const connectionSummary = projectConnectionSummary({
+    devices,
+    peers,
+    peerConnections,
+    connectionStateKnown,
+    managedRelayConfigurations,
+    managedRelayStates,
+  });
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -1916,11 +1927,11 @@ export function ClipboardApp({
                 {devices.map((dev) => {
                   const connectionInfo = peerConnectionMap.get(dev.deviceId);
                   const isOnline =
-                    connectedPeerSet.has(dev.deviceId) ||
-                    Boolean(connectionInfo);
+                    connectionStateKnown && connectedPeerSet.has(dev.deviceId);
                   const connectionStatus = connectionStatusFor(
                     connectionInfo,
-                    isOnline
+                    isOnline,
+                    connectionStateKnown
                   );
                   return (
                     <div
@@ -2363,10 +2374,10 @@ export function ClipboardApp({
           <div className="app-title-block">
             <div className="app-title">
               Clipp
-              <span className="chip-status">
-                <span className="dot"></span>
-                {peerCount ? "Synced" : "Offline"}
-              </span>
+              <ConnectionStatusButton
+                summary={connectionSummary}
+                session={session}
+              />
             </div>
             <div className="app-subtitle">
               Clipboard sharing across all your devices.
@@ -2458,6 +2469,13 @@ export function ClipboardApp({
           </>
         )}
       </div>
+      {activeTask?.kind === "connections" && (
+        <ConnectionsPanel
+          summary={connectionSummary}
+          session={session}
+          autoSync={autoSyncKnown ? autoSync : null}
+        />
+      )}
       {activeTask?.kind === "issues" && (
         <RecoveryIssues
           issues={issues}

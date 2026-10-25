@@ -40,6 +40,7 @@ type AppState = {
   pairingErrors: PairingError[];
   pairingState?: PairingOutcomeSnapshot;
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
@@ -167,6 +168,9 @@ const App = () => {
             : Promise.resolve(false)
         }
         peers={state.peers}
+        connectionStateKnown={
+          state.connectionStateKnown === true && !recovery.unavailable
+        }
         peerConnections={state.peerConnections || []}
         relayConnections={state.relayConnections || []}
         identity={state.identity}

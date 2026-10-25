@@ -87,7 +87,8 @@ export function composeRecoveryIssues(faults: RecoveryFaults): RecoveryIssue[] {
       ["login_needed", "degraded", "refused", "conflict"].includes(
         relay.status
       ) ||
-      (relay.status === "retrying" && relay.reason)
+      relay.status === "retrying" ||
+      Boolean(relay.warning)
     )
       add(
         "relay",

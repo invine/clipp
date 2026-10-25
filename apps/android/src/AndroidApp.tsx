@@ -167,6 +167,9 @@ export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
             : Promise.resolve(false)
         }
         peers={state.peers}
+        connectionStateKnown={
+          state.connectionStateKnown === true && !recovery.unavailable
+        }
         peerConnections={state.peerConnections || []}
         relayConnections={state.relayConnections || []}
         identity={state.identity as Identity | null}
