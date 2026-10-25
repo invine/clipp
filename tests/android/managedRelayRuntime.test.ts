@@ -18,7 +18,10 @@ describe("Android managed relay runtime adapter", () => {
     const host = {
       supportsAddress: jest.fn((_address: string) => true),
     } as unknown as AndroidManagedRelayHost;
-    const auth = {} as AndroidManagedRelayAuth;
+    const accessToken = "ory_at_Native.CaseSensitive";
+    const auth = {
+      accessToken: jest.fn(async () => accessToken),
+    } as unknown as AndroidManagedRelayAuth;
     const native = {
       getDiscovery: jest.fn(async (_url: string, _token: string) => ({
         status: 200,
@@ -44,14 +47,13 @@ describe("Android managed relay runtime adapter", () => {
         `/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/${peer}`
       )
     ).toBe(true);
-    const result = await adapter.discover(
-      endpoint,
-      "access-only-for-this-relay",
-      new AbortController().signal
-    );
+    const signal = new AbortController().signal;
+    const token = await adapter.accessToken(endpoint, signal);
+    const result = await adapter.discover(endpoint, token!, signal);
+    expect(auth.accessToken).toHaveBeenCalledWith(endpoint, signal);
     expect(native.getDiscovery).toHaveBeenCalledWith(
       endpoint,
-      "access-only-for-this-relay"
+      "ory_at_Native.CaseSensitive"
     );
     expect(result.relay.addresses).toEqual([wss, webrtc]);
   });
