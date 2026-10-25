@@ -1299,3 +1299,260 @@ test("human v2 status displays canonical ownership, decision coverage and artifa
   expect(result.stdout).toContain("preserved: available");
   expect(result.stdout).not.toContain("private artifact canary");
 });
+
+test("historical v1 and v2 records keep absent operational facts unknown", () => {
+  const historical = setup();
+  const before = JSON.stringify(historical.ledger);
+  const result = run(historical.ledger, historical.local);
+  expect(JSON.parse(result.stdout).operational).toEqual({ state: "unknown" });
+  expect(readFileSync(join(root, "run.json"), "utf8")).toBe(before);
+  rmSync(root, { recursive: true, force: true });
+  const { ledger, local } = setupOwnership();
+  const current = run(ledger, local);
+  expect(current.status).toBe(0);
+  expect(JSON.parse(current.stdout).operational).toEqual({ state: "unknown" });
+  expect(JSON.parse(current.stdout).frontier).toEqual(["01-first.md"]);
+  const explicitlyUnknown = run(
+    {
+      ...ledger,
+      operational: {
+        deployments: [],
+        access: [],
+        authorizations: [],
+        requirements: [],
+      },
+    },
+    local
+  );
+  expect(JSON.parse(explicitlyUnknown.stdout).operational).toMatchObject({
+    state: "recorded",
+    deploymentsState: "unknown",
+    accessState: "unknown",
+    authorizationsState: "unknown",
+  });
+});
+
+function setupOperational() {
+  const { ledger, local } = setupOwnership();
+  const source = { kind: "artifact", id: "operational-source" };
+  file(join(root, "preserved/operational.txt"), "PRIVATE_OPERATIONAL_CANARY");
+  return {
+    ledger: {
+      ...ledger,
+      operational: {
+        deployments: [
+          {
+            id: "deployment",
+            displayName: "prod (user wording)",
+            identity: {
+              context: "fixture-context",
+              namespace: "test",
+              release: "relay-test",
+              publicEndpoint: "https://relay.example.invalid",
+            },
+            observedAt: "2026-10-25",
+            source,
+            qualification: {
+              status: "limited",
+              observedAt: "2026-10-25",
+              revisions: { relay: ledger.repositories.relay.integrationTip },
+              source,
+              limits: ["Client acceptance outstanding"],
+            },
+          },
+        ],
+        access: [
+          {
+            id: "github",
+            service: "GitHub",
+            route: "Authenticated Chrome web UI",
+            observedAt: "2026-10-25",
+            source,
+            resources: ["fixture/relay"],
+            recheck: `Inspect supported connector, then existing Chrome session; $(touch '${join(root, "forbidden")}')`,
+          },
+        ],
+        authorizations: [
+          {
+            id: "clipboard",
+            observedAt: "2026-10-25",
+            authorizationDate: "2026-10-25",
+            source: {
+              kind: "public",
+              role: "client",
+              path: ".scratch/feature/decisions.md",
+            },
+            action: "Overwrite clipboard for this effort's native tests",
+            resources: ["Owned native test clipboard"],
+            limits: [
+              "No publication of clipboard data",
+              "Restoration not required",
+            ],
+            status: "recorded",
+            statusAt: "2026-10-25",
+            statusSource: {
+              kind: "public",
+              role: "client",
+              path: ".scratch/feature/decisions.md",
+            },
+            supersededBy: undefined as string | undefined,
+          },
+        ],
+        requirements: [{ ticket: "01-first.md", records: ["clipboard"] }],
+      },
+    },
+    local: {
+      ...local,
+      artifacts: {
+        ...local.artifacts,
+        "operational-source": join(root, "preserved/operational.txt"),
+      },
+    },
+  };
+}
+
+test("operational status preserves exact target and dated scope without executing rechecks or disclosing private sources", () => {
+  const { ledger, local } = setupOperational();
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.operational.deployments[0]).toMatchObject({
+    displayName: "prod (user wording)",
+    identity: {
+      context: "fixture-context",
+      namespace: "test",
+      release: "relay-test",
+      publicEndpoint: "https://relay.example.invalid",
+    },
+    qualification: { status: "limited", freshness: "matching-revisions" },
+    availability: "available",
+    currentState: "unverified",
+  });
+  expect(report.operational).toMatchObject({
+    deploymentsState: "recorded",
+    accessState: "recorded",
+    authorizationsState: "recorded",
+  });
+  expect(report.operational.access[0]).toMatchObject({
+    route: "Authenticated Chrome web UI",
+    currentAvailability: "unverified",
+    observedAt: "2026-10-25",
+  });
+  expect(report.operational.authorizations[0]).toMatchObject({
+    status: "recorded",
+    permission: "not-assessed",
+  });
+  expect(report.frontier).toEqual(["01-first.md"]);
+  expect(result.stdout).not.toContain("PRIVATE_OPERATIONAL_CANARY");
+  expect(result.stdout).not.toContain(local.artifacts["operational-source"]);
+  expect(readdirSync(root)).not.toContain("forbidden");
+  expect(JSON.parse(readFileSync(join(root, "run.json"), "utf8"))).toEqual(
+    ledger
+  );
+});
+
+test("unavailable operational evidence and unknown facts block only dependent tickets", () => {
+  const { ledger, local } = setupOperational();
+  const unrelated = { ...ledger.tickets[0], path: "02-unrelated.md" };
+  ledger.tickets.push(unrelated);
+  file(
+    join(client, ledger.tracker.path, unrelated.path),
+    "# Unrelated\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  ledger.operational.requirements[0].records = ["github", "missing-fact"];
+  rmSync(local.artifacts["operational-source"]);
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.complete).toBe(true);
+  expect(report.frontier).toEqual(["02-unrelated.md"]);
+  expect(report.operational.requirements).toEqual([
+    {
+      ticket: "01-first.md",
+      records: ["github", "missing-fact"],
+      blockers: [
+        { id: "github", state: "unavailable" },
+        { id: "missing-fact", state: "unknown" },
+      ],
+    },
+  ]);
+  expect(report.operational.deployments[0].qualification.availability).toBe(
+    "unavailable"
+  );
+});
+
+test("revoked and superseded authorization history is visible without granting permission", () => {
+  const { ledger, local } = setupOperational();
+  const prior = ledger.operational.authorizations[0];
+  prior.status = "superseded";
+  prior.statusAt = "2026-10-26";
+  prior.supersededBy = "clipboard-v2";
+  ledger.operational.authorizations.push({
+    ...prior,
+    id: "clipboard-v2",
+    authorizationDate: "2026-10-26",
+    status: "revoked",
+    statusAt: "2026-10-27",
+  });
+  delete ledger.operational.authorizations[1].supersededBy;
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(
+    report.operational.authorizations.map(
+      (item: {
+        id: string;
+        status: string;
+        supersededBy?: string;
+        permission: string;
+      }) => ({
+        id: item.id,
+        status: item.status,
+        supersededBy: item.supersededBy,
+        permission: item.permission,
+      })
+    )
+  ).toEqual([
+    {
+      id: "clipboard",
+      status: "superseded",
+      supersededBy: "clipboard-v2",
+      permission: "not-assessed",
+    },
+    { id: "clipboard-v2", status: "revoked", permission: "not-assessed" },
+  ]);
+  expect(report.operational.requirements).toEqual([
+    {
+      ticket: "01-first.md",
+      records: ["clipboard"],
+      blockers: [{ id: "clipboard", state: "superseded" }],
+    },
+  ]);
+  expect(report.frontier).toEqual([]);
+  expect(JSON.parse(readFileSync(join(root, "run.json"), "utf8"))).toEqual(
+    ledger
+  );
+});
+
+test("operational requirements reject malformed authorization transitions and unknown ticket references", () => {
+  const { ledger, local } = setupOperational();
+  ledger.operational.authorizations[0].status = "revoked";
+  ledger.operational.authorizations[0].supersededBy = "missing";
+  expect(run(ledger, local).status).toBe(1);
+  ledger.operational.authorizations[0].status = "superseded";
+  expect(run(ledger, local).status).toBe(1);
+  ledger.operational.authorizations[0].status = "recorded";
+  delete ledger.operational.authorizations[0].supersededBy;
+  ledger.operational.requirements[0].ticket = "missing.md";
+  expect(run(ledger, local).status).toBe(1);
+});
+
+test("operational records reject invalid source references and credential-bearing routes", () => {
+  const { ledger, local } = setupOperational();
+  ledger.operational.access[0].source.kind = "public";
+  expect(run(ledger, local).status).toBe(1);
+  ledger.operational.access[0].source.kind = "artifact";
+  ledger.operational.access[0].route =
+    "https://operator:private-token@example.invalid/";
+  expect(run(ledger, local).status).toBe(1);
+});

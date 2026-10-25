@@ -26,6 +26,7 @@ const report = {
   claims: [],
   integrations: [],
   evidence: [],
+  operational: { state: "unknown" },
   frontier: [],
   diagnostics: [],
 };
@@ -481,6 +482,174 @@ function inspectOwnership(ledger, local) {
     }
   }
 }
+function inspectOperational(ledger, local, preserved) {
+  if (!ledger.operational) return;
+  const byId = new Map();
+  const operationalRows = [
+    ...ledger.operational.deployments.map((item) => ["deployment", item]),
+    ...ledger.operational.access.map((item) => ["access", item]),
+    ...ledger.operational.authorizations.map((item) => ["authorization", item]),
+  ];
+  const validDate = (value) => Number.isFinite(Date.parse(value));
+  const validateSource = (source, label) => {
+    if (source.kind === "public")
+      requireValue(
+        ["client", "relay"].includes(source.role) &&
+          typeof source.path === "string" &&
+          source.path.length > 0,
+        `${label}: public source requires repository role and relative path`
+      );
+    if (source.kind === "artifact")
+      requireValue(
+        typeof source.id === "string" && source.id.length > 0,
+        `${label}: artifact source requires artifact id`
+      );
+  };
+  for (const [kind, item] of operationalRows) {
+    requireValue(
+      !byId.has(item.id),
+      `duplicate operational record id: ${item.id}`
+    );
+    requireValue(
+      validDate(item.observedAt),
+      `${item.id}: observedAt must be a date`
+    );
+    validateSource(item.source, item.id);
+    if (kind === "deployment") {
+      requireValue(
+        validDate(item.qualification.observedAt),
+        `${item.id}: qualification observedAt must be a date`
+      );
+      validateSource(item.qualification.source, `${item.id} qualification`);
+      requireValue(
+        !/:[^/@\s]+@/.test(item.identity.publicEndpoint),
+        `${item.id}: public endpoint must not contain embedded credentials`
+      );
+    }
+    if (kind === "access")
+      requireValue(
+        !/:[^/@\s]+@/.test(item.route),
+        `${item.id}: access route must not contain embedded credentials`
+      );
+    if (kind === "authorization") {
+      requireValue(
+        validDate(item.authorizationDate),
+        `${item.id}: authorizationDate must be a date`
+      );
+      requireValue(
+        validDate(item.statusAt),
+        `${item.id}: statusAt must be a date`
+      );
+      requireValue(
+        Date.parse(item.statusAt) >= Date.parse(item.authorizationDate),
+        `${item.id}: statusAt precedes authorization`
+      );
+      validateSource(item.statusSource, `${item.id} status`);
+      requireValue(
+        item.status === "superseded"
+          ? typeof item.supersededBy === "string" &&
+              item.supersededBy.length > 0 &&
+              item.supersededBy !== item.id
+          : item.supersededBy === undefined,
+        `${item.id}: supersededBy must only identify a replacement authorization`
+      );
+    }
+    byId.set(item.id, { kind, item });
+  }
+  for (const { kind, item } of byId.values())
+    if (kind === "authorization" && item.status === "superseded")
+      requireValue(
+        byId.has(item.supersededBy),
+        `${item.id}: superseded authorization reference unavailable`
+      );
+  function sourceAvailable(source) {
+    if (source.kind === "public") return referenceAvailable(source, local);
+    try {
+      const path = local.artifacts[source.id];
+      return isAbsolute(path) && !!statSync(path) && preserved(path);
+    } catch {
+      return false;
+    }
+  }
+  const records = (items) =>
+    items.map((item) => ({
+      ...item,
+      availability: sourceAvailable(item.source) ? "available" : "unavailable",
+    }));
+  const requirements = ledger.operational.requirements.map((requirement) => {
+    const ticket = report.tickets.find(
+      (item) => item.path === requirement.ticket
+    );
+    requireValue(
+      ticket,
+      `${requirement.ticket}: operational requirement ticket unavailable`
+    );
+    const states = requirement.records.map((id) => {
+      const record = byId.get(id);
+      if (!record) return { id, state: "unknown" };
+      const { kind, item } = record;
+      let state =
+        sourceAvailable(item.source) &&
+        (kind !== "authorization" || sourceAvailable(item.statusSource))
+          ? "available"
+          : "unavailable";
+      if (
+        kind === "authorization" &&
+        ["revoked", "superseded"].includes(item.status)
+      )
+        state = item.status;
+      return { id, state };
+    });
+    return {
+      ticket: requirement.ticket,
+      records: requirement.records,
+      blockers: states.filter(({ state }) => state !== "available"),
+    };
+  });
+  report.operational = {
+    state: "recorded",
+    deploymentsState: ledger.operational.deployments.length
+      ? "recorded"
+      : "unknown",
+    accessState: ledger.operational.access.length ? "recorded" : "unknown",
+    authorizationsState: ledger.operational.authorizations.length
+      ? "recorded"
+      : "unknown",
+    deployments: records(ledger.operational.deployments).map((item) => ({
+      ...item,
+      currentState: "unverified",
+      qualification: {
+        ...item.qualification,
+        availability: sourceAvailable(item.qualification.source)
+          ? "available"
+          : "unavailable",
+        freshness: Object.entries(item.qualification.revisions).every(
+          ([role, revision]) =>
+            report.repositories[role]?.integrationTip === revision
+        )
+          ? "matching-revisions"
+          : "stale",
+      },
+    })),
+    access: records(ledger.operational.access).map((item) => ({
+      ...item,
+      currentAvailability: "unverified",
+    })),
+    authorizations: records(ledger.operational.authorizations).map((item) => ({
+      ...item,
+      statusAvailability: sourceAvailable(item.statusSource)
+        ? "available"
+        : "unavailable",
+      permission: "not-assessed",
+    })),
+    requirements,
+  };
+  for (const ticket of report.tickets) {
+    ticket.operationalBlockers = requirements
+      .filter((item) => item.ticket === ticket.path)
+      .flatMap((item) => item.blockers);
+  }
+}
 function main() {
   if (args.includes("--help")) {
     console.log(
@@ -931,6 +1100,7 @@ function main() {
       })),
     };
   }
+  if (ledger.schemaVersion === 2) inspectOperational(ledger, local, preserved);
   const evidenceIds = new Set();
   for (const item of ledger.evidence) {
     requireValue(
@@ -1138,7 +1308,8 @@ function main() {
           !ticket.externalBlockers.length &&
           ticket.dependencies.every(
             (path) => tickets.get(path)?.status === "resolved"
-          )
+          ) &&
+          !ticket.operationalBlockers?.length
       )
       .map((ticket) => ticket.path);
   report.complete = report.diagnostics.length === 0;
@@ -1157,6 +1328,7 @@ if (!args.includes("--help")) {
     ? JSON.stringify(report)
     : [
         `${report.runId ?? "Run"}: ${report.complete ? "consistent" : "incomplete"} (${report.observedAt})`,
+        `Operational facts: ${report.operational.state}`,
         ...(report.ownership
           ? [
               `Canonical: ${report.ownership.canonical.role}:${report.ownership.canonical.path}`,

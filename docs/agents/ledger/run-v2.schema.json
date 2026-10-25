@@ -204,6 +204,387 @@
         "artifacts"
       ],
       "additionalProperties": false
+    },
+    "operational": {
+      "type": "object",
+      "properties": {
+        "deployments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "observedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": ["public", "artifact"]
+                  },
+                  "role": {
+                    "enum": ["client", "relay"]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "context": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "release": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "publicEndpoint": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "context",
+                  "namespace",
+                  "release",
+                  "publicEndpoint"
+                ],
+                "additionalProperties": false
+              },
+              "qualification": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "limited", "qualified"]
+                  },
+                  "observedAt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "revisions": {
+                    "$ref": "run-v1.schema.json#/properties/evidence/items/properties/revisions"
+                  },
+                  "source": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "enum": ["public", "artifact"]
+                      },
+                      "role": {
+                        "enum": ["client", "relay"]
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": false
+                  },
+                  "limits": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "minItems": 0,
+                    "maxItems": 500,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "status",
+                  "observedAt",
+                  "revisions",
+                  "source",
+                  "limits"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "observedAt",
+              "source",
+              "displayName",
+              "identity",
+              "qualification"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 500,
+          "uniqueItems": true
+        },
+        "access": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "observedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": ["public", "artifact"]
+                  },
+                  "role": {
+                    "enum": ["client", "relay"]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              },
+              "service": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "route": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 1,
+                "maxItems": 500,
+                "uniqueItems": true
+              },
+              "recheck": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "id",
+              "observedAt",
+              "source",
+              "service",
+              "route",
+              "resources",
+              "recheck"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 500,
+          "uniqueItems": true
+        },
+        "authorizations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "authorizationDate": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "observedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": ["public", "artifact"]
+                  },
+                  "role": {
+                    "enum": ["client", "relay"]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              },
+              "action": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 1,
+                "maxItems": 500,
+                "uniqueItems": true
+              },
+              "limits": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 0,
+                "maxItems": 500,
+                "uniqueItems": true
+              },
+              "status": {
+                "enum": ["recorded", "revoked", "superseded"]
+              },
+              "statusAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "statusSource": {
+                "type": "object",
+                "properties": {
+                  "kind": { "enum": ["public", "artifact"] },
+                  "role": { "enum": ["client", "relay"] },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "id": { "type": "string", "minLength": 1, "maxLength": 4096 }
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+              },
+              "supersededBy": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "id",
+              "observedAt",
+              "authorizationDate",
+              "source",
+              "action",
+              "resources",
+              "limits",
+              "status",
+              "statusAt",
+              "statusSource"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 500,
+          "uniqueItems": true
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ticket": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 1,
+                "maxItems": 500,
+                "uniqueItems": true
+              }
+            },
+            "required": ["ticket", "records"],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 500,
+          "uniqueItems": true
+        }
+      },
+      "required": ["deployments", "access", "authorizations", "requirements"],
+      "additionalProperties": false
     }
   }
 }
