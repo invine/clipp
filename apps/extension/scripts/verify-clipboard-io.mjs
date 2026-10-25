@@ -1,26 +1,30 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+} from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { beginNativeAttempt } from "../../../scripts/native-acceptance-attempts.mjs";
 import {
-  loadAttemptState,
   parseClipboardAcceptanceArgs,
-  recordDiagnosticAttempt,
-  saveAttemptState,
+  persistentAttemptDirectory,
+  raceAcceptanceOperation,
+  verifyPopupHistorySearch,
 } from "./clipboard-acceptance.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const extensionPath = resolve(scriptDirectory, "..", "dist");
 const repositoryRoot = resolve(scriptDirectory, "../../..");
-const attemptStatePath = resolve(
-  scriptDirectory,
-  "../.local/native-acceptance/chrome-clipboard.json"
-);
 const options = parseClipboardAcceptanceArgs(process.argv.slice(2));
 if (options.validateOnly) {
   console.log(
@@ -32,22 +36,24 @@ if (options.validateOnly) {
   );
   process.exit(0);
 }
-const previousAttempt = await loadAttemptState(
-  attemptStatePath,
-  options.scenario
+const configuredStateRoot = resolve(persistentAttemptDirectory());
+await mkdir(configuredStateRoot, { recursive: true, mode: 0o700 });
+const stateRoot = await realpath(configuredStateRoot);
+const stateRelative = relative(repositoryRoot, stateRoot);
+assert(
+  stateRelative === ".." ||
+    stateRelative.startsWith(`..${sep}`) ||
+    isAbsolute(stateRelative),
+  "attempt_history_must_be_outside_checkout"
 );
-const attemptState = recordDiagnosticAttempt(previousAttempt, {
-  kind: options.attempt,
-  startedAt: new Date().toISOString(),
-  hypothesis:
-    options.attempt === "initial"
-      ? "initial acceptance run"
-      : process.env.CLIPP_DIAGNOSTIC_HYPOTHESIS,
+const attemptOutput = join(stateRoot, "chrome-clipboard");
+const attempt = await beginNativeAttempt({
+  output: attemptOutput,
+  scenario: "chrome-clipboard",
+  change: options.diagnosticChange,
+  expectation: options.expectedObservation,
 });
-await saveAttemptState(attemptStatePath, options.scenario, attemptState, {
-  status: "running",
-});
-const profilePath = await mkdtemp(join(tmpdir(), "clipp-clipboard-io-"));
+let profilePath;
 const probeServer = createServer((_request, response) => {
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   response.end("<!doctype html><title>Clipp clipboard probe</title>");
@@ -56,6 +62,7 @@ const probeServer = createServer((_request, response) => {
 let context;
 let probe;
 let stage = "prerequisite";
+let operationLabel = "create_owned_profile";
 let extensionId;
 let candidate;
 let browserVersion;
@@ -63,46 +70,88 @@ let clipboardUsed = false;
 let clipboardChanged = false;
 let outcome = "runner_failure";
 try {
-  candidate = await identifyCandidate(extensionPath, repositoryRoot);
+  profilePath = await withinBudget(() =>
+    mkdtemp(join(tmpdir(), "clipp-clipboard-io-"))
+  );
+  operationLabel = "identify_built_candidate";
+  candidate = await withinBudget(() =>
+    identifyCandidate(extensionPath, repositoryRoot)
+  );
+  attempt.assertBudget();
   stage = "runner_setup";
-  const probeOrigin = await listen(probeServer);
-  context = await chromium.launchPersistentContext(profilePath, {
-    headless: false,
-    ignoreDefaultArgs: ["--disable-extensions"],
-    args: [
-      `--disable-extensions-except=${extensionPath}`,
-      `--load-extension=${extensionPath}`,
-    ],
-  });
+  operationLabel = "listen_local_probe";
+  const probeOrigin = await withinBudget(() => listen(probeServer));
+  attempt.assertBudget();
+  operationLabel = "launch_owned_chromium";
+  context = await withinBudget(() =>
+    chromium.launchPersistentContext(profilePath, {
+      headless: false,
+      ignoreDefaultArgs: ["--disable-extensions"],
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+      ],
+    })
+  );
   browserVersion = context.browser()?.version() ?? "unknown";
+  attempt.assertBudget();
 
   stage = "prerequisite";
+  operationLabel = "discover_extension_service_worker";
   let serviceWorker = context.serviceWorkers()[0];
   if (!serviceWorker)
-    serviceWorker = await context.waitForEvent("serviceworker", {
-      timeout: 15_000,
-    });
+    serviceWorker = await withinBudget(
+      () =>
+        context.waitForEvent("serviceworker", {
+          timeout: remainingMs(15_000),
+        }),
+      15_000
+    );
+  attempt.assertBudget();
   extensionId = new URL(serviceWorker.url()).host;
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: probeOrigin,
-  });
-  probe = await context.newPage();
-  await probe.goto(probeOrigin);
-  await probe.bringToFront();
+  operationLabel = "grant_probe_clipboard_permissions";
+  await withinBudget(() =>
+    context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: probeOrigin,
+    })
+  );
+  attempt.assertBudget();
+  probe = await withinBudget(() => context.newPage());
+  operationLabel = "load_probe_page";
+  await withinBudget(() => probe.goto(probeOrigin));
+  await withinBudget(() => probe.bringToFront());
   // D4 authorizes this effort to overwrite the clipboard. We neither read nor retain
   // clipboard contents and do not attempt restoration.
 
   stage = "interaction_preflight";
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/src/popup.html`);
-  assert.equal(await popup.evaluate(() => chrome.runtime.id), extensionId);
+  operationLabel = "open_readiness_popup";
+  const popup = await withinBudget(() => context.newPage());
+  await withinBudget(() =>
+    popup.goto(`chrome-extension://${extensionId}/src/popup.html`)
+  );
+  assert.equal(
+    await withinBudget(() => popup.evaluate(() => chrome.runtime.id)),
+    extensionId
+  );
   candidate.loadedExtensionId = extensionId;
   assert.deepEqual(await extensionMessage(popup, { type: "clearHistory" }), {
     ok: true,
   });
-  await popup.close();
+  operationLabel = "capture_readiness_fixture";
+  const readinessText = "clipp-readiness-search-interaction";
+  await captureFixture(popup, readinessText);
+  const interactionPreflight = await verifyPopupHistorySearch(
+    popup,
+    readinessText,
+    withinBudget,
+    remainingMs
+  );
+  operationLabel = "close_readiness_popup";
+  attempt.assertBudget();
+  await withinBudget(() => popup.close());
 
   stage = "clipboard_acceptance";
+  operationLabel = "write_offscreen_clipboard_fixture";
   const offscreenText = "clipp-offscreen-writer-verification";
   clipboardUsed = true;
   const offscreenResponse = await sendToOffscreen(serviceWorker, {
@@ -111,36 +160,47 @@ try {
   });
   assert.deepEqual(offscreenResponse, { ok: true });
   clipboardChanged = true;
+  operationLabel = "confirm_offscreen_clipboard_write";
   assert.equal(await readClipboard(probe), offscreenText);
 
-  const acceptancePopup = await context.newPage();
-  await acceptancePopup.goto(
-    `chrome-extension://${extensionId}/src/popup.html`
+  operationLabel = "open_acceptance_popup";
+  const acceptancePopup = await withinBudget(() => context.newPage());
+  await withinBudget(() =>
+    acceptancePopup.goto(`chrome-extension://${extensionId}/src/popup.html`)
   );
 
   const retainedText = "clipp-retained-copy-verification";
+  operationLabel = "capture_retained_copy_fixture";
   const retainedClip = await captureFixture(acceptancePopup, retainedText);
   clipboardChanged = true;
+  operationLabel = "write_copy_sentinel";
   await writeClipboard(probe, "clipp-copy-sentinel");
-  await acceptancePopup.bringToFront();
-  await acceptancePopup.reload();
+  await withinBudget(() => acceptancePopup.bringToFront());
+  await withinBudget(() => acceptancePopup.reload());
   const retainedCard = acceptancePopup
     .locator("article")
     .filter({ hasText: retainedText })
     .first();
-  await retainedCard.locator("button").filter({ hasText: "Copy" }).click();
+  operationLabel = "click_retained_copy_action";
+  await withinBudget(() =>
+    retainedCard.locator("button").filter({ hasText: "Copy" }).click()
+  );
+  operationLabel = "confirm_retained_clipboard_copy";
   await waitForClipboard(probe, retainedText);
-  await acceptancePopup.bringToFront();
+  await withinBudget(() => acceptancePopup.bringToFront());
   assert.equal(
-    await acceptancePopup
-      .getByText(
-        "Could not copy this Clip. Your clipboard and history were not changed.",
-        { exact: true }
-      )
-      .isVisible()
-      .catch(() => false),
+    await withinBudget(() =>
+      acceptancePopup
+        .getByText(
+          "Could not copy this Clip. Your clipboard and history were not changed.",
+          { exact: true }
+        )
+        .isVisible()
+        .catch(() => false)
+    ),
     false
   );
+  operationLabel = "verify_retained_history_reuse";
   const reusedHistory = await waitForHistory(
     acceptancePopup,
     (clips) =>
@@ -156,19 +216,21 @@ try {
 
   const shareNowText = "  clipp-share-now\r\nverification  ";
   clipboardChanged = true;
+  operationLabel = "write_share_fixture";
   await writeClipboard(probe, shareNowText);
-  await acceptancePopup.bringToFront();
-  await acceptancePopup.waitForTimeout(500);
+  await withinBudget(() => acceptancePopup.bringToFront());
+  await withinBudget(() => acceptancePopup.waitForTimeout(500));
   const historyBeforeShare = await extensionMessage(acceptancePopup, {
     type: "getClipHistory",
   });
   const observedIds = new Set(
     (historyBeforeShare?.clips ?? []).map((clip) => clip.id)
   );
-  await acceptancePopup
-    .locator("button")
-    .filter({ hasText: "Share Now" })
-    .click();
+  operationLabel = "click_share_now_action";
+  await withinBudget(() =>
+    acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
+  );
+  operationLabel = "verify_share_history_effect";
   const sharedHistory = await waitForHistory(acceptancePopup, (clips) =>
     clips.some(
       (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
@@ -180,7 +242,8 @@ try {
     )
   );
 
-  await acceptancePopup.close();
+  operationLabel = "close_acceptance_popup";
+  await withinBudget(() => acceptancePopup.close());
   outcome = "passed";
   console.log(
     JSON.stringify({
@@ -193,7 +256,7 @@ try {
       browserVersion,
       profilePath,
       extensionId,
-      interactionPreflight: "passed",
+      interactionPreflight,
       clipboard: {
         hostClipboardUsed: clipboardUsed,
         changed: clipboardChanged,
@@ -208,6 +271,7 @@ try {
     JSON.stringify({
       status: outcome,
       stage,
+      operation: error?.operation ?? operationLabel,
       authorizationReference: options.authorizationReference,
       candidate,
       extensionId,
@@ -234,15 +298,17 @@ try {
     cleanupErrors.push(`probe_server_close:${error.message}`);
   }
   try {
-    await rm(profilePath, { recursive: true, force: true });
+    if (profilePath) await rm(profilePath, { recursive: true, force: true });
   } catch (error) {
     cleanupErrors.push(`owned_profile_remove:${error.message}`);
   }
   const finalStatus =
     cleanupErrors.length && outcome === "passed" ? "cleanup_failure" : outcome;
-  await saveAttemptState(attemptStatePath, options.scenario, attemptState, {
-    status: finalStatus,
+  await attempt.finish({
+    result: finalStatus,
     stage: outcome === "passed" ? "complete" : stage,
+    operation: outcome === "passed" ? "complete" : operationLabel,
+    classification: outcome === "passed" ? "none" : outcome,
     authorizationReference: options.authorizationReference,
     candidate,
     profileOwned: true,
@@ -302,6 +368,11 @@ async function listFiles(directory) {
 
 function classifyFailure(currentStage, error) {
   if (
+    error?.message === "diagnostic_time_budget_exhausted" ||
+    error?.message === "acceptance_operation_timeout"
+  )
+    return "runner_failure";
+  if (
     currentStage === "prerequisite" ||
     currentStage === "interaction_preflight"
   )
@@ -331,25 +402,55 @@ async function close(server) {
 }
 
 async function pollUntil(timeoutMs, probe) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + remainingMs(timeoutMs);
   while (Date.now() < deadline) {
-    const result = await probe();
+    attempt.assertBudget();
+    const result = await withinBudget(
+      probe,
+      Math.max(1, deadline - Date.now())
+    );
     if (result !== undefined) return result;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    await withinBudget(
+      () => new Promise((resolveDelay) => setTimeout(resolveDelay, 100)),
+      Math.min(100, deadline - Date.now())
+    );
   }
+  attempt.assertBudget();
   return undefined;
 }
 
+function remainingMs(maximum) {
+  return attempt.remainingMs(maximum);
+}
+
+async function withinBudget(run, maximum = 30_000) {
+  attempt.assertBudget();
+  const timeout = remainingMs(maximum);
+  try {
+    const result = await raceAcceptanceOperation(run, timeout, operationLabel);
+    attempt.assertBudget();
+    return result;
+  } catch (error) {
+    if (error?.message === "acceptance_operation_timeout")
+      error.operation ??= operationLabel;
+    throw error;
+  }
+}
+
 async function readClipboard(page) {
-  await page.bringToFront();
-  return await page.evaluate(async () => await navigator.clipboard.readText());
+  await withinBudget(() => page.bringToFront());
+  return await withinBudget(() =>
+    page.evaluate(async () => await navigator.clipboard.readText())
+  );
 }
 
 async function writeClipboard(page, text) {
-  await page.bringToFront();
-  await page.evaluate(
-    async (value) => await navigator.clipboard.writeText(value),
-    text
+  await withinBudget(() => page.bringToFront());
+  await withinBudget(() =>
+    page.evaluate(
+      async (value) => await navigator.clipboard.writeText(value),
+      text
+    )
   );
 }
 
@@ -362,9 +463,11 @@ async function waitForClipboard(page, expected) {
 }
 
 async function extensionMessage(page, message) {
-  return await page.evaluate(
-    async (payload) => await chrome.runtime.sendMessage(payload),
-    message
+  return await withinBudget(() =>
+    page.evaluate(
+      async (payload) => await chrome.runtime.sendMessage(payload),
+      message
+    )
   );
 }
 
@@ -372,10 +475,15 @@ async function sendToOffscreen(serviceWorker, message) {
   let latest;
   const successful = await pollUntil(15_000, async () => {
     try {
-      latest = await serviceWorker.evaluate(
-        async (payload) =>
-          await chrome.runtime.sendMessage({ target: "offscreen", ...payload }),
-        message
+      latest = await withinBudget(() =>
+        serviceWorker.evaluate(
+          async (payload) =>
+            await chrome.runtime.sendMessage({
+              target: "offscreen",
+              ...payload,
+            }),
+          message
+        )
       );
       if (latest?.ok === true) return latest;
     } catch {
