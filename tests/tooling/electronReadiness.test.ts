@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = path.resolve(__dirname, "../..");
 let fixture: string;
@@ -334,3 +335,45 @@ test("source edits during the build prevent a candidate provenance claim", () =>
     shutdown: "not-launched",
   });
 });
+
+test("the initial Electron build is outside the diagnostic clock, but retry rebuild time counts", () => {
+  expect(
+    readFileSync(
+      path.join(repo, "scripts/electron-relay-acceptance.mjs"),
+      "utf8"
+    )
+  ).toContain("deferDiagnosticClockUntilFailure: true");
+  const helperUrl = pathToFileURL(
+    path.join(repo, "scripts/native-acceptance-attempts.mjs")
+  ).href;
+  const source = `
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { beginNativeAttempt } from ${JSON.stringify(helperUrl)};
+let now = Date.parse('2026-10-25T00:00:00.000Z');
+const output = ${JSON.stringify(output)};
+const options = { output, scenario: 'electron-readiness', deferDiagnosticClockUntilFailure: true, now: () => now };
+const initial = await beginNativeAttempt(options);
+let history = JSON.parse(await readFile(output + '/attempts.json', 'utf8'));
+assert.equal(history.diagnosticStartedAt, null);
+now += 21 * 60 * 1000;
+initial.assertBudget();
+assert.equal(initial.remainingMs(180_000), 180_000);
+await initial.finish({ result: 'failed', stage: 'build', classification: 'prerequisite' });
+history = JSON.parse(await readFile(output + '/attempts.json', 'utf8'));
+assert.equal(history.diagnosticStartedAt, new Date(now).toISOString());
+const retry = await beginNativeAttempt({ ...options, change: 'repair build failure', expectation: 'candidate build succeeds' });
+assert.equal(retry.remainingMs(20 * 60 * 1000), 20 * 60 * 1000);
+now += 2 * 60 * 1000;
+assert.equal(retry.remainingMs(20 * 60 * 1000), 18 * 60 * 1000);
+`;
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", source],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+    }
+  );
+  expect(result.status).toBe(0);
+}, 15000);
