@@ -28,8 +28,8 @@ The initial task authorizes preparation now and local implementation after ticke
 - Design: approved with D4 amendment.
 - Testing boundaries: approved by the user on 2026-10-25 ("I agree").
 - Ticket breakdown: six tickets and the sole 05 → 06 blocking edge approved on 2026-10-25 ("I agree").
-- Implementation: the reopened Chrome and Android code findings are fixed, and the Electron diagnostic-clock finding is fixed. Ticket 02 remains claimed pending refreshed final review/evidence. Tickets 03 and 04 remain open because their bounded native qualification did not complete: Chrome clipboard acceptance timed out after the popup interaction preflight, and Android's three readiness attempts ended with an ADB timeout before instrumentation. Those retry budgets are exhausted. An API 31 emulator was available; only the isolated acceptance packages were installed there, and the connected phone was not targeted. Hosted PostgreSQL CI was not run. No unperformed qualification is claimed.
-- Refreshed final Standards/Spec review and canonical ledger reconciliation are pending.
+- Implementation: the reopened Chrome and Android code findings are fixed, and the Electron diagnostic-clock finding is fixed. Ticket 02 is resolved after refreshed checks and review. Tickets 03 and 04 remain open because their bounded native qualification did not complete: Chrome clipboard acceptance timed out after the popup interaction preflight, and Android's three readiness attempts ended with an ADB timeout before instrumentation. Those retry budgets are exhausted. An API 31 emulator was available; only the isolated acceptance packages were installed there, and the connected phone was not targeted. Hosted PostgreSQL CI was not run. No unperformed qualification is claimed.
+- Refreshed final Standards/Spec review passed; canonical ledger reconciliation remains pending.
 
 These operational choices preserve existing product and transport invariants. They do not introduce new product glossary concepts or require an architectural decision record. The compact coverage table is the decision record for this effort.
 

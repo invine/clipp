@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] Candidate/build provenance, process/profile/window ownership and harmless focused interaction are checked before product assertions.
 - [x] Prerequisite, runner, product and unknown failures are distinguishable with retained stage evidence.
@@ -17,7 +17,7 @@ The [approved specification](../spec.md) and [decision coverage](../decisions.md
 
 ## Answer
 
-Implemented on the client integration branch. The runner binds build provenance to the owned process/profile/window and harmless focused interaction, classifies failures, retains bounded attempts and enforces cleanup. The initial build and normal acceptance are now outside the diagnostic clock; a failing initial attempt starts the clock when its receipt is recorded, and subsequent diagnostic rebuilds use the remaining budget. The regression test failed before the change and passed after it; focused Electron readiness tests passed 12/12, and the exact integration tree passed `npm run check` (81 suites, 726 tests). No new native Electron attempt was run. Existing readiness evidence remains scoped to its recorded candidate; this ticket stays claimed pending refreshed review and tracker reconciliation.
+Implemented and integrated on the client branch. The runner binds build provenance to the owned process/profile/window and harmless focused interaction, classifies failures, retains bounded attempts and enforces cleanup. The initial build and normal acceptance are outside the diagnostic clock; a failing initial attempt starts the clock when its receipt is recorded, and subsequent diagnostic rebuilds use the remaining budget. The regression test failed before the change and passed after it; focused Electron readiness tests passed 12/12, and the exact integration tree passed `npm run check` (81 suites, 726 tests). Standards and Spec reviews passed. The prior owned Electron readiness demonstration remains recorded for the clean candidate `c33ade629da2c85479ff6eb91a06efe8ff20d6d9`; no new native attempt was run after this runner-only timing correction. This does not claim live relay transfer or provider-login qualification.
 
 ## Comments
 
