@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -19,7 +20,21 @@ function runReadiness({
   corruptProvenance = false,
   installedMatches = true,
   splitPackage = false,
+  interactionChanges = true,
+  timeoutBudgetMs,
+  adbDelayMs = 0,
   serial = "emulator-5554",
+}: {
+  webView?: boolean;
+  instrumentation?: boolean;
+  emulator?: boolean;
+  corruptProvenance?: boolean;
+  installedMatches?: boolean;
+  splitPackage?: boolean;
+  interactionChanges?: boolean;
+  timeoutBudgetMs?: number;
+  adbDelayMs?: number;
+  serial?: string;
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "clipp-android-ready-"));
   const adb = join(directory, "adb");
@@ -27,6 +42,40 @@ function runReadiness({
   const candidate = join(directory, "app-acceptance.apk");
   const installedApk = join(directory, "installed-base.apk");
   const output = join(directory, "receipt");
+  mkdirSync(output, { recursive: true });
+  const uiStateFile = join(directory, "ui-state.xml");
+  const uiBefore = join(directory, "ui-before.xml");
+  const uiAfter = join(directory, "ui-after.xml");
+  writeFileSync(
+    uiBefore,
+    '<hierarchy><node package="com.clipp.app.acceptance" class="android.widget.EditText" resource-id="com.clipp.app.acceptance:id/search" bounds="[0,0][100,40]" focusable="true" clickable="true" focused="true" text="private text" /></hierarchy>'
+  );
+  writeFileSync(
+    uiAfter,
+    '<hierarchy><node package="com.clipp.app.acceptance" class="android.widget.Button" resource-id="com.clipp.app.acceptance:id/history" bounds="[0,50][100,90]" focusable="true" clickable="true" focused="true" text="private text" /></hierarchy>'
+  );
+  writeFileSync(uiStateFile, readFileSync(uiBefore));
+  if (timeoutBudgetMs !== undefined) {
+    const startedAt = new Date(
+      Date.now() - (20 * 60_000 - timeoutBudgetMs)
+    ).toISOString();
+    writeFileSync(
+      join(output, "attempts.json"),
+      JSON.stringify({
+        version: 1,
+        scenario: `android-readiness-${serial}`,
+        diagnosticStartedAt: startedAt,
+        attempts: [
+          {
+            number: 1,
+            startedAt: new Date(Date.parse(startedAt) - 1000).toISOString(),
+            finishedAt: startedAt,
+            result: "failed",
+          },
+        ],
+      })
+    );
+  }
   writeFileSync(candidate, "fixture candidate bytes");
   writeFileSync(
     installedApk,
@@ -64,7 +113,7 @@ if [ "$1" != "emulator-5554" ]; then echo 'error: device serial not found'; exit
 shift
 if [ "$1" = "pull" ]; then cp "$FIXTURE_INSTALLED_APK" "$3"; echo '1 file pulled'; exit 0; fi
 case "$*" in
-  "get-state") echo device ;;
+  "get-state") ${adbDelayMs > 0 ? `sleep ${adbDelayMs / 1000};` : ""} echo device ;;
   "shell getprop sys.boot_completed") echo 1 ;;
   "shell getprop ro.build.version.sdk") echo 33 ;;
   "shell getprop ro.kernel.qemu") echo '${emulator ? 1 : 0}' ;;
@@ -72,12 +121,15 @@ case "$*" in
     echo package:/data/app/com.clipp.app.acceptance/base.apk
     ${splitPackage ? "echo package:/data/app/com.clipp.app.acceptance/split_config.arm64_v8a.apk" : ":"}
     ;;
-  "shell cmd webviewupdate getCurrentWebViewPackage") ${webView ? "echo com.android.webview versionName=133.0.6943.49" : "echo No WebView provider available"} ;;
-  "shell pm list instrumentation com.clipp.app.acceptance.test") echo 'instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=com.clipp.app.acceptance)' ;;
+  "shell dumpsys webviewupdate") ${webView ? "echo 'Current WebView package (name, version): (com.android.webview, 133.0.6943.49)'" : "echo 'Current WebView package is null'"} ;;
+  "shell pm list instrumentation com.clipp.app.acceptance") echo 'instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=com.clipp.app.acceptance)' ;;
   "shell am instrument -w -e class com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? "echo 'OK (1 test)'" : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
   "shell am start -W -n com.clipp.app.acceptance/com.clipp.app.MainActivity") echo 'Status: ok' ;;
-  "shell dumpsys window windows") echo 'mCurrentFocus=Window{ab12 com.clipp.app.acceptance/com.clipp.app.MainActivity}' ;;
-  "shell input keyevent KEYCODE_TAB") : ;;
+  "shell dumpsys window windows") echo 'mCurrentFocus=Window{ab12 u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}' ;;
+  "shell uiautomator dump /data/local/tmp/clipp-readiness-"*".xml") echo 'UI hierarchy dumped to: /data/local/tmp/clipp-readiness.xml' ;;
+  "exec-out cat /data/local/tmp/clipp-readiness-"*".xml") cat '${uiStateFile}' ;;
+  "shell rm -f /data/local/tmp/clipp-readiness-"*".xml") : ;;
+  "shell input keyevent KEYCODE_TAB") ${interactionChanges ? `cp '${uiAfter}' '${uiStateFile}';` : ":"} ;;
   *) echo unexpected_probe:"$*"; exit 2 ;;
 esac
 `
@@ -93,6 +145,14 @@ esac
       candidate,
       "--output",
       output,
+      ...(timeoutBudgetMs === undefined
+        ? []
+        : [
+            "--diagnostic-change",
+            "recheck the owned device",
+            "--expected-observation",
+            "the bounded adb command will time out inside the remaining budget",
+          ]),
     ],
     {
       encoding: "utf8",
@@ -100,6 +160,7 @@ esac
         ...process.env,
         CLIPP_ANDROID_ADB: adb,
         FIXTURE_INSTALLED_APK: installedApk,
+        FIXTURE_UI_STATE: uiStateFile,
       },
     }
   );
@@ -120,16 +181,89 @@ test("Android readiness probes one candidate serial through WebView, instrumenta
     expect(receipt.installedCandidate.sha256).toBe(receipt.candidate.sha256);
     expect(receipt.installedCandidate.matchesCandidate).toBe(true);
     expect(receipt.androidApi).toBe("33");
+    expect(receipt.webViewProvider).toBe("com.android.webview");
+    expect(receipt.webViewProviderVersion).toBe("133.0.6943.49");
+    expect(receipt.instrumentation).toBe(
+      "instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=com.clipp.app.acceptance)"
+    );
     expect(receipt.instrumentationProbe).toContain("OK (1 test)");
+    expect(receipt.focusBeforeActivity).toBe(
+      "com.clipp.app.acceptance/com.clipp.app.MainActivity"
+    );
+    expect(receipt.focusAfterActivity).toBe(receipt.focusBeforeActivity);
+    expect(receipt.focusBefore).toMatch(/^[a-f0-9]{64}$/);
+    expect(receipt.focusAfter).toMatch(/^[a-f0-9]{64}$/);
+    expect(receipt.focusAfter).not.toBe(receipt.focusBefore);
+    expect(receipt.interaction).toBe("tab_changed_focused_accessible_control");
+    expect(JSON.stringify(receipt)).not.toContain("private text");
     expect(receipt.cleanup).toBe("passed");
     const calls = readFileSync(run.argsFile, "utf8").trim().split("\n");
     expect(calls.every((call) => call.startsWith("-s emulator-5554 "))).toBe(
       true
     );
-    expect(calls.at(-1)).toContain("dumpsys window windows");
+    expect(calls).toContain("-s emulator-5554 shell dumpsys webviewupdate");
+    expect(calls).toContain(
+      "-s emulator-5554 shell pm list instrumentation com.clipp.app.acceptance"
+    );
+    expect(calls).not.toContain(
+      "-s emulator-5554 shell pm list instrumentation com.clipp.app.acceptance.test"
+    );
+    expect(calls).toContain("-s emulator-5554 shell dumpsys window windows");
     expect(calls.join("\n")).not.toMatch(/barcode|gms\.version|settings put/i);
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android readiness fails when the UI action produces no observable effect", () => {
+  const run = runReadiness({ interactionChanges: false });
+  try {
+    expect(run.result.status).not.toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.stage).toBe("interaction");
+    expect(receipt.failure).toContain("candidate_ui_interaction_no_effect");
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("diagnostic adb work is bounded by the remaining 20-minute budget", () => {
+  const run = runReadiness({ timeoutBudgetMs: 4000, adbDelayMs: 10000 });
+  try {
+    expect(run.result.status).not.toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.stage).toBe("device");
+    expect(receipt.classification).toBe("runner");
+    expect(receipt.failure).toContain("spawnSync");
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("default and connected Android instrumentation commands run readiness first", () => {
+  const scripts = JSON.parse(
+    readFileSync(join(repoRoot, "apps/android/package.json"), "utf8")
+  ).scripts;
+  expect(scripts["test:native:instrumentation"]).toBe(
+    "npm run test:native:instrumentation:matrix"
+  );
+  expect(scripts["test:native:readiness"]).toContain(
+    "node scripts/android-readiness.mjs"
+  );
+  const instrumentationCommands = Object.keys(scripts).filter((name) =>
+    name.startsWith("test:native:instrumentation:")
+  );
+  for (const name of instrumentationCommands) {
+    expect(
+      scripts[name].indexOf("npm run test:native:readiness")
+    ).toBeGreaterThanOrEqual(0);
+    expect(scripts[name].indexOf("npm run test:native:readiness")).toBeLessThan(
+      scripts[name].indexOf("gradlew")
+    );
   }
 });
 
@@ -151,7 +285,7 @@ test("Android readiness rejects an installed APK that differs from the candidate
     expect(calls).toMatch(
       /pull \/data\/app\/com\.clipp\.app\.acceptance\/base\.apk \/.*installed-base\.apk/
     );
-    expect(calls).not.toContain("shell cmd webviewupdate");
+    expect(calls).not.toContain("shell dumpsys webviewupdate");
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }

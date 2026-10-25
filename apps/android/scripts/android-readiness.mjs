@@ -45,12 +45,34 @@ const adb = process.env.CLIPP_ANDROID_ADB || "adb";
 const appPackage = "com.clipp.app.acceptance";
 const testPackage = "com.clipp.app.acceptance.test";
 const activity = `${appPackage}/com.clipp.app.MainActivity`;
+let attempt;
+
+function assertWithinBudget(stage) {
+  try {
+    attempt?.assertBudget();
+  } catch (error) {
+    error.stage = stage;
+    error.classification = "runner";
+    throw error;
+  }
+}
+
+function remainingTimeout(stage) {
+  assertWithinBudget(stage);
+  try {
+    return attempt ? attempt.remainingMs(timeout) : timeout;
+  } catch (error) {
+    error.stage = stage;
+    error.classification = "runner";
+    throw error;
+  }
+}
 
 function invoke(args, stage, classification = "prerequisite") {
   const result = spawnSync(adb, ["-s", serial, ...args], {
     cwd: root,
     encoding: "utf8",
-    timeout,
+    timeout: remainingTimeout(stage),
     maxBuffer: 1024 * 1024,
   });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
@@ -63,6 +85,7 @@ function invoke(args, stage, classification = "prerequisite") {
       result.error?.code === "ETIMEDOUT" ? "runner" : classification;
     throw error;
   }
+  assertWithinBudget(stage);
   return output;
 }
 
@@ -136,15 +159,17 @@ async function verifyInstalledCandidate(packagePaths, candidateHash) {
     execFileSync(adb, ["-s", serial, "pull", paths[0], localApk], {
       cwd: root,
       encoding: "utf8",
-      timeout,
+      timeout: remainingTimeout("installed-candidate"),
       maxBuffer: 1024 * 1024,
     });
+    assertWithinBudget("installed-candidate");
     const details = await stat(localApk);
     assert(
       details.isFile() && details.size > 0,
       "installed_candidate_pull_empty"
     );
     installedSha256 = await sha256File(localApk);
+    assertWithinBudget("installed-candidate");
   } catch (error) {
     failure = error;
   }
@@ -172,7 +197,60 @@ async function verifyInstalledCandidate(packagePaths, candidateHash) {
   };
 }
 
-const attempt = await beginNativeAttempt({
+function focusedActivity(windowDump) {
+  const match = windowDump.match(
+    /(?:mCurrentFocus|mFocusedApp)=Window\{[^}]*\s([^\s}]+\/[^\s}]+)\}/
+  );
+  return match?.[1] ?? null;
+}
+
+function focusedNodeFingerprint(hierarchy) {
+  const nodes = hierarchy.match(/<node\b[^>]*>/g) ?? [];
+  const focused = nodes.find((node) => {
+    const packageName = node.match(/\bpackage="([^"]*)"/)?.[1];
+    return packageName === appPackage && /\bfocused="true"/.test(node);
+  });
+  if (!focused) return null;
+
+  // Avoid retaining user-visible text or content descriptions from the UI tree.
+  const attribute = (name) =>
+    focused.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "";
+  const descriptor = [
+    attribute("class"),
+    attribute("resource-id"),
+    attribute("bounds"),
+    attribute("clickable"),
+    attribute("focusable"),
+  ].join("\n");
+  return createHash("sha256").update(descriptor).digest("hex");
+}
+
+function readUiHierarchy() {
+  const devicePath = `/data/local/tmp/clipp-readiness-${process.pid}-${attempt.number}.xml`;
+  try {
+    const dumpResult = invoke(
+      ["shell", "uiautomator", "dump", devicePath],
+      "interaction",
+      "runner"
+    );
+    assert.match(
+      dumpResult,
+      /hierarchy dumped to/i,
+      "ui_hierarchy_dump_failed"
+    );
+    const hierarchy = invoke(
+      ["exec-out", "cat", devicePath],
+      "interaction",
+      "runner"
+    );
+    assert.match(hierarchy, /^<?xml|<hierarchy\b/i, "ui_hierarchy_unreadable");
+    return hierarchy;
+  } finally {
+    invoke(["shell", "rm", "-f", devicePath], "cleanup", "runner");
+  }
+}
+
+attempt = await beginNativeAttempt({
   output: values.output,
   scenario: `android-readiness-${serial}`,
   change: values["diagnostic-change"],
@@ -191,6 +269,7 @@ const receipt = {
 
 try {
   receipt.candidate = await candidateIdentity();
+  assertWithinBudget("candidate");
   assert.equal(receipt.candidate.appPackage, appPackage);
   receipt.stage = "device";
   const state = invoke(["get-state"], "device", "prerequisite");
@@ -227,23 +306,35 @@ try {
     "installed_candidate_differs_from_supplied_apk"
   );
   receipt.stage = "webview";
-  receipt.webViewProvider = invoke(
-    ["shell", "cmd", "webviewupdate", "getCurrentWebViewPackage"],
+  receipt.webViewDiagnostic = invoke(
+    ["shell", "dumpsys", "webviewupdate"],
     "webview"
   );
-  const webViewVersion = receipt.webViewProvider.match(
-    /com\.[\w.]*webview[\s\S]*?(\d+\.\d+(?:\.\d+)*)/i
+  const webViewProvider = receipt.webViewDiagnostic.match(
+    /Current WebView package \(name, version\):\s*\(([^,]+),\s*([^)]+)\)/i
   );
-  assert(webViewVersion, "active_webview_provider_unavailable");
-  receipt.webViewProviderVersion = webViewVersion[1];
+  assert(webViewProvider, "active_webview_provider_unavailable");
+  receipt.webViewProvider = webViewProvider[1].trim();
+  receipt.webViewProviderVersion = webViewProvider[2].trim();
+  assert(
+    receipt.webViewProvider !== "null" &&
+      receipt.webViewProviderVersion !== "null",
+    "active_webview_provider_unavailable"
+  );
 
   receipt.stage = "instrumentation";
   receipt.instrumentation = invoke(
-    ["shell", "pm", "list", "instrumentation", testPackage],
+    ["shell", "pm", "list", "instrumentation", appPackage],
     "instrumentation"
   );
   assert(
-    receipt.instrumentation.includes(testPackage),
+    receipt.instrumentation
+      .split(/\r?\n/)
+      .some((line) =>
+        new RegExp(
+          `^instrumentation:${testPackage}/[^\\s]+ \\(target=${appPackage}\\)$`
+        ).test(line)
+      ),
     "acceptance_instrumentation_unavailable"
   );
   receipt.instrumentationProbe = invoke(
@@ -274,29 +365,33 @@ try {
     "runner"
   );
   assert(/Status: ok/.test(receipt.launch), "candidate_launch_failed");
-  receipt.focusBefore = invoke(
-    ["shell", "dumpsys", "window", "windows"],
-    "interaction",
-    "runner"
+  receipt.focusBeforeActivity = focusedActivity(
+    invoke(["shell", "dumpsys", "window", "windows"], "interaction", "runner")
   );
   assert(
-    receipt.focusBefore.includes(appPackage),
+    receipt.focusBeforeActivity === activity,
     "candidate_window_not_owned"
   );
+  const hierarchyBefore = readUiHierarchy();
+  receipt.focusBefore = focusedNodeFingerprint(hierarchyBefore);
   receipt.input = invoke(
     ["shell", "input", "keyevent", "KEYCODE_TAB"],
     "interaction",
     "runner"
   );
-  receipt.focusAfter = invoke(
-    ["shell", "dumpsys", "window", "windows"],
-    "interaction",
-    "runner"
+  receipt.focusAfterActivity = focusedActivity(
+    invoke(["shell", "dumpsys", "window", "windows"], "interaction", "runner")
   );
   assert(
-    receipt.focusAfter.includes(appPackage),
+    receipt.focusAfterActivity === activity,
     "candidate_lost_window_focus"
   );
+  receipt.focusAfter = focusedNodeFingerprint(readUiHierarchy());
+  assert(
+    receipt.focusAfter && receipt.focusAfter !== receipt.focusBefore,
+    "candidate_ui_interaction_no_effect"
+  );
+  receipt.interaction = "tab_changed_focused_accessible_control";
 
   receipt.result = "passed";
   receipt.classification = "none";
