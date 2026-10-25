@@ -29,7 +29,7 @@ The initial task authorizes preparation now and local implementation after ticke
 - Testing boundaries: approved by the user on 2026-10-25 ("I agree").
 - Ticket breakdown: six tickets and the sole 05 → 06 blocking edge approved on 2026-10-25 ("I agree").
 - Implementation: the reopened Chrome and Android code findings are fixed, and the Electron diagnostic-clock finding is fixed. Tickets 02 and 04 are resolved after refreshed checks, review and Android native acceptance. Ticket 03 remains open because Chrome clipboard acceptance timed out after the popup interaction preflight and its bounded scenario budget is exhausted. Ticket 04's original three attempts ended before readiness; after the user reset its budget on 2026-10-26, the API 31 emulator readiness and connected suite passed on `emulator-5554`. Only isolated acceptance packages were installed, and the connected phone was not targeted. Hosted PostgreSQL CI was not run. No unperformed qualification is claimed.
-- Refreshed final Standards/Spec review passed; canonical ledger reconciliation is complete with no current status diagnostics. Ticket 03 remains open on its owned Chrome acceptance blocker.
+- Refreshed final Standards/Spec review passed on the reviewed integration revision. Ticket 03 remains open on its owned Chrome acceptance blocker; revision-specific review and status evidence is retained in the private run ledger.
 
 These operational choices preserve existing product and transport invariants. They do not introduce new product glossary concepts or require an architectural decision record. The compact coverage table is the decision record for this effort.
 
