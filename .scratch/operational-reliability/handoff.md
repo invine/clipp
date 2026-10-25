@@ -15,10 +15,10 @@ The approved decisions, test boundaries and authorization scope remain in [decis
 
 ## Current integration state
 
-- Client integration: `codex/operational-reliability-integration` at `c15d456` (the full tip is available from Git); the private v2 ledger still has the earlier client tip and requires reconciliation.
+- Client integration: `codex/operational-reliability-integration` at `df7084155395522e1d4a53e88eea32a82071f824`; the private v2 ledger tip and resolved-ticket claims now match Git and the canonical tracker. Remaining evidence freshness diagnostics are retained in the status artifact.
 - Relay integration: `codex/operational-reliability-integration` at `1a2b1934051e62743471572cfaaa84cff3f6507d`.
 - Tickets 01, 02, 04, 05 and 06 are integrated and resolved. Ticket 03's code fixes are integrated, but owned clipboard acceptance timed out after the popup UI preflight and its diagnostic budget is exhausted; it remains open pending a separately authorized decision on further native qualification. Ticket 04's reviewed fixes passed a fresh API 31 emulator readiness and connected instrumentation scenario after the user reset its budget.
-- Final Standards and Spec reviews passed on the current implementation revisions with no outstanding code findings. Coordinator ledger reconciliation remains pending. Chrome emulator receipts and Android emulator receipts are retained in the private run artifacts; Android native qualification passed its readiness gate and connected instrumentation suite, while Chrome clipboard qualification remains incomplete.
+- Final Standards and Spec reviews passed on implementation revision `8d51c02147b84071579d0d337d9fc87f9e8bf80f` with no outstanding code findings. The ledger tip and resolved-ticket claims are reconciled, but evidence freshness diagnostics remain for records that predate the latest integration commits. Chrome emulator receipts and Android emulator receipts are retained in the private run artifacts; Android native qualification passed its readiness gate and connected instrumentation suite, while Chrome clipboard qualification remains incomplete.
 
 ## Evidence and limits
 
