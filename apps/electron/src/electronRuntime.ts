@@ -716,6 +716,7 @@ async function composeElectronRuntime(
       pairingErrors: pairingState.errors,
       pairingState,
       peers,
+      connectionStateKnown: !suspended && !identityRotationRecovery,
       peerConnections,
       relayConnections,
       identity,

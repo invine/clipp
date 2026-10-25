@@ -7,6 +7,7 @@ export type ExtensionRecoveryState = Pick<
   | "waiting"
   | "pairingErrors"
   | "pairingState"
+  | "connectionStateKnown"
   | "peers"
   | "peerConnections"
   | "clipboardHistoryError"

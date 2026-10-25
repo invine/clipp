@@ -105,6 +105,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
   const [pairingState, setPairingState] =
     useState<ExtensionRecoveryState["pairingState"]>();
   const [pairingErrors, setPairingErrors] = useState<PairingError[]>([]);
+  const [connectionStateKnown, setConnectionStateKnown] = useState(false);
   const [peers, setPeers] = useState<string[]>([]);
   const [peerConnections, setPeerConnections] = useState<PeerConnectionInfo[]>(
     []
@@ -149,6 +150,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
           setWaiting(state.waiting ?? []);
           setPairingErrors(state.pairingErrors ?? []);
           setPairingState(state.pairingState);
+          setConnectionStateKnown(state.connectionStateKnown === true);
           setPeers(state.peers ?? []);
           setPeerConnections(state.peerConnections ?? []);
           setClipboardHistoryError(state.clipboardHistoryError ?? null);
@@ -395,6 +397,7 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
             : Promise.resolve(false)
         }
         peers={peers}
+        connectionStateKnown={connectionStateKnown && !recovery.unavailable}
         peerConnections={peerConnections}
         identity={identity}
         pinnedIds={history.snapshot?.pinnedIds ?? []}

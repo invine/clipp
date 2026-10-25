@@ -383,3 +383,73 @@ it("a distinct notification removes the rendered Issues modal from Requests and 
   expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("pairing");
   expect(session.pairing.getSnapshot().raw).toBe("retained original input");
 });
+
+it("names one connection control without claiming delivery for an untrusted transport peer", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      peers: ["pairing-only"],
+      connectionStateKnown: true,
+    })
+  );
+  expect(output).toContain('aria-label="Connections: No Trusted Devices yet"');
+  expect(output).not.toContain("Synced");
+});
+
+it("opens a brief live connection panel while retaining query and the suspended task", () => {
+  const session = createUiSession();
+  session.update({ search: "retained query", filterMode: "pinned" });
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.pairing.change("retained draft");
+  session.open({ kind: "connections", origin: "connections-summary" });
+  const render = (connectionStateKnown: boolean) =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, {
+        ...props,
+        session,
+        connectionStateKnown,
+        autoSyncKnown: true,
+        autoSync: false,
+      })
+    );
+  expect(render(false)).toContain("Connection status unknown.");
+  expect(render(true)).toContain("No Trusted Devices yet.");
+  expect(render(true)).toContain("Auto Sync: Off.");
+  expect(render(true)).toContain("Open Connections settings");
+  session.back();
+  expect(session.getSnapshot()).toMatchObject({
+    search: "retained query",
+    filterMode: "pinned",
+    focusKey: "connections-summary",
+    tasks: [{ kind: "pairing" }],
+  });
+  expect(session.pairing.getSnapshot().raw).toBe("retained draft");
+});
+
+it("Devices retains honest text status when a reported path is no longer connected", () => {
+  const session = createUiSession();
+  session.update({ destination: "devices" });
+  const render = (peers: string[], connectionStateKnown: boolean) =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, {
+        ...props,
+        session,
+        devices: [{ deviceId: "trusted", deviceName: "Laptop" }],
+        peers,
+        connectionStateKnown,
+        peerConnections: [
+          {
+            peerId: "trusted",
+            path: "direct",
+            hasDirect: true,
+            hasRelay: false,
+            addrs: [],
+          },
+        ],
+      })
+    );
+  expect(render(["trusted"], true)).toContain("Connected · direct");
+  expect(render([], true)).not.toContain("Connected · direct");
+  expect(render([], true)).toContain("Offline");
+  expect(render([], false)).toContain("Connection status unknown");
+});

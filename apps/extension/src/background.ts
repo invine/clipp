@@ -909,7 +909,7 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
             ? Promise.resolve(null)
             : identitySvc.get(),
           suspended || identityRotationRecovery
-            ? Promise.resolve({ peers: [], peerConnections: [] })
+            ? Promise.resolve({ peers: undefined, peerConnections: undefined })
             : offscreenReady
                 .then(() =>
                   sendOffscreen<{
@@ -917,7 +917,10 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
                     peerConnections?: PeerConnectionInfo[];
                   }>({ action: "getPeers" })
                 )
-                .catch(() => ({ peers: [], peerConnections: [] })),
+                .catch(() => ({
+                  peers: undefined,
+                  peerConnections: undefined,
+                })),
           identityRotation.notice(),
         ]);
       return {
@@ -927,8 +930,9 @@ const runtimeAdapter = createChromeExtensionRuntimeAdapter({
         waiting: pairingState.waiting,
         pairingErrors: pairingState.errors,
         pairingState,
-        peers: peerState.peers ?? [],
-        peerConnections: peerState.peerConnections ?? [],
+        connectionStateKnown: Array.isArray(peerState?.peers),
+        peers: peerState?.peers ?? [],
+        peerConnections: peerState?.peerConnections ?? [],
         identity: identity ? toPublicDeviceIdentity(identity) : null,
         pinnedIds,
         clipboardHistoryError,
