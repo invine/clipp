@@ -15,7 +15,7 @@ The approved decisions, test boundaries and authorization scope remain in [decis
 
 ## Current integration state
 
-- Client integration: `codex/operational-reliability-integration` at `17445a60c2b62635942bee201a200fca2815aeec`.
+- Client integration: `codex/operational-reliability-integration` at `eb673053c7779f12eea134fa455bf581c8fc2c42`.
 - Relay integration: `codex/operational-reliability-integration` at `1a2b1934051e62743471572cfaaa84cff3f6507d`.
 - Tickets 01–06 are integrated and resolved in the canonical tracker. The v2 ledger has no active claims and records the six source-to-integration mappings.
 - Final Standards and Spec reviews and full client and relay verification profiles are recorded in the private run ledger. No implementation findings remain.
