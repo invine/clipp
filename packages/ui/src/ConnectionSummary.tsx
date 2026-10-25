@@ -75,6 +75,8 @@ export function ConnectionsPanel({
 }) {
   const tasks = session.getSnapshot().tasks;
   const task = tasks[tasks.length - 1];
+  const trustedDevicePhrase = (count: number) =>
+    `${count} Trusted Device${count === 1 ? "" : "s"}`;
   const manage = (destination: "devices" | "settings") => {
     session.close();
     session.update({
@@ -96,16 +98,10 @@ export function ConnectionsPanel({
     >
       <p>{summary.label}.</p>
       {summary.direct > 0 && (
-        <p>
-          {summary.direct} Trusted Device{summary.direct === 1 ? "" : "s"}{" "}
-          connected directly.
-        </p>
+        <p>{trustedDevicePhrase(summary.direct)} connected directly.</p>
       )}
       {summary.relayed > 0 && (
-        <p>
-          {summary.relayed} Trusted Device{summary.relayed === 1 ? "" : "s"}{" "}
-          connected through relay.
-        </p>
+        <p>{trustedDevicePhrase(summary.relayed)} connected through relay.</p>
       )}
       {summary.unknown > 0 && (
         <p>A Trusted Device is connected; its path is unknown.</p>
