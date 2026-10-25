@@ -23,6 +23,7 @@ beforeEach(() => {
   for (const name of [
     "electron-relay-acceptance.mjs",
     "native-acceptance-attempts.mjs",
+    "source-identity.mjs",
   ]) {
     if (existsSync(path.join(root, "scripts", name)))
       copyFileSync(

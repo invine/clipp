@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { _electron } from "playwright";
 import { beginNativeAttempt } from "./native-acceptance-attempts.mjs";
+import { sourceIdentity } from "./source-identity.mjs";
 
 const { values } = parseArgs({
   options: {
@@ -76,44 +77,6 @@ if ((await lstat(path.join(root, ".git"))).isFile()) {
       .startsWith(`..${path.sep}`),
     "durable_output_outside_checkout_required"
   );
-}
-function git(args) {
-  const result = spawnSync("git", args, {
-    cwd: root,
-    encoding: "utf8",
-    timeout: 10_000,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  assert.equal(result.status, 0, "candidate_source_unavailable");
-  return result.stdout;
-}
-async function sourceIdentity() {
-  const files = [
-    ...new Set(
-      git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
-        .split("\0")
-        .filter(Boolean)
-    ),
-  ].sort();
-  const hash = createHash("sha256");
-  for (const file of files) {
-    hash.update(file + "\0");
-    try {
-      const source = path.join(root, file);
-      const stat = await lstat(source);
-      hash.update(
-        stat.isSymbolicLink() ? await readlink(source) : await readFile(source)
-      );
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      hash.update("deleted");
-    }
-  }
-  return {
-    revision: git(["rev-parse", "HEAD"]).trim(),
-    dirty: Boolean(git(["status", "--porcelain"]).trim()),
-    sourceSha256: hash.digest("hex"),
-  };
 }
 async function artifactIdentity() {
   const files = [];
@@ -186,7 +149,7 @@ const receipt = {
 let electron;
 try {
   log = await open(path.join(evidenceDirectory, "runtime.log"), "a", 0o600);
-  receipt.candidate = await sourceIdentity();
+  receipt.candidate = await sourceIdentity(root);
   await rm(dist, { recursive: true, force: true });
   attempt.assertBudget();
   const build = spawnSync(
@@ -204,7 +167,7 @@ try {
     artifacts: await artifactIdentity(),
   };
   assert.deepEqual(
-    await sourceIdentity(),
+    await sourceIdentity(root),
     receipt.candidate,
     "candidate_source_changed_during_build"
   );
@@ -383,7 +346,7 @@ try {
     "candidate_build_changed_during_run"
   );
   assert.deepEqual(
-    await sourceIdentity(),
+    await sourceIdentity(root),
     receipt.candidate,
     "candidate_source_changed_during_run"
   );
