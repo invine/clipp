@@ -3,11 +3,28 @@ import { join as posixJoin, win32 } from "node:path";
 
 export const AUTHORIZATION_REFERENCE = "operational-reliability:D4:2026-10-25";
 
+export async function raceAcceptanceOperation(operation, timeoutMs, label) {
+  let timer;
+  const task = Promise.resolve().then(operation);
+  task.catch(() => {});
+  try {
+    return await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error("acceptance_operation_timeout");
+          error.operation = label;
+          reject(error);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function parseClipboardAcceptanceArgs(args) {
-  const options = {
-    attempt: "initial",
-    scenario: "chrome-clipboard",
-  };
+  const options = { attempt: "initial" };
   const values = new Map();
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -16,7 +33,6 @@ export function parseClipboardAcceptanceArgs(args) {
       [
         "--authorization-reference",
         "--attempt",
-        "--scenario",
         "--diagnostic-change",
         "--expected-observation",
       ].includes(argument)
@@ -31,7 +47,6 @@ export function parseClipboardAcceptanceArgs(args) {
   }
   options.authorizationReference = values.get("--authorization-reference");
   options.attempt = values.get("--attempt") ?? "initial";
-  options.scenario = values.get("--scenario") ?? options.scenario;
   options.diagnosticChange = values.get("--diagnostic-change");
   options.expectedObservation = values.get("--expected-observation");
 
@@ -41,8 +56,6 @@ export function parseClipboardAcceptanceArgs(args) {
     throw new Error("authorization_reference_required");
   if (options.authorizationReference !== AUTHORIZATION_REFERENCE)
     throw new Error("authorization_reference_not_applicable");
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(options.scenario))
-    throw new Error("invalid_scenario");
   if (options.attempt === "diagnostic") {
     if (!options.diagnosticChange)
       throw new Error("changed_hypothesis_required");
@@ -57,7 +70,6 @@ export function parseClipboardAcceptanceArgs(args) {
 export function persistentAttemptDirectory({
   platform = process.platform,
   home = homedir(),
-  env = process.env,
 } = {}) {
   const join = platform === "win32" ? win32.join : posixJoin;
   if (platform === "darwin")
@@ -71,17 +83,12 @@ export function persistentAttemptDirectory({
     );
   if (platform === "win32")
     return join(
-      env.LOCALAPPDATA ?? join(home, "AppData", "Local"),
+      join(home, "AppData", "Local"),
       "Clipp",
       "Acceptance",
       "chrome"
     );
-  return join(
-    env.XDG_STATE_HOME ?? join(home, ".local", "state"),
-    "clipp",
-    "acceptance",
-    "chrome"
-  );
+  return join(join(home, ".local", "state"), "clipp", "acceptance", "chrome");
 }
 
 export async function verifyPopupHistorySearch(

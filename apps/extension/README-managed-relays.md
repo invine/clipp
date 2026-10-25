@@ -204,11 +204,11 @@ effects. It does not qualify Chrome's toolbar popup. The authorization reference
 is required each time; it is not embedded in the package script. The runner
 does not read, save, or restore prior clipboard content.
 
-Retry state and sanitized receipts are kept in the user's durable application
-state directory, outside disposable worktrees. Set
-`CLIPP_ACCEPTANCE_STATE_DIR` only to another durable directory outside the
-checkout. After a failed initial attempt, a diagnostic rerun must use the same
-scenario state and provide both a distinct hypothesis and its expected
+Retry state and sanitized receipts are kept in the fixed per-user durable
+application state directory, outside disposable worktrees. The runner does not
+accept a state-directory or scenario override, so retries cannot reset their
+history by selecting a new location. After a failed initial attempt, a
+diagnostic rerun must provide both a distinct hypothesis and its expected
 observation:
 
 ```sh

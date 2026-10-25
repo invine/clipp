@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   parseClipboardAcceptanceArgs,
   persistentAttemptDirectory,
+  raceAcceptanceOperation,
   verifyPopupHistorySearch,
 } from "./clipboard-acceptance.mjs";
 import extensionPackage from "../package.json" with { type: "json" };
@@ -89,6 +90,32 @@ test("the package command never supplies a permanent authorization", () => {
   );
 });
 
+test("retry history location and scenario cannot be overridden", async () => {
+  const authorization = [
+    "--authorization-reference",
+    "operational-reliability:D4:2026-10-25",
+  ];
+  assert.throws(
+    () =>
+      parseClipboardAcceptanceArgs([...authorization, "--scenario", "fresh"]),
+    /unknown_argument/
+  );
+  assert.throws(
+    () =>
+      parseClipboardAcceptanceArgs([
+        ...authorization,
+        "--state-dir",
+        "/tmp/fresh",
+      ]),
+    /unknown_argument/
+  );
+  const runner = await readFile(
+    new URL("./verify-clipboard-io.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.equal(runner.includes("CLIPP_ACCEPTANCE_STATE_DIR"), false);
+});
+
 test("attempt history defaults to durable user state outside the checkout", () => {
   const home = "/Users/example";
   assert.equal(
@@ -99,18 +126,18 @@ test("attempt history defaults to durable user state outside the checkout", () =
     persistentAttemptDirectory({
       platform: "linux",
       home,
-      env: { XDG_STATE_HOME: "/Users/example/state" },
     }),
-    "/Users/example/state/clipp/acceptance/chrome"
+    "/Users/example/.local/state/clipp/acceptance/chrome"
   );
   assert.equal(
     persistentAttemptDirectory({
       platform: "win32",
-      home,
-      env: { LOCALAPPDATA: "C:\\Users\\example\\AppData\\Local" },
+      home: "C:\\Users\\example",
     }),
     win32.join(
-      "C:\\Users\\example\\AppData\\Local",
+      "C:\\Users\\example",
+      "AppData",
+      "Local",
       "Clipp",
       "Acceptance",
       "chrome"
@@ -173,6 +200,21 @@ test("readiness succeeds only after popup search has a visible result", async ()
       (maximum) => maximum
     ),
     /not visible/
+  );
+});
+
+test("operation timeouts retain only a static operation label", async () => {
+  await assert.rejects(
+    raceAcceptanceOperation(
+      () => new Promise(() => {}),
+      1,
+      "confirm_offscreen_clipboard_write"
+    ),
+    (error) => {
+      assert.equal(error.message, "acceptance_operation_timeout");
+      assert.equal(error.operation, "confirm_offscreen_clipboard_write");
+      return true;
+    }
   );
 });
 
