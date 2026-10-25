@@ -119,6 +119,9 @@ try {
     scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport}`,
     change: values["diagnostic-change"],
     expectation: values["expected-observation"],
+    // The initial build and normal acceptance are outside diagnostic time. The
+    // helper starts the clock when this first attempt records a failure.
+    deferDiagnosticClockUntilFailure: true,
   });
 } catch (error) {
   console.error(error.message);

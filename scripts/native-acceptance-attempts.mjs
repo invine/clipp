@@ -25,6 +25,8 @@ export async function beginNativeAttempt({
   scenario,
   change,
   expectation,
+  deferDiagnosticClockUntilFailure = false,
+  now = Date.now,
 }) {
   await mkdir(output, { recursive: true, mode: 0o700 });
   const lockPath = path.join(output, ".attempt.lock");
@@ -66,15 +68,17 @@ export async function beginNativeAttempt({
         !history.attempts.some((attempt) => attempt.change === change.trim()),
         "unchanged_diagnosis_refused"
       );
-      // The full scenario budget starts with attempt one, including its setup
-      // and execution time. Invoking again never resets the budget.
-      history.diagnosticStartedAt ??= history.attempts[0].startedAt;
+      // Legacy callers include attempt one. Electron can defer the diagnostic
+      // budget until its initial failure is recorded. A retry never resets it.
+      history.diagnosticStartedAt ??= deferDiagnosticClockUntilFailure
+        ? (history.attempts[0].finishedAt ?? new Date(now()).toISOString())
+        : history.attempts[0].startedAt;
       assert(
         Number.isFinite(Date.parse(history.diagnosticStartedAt)),
         "attempt_history_invalid"
       );
       assert(
-        Date.now() - Date.parse(history.diagnosticStartedAt) < budgetMs,
+        now() - Date.parse(history.diagnosticStartedAt) < budgetMs,
         "diagnostic_time_budget_exhausted"
       );
     }
@@ -83,13 +87,14 @@ export async function beginNativeAttempt({
     await mkdir(directory, { mode: 0o700 });
     const attempt = {
       number,
-      startedAt: new Date().toISOString(),
+      startedAt: new Date(now()).toISOString(),
       result: "running",
       ...(number > 1
         ? { change: change.trim(), expectation: expectation.trim() }
         : {}),
     };
-    history.diagnosticStartedAt ??= attempt.startedAt;
+    if (!deferDiagnosticClockUntilFailure || number > 1)
+      history.diagnosticStartedAt ??= attempt.startedAt;
     history.attempts.push(attempt);
     await save(historyPath, history);
     return {
@@ -98,7 +103,7 @@ export async function beginNativeAttempt({
       directory,
       remainingMs(maximum) {
         const remaining = history.diagnosticStartedAt
-          ? budgetMs - (Date.now() - Date.parse(history.diagnosticStartedAt))
+          ? budgetMs - (now() - Date.parse(history.diagnosticStartedAt))
           : maximum;
         assert(remaining > 0, "diagnostic_time_budget_exhausted");
         return Math.min(maximum, remaining);
@@ -106,17 +111,23 @@ export async function beginNativeAttempt({
       assertBudget() {
         if (history.diagnosticStartedAt)
           assert(
-            Date.now() - Date.parse(history.diagnosticStartedAt) < budgetMs,
+            now() - Date.parse(history.diagnosticStartedAt) < budgetMs,
             "diagnostic_time_budget_exhausted"
           );
       },
       async finish(receipt) {
         try {
-          attempt.finishedAt = new Date().toISOString();
+          attempt.finishedAt = new Date(now()).toISOString();
           attempt.result = receipt.result;
           attempt.stage = receipt.stage;
           attempt.classification = receipt.classification;
           attempt.receipt = `attempt-${number}/receipt.json`;
+          if (
+            number === 1 &&
+            deferDiagnosticClockUntilFailure &&
+            receipt.result !== "passed"
+          )
+            history.diagnosticStartedAt = attempt.finishedAt;
           await save(path.join(directory, "receipt.json"), receipt);
           await save(path.join(output, "receipt.json"), receipt);
           await save(historyPath, history);
