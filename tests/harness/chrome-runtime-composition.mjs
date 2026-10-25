@@ -53,6 +53,7 @@ const area = () => {
 };
 const onMessage = event();
 let offscreen = false;
+let failPeerRead = false;
 let reloads = 0;
 let lastGeneration;
 globalThis.indexedDB = new IDBFactory();
@@ -67,6 +68,10 @@ globalThis.chrome = {
     sendMessage(message, callback) {
       if (message.target === "offscreen") {
         lastGeneration = message.runtimeGeneration ?? lastGeneration;
+        if (message.action === "getPeers" && failPeerRead) {
+          callback?.({ ok: false, error: "fixture_peer_read_failed" });
+          return Promise.resolve();
+        }
         callback?.({
           ok: true,
           peers: [],
@@ -153,6 +158,16 @@ try {
   );
   const initial = await owner.publicState();
   assert.ok(initial.identity?.deviceId);
+  assert.equal(initial.connectionStateKnown, true);
+  failPeerRead = true;
+  const unavailable = (await ask({ type: "getRuntimeState" })).state;
+  assert.equal(
+    unavailable.connectionStateKnown,
+    false,
+    "failed offscreen read must preserve unknown instead of asserting offline"
+  );
+  failPeerRead = false;
+  assert.equal((await owner.publicState()).connectionStateKnown, true);
   await ask({
     type: "setSettings",
     settings: { autoSync: false, theme: "dark", localRetentionMs: 3_600_000 },

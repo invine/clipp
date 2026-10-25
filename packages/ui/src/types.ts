@@ -49,6 +49,7 @@ export type { PairingCode } from "../../core/pairing/qrCode";
 
 export type PeerState = {
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
 };

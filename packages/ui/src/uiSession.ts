@@ -19,6 +19,7 @@ export type SessionTask = {
     | "paste"
     | "qr"
     | "clear"
+    | "connections"
     | "issues"
     | "pairing-recovery";
   entity?: string;
@@ -338,6 +339,7 @@ export function createUiSession() {
       const current = state.tasks[state.tasks.length - 1];
       if (current?.kind === task.kind && current.entity === task.entity) return;
       const subtask =
+        task.kind === "connections" ||
         (current?.kind === "pairing" &&
           (task.kind === "paste" || task.kind === "qr")) ||
         (current?.kind === "issues" && task.kind === "pairing-recovery");

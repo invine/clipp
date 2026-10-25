@@ -45,6 +45,7 @@ type AppState = {
   pairingErrors: PairingError[];
   pairingState?: PairingOutcomeSnapshot;
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;

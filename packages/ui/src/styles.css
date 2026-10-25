@@ -2319,3 +2319,35 @@ html[data-host-geometry="android"] .android-host {
   grid-auto-rows: max-content;
   align-content: start;
 }
+
+/* One connection signal in the branding line; paths never claim delivery. */
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--clipp-target-min);
+  min-height: var(--clipp-target-min);
+  padding: 6px;
+  border: 0;
+  border-radius: var(--md-radius-pill);
+  background: transparent;
+  color: var(--clipp-text-muted);
+  cursor: pointer;
+}
+.connection-direct {
+  color: var(--clipp-success);
+}
+.connection-relay,
+.connection-attention {
+  color: var(--clipp-warning);
+}
+.connection-status:focus-visible {
+  outline: 2px solid var(--clipp-focus);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .connection-status {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
