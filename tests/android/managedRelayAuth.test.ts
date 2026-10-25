@@ -26,11 +26,15 @@ function bridge() {
   };
 }
 
-function tokens(access = "access-new", refresh = "refresh-new") {
+function tokens(
+  access = "access-new",
+  refresh = "refresh-new",
+  tokenType = "Bearer"
+) {
   return new Response(
     JSON.stringify({
       access_token: access,
-      token_type: "Bearer",
+      token_type: tokenType,
       expires_in: 900,
       refresh_token: refresh,
     }),
@@ -39,6 +43,63 @@ function tokens(access = "access-new", refresh = "refresh-new") {
 }
 
 describe("Android managed relay authorization", () => {
+  it("keeps native token bytes through login, protected reload, refresh, and relay use", async () => {
+    const native = bridge();
+    const requests: URLSearchParams[] = [];
+    const loginAuth = new AndroidManagedRelayAuth(
+      native,
+      jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(new URLSearchParams(String(init?.body)));
+        return tokens("ory_at_Login.CaSe", "ory_rt_Login.KeEp", "bEaReR");
+      })
+    );
+    const login = loginAuth.login(endpoint);
+    while (native.openBrowser.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = new URL(native.openBrowser.mock.calls[0][0]).searchParams.get(
+      "state"
+    )!;
+    expect(
+      await loginAuth.acceptCallback(
+        `${ANDROID_RELAY_REDIRECT}?code=native&state=${state}`
+      )
+    ).toBe(true);
+    await login;
+    expect(native.saved.get(endpoint)).toBe("ory_rt_Login.KeEp");
+
+    const refreshAuth = new AndroidManagedRelayAuth(
+      native,
+      jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(new URLSearchParams(String(init?.body)));
+        return tokens("ory_at_Refresh.CaSe", "ory_rt_Refresh.KeEp", "BEARER");
+      })
+    );
+    expect(
+      await refreshAuth.accessToken(endpoint, new AbortController().signal)
+    ).toBe("ory_at_Refresh.CaSe");
+    expect(requests[0].get("code")).toBe("native");
+    expect(requests[1].get("refresh_token")).toBe("ory_rt_Login.KeEp");
+    expect(native.saved.get(endpoint)).toBe("ory_rt_Refresh.KeEp");
+  });
+
+  it("does not store malformed or oversized token responses", async () => {
+    for (const body of ["not-json", "x".repeat(16_385)]) {
+      const native = bridge();
+      native.saved.set(endpoint, "refresh-old");
+      const auth = new AndroidManagedRelayAuth(
+        native,
+        jest.fn(async () => new Response(body, { status: 200 }))
+      );
+
+      await expect(
+        auth.accessToken(endpoint, new AbortController().signal)
+      ).rejects.toThrow();
+      expect(native.eraseCredential).toHaveBeenCalledWith(endpoint);
+      expect(native.saved.has(endpoint)).toBe(false);
+      expect(native.writeCredential).not.toHaveBeenCalled();
+    }
+  });
+
   it("rejects wrong state, redirect, duplicate and late callbacks without exchanging a code", async () => {
     const native = bridge();
     const fetcher = jest.fn(async (_input: RequestInfo | URL) => tokens());

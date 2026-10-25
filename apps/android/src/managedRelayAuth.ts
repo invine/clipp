@@ -1,4 +1,5 @@
 import { canonicalDiscoveryUrl } from "@core/network/managedRelays";
+import { parseManagedRelayTokenResponse } from "@core/network/managedRelayTokens";
 
 /** This value is also pinned by AndroidManifest.xml and the relay public-client configuration. */
 export const ANDROID_RELAY_REDIRECT = "clipp-relay://oauth/callback";
@@ -68,25 +69,7 @@ async function tokenResponse(response: Response): Promise<{
   const body = await response.text();
   if (body.length > 16_384) throw new Error("token_response_too_large");
   const value: unknown = JSON.parse(body);
-  if (!value || typeof value !== "object")
-    throw new Error("invalid_token_response");
-  const token = value as Record<string, unknown>;
-  if (
-    token.token_type !== "Bearer" ||
-    typeof token.access_token !== "string" ||
-    !token.access_token ||
-    typeof token.refresh_token !== "string" ||
-    !token.refresh_token ||
-    !Number.isSafeInteger(token.expires_in) ||
-    (token.expires_in as number) <= 0 ||
-    (token.expires_in as number) > 900
-  )
-    throw new Error("invalid_token_response");
-  return token as {
-    access_token: string;
-    refresh_token: string;
-    expires_in: number;
-  };
+  return parseManagedRelayTokenResponse(value);
 }
 
 /** Activity-owned credentials and browser flow. No renewable credential enters ordinary Preferences. */
