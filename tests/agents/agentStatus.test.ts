@@ -1040,3 +1040,262 @@ test("oversized local branch inventories fail visibly and withhold the frontier"
     ])
   );
 });
+
+function setupOwnership() {
+  const { ledger, local } = setup();
+  const canonical = { role: "client", path: ".scratch/feature" };
+  const specification = { role: "client", path: ".scratch/feature/spec.md" };
+  const decisions = { role: "client", path: ".scratch/feature/decisions.md" };
+  const pointer = { role: "relay", path: ".scratch/feature/README.md" };
+  const header =
+    "**Owning repository:** client (Clipp).  \n**Canonical feature directory:** client:`.scratch/feature/`.\n";
+  file(join(client, canonical.path, "README.md"), header);
+  file(join(relay, pointer.path), header);
+  file(
+    join(client, specification.path),
+    "# Specification\n\n## Artifact ownership\n"
+  );
+  file(join(client, decisions.path), "private decision prose canary\n");
+  file(
+    join(client, canonical.path, "issues/01-first.md"),
+    readFileSync(join(client, "tickets/01-first.md"), "utf8")
+  );
+  file(join(root, "preserved/evidence.txt"), "private artifact canary\n");
+  return {
+    ledger: {
+      ...ledger,
+      schemaVersion: 2,
+      tracker: { role: "client", path: ".scratch/feature/issues" },
+      ownership: {
+        canonical,
+        specification,
+        decisions,
+        roles: {
+          client: "Coordination and client",
+          relay: "Relay implementation",
+        },
+        pointers: [pointer],
+        coverage: [
+          {
+            decision: "D1",
+            source: decisions,
+            disposition: "accepted",
+            requirements: ["Artifact ownership"],
+          },
+        ],
+        artifacts: ["preserved"],
+      },
+    },
+    local: {
+      ...local,
+      artifacts: { preserved: join(root, "preserved/evidence.txt") },
+    },
+  };
+}
+
+test("v2 discovers canonical ownership and decision coverage without rewriting v1 or reading private evidence", () => {
+  const { ledger, local } = setupOwnership();
+  const before = [client, relay].map((repo) => ({
+    index: readFileSync(join(repo, ".git/index")),
+    refs: git(repo, "show-ref"),
+    status: git(repo, "status", "--porcelain=v1"),
+  }));
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.schemaVersion).toBe(2);
+  expect(report.ownership).toEqual({
+    ...ledger.ownership,
+    artifacts: [{ id: "preserved", available: true }],
+  });
+  expect(report.frontier).toEqual(["01-first.md"]);
+  expect(result.stdout).not.toContain("private decision prose canary");
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(result.stdout).not.toContain(local.artifacts.preserved);
+  expect(
+    [client, relay].map((repo) => ({
+      index: readFileSync(join(repo, ".git/index")),
+      refs: git(repo, "show-ref"),
+      status: git(repo, "status", "--porcelain=v1"),
+    }))
+  ).toEqual(before);
+  expect(JSON.parse(readFileSync(join(root, "run.json"), "utf8"))).toEqual(
+    ledger
+  );
+});
+
+test("v2 withholds assignments when companion ownership conflicts with the canonical tracker", () => {
+  const { ledger, local } = setupOwnership();
+  file(
+    join(relay, ledger.ownership.pointers[0].path),
+    "**Owning repository:** relay\n**Canonical feature directory:** relay:`.scratch/feature/`\n"
+  );
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).frontier).toEqual([]);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "ownership-pointer" }),
+    ])
+  );
+});
+
+test("v2 rejects a tracker outside its owner feature and companion copies of claimable tickets", () => {
+  const { ledger, local } = setupOwnership();
+  ledger.tracker.path = "tickets";
+  file(
+    join(relay, ".scratch/feature/issues/01-copy.md"),
+    "**Status:** ready-for-agent\n"
+  );
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "ownership-consistency" }),
+      expect.objectContaining({ code: "ownership-duplicate" }),
+    ])
+  );
+});
+
+test("v2 reports unavailable decision/spec references and uncovered accepted decisions", () => {
+  const { ledger, local } = setupOwnership();
+  rmSync(join(client, ledger.ownership.specification.path));
+  rmSync(join(client, ledger.ownership.decisions.path));
+  ledger.ownership.coverage[0].requirements = [];
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "ownership-reference" }),
+      expect.objectContaining({ code: "decision-coverage" }),
+    ])
+  );
+  expect(JSON.parse(result.stdout).frontier).toEqual([]);
+});
+
+test("v2 keeps private artifacts outside disposable worktrees and reports missing preserved evidence without disclosure", () => {
+  const { ledger, local } = setupOwnership();
+  const disposable = join(root, "disposable");
+  git(client, "worktree", "add", "--quiet", "-b", "disposable", disposable);
+  file(join(disposable, "evidence.txt"), "private artifact canary\n");
+  local.artifacts.preserved = join(disposable, "evidence.txt");
+  let result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "artifact-unpreserved" }),
+    ])
+  );
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(readFileSync(local.artifacts.preserved, "utf8")).toBe(
+    "private artifact canary\n"
+  );
+  local.artifacts.preserved = join(root, "missing-artifact");
+  result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).ownership.artifacts).toEqual([
+    { id: "preserved", available: false },
+  ]);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "artifact-unavailable" }),
+    ])
+  );
+});
+
+test("v2 refuses a durable ledger stored in a disposable worktree", () => {
+  const { ledger, local } = setupOwnership();
+  const disposable = join(root, "disposable");
+  git(client, "worktree", "add", "--quiet", "-b", "disposable", disposable);
+  run(ledger, local);
+  file(join(disposable, "run.json"), JSON.stringify(ledger));
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(disposable, "run.json"),
+      "--local",
+      join(root, "local.json"),
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "input-unpreserved" }),
+    ])
+  );
+  expect(
+    JSON.parse(readFileSync(join(disposable, "run.json"), "utf8"))
+  ).toEqual(ledger);
+});
+
+test("v2 detects a coverage reference to a missing specification heading", () => {
+  const { ledger, local } = setupOwnership();
+  ledger.ownership.coverage[0].requirements = ["Missing requirement"];
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "decision-coverage" }),
+    ])
+  );
+});
+
+test("v2 supports a relay-owned single-role effort without inventing companion participation", () => {
+  const { ledger, local } = setupOwnership();
+  const { canonical, specification, decisions } = ledger.ownership;
+  file(
+    join(relay, canonical.path, "README.md"),
+    "**Owning repository:** relay\n**Canonical feature directory:** relay:`.scratch/feature/`\n"
+  );
+  for (const path of [
+    specification.path,
+    decisions.path,
+    ledger.tracker.path + "/01-first.md",
+  ])
+    file(join(relay, path), readFileSync(join(client, path), "utf8"));
+  const next = {
+    ...ledger,
+    tracker: { ...ledger.tracker, role: "relay" },
+    tickets: ledger.tickets.map((item) => ({ ...item, roles: ["relay"] })),
+    ownership: {
+      ...ledger.ownership,
+      canonical: { ...canonical, role: "relay" },
+      specification: { ...specification, role: "relay" },
+      decisions: { ...decisions, role: "relay" },
+      roles: { relay: "Coordination and implementation" },
+      pointers: [],
+      coverage: ledger.ownership.coverage.map((item) => ({
+        ...item,
+        source: { ...decisions, role: "relay" },
+      })),
+    },
+  };
+  const result = run(next, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).frontier).toEqual(["01-first.md"]);
+});
+
+test("human v2 status displays canonical ownership, decision coverage and artifact availability", () => {
+  const { ledger, local } = setupOwnership();
+  run(ledger, local);
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Canonical: client:.scratch/feature");
+  expect(result.stdout).toContain("D1: accepted; Artifact ownership");
+  expect(result.stdout).toContain("preserved: available");
+  expect(result.stdout).not.toContain("private artifact canary");
+});

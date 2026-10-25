@@ -4,7 +4,7 @@ Use this procedure before assigning implementation, reviewing its scope, integra
 
 ## Establish the run
 
-The coordinator records these facts before dispatch:
+Establish [canonical ownership and decision coverage](issue-tracker.md#establish-ownership) before creating plans or tickets. The coordinator records these facts before dispatch:
 
 - Run identifier and coordinator; canonical tracker, specification and ticket paths.
 - Participating repository roles (`client` for Clipp, `relay` for clipp-relay), explicit local root mapping, approved starting commits and one integration branch with its observed full commit hash per role. Tracked references use roles and repository-relative paths; local roots and private artifact directories are supplied explicitly.

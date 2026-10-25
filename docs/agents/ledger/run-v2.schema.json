@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "coordinator",
+    "maxImplementers",
+    "tracker",
+    "repositories",
+    "tickets",
+    "claims",
+    "integrations",
+    "evidence",
+    "ownership"
+  ],
+  "additionalProperties": false,
+  "$id": "https://clipp.local/agent-workflow/run-v2.schema.json",
+  "title": "Clipp agent workflow run v2",
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "runId": {
+      "$ref": "run-v1.schema.json#/properties/runId"
+    },
+    "coordinator": {
+      "$ref": "run-v1.schema.json#/properties/coordinator"
+    },
+    "maxImplementers": {
+      "$ref": "run-v1.schema.json#/properties/maxImplementers"
+    },
+    "tracker": {
+      "$ref": "run-v1.schema.json#/properties/tracker"
+    },
+    "repositories": {
+      "$ref": "run-v1.schema.json#/properties/repositories"
+    },
+    "tickets": {
+      "$ref": "run-v1.schema.json#/properties/tickets"
+    },
+    "claims": {
+      "$ref": "run-v1.schema.json#/properties/claims"
+    },
+    "integrations": {
+      "$ref": "run-v1.schema.json#/properties/integrations"
+    },
+    "evidence": {
+      "$ref": "run-v1.schema.json#/properties/evidence"
+    },
+    "ownership": {
+      "type": "object",
+      "properties": {
+        "canonical": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": ["client", "relay"]
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": ["role", "path"],
+          "additionalProperties": false
+        },
+        "specification": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": ["client", "relay"]
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": ["role", "path"],
+          "additionalProperties": false
+        },
+        "decisions": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": ["client", "relay"]
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": ["role", "path"],
+          "additionalProperties": false
+        },
+        "roles": {
+          "type": "object",
+          "properties": {
+            "client": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "relay": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [],
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "pointers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "enum": ["client", "relay"]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": ["role", "path"],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 500,
+          "uniqueItems": true
+        },
+        "coverage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "enum": ["client", "relay"]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": ["role", "path"],
+                "additionalProperties": false
+              },
+              "disposition": {
+                "enum": ["accepted", "superseded", "rejected", "deferred"]
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "minItems": 0,
+                "maxItems": 500,
+                "uniqueItems": true
+              }
+            },
+            "required": ["decision", "source", "disposition", "requirements"],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 500,
+          "uniqueItems": true
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 500,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "canonical",
+        "specification",
+        "decisions",
+        "roles",
+        "pointers",
+        "coverage",
+        "artifacts"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
