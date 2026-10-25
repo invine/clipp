@@ -73,8 +73,8 @@ export function ConnectionsPanel({
   session: UiSession;
   autoSync: boolean | null;
 }) {
-  const task =
-    session.getSnapshot().tasks[session.getSnapshot().tasks.length - 1];
+  const tasks = session.getSnapshot().tasks;
+  const task = tasks[tasks.length - 1];
   const manage = (destination: "devices" | "settings") => {
     session.close();
     session.update({
