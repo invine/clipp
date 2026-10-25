@@ -18,4 +18,4 @@ The [approved specification](../spec.md) and [decision coverage](../decisions.md
 
 ## Answer
 
-Integrated at client `e35794a2c884b75d6893c8e1aa9075dd19e03e16`; independent Standards and Spec reviews passed. Fresh integrated routine verification passed 79 suites/694 tests, all typechecks and three production builds; public CLI/navigation checks passed 29 tests. Durable receipt: client local artifact `merge-05.json` under this effort's run directory. The actual run now uses v2 with all six decisions and the relay pointer; historical v1 ledger is preserved.
+Implemented and integrated on the client branch. The v2 ledger validates canonical ownership, role pointers, decision coverage and preserved evidence while retaining v1 compatibility. Public fixtures cover inconsistent references and private artifacts without mutation or disclosure. Final cross-effort verification and review are recorded in the local run ledger.
