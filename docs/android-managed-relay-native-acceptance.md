@@ -55,12 +55,17 @@ npm --workspace apps/android run test:native:instrumentation:connected
 
 Before instrumentation, the readiness gate uses that exact serial for the
 device state, completed boot, API level, installed acceptance package, active
-WebView provider/version, acceptance instrumentation probe, app launch and a
-harmless Tab key interaction. It pulls the installed base APK into a private
+WebView provider/version from `dumpsys webviewupdate`, target-package-filtered
+acceptance instrumentation probe, app launch and a harmless Tab interaction.
+The probe verifies the exact focused activity and requires Tab to move focus to
+a different accessible control; only hashed control descriptors are retained.
+The default matrix and API-specific/connected instrumentation commands run
+this same gate before Gradle. It pulls the installed base APK into a private
 temporary directory, hashes it and compares it to the supplied candidate;
 split APK installs and unreadable packages fail closed. Temporary-file cleanup
 is checked and recorded. The subsequent Gradle command inherits
-`ANDROID_SERIAL` for the same device. The candidate receipt includes its file
+`ANDROID_SERIAL` for the same device. Each ADB invocation is bounded by the
+remaining diagnostic budget. The candidate receipt includes its file
 hash, source revision and dirty state, alongside the installed base APK hash.
 Do not use an unrelated APK renamed to
 `app-acceptance.apk`; readiness verifies the adjacent provenance sidecar against
