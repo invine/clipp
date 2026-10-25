@@ -12,6 +12,7 @@ const peer = "12D3KooWGVgpvsG4YReZDibWrpQvVVWxh2njEoR4dvrmHPp3tDex";
 const wss = `/dns4/relay.example/tcp/443/wss/p2p/${peer}`;
 const sni = `/dns4/relay.example/tcp/443/tls/sni/relay.example/ws/p2p/${peer}`;
 const direct = `/ip4/192.0.2.1/udp/443/webrtc-direct/certhash/uEiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/p2p/${peer}`;
+const nativeAccessToken = "ory_at_native.KeEp-ByteS_03";
 const configuration = {
   key: "managed",
   name: "Managed",
@@ -46,12 +47,14 @@ describe("Chrome offscreen managed relay controller", () => {
             onDisconnect: { addListener: () => {} },
             disconnect: () => {},
             postMessage: () =>
-              queueMicrotask(() => reply({ accessToken: "synthetic-access" })),
+              queueMicrotask(() => reply({ accessToken: nativeAccessToken })),
           }),
         },
       } as unknown as typeof chrome;
-      globalThis.fetch = async () =>
-        new Response(
+      let authorizationHeader: string | null = null;
+      globalThis.fetch = async (_input, init) => {
+        authorizationHeader = new Headers(init?.headers).get("Authorization");
+        return new Response(
           JSON.stringify({
             version: 1,
             relay: {
@@ -61,6 +64,7 @@ describe("Chrome offscreen managed relay controller", () => {
             validUntil: new Date(Date.now() + 60_000).toISOString(),
           })
         );
+      };
       const dialed: string[] = [];
       const controller = createExtensionManagedRelayController({
         ...{ acceptanceTransport },
@@ -85,6 +89,7 @@ describe("Chrome offscreen managed relay controller", () => {
         await controller.setConfigurations([configuration]);
         expect(controller.states()[0].status).toBe("ready");
         expect(dialed).toEqual([expected]);
+        expect(authorizationHeader).toBe(`Bearer ${nativeAccessToken}`);
       } finally {
         await controller.stop();
       }
