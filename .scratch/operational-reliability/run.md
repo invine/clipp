@@ -2,7 +2,7 @@
 
 Coordinator: `/root`. The user approved the design, test boundaries, six-ticket graph and sole 05 → 06 dependency on 2026-10-25. Implementation resumed on the user's explicit follow-up. The coordinator owns canonical claims, integration and resolution; no more than two implementers were active at once.
 
-Client and relay use their own `codex/operational-reliability-integration` branches in isolated worktrees. Their current exact tips are recorded in the v2 ledger. Tickets 01, 02, 04, 05 and 06 are resolved. Ticket 03 remains claimed/blocked on incomplete owned clipboard acceptance evidence; its bounded scenario budget is exhausted. After the user reset ticket 04's acceptance budget on 2026-10-26, fresh API 31 emulator readiness and connected instrumentation passed on `emulator-5554`.
+Client and relay use their own `codex/operational-reliability-integration` branches in isolated worktrees. The relay tip remains `1a2b1934051e62743471572cfaaa84cff3f6507d`; the client integration is now at `c15d456` and the private v2 ledger still needs its client tip and evidence reconciled. Tickets 01, 02, 04, 05 and 06 are resolved. Ticket 03 remains claimed/blocked on incomplete owned clipboard acceptance evidence; its bounded scenario budget is exhausted. After the user reset ticket 04's acceptance budget on 2026-10-26, fresh API 31 emulator readiness and connected instrumentation passed on `emulator-5554`.
 
 The authoritative v2 run ledger and local roots/artifact mappings are client:`.local/operational-reliability/run-20261025/ledger.json` and `local.json`. Private receipts, command logs, failed attempts and review artifacts live under the same ignored run directory. The final ledger and read-only status reconciliation are the evidence source.
 
