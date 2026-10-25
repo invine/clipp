@@ -1,8 +1,10 @@
 /** Readiness gate for the exact Android candidate and serial used by acceptance. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -101,6 +103,75 @@ async function candidateIdentity() {
   };
 }
 
+async function sha256File(file) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function verifyInstalledCandidate(packagePaths, candidateHash) {
+  const paths = packagePaths
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^package:(\/\S+)$/);
+      assert(match, "installed_package_path_unparseable");
+      return match[1];
+    });
+  assert.equal(paths.length, 1, "installed_package_split_apks_unsupported");
+  assert.equal(
+    path.basename(paths[0]),
+    "base.apk",
+    "installed_package_base_apk_missing"
+  );
+
+  const temporaryDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "clipp-android-installed-apk-")
+  );
+  const localApk = path.join(temporaryDirectory, "installed-base.apk");
+  let failure;
+  let installedSha256;
+  try {
+    execFileSync(adb, ["-s", serial, "pull", paths[0], localApk], {
+      cwd: root,
+      encoding: "utf8",
+      timeout,
+      maxBuffer: 1024 * 1024,
+    });
+    const details = await stat(localApk);
+    assert(
+      details.isFile() && details.size > 0,
+      "installed_candidate_pull_empty"
+    );
+    installedSha256 = await sha256File(localApk);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await rm(temporaryDirectory, { recursive: true, force: false });
+  } catch (error) {
+    if (failure) failure.cleanupFailure = error.message;
+    else
+      failure = Object.assign(
+        new Error("installed_candidate_temp_cleanup_failed"),
+        {
+          stage: "cleanup",
+          classification: "runner",
+          cleanupFailure: error.message,
+        }
+      );
+  }
+  if (failure) throw failure;
+  return {
+    package: appPackage,
+    devicePath: paths[0],
+    sha256: installedSha256,
+    matchesCandidate: installedSha256 === candidateHash,
+    temporaryArtifactCleanup: "passed",
+  };
+}
+
 const attempt = await beginNativeAttempt({
   output: values.output,
   scenario: `android-readiness-${serial}`,
@@ -145,6 +216,15 @@ try {
   assert(
     receipt.installedPackage.startsWith("package:"),
     "acceptance_candidate_not_installed"
+  );
+  receipt.installedCandidate = await verifyInstalledCandidate(
+    receipt.installedPackage,
+    receipt.candidate.sha256
+  );
+  receipt.cleanup = receipt.installedCandidate.temporaryArtifactCleanup;
+  assert(
+    receipt.installedCandidate.matchesCandidate,
+    "installed_candidate_differs_from_supplied_apk"
   );
   receipt.stage = "webview";
   receipt.webViewProvider = invoke(
@@ -224,6 +304,10 @@ try {
   receipt.stage = error.stage || receipt.stage;
   receipt.classification = error.classification || "prerequisite";
   receipt.failure = error.message;
+  if (error.cleanupFailure) {
+    receipt.cleanup = "failed";
+    receipt.cleanupFailure = error.cleanupFailure;
+  }
 } finally {
   receipt.finishedAt = new Date().toISOString();
   await attempt.finish(receipt);

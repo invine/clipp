@@ -17,14 +17,23 @@ function runReadiness({
   instrumentation = true,
   emulator = true,
   corruptProvenance = false,
+  installedMatches = true,
+  splitPackage = false,
   serial = "emulator-5554",
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "clipp-android-ready-"));
   const adb = join(directory, "adb");
   const argsFile = join(directory, "calls.txt");
   const candidate = join(directory, "app-acceptance.apk");
+  const installedApk = join(directory, "installed-base.apk");
   const output = join(directory, "receipt");
   writeFileSync(candidate, "fixture candidate bytes");
+  writeFileSync(
+    installedApk,
+    installedMatches
+      ? "fixture candidate bytes"
+      : "different installed candidate bytes"
+  );
   const source = spawnSync(
     process.execPath,
     [
@@ -53,12 +62,16 @@ printf '%s\\n' "$*" >> '${argsFile}'
 shift
 if [ "$1" != "emulator-5554" ]; then echo 'error: device serial not found'; exit 1; fi
 shift
+if [ "$1" = "pull" ]; then cp "$FIXTURE_INSTALLED_APK" "$3"; echo '1 file pulled'; exit 0; fi
 case "$*" in
   "get-state") echo device ;;
   "shell getprop sys.boot_completed") echo 1 ;;
   "shell getprop ro.build.version.sdk") echo 33 ;;
   "shell getprop ro.kernel.qemu") echo '${emulator ? 1 : 0}' ;;
-  "shell pm path com.clipp.app.acceptance") echo package:/data/app/com.clipp.app.acceptance/base.apk ;;
+  "shell pm path com.clipp.app.acceptance")
+    echo package:/data/app/com.clipp.app.acceptance/base.apk
+    ${splitPackage ? "echo package:/data/app/com.clipp.app.acceptance/split_config.arm64_v8a.apk" : ":"}
+    ;;
   "shell cmd webviewupdate getCurrentWebViewPackage") ${webView ? "echo com.android.webview versionName=133.0.6943.49" : "echo No WebView provider available"} ;;
   "shell pm list instrumentation com.clipp.app.acceptance.test") echo 'instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=com.clipp.app.acceptance)' ;;
   "shell am instrument -w -e class com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? "echo 'OK (1 test)'" : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
@@ -81,7 +94,14 @@ esac
       "--output",
       output,
     ],
-    { encoding: "utf8", env: { ...process.env, CLIPP_ANDROID_ADB: adb } }
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CLIPP_ANDROID_ADB: adb,
+        FIXTURE_INSTALLED_APK: installedApk,
+      },
+    }
   );
   return { directory, argsFile, output, result };
 }
@@ -97,15 +117,58 @@ test("Android readiness probes one candidate serial through WebView, instrumenta
     expect(receipt.serial).toBe("emulator-5554");
     expect(receipt.candidate.appPackage).toBe("com.clipp.app.acceptance");
     expect(receipt.candidate.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(receipt.installedCandidate.sha256).toBe(receipt.candidate.sha256);
+    expect(receipt.installedCandidate.matchesCandidate).toBe(true);
     expect(receipt.androidApi).toBe("33");
     expect(receipt.instrumentationProbe).toContain("OK (1 test)");
-    expect(receipt.cleanup).toBe("not-required");
+    expect(receipt.cleanup).toBe("passed");
     const calls = readFileSync(run.argsFile, "utf8").trim().split("\n");
     expect(calls.every((call) => call.startsWith("-s emulator-5554 "))).toBe(
       true
     );
     expect(calls.at(-1)).toContain("dumpsys window windows");
     expect(calls.join("\n")).not.toMatch(/barcode|gms\.version|settings put/i);
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android readiness rejects an installed APK that differs from the candidate", () => {
+  const run = runReadiness({ installedMatches: false });
+  try {
+    expect(run.result.status).not.toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.result).toBe("failed");
+    expect(receipt.stage).toBe("installed-candidate");
+    expect(receipt.classification).toBe("prerequisite");
+    expect(receipt.installedCandidate.matchesCandidate).toBe(false);
+    expect(receipt.installedCandidate.sha256).not.toBe(
+      receipt.candidate.sha256
+    );
+    const calls = readFileSync(run.argsFile, "utf8");
+    expect(calls).toMatch(
+      /pull \/data\/app\/com\.clipp\.app\.acceptance\/base\.apk \/.*installed-base\.apk/
+    );
+    expect(calls).not.toContain("shell cmd webviewupdate");
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android readiness refuses split APK installs that cannot match one candidate APK", () => {
+  const run = runReadiness({ splitPackage: true });
+  try {
+    expect(run.result.status).not.toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.stage).toBe("installed-candidate");
+    expect(receipt.failure).toContain(
+      "installed_package_split_apks_unsupported"
+    );
+    expect(readFileSync(run.argsFile, "utf8")).not.toContain(" pull ");
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }

@@ -56,9 +56,13 @@ npm --workspace apps/android run test:native:instrumentation:connected
 Before instrumentation, the readiness gate uses that exact serial for the
 device state, completed boot, API level, installed acceptance package, active
 WebView provider/version, acceptance instrumentation probe, app launch and a
-harmless Tab key interaction. The subsequent Gradle command inherits
+harmless Tab key interaction. It pulls the installed base APK into a private
+temporary directory, hashes it and compares it to the supplied candidate;
+split APK installs and unreadable packages fail closed. Temporary-file cleanup
+is checked and recorded. The subsequent Gradle command inherits
 `ANDROID_SERIAL` for the same device. The candidate receipt includes its file
-hash, source revision and dirty state. Do not use an unrelated APK renamed to
+hash, source revision and dirty state, alongside the installed base APK hash.
+Do not use an unrelated APK renamed to
 `app-acceptance.apk`; readiness verifies the adjacent provenance sidecar against
 the current source tree and candidate bytes.
 Missing targets, provider/readiness failures and runner failures stop before
