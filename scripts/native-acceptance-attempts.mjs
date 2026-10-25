@@ -66,10 +66,9 @@ export async function beginNativeAttempt({
         !history.attempts.some((attempt) => attempt.change === change.trim()),
         "unchanged_diagnosis_refused"
       );
-      // Interrupted attempts have no finish timestamp; their original start is
-      // the conservative clock origin. Invoking again never resets the budget.
-      history.diagnosticStartedAt ??=
-        history.attempts[0].finishedAt ?? history.attempts[0].startedAt;
+      // The full scenario budget starts with attempt one, including its setup
+      // and execution time. Invoking again never resets the budget.
+      history.diagnosticStartedAt ??= history.attempts[0].startedAt;
       assert(
         Number.isFinite(Date.parse(history.diagnosticStartedAt)),
         "attempt_history_invalid"
@@ -90,10 +89,12 @@ export async function beginNativeAttempt({
         ? { change: change.trim(), expectation: expectation.trim() }
         : {}),
     };
+    history.diagnosticStartedAt ??= attempt.startedAt;
     history.attempts.push(attempt);
     await save(historyPath, history);
     return {
       number,
+      startedAt: attempt.startedAt,
       directory,
       remainingMs(maximum) {
         const remaining = history.diagnosticStartedAt
@@ -116,8 +117,6 @@ export async function beginNativeAttempt({
           attempt.stage = receipt.stage;
           attempt.classification = receipt.classification;
           attempt.receipt = `attempt-${number}/receipt.json`;
-          if (receipt.result !== "passed")
-            history.diagnosticStartedAt ??= attempt.finishedAt;
           await save(path.join(directory, "receipt.json"), receipt);
           await save(path.join(output, "receipt.json"), receipt);
           await save(historyPath, history);

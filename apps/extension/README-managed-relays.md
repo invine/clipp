@@ -187,29 +187,40 @@ configuration behavior remain required before completing ticket 15.
 
 ## Chrome clipboard acceptance evidence
 
-Run `npm --workspace apps/extension run test:clipboard` for the effort-scoped
-clipboard acceptance. The command rebuilds the candidate, creates its own
-throwaway Chromium profile, loads only that candidate, identifies the loaded
-extension ID, exercises the extension page and offscreen clipboard path, and
-prints a sanitized receipt with the source revision, build SHA-256 and clipboard
-side effects. It verifies extension-page behavior; it does not qualify Chrome's
-toolbar popup. The runner uses the 2026-10-25 D4 authorization to overwrite the
-host clipboard. It does not read, save, or restore prior clipboard content.
-
-Attempt history is stored outside Git at
-`apps/extension/.local/native-acceptance/chrome-clipboard.json`. After a failed
-initial attempt, a diagnostic rerun must state a changed hypothesis and use the
-same scenario history, for example:
+Run the public acceptance command with the applicable user authorization
+reference supplied for that invocation:
 
 ```sh
-npm --workspace apps/extension run build
-CLIPP_DIAGNOSTIC_HYPOTHESIS='service worker was not ready; increase readiness wait' \
-  node apps/extension/scripts/verify-clipboard-io.mjs \
-  --authorization-reference operational-reliability:D4:2026-10-25 \
-  --attempt diagnostic
+npm --workspace apps/extension run test:clipboard -- \
+  --authorization-reference operational-reliability:D4:2026-10-25
 ```
 
-The runner permits at most two diagnostic attempts within 20 minutes of the
-initial attempt. Cleanup failures are reported and fail the command. Public
-argument and retry-history fixtures can be run with
+The command rebuilds the candidate, creates its own throwaway Chromium profile,
+loads only that candidate, identifies the loaded extension ID, proves a visible
+popup interaction by searching history and observing its matching result, and
+exercises the extension-page and offscreen clipboard paths. Its receipt records
+the source revision, build SHA-256, interaction result and clipboard side
+effects. It does not qualify Chrome's toolbar popup. The authorization reference
+is required each time; it is not embedded in the package script. The runner
+does not read, save, or restore prior clipboard content.
+
+Retry state and sanitized receipts are kept in the user's durable application
+state directory, outside disposable worktrees. Set
+`CLIPP_ACCEPTANCE_STATE_DIR` only to another durable directory outside the
+checkout. After a failed initial attempt, a diagnostic rerun must use the same
+scenario state and provide both a distinct hypothesis and its expected
+observation:
+
+```sh
+npm --workspace apps/extension run test:clipboard -- \
+  --authorization-reference operational-reliability:D4:2026-10-25 \
+  --attempt diagnostic \
+  --diagnostic-change 'increase the service worker readiness wait' \
+  --expected-observation 'the owned worker is ready before the popup opens'
+```
+
+The shared native retry policy allows at most two diagnostic attempts and
+enforces a 20-minute total deadline from the initial attempt's start, including
+checks during the run. Cleanup failures are reported and fail the command.
+Public argument, UI-interaction and retry-policy fixtures can be run with
 `npm --workspace apps/extension run test:clipboard:contract`.
