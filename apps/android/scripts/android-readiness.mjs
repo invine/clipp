@@ -46,6 +46,7 @@ const appPackage = "com.clipp.app.acceptance";
 const testPackage = "com.clipp.app.acceptance.test";
 const activity = `${appPackage}/com.clipp.app.MainActivity`;
 let attempt;
+let uiHierarchyCleanup = "not-required";
 
 function assertWithinBudget(stage) {
   try {
@@ -246,7 +247,32 @@ function readUiHierarchy() {
     assert.match(hierarchy, /^<?xml|<hierarchy\b/i, "ui_hierarchy_unreadable");
     return hierarchy;
   } finally {
-    invoke(["shell", "rm", "-f", devicePath], "cleanup", "runner");
+    // Leave enough time to bound the cleanup command itself. A skipped or
+    // failed XML removal must never be represented by the APK temp cleanup.
+    try {
+      if (remainingTimeout("cleanup") <= 250) {
+        uiHierarchyCleanup = "not-run-deadline";
+        throw Object.assign(new Error("ui_hierarchy_cleanup_deadline"), {
+          stage: "cleanup",
+          classification: "runner",
+          cleanupFailure: "ui_hierarchy_cleanup_deadline",
+        });
+      }
+      invoke(["shell", "rm", "-f", devicePath], "cleanup", "runner");
+      uiHierarchyCleanup = "passed";
+    } catch (error) {
+      if (
+        error.message === "diagnostic_time_budget_exhausted" ||
+        error.message === "ui_hierarchy_cleanup_deadline"
+      ) {
+        uiHierarchyCleanup = "not-run-deadline";
+        error.cleanupFailure = "ui_hierarchy_cleanup_deadline";
+      } else if (uiHierarchyCleanup !== "not-run-deadline") {
+        uiHierarchyCleanup = "failed";
+        error.cleanupFailure = error.message;
+      }
+      throw error;
+    }
   }
 }
 
@@ -262,6 +288,7 @@ const receipt = {
   stage: "candidate",
   classification: "prerequisite",
   cleanup: "not-required",
+  uiHierarchyCleanup,
   serial,
   attempt: attempt.number,
   startedAt: new Date().toISOString(),
@@ -366,7 +393,7 @@ try {
   );
   assert(/Status: ok/.test(receipt.launch), "candidate_launch_failed");
   receipt.focusBeforeActivity = focusedActivity(
-    invoke(["shell", "dumpsys", "window", "windows"], "interaction", "runner")
+    invoke(["shell", "dumpsys", "window"], "interaction", "runner")
   );
   assert(
     receipt.focusBeforeActivity === activity,
@@ -380,7 +407,7 @@ try {
     "runner"
   );
   receipt.focusAfterActivity = focusedActivity(
-    invoke(["shell", "dumpsys", "window", "windows"], "interaction", "runner")
+    invoke(["shell", "dumpsys", "window"], "interaction", "runner")
   );
   assert(
     receipt.focusAfterActivity === activity,
@@ -404,6 +431,7 @@ try {
     receipt.cleanupFailure = error.cleanupFailure;
   }
 } finally {
+  receipt.uiHierarchyCleanup = uiHierarchyCleanup;
   receipt.finishedAt = new Date().toISOString();
   await attempt.finish(receipt);
 }

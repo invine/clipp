@@ -21,8 +21,10 @@ function runReadiness({
   installedMatches = true,
   splitPackage = false,
   interactionChanges = true,
+  windowDumpFormat = "summary",
   timeoutBudgetMs,
   adbDelayMs = 0,
+  uiReadDelayMs = 0,
   serial = "emulator-5554",
 }: {
   webView?: boolean;
@@ -32,8 +34,10 @@ function runReadiness({
   installedMatches?: boolean;
   splitPackage?: boolean;
   interactionChanges?: boolean;
+  windowDumpFormat?: "summary" | "windows-only";
   timeoutBudgetMs?: number;
   adbDelayMs?: number;
+  uiReadDelayMs?: number;
   serial?: string;
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "clipp-android-ready-"));
@@ -125,9 +129,10 @@ case "$*" in
   "shell pm list instrumentation com.clipp.app.acceptance") echo 'instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=com.clipp.app.acceptance)' ;;
   "shell am instrument -w -e class com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? "echo 'OK (1 test)'" : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
   "shell am start -W -n com.clipp.app.acceptance/com.clipp.app.MainActivity") echo 'Status: ok' ;;
-  "shell dumpsys window windows") echo 'mCurrentFocus=Window{ab12 u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}' ;;
+  "shell dumpsys window") ${windowDumpFormat === "summary" ? "echo 'mCurrentFocus=Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}'; echo 'mFocusedApp=ActivityRecord{d697132 u0 com.clipp.app.acceptance/com.clipp.app.MainActivity t30}'" : "echo 'Window #6 Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}:'; echo '  mHasSurface=true'; echo '  isOnScreen=true'; echo '  isVisible=true'"} ;;
+  "shell dumpsys window windows") echo 'Window #6 Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}:'; echo '  mHasSurface=true'; echo '  isOnScreen=true'; echo '  isVisible=true' ;;
   "shell uiautomator dump /data/local/tmp/clipp-readiness-"*".xml") echo 'UI hierarchy dumped to: /data/local/tmp/clipp-readiness.xml' ;;
-  "exec-out cat /data/local/tmp/clipp-readiness-"*".xml") cat '${uiStateFile}' ;;
+  "exec-out cat /data/local/tmp/clipp-readiness-"*".xml") ${uiReadDelayMs > 0 ? `sleep ${uiReadDelayMs / 1000};` : ""} cat '${uiStateFile}' ;;
   "shell rm -f /data/local/tmp/clipp-readiness-"*".xml") : ;;
   "shell input keyevent KEYCODE_TAB") ${interactionChanges ? `cp '${uiAfter}' '${uiStateFile}';` : ":"} ;;
   *) echo unexpected_probe:"$*"; exit 2 ;;
@@ -208,8 +213,22 @@ test("Android readiness probes one candidate serial through WebView, instrumenta
     expect(calls).not.toContain(
       "-s emulator-5554 shell pm list instrumentation com.clipp.app.acceptance.test"
     );
-    expect(calls).toContain("-s emulator-5554 shell dumpsys window windows");
+    expect(calls).toContain("-s emulator-5554 shell dumpsys window");
     expect(calls.join("\n")).not.toMatch(/barcode|gms\.version|settings put/i);
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android readiness rejects a visible window-list entry without explicit focus evidence", () => {
+  const run = runReadiness({ windowDumpFormat: "windows-only" });
+  try {
+    expect(run.result.status).not.toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.stage).toBe("interaction");
+    expect(receipt.failure).toContain("candidate_window_not_owned");
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
@@ -239,6 +258,24 @@ test("diagnostic adb work is bounded by the remaining 20-minute budget", () => {
     expect(receipt.stage).toBe("device");
     expect(receipt.classification).toBe("runner");
     expect(receipt.failure).toContain("spawnSync");
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("UI hierarchy cleanup is skipped and reported when the diagnostic budget expires", () => {
+  const run = runReadiness({ timeoutBudgetMs: 3500, uiReadDelayMs: 10000 });
+  try {
+    expect(run.result.status).not.toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    const calls = readFileSync(run.argsFile, "utf8");
+    expect(receipt.result).toBe("failed");
+    expect(receipt.uiHierarchyCleanup).toBe("not-run-deadline");
+    expect(receipt.cleanup).not.toBe("passed");
+    expect(calls).toContain("exec-out cat /data/local/tmp/clipp-readiness-");
+    expect(calls).not.toMatch(/shell rm -f \/data\/local\/tmp\/clipp-readiness/);
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
