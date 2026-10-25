@@ -2278,6 +2278,11 @@ export function ClipboardApp({
     );
   }
 
+  const detailsClip =
+    activeTask?.kind === "clip-details"
+      ? clips.find((clip) => clip.id === activeTask.entity)
+      : undefined;
+
   return (
     <div
       ref={rootRef}
@@ -2870,11 +2875,8 @@ export function ClipboardApp({
             onCancel={() => session.back()}
           >
             <ClipDetails
-              clip={clips.find((clip) => clip.id === activeTask?.entity)}
-              sourceName={deviceNameMap.get(
-                clips.find((clip) => clip.id === activeTask?.entity)
-                  ?.originPeerId ?? ""
-              )}
+              clip={detailsClip}
+              sourceName={deviceNameMap.get(detailsClip?.originPeerId ?? "")}
               pinned={pinnedSet.has(activeTask?.entity ?? "")}
               disabled={
                 !identityReady ||
