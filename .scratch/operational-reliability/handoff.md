@@ -15,13 +15,13 @@ The approved decisions, test boundaries and authorization scope remain in [decis
 
 ## Current integration state
 
-- Client integration: `codex/operational-reliability-integration`, implementation tip `9e5c12f54e3a82d3cc476b297a3875ac658f9356` before this documentation reconciliation commit.
-- Relay integration: `codex/operational-reliability-integration`, implementation tip `248eefd006ddef5ea9a7732963f7009e15c930f3`.
-- Tickets 01–06 have implementation commits; 01–05 are integrated in the stated repository roles. Ticket 06 integration and current claims are recorded in the local ledger.
-- Whole-effort Standards/Spec review, fresh integration verification and canonical resolution remain coordinator gates.
+- Client integration: `codex/operational-reliability-integration` at `17445a60c2b62635942bee201a200fca2815aeec`.
+- Relay integration: `codex/operational-reliability-integration` at `1a2b1934051e62743471572cfaaa84cff3f6507d`.
+- Tickets 01–06 are integrated and resolved in the canonical tracker. The v2 ledger has no active claims and records the six source-to-integration mappings.
+- Final Standards and Spec reviews and full client and relay verification profiles are recorded in the private run ledger. No implementation findings remain.
 
 ## Evidence and limits
 
-Private receipts, failed attempts, run ledger and local path mappings are retained under the primary client checkout's ignored `.local/operational-reliability/run-20261025/`. The strict PostgreSQL 17/18 evidence used owned host-mounted Docker data because the Docker VM volume was full; hosted CI was not run. Electron and Chrome owned readiness passed on exact committed candidates. Android native acceptance was unavailable because no API 31+ emulator was present; no device installation or instrumentation was attempted. Chrome clipboard overwrite used the user's effort-scoped authorization and was not restored, as authorized.
+Private receipts, failed attempts, run ledger and local path mappings are retained under the primary client checkout's ignored `.local/operational-reliability/run-20261025/`. The strict PostgreSQL 17/18 evidence used owned host-mounted Docker data because the Docker VM volume was full; hosted CI was not run. Electron and Chrome owned readiness passed on committed candidates; the final Electron native retry was unavailable because macOS was locked. Android native acceptance was unavailable because no API 31+ emulator was present; no device installation or instrumentation was attempted. Chrome clipboard overwrite used the user's effort-scoped authorization and was not restored, as authorized.
 
-No push, PR, publication or deployment was performed. Existing primary dirty files, unrelated efforts, pre-existing worktrees and stashes were preserved. The new Android managed worktree will be archived after its evidence is preserved and final integration is confirmed.
+No push, PR, publication or deployment was performed. Existing primary dirty files, unrelated efforts, pre-existing worktrees and stashes were preserved. The new Android managed worktree is retained until its evidence is archived and integration cleanup is complete.
