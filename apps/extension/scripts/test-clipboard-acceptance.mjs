@@ -123,7 +123,7 @@ test("readiness succeeds only after popup search has a visible result", async ()
   let input = "";
   const popup = {
     getByPlaceholder(value) {
-      assert.equal(value, "Search history...");
+      assert.equal(value, "Search history: text, URL, device");
       return {
         async fill(text) {
           calls.push("fill");

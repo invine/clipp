@@ -90,7 +90,7 @@ export async function verifyPopupHistorySearch(
   withinBudget,
   remainingMs
 ) {
-  const search = popup.getByPlaceholder("Search history...");
+  const search = popup.getByPlaceholder("Search history: text, URL, device");
   await withinBudget(() => search.fill(text));
   await withinBudget(() =>
     popup.getByText(text, { exact: true }).waitFor({
