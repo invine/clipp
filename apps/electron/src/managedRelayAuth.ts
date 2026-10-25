@@ -1,13 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRelays.js";
-
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-  token_type: "Bearer";
-  expires_in: number;
-};
+import { parseManagedRelayTokenResponse } from "../../../packages/core/network/managedRelayTokens.js";
 
 type CredentialStorage = {
   get(key: string): Promise<string | null>;
@@ -92,24 +86,6 @@ function renewalFailureReason(error: unknown): string {
 
 function tokenEndpoint(discoveryUrl: string): string {
   return new URL("/oauth/token", discoveryUrl).href;
-}
-
-function parseTokens(value: unknown): TokenResponse {
-  if (!value || typeof value !== "object")
-    throw new Error("invalid_token_response");
-  const token = value as Record<string, unknown>;
-  if (
-    typeof token.access_token !== "string" ||
-    !token.access_token ||
-    typeof token.refresh_token !== "string" ||
-    !token.refresh_token ||
-    token.token_type !== "Bearer" ||
-    !Number.isSafeInteger(token.expires_in) ||
-    (token.expires_in as number) < 1 ||
-    (token.expires_in as number) > 900
-  )
-    throw new Error("invalid_token_response");
-  return token as TokenResponse;
 }
 
 async function postToken(
@@ -204,7 +180,7 @@ export function createElectronManagedRelayAuth(options: Options) {
 
   async function acceptTokens(url: string, raw: unknown): Promise<void> {
     url = canonicalDiscoveryUrl(url);
-    const token = parseTokens(raw);
+    const token = parseManagedRelayTokenResponse(raw);
     const generation = credentialGeneration.get(url) ?? 0;
     credentials.set(url, {
       refresh: token.refresh_token,

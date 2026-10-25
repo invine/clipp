@@ -13,7 +13,7 @@ import { ManagedRelayController } from "../../packages/core/network/managedRelay
 
 const endpoint = "https://relay.example/v1/relay";
 
-function fixture(secure = true, useFetch = false) {
+function fixture(secure = true, useFetch = false, tokenResponse?: unknown) {
   const data = new Map<string, string>();
   const opened: string[] = [];
   const posts: URLSearchParams[] = [];
@@ -65,12 +65,14 @@ function fixture(secure = true, useFetch = false) {
             await tokenGate;
           posts.push(params);
           if (tokenFailure) throw tokenFailure;
-          return {
-            access_token: `access-${posts.length}`,
-            refresh_token: `refresh-${posts.length}`,
-            token_type: "Bearer",
-            expires_in: 900,
-          };
+          return (
+            tokenResponse ?? {
+              access_token: `access-${posts.length}`,
+              refresh_token: `refresh-${posts.length}`,
+              token_type: "Bearer",
+              expires_in: 900,
+            }
+          );
         },
     now: () => clock,
   });
@@ -124,6 +126,51 @@ async function callback(url: URL): Promise<number> {
 }
 
 describe("Electron managed relay authorization", () => {
+  it("preserves native opaque credentials across storage and refresh", async () => {
+    const { auth, data, posts, advance } = fixture();
+    const access = "ory_at_case-sensitive.native";
+    const refresh = "ory_rt_case-sensitive.native";
+    await auth.acceptTokens(endpoint, {
+      access_token: access,
+      refresh_token: refresh,
+      token_type: "bEaReR",
+      expires_in: 900,
+    });
+
+    expect(await auth.accessToken(endpoint)).toBe(access);
+    expect(Buffer.from([...data.values()][0], "base64").toString()).toBe(
+      `encrypted:${refresh}`
+    );
+
+    advance(901_000);
+    expect(await auth.accessToken(endpoint)).toBe("access-1");
+    expect(posts[0].get("refresh_token")).toBe(refresh);
+  });
+
+  it("accepts native credentials after the registered browser callback", async () => {
+    const access = "ory_at_login.NativeCase";
+    const refresh = "ory_rt_login.NativeCase";
+    const { auth, data, opened } = fixture(true, false, {
+      access_token: access,
+      refresh_token: refresh,
+      token_type: "BEARER",
+      expires_in: 900,
+    });
+    const login = auth.interactiveLogin(endpoint);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const authorize = new URL(opened[0]);
+    const redirect = new URL(authorize.searchParams.get("redirect_uri")!);
+    redirect.searchParams.set("state", authorize.searchParams.get("state")!);
+    redirect.searchParams.set("code", "native-login-code");
+    expect(await callback(redirect)).toBe(200);
+    await login;
+
+    expect(await auth.accessToken(endpoint)).toBe(access);
+    expect(Buffer.from([...data.values()][0], "base64").toString()).toBe(
+      `encrypted:${refresh}`
+    );
+  });
+
   it("renews successfully after six idle hours when DNS is available", async () => {
     const { auth, posts, advance } = fixture();
     await auth.acceptTokens(endpoint, {
@@ -569,14 +616,16 @@ describe("Electron managed relay authorization", () => {
   });
 
   it("retries a transient credential read failure instead of treating it as no credential", async () => {
-    const { auth, data, failNextRead } = fixture();
+    const { auth, data, posts, failNextRead } = fixture();
+    const refresh = "ory_rt_reloaded.PreserveThisCase";
     data.set(
       `managedRelayRefresh:${encodeURIComponent(endpoint)}`,
-      Buffer.from("encrypted:stored-refresh").toString("base64")
+      Buffer.from(`encrypted:${refresh}`).toString("base64")
     );
     failNextRead();
     await expect(auth.accessToken(endpoint)).rejects.toThrow("read_failed");
     expect(await auth.accessToken(endpoint)).toBe("access-1");
+    expect(posts[0].get("refresh_token")).toBe(refresh);
   });
 
   it("settles a denied callback immediately without exchanging a code", async () => {
