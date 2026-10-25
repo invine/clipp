@@ -236,7 +236,7 @@ function readUiHierarchy() {
     );
     assert.match(
       dumpResult,
-      /hierarchy dumped to/i,
+      /(?:hierarchy|hierchary) dumped to/i,
       "ui_hierarchy_dump_failed"
     );
     const hierarchy = invoke(

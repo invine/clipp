@@ -22,6 +22,7 @@ function runReadiness({
   splitPackage = false,
   interactionChanges = true,
   windowDumpFormat = "summary",
+  uiDumpSpelling = "hierarchy",
   timeoutBudgetMs,
   adbDelayMs = 0,
   uiReadDelayMs = 0,
@@ -35,6 +36,7 @@ function runReadiness({
   splitPackage?: boolean;
   interactionChanges?: boolean;
   windowDumpFormat?: "summary" | "windows-only";
+  uiDumpSpelling?: "hierarchy" | "hierchary";
   timeoutBudgetMs?: number;
   adbDelayMs?: number;
   uiReadDelayMs?: number;
@@ -131,7 +133,7 @@ case "$*" in
   "shell am start -W -n com.clipp.app.acceptance/com.clipp.app.MainActivity") echo 'Status: ok' ;;
   "shell dumpsys window") ${windowDumpFormat === "summary" ? "echo 'mCurrentFocus=Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}'; echo 'mFocusedApp=ActivityRecord{d697132 u0 com.clipp.app.acceptance/com.clipp.app.MainActivity t30}'" : "echo 'Window #6 Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}:'; echo '  mHasSurface=true'; echo '  isOnScreen=true'; echo '  isVisible=true'"} ;;
   "shell dumpsys window windows") echo 'Window #6 Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}:'; echo '  mHasSurface=true'; echo '  isOnScreen=true'; echo '  isVisible=true' ;;
-  "shell uiautomator dump /data/local/tmp/clipp-readiness-"*".xml") echo 'UI hierarchy dumped to: /data/local/tmp/clipp-readiness.xml' ;;
+  "shell uiautomator dump /data/local/tmp/clipp-readiness-"*".xml") echo 'UI ${uiDumpSpelling} dumped to: /data/local/tmp/clipp-readiness.xml' ;;
   "exec-out cat /data/local/tmp/clipp-readiness-"*".xml") ${uiReadDelayMs > 0 ? `sleep ${uiReadDelayMs / 1000};` : ""} cat '${uiStateFile}' ;;
   "shell rm -f /data/local/tmp/clipp-readiness-"*".xml") : ;;
   "shell input keyevent KEYCODE_TAB") ${interactionChanges ? `cp '${uiAfter}' '${uiStateFile}';` : ":"} ;;
@@ -243,6 +245,19 @@ test("Android readiness fails when the UI action produces no observable effect",
     );
     expect(receipt.stage).toBe("interaction");
     expect(receipt.failure).toContain("candidate_ui_interaction_no_effect");
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android readiness accepts the platform's observed UIAutomator output spelling", () => {
+  const run = runReadiness({ uiDumpSpelling: "hierchary" });
+  try {
+    expect(run.result.status).toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.result).toBe("passed");
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
