@@ -19,6 +19,7 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
   const tcp = `/ip4/10.0.5.241/tcp/4001/p2p/${peer}`;
   const wss = `/dns4/relay.example/tcp/443/tls/ws/p2p/${peer}`;
   const endpoint = "https://relay.example/v1/relay";
+  const access = "ory_at_forward.PreserveCase";
   const connection = { verifiedPeerId: peer, close: jest.fn(async () => {}) };
   const auth = createElectronManagedRelayAuth({
     storage: {
@@ -34,9 +35,9 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
     openExternal: async () => {},
   });
   await auth.acceptTokens(endpoint, {
-    access_token: "test-access",
-    refresh_token: "test-refresh",
-    token_type: "Bearer",
+    access_token: access,
+    refresh_token: "ory_rt_forward.PreserveCase",
+    token_type: "bEaReR",
     expires_in: 900,
   });
   let flight: Promise<ManagedRelayConnection> | undefined;
@@ -94,7 +95,11 @@ it("reaches WSS when private TCP would stall the same-peer libp2p dial queue", a
     await setup;
     expect(controller.states()[0].status).toBe("ready");
     expect(host.dial.mock.calls.map(([route]) => route)).toEqual([tcp, wss]);
-    expect(host.authenticate).toHaveBeenCalled();
+    expect(host.authenticate).toHaveBeenCalledWith(
+      connection,
+      access,
+      expect.any(AbortSignal)
+    );
   } finally {
     await controller.stop();
     jest.useRealTimers();

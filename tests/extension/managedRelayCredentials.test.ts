@@ -59,6 +59,49 @@ function harness(digest?: (bytes: Uint8Array) => Promise<Uint8Array>) {
 }
 
 describe("Chrome managed relay credentials", () => {
+  it("keeps native token bytes unchanged through login, worker reload, and refresh", async () => {
+    const first = harness();
+    const firstAccess = "ory_at_native.KeEp-ByteS_01";
+    const firstRefresh = "ory_rt_native.ReFrEsH-ByteS_01";
+    first.fetchToken.mockImplementationOnce(async () => ({
+      access_token: firstAccess,
+      refresh_token: firstRefresh,
+      token_type: "bEaReR",
+      expires_in: 900,
+    }));
+
+    await first.service.interactiveLogin(endpoint);
+    expect(await first.service.accessToken(endpoint)).toBe(firstAccess);
+    expect([...first.records.values()]).toEqual([
+      { status: "ready", refreshToken: firstRefresh },
+    ]);
+
+    const secondAccess = "ory_at_native.ReFrEsHeD-ByteS_02";
+    const secondRefresh = "ory_rt_native.ReFrEsHeD-ByteS_02";
+    first.fetchToken.mockImplementationOnce(async (_url, form) => {
+      expect(form.get("refresh_token")).toBe(firstRefresh);
+      return {
+        access_token: secondAccess,
+        refresh_token: secondRefresh,
+        token_type: "BEARER",
+        expires_in: 900,
+      };
+    });
+    const restarted = createExtensionManagedRelayCredentials({
+      storage: first.storage,
+      identity: first.identity,
+      fetchToken: first.fetchToken,
+      registeredExtensionId: extensionId,
+    });
+
+    await expect(
+      restarted.accessToken(endpoint, { forceRefresh: true })
+    ).resolves.toBe(secondAccess);
+    expect([...first.records.values()]).toEqual([
+      { status: "ready", refreshToken: secondRefresh },
+    ]);
+  });
+
   it("restricts local storage before credential reads and keeps first adoption empty", async () => {
     const { service, events } = harness();
     expect(await service.accessToken(endpoint)).toBeNull();
