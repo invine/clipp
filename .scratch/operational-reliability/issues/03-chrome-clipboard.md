@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Acceptance blocker:** The owned Chrome acceptance remains unresolved. The reset scenario used all three allowed attempts at the Share Now history-effect check; another scenario requires a fresh budget reset.
+**Acceptance blocker:** The 2026-10-26 reset scenario used all three allowed attempts without a successful Share Now history effect. Another owned acceptance scenario requires a fresh budget reset.
 
 **Status:** claimed
 
@@ -20,10 +20,10 @@ The [approved specification](../spec.md) and [decision coverage](../decisions.md
 
 ## Answer
 
-Implemented on the client integration branch. At the current candidate revision, public clipboard contract tests passed (12/12), `npm run verify` passed 81 suites / 726 tests and all three production builds, and Standards/Spec reviews passed. After the user directly confirmed a new Chrome budget and the existing D4 clipboard scope on 2026-10-26, the owned Chromium runner reached the clipboard stage on all three attempts. Attempts 1, 2 and 3 timed out at `verify_share_history_effect` after the popup search interaction passed. Attempt 2 widened that history observer to 30 seconds; attempt 3 checked for generic Share Now UI feedback. The final attempt recorded no UI error code. All three receipts report the host clipboard was used and changed under D4; the runner read back only its synthetic fixture writes and did not read, save, or restore the prior clipboard contents. The three-attempt budget is exhausted. No successful Share Now history effect is established, and the toolbar popup itself is not qualified. The native-dialog observer added after the final attempt remains unverified in a browser run.
+Implemented on the client integration branch. On 2026-10-26, the user explicitly reset the Chrome budget. Attempt 1 on `119d9621` again timed out at `verify_share_history_effect`. Attempt 2 on `c9653bac` tried a Playwright permission override for the opaque extension origin and failed because Chrome does not permit grants to opaque origins. Attempt 3 on `ebd42724` returned to the manifest permission path and timed out at `verify_share_history_effect`; the Share Now response observer recorded no response. All three receipts report synthetic clipboard use/change; the runner read back only its fixture writes and did not read, save or restore the prior clipboard contents. The latest code at `b0480615` now classifies the two fixed Share Now UI failure messages without retaining arbitrary alert text, but this change was made after the last browser attempt and remains unqualified. The reset scenario is exhausted, no successful Share Now history effect is established, and the toolbar popup itself is not qualified. Public contract tests pass 13/13 and `npm run check` passes 81 suites / 726 tests at the latest code.
 
 ## Comments
 
 Reopened after review found that the package script permanently supplied the effort authorization reference, clipboard acceptance did not establish a successful product UI interaction, diagnostic runs could continue beyond the 20-minute budget, expected observations were optional, and attempt history was stored in the checkout. Resolve these against the approved spec before restoring the completion status.
 
-The code findings are fixed. Earlier, automatic approval review rejected a launch before command execution because it did not accept the stored D4 reference as trusted current-user evidence; this refusal is retained as historical evidence. The user later directly confirmed both a budget reset and the same D4 scope, after which the owned runner completed three attempts. All receipts and command logs are retained under the private run artifacts and the runner's durable per-user acceptance directory. The attempt cap is now exhausted, so Ticket 03 remains open pending a future budget reset and successful owned acceptance.
+The original review findings are fixed. Earlier, automatic approval review rejected a launch before command execution; that refusal remains historical. The user directly reset the budget again on 2026-10-26, after which the owned runner used all three attempts described above. Receipts are retained in the durable per-user acceptance directory, and the exhausted prior scenario is archived beside it. A fresh reset and a successful owned acceptance are still required to close Ticket 03.
