@@ -5,6 +5,7 @@ import {
   type ExtensionClipboardRequest,
 } from "../../../apps/extension/src/clipboardBridge";
 import {
+  createOffscreenClipboardReader,
   createOffscreenClipboardWriter,
   type OffscreenClipboardDocument,
 } from "../../../apps/extension/src/offscreenClipboard";
@@ -15,10 +16,11 @@ import type { Clip } from "../../../packages/core/models/Clip";
 describe("Chrome offscreen clipboard bridge", () => {
   it("routes clipboard writes through the offscreen handler", async () => {
     const writeText = jest.fn(async (_text: string) => {});
+    const readText = jest.fn(async () => "synthetic clipboard");
     const requests: ExtensionClipboardRequest[] = [];
     const bridge = createExtensionClipboardBridge(async (request) => {
       requests.push(request);
-      return handleExtensionClipboardRequest(request, writeText);
+      return handleExtensionClipboardRequest(request, { readText, writeText });
     });
 
     await bridge.writeText("reused");
@@ -27,11 +29,30 @@ describe("Chrome offscreen clipboard bridge", () => {
     expect(writeText).toHaveBeenCalledWith("reused");
   });
 
+  it("reads clipboard text through the offscreen handler", async () => {
+    const writeText = jest.fn(async (_text: string) => {});
+    const readText = jest.fn(async () => "synthetic clipboard");
+    const requests: ExtensionClipboardRequest[] = [];
+    const bridge = createExtensionClipboardBridge(async (request) => {
+      requests.push(request);
+      return handleExtensionClipboardRequest(request, { readText, writeText });
+    });
+
+    await expect(bridge.readText()).resolves.toBe("synthetic clipboard");
+
+    expect(requests).toEqual([{ action: "clipboardRead" }]);
+    expect(readText).toHaveBeenCalledTimes(1);
+  });
+
   it("applies a live Remote Clip through the extension bridge and offscreen writer", async () => {
     const fixture = offscreenDocumentFixture(true);
     const writeText = createOffscreenClipboardWriter(fixture.document);
     const bridge = createExtensionClipboardBridge(async (request) =>
-      handleExtensionClipboardRequest(request, writeText));
+      handleExtensionClipboardRequest(request, {
+        readText: async () => "",
+        writeText,
+      })
+    );
     const accept = jest.fn();
     const clipboard = createRuntimeClipboardService({
       capabilities: RUNTIME_CAPABILITIES.chromeExtension,
@@ -53,17 +74,46 @@ describe("Chrome offscreen clipboard bridge", () => {
 
     expect(fixture.execCommand).toHaveBeenCalledWith("copy");
     expect(fixture.valueAtCopy()).toBe(remoteClip.content);
-    await expect(clipboard.processLocalText(remoteClip.content)).resolves.toBeNull();
+    await expect(
+      clipboard.processLocalText(remoteClip.content)
+    ).resolves.toBeNull();
     expect(accept).not.toHaveBeenCalled();
     await clipboard.stop();
   });
 
   it("rejects failed offscreen writes and invalid requests", async () => {
-    const failed = createExtensionClipboardBridge(async () => ({ ok: false, error: "denied" }));
+    const failed = createExtensionClipboardBridge(async () => ({
+      ok: false,
+      error: "denied",
+    }));
 
     await expect(failed.writeText("secret")).rejects.toThrow("denied");
-    expect(isExtensionClipboardRequest({ action: "clipboardWrite" })).toBe(false);
-    expect(isExtensionClipboardRequest({ action: "clipboardRead" })).toBe(false);
+    expect(isExtensionClipboardRequest({ action: "clipboardWrite" })).toBe(
+      false
+    );
+    expect(isExtensionClipboardRequest({ action: "clipboardRead" })).toBe(true);
+    expect(
+      isExtensionClipboardRequest({ action: "clipboardWrite", text: "x" })
+    ).toBe(true);
+  });
+
+  it("reads exact text through the offscreen web clipboard API", async () => {
+    const clipboard = { readText: jest.fn(async () => "  exact\r\ntext  ") };
+    const readText = createOffscreenClipboardReader(clipboard);
+
+    await expect(readText()).resolves.toBe("  exact\r\ntext  ");
+
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes offscreen clipboard read failures", async () => {
+    const readText = createOffscreenClipboardReader({
+      readText: async () => {
+        throw new Error("permission denied");
+      },
+    });
+
+    await expect(readText()).rejects.toThrow("clipboard_read_failed");
   });
 
   it("copies exact text through a temporary offscreen control and removes it", async () => {
@@ -116,7 +166,7 @@ function offscreenDocumentFixture(copyResult: boolean) {
     setAttribute: jest.fn(),
   };
   const appendChild = jest.fn();
-  const execCommand = jest.fn(() => {
+  const execCommand = jest.fn((_command: "copy") => {
     copiedValue = control.value;
     return copyResult;
   });

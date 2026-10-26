@@ -232,7 +232,10 @@ try {
     (historyBeforeShare?.clips ?? []).map((clip) => clip.id)
   );
   const existingShareNowAlertVisible = await withinBudget(() =>
-    acceptancePopup.getByRole("alert").isVisible().catch(() => false)
+    acceptancePopup
+      .getByRole("alert")
+      .isVisible()
+      .catch(() => false)
   );
   const observeShareNowDialog = async (dialog) => {
     shareNowDialogObserved = true;
@@ -248,10 +251,7 @@ try {
   };
   acceptancePopup.on("dialog", observeShareNowDialog);
   operationLabel = "observe_share_now_response";
-  shareNowObservation = await installShareNowResponseObserver(
-    acceptancePopup,
-    shareNowText
-  );
+  shareNowObservation = await installShareNowResponseObserver(acceptancePopup);
   operationLabel = "click_share_now_action";
   await withinBudget(() =>
     acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
@@ -267,16 +267,12 @@ try {
     async () => {
       const liveObservation = await withinBudget(() =>
         acceptancePopup.evaluate(() => ({
-          popupClipboardRead: window.__clippShareNowClipboardRead,
           response: window.__clippShareNowResponse,
         }))
       );
-      if (liveObservation.popupClipboardRead || liveObservation.response) {
+      if (liveObservation.response) {
         shareNowObservation = {
           ...shareNowObservation,
-          ...(liveObservation.popupClipboardRead
-            ? { popupClipboardRead: liveObservation.popupClipboardRead }
-            : {}),
           ...(liveObservation.response
             ? { response: liveObservation.response }
             : {}),
@@ -301,7 +297,10 @@ try {
       if (shareNowDialogDismissalError) throw shareNowDialogDismissalError;
       if (shareNowDialogObserved) return true;
       const alertVisible = await withinBudget(() =>
-        acceptancePopup.getByRole("alert").isVisible().catch(() => false)
+        acceptancePopup
+          .getByRole("alert")
+          .isVisible()
+          .catch(() => false)
       );
       return alertVisible && !existingShareNowAlertVisible;
     }
@@ -545,46 +544,16 @@ async function extensionMessage(page, message) {
   );
 }
 
-async function installShareNowResponseObserver(page, expectedClipboardText) {
+async function installShareNowResponseObserver(page) {
   return await withinBudget(() =>
-    page.evaluate((expected) => {
-      const clipboard = navigator.clipboard;
-      const originalReadText = clipboard.readText.bind(clipboard);
-      const observedReadText = async () => {
-        try {
-          const text = await originalReadText();
-          window.__clippShareNowClipboardRead = {
-            matched: text === expected,
-            errorCode: null,
-          };
-          return text;
-        } catch {
-          window.__clippShareNowClipboardRead = {
-            matched: false,
-            errorCode: "clipboard_read_failed",
-          };
-          throw new Error("clipboard_read_failed");
-        }
-      };
-      let clipboardReadObserverInstalled = false;
-      try {
-        Object.defineProperty(clipboard, "readText", {
-          configurable: true,
-          value: observedReadText,
-        });
-        clipboardReadObserverInstalled = clipboard.readText === observedReadText;
-      } catch {
-        // The acceptance still exercises the UI; this flag reports unavailable observation.
-      }
+    page.evaluate(() => {
       const runtime = chrome.runtime;
       const original = runtime.sendMessage.bind(runtime);
       const observedSendMessage = (...args) => {
         const message = args[0];
         let callbackIndex = args.length - 1;
-        while (
-          callbackIndex >= 0 &&
-          typeof args[callbackIndex] !== "function"
-        ) callbackIndex -= 1;
+        while (callbackIndex >= 0 && typeof args[callbackIndex] !== "function")
+          callbackIndex -= 1;
         if (message?.type === "shareNow" && callbackIndex >= 0) {
           const callback = args[callbackIndex];
           args[callbackIndex] = (response) => {
@@ -613,8 +582,8 @@ async function installShareNowResponseObserver(page, expectedClipboardText) {
       } catch {
         // The static UI feedback observer remains available.
       }
-      return { clipboardReadObserverInstalled, responseObserverInstalled };
-    }, expectedClipboardText)
+      return { responseObserverInstalled };
+    })
   );
 }
 

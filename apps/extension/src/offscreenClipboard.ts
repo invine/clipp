@@ -1,7 +1,10 @@
 type OffscreenClipboardControl = {
   value: string;
   tabIndex: number;
-  style: Pick<CSSStyleDeclaration, "position" | "left" | "top" | "opacity" | "pointerEvents">;
+  style: Pick<
+    CSSStyleDeclaration,
+    "position" | "left" | "top" | "opacity" | "pointerEvents"
+  >;
   setAttribute(name: string, value: string): void;
   select(): void;
   remove(): void;
@@ -13,8 +16,24 @@ export type OffscreenClipboardDocument = {
   execCommand(command: "copy"): boolean;
 };
 
+export type OffscreenClipboardReader = {
+  readText(): Promise<string>;
+};
+
+export function createOffscreenClipboardReader(
+  clipboard: OffscreenClipboardReader = globalThis.navigator.clipboard
+): () => Promise<string> {
+  return async () => {
+    try {
+      return await clipboard.readText();
+    } catch {
+      throw new Error("clipboard_read_failed");
+    }
+  };
+}
+
 export function createOffscreenClipboardWriter(
-  document: OffscreenClipboardDocument = globalThis.document as unknown as OffscreenClipboardDocument,
+  document: OffscreenClipboardDocument = globalThis.document as unknown as OffscreenClipboardDocument
 ): (text: string) => Promise<void> {
   return async (text: string): Promise<void> => {
     const control = document.createElement("textarea");
@@ -29,7 +48,8 @@ export function createOffscreenClipboardWriter(
       control.style.pointerEvents = "none";
       document.body.appendChild(control);
       control.select();
-      if (!document.execCommand("copy")) throw new Error("clipboard_write_failed");
+      if (!document.execCommand("copy"))
+        throw new Error("clipboard_write_failed");
     } catch {
       throw new Error("clipboard_write_failed");
     } finally {

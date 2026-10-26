@@ -1039,14 +1039,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "shareNow") {
     if (
-      typeof msg.text !== "string" ||
+      "text" in msg ||
       !isAuthorizedPopupShareNowSender(sender.url, POPUP_URL)
     ) {
       sendResponse({ ok: false, error: "share_now_unauthorized" });
       return false;
     }
     historyPolicyReady
-      .then(() => clipboard.processLocalText(msg.text, { shareNow: true }))
+      .then(async () => {
+        const text = await extensionClipboard.readText();
+        await clipboard.processLocalText(text, { shareNow: true });
+      })
       .then(() => sendResponse({ ok: true }))
       .catch((error) =>
         sendResponse({ ok: false, error: (error as Error).message })
