@@ -69,6 +69,7 @@ let candidate;
 let browserVersion;
 let shareNowDialogObserved = false;
 let shareNowDialogDismissalError;
+let shareNowResponseObservation;
 let clipboardUsed = false;
 let clipboardChanged = false;
 let outcome = "runner_failure";
@@ -171,12 +172,6 @@ try {
   await withinBudget(() =>
     acceptancePopup.goto(`chrome-extension://${extensionId}/src/popup.html`)
   );
-  operationLabel = "grant_popup_clipboard_permissions";
-  await withinBudget(() =>
-    context.grantPermissions(["clipboard-read", "clipboard-write"], {
-      origin: `chrome-extension://${extensionId}`,
-    })
-  );
 
   const retainedText = "clipp-retained-copy-verification";
   operationLabel = "capture_retained_copy_fixture";
@@ -247,6 +242,8 @@ try {
     }
   };
   acceptancePopup.on("dialog", observeShareNowDialog);
+  operationLabel = "observe_share_now_response";
+  await installShareNowResponseObserver(acceptancePopup);
   operationLabel = "click_share_now_action";
   await withinBudget(() =>
     acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
@@ -260,6 +257,16 @@ try {
       ),
     shareNowHistoryEffectTimeoutMs,
     async () => {
+      shareNowResponseObservation = await withinBudget(() =>
+        acceptancePopup.evaluate(
+          () => window.__clippShareNowResponse ?? undefined
+        )
+      );
+      if (shareNowResponseObservation?.ok === false) {
+        const error = new Error("share_now_failure_feedback");
+        error.code = "share_now_failure_feedback";
+        throw error;
+      }
       if (shareNowDialogDismissalError) throw shareNowDialogDismissalError;
       if (shareNowDialogObserved) return true;
       const alertVisible = await withinBudget(() =>
@@ -288,6 +295,7 @@ try {
       browserVersion,
       profilePath,
       extensionId,
+      shareNowResponse: shareNowResponseObservation,
       interactionPreflight,
       clipboard: {
         hostClipboardUsed: clipboardUsed,
@@ -307,6 +315,7 @@ try {
       authorizationReference: options.authorizationReference,
       candidate,
       extensionId,
+      shareNowResponse: shareNowResponseObservation,
       clipboard: {
         hostClipboardUsed: clipboardUsed,
         changed: clipboardChanged,
@@ -348,6 +357,7 @@ try {
     browserVersion,
     profilePath,
     extensionId,
+    shareNowResponse: shareNowResponseObservation,
     clipboard: {
       hostClipboardUsed: clipboardUsed,
       changed: clipboardChanged,
@@ -502,6 +512,37 @@ async function extensionMessage(page, message) {
       message
     )
   );
+}
+
+async function installShareNowResponseObserver(page) {
+  const installed = await withinBudget(() =>
+    page.evaluate(() => {
+      const runtime = chrome.runtime;
+      const original = runtime.sendMessage.bind(runtime);
+      runtime.sendMessage = (...args) => {
+        const message = args[0];
+        const callback = args.at(-1);
+        if (message?.type === "shareNow" && typeof callback === "function") {
+          args[args.length - 1] = (response) => {
+            const rawError = response?.error;
+            window.__clippShareNowResponse = {
+              ok: response?.ok === true,
+              errorCode:
+                typeof rawError === "string" && /^[a-z0-9_]{1,80}$/.test(rawError)
+                  ? rawError
+                  : rawError
+                    ? "unclassified"
+                    : null,
+            };
+            callback(response);
+          };
+        }
+        return original(...args);
+      };
+      return true;
+    })
+  );
+  assert.equal(installed, true);
 }
 
 async function sendToOffscreen(serviceWorker, message) {
