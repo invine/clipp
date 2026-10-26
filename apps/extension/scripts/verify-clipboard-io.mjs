@@ -171,6 +171,12 @@ try {
   await withinBudget(() =>
     acceptancePopup.goto(`chrome-extension://${extensionId}/src/popup.html`)
   );
+  operationLabel = "grant_popup_clipboard_permissions";
+  await withinBudget(() =>
+    context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: `chrome-extension://${extensionId}`,
+    })
+  );
 
   const retainedText = "clipp-retained-copy-verification";
   operationLabel = "capture_retained_copy_fixture";
