@@ -238,7 +238,8 @@ try {
       clips.some(
         (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
       ),
-    shareNowHistoryEffectTimeoutMs
+    shareNowHistoryEffectTimeoutMs,
+    true
   );
   assert.ok(
     sharedHistory.some(
@@ -371,6 +372,7 @@ async function listFiles(directory) {
 }
 
 function classifyFailure(currentStage, error) {
+  if (error?.code === "share_now_failure_feedback") return "product_failure";
   if (
     error?.message === "diagnostic_time_budget_exhausted" ||
     error?.message === "acceptance_operation_timeout"
@@ -508,9 +510,24 @@ async function captureFixture(popup, text) {
   throw new Error("clipboard_fixture_capture_timeout");
 }
 
-async function waitForHistory(popup, predicate, timeoutMs = 10_000) {
+async function waitForHistory(
+  popup,
+  predicate,
+  timeoutMs = 10_000,
+  detectShareNowFailure = false
+) {
   let clips = [];
   const matched = await pollUntil(timeoutMs, async () => {
+    if (detectShareNowFailure) {
+      const visible = await withinBudget(() =>
+        popup.getByRole("alert").isVisible().catch(() => false)
+      );
+      if (visible) {
+        const error = new Error("share_now_failure_feedback");
+        error.code = "share_now_failure_feedback";
+        throw error;
+      }
+    }
     const response = await extensionMessage(popup, { type: "getClipHistory" });
     clips = response?.clips ?? [];
     return predicate(clips) ? clips : undefined;
