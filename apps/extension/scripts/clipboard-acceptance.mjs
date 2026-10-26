@@ -91,6 +91,15 @@ export function persistentAttemptDirectory({
   return join(join(home, ".local", "state"), "clipp", "acceptance", "chrome");
 }
 
+export function classifyShareNowFeedback({
+  clipboardReadFailed = false,
+  shareNowFailed = false,
+} = {}) {
+  if (clipboardReadFailed) return "clipboard_read_failed";
+  if (shareNowFailed) return "share_now_failed";
+  return undefined;
+}
+
 export async function verifyPopupHistorySearch(
   popup,
   text,

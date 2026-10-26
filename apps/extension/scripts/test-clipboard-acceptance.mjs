@@ -5,12 +5,25 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import {
+  classifyShareNowFeedback,
   parseClipboardAcceptanceArgs,
   persistentAttemptDirectory,
   raceAcceptanceOperation,
   verifyPopupHistorySearch,
 } from "./clipboard-acceptance.mjs";
 import extensionPackage from "../package.json" with { type: "json" };
+
+test("classifies only the two fixed Share Now feedback messages", () => {
+  assert.equal(
+    classifyShareNowFeedback({ clipboardReadFailed: true, shareNowFailed: true }),
+    "clipboard_read_failed"
+  );
+  assert.equal(
+    classifyShareNowFeedback({ shareNowFailed: true }),
+    "share_now_failed"
+  );
+  assert.equal(classifyShareNowFeedback(), undefined);
+});
 
 test("public runner refuses missing or unrelated authorization before launch", () => {
   const runner = new URL("./verify-clipboard-io.mjs", import.meta.url);

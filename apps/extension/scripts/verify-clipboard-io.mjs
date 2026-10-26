@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { beginNativeAttempt } from "../../../scripts/native-acceptance-attempts.mjs";
 import {
+  classifyShareNowFeedback,
   parseClipboardAcceptanceArgs,
   persistentAttemptDirectory,
   raceAcceptanceOperation,
@@ -69,7 +70,7 @@ let candidate;
 let browserVersion;
 let shareNowDialogObserved = false;
 let shareNowDialogDismissalError;
-let shareNowResponseObservation;
+let shareNowObservation;
 let clipboardUsed = false;
 let clipboardChanged = false;
 let outcome = "runner_failure";
@@ -235,6 +236,10 @@ try {
   );
   const observeShareNowDialog = async (dialog) => {
     shareNowDialogObserved = true;
+    shareNowObservation = {
+      ...shareNowObservation,
+      nativeDialogObserved: true,
+    };
     try {
       await dialog.dismiss();
     } catch (error) {
@@ -257,12 +262,28 @@ try {
       ),
     shareNowHistoryEffectTimeoutMs,
     async () => {
-      shareNowResponseObservation = await withinBudget(() =>
+      const responseObservation = await withinBudget(() =>
         acceptancePopup.evaluate(
           () => window.__clippShareNowResponse ?? undefined
         )
       );
-      if (shareNowResponseObservation?.ok === false) {
+      if (responseObservation) {
+        shareNowObservation = {
+          ...shareNowObservation,
+          response: responseObservation,
+        };
+      }
+      if (responseObservation?.ok === false) {
+        const error = new Error("share_now_failure_feedback");
+        error.code = "share_now_failure_feedback";
+        throw error;
+      }
+      const feedbackCode = await visibleShareNowFeedbackCode(acceptancePopup);
+      if (feedbackCode) {
+        shareNowObservation = {
+          ...shareNowObservation,
+          feedbackCode,
+        };
         const error = new Error("share_now_failure_feedback");
         error.code = "share_now_failure_feedback";
         throw error;
@@ -295,7 +316,7 @@ try {
       browserVersion,
       profilePath,
       extensionId,
-      shareNowResponse: shareNowResponseObservation,
+      shareNowObservation,
       interactionPreflight,
       clipboard: {
         hostClipboardUsed: clipboardUsed,
@@ -315,7 +336,7 @@ try {
       authorizationReference: options.authorizationReference,
       candidate,
       extensionId,
-      shareNowResponse: shareNowResponseObservation,
+      shareNowObservation,
       clipboard: {
         hostClipboardUsed: clipboardUsed,
         changed: clipboardChanged,
@@ -357,7 +378,7 @@ try {
     browserVersion,
     profilePath,
     extensionId,
-    shareNowResponse: shareNowResponseObservation,
+    shareNowObservation,
     clipboard: {
       hostClipboardUsed: clipboardUsed,
       changed: clipboardChanged,
@@ -543,6 +564,27 @@ async function installShareNowResponseObserver(page) {
     })
   );
   assert.equal(installed, true);
+}
+
+async function visibleShareNowFeedbackCode(page) {
+  const clipboardReadFailed = await withinBudget(() =>
+    page
+      .getByText(
+        "Could not read the current clipboard. Keep Clipp open and try again.",
+        { exact: true }
+      )
+      .isVisible()
+      .catch(() => false)
+  );
+  const shareNowFailed = await withinBudget(() =>
+    page
+      .getByText("Could not save or share the current clipboard.", {
+        exact: true,
+      })
+      .isVisible()
+      .catch(() => false)
+  );
+  return classifyShareNowFeedback({ clipboardReadFailed, shareNowFailed });
 }
 
 async function sendToOffscreen(serviceWorker, message) {
