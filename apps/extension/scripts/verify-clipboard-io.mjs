@@ -67,6 +67,8 @@ let operationLabel = "create_owned_profile";
 let extensionId;
 let candidate;
 let browserVersion;
+let shareNowDialogObserved = false;
+let shareNowDialogDismissalError;
 let clipboardUsed = false;
 let clipboardChanged = false;
 let outcome = "runner_failure";
@@ -227,6 +229,18 @@ try {
   const observedIds = new Set(
     (historyBeforeShare?.clips ?? []).map((clip) => clip.id)
   );
+  const existingShareNowAlertVisible = await withinBudget(() =>
+    acceptancePopup.getByRole("alert").isVisible().catch(() => false)
+  );
+  const observeShareNowDialog = async (dialog) => {
+    shareNowDialogObserved = true;
+    try {
+      await dialog.dismiss();
+    } catch (error) {
+      shareNowDialogDismissalError = error;
+    }
+  };
+  acceptancePopup.on("dialog", observeShareNowDialog);
   operationLabel = "click_share_now_action";
   await withinBudget(() =>
     acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
@@ -239,7 +253,14 @@ try {
         (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
       ),
     shareNowHistoryEffectTimeoutMs,
-    true
+    async () => {
+      if (shareNowDialogDismissalError) throw shareNowDialogDismissalError;
+      if (shareNowDialogObserved) return true;
+      const alertVisible = await withinBudget(() =>
+        acceptancePopup.getByRole("alert").isVisible().catch(() => false)
+      );
+      return alertVisible && !existingShareNowAlertVisible;
+    }
   );
   assert.ok(
     sharedHistory.some(
@@ -514,19 +535,14 @@ async function waitForHistory(
   popup,
   predicate,
   timeoutMs = 10_000,
-  detectShareNowFailure = false
+  detectShareNowFailure
 ) {
   let clips = [];
   const matched = await pollUntil(timeoutMs, async () => {
-    if (detectShareNowFailure) {
-      const visible = await withinBudget(() =>
-        popup.getByRole("alert").isVisible().catch(() => false)
-      );
-      if (visible) {
-        const error = new Error("share_now_failure_feedback");
-        error.code = "share_now_failure_feedback";
-        throw error;
-      }
+    if (detectShareNowFailure && (await detectShareNowFailure())) {
+      const error = new Error("share_now_failure_feedback");
+      error.code = "share_now_failure_feedback";
+      throw error;
     }
     const response = await extensionMessage(popup, { type: "getClipHistory" });
     clips = response?.clips ?? [];
