@@ -225,6 +225,21 @@ try {
   await writeClipboard(probe, shareNowText);
   await withinBudget(() => acceptancePopup.bringToFront());
   await withinBudget(() => acceptancePopup.waitForTimeout(500));
+  operationLabel = "verify_popup_clipboard_read";
+  const popupClipboardMatches = await withinBudget(() =>
+    acceptancePopup.evaluate(async (expected) => {
+      try {
+        return (await navigator.clipboard.readText()) === expected;
+      } catch {
+        return false;
+      }
+    }, shareNowText)
+  );
+  shareNowObservation = {
+    ...shareNowObservation,
+    popupClipboardMatches,
+  };
+  assert.equal(popupClipboardMatches, true, "share_now_popup_clipboard_unavailable");
   const historyBeforeShare = await extensionMessage(acceptancePopup, {
     type: "getClipHistory",
   });
