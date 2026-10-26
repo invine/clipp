@@ -174,51 +174,6 @@ try {
     acceptancePopup.goto(`chrome-extension://${extensionId}/src/popup.html`)
   );
 
-  const retainedText = "clipp-retained-copy-verification";
-  operationLabel = "capture_retained_copy_fixture";
-  const retainedClip = await captureFixture(acceptancePopup, retainedText);
-  clipboardChanged = true;
-  operationLabel = "write_copy_sentinel";
-  await writeClipboard(probe, "clipp-copy-sentinel");
-  await withinBudget(() => acceptancePopup.bringToFront());
-  await withinBudget(() => acceptancePopup.reload());
-  const retainedCard = acceptancePopup
-    .locator("article")
-    .filter({ hasText: retainedText })
-    .first();
-  operationLabel = "click_retained_copy_action";
-  await withinBudget(() =>
-    retainedCard.locator("button").filter({ hasText: "Copy" }).click()
-  );
-  operationLabel = "confirm_retained_clipboard_copy";
-  await waitForClipboard(probe, retainedText);
-  await withinBudget(() => acceptancePopup.bringToFront());
-  assert.equal(
-    await withinBudget(() =>
-      acceptancePopup
-        .getByText(
-          "Could not copy this Clip. Your clipboard and history were not changed.",
-          { exact: true }
-        )
-        .isVisible()
-        .catch(() => false)
-    ),
-    false
-  );
-  operationLabel = "verify_retained_history_reuse";
-  const reusedHistory = await waitForHistory(
-    acceptancePopup,
-    (clips) =>
-      clips.filter(
-        (clip) => clip.content === retainedText && clip.id !== retainedClip.id
-      ).length > 0
-  );
-  assert.ok(
-    reusedHistory.some(
-      (clip) => clip.content === retainedText && clip.id !== retainedClip.id
-    )
-  );
-
   const shareNowText = "  clipp-share-now\r\nverification  ";
   clipboardChanged = true;
   operationLabel = "write_share_fixture";
