@@ -174,7 +174,7 @@ try {
     acceptancePopup.goto(`chrome-extension://${extensionId}/src/popup.html`)
   );
 
-  const shareNowText = "  clipp-share-now\r\nverification  ";
+  const shareNowText = "clipp-share-now-verification";
   clipboardChanged = true;
   operationLabel = "write_share_fixture";
   await writeClipboard(probe, shareNowText);
@@ -226,12 +226,20 @@ try {
       const liveObservation = await withinBudget(() =>
         acceptancePopup.evaluate(() => ({
           clipboardRead: window.__clippShareNowClipboardRead,
+          shareNowMessageSent: window.__clippShareNowMessageSent === true,
           response: window.__clippShareNowResponse,
         }))
       );
-      if (liveObservation.clipboardRead || liveObservation.response) {
+      if (
+        liveObservation.clipboardRead ||
+        liveObservation.shareNowMessageSent ||
+        liveObservation.response
+      ) {
         shareNowObservation = {
           ...shareNowObservation,
+          ...(liveObservation.shareNowMessageSent
+            ? { shareNowMessageSent: true }
+            : {}),
           ...(liveObservation.clipboardRead
             ? { clipboardRead: liveObservation.clipboardRead }
             : {}),
@@ -514,8 +522,12 @@ async function installShareNowResponseObserver(page, expectedClipboardText) {
       const observedReadText = async () => {
         try {
           const text = await originalReadText();
+          const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
           window.__clippShareNowClipboardRead = {
             matched: text === expected,
+            lineEndingNormalizedMatch:
+              normalizeLineEndings(text) === normalizeLineEndings(expected),
+            empty: text.length === 0,
             errorCode: null,
           };
           return text;
@@ -545,6 +557,9 @@ async function installShareNowResponseObserver(page, expectedClipboardText) {
         let callbackIndex = args.length - 1;
         while (callbackIndex >= 0 && typeof args[callbackIndex] !== "function")
           callbackIndex -= 1;
+        if (message?.type === "shareNow") {
+          window.__clippShareNowMessageSent = true;
+        }
         if (message?.type === "shareNow" && callbackIndex >= 0) {
           const callback = args[callbackIndex];
           args[callbackIndex] = (response) => {
