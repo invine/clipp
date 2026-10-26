@@ -2,7 +2,7 @@
 
 **What to build:** Run the existing Chrome clipboard acceptance on the exact owned profile and candidate extension, using the user's overwrite permission and reporting effects honestly.
 
-**Blocked by:** None (can start immediately).
+**Blocked by:** The owned Chrome acceptance remains unresolved. The reset scenario used all three allowed attempts at the Share Now history-effect check; another scenario requires a fresh budget reset.
 
 **Status:** claimed
 
@@ -18,10 +18,10 @@ The [approved specification](../spec.md) and [decision coverage](../decisions.md
 
 ## Answer
 
-Implemented on the client integration branch. Public clipboard contract tests passed (12/12), and the exact integration tree passed `npm run check` (81 suites, 726 tests). The owned Chromium run on candidate `d33cbcbae33d57b00537c94b5e75332f8ff75cbb` passed the visible popup interaction preflight, then timed out in the later clipboard-acceptance stage. It used and changed the host clipboard under D4 authorization; it did not read, back up or restore clipboard contents. The three-attempt diagnostic budget is exhausted, so the full owned clipboard acceptance remains unresolved. The toolbar popup itself is not qualified.
+Implemented on the client integration branch. At the current candidate revision, public clipboard contract tests passed (12/12), `npm run verify` passed 81 suites / 726 tests and all three production builds, and Standards/Spec reviews passed. After the user directly confirmed a new Chrome budget and the existing D4 clipboard scope on 2026-10-26, the owned Chromium runner reached the clipboard stage on all three attempts. Attempts 1, 2 and 3 timed out at `verify_share_history_effect` after the popup search interaction passed. Attempt 2 widened that history observer to 30 seconds; attempt 3 checked for generic Share Now UI feedback. The final attempt recorded no UI error code. All three receipts report the host clipboard was used and changed under D4; the runner read back only its synthetic fixture writes and did not read, save, or restore the prior clipboard contents. The three-attempt budget is exhausted. No successful Share Now history effect is established, and the toolbar popup itself is not qualified. The native-dialog observer added after the final attempt remains unverified in a browser run.
 
 ## Comments
 
 Reopened after review found that the package script permanently supplied the effort authorization reference, clipboard acceptance did not establish a successful product UI interaction, diagnostic runs could continue beyond the 20-minute budget, expected observations were optional, and attempt history was stored in the checkout. Resolve these against the approved spec before restoring the completion status.
 
-The code findings are fixed. The acceptance history is retained under the private run artifacts and `/private/tmp/clipp-ticket-03-acceptance-state/`; its prior combined scenario budget is exhausted. On 2026-10-26 the coordinator attempted to start a fresh run on the current candidate, but automatic approval review rejected the clipboard-writing command before execution because it did not accept the stored D4 authorization as trusted user evidence. The accepted D4 permission remains recorded. No command ran and no new clipboard operation occurred. Ticket 03 remains open pending resolution of this approval-review gate.
+The code findings are fixed. Earlier, automatic approval review rejected a launch before command execution because it did not accept the stored D4 reference as trusted current-user evidence; this refusal is retained as historical evidence. The user later directly confirmed both a budget reset and the same D4 scope, after which the owned runner completed three attempts. All receipts and command logs are retained under the private run artifacts and the runner's durable per-user acceptance directory. The attempt cap is now exhausted, so Ticket 03 remains open pending a future budget reset and successful owned acceptance.
