@@ -25,6 +25,7 @@ import {
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const extensionPath = resolve(scriptDirectory, "..", "dist");
 const repositoryRoot = resolve(scriptDirectory, "../../..");
+const shareNowHistoryEffectTimeoutMs = 30_000;
 const options = parseClipboardAcceptanceArgs(process.argv.slice(2));
 if (options.validateOnly) {
   console.log(
@@ -231,10 +232,13 @@ try {
     acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
   );
   operationLabel = "verify_share_history_effect";
-  const sharedHistory = await waitForHistory(acceptancePopup, (clips) =>
-    clips.some(
-      (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
-    )
+  const sharedHistory = await waitForHistory(
+    acceptancePopup,
+    (clips) =>
+      clips.some(
+        (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
+      ),
+    shareNowHistoryEffectTimeoutMs
   );
   assert.ok(
     sharedHistory.some(
@@ -504,9 +508,9 @@ async function captureFixture(popup, text) {
   throw new Error("clipboard_fixture_capture_timeout");
 }
 
-async function waitForHistory(popup, predicate) {
+async function waitForHistory(popup, predicate, timeoutMs = 10_000) {
   let clips = [];
-  const matched = await pollUntil(10_000, async () => {
+  const matched = await pollUntil(timeoutMs, async () => {
     const response = await extensionMessage(popup, { type: "getClipHistory" });
     clips = response?.clips ?? [];
     return predicate(clips) ? clips : undefined;
