@@ -16,22 +16,6 @@ export type OffscreenClipboardDocument = {
   execCommand(command: "copy"): boolean;
 };
 
-export type OffscreenClipboardReader = {
-  readText(): Promise<string>;
-};
-
-export function createOffscreenClipboardReader(
-  clipboard: OffscreenClipboardReader = globalThis.navigator.clipboard
-): () => Promise<string> {
-  return async () => {
-    try {
-      return await clipboard.readText();
-    } catch {
-      throw new Error("clipboard_read_failed");
-    }
-  };
-}
-
 export function createOffscreenClipboardWriter(
   document: OffscreenClipboardDocument = globalThis.document as unknown as OffscreenClipboardDocument
 ): (text: string) => Promise<void> {

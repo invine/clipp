@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Acceptance blocker:** The 2026-10-26 reset scenario used all three allowed attempts without a successful Share Now history effect. Another owned acceptance scenario requires a fresh budget reset.
+**Acceptance blocker:** The current user-approved reset is in progress. Attempt 1 reached the Share Now background response but failed with `clipboard_read_failed` from the offscreen reader; one diagnostic retry remains in the 20-minute window.
 
 **Status:** claimed
 
@@ -20,9 +20,9 @@ The [approved specification](../spec.md) and [decision coverage](../decisions.md
 
 ## Answer
 
-Implemented on the client integration branch. The latest user-approved Chrome reset used all three attempts: `706943bb` timed out at `verify_share_history_effect`; `ce50c10b` classified an out-of-user-gesture popup clipboard-read probe as a product failure (that probe does not establish whether the actual click path can read); and `50799feb` timed out at the same history-effect check. Attempt 3 installed both read and response observers but recorded no read result, response, or fixed UI feedback. Receipts report synthetic clipboard use/change; the runner did not inspect, save or restore prior clipboard contents. The reset is exhausted and no successful Share Now effect is established.
+Implemented on the client integration branch. The prior reset's three attempts are preserved: `706943bb` and `50799feb` timed out at `verify_share_history_effect`; `ce50c10b` tested an out-of-user-gesture popup read and is inconclusive about the click path. A new reset was approved by the user's “Proceed” on 2026-10-26; its prior history was archived intact. Attempt 1 on clean revision `79a04df5` reached the Share Now background response and returned `clipboard_read_failed` from the offscreen Clipboard API read. The receipt records synthetic clipboard use/change only and does not contain clipboard text.
 
-After that reset, the unqualified working-tree change routes Share Now clipboard reads from the authorized background through the offscreen clipboard bridge, instead of asking the popup to read and forward clipboard text. The acceptance observer now watches only the Share Now response. Targeted bridge tests pass 11/11, the Chrome public contract passes 13/13, extension production build passes, and `npm run check` passes 81 suites / 727 tests with loopback access. This code has not had a browser acceptance attempt; the next explicitly approved reset will be archived as a new scenario before running it. Ticket remains claimed/open, with no acceptance pass claimed.
+Chrome documents that offscreen pages cannot be focused, which explains why an offscreen `navigator.clipboard.readText()` path can fail. The current uncommitted diagnostic change reads from the focused extension popup inside the Share Now click, then sends that text to the authorized background for processing. It also records a sanitized fixture-match flag in the owned acceptance runner. Targeted clipboard tests pass 10/10, the Chrome public contract passes 13/13, extension production build passes, and `npm run check` passes 81 suites / 726 tests with loopback access. The diagnostic attempt will distinguish whether a focused popup read succeeds and whether Share Now creates the expected new history entry. Ticket remains claimed/open until that browser result passes.
 
 ## Comments
 

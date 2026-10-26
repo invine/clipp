@@ -19,6 +19,7 @@ import {
   ReuseClipOutcome,
 } from "../../../packages/ui";
 import { decodePairingTarget } from "../../../packages/core/pairing/v2";
+import { shareCurrentPopupClipboard } from "./popupClipboardActions";
 import type {
   RelayConfiguration,
   RelayState,
@@ -384,7 +385,12 @@ const Popup = () => {
           return response.outcome;
         }}
         onShareNow={async () => {
-          await runHistoryOperation({ type: "shareNow" });
+          await shareCurrentPopupClipboard(
+            () => navigator.clipboard.readText(),
+            async (text) => {
+              await runHistoryOperation({ type: "shareNow", text });
+            }
+          );
         }}
         onSetPinned={async (id, pinned) => {
           const response = await runHistoryOperation<{

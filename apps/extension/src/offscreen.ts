@@ -44,10 +44,7 @@ import {
   handleExtensionClipboardRequest,
   isExtensionClipboardRequest,
 } from "./clipboardBridge";
-import {
-  createOffscreenClipboardReader,
-  createOffscreenClipboardWriter,
-} from "./offscreenClipboard";
+import { createOffscreenClipboardWriter } from "./offscreenClipboard";
 import { extensionRelayTransportAllows } from "./relayAcceptance";
 
 const acceptanceTransport = __CLIPP_RELAY_ACCEPTANCE_TRANSPORT__ ?? undefined;
@@ -69,7 +66,6 @@ const identitySvc = createRuntimeIdentityManager({
 let started = false;
 let managedController: ManagedRelayController | null = null;
 const writeClipboardText = createOffscreenClipboardWriter();
-const readClipboardText = createOffscreenClipboardReader();
 const runtimeOutboundStreamControllers = new Map<string, AbortController>();
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -308,10 +304,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return false;
       }
       sendResponse(
-        await handleExtensionClipboardRequest(msg, {
-          readText: readClipboardText,
-          writeText: writeClipboardText,
-        })
+        await handleExtensionClipboardRequest(msg, writeClipboardText)
       );
       return;
     }

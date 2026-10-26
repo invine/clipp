@@ -251,7 +251,10 @@ try {
   };
   acceptancePopup.on("dialog", observeShareNowDialog);
   operationLabel = "observe_share_now_response";
-  shareNowObservation = await installShareNowResponseObserver(acceptancePopup);
+  shareNowObservation = await installShareNowResponseObserver(
+    acceptancePopup,
+    shareNowText
+  );
   operationLabel = "click_share_now_action";
   await withinBudget(() =>
     acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
@@ -267,12 +270,16 @@ try {
     async () => {
       const liveObservation = await withinBudget(() =>
         acceptancePopup.evaluate(() => ({
+          clipboardRead: window.__clippShareNowClipboardRead,
           response: window.__clippShareNowResponse,
         }))
       );
-      if (liveObservation.response) {
+      if (liveObservation.clipboardRead || liveObservation.response) {
         shareNowObservation = {
           ...shareNowObservation,
+          ...(liveObservation.clipboardRead
+            ? { clipboardRead: liveObservation.clipboardRead }
+            : {}),
           ...(liveObservation.response
             ? { response: liveObservation.response }
             : {}),
@@ -544,9 +551,38 @@ async function extensionMessage(page, message) {
   );
 }
 
-async function installShareNowResponseObserver(page) {
+async function installShareNowResponseObserver(page, expectedClipboardText) {
   return await withinBudget(() =>
-    page.evaluate(() => {
+    page.evaluate((expected) => {
+      const clipboard = navigator.clipboard;
+      const originalReadText = clipboard.readText.bind(clipboard);
+      const observedReadText = async () => {
+        try {
+          const text = await originalReadText();
+          window.__clippShareNowClipboardRead = {
+            matched: text === expected,
+            errorCode: null,
+          };
+          return text;
+        } catch {
+          window.__clippShareNowClipboardRead = {
+            matched: false,
+            errorCode: "clipboard_read_failed",
+          };
+          throw new Error("clipboard_read_failed");
+        }
+      };
+      let clipboardReadObserverInstalled = false;
+      try {
+        Object.defineProperty(clipboard, "readText", {
+          configurable: true,
+          value: observedReadText,
+        });
+        clipboardReadObserverInstalled =
+          clipboard.readText === observedReadText;
+      } catch {
+        // The background response remains observable if the method is not replaceable.
+      }
       const runtime = chrome.runtime;
       const original = runtime.sendMessage.bind(runtime);
       const observedSendMessage = (...args) => {
@@ -582,8 +618,8 @@ async function installShareNowResponseObserver(page) {
       } catch {
         // The static UI feedback observer remains available.
       }
-      return { responseObserverInstalled };
-    })
+      return { clipboardReadObserverInstalled, responseObserverInstalled };
+    }, expectedClipboardText)
   );
 }
 
