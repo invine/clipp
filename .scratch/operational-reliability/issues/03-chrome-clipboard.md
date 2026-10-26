@@ -2,7 +2,9 @@
 
 **What to build:** Run the existing Chrome clipboard acceptance on the exact owned profile and candidate extension, using the user's overwrite permission and reporting effects honestly.
 
-**Blocked by:** The owned Chrome acceptance remains unresolved. The reset scenario used all three allowed attempts at the Share Now history-effect check; another scenario requires a fresh budget reset.
+**Blocked by:** None.
+
+**Acceptance blocker:** The owned Chrome acceptance remains unresolved. The reset scenario used all three allowed attempts at the Share Now history-effect check; another scenario requires a fresh budget reset.
 
 **Status:** claimed
 
