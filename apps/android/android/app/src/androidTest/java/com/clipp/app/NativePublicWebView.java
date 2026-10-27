@@ -54,6 +54,12 @@ final class NativePublicWebView {
     private String lastTouchDispatch = "none";
     private UiAutomation ownedAutomation;
     private JSONObject lastActiveWindowReadiness = new JSONObject();
+    private boolean overlapReadinessEnabled;
+    private JSONObject overlapReadiness = new JSONObject();
+
+    void enableOverlapReadiness() { overlapReadiness = new JSONObject(); overlapReadinessEnabled = true; }
+    void disableOverlapReadiness() { overlapReadinessEnabled = false; }
+    JSONObject overlapReadiness() { return overlapReadiness; }
     private String blockedWindowNonce;
     private long blockedWindowMethodEnd;
     private final AtomicBoolean blockedWindowAttempted=new AtomicBoolean();
@@ -394,11 +400,23 @@ final class NativePublicWebView {
         do {
             // DOM existence precedes React's responsive/native-geometry effects.
             // Measure until settled, then dispatch exactly one physical tap below.
-            String sample = evaluate("(() => { const e = " + element + "; if (!e) return {ready:false};"
+            String sample = overlapReadinessEnabled ? null : evaluate("(() => { const e = " + element + "; if (!e) return {ready:false};"
                 + " const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, hit=document.elementFromPoint(x,y);"
                 + " return {x,y,width:innerWidth,height:innerHeight,rect:{x:r.x,y:r.y,width:r.width,height:r.height},"
                 + " shell:document.querySelector('.app-shell')?.className,"
                 + " ready:!e.disabled && !e.closest('[inert], [hidden], [aria-hidden=\"true\"]') && r.width>0 && r.height>0 && x>0 && y>0 && x<innerWidth && y<innerHeight && !!hit && (hit===e || e.contains(hit))}; })()");
+            if (overlapReadinessEnabled) {
+                JSONObject observed = new JSONObject(evaluate(ResetOverlapReadiness.expression(element)));
+                sample = observed.getJSONObject("sample").toString();
+                JSONObject source = observed.getJSONObject("vector"), safe = new JSONObject();
+                for (String key : new String[] {"modal", "documentCandidate", "scopeCandidate", "selected", "scopeDisabled", "scopeHidden", "scopeHasRects", "positiveSize", "inViewport", "hitTarget"}) {
+                    safe.put(key, source.getBoolean(key));
+                }
+                safe.put("sampleSameAsPrevious", sample.equals(previous));
+                safe.put("observedUptimeMs", SystemClock.uptimeMillis());
+                if (!overlapReadiness.has("first")) overlapReadiness.put("first", safe);
+                overlapReadiness.put("last", safe).put("samples", overlapReadiness.optInt("samples") + 1);
+            }
             lastTouchSample = sample;
             lastTouchSampleUptimeMs = SystemClock.uptimeMillis();
             lastTouchSampleEpochMs = System.currentTimeMillis();

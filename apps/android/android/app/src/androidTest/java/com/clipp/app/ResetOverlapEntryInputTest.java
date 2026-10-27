@@ -559,6 +559,9 @@ public final class ResetOverlapEntryInputTest {
 
     private void tapContinue(String element) throws Exception {
         long started = SystemClock.uptimeMillis();
+        MainActivity tapOwner = resumedActivity;
+        int createdBeforeTap = created.get(), destroyedBeforeTap = destroyed.get();
+        web.enableOverlapReadiness();
         boolean failed = false;
         try { tap(element); }
         catch (Exception | AssertionError original) { failed = true; throw original; }
@@ -574,10 +577,14 @@ public final class ResetOverlapEntryInputTest {
                     long value = ResetOverlapTapDiagnostics.dispatchUptime(dispatch, field, finished);
                     if (value >= started) timing.put(field + "UptimeMs", value);
                 }
+                timing.put("readiness", web.overlapReadiness());
+                timing.put("ownerAtEnd", tapOwner != null && tapOwner == resumedActivity && !tapOwner.isDestroyed()
+                    && createdBeforeTap == created.get() && destroyedBeforeTap == destroyed.get() ? "same-resumed" : "changed-or-unavailable");
                 continueTap = timing;
             } catch (Throwable ignored) {
                 continueTap = new JSONObject();
             }
+            web.disableOverlapReadiness();
             if (failed) {
                 try { postFailureProgress = observeAfterFailedTap(); }
                 catch (Throwable ignored) { postFailureProgress = new JSONObject(); }
