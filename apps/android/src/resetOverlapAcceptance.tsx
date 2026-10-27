@@ -25,6 +25,8 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
   const documentId = uuidv4();
   const expiresAt = Date.now() + manifest.deadlineMs;
   let overlapFailure: OverlapFailureWitness | undefined;
+  let overlapStartOutcome:
+    "completed" | "rejected-reset-fence-code" | "not-observed" = "not-observed";
   let disposed = false;
   let ready = false;
   let refreshPending = false;
@@ -49,6 +51,7 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
     "historyAvailable",
     "receiptPresent",
     "error",
+    "overlapStartOutcome",
     "failurePhase",
     "failureStartGate",
     "failureFenceGate",
@@ -344,6 +347,13 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
       try {
         result = await runResetOverlap({
           ports: overlapPorts,
+          startOutcome: (outcome) => {
+            overlapStartOutcome = outcome;
+            emit("start-settled", {
+              operationId: manifest.operationId,
+              overlapStartOutcome,
+            });
+          },
           failure: (witness) => {
             overlapFailure = witness;
           },
@@ -368,13 +378,17 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
     if (!active()) return;
     if (result.outcome === "rejected") {
       finish("reset-rejected", {
+        overlapStartOutcome,
         operationId: manifest.operationId,
         error: result.code,
       });
       return;
     }
     if (result.outcome === "completed")
-      finish("restart-required", { operationId: manifest.operationId });
+      finish("restart-required", {
+        operationId: manifest.operationId,
+        overlapStartOutcome,
+      });
     else if (result.outcome === "outcome-unconfirmed") {
       emit("checking", { operationId: manifest.operationId });
       await wait();
@@ -403,6 +417,7 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
           finish("operation-unconfirmed", {
             operationId: manifest.operationId,
             error: overlapFailureReason(error),
+            overlapStartOutcome,
             ...(overlapFailure
               ? {
                   failurePhase: overlapFailure.phase,

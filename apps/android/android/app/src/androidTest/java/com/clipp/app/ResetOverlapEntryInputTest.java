@@ -73,7 +73,7 @@ public final class ResetOverlapEntryInputTest {
         "currentPeerId", "formerPeerId", "generatedPeerId", "clipCount", "pinnedCount", "markerMatchCount",
         "autoSync", "theme", "backgroundEnabled", "backgroundStateKnown", "localRetentionMs",
         "sharingLifetimeMs", "historyAvailable", "receiptPresent", "error", "overlapElapsedMs", "overlapRemainingMs",
-        "failurePhase", "failureStartGate", "failureFenceGate", "failureKind"};
+        "failurePhase", "failureStartGate", "failureFenceGate", "failureKind", "overlapStartOutcome"};
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     @Rule public final TestName method = new TestName();
     @Rule public final TestWatcher outcome = new TestWatcher() {
@@ -437,7 +437,7 @@ public final class ResetOverlapEntryInputTest {
         assertEquals("Bounded public entry version", 1, value.getInt("version"));
         assertEquals("Public observation belongs to the fixed packaged case", nonce, value.getString("caseId"));
         documentId(value.getString("documentId"));
-        for (String key : new String[] {"failurePhase", "failureStartGate", "failureFenceGate", "failureKind"}) {
+        for (String key : new String[] {"failurePhase", "failureStartGate", "failureFenceGate", "failureKind", "overlapStartOutcome"}) {
             if (value.has(key)) value.put(key, ResetOverlapTapDiagnostics.finiteFailure(key, value.optString(key)));
         }
         String trace = value.getString("stage") + ":" + value.getString("documentId");
@@ -446,6 +446,7 @@ public final class ResetOverlapEntryInputTest {
                 JSONObject item = new JSONObject().put("stage", value.getString("stage"))
                     .put("documentId", value.getString("documentId"))
                     .put("observedUptimeMs", SystemClock.uptimeMillis());
+                if (value.has("overlapStartOutcome")) item.put("overlapStartOutcome", value.getString("overlapStartOutcome"));
                 if (value.has("overlapElapsedMs")) item.put("overlapElapsedMs", value.getLong("overlapElapsedMs"));
                 if (value.has("overlapRemainingMs")) item.put("overlapRemainingMs", value.getLong("overlapRemainingMs"));
                 progressTrace.put(item);
@@ -608,7 +609,7 @@ public final class ResetOverlapEntryInputTest {
                 + "const bounded=v=>typeof v==='string' && v.length<=128?v:'';"
                 + "return JSON.stringify({origin:location.origin,caseId:bounded(p.caseId),documentId:bounded(p.documentId),"
                 + "stage:bounded(p.stage),error:bounded(p.error),failurePhase:bounded(p.failurePhase),"
-                + "failureStartGate:bounded(p.failureStartGate),failureFenceGate:bounded(p.failureFenceGate),failureKind:bounded(p.failureKind)});})()");
+                + "failureStartGate:bounded(p.failureStartGate),failureFenceGate:bounded(p.failureFenceGate),failureKind:bounded(p.failureKind),overlapStartOutcome:bounded(p.overlapStartOutcome)});})()");
             if ("null".equals(selected)) return null;
             JSONObject value = new JSONObject(selected);
             if (resumedActivity != owner || owner.isDestroyed() || created.get() != createdBefore || destroyed.get() != destroyedBefore
@@ -620,6 +621,7 @@ public final class ResetOverlapEntryInputTest {
                 .put("failureStartGate", ResetOverlapTapDiagnostics.finiteFailure("failureStartGate", value.optString("failureStartGate")))
                 .put("failureFenceGate", ResetOverlapTapDiagnostics.finiteFailure("failureFenceGate", value.optString("failureFenceGate")))
                 .put("failureKind", ResetOverlapTapDiagnostics.finiteFailure("failureKind", value.optString("failureKind")))
+                .put("overlapStartOutcome", ResetOverlapTapDiagnostics.finiteFailure("overlapStartOutcome", value.optString("overlapStartOutcome")))
                 .put("observedUptimeMs", SystemClock.uptimeMillis());
         }, 1500);
         try {

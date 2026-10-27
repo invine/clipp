@@ -150,3 +150,35 @@ test("a non-enumerable native proxy retains its unwrapped methods", async () => 
   await wrapped.releaseFence();
   expect(calls).toEqual(["release"]);
 });
+
+test("only the exact error from an update invoked after both releases gains acceptance provenance", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const exact = new Error("identity_reset_incomplete_retry_after_setup");
+  const other = new Error("identity_reset_incomplete_retry_after_setup_extra");
+  const update = ports.wrapUpdate(async (error: Error) => {
+    throw error;
+  });
+  await expect(update(exact)).rejects.toBe(exact);
+  expect(ports.isPostReleaseFenceUpdateError(exact)).toBe(false);
+  ports.arm();
+  const start = ports
+    .wrapBackground({ start: async (_value: boolean | null) => {} })
+    .start(true);
+  const fence = ports
+    .wrapReset({ acquireFence: async () => {} })
+    .acquireFence();
+  await Promise.all([ports.startGate.ready, ports.fenceGate.ready]);
+  await expect(update(exact)).rejects.toBe(exact);
+  expect(ports.isPostReleaseFenceUpdateError(exact)).toBe(false);
+  ports.startGate.release();
+  ports.fenceGate.release();
+  await Promise.all([start, fence]);
+  await expect(update(other)).rejects.toBe(other);
+  expect(ports.isPostReleaseFenceUpdateError(other)).toBe(false);
+  const fresh = new Error("identity_reset_incomplete_retry_after_setup");
+  await expect(update(fresh)).rejects.toBe(fresh);
+  expect(ports.isPostReleaseFenceUpdateError(fresh)).toBe(true);
+  expect(ports.isPostReleaseFenceUpdateError(new Error(fresh.message))).toBe(
+    false
+  );
+});

@@ -33,6 +33,7 @@ export async function runResetOverlap<T>(options: {
   begin(): Promise<T>;
   ingress(): Promise<void>;
   failure?(witness: OverlapFailureWitness): void;
+  startOutcome?(outcome: "completed" | "rejected-reset-fence-code"): void;
   stage(
     value: "start-held" | "provisional-fence-held",
     timing: ReturnType<typeof overlapBudgetObservation>
@@ -110,7 +111,14 @@ export async function runResetOverlap<T>(options: {
     phase = "release-start";
     ports.startGate.release();
     phase = "await-start";
-    await Promise.race([started, deadline]);
+    let outcome: "completed" | "rejected-reset-fence-code" = "completed";
+    try {
+      await Promise.race([started, deadline]);
+    } catch (error) {
+      if (!ports.isPostReleaseFenceUpdateError(error)) throw error;
+      outcome = "rejected-reset-fence-code";
+    }
+    options.startOutcome?.(outcome);
     phase = "await-reset";
     return await Promise.race([begun, deadline]);
   } catch (error) {

@@ -229,3 +229,143 @@ test("a throwing diagnostic observer cannot replace the original error", async (
     })
   ).rejects.toBe(error);
 });
+
+test("post-ingress Start rejection other than the exact fence code remains a rejection", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const unexpected = new Error(
+    "identity_reset_incomplete_retry_after_setup_extra"
+  );
+  const startOutcomes: string[] = [];
+  await expect(
+    runResetOverlap({
+      ports,
+      start: async () => {
+        await background.start(true);
+        throw unexpected;
+      },
+      begin: async () => {
+        await reset.acquireFence();
+        return "completed";
+      },
+      ingress: async () => {},
+      stage: () => {},
+      startOutcome: (outcome) => startOutcomes.push(outcome),
+    })
+  ).rejects.toBe(unexpected);
+  expect(startOutcomes).toEqual([]);
+});
+
+test("the fence-code Start rejection does not hide a later reset failure", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const resetFailure = new Error("reset_failure");
+  const update = ports.wrapUpdate(async () => {
+    throw new Error("identity_reset_incomplete_retry_after_setup");
+  });
+  const outcomes: string[] = [];
+  await expect(
+    runResetOverlap({
+      ports,
+      start: async () => {
+        await background.start(true);
+        await update();
+      },
+      begin: async () => {
+        await reset.acquireFence();
+        throw resetFailure;
+      },
+      ingress: async () => {},
+      stage: () => {},
+      startOutcome: (outcome) => outcomes.push(outcome),
+    })
+  ).rejects.toBe(resetFailure);
+  expect(outcomes).toEqual(["rejected-reset-fence-code"]);
+});
+
+test("the fence code before overlap admission is never accepted", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const outcomes: string[] = [];
+  const failure = new Error("identity_reset_incomplete_retry_after_setup");
+  await expect(
+    runResetOverlap({
+      ports,
+      start: async () => {
+        throw failure;
+      },
+      begin: async () => "unused",
+      ingress: async () => {},
+      stage: () => {},
+      startOutcome: (outcome) => outcomes.push(outcome),
+    })
+  ).rejects.toBe(failure);
+  expect(outcomes).toEqual([]);
+});
+
+test("an outcome observer throwing the fence code is not mistaken for a Start rejection", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const observerFailure = new Error(
+    "identity_reset_incomplete_retry_after_setup"
+  );
+  const outcomes: string[] = [];
+  await expect(
+    runResetOverlap({
+      ports,
+      start: () => background.start(true),
+      begin: async () => {
+        await reset.acquireFence();
+        return "completed";
+      },
+      ingress: async () => {},
+      stage: () => {},
+      startOutcome: (outcome) => {
+        outcomes.push(outcome);
+        throw observerFailure;
+      },
+    })
+  ).rejects.toBe(observerFailure);
+  expect(outcomes).toEqual(["completed"]);
+});
+
+test("a Start rejection settled while gates are held cannot be accepted by a simultaneous ingress", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const failure = new Error("identity_reset_incomplete_retry_after_setup");
+  let rejectStart!: (error: Error) => void;
+  const start = new Promise<never>((_, reject) => {
+    rejectStart = reject;
+  });
+  const outcomes: string[] = [];
+  const operation = runResetOverlap({
+    ports,
+    start: () => {
+      void background.start(true);
+      return start;
+    },
+    begin: async () => {
+      await reset.acquireFence();
+      return "completed";
+    },
+    ingress: () => {
+      queueMicrotask(() => queueMicrotask(() => rejectStart(failure)));
+      return Promise.resolve();
+    },
+    stage: () => {},
+    startOutcome: (outcome) => outcomes.push(outcome),
+  });
+  await expect(operation).rejects.toBe(failure);
+  expect(outcomes).toEqual([]);
+});

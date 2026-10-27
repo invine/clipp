@@ -964,3 +964,68 @@ test("a current failed connection update stays unknown until an explicit refresh
     controlError: null,
   });
 });
+
+test("the acceptance overlap drains a Start rejected by the fenced native update and still waits for reset cleanup", async () => {
+  const { createResetOverlapPorts } =
+    await import("../../apps/android/src/resetOverlapPorts");
+  const { runResetOverlap } =
+    await import("../../apps/android/src/resetOverlapJourney");
+  const ports = createResetOverlapPorts(1000);
+  const fake = createPlatform();
+  let nativeFenced = false;
+  let nativeStopped = false;
+  let queuesCleared = false;
+  const wrapped = ports.wrapBackground({ start: fake.platform.startService });
+  fake.platform.startService = wrapped.start;
+  fake.platform.updateService = ports.wrapUpdate(async () => {
+    if (nativeFenced)
+      throw new Error("identity_reset_incomplete_retry_after_setup");
+  });
+  fake.platform.stopService = async () => {
+    nativeStopped = true;
+  };
+  let coordinator: ReturnType<
+    typeof createAndroidBackgroundContinuityCoordinator
+  >;
+  const runtime = createAndroidIdentityResetRuntime({
+    native: ports.wrapReset({
+      acquireFence: async () => {
+        nativeFenced = true;
+      },
+      releaseFence: async () => {
+        nativeFenced = false;
+      },
+      clearNativeQueues: async () => {
+        queuesCleared = true;
+      },
+      verifyNativeQueues: async () => {},
+      openRuntime: async () => {},
+      restartRuntime: async () => {},
+    }),
+    suspend: async () => coordinator.suspendForIdentityReset(),
+  });
+  coordinator = createAndroidBackgroundContinuityCoordinator(fake.platform, {
+    workFence: runtime.workFence,
+  });
+  await coordinator.initialize();
+  const outcomes: string[] = [];
+  const operation = runResetOverlap({
+    ports,
+    deadlineMs: 1000,
+    startOutcome: (outcome) => outcomes.push(outcome),
+    start: () => coordinator.setEnabledFromUser(true),
+    begin: async () => {
+      await runtime.lifecycle.acquireFence();
+      await runtime.lifecycle.quiesce();
+      return "completed";
+    },
+    ingress: async () => {},
+    stage: () => {},
+  });
+  await expect(operation).resolves.toBe("completed");
+  expect(outcomes).toEqual(["rejected-reset-fence-code"]);
+  expect(nativeFenced).toBe(true);
+  expect(nativeStopped).toBe(true);
+  expect(queuesCleared).toBe(true);
+  expect(fake.enabled()).toBe(true);
+});

@@ -38,6 +38,8 @@ final class ResetOverlapTapDiagnostics {
                     case "waiting-native": case "held": case "released": case "failed": return value;
                     default: return "unknown";
                 }
+            case "overlapStartOutcome":
+                switch (value) { case "completed": case "rejected-reset-fence-code": case "not-observed": return value; default: return "unknown"; }
             case "failureKind":
                 switch (value) { case "type-error": case "error": case "non-error": return value; default: return "unknown"; }
             default: return "unknown";
@@ -47,7 +49,7 @@ final class ResetOverlapTapDiagnostics {
     static String publicStage(String value) {
         if (value == null) return "other";
         switch (value) {
-            case "start-held": case "provisional-fence-held": case "operation-unconfirmed":
+            case "start-held": case "provisional-fence-held": case "start-settled": case "operation-unconfirmed":
             case "restart-required": case "replacement-ready": case "checking": case "stopped":
                 return value;
             default: return "other";

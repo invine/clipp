@@ -7,6 +7,7 @@ export function createResetOverlapPorts(deadlineMs: number) {
   let armed = false;
   let startUsed = false;
   let fenceUsed = false;
+  const postReleaseUpdateErrors = new WeakSet<Error>();
   return {
     arm() {
       if (armed) throw new Error("overlap_already_armed");
@@ -14,6 +15,28 @@ export function createResetOverlapPorts(deadlineMs: number) {
     },
     startGate,
     fenceGate,
+    isPostReleaseFenceUpdateError(error: unknown): boolean {
+      return error instanceof Error && postReleaseUpdateErrors.has(error);
+    },
+    wrapUpdate<T extends unknown[]>(actual: (...args: T) => Promise<void>) {
+      return async (...args: T): Promise<void> => {
+        const afterRelease =
+          armed &&
+          startGate.state() === "released" &&
+          fenceGate.state() === "released";
+        try {
+          await actual(...args);
+        } catch (error) {
+          if (
+            afterRelease &&
+            error instanceof Error &&
+            error.message === "identity_reset_incomplete_retry_after_setup"
+          )
+            postReleaseUpdateErrors.add(error);
+          throw error;
+        }
+      };
+    },
     wrapBackground<
       T extends { start(autoSync: boolean | null): Promise<void> },
     >(actual: T): T {

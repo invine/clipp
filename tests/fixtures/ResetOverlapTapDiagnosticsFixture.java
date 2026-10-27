@@ -30,6 +30,8 @@ public final class ResetOverlapTapDiagnosticsFixture {
         if (!"unclassified".equals(ResetOverlapTapDiagnostics.publicError("PRIVATE_SENTINEL"))) throw new AssertionError();
         if (!"await-reset".equals(ResetOverlapTapDiagnostics.finiteFailure("failurePhase", "await-reset"))) throw new AssertionError();
         if (!"released".equals(ResetOverlapTapDiagnostics.finiteFailure("failureStartGate", "released"))) throw new AssertionError();
+        if (!"rejected-reset-fence-code".equals(ResetOverlapTapDiagnostics.finiteFailure("overlapStartOutcome", "rejected-reset-fence-code"))) throw new AssertionError();
+        if (!"unknown".equals(ResetOverlapTapDiagnostics.finiteFailure("overlapStartOutcome", "PRIVATE_SENTINEL"))) throw new AssertionError();
         if (!"unknown".equals(ResetOverlapTapDiagnostics.finiteFailure("failureKind", "PRIVATE_SENTINEL"))) throw new AssertionError();
         if (!"unknown".equals(ResetOverlapTapDiagnostics.finiteFailure("PRIVATE_SENTINEL", "error"))) throw new AssertionError();
         try {

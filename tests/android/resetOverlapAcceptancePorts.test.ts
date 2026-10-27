@@ -1,10 +1,11 @@
 const nativeStart = jest.fn(async (_input: { autoSync: boolean | null }) => {});
 const nativeFence = jest.fn(async () => {});
+const nativeUpdate = jest.fn(async (_input: unknown) => {});
 jest.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => "android" },
   registerPlugin: (name: string) =>
     name === "BackgroundContinuity"
-      ? { start: nativeStart }
+      ? { start: nativeStart, update: nativeUpdate }
       : { acquireFence: nativeFence },
 }));
 import {
@@ -28,4 +29,19 @@ test("acceptance wrappers call real Capacitor adapters before exposing their hel
   overlapPorts.fenceGate.release();
   overlapPorts.startGate.release();
   await Promise.all([start, fence]);
+  const nativeRejection = new Error(
+    "identity_reset_incomplete_retry_after_setup"
+  );
+  nativeUpdate.mockRejectedValueOnce(nativeRejection);
+  await expect(background.update("waiting", 0, false)).rejects.toBe(
+    nativeRejection
+  );
+  expect(nativeUpdate).toHaveBeenCalledWith({
+    state: "waiting",
+    connectedTrustedDeviceCount: 0,
+    autoSync: false,
+  });
+  expect(overlapPorts.isPostReleaseFenceUpdateError(nativeRejection)).toBe(
+    true
+  );
 });
