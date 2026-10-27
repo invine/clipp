@@ -143,3 +143,66 @@ it("does not present a guessed applied preference while the runtime is unavailab
   expect(html.match(/disabled=""/g)).toHaveLength(2);
   expect(html.match(/Unknown/g)).toHaveLength(2);
 });
+
+it("keeps retention and lifetime save feedback with their own displayed control", async () => {
+  const initial = {
+    sessionId: "settings",
+    revision: 1,
+    state: {
+      theme: "system" as const,
+      autoSync: true,
+      logLevel: "info" as const,
+      localRetentionMs: 2592000000,
+      sharingLifetimeMs: 86400000,
+    },
+  };
+  let finish!: (value: unknown) => void;
+  const client = createSettingsClient({
+    send: async (message) =>
+      message.type === "getSettings"
+        ? { ok: true, snapshot: initial }
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+    subscribe: () => () => {},
+  });
+  await client.start();
+  const pending = client.save({ sharingLifetimeMs: 3600000 });
+  const settings = {
+    ...client.getState(),
+    save: client.save,
+    refresh: client.refresh,
+  };
+  const retention = renderToStaticMarkup(
+    React.createElement(ClipSettings, { settings, section: "retention" })
+  );
+  const lifetime = renderToStaticMarkup(
+    React.createElement(ClipSettings, { settings, section: "lifetime" })
+  );
+  expect(retention).not.toContain("Saving Clip settings…");
+  expect(lifetime).toContain("Saving Clip settings…");
+  finish({ status: "rejected", snapshot: initial, error: "lifetime failed" });
+  await pending;
+  const failed = {
+    ...client.getState(),
+    save: client.save,
+    refresh: client.refresh,
+  };
+  expect(
+    renderToStaticMarkup(
+      React.createElement(ClipSettings, {
+        settings: failed,
+        section: "retention",
+      })
+    )
+  ).not.toContain("lifetime failed");
+  expect(
+    renderToStaticMarkup(
+      React.createElement(ClipSettings, {
+        settings: failed,
+        section: "lifetime",
+      })
+    )
+  ).toContain("lifetime failed");
+  client.stop();
+});

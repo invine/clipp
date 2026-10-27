@@ -106,7 +106,7 @@ await build({
   stdin: {
     resolveDir: repo,
     loader: "tsx",
-    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();let retentionValue=30*86400000;const retentionState=()=>({value:retentionValue,persistenceError:null,cleanupError:null});const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',retention:{read:async()=>retentionState(),set:async value=>{retentionValue=value;return {...retentionState(),status:'applied'}}},storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],peers:[],connectionStateKnown:false,clips:[],pinnedIds:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={state.peers??[]} connectionStateKnown={state.connectionStateKnown??false} pinnedIds={state.pinnedIds} onDeleteClip={async id=>{window.fixtureActions.push({action:'delete',id});if(window.failDelete)throw Error('controlled-delete-failure');setState(old=>({...old,clips:old.clips.filter(clip=>clip.id!==id)}))}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return window.copyOutcome??'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'});if(window.sendFailure)throw Object.assign(Error('controlled-send-failure'),{code:window.sendFailure})}} onSetPinned={async(id,pinned)=>{window.fixtureActions.push({action:'pin',id,pinned});setState(old=>({...old,pinnedIds:pinned?[...old.pinnedIds,id]:old.pinnedIds.filter(value=>value!==id),clips:!pinned&&window.removeOnUnpin?old.clips.filter(clip=>clip.id!==id):old.clips}))}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
+    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();let retentionValue=30*86400000;const retentionState=()=>({value:retentionValue,persistenceError:null,cleanupError:null});const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',retention:{read:async()=>retentionState(),set:async value=>{if(window.rejectSetting==='localRetentionMs')return {...retentionState(),status:'rejected',error:'controlled-policy-failure'};retentionValue=value;return {...retentionState(),status:'applied'}}},storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key===window.rejectSetting)throw Error('controlled-policy-failure');if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],peers:[],connectionStateKnown:false,clips:[],pinnedIds:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={state.peers??[]} connectionStateKnown={state.connectionStateKnown??false} pinnedIds={state.pinnedIds} onDeleteClip={async id=>{window.fixtureActions.push({action:'delete',id});if(window.failDelete)throw Error('controlled-delete-failure');setState(old=>({...old,clips:old.clips.filter(clip=>clip.id!==id)}))}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return window.copyOutcome??'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'});if(window.sendFailure)throw Object.assign(Error('controlled-send-failure'),{code:window.sendFailure})}} onSetPinned={async(id,pinned)=>{window.fixtureActions.push({action:'pin',id,pinned});setState(old=>({...old,pinnedIds:pinned?[...old.pinnedIds,id]:old.pinnedIds.filter(value=>value!==id),clips:!pinned&&window.removeOnUnpin?old.clips.filter(clip=>clip.id!==id):old.clips}))}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
   },
   bundle: true,
   platform: "browser",
@@ -1168,6 +1168,119 @@ try {
       label:
         "Android actual bindHostGeometry public synthetic port: safe/IME intersection, dp target and retained focused task across ordered geometry",
       native: false,
+      passed: true,
+    });
+  }
+  if (process.argv.includes("--settings-recovery-route")) {
+    const categories = page.getByRole("navigation", {
+      name: "Settings categories",
+    });
+    for (const [field, label, value, category, code] of [
+      [
+        "sharingLifetimeMs",
+        "Clip Sharing Lifetime",
+        "3600000",
+        "Advanced",
+        "clip-settings",
+      ],
+      ["logLevel", "Log level", "debug", "Advanced", "settings"],
+      ["theme", "Appearance", "dark", "General", "settings"],
+      [
+        "localRetentionMs",
+        "Keep unpinned history",
+        "604800000",
+        "General",
+        "clip-settings",
+      ],
+    ]) {
+      await nav.getByRole("button", { name: "Settings", exact: true }).click();
+      await categories
+        .getByRole("button", { name: category, exact: true })
+        .click();
+      await page.evaluate((field) => (window.rejectSetting = field), field);
+      await page.getByLabel(label, { exact: true }).selectOption(value);
+      await page
+        .getByRole("button", { name: /issues? needs? attention/ })
+        .click();
+      const issue = page.locator(`[data-issue-id="task:preference:${code}"]`);
+      await issue
+        .getByRole("button", {
+          name: code === "settings" ? "Open Settings" : "Open task",
+          exact: true,
+        })
+        .click();
+      assert.equal(
+        await categories
+          .getByRole("button", { name: category, exact: true })
+          .getAttribute("aria-current"),
+        "page",
+        `${field} recovery category`
+      );
+      assert.equal(
+        await page.getByLabel(label, { exact: true }).isVisible(),
+        true,
+        `${field} recovery control`
+      );
+      if (code === "clip-settings") {
+        const other = category === "General" ? "Advanced" : "General";
+        await categories
+          .getByRole("button", { name: other, exact: true })
+          .click();
+        const panel = page.locator(
+          `[data-settings-panel="${other.toLowerCase()}"]`
+        );
+        assert.equal(
+          await panel.getByText(/controlled-policy-failure/).count(),
+          0,
+          `${field} feedback stays with its control`
+        );
+        await categories
+          .getByRole("button", { name: category, exact: true })
+          .click();
+      }
+      await page.evaluate(() => (window.rejectSetting = null));
+      await page.getByLabel(label, { exact: true }).selectOption(value);
+      await page
+        .getByRole("button", { name: /issues? needs? attention/ })
+        .waitFor({ state: "hidden" });
+    }
+    report.cases.push({
+      label:
+        "Settings recovery issues open the category containing the failed field",
+      passed: true,
+    });
+  }
+  if (process.argv.includes("--settings-category-focus")) {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    const categories = page.getByRole("navigation", {
+      name: "Settings categories",
+    });
+    for (const name of ["Connections", "Advanced"]) {
+      const button = categories.getByRole("button", { name, exact: true });
+      await button.click();
+      await button.focus();
+      assert.equal(
+        await button.getAttribute("data-session-focus"),
+        `settings-category:${name.toLowerCase()}`
+      );
+      await page.setViewportSize({ width: 320, height: 650 });
+      await page.waitForTimeout(100);
+      assert.equal(
+        await button.evaluate((element) => document.activeElement === element),
+        true,
+        `${name} retains focus after resize`
+      );
+      await page.setViewportSize({ width: 1100, height: 800 });
+      await page.waitForTimeout(100);
+      assert.equal(
+        await button.evaluate((element) => document.activeElement === element),
+        true,
+        `${name} retains focus after restoring`
+      );
+    }
+    report.cases.push({
+      label: "Settings category focus survives layout changes",
       passed: true,
     });
   }

@@ -2033,6 +2033,7 @@ export function ClipboardApp({
                         key={item}
                         type="button"
                         aria-current={category === item ? "page" : undefined}
+                        data-session-focus={`settings-category:${item}`}
                         onClick={() =>
                           session.update({ settingsCategory: item })
                         }
@@ -2689,7 +2690,28 @@ export function ClipboardApp({
                     ["auto-sync", "clip-settings", "settings"].includes(
                       issue.code
                     )
-                  ? { settingsCategory: "general" as const }
+                  ? {
+                      settingsCategory:
+                        issue.code === "clip-settings" &&
+                        !appearanceSettings?.snapshot?.state.retentionError &&
+                        appearanceSettings?.feedback?.fields?.includes(
+                          "sharingLifetimeMs"
+                        ) &&
+                        !appearanceSettings.feedback.fields.includes(
+                          "localRetentionMs"
+                        )
+                          ? ("advanced" as const)
+                          : issue.code === "settings" &&
+                              !appearanceSettings?.refreshError &&
+                              appearanceSettings?.feedback?.fields?.includes(
+                                "logLevel"
+                              ) &&
+                              !appearanceSettings.feedback.fields.includes(
+                                "theme"
+                              )
+                            ? ("advanced" as const)
+                            : ("general" as const),
+                    }
                   : {}),
               showNav: issue.scope !== "history",
             });

@@ -66,9 +66,10 @@ export function ClipSettings({
   const [retryError, setRetryError] = useState<string | null>(null);
   const applied = settings.snapshot?.state;
   const disabled = !applied || settings.recoveryRequired;
-  const feedback = settings.feedback?.fields?.some(
-    (field) => field === "localRetentionMs" || field === "sharingLifetimeMs"
-  )
+  const belongsToSection = (field: string) =>
+    (field === "localRetentionMs" && section !== "lifetime") ||
+    (field === "sharingLifetimeMs" && section !== "retention");
+  const feedback = settings.feedback?.fields?.some(belongsToSection)
     ? settings.feedback
     : null;
   const retry = async () => {
@@ -157,11 +158,9 @@ export function ClipSettings({
       {retryError && (
         <p role="alert">History policy recovery failed: {retryError}</p>
       )}
-      {settings.pending &&
-        settings.pendingFields?.some(
-          (field) =>
-            field === "localRetentionMs" || field === "sharingLifetimeMs"
-        ) && <p role="status">Saving Clip settings…</p>}
+      {settings.pending && settings.pendingFields?.some(belongsToSection) && (
+        <p role="status">Saving Clip settings…</p>
+      )}
       <PreferenceRefreshNotice
         subject="Clip settings"
         error={settings.refreshError}
