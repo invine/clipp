@@ -24,8 +24,8 @@ await build({
         localAlias: "Local alias",
       };
       const longPrefix = "Prefix 🌿 Café 東京 ".repeat(2);
-      const unicodeNameA = longPrefix + "👨‍👩‍👧‍👦 é Alpha";
-      const unicodeNameB = longPrefix + "👨‍👩‍👧‍👦 é Beta";
+      const unicodeNameA = longPrefix + "👨‍👩‍👧‍👦 é Alpha";
+      const unicodeNameB = longPrefix + "👨‍👩‍👧‍👦 é Beta";
       const initialDevices = [
         firstDevice,
         { deviceId: "direct-peer", deviceName: "Direct device", displayName: "Direct device" },
@@ -43,16 +43,26 @@ await build({
       const initialPending = Array.from({ length: 4 }, (_, index) => ({
         deviceId: "pending-peer-" + (index + 1),
         deviceName: "Waiting device " + (index + 1),
-        requestVersion: "version-" + (index + 1),
+        requestVersion: index === 0 ? "stale-request-version" : "version-" + (index + 1),
       }));
       const singleDevice = { deviceId: "single-peer", deviceName: "Single device", displayName: "Single device" };
-      window.fixture = { calls: [], fail: true, holdNext: false, unicodeNameA, unicodeNameB, singleDevice };
+      window.fixture = {
+        calls: [],
+        fail: true,
+        holdNext: false,
+        unicodeNameA,
+        unicodeNameB,
+        singleDevice,
+        acceptedRequests: [],
+        currentRequestVersions: { "pending-peer-1": "current-request-version" },
+      };
       function Fixture() {
         const [devices, setDevices] = useState(initialDevices);
         const [pending, setPending] = useState(initialPending);
         window.fixture.getDevices = () => devices;
         window.fixture.setDevices = setDevices;
         window.fixture.setPending = setPending;
+        // Synthetic public controls only; this fixture makes no OS delivery claim.
         return <ClipboardApp
           clips={[]}
           devices={devices}
@@ -65,10 +75,25 @@ await build({
           ]}
           pinnedIds={[]}
           identity={{ deviceId: "local", deviceName: "This installation" }}
+          notificationControls={{
+            state: { app: "blocked", channel: "blocked", displayError: "synthetic display failure" },
+            pending: false,
+            error: true,
+            refresh: async () => {},
+            openSettings: async () => {},
+            requestPermission: async () => {},
+          }}
           onDeleteClip={() => {}}
           onUnpair={() => {}}
-          onAccept={async () => ({ status: "accepted" })}
-          onReject={async () => ({ status: "rejected" })}
+          onAccept={async (request) => {
+            window.fixture.acceptedRequests.push({ ...request });
+            if (request.requestVersion !== window.fixture.currentRequestVersions[request.deviceId]) {
+              setPending((current) => current.filter((item) => item.deviceId !== request.deviceId));
+              return { ok: false, error: "stale_request", admitted: false };
+            }
+            return { ok: true, admitted: false };
+          }}
+          onReject={async () => ({ ok: true, admitted: false })}
           onPairText={async () => ({ status: "invalid-input" })}
           onCopyPairingText={async () => ({ status: "copied" })}
           onRequestPairingCode={async () => ({ text: "fixture" })}
@@ -114,8 +139,8 @@ await build({
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const sharedUnicodePrefix = "Prefix 🌿 Café 東京 ".repeat(2);
-const fullUnicodeNameA = `${sharedUnicodePrefix}👨‍👩‍👧‍👦 é Alpha`;
-const fullUnicodeNameB = `${sharedUnicodePrefix}👨‍👩‍👧‍👦 é Beta`;
+const fullUnicodeNameA = `${sharedUnicodePrefix}👨‍👩‍👧‍👦 é Alpha`;
+const fullUnicodeNameB = `${sharedUnicodePrefix}👨‍👩‍👧‍👦 é Beta`;
 assert(
   [...fullUnicodeNameA].length <= 64 && [...fullUnicodeNameB].length <= 64
 );
@@ -128,6 +153,27 @@ try {
   await page.addScriptTag({ path: `${out}/devices-requests.js` });
   const devicesNav = page.getByRole("button", { name: /^Devices/ });
   const requestsNav = page.getByRole("button", { name: /^Requests/ });
+  const pendingCards = page.locator(".pending-card");
+  await devicesNav.click();
+  await page.locator(".issue-summary").click();
+  await page
+    .getByText(
+      "Pairing notifications need attention. Open notification settings; pending Requests remain available in Clipp.",
+      { exact: true }
+    )
+    .waitFor({ state: "visible" });
+  await page.locator(".task-dialog [data-task-return]").click();
+  assert.equal(await requestsNav.isVisible(), true);
+  await requestsNav.click();
+  assert.equal(
+    await pendingCards.count(),
+    4,
+    "pending Requests remain directly available after synthetic notification failure"
+  );
+  await page
+    .locator(".pending-card")
+    .filter({ hasText: "Waiting device 1" })
+    .waitFor({ state: "visible" });
   await devicesNav.click();
   const trustedRows = page.locator(".peer-item:not(.active)");
   assert.equal(await trustedRows.count(), 20, "all 20 Trusted Devices render");
@@ -191,7 +237,6 @@ try {
     "Requests count remains visible"
   );
   await requestsNav.click();
-  const pendingCards = page.locator(".pending-card");
   assert.equal(
     await pendingCards.count(),
     4,
@@ -315,6 +360,37 @@ try {
     .locator(".pending-card")
     .filter({ hasText: "Waiting device" })
     .waitFor({ state: "visible" });
+  const staleRequestCard = pendingCards.filter({ hasText: "Waiting device 1" });
+  await staleRequestCard
+    .getByRole("button", { name: "Accept", exact: true })
+    .click();
+  await page
+    .getByRole("status")
+    .filter({
+      hasText:
+        "Request expired, changed or is unavailable. Refresh Requests and review it again.",
+    })
+    .waitFor({ state: "visible" });
+  assert.deepEqual(
+    await page.evaluate(() => window.fixture.acceptedRequests),
+    [
+      {
+        deviceId: "pending-peer-1",
+        deviceName: "Waiting device 1",
+        requestVersion: "stale-request-version",
+      },
+    ],
+    "Accept receives the versioned PendingRequest from the visible card"
+  );
+  await page.waitForFunction(
+    () => document.querySelectorAll(".pending-list .pending-card").length === 3
+  );
+  assert.equal(await pendingCards.count(), 3);
+  assert.equal(await staleRequestCard.count(), 0);
+  await pendingCards
+    .filter({ hasText: "Waiting device 2" })
+    .waitFor({ state: "visible" });
+  assert.match(await requestsNav.innerText(), /\(3\)/);
   await page.evaluate(() => {
     window.fixture.setDevices([]);
     window.fixture.setPending([]);
