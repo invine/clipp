@@ -33,9 +33,7 @@ try {
       content: await readFile(`${repo}/${css}`, "utf8"),
     });
   await page.addScriptTag({ path: `${out}/devices-requests.js` });
-  await page
-    .getByRole("button", { name: "Open management", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Devices/ }).click();
   await page
     .getByRole("button", { name: "Edit Local Device Alias", exact: true })
     .click();
