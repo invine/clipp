@@ -24,7 +24,7 @@ const state={identity:{deviceId:'local',deviceName:'Local'},devices:[{deviceId:'
 window.rotateFixtureIdentity=id=>{state.identity={deviceId:id,deviceName:'Fixture new authority'};window.publish();};
 window.publish=()=>{state.pairingState.revision++;listeners.forEach(f=>f({type:'runtimeState',state:structuredClone(state)}));};
 let handoffCount=0;window.deliver=destination=>{const id='fixture-'+(++handoffCount);portListener({type:'destination',handoff:{id,destination}});return id;};
-const runtime={onMessage:{addListener:f=>listeners.add(f),removeListener:f=>listeners.delete(f)},connect:()=>({name:'clipp-management-page-v1',postMessage:value=>window.actions.push({port:value}),disconnect:()=>{},onMessage:{addListener:f=>{portListener=f;}},onDisconnect:{addListener:()=>{}}}),sendMessage(message,done){window.actions.push(message);queueMicrotask(()=>{
+const runtime={onMessage:{addListener:f=>listeners.add(f),removeListener:f=>listeners.delete(f)},connect:()=>({name:'clipp-management-page-v1',postMessage:value=>window.actions.push({port:value}),disconnect:()=>{},onMessage:{addListener:f=>{portListener=f;}},onDisconnect:{addListener:()=>{}}}),sendMessage(message,done){if(typeof done!=="function")return new Promise(resolve=>runtime.sendMessage(message,resolve));window.actions.push(message);queueMicrotask(()=>{
 let response={ok:true};switch(message.type){
 case 'getRuntimeAuthority':response={sessionId:'runtime'};break;case 'getRuntimeState':response={state:structuredClone(state)};break;case 'getInitializationError':response={error:null};break;
 case 'getClipHistory':response={ok:true,snapshot:structuredClone(history)};break;case 'getSettings':response={ok:true,snapshot:structuredClone(settings)};break;
@@ -285,9 +285,12 @@ try {
   await page.evaluate(() => (window.copyFailure = false));
   await dialog.getByRole("button", { name: "Copy Clip", exact: true }).click();
   await dialog.getByRole("button", { name: "Pin Clip", exact: true }).click();
-  await dialog
-    .getByRole("button", { name: "Unpin Clip", exact: true })
-    .waitFor();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[role="dialog"] [aria-label="Pin Clip"]')
+        ?.getAttribute("aria-pressed") === "true"
+  );
   await page.evaluate(() => (window.deleteFailure = true));
   await dialog
     .getByRole("button", { name: "Delete Clip", exact: true })

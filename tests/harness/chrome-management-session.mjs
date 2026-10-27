@@ -110,9 +110,12 @@ queueMicrotask(()=>callback?.(reply));}}};`,
     fixture.messages.some((m) => m.type === "reuseClip" && m.id === "clip")
   );
   await details.getByRole("button", { name: "Pin Clip", exact: true }).click();
-  await details
-    .getByRole("button", { name: "Unpin Clip", exact: true })
-    .waitFor();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[role="dialog"] [aria-label="Pin Clip"]')
+        ?.getAttribute("aria-pressed") === "true"
+  );
   await details
     .getByRole("button", { name: "Delete Clip", exact: true })
     .click();

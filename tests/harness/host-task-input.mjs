@@ -70,10 +70,14 @@ try {
   await page.addStyleTag({ path: join(out, "consumer.css") });
   await page.addScriptTag({ path: join(out, "consumer.js") });
   const nav = page.getByRole("navigation", { name: "Clipp destinations" });
+  const filters = page.getByRole("button", { name: "Filters", exact: true });
+  if ((await filters.getAttribute("aria-expanded")) === "false")
+    await filters.click();
   await page
-    .getByRole("button", { name: "More Clip actions", exact: true })
+    .getByRole("group", { name: "History filters" })
+    .getByRole("button", { name: "All time", exact: true })
     .click();
-  await page.locator(".history-menu-dropdown").waitFor();
+  await page.locator(".time-filter-wrap .time-menu").waitFor();
   assert.equal(
     await page.evaluate(() =>
       window
@@ -82,7 +86,9 @@ try {
     ),
     "overlay"
   );
-  await page.locator(".history-menu-dropdown").waitFor({ state: "hidden" });
+  await page
+    .locator(".time-filter-wrap .time-menu")
+    .waitFor({ state: "hidden" });
   assert.deepEqual(
     await page.evaluate(() => window.session.getSnapshot().tasks),
     []
@@ -249,7 +255,9 @@ try {
   await page.keyboard.press("Escape");
   await pairing.waitFor();
   await page.evaluate(() => {
-    document.querySelector("[data-session-focus=pairing-start]")?.remove();
+    document
+      .querySelector("[data-session-focus=pairing-start]")
+      ?.removeAttribute("data-session-focus");
   });
   await page.keyboard.press("Escape");
   await page.waitForFunction(
@@ -259,7 +267,12 @@ try {
     await page.evaluate(() => document.activeElement.dataset.sessionFocus),
     "workspace"
   );
-  report.cases.push("disappeared invoker returns to workspace");
+  await page
+    .getByRole("button", { name: "Pair this device", exact: true })
+    .evaluate((element) =>
+      element.setAttribute("data-session-focus", "pairing-start")
+    );
+  report.cases.push("unavailable invoker focus key returns to workspace");
   // Real ClipboardApp/RecoveryIssues: the failed public Pairing submission above
   // creates its own closed Technical details disclosure, never a seeded issue.
   await page.locator("button.issue-summary").click();
