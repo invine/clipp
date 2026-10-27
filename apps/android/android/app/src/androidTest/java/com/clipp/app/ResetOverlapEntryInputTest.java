@@ -255,7 +255,27 @@ public final class ResetOverlapEntryInputTest {
         openHistory();
         assertTrue("Incomplete-reset SEND must not reappear", "0".equals(web.evaluate(matchingCards(marker("during-send")) + ".length")));
         assertTrue("Incomplete-reset PROCESS_TEXT must not reappear", "0".equals(web.evaluate(matchingCards(marker("during-process")) + ".length")));
-        nativeIngress(Intent.ACTION_SEND, marker("after-send"));
+        String freshId = nativeIngress(Intent.ACTION_SEND, marker("after-send"));
+        assertFreshClipSurvivesOwnerRecreation(freshId, deadline);
+    }
+
+    private void assertFreshClipSurvivesOwnerRecreation(String freshId, long deadline) throws Exception {
+        String formerDocument = lastProgress.getString("documentId");
+        String currentPeer = lastProgress.getString("currentPeerId");
+        MainActivity formerActivity = resumedActivity;
+        scenario.recreate();
+        JSONObject reopened = awaitProgress("replacement-ready", deadline);
+        assertReplacement(reopened, 1);
+        assertEquals("Fresh Clip must remain on the same replacement identity", currentPeer, reopened.getString("currentPeerId"));
+        assertNotEquals("Durability check requires a new public document", formerDocument, reopened.getString("documentId"));
+        assertTrue("Durability check requires real Activity reconstruction",
+            formerActivity != null && formerActivity.isDestroyed() && resumedActivity != null
+                && resumedActivity != formerActivity && created.get() == 3 && destroyed.get() == 2);
+        openHistory();
+        awaitUi("the same fresh Local Clip is visible after native owner recreation",
+            matchingCards(marker("after-send")) + ".length === 1 && document.querySelectorAll('.history-card[data-clip-id]').length === 1 && "
+                + matchingCards(marker("after-send")) + "[0].getAttribute('data-clip-id') === " + JSONObject.quote(freshId)
+                + " && " + matchingCards(marker("after-send")) + "[0].querySelector('.pill-source')?.textContent.trim() === 'Local'");
     }
 
     private void assertNativeRefusal(String action, String marker) throws Exception {
