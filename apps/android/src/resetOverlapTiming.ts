@@ -41,6 +41,18 @@ export function overlapFailureReason(error: unknown): string {
       return "start-completed-early";
     case "overlap_reset_completed_early":
       return "reset-completed-early";
+    case "overlap_not_held":
+      return "gate-not-held";
+    case "overlap_already_armed":
+      return "already-armed";
+    case "overlap_start_already_used":
+      return "start-already-used";
+    case "overlap_fence_already_used":
+      return "fence-already-used";
+    case "background_persistence_unknown":
+      return "background-persistence-unknown";
+    case "background_continuity_unavailable":
+      return "background-unavailable";
     default:
       return "unclassified";
   }

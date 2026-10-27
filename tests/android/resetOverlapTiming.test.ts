@@ -35,3 +35,18 @@ test("overlap failures expose only a finite reason code", () => {
   );
   expect(overlapFailureReason("PRIVATE_SENTINEL")).toBe("unclassified");
 });
+
+test("known acceptance gate and background errors use finite reason codes", () => {
+  expect(overlapFailureReason(new Error("overlap_not_held"))).toBe(
+    "gate-not-held"
+  );
+  expect(overlapFailureReason(new Error("overlap_already_armed"))).toBe(
+    "already-armed"
+  );
+  expect(
+    overlapFailureReason(new Error("background_persistence_unknown"))
+  ).toBe("background-persistence-unknown");
+  expect(
+    overlapFailureReason(new Error("background_continuity_unavailable"))
+  ).toBe("background-unavailable");
+});

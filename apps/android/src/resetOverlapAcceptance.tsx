@@ -2,7 +2,10 @@ import { createResetOverlapContinue } from "./resetOverlapContinue";
 import { overlapFailureReason } from "./resetOverlapTiming";
 import { resetOverlapHistoryAccepted } from "./resetOverlapHistory";
 import { overlapPorts } from "./resetOverlapAcceptancePorts";
-import { runResetOverlap } from "./resetOverlapJourney";
+import {
+  runResetOverlap,
+  type OverlapFailureWitness,
+} from "./resetOverlapJourney";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { v4 as uuidv4 } from "uuid";
@@ -21,6 +24,7 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
   const root = createRoot(rootElement);
   const documentId = uuidv4();
   const expiresAt = Date.now() + manifest.deadlineMs;
+  let overlapFailure: OverlapFailureWitness | undefined;
   let disposed = false;
   let ready = false;
   let refreshPending = false;
@@ -45,6 +49,10 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
     "historyAvailable",
     "receiptPresent",
     "error",
+    "failurePhase",
+    "failureStartGate",
+    "failureFenceGate",
+    "failureKind",
   ]);
   const emit = (
     stage: string,
@@ -336,6 +344,9 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
       try {
         result = await runResetOverlap({
           ports: overlapPorts,
+          failure: (witness) => {
+            overlapFailure = witness;
+          },
           start: () => owner.client.setBackgroundContinuity(true),
           begin: () =>
             owner.identityReset.begin({
@@ -392,6 +403,14 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
           finish("operation-unconfirmed", {
             operationId: manifest.operationId,
             error: overlapFailureReason(error),
+            ...(overlapFailure
+              ? {
+                  failurePhase: overlapFailure.phase,
+                  failureStartGate: overlapFailure.startGate,
+                  failureFenceGate: overlapFailure.fenceGate,
+                  failureKind: overlapFailure.errorKind,
+                }
+              : {}),
           })
         );
       } else refresh();

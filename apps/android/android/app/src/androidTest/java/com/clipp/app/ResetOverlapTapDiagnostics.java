@@ -23,6 +23,27 @@ final class ResetOverlapTapDiagnostics {
         } catch (NumberFormatException error) { return -1; }
     }
 
+    static String finiteFailure(String key, String value) {
+        if (value == null) return "unknown";
+        switch (key) {
+            case "failurePhase":
+                switch (value) {
+                    case "await-start-gate": case "stage-start": case "begin": case "await-fence-gate":
+                    case "stage-fence": case "await-ingress": case "release-fence": case "release-start":
+                    case "await-start": case "await-reset": return value;
+                    default: return "unknown";
+                }
+            case "failureStartGate": case "failureFenceGate":
+                switch (value) {
+                    case "waiting-native": case "held": case "released": case "failed": return value;
+                    default: return "unknown";
+                }
+            case "failureKind":
+                switch (value) { case "type-error": case "error": case "non-error": return value; default: return "unknown"; }
+            default: return "unknown";
+        }
+    }
+
     static String publicStage(String value) {
         if (value == null) return "other";
         switch (value) {
@@ -37,7 +58,8 @@ final class ResetOverlapTapDiagnostics {
         if (value == null) return "unclassified";
         switch (value) {
             case "overlap-deadline": case "start-unavailable": case "fence-unavailable":
-            case "start-completed-early": case "reset-completed-early": return value;
+            case "start-completed-early": case "reset-completed-early": case "gate-not-held": case "already-armed":
+            case "start-already-used": case "fence-already-used": case "background-persistence-unknown": case "background-unavailable": return value;
             default: return "unclassified";
         }
     }

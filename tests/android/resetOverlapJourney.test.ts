@@ -146,3 +146,86 @@ test("observed stages report the remaining bounded monotonic window", async () =
   expect(remaining[0]).toBeLessThanOrEqual(1000);
   expect(remaining[1]).toBeGreaterThanOrEqual(0);
 });
+
+test("failure witness reports its finite phase and gate states without exposing the rejection", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const secret = new Error("PRIVATE_SENTINEL");
+  const observed: unknown[] = [];
+  await expect(
+    runResetOverlap({
+      ports,
+      start: () => background.start(true),
+      begin: async () => {
+        await reset.acquireFence();
+        throw secret;
+      },
+      ingress: async () => {},
+      stage: () => {},
+      failure: (witness) => observed.push(witness),
+    })
+  ).rejects.toBe(secret);
+  expect(observed).toEqual([
+    {
+      phase: "await-reset",
+      startGate: "released",
+      fenceGate: "released",
+      errorKind: "error",
+    },
+  ]);
+  expect(JSON.stringify(observed)).not.toContain("PRIVATE_SENTINEL");
+});
+
+test("failure witness distinguishes ingress rejection while both gates are held", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const observed: unknown[] = [];
+  await expect(
+    runResetOverlap({
+      ports,
+      start: () => background.start(true),
+      begin: async () => {
+        await reset.acquireFence();
+        return "done";
+      },
+      ingress: async () => {
+        throw new TypeError("PRIVATE_SENTINEL");
+      },
+      stage: () => {},
+      failure: (witness) => observed.push(witness),
+    })
+  ).rejects.toThrow(TypeError);
+  expect(observed).toEqual([
+    {
+      phase: "await-ingress",
+      startGate: "held",
+      fenceGate: "held",
+      errorKind: "type-error",
+    },
+  ]);
+});
+
+test("a throwing diagnostic observer cannot replace the original error", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const error = new Error("PRIVATE_SENTINEL");
+  await expect(
+    runResetOverlap({
+      ports,
+      start: async () => {
+        throw error;
+      },
+      begin: async () => "unused",
+      ingress: async () => {},
+      stage: () => {},
+      failure: () => {
+        throw new Error("observer_failure");
+      },
+    })
+  ).rejects.toBe(error);
+});

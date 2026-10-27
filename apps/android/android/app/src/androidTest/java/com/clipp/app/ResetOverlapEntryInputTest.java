@@ -72,7 +72,8 @@ public final class ResetOverlapEntryInputTest {
     private static final String[] PUBLIC_FIELDS = {"version", "caseId", "documentId", "stage", "operationId",
         "currentPeerId", "formerPeerId", "generatedPeerId", "clipCount", "pinnedCount", "markerMatchCount",
         "autoSync", "theme", "backgroundEnabled", "backgroundStateKnown", "localRetentionMs",
-        "sharingLifetimeMs", "historyAvailable", "receiptPresent", "error", "overlapElapsedMs", "overlapRemainingMs"};
+        "sharingLifetimeMs", "historyAvailable", "receiptPresent", "error", "overlapElapsedMs", "overlapRemainingMs",
+        "failurePhase", "failureStartGate", "failureFenceGate", "failureKind"};
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     @Rule public final TestName method = new TestName();
     @Rule public final TestWatcher outcome = new TestWatcher() {
@@ -436,6 +437,9 @@ public final class ResetOverlapEntryInputTest {
         assertEquals("Bounded public entry version", 1, value.getInt("version"));
         assertEquals("Public observation belongs to the fixed packaged case", nonce, value.getString("caseId"));
         documentId(value.getString("documentId"));
+        for (String key : new String[] {"failurePhase", "failureStartGate", "failureFenceGate", "failureKind"}) {
+            if (value.has(key)) value.put(key, ResetOverlapTapDiagnostics.finiteFailure(key, value.optString(key)));
+        }
         String trace = value.getString("stage") + ":" + value.getString("documentId");
         if (!trace.equals(previousTrace)) {
             if (progressTrace.length() < 16) {
@@ -603,7 +607,8 @@ public final class ResetOverlapEntryInputTest {
                 + "if(!e || !e.textContent || e.textContent.length>4096)return null; const p=JSON.parse(e.textContent);"
                 + "const bounded=v=>typeof v==='string' && v.length<=128?v:'';"
                 + "return JSON.stringify({origin:location.origin,caseId:bounded(p.caseId),documentId:bounded(p.documentId),"
-                + "stage:bounded(p.stage),error:bounded(p.error)});})()");
+                + "stage:bounded(p.stage),error:bounded(p.error),failurePhase:bounded(p.failurePhase),"
+                + "failureStartGate:bounded(p.failureStartGate),failureFenceGate:bounded(p.failureFenceGate),failureKind:bounded(p.failureKind)});})()");
             if ("null".equals(selected)) return null;
             JSONObject value = new JSONObject(selected);
             if (resumedActivity != owner || owner.isDestroyed() || created.get() != createdBefore || destroyed.get() != destroyedBefore
@@ -611,6 +616,10 @@ public final class ResetOverlapEntryInputTest {
                 || !expectedDocument.equals(value.optString("documentId"))) return null;
             return new JSONObject().put("stage", ResetOverlapTapDiagnostics.publicStage(value.optString("stage")))
                 .put("error", ResetOverlapTapDiagnostics.publicError(value.optString("error")))
+                .put("failurePhase", ResetOverlapTapDiagnostics.finiteFailure("failurePhase", value.optString("failurePhase")))
+                .put("failureStartGate", ResetOverlapTapDiagnostics.finiteFailure("failureStartGate", value.optString("failureStartGate")))
+                .put("failureFenceGate", ResetOverlapTapDiagnostics.finiteFailure("failureFenceGate", value.optString("failureFenceGate")))
+                .put("failureKind", ResetOverlapTapDiagnostics.finiteFailure("failureKind", value.optString("failureKind")))
                 .put("observedUptimeMs", SystemClock.uptimeMillis());
         }, 1500);
         try {

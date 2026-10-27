@@ -28,6 +28,10 @@ public final class ResetOverlapTapDiagnosticsFixture {
         if (!"other".equals(ResetOverlapTapDiagnostics.publicStage("PRIVATE_SENTINEL"))) throw new AssertionError();
         if (!"overlap-deadline".equals(ResetOverlapTapDiagnostics.publicError("overlap-deadline"))) throw new AssertionError();
         if (!"unclassified".equals(ResetOverlapTapDiagnostics.publicError("PRIVATE_SENTINEL"))) throw new AssertionError();
+        if (!"await-reset".equals(ResetOverlapTapDiagnostics.finiteFailure("failurePhase", "await-reset"))) throw new AssertionError();
+        if (!"released".equals(ResetOverlapTapDiagnostics.finiteFailure("failureStartGate", "released"))) throw new AssertionError();
+        if (!"unknown".equals(ResetOverlapTapDiagnostics.finiteFailure("failureKind", "PRIVATE_SENTINEL"))) throw new AssertionError();
+        if (!"unknown".equals(ResetOverlapTapDiagnostics.finiteFailure("PRIVATE_SENTINEL", "error"))) throw new AssertionError();
         try {
             ResetOverlapBoundedObservation.Result<String> success = ResetOverlapBoundedObservation.read(() -> "observed", 500);
             if (!"observed".equals(success.status) || !"observed".equals(success.value)) throw new AssertionError();
