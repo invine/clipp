@@ -176,8 +176,25 @@ describe("Device Identity initialization", () => {
     await manager.recordRemoteDeviceName(remotePeerId, "\u0001", 3n);
     expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
     expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({ deviceName: "Phone", nameRevision: "3" });
-    await manager.recordRemoteDeviceName(remotePeerId, "Large revision", 9_007_199_254_740_993n);
+    await manager.recordRemoteDeviceName(
+      remotePeerId,
+      "Large revision",
+      9_007_199_254_740_993n
+    );
     expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
+    expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({
+      deviceName: "Large revision",
+      nameRevision: "9007199254740993",
+    });
+    await expect(
+      manager.setLocalDeviceAlias(remotePeerId, "")
+    ).resolves.toEqual({
+      deviceId: remotePeerId,
+      deviceName: "Large revision",
+      displayName: "Large revision",
+      localAlias: undefined,
+    });
+    expect(stored?.localDeviceAliases?.[remotePeerId]).toBeUndefined();
     expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({
       deviceName: "Large revision",
       nameRevision: "9007199254740993",

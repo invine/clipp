@@ -626,6 +626,9 @@ export function ClipboardApp({
     deviceId: string;
     identityId: string | undefined;
   } | null>(null);
+  const [deviceCopyFeedback, setDeviceCopyFeedback] = useState<string | null>(
+    null
+  );
   const [relaysOpen, setRelaysOpen] = useState(true);
   const [addingRelay, setAddingRelay] = useState(false);
   const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(
@@ -1189,6 +1192,7 @@ export function ClipboardApp({
   }
 
   function beginEditDeviceName(device: Device) {
+    setDeviceCopyFeedback(null);
     session.open({
       kind: "alias",
       entity: device.deviceId,
@@ -1215,6 +1219,38 @@ export function ClipboardApp({
       if (!aliasSession.getSnapshot().targetId)
         session.complete("alias", submittedTarget ?? undefined);
     });
+  }
+
+  function useReportedDeviceName() {
+    if (!identityReady) return;
+    const submittedTarget = aliasSession.getSnapshot().targetId;
+    void aliasSession
+      .save(async (targetId) => {
+        if (
+          !onRenameDevice ||
+          !devices.some((candidate) => candidate.deviceId === targetId)
+        ) {
+          throw new Error("device_unavailable");
+        }
+        // An empty value is the existing runtime contract for deleting only
+        // this installation's Local Device Alias.
+        return onRenameDevice(targetId, "");
+      })
+      .then(() => {
+        if (!aliasSession.getSnapshot().targetId)
+          session.complete("alias", submittedTarget ?? undefined);
+      });
+  }
+
+  async function copyDeviceValue(label: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setDeviceCopyFeedback(`${label} copied.`);
+    } catch {
+      setDeviceCopyFeedback(
+        `Could not copy ${label.toLowerCase()}. Select and copy it manually.`
+      );
+    }
   }
 
   async function revokeDevice(device: Device): Promise<void> {
@@ -1681,6 +1717,7 @@ export function ClipboardApp({
             <div className="peer-list">
               {identity && (
                 <>
+                  <div className="nav-section-label">This device</div>
                   <div className="peer-item active">
                     <div className="peer-avatar" style={{ minWidth: 32 }}>
                       L
@@ -1864,7 +1901,7 @@ export function ClipboardApp({
 
             <div>
               <div className="nav-section-label" style={{ marginTop: 14 }}>
-                Connected devices
+                Trusted Devices
               </div>
               <div
                 style={{
@@ -3039,11 +3076,39 @@ export function ClipboardApp({
                 }}
               >
                 {alias && (
-                  <p>
-                    Device Name: {target?.deviceName}
-                    <br />
-                    Peer ID: {edit.targetId}
-                  </p>
+                  <div className="peer-full-value">
+                    <div>
+                      <span>
+                        Device Name: {target?.deviceName || "Unknown"}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!target?.deviceName}
+                        onClick={() =>
+                          void copyDeviceValue(
+                            "Device Name",
+                            target?.deviceName || ""
+                          )
+                        }
+                      >
+                        Copy Device Name
+                      </button>
+                    </div>
+                    <div>
+                      <span>Peer ID: {edit.targetId}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void copyDeviceValue("Peer ID", edit.targetId || "")
+                        }
+                      >
+                        Copy Peer ID
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {alias && deviceCopyFeedback && (
+                  <p role="status">{deviceCopyFeedback}</p>
                 )}
                 <label>
                   {title}
@@ -3075,6 +3140,15 @@ export function ClipboardApp({
                 >
                   Save {title}
                 </button>
+                {alias && (
+                  <button
+                    type="button"
+                    disabled={edit.pending || !identityReady || !target}
+                    onClick={useReportedDeviceName}
+                  >
+                    Use device name
+                  </button>
+                )}
               </TaskDialog>
             );
           })(),
