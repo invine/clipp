@@ -55,7 +55,7 @@ try {
   assert.equal(await requestsNav.isVisible(), true);
   assert.match(
     await requestsNav.innerText(),
-    /4/,
+    /\(4\)/,
     "Requests count remains visible"
   );
   await requestsNav.click();
