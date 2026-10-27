@@ -106,7 +106,7 @@ await build({
   stdin: {
     resolveDir: repo,
     loader: "tsx",
-    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],peers:[],connectionStateKnown:false,clips:[],pinnedIds:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={state.peers??[]} connectionStateKnown={state.connectionStateKnown??false} pinnedIds={state.pinnedIds} onDeleteClip={async id=>{window.fixtureActions.push({action:'delete',id});if(window.failDelete)throw Error('controlled-delete-failure');setState(old=>({...old,clips:old.clips.filter(clip=>clip.id!==id)}))}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return window.copyOutcome??'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'});if(window.sendFailure)throw Object.assign(Error('controlled-send-failure'),{code:window.sendFailure})}} onSetPinned={async(id,pinned)=>{window.fixtureActions.push({action:'pin',id,pinned});setState(old=>({...old,pinnedIds:pinned?[...old.pinnedIds,id]:old.pinnedIds.filter(value=>value!==id),clips:!pinned&&window.removeOnUnpin?old.clips.filter(clip=>clip.id!==id):old.clips}))}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
+    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();let retentionValue=30*86400000;const retentionState=()=>({value:retentionValue,persistenceError:null,cleanupError:null});const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',retention:{read:async()=>retentionState(),set:async value=>{retentionValue=value;return {...retentionState(),status:'applied'}}},storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],peers:[],connectionStateKnown:false,clips:[],pinnedIds:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={state.peers??[]} connectionStateKnown={state.connectionStateKnown??false} pinnedIds={state.pinnedIds} onDeleteClip={async id=>{window.fixtureActions.push({action:'delete',id});if(window.failDelete)throw Error('controlled-delete-failure');setState(old=>({...old,clips:old.clips.filter(clip=>clip.id!==id)}))}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return window.copyOutcome??'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'});if(window.sendFailure)throw Object.assign(Error('controlled-send-failure'),{code:window.sendFailure})}} onSetPinned={async(id,pinned)=>{window.fixtureActions.push({action:'pin',id,pinned});setState(old=>({...old,pinnedIds:pinned?[...old.pinnedIds,id]:old.pinnedIds.filter(value=>value!==id),clips:!pinned&&window.removeOnUnpin?old.clips.filter(clip=>clip.id!==id):old.clips}))}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
   },
   bundle: true,
   platform: "browser",
@@ -569,6 +569,10 @@ try {
   }
   if (process.argv.includes("--relay-task")) {
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Settings categories" })
+      .getByRole("button", { name: "Connections", exact: true })
+      .click();
     await page.getByRole("button", { name: "Add relay", exact: true }).click();
     const relay = page.getByRole("dialog", {
       name: "Relay configuration",
@@ -1167,17 +1171,168 @@ try {
       passed: true,
     });
   }
+  if (process.argv.includes("--m3-settings")) {
+    await page.setViewportSize({ width: 320, height: 650 });
+    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    const categories = page.getByRole("navigation", {
+      name: "Settings categories",
+    });
+    await categories
+      .getByRole("button", { name: "General", exact: true })
+      .click();
+    assert.equal(
+      await page
+        .getByLabel("Keep unpinned history", { exact: true })
+        .isVisible(),
+      true
+    );
+    assert.equal(
+      await page
+        .getByLabel("Clip Sharing Lifetime", { exact: true })
+        .isVisible(),
+      false
+    );
+    await page
+      .getByLabel("Keep unpinned history", { exact: true })
+      .selectOption(String(7 * 86400000));
+    await page.getByLabel("Keep unpinned history", { exact: true }).waitFor();
+    await categories
+      .getByRole("button", { name: "Connections", exact: true })
+      .click();
+    assert.equal(
+      await page
+        .getByText("No relays configured. Direct connections remain available.")
+        .isVisible(),
+      true
+    );
+    await page.getByRole("button", { name: "Add relay", exact: true }).click();
+    const editor = page.getByRole("dialog", { name: "Relay configuration" });
+    await editor
+      .getByLabel("Name", { exact: true })
+      .fill("Retained relay draft");
+    await page.setViewportSize({ width: 1100, height: 800 });
+    assert.equal(
+      await editor.getByLabel("Name", { exact: true }).inputValue(),
+      "Retained relay draft"
+    );
+    await editor
+      .getByRole("button", { name: "Close relay editor", exact: true })
+      .click();
+    await categories
+      .getByRole("button", { name: "General", exact: true })
+      .click();
+    await categories
+      .getByRole("button", { name: "Connections", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Add relay", exact: true }).click();
+    assert.equal(
+      await editor.getByLabel("Name", { exact: true }).inputValue(),
+      "Retained relay draft"
+    );
+    await editor
+      .getByRole("button", { name: "Cancel relay edit", exact: true })
+      .click();
+    await page.evaluate(() =>
+      window.publishFixture({
+        managedRelayConfigurations: Array.from({ length: 5 }, (_, i) => ({
+          key: `relay-${i}`,
+          name: `Relay ${i}`,
+          kind: "managed",
+          discoveryUrl: `https://${"long".repeat(14)}-${i}.example.test/v1/relay`,
+        })),
+      })
+    );
+    const relay = page.locator("details.managed-relay-card").first();
+    assert.equal(await relay.locator("summary").isVisible(), true);
+    assert.equal(
+      await relay
+        .getByRole("button", { name: "Remove", exact: true })
+        .isVisible(),
+      false
+    );
+    await relay.locator("summary").click();
+    assert.equal(
+      await relay
+        .getByRole("button", { name: "Remove", exact: true })
+        .isVisible(),
+      true
+    );
+    assert.equal(
+      await relay.locator(".relay-address").innerText(),
+      `https://${"long".repeat(14)}-0.example.test/v1/relay`
+    );
+    await relay.getByRole("button", { name: "Remove", exact: true }).click();
+    await page
+      .getByText(/controlled-relay-failure/)
+      .first()
+      .waitFor();
+    await categories
+      .getByRole("button", { name: "Advanced", exact: true })
+      .click();
+    assert.equal(
+      await page
+        .getByLabel("Clip Sharing Lifetime", { exact: true })
+        .isVisible(),
+      true
+    );
+    assert.equal(
+      await page
+        .getByLabel("Keep unpinned history", { exact: true })
+        .isVisible(),
+      false
+    );
+    await page
+      .getByLabel("Clip Sharing Lifetime", { exact: true })
+      .selectOption(String(3600000));
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Clear all local history", exact: true })
+        .isVisible(),
+      true
+    );
+    await page.setViewportSize({ width: 320, height: 650 });
+    assert.equal(
+      await categories
+        .getByRole("button", { name: "Advanced", exact: true })
+        .getAttribute("aria-current"),
+      "page"
+    );
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth
+    );
+    assert.equal(overflow, false, "no page-level horizontal overflow");
+    await page.screenshot({ path: join(out, "m3-advanced-320.png") });
+    await categories
+      .getByRole("button", { name: "General", exact: true })
+      .click();
+    assert.equal(
+      await page
+        .getByLabel("Keep unpinned history", { exact: true })
+        .inputValue(),
+      String(7 * 86400000)
+    );
+    await page.screenshot({ path: join(out, "m3-general-320.png") });
+    report.cases.push({
+      label: `${host} M3 categories, real settings writes, retained relay editor through resize and Advanced Clear`,
+      passed: true,
+    });
+  }
   if (process.argv.includes("--clear-focus")) {
     await page.setViewportSize({ width: 800, height: 800 });
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "100%";
       window.deferClear = true;
     });
-    await nav.getByRole("button", { name: "History", exact: true }).click();
-    const filters = page.getByRole("button", { name: "Filters", exact: true });
-    if ((await filters.getAttribute("aria-expanded")) === "false")
-      await filters.click();
-    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Settings categories" })
+      .getByRole("button", { name: "Advanced", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Clear all local history", exact: true })
+      .click();
     const confirmation = page.getByRole("alertdialog", {
       name: "Clear all local history?",
       exact: true,

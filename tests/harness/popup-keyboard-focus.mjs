@@ -756,6 +756,10 @@ try {
         assert.equal(returned.task, null);
       }
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page
+        .getByRole("navigation", { name: "Settings categories" })
+        .getByRole("button", { name: "Advanced", exact: true })
+        .click();
       const log = page.getByLabel("Log level", { exact: true });
       await log.waitFor();
       await page.waitForFunction(

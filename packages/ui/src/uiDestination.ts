@@ -16,7 +16,13 @@ export type UiDestination =
   | { kind: "devices" }
   | {
       kind: "settings";
-      category?: "general" | "appearance" | "clips" | "relays";
+      category?:
+        | "general"
+        | "connections"
+        | "advanced"
+        | "appearance"
+        | "clips"
+        | "relays";
     };
 export function parseUiDestination(value: unknown): UiDestination | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -53,7 +59,14 @@ export function parseUiDestination(value: unknown): UiDestination | null {
   if (v.entity !== undefined && !identifier(v.entity)) return null;
   if (
     v.category !== undefined &&
-    !["general", "appearance", "clips", "relays"].includes(String(v.category))
+    ![
+      "general",
+      "connections",
+      "advanced",
+      "appearance",
+      "clips",
+      "relays",
+    ].includes(String(v.category))
   )
     return null;
   if (v.context !== undefined) {

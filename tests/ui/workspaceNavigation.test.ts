@@ -499,3 +499,38 @@ it("Devices retains honest text status when a reported path is no longer connect
   expect(render([], true)).toContain("Offline");
   expect(render([], false)).toContain("Connection status unknown");
 });
+
+it("organizes routine settings, connections, and advanced tasks by session category", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, {
+        ...props,
+        session,
+        onSetAutoSync: async () => ({
+          status: "applied" as const,
+          autoSync: true,
+        }),
+        onSetLocalRetention: async () => {},
+        onMutateManagedRelay: async () => ({
+          status: "applied" as const,
+          configurations: [],
+          configurationApplied: true,
+          credentialsRemoved: [],
+        }),
+      })
+    );
+  const general = render();
+  expect(general).toContain('aria-label="Settings categories"');
+  expect(general).toMatch(/aria-current="page"[^>]*>General/);
+  expect(general).toContain('data-settings-panel="general"');
+  expect(general).toContain('data-settings-panel="connections" hidden=""');
+  expect(general).toContain('data-settings-panel="advanced" hidden=""');
+  session.update({ settingsCategory: "advanced" });
+  const advanced = render();
+  expect(advanced).toMatch(/aria-current="page"[^>]*>Advanced/);
+  expect(advanced).toContain('data-settings-panel="advanced"');
+  expect(advanced).toContain('data-session-focus="settings-clear"');
+  expect(advanced).not.toContain("Generate new identity");
+});

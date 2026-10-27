@@ -91,10 +91,14 @@ try {
     "actual ClipboardApp menu consumes native adapter Back before root"
   );
   if (!process.argv.includes("--qr-only")) {
-    const filters = page.getByRole("button", { name: "Filters", exact: true });
-    if ((await filters.getAttribute("aria-expanded")) === "false")
-      await filters.click();
-    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Settings categories" })
+      .getByRole("button", { name: "Advanced", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Clear all local history", exact: true })
+      .click();
     const clear = page.getByRole("alertdialog", {
       name: "Clear all local history?",
       exact: true,
@@ -309,11 +313,14 @@ try {
   report.cases.push(
     "browser Tab/Shift-Tab crosses the actual Issues Technical details summary and opens retained Pairing input"
   );
-  await nav.getByRole("button", { name: /^History/ }).click();
-  const filters = page.getByRole("button", { name: "Filters", exact: true });
-  if ((await filters.getAttribute("aria-expanded")) === "false")
-    await filters.click();
-  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Settings categories" })
+    .getByRole("button", { name: "Advanced", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Clear all local history", exact: true })
+    .click();
   const pendingClear = page.getByRole("alertdialog", {
     name: "Clear all local history?",
     exact: true,

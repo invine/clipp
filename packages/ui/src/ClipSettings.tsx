@@ -56,8 +56,10 @@ function DurationSelect({
 export function ClipSettings({
   settings,
   onRetryRetention,
+  section = "both",
 }: {
   settings: AppearanceSettings;
+  section?: "retention" | "lifetime" | "both";
   onRetryRetention?(): Promise<void>;
 }) {
   const [retrying, setRetrying] = useState(false);
@@ -84,64 +86,74 @@ export function ClipSettings({
   };
   return (
     <div className="clip-settings relay-settings">
-      <DurationSelect
-        label="Keep unpinned history"
-        value={applied?.localRetentionMs}
-        values={[
-          [0, "Remove unpinned history immediately"],
-          [7 * day, "7 days"],
-          [30 * day, "30 days (default)"],
-          [90 * day, "90 days"],
-          [365 * day, "365 days (maximum)"],
-        ]}
-        disabled={disabled}
-        pending={settings.pending}
-        onChange={(value) => {
-          void settings.save({ localRetentionMs: value });
-        }}
-      />
-      <p className="peer-sub">
-        Applies immediately to existing unpinned history. Pins are exempt.
-        Removed history cannot be restored by increasing this period.
-      </p>
-      <DurationSelect
-        label="Clip Sharing Lifetime"
-        value={applied?.sharingLifetimeMs}
-        values={[
-          [3600000, "1 hour"],
-          [day, "24 hours (default)"],
-          [7 * day, "7 days"],
-          [30 * day, "30 days (maximum)"],
-        ]}
-        disabled={disabled}
-        pending={settings.pending}
-        onChange={(value) => {
-          void settings.save({ sharingLifetimeMs: value });
-        }}
-      />
-      <p className="peer-sub">
-        Applies to new Clips only. Expiry stops sharing; it does not delete
-        local history. Existing and imported Clips keep their original
-        deadlines.
-      </p>
-      {applied?.retentionError && (
+      {section !== "lifetime" && (
+        <>
+          <DurationSelect
+            label="Keep unpinned history"
+            value={applied?.localRetentionMs}
+            values={[
+              [0, "Remove unpinned history immediately"],
+              [7 * day, "7 days"],
+              [30 * day, "30 days (default)"],
+              [90 * day, "90 days"],
+              [365 * day, "365 days (maximum)"],
+            ]}
+            disabled={disabled}
+            pending={settings.pending}
+            onChange={(value) => {
+              void settings.save({ localRetentionMs: value });
+            }}
+          />
+          <p className="peer-sub">
+            Applies immediately to existing unpinned history. Pins are exempt.
+            Removed history cannot be restored by increasing this period.
+          </p>
+        </>
+      )}
+      {section !== "retention" && (
+        <>
+          <DurationSelect
+            label="Clip Sharing Lifetime"
+            value={applied?.sharingLifetimeMs}
+            values={[
+              [3600000, "1 hour"],
+              [day, "24 hours (default)"],
+              [7 * day, "7 days"],
+              [30 * day, "30 days (maximum)"],
+            ]}
+            disabled={disabled}
+            pending={settings.pending}
+            onChange={(value) => {
+              void settings.save({ sharingLifetimeMs: value });
+            }}
+          />
+          <p className="peer-sub">
+            Applies to new Clips only. Expiry stops sharing; it does not delete
+            local history. Existing and imported Clips keep their original
+            deadlines.
+          </p>
+        </>
+      )}
+      {section !== "lifetime" && applied?.retentionError && (
         <p role="alert">
           The applied history policy is shown above, but cleanup or saving needs
           recovery: {applied.retentionError}. Any completed cleanup remains in
           effect.
         </p>
       )}
-      {applied?.retentionError && onRetryRetention && (
-        <button
-          type="button"
-          disabled={retrying || settings.pending}
-          onClick={() => {
-            void retry();
-          }}
-        >
-          {retrying ? "Retrying history policy…" : "Retry history policy"}
-        </button>
-      )}
+      {section !== "lifetime" &&
+        applied?.retentionError &&
+        onRetryRetention && (
+          <button
+            type="button"
+            disabled={retrying || settings.pending}
+            onClick={() => {
+              void retry();
+            }}
+          >
+            {retrying ? "Retrying history policy…" : "Retry history policy"}
+          </button>
+        )}
       {retryError && (
         <p role="alert">History policy recovery failed: {retryError}</p>
       )}

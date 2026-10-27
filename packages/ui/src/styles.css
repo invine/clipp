@@ -2351,3 +2351,41 @@ html[data-host-geometry="android"] .android-host {
     min-height: 48px;
   }
 }
+
+.settings-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.75rem 1rem;
+}
+.settings-categories button {
+  min-height: max(40px, var(--clipp-target-min, 40px));
+  padding: 0.5rem 0.85rem;
+}
+@media (max-width: 400px) {
+  .settings-categories {
+    gap: 0.125rem;
+  }
+  .settings-categories button {
+    padding-inline: 0.125rem;
+  }
+}
+.settings-categories button[aria-current="page"] {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+[data-settings-panel][hidden] {
+  display: none;
+}
+
+.managed-relay-card {
+  display: block;
+}
+.managed-relay-card > summary {
+  cursor: pointer;
+}
+
+.settings-pane {
+  box-shadow: none;
+}

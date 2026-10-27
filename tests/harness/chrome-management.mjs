@@ -420,16 +420,24 @@ try {
   report.cases.push("guarded Requests owner action and refreshed list");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("Appearance", { exact: true }).selectOption("dark");
+  await page
+    .getByLabel("Keep unpinned history", { exact: true })
+    .selectOption("604800000");
+  await page
+    .getByRole("navigation", { name: "Settings categories" })
+    .getByRole("button", { name: "Advanced", exact: true })
+    .click();
   await page.getByLabel("Log level", { exact: true }).selectOption("debug");
   await page
     .getByLabel("Clip Sharing Lifetime", { exact: true })
     .selectOption("3600000");
-  await page
-    .getByLabel("Keep unpinned history", { exact: true })
-    .selectOption("604800000");
   report.cases.push(
     "General/Appearance/Clip settings call ordered settings owner"
   );
+  await page
+    .getByRole("navigation", { name: "Settings categories" })
+    .getByRole("button", { name: "Connections", exact: true })
+    .click();
   await page.getByRole("button", { name: "Add relay", exact: true }).click();
   const relay = page.getByRole("dialog");
   await relay.getByLabel("Name", { exact: true }).fill("Retained relay");

@@ -52,7 +52,8 @@ export type SessionContext = {
     feedback: AutoSyncActionResult | null;
   };
   navigationVersion?: number;
-  settingsCategory?: "general" | "appearance" | "clips" | "relays";
+  settingsCategory?:
+    "general" | "connections" | "advanced" | "appearance" | "clips" | "relays";
   taskNotice: string | null;
   pairingImport: { pending: boolean; error: string | null };
   historyActions: Record<

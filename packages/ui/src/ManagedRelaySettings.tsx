@@ -262,8 +262,8 @@ export function ManagedRelaySettings({
       {configurations.map((config) => {
         const state = states.find((item) => item.key === config.key);
         return (
-          <div className="relay-card managed-relay-card" key={config.key}>
-            <div className="peer-meta">
+          <details className="relay-card managed-relay-card" key={config.key}>
+            <summary className="peer-meta">
               <div className="peer-name">
                 {config.name ||
                   (config.kind === "managed"
@@ -274,6 +274,8 @@ export function ManagedRelaySettings({
                 {state ? statusText[state.status] : "Connecting"}
                 {state?.reason ? `: ${state.reason}` : ""}
               </div>
+            </summary>
+            <div className="peer-meta">
               <div className="relay-address">
                 {config.kind === "managed"
                   ? config.discoveryUrl
@@ -387,7 +389,7 @@ export function ManagedRelaySettings({
                 Remove
               </button>
             </div>
-          </div>
+          </details>
         );
       })}
       {editing &&

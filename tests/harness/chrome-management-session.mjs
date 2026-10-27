@@ -284,6 +284,10 @@ queueMicrotask(()=>callback?.(reply));}}};`,
     () => fixture.settings.state.localRetentionMs === 604800000
   );
   await page
+    .getByRole("navigation", { name: "Settings categories" })
+    .getByRole("button", { name: "Advanced", exact: true })
+    .click();
+  await page
     .getByLabel("Clip Sharing Lifetime", { exact: true })
     .selectOption("3600000");
   await page.waitForFunction(

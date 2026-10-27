@@ -2012,265 +2012,371 @@ export function ClipboardApp({
             </div>
           </>
         )}
-        {sessionState.destination === "settings" && (
-          <>
-            {notificationControls && (
-              <NotificationSettings controls={notificationControls} />
-            )}
-            {appearanceSettings && (
+        {sessionState.destination === "settings" &&
+          (() => {
+            const category =
+              sessionState.settingsCategory === "relays" ||
+              sessionState.settingsCategory === "connections"
+                ? "connections"
+                : sessionState.settingsCategory === "advanced"
+                  ? "advanced"
+                  : "general";
+            return (
               <>
-                <div tabIndex={-1} data-session-focus="settings:appearance">
-                  <h3>Appearance</h3>
-                  <Appearance settings={appearanceSettings} />
-                </div>
-                <div tabIndex={-1} data-session-focus="settings:clips">
-                  <h3>Clips</h3>
-                  <ClipSettings
-                    settings={appearanceSettings}
-                    onRetryRetention={
-                      onRetryHistoryCleanup
-                        ? async () => {
-                            await onRetryHistoryCleanup();
-                          }
-                        : undefined
-                    }
-                  />
-                </div>
-              </>
-            )}
-            <div tabIndex={-1} data-session-focus="settings:relays">
-              <h3>Relays</h3>
-              {renderRelaysSection()}
-            </div>
-
-            {!appearanceSettings && onSetLocalRetention && (
-              <div className="relay-settings">
-                <label className="peer-sub" htmlFor="history-retention">
-                  Keep unpinned history
-                </label>
-                <select
-                  id="history-retention"
-                  value={localRetentionMs}
-                  onChange={(event) =>
-                    void updateLocalRetention(Number(event.target.value))
-                  }
+                <nav
+                  className="settings-categories"
+                  aria-label="Settings categories"
                 >
-                  {![0, 7, 30, 90, 365]
-                    .map((days) => days * 86400000)
-                    .includes(localRetentionMs) && (
-                    <option value={localRetentionMs}>
-                      Custom ({localRetentionMs} ms)
-                    </option>
-                  )}
-                  <option value={0}>Remove unpinned history immediately</option>
-                  <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
-                  <option value={30 * 24 * 60 * 60 * 1000}>30 days</option>
-                  <option value={90 * 24 * 60 * 60 * 1000}>90 days</option>
-                  <option value={365 * 24 * 60 * 60 * 1000}>1 year</option>
-                </select>
-              </div>
-            )}
-
-            {onSetAutoSync && (
-              <div className="relay-settings">
-                <h3 tabIndex={-1} data-session-focus="settings:general">
-                  General
-                </h3>
-                <label className="peer-sub" htmlFor="auto-sync">
-                  Auto Sync
-                </label>
-                <select
-                  id="auto-sync"
-                  value={
-                    autoSyncKnown ? (autoSync ? "enabled" : "disabled") : ""
-                  }
-                  disabled={
-                    !autoSyncKnown ||
-                    autoSyncLoading ||
-                    autoSyncRecoveryRequired ||
-                    sessionState.autoSync.recoveryRequired
-                  }
-                  aria-disabled={
-                    autoSyncPending ||
-                    sessionState.autoSync.pending ||
-                    undefined
-                  }
-                  aria-busy={
-                    autoSyncPending ||
-                    sessionState.autoSync.pending ||
-                    undefined
-                  }
-                  onChange={(event) => {
-                    if (autoSyncPending || sessionState.autoSync.pending) {
-                      event.currentTarget.value = autoSyncKnown
-                        ? autoSync
-                          ? "enabled"
-                          : "disabled"
-                        : "";
-                      return;
-                    }
-                    void session.saveAutoSync(() =>
-                      onSetAutoSync(event.target.value === "enabled")
-                    );
-                  }}
-                >
-                  {!autoSyncKnown && <option value="">Unknown</option>}
-                  <option value="enabled">Enabled</option>
-                  <option value="disabled">Disabled — keep Clips local</option>
-                </select>
-                {autoSyncLoading && <p role="status">Loading Auto Sync…</p>}
-                {(autoSyncPending || sessionState.autoSync.pending) && (
-                  <p role="status">Saving Auto Sync…</p>
-                )}
-                <PreferenceRefreshNotice
-                  subject="Auto Sync"
-                  error={autoSyncRefreshError}
-                  onRetry={
-                    onRetryAutoSync
-                      ? async () => {
-                          await onRetryAutoSync();
+                  {(["general", "connections", "advanced"] as const).map(
+                    (item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        aria-current={category === item ? "page" : undefined}
+                        onClick={() =>
+                          session.update({ settingsCategory: item })
                         }
-                      : undefined
-                  }
-                />
-                {sessionState.autoSync.feedback && (
-                  <p
-                    role={
-                      sessionState.autoSync.feedback.status === "applied"
-                        ? "status"
-                        : "alert"
-                    }
-                  >
-                    {sessionState.autoSync.feedback.status === "applied"
-                      ? "Auto Sync saved."
-                      : sessionState.autoSync.feedback.status === "rejected"
-                        ? "Auto Sync was not saved."
-                        : sessionState.autoSync.feedback.status === "partial"
-                          ? "Auto Sync was applied, but current state refresh was not confirmed."
-                          : "Auto Sync Save could not be confirmed."}
-                    {sessionState.autoSync.feedback.error &&
-                      ` ${sessionState.autoSync.feedback.error}`}
-                    {sessionState.autoSync.refreshed
-                      ? " Current setting refreshed."
-                      : sessionState.autoSync.recoveryRequired
-                        ? " Refresh the current setting before trying again."
-                        : ""}
-                  </p>
-                )}
-                {sessionState.autoSync.recoveryRequired && onRetryAutoSync && (
-                  <button
-                    type="button"
-                    disabled={sessionState.autoSync.pending}
-                    onClick={() =>
-                      void session.refreshAutoSync(onRetryAutoSync)
-                    }
-                  >
-                    Refresh Auto Sync
-                  </button>
-                )}
-                <PreferenceSaveFeedback
-                  feedback={autoSyncFeedback}
-                  subject="Auto Sync"
-                  refreshError={autoSyncRefreshError}
-                  refreshing={autoSyncRefreshing}
-                />
-              </div>
-            )}
-
-            {appearanceSettings && (
-              <div className="relay-settings">
-                <label>
-                  Log level
-                  <select
-                    aria-label="Log level"
-                    value={appearanceSettings.snapshot?.state.logLevel ?? ""}
-                    disabled={
-                      !appearanceSettings.snapshot ||
-                      appearanceSettings.recoveryRequired
-                    }
-                    aria-disabled={appearanceSettings.pending || undefined}
-                    aria-busy={appearanceSettings.pending || undefined}
-                    onChange={(event) => {
-                      if (appearanceSettings.pending) {
-                        event.currentTarget.value =
-                          appearanceSettings.snapshot?.state.logLevel ?? "";
-                        return;
-                      }
-                      void appearanceSettings.save({
-                        logLevel: event.target.value as
-                          "debug" | "info" | "warn" | "error",
-                      });
-                    }}
-                  >
-                    {!appearanceSettings.snapshot && (
-                      <option value="">Unknown</option>
-                    )}
-                    {(["debug", "info", "warn", "error"] as const).map(
-                      (level) => (
-                        <option key={level} value={level}>
-                          {level}
+                      >
+                        {item[0].toUpperCase() + item.slice(1)}
+                      </button>
+                    )
+                  )}
+                </nav>
+                <section
+                  data-settings-panel="general"
+                  hidden={category !== "general"}
+                  aria-label="General settings"
+                >
+                  <h3 tabIndex={-1} data-session-focus="settings:general">
+                    General
+                  </h3>
+                  {appearanceSettings && (
+                    <div tabIndex={-1} data-session-focus="settings:appearance">
+                      <h3>Appearance</h3>
+                      <Appearance settings={appearanceSettings} />
+                    </div>
+                  )}
+                  {onSetAutoSync && (
+                    <div className="relay-settings">
+                      <label className="peer-sub" htmlFor="auto-sync">
+                        Auto Sync
+                      </label>
+                      <select
+                        id="auto-sync"
+                        value={
+                          autoSyncKnown
+                            ? autoSync
+                              ? "enabled"
+                              : "disabled"
+                            : ""
+                        }
+                        disabled={
+                          !autoSyncKnown ||
+                          autoSyncLoading ||
+                          autoSyncRecoveryRequired ||
+                          sessionState.autoSync.recoveryRequired
+                        }
+                        aria-disabled={
+                          autoSyncPending ||
+                          sessionState.autoSync.pending ||
+                          undefined
+                        }
+                        aria-busy={
+                          autoSyncPending ||
+                          sessionState.autoSync.pending ||
+                          undefined
+                        }
+                        onChange={(event) => {
+                          if (
+                            autoSyncPending ||
+                            sessionState.autoSync.pending
+                          ) {
+                            event.currentTarget.value = autoSyncKnown
+                              ? autoSync
+                                ? "enabled"
+                                : "disabled"
+                              : "";
+                            return;
+                          }
+                          void session.saveAutoSync(() =>
+                            onSetAutoSync(event.target.value === "enabled")
+                          );
+                        }}
+                      >
+                        {!autoSyncKnown && <option value="">Unknown</option>}
+                        <option value="enabled">Enabled</option>
+                        <option value="disabled">
+                          Disabled — keep Clips local
                         </option>
-                      )
-                    )}
-                  </select>
-                </label>
-                <PreferenceRefreshNotice
-                  subject="General settings"
-                  error={appearanceSettings.refreshError}
-                  onRetry={appearanceSettings.refresh}
-                />
-                <PreferenceSaveFeedback
-                  subject="Log level"
-                  feedback={
-                    appearanceSettings.feedback?.fields?.includes("logLevel")
-                      ? appearanceSettings.feedback
-                      : null
-                  }
-                  refreshError={appearanceSettings.refreshError}
-                  refreshing={appearanceSettings.refreshing}
-                />
-                {appearanceSettings.recoveryRequired && (
-                  <button
-                    type="button"
-                    onClick={() => void appearanceSettings.refresh()}
-                  >
-                    Refresh General settings
-                  </button>
-                )}
-              </div>
-            )}
+                      </select>
+                      {autoSyncLoading && (
+                        <p role="status">Loading Auto Sync…</p>
+                      )}
+                      {(autoSyncPending || sessionState.autoSync.pending) && (
+                        <p role="status">Saving Auto Sync…</p>
+                      )}
+                      <PreferenceRefreshNotice
+                        subject="Auto Sync"
+                        error={autoSyncRefreshError}
+                        onRetry={
+                          onRetryAutoSync
+                            ? async () => {
+                                await onRetryAutoSync();
+                              }
+                            : undefined
+                        }
+                      />
+                      {sessionState.autoSync.feedback && (
+                        <p
+                          role={
+                            sessionState.autoSync.feedback.status === "applied"
+                              ? "status"
+                              : "alert"
+                          }
+                        >
+                          {sessionState.autoSync.feedback.status === "applied"
+                            ? "Auto Sync saved."
+                            : sessionState.autoSync.feedback.status ===
+                                "rejected"
+                              ? "Auto Sync was not saved."
+                              : sessionState.autoSync.feedback.status ===
+                                  "partial"
+                                ? "Auto Sync was applied, but current state refresh was not confirmed."
+                                : "Auto Sync Save could not be confirmed."}
+                          {sessionState.autoSync.feedback.error &&
+                            ` ${sessionState.autoSync.feedback.error}`}
+                          {sessionState.autoSync.refreshed
+                            ? " Current setting refreshed."
+                            : sessionState.autoSync.recoveryRequired
+                              ? " Refresh the current setting before trying again."
+                              : ""}
+                        </p>
+                      )}
+                      {sessionState.autoSync.recoveryRequired &&
+                        onRetryAutoSync && (
+                          <button
+                            type="button"
+                            disabled={sessionState.autoSync.pending}
+                            onClick={() =>
+                              void session.refreshAutoSync(onRetryAutoSync)
+                            }
+                          >
+                            Refresh Auto Sync
+                          </button>
+                        )}
+                      <PreferenceSaveFeedback
+                        feedback={autoSyncFeedback}
+                        subject="Auto Sync"
+                        refreshError={autoSyncRefreshError}
+                        refreshing={autoSyncRefreshing}
+                      />
+                    </div>
+                  )}
 
-            {backgroundContinuity && onSetBackgroundContinuity && (
-              <BackgroundContinuityControls
-                state={backgroundContinuity}
-                setEnabled={onSetBackgroundContinuity}
-                setAutoSync={(enabled) =>
-                  session.saveAutoSync(() => onSetAutoSync?.(enabled))
-                }
-                autoSyncPending={
-                  autoSyncPending || sessionState.autoSync.pending
-                }
-                autoSyncRecoveryRequired={
-                  sessionState.autoSync.recoveryRequired
-                }
-                refresh={onRefreshBackgroundContinuity}
-                refreshAutoSync={
-                  onRetryAutoSync
-                    ? () => session.refreshAutoSync(onRetryAutoSync)
-                    : undefined
-                }
-                openNotificationSettings={onOpenBackgroundNotificationSettings}
-                help={() =>
-                  session.open({
-                    kind: "issues",
-                    entity: "continuity",
-                    origin: "continuity-help",
-                  })
-                }
-              />
-            )}
-          </>
-        )}
+                  {appearanceSettings && (
+                    <div tabIndex={-1} data-session-focus="settings:clips">
+                      <ClipSettings
+                        section="retention"
+                        settings={appearanceSettings}
+                        onRetryRetention={
+                          onRetryHistoryCleanup
+                            ? async () => {
+                                await onRetryHistoryCleanup();
+                              }
+                            : undefined
+                        }
+                      />
+                    </div>
+                  )}
+                  {!appearanceSettings && onSetLocalRetention && (
+                    <div className="relay-settings">
+                      <label className="peer-sub" htmlFor="history-retention">
+                        Keep unpinned history
+                      </label>
+                      <select
+                        id="history-retention"
+                        value={localRetentionMs}
+                        onChange={(event) =>
+                          void updateLocalRetention(Number(event.target.value))
+                        }
+                      >
+                        {![0, 7, 30, 90, 365]
+                          .map((days) => days * 86400000)
+                          .includes(localRetentionMs) && (
+                          <option value={localRetentionMs}>
+                            Custom ({localRetentionMs} ms)
+                          </option>
+                        )}
+                        <option value={0}>
+                          Remove unpinned history immediately
+                        </option>
+                        <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
+                        <option value={30 * 24 * 60 * 60 * 1000}>
+                          30 days
+                        </option>
+                        <option value={90 * 24 * 60 * 60 * 1000}>
+                          90 days
+                        </option>
+                        <option value={365 * 24 * 60 * 60 * 1000}>
+                          1 year
+                        </option>
+                      </select>
+                    </div>
+                  )}
+                </section>
+                <section
+                  data-settings-panel="connections"
+                  hidden={category !== "connections"}
+                  aria-label="Connections settings"
+                >
+                  <h3>Connections</h3>
+                  <div tabIndex={-1} data-session-focus="settings:relays">
+                    <h3>Relays</h3>
+                    {renderRelaysSection()}
+                  </div>
+                  {backgroundContinuity && onSetBackgroundContinuity && (
+                    <BackgroundContinuityControls
+                      state={backgroundContinuity}
+                      setEnabled={onSetBackgroundContinuity}
+                      setAutoSync={(enabled) =>
+                        session.saveAutoSync(() => onSetAutoSync?.(enabled))
+                      }
+                      autoSyncPending={
+                        autoSyncPending || sessionState.autoSync.pending
+                      }
+                      autoSyncRecoveryRequired={
+                        sessionState.autoSync.recoveryRequired
+                      }
+                      refresh={onRefreshBackgroundContinuity}
+                      refreshAutoSync={
+                        onRetryAutoSync
+                          ? () => session.refreshAutoSync(onRetryAutoSync)
+                          : undefined
+                      }
+                      openNotificationSettings={
+                        onOpenBackgroundNotificationSettings
+                      }
+                      help={() =>
+                        session.open({
+                          kind: "issues",
+                          entity: "continuity",
+                          origin: "continuity-help",
+                        })
+                      }
+                    />
+                  )}{" "}
+                  {notificationControls && (
+                    <NotificationSettings controls={notificationControls} />
+                  )}
+                </section>
+                <section
+                  data-settings-panel="advanced"
+                  hidden={category !== "advanced"}
+                  aria-label="Advanced settings"
+                >
+                  <h3>Advanced</h3>
+                  {appearanceSettings && (
+                    <ClipSettings
+                      section="lifetime"
+                      settings={appearanceSettings}
+                    />
+                  )}
+                  <div className="relay-settings">
+                    <h3>Local history</h3>
+                    <button
+                      type="button"
+                      className="text-button labelled-control"
+                      data-session-focus="settings-clear"
+                      onClick={() => {
+                        setClearError(null);
+                        setClearReviewOpen(true);
+                        session.open({
+                          kind: "clear",
+                          origin: "settings-clear",
+                        });
+                      }}
+                      disabled={
+                        historyLoading ||
+                        historyUnavailable ||
+                        Boolean(historyRefreshError)
+                      }
+                    >
+                      Clear all local history
+                    </button>
+                  </div>
+                  {appearanceSettings && (
+                    <div className="relay-settings">
+                      <label>
+                        Log level
+                        <select
+                          aria-label="Log level"
+                          value={
+                            appearanceSettings.snapshot?.state.logLevel ?? ""
+                          }
+                          disabled={
+                            !appearanceSettings.snapshot ||
+                            appearanceSettings.recoveryRequired
+                          }
+                          aria-disabled={
+                            appearanceSettings.pending || undefined
+                          }
+                          aria-busy={appearanceSettings.pending || undefined}
+                          onChange={(event) => {
+                            if (appearanceSettings.pending) {
+                              event.currentTarget.value =
+                                appearanceSettings.snapshot?.state.logLevel ??
+                                "";
+                              return;
+                            }
+                            void appearanceSettings.save({
+                              logLevel: event.target.value as
+                                "debug" | "info" | "warn" | "error",
+                            });
+                          }}
+                        >
+                          {!appearanceSettings.snapshot && (
+                            <option value="">Unknown</option>
+                          )}
+                          {(["debug", "info", "warn", "error"] as const).map(
+                            (level) => (
+                              <option key={level} value={level}>
+                                {level}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </label>
+                      <PreferenceRefreshNotice
+                        subject="General settings"
+                        error={appearanceSettings.refreshError}
+                        onRetry={appearanceSettings.refresh}
+                      />
+                      <PreferenceSaveFeedback
+                        subject="Log level"
+                        feedback={
+                          appearanceSettings.feedback?.fields?.includes(
+                            "logLevel"
+                          )
+                            ? appearanceSettings.feedback
+                            : null
+                        }
+                        refreshError={appearanceSettings.refreshError}
+                        refreshing={appearanceSettings.refreshing}
+                      />
+                      {appearanceSettings.recoveryRequired && (
+                        <button
+                          type="button"
+                          onClick={() => void appearanceSettings.refresh()}
+                        >
+                          Refresh General settings
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              </>
+            );
+          })()}
       </>
     );
   }
@@ -2412,7 +2518,10 @@ export function ClipboardApp({
             type="button"
             onClick={() => {
               session.close();
-              session.update({ destination: "settings" });
+              session.update({
+                destination: "settings",
+                settingsCategory: "general",
+              });
             }}
           >
             Auto Sync: {autoSyncKnown ? (autoSync ? "On" : "Off") : "Unknown"}
@@ -2566,6 +2675,22 @@ export function ClipboardApp({
                         ["alias", "device-name", "pairing"].includes(issue.code)
                       ? "devices"
                       : "history",
+              ...(issue.scope === "relay" ||
+              (issue.scope === "task" &&
+                [
+                  "relay-edit",
+                  "relay-action",
+                  "relay",
+                  "continuity",
+                  "notifications",
+                ].includes(issue.code))
+                ? { settingsCategory: "connections" as const }
+                : issue.scope === "task" &&
+                    ["auto-sync", "clip-settings", "settings"].includes(
+                      issue.code
+                    )
+                  ? { settingsCategory: "general" as const }
+                  : {}),
               showNav: issue.scope !== "history",
             });
           }}
@@ -2588,7 +2713,7 @@ export function ClipboardApp({
       >
         {sessionState.destination !== "history" && (
           <section
-            className="surface destination-pane"
+            className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : ""}`}
             data-session-scroll={sessionState.destination}
           >
             <h1>
@@ -2692,24 +2817,6 @@ export function ClipboardApp({
                   </div>
                 )}
               </div>
-
-              <button
-                className="text-button"
-                data-session-focus="history-clear"
-                onClick={() => {
-                  setClearError(null);
-                  setClearReviewOpen(true);
-                  session.open({ kind: "clear", origin: "history-clear" });
-                }}
-                disabled={
-                  historyLoading ||
-                  historyUnavailable ||
-                  Boolean(historyRefreshError)
-                }
-              >
-                <Icon name="delete" />
-                Clear
-              </button>
             </div>
           )}
 
