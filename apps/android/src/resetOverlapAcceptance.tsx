@@ -1,3 +1,4 @@
+import { createResetOverlapContinue } from "./resetOverlapContinue";
 import { overlapFailureReason } from "./resetOverlapTiming";
 import { resetOverlapHistoryAccepted } from "./resetOverlapHistory";
 import { overlapPorts } from "./resetOverlapAcceptancePorts";
@@ -331,9 +332,7 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
       }
       if (!active()) return;
       emit("begin-submitted", { operationId: manifest.operationId });
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "Continue reset overlap";
+      const button = createResetOverlapContinue();
       try {
         result = await runResetOverlap({
           ports: overlapPorts,
