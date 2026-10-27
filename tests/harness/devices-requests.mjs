@@ -195,9 +195,12 @@ try {
   await devicesNav.click();
   const trustedRows = page.locator(".peer-item:not(.active)");
   assert.equal(await trustedRows.count(), 20, "all 20 Trusted Devices render");
-  const firstTrustedDevice = trustedRows.filter({
-    hasText: "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv",
-  });
+  const firstTrustedDevice = trustedRows.first();
+  assert.equal(
+    await firstTrustedDevice.locator(".peer-name").getAttribute("title"),
+    "Local alias",
+    "the first compact Trusted Device row is the expected fixture device"
+  );
   await page.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -373,7 +376,9 @@ try {
     await page.getByText("Connected · path unknown", { exact: true }).count(),
     1
   );
-  const revocationRow = trustedRows.filter({ hasText: "revoke-peer" });
+  const revocationRow = trustedRows.filter({
+    has: page.locator('.peer-name[title="Trusted device 20"]'),
+  });
   await revocationRow
     .getByRole("button", { name: "Revoke device", exact: true })
     .click();
@@ -399,9 +404,7 @@ try {
     "confirmed Revoke reaches the rendered action port"
   );
   assert.equal(await revocationRow.count(), 1, "failed Revoke retains the row");
-  await revocationRow
-    .getByRole("button", { name: "Retry", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await revocationRow.waitFor({ state: "detached" });
   assert.deepEqual(
     await page.evaluate(() => window.fixture.unpairCalls),
@@ -416,7 +419,7 @@ try {
   await requestsNav.click();
   await page
     .locator(".pending-card")
-    .filter({ hasText: "Waiting device" })
+    .filter({ hasText: "Waiting device 1" })
     .waitFor({ state: "visible" });
   const staleRequestCard = pendingCards.filter({ hasText: "Waiting device 1" });
   await staleRequestCard
