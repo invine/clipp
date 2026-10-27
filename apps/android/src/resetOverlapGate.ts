@@ -2,11 +2,16 @@
 export function createResetOverlapGate(deadlineMs: number) {
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000)
     throw new Error("invalid_overlap_deadline");
-  let state: "waiting-native" | "held" | "released" | "failed" = "waiting-native";
+  let state: "waiting-native" | "held" | "released" | "failed" =
+    "waiting-native";
   let markReady!: (ready: boolean) => void;
-  const ready = new Promise<boolean>((resolve) => { markReady = resolve; });
+  const ready = new Promise<boolean>((resolve) => {
+    markReady = resolve;
+  });
   let release!: () => void;
-  const released = new Promise<void>((resolve) => { release = resolve; });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   return {
     ready,
     state: () => state,
@@ -27,7 +32,10 @@ export function createResetOverlapGate(deadlineMs: number) {
             await released;
           })(),
           new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error("overlap_deadline")), deadlineMs);
+            timer = setTimeout(
+              () => reject(new Error("overlap_deadline")),
+              deadlineMs
+            );
           }),
         ]);
       } catch (error) {

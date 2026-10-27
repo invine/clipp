@@ -11,8 +11,12 @@ export { createAndroidPendingTrustRequestStore } from "./identityResetRuntime";
 export const overlapPorts = createResetOverlapPorts(10000);
 export const createAndroidBackgroundNative = () =>
   overlapPorts.wrapBackground(createRealBackgroundNative());
-export function createAndroidIdentityResetRuntime(options: { suspend(): Promise<void> }) {
-  const native = registerPlugin<AndroidIdentityResetNative>("IdentityResetStorage");
+export function createAndroidIdentityResetRuntime(options: {
+  suspend(): Promise<void>;
+}) {
+  const native = registerPlugin<AndroidIdentityResetNative>(
+    "IdentityResetStorage"
+  );
   return createRealIdentityResetRuntime({
     suspend: options.suspend,
     native: overlapPorts.wrapReset(native),

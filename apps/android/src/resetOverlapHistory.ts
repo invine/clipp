@@ -4,7 +4,10 @@ export function resetOverlapHistoryAccepted(
   caseId: string,
   currentPeerId: string
 ): boolean {
-  return clips.length === 0 || (clips.length === 1 &&
-    clips[0].content === `clipp-reset-${caseId}-after-send` &&
-    clips[0].originPeerId === currentPeerId);
+  return (
+    clips.length === 0 ||
+    (clips.length === 1 &&
+      clips[0].content === `clipp-reset-${caseId}-after-send` &&
+      clips[0].originPeerId === currentPeerId)
+  );
 }

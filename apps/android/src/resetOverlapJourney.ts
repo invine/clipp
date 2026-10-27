@@ -20,24 +20,45 @@ export async function runResetOverlap<T>(options: {
     timer = setTimeout(() => reject(new Error("overlap_deadline")), deadlineMs);
   });
   const startFailure = started.then(
-    () => { throw new Error("overlap_start_completed_early"); },
-    (error: unknown) => { throw error; }
+    () => {
+      throw new Error("overlap_start_completed_early");
+    },
+    (error: unknown) => {
+      throw error;
+    }
   );
   void startFailure.catch(() => {});
   let begun: Promise<T> | undefined;
   try {
-    if (!await Promise.race([ports.startGate.ready, startFailure, deadline])) throw new Error("overlap_start_unavailable");
+    if (!(await Promise.race([ports.startGate.ready, startFailure, deadline])))
+      throw new Error("overlap_start_unavailable");
     options.stage("start-held");
     begun = options.begin();
     const beginFailure = begun.then(
-      () => { throw new Error("overlap_reset_completed_early"); },
-      (error: unknown) => { throw error; }
+      () => {
+        throw new Error("overlap_reset_completed_early");
+      },
+      (error: unknown) => {
+        throw error;
+      }
     );
     void beginFailure.catch(() => {});
-    if (!await Promise.race([ports.fenceGate.ready, startFailure, beginFailure, deadline]))
+    if (
+      !(await Promise.race([
+        ports.fenceGate.ready,
+        startFailure,
+        beginFailure,
+        deadline,
+      ]))
+    )
       throw new Error("overlap_fence_unavailable");
     options.stage("provisional-fence-held");
-    await Promise.race([options.ingress(), startFailure, beginFailure, deadline]);
+    await Promise.race([
+      options.ingress(),
+      startFailure,
+      beginFailure,
+      deadline,
+    ]);
     ports.fenceGate.release();
     ports.startGate.release();
     await Promise.race([started, deadline]);

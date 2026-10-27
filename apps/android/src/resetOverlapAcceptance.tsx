@@ -193,7 +193,10 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
       ]);
       return { state, settings: settings.snapshot.state };
     };
-    const settingsMatch = (value: Awaited<ReturnType<typeof selected>>, backgroundEnabled = manifest.expected.backgroundEnabled) => {
+    const settingsMatch = (
+      value: Awaited<ReturnType<typeof selected>>,
+      backgroundEnabled = manifest.expected.backgroundEnabled
+    ) => {
       const e = manifest.expected;
       return (
         value.settings.theme === e.theme &&
@@ -201,8 +204,7 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
         value.settings.localRetentionMs === e.localRetentionMs &&
         value.settings.sharingLifetimeMs === e.sharingLifetimeMs &&
         value.state.backgroundContinuity?.controlStateKnown === true &&
-        value.state.backgroundContinuity.backgroundEnabled ===
-          backgroundEnabled
+        value.state.backgroundContinuity.backgroundEnabled === backgroundEnabled
       );
     };
     let reconciled = await owner.identityReset.reconcile();
@@ -252,7 +254,11 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
           current.state.identityRotationRecovery ||
           current.state.historyUnavailable ||
           current.state.historyRefreshError ||
-          !resetOverlapHistoryAccepted(current.state.clips, manifest.caseId, guard.generatedPeerId) ||
+          !resetOverlapHistoryAccepted(
+            current.state.clips,
+            manifest.caseId,
+            guard.generatedPeerId
+          ) ||
           current.state.pinnedIds.length
         ) {
           finish("replacement-unconfirmed", {
@@ -329,15 +335,17 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
         result = await runResetOverlap({
           ports: overlapPorts,
           start: () => owner.client.setBackgroundContinuity(true),
-          begin: () => owner.identityReset.begin({
-            operationId: manifest.operationId,
-            reviewedPeerId: manifest.reviewedPeerId,
-          }),
+          begin: () =>
+            owner.identityReset.begin({
+              operationId: manifest.operationId,
+              reviewedPeerId: manifest.reviewedPeerId,
+            }),
           stage: (stage) => emit(stage, { operationId: manifest.operationId }),
-          ingress: () => new Promise<void>((resolve) => {
-            button.addEventListener("click", () => resolve(), { once: true });
-            document.body.appendChild(button);
-          }),
+          ingress: () =>
+            new Promise<void>((resolve) => {
+              button.addEventListener("click", () => resolve(), { once: true });
+              document.body.appendChild(button);
+            }),
         });
       } finally {
         button.remove();

@@ -4,13 +4,23 @@ test("overlap ports let the actual native operations finish before holding their
   const events: string[] = [];
   const ports = createResetOverlapPorts(1000);
   ports.arm();
-  const background = ports.wrapBackground({ start: async (_value: boolean | null) => { events.push("actual start"); } });
-  const reset = ports.wrapReset({ acquireFence: async () => { events.push("actual fence"); } });
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {
+      events.push("actual start");
+    },
+  });
+  const reset = ports.wrapReset({
+    acquireFence: async () => {
+      events.push("actual fence");
+    },
+  });
   const start = background.start(false);
   expect(await ports.startGate.ready).toBe(true);
   expect(events).toEqual(["actual start"]);
   let startDone = false;
-  void start.then(() => { startDone = true; });
+  void start.then(() => {
+    startDone = true;
+  });
   const fence = reset.acquireFence();
   expect(await ports.fenceGate.ready).toBe(true);
   expect(events).toEqual(["actual start", "actual fence"]);
@@ -26,12 +36,20 @@ test("acceptance adapters delegate the native arguments and leave unrelated oper
   const calls: unknown[] = [];
   const ports = createResetOverlapPorts(1000);
   const background = ports.wrapBackground({
-    start: async (autoSync: boolean | null) => { calls.push(autoSync); },
-    stop: async () => { calls.push("stop"); },
+    start: async (autoSync: boolean | null) => {
+      calls.push(autoSync);
+    },
+    stop: async () => {
+      calls.push("stop");
+    },
   });
   const reset = ports.wrapReset({
-    acquireFence: async () => { calls.push("acquired"); },
-    releaseFence: async () => { calls.push("released"); },
+    acquireFence: async () => {
+      calls.push("acquired");
+    },
+    releaseFence: async () => {
+      calls.push("released");
+    },
   });
   ports.arm();
   const start = background.start(false);
@@ -50,7 +68,11 @@ test("acceptance adapters delegate the native arguments and leave unrelated oper
 test("unarmed adapters pass through normally and the overlap is armed only once", async () => {
   const calls: string[] = [];
   const ports = createResetOverlapPorts(1000);
-  const background = ports.wrapBackground({ start: async (_value: boolean | null) => { calls.push("start"); } });
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {
+      calls.push("start");
+    },
+  });
   await background.start(null);
   expect(calls).toEqual(["start"]);
   ports.arm();
@@ -64,11 +86,17 @@ test("unarmed adapters pass through normally and the overlap is armed only once"
 test("a repeated gated start is refused before a second native call", async () => {
   let calls = 0;
   const ports = createResetOverlapPorts(1000);
-  const background = ports.wrapBackground({ start: async (_value: boolean | null) => { calls++; } });
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {
+      calls++;
+    },
+  });
   ports.arm();
   const first = background.start(false);
   expect(await ports.startGate.ready).toBe(true);
-  await expect(background.start(false)).rejects.toThrow("overlap_start_already_used");
+  await expect(background.start(false)).rejects.toThrow(
+    "overlap_start_already_used"
+  );
   expect(calls).toBe(1);
   ports.startGate.release();
   await first;
@@ -77,8 +105,16 @@ test("a repeated gated start is refused before a second native call", async () =
 test("after the bounded overlap, later native starts and fence acquisitions pass through", async () => {
   const calls: string[] = [];
   const ports = createResetOverlapPorts(1000);
-  const background = ports.wrapBackground({ start: async (_value: boolean | null) => { calls.push("start"); } });
-  const reset = ports.wrapReset({ acquireFence: async () => { calls.push("fence"); } });
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {
+      calls.push("start");
+    },
+  });
+  const reset = ports.wrapReset({
+    acquireFence: async () => {
+      calls.push("fence");
+    },
+  });
   ports.arm();
   const start = background.start(false);
   expect(await ports.startGate.ready).toBe(true);
@@ -94,12 +130,21 @@ test("after the bounded overlap, later native starts and fence acquisitions pass
 
 test("a non-enumerable native proxy retains its unwrapped methods", async () => {
   const calls: string[] = [];
-  const actual = new Proxy({} as { acquireFence(): Promise<void>; releaseFence(): Promise<void> }, {
-    get(_target, name) {
-      if (name === "acquireFence") return async () => { calls.push("acquire"); };
-      if (name === "releaseFence") return async () => { calls.push("release"); };
-    },
-  });
+  const actual = new Proxy(
+    {} as { acquireFence(): Promise<void>; releaseFence(): Promise<void> },
+    {
+      get(_target, name) {
+        if (name === "acquireFence")
+          return async () => {
+            calls.push("acquire");
+          };
+        if (name === "releaseFence")
+          return async () => {
+            calls.push("release");
+          };
+      },
+    }
+  );
   const ports = createResetOverlapPorts(1000);
   const wrapped = ports.wrapReset(actual);
   await wrapped.releaseFence();

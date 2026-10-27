@@ -68,7 +68,10 @@ try {
   const normalized = JSON.stringify(manifest) + "\n";
   await writeFile(join(own, "manifest.json"), normalized, { flag: "wx" });
   const { build } = await import("vite");
-  const alias = resetOverlapAlias(join(android, "src/client.ts"), join(android, "src/resetOverlapAcceptancePorts.ts"));
+  const alias = resetOverlapAlias(
+    join(android, "src/client.ts"),
+    join(android, "src/resetOverlapAcceptancePorts.ts")
+  );
   await build({
     configFile: join(android, "vite.config.ts"),
     plugins: [
@@ -76,7 +79,9 @@ try {
         name: "reset-overlap-port-alias",
         enforce: "pre",
         resolveId: alias,
-        generateBundle() { alias.verify(); },
+        generateBundle() {
+          alias.verify();
+        },
       },
       {
         name: "fixed-reset-owning-manifest",
