@@ -334,12 +334,19 @@ test("startup reports inaccessible retired fallback data before admitting an ord
     });
   try {
     Reflect.deleteProperty(globalThis, "localStorage");
-    await make().identityResetStorage.remove("runtimeApplicationState");
+    await make().identityResetStorage.remove(
+      `${IDENTITY_KEY}:initializationError`
+    );
     await make().set(IDENTITY_KEY, { deviceId: "new" });
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
-      get: () => {
-        throw new Error("web_store_inaccessible");
+      value: {
+        getItem: () => {
+          throw new Error("web_store_inaccessible");
+        },
+        removeItem: () => {
+          throw new Error("web_store_inaccessible");
+        },
       },
     });
     await expect(make().get(IDENTITY_KEY)).rejects.toThrow(
