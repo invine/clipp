@@ -13,7 +13,7 @@ const out = process.argv[2]
 await mkdir(out, { recursive: true });
 await build({
   stdin: {
-    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';window.fixture={calls:[],fail:true,holdNext:false};function Fixture(){const[devices,setDevices]=useState([{deviceId:'12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv',deviceName:'Reported device name',displayName:'Local alias',localAlias:'Local alias'}]);window.fixture.getDevices=()=>devices;return <ClipboardApp clips={[]} devices={devices} pending={[{deviceId:'pending-peer',deviceName:'Waiting device',requestVersion:'v1'}]} peers={[]} connectionStateKnown={false} pinnedIds={[]} identity={{deviceId:'local',deviceName:'This installation'}} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async()=>({status:'accepted'})} onReject={async()=>({status:'rejected'})} onPairText={async()=>({status:'invalid-input'})} onCopyPairingText={async()=>({status:'copied'})} onRequestPairingCode={async()=>({text:'fixture'})} onReuseClip={()=>'complete'} onShareNow={()=>{}} onSetPinned={()=>{}} onClearAll={()=>{}} onRenameDevice={async(id,name)=>{window.fixture.calls.push({id,name});if(window.fixture.holdNext){window.fixture.holdNext=false;return new Promise(resolve=>{window.fixture.resolveClear=()=>{setDevices(old=>old.map(device=>device.deviceId===id?{...device,displayName:name||device.deviceName,localAlias:name||undefined}:device));resolve({deviceId:id,deviceName:'Reported device name',displayName:name||'Reported device name',localAlias:name||undefined})}})}if(window.fixture.fail)throw new Error('fixture_clear_failed');setDevices(old=>old.map(device=>device.deviceId===id?{...device,displayName:name||device.deviceName,localAlias:name||undefined}:device));return {deviceId:id,deviceName:'Reported device name',displayName:name||'Reported device name',localAlias:name||undefined}}}/>};createRoot(document.getElementById('root')).render(<Fixture/>);`,
+    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';const firstDevice={deviceId:'12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv',deviceName:'Reported device name',displayName:'Local alias',localAlias:'Local alias'};const initialDevices=[firstDevice,...Array.from({length:19},(_,index)=>({deviceId:'trusted-'+(index+2),deviceName:'Trusted device '+(index+2),displayName:'Trusted device '+(index+2)}))];const initialPending=Array.from({length:4},(_,index)=>({deviceId:'pending-peer-'+(index+1),deviceName:'Waiting device '+(index+1),requestVersion:'version-'+(index+1)}));window.fixture={calls:[],fail:true,holdNext:false};function Fixture(){const[devices,setDevices]=useState(initialDevices);window.fixture.getDevices=()=>devices;return <ClipboardApp clips={[]} devices={devices} pending={initialPending} peers={[]} connectionStateKnown={false} pinnedIds={[]} identity={{deviceId:'local',deviceName:'This installation'}} onDeleteClip={()=>{}} onUnpair={()=>{}} onAccept={async()=>({status:'accepted'})} onReject={async()=>({status:'rejected'})} onPairText={async()=>({status:'invalid-input'})} onCopyPairingText={async()=>({status:'copied'})} onRequestPairingCode={async()=>({text:'fixture'})} onReuseClip={()=>'complete'} onShareNow={()=>{}} onSetPinned={()=>{}} onClearAll={()=>{}} onRenameDevice={async(id,name)=>{window.fixture.calls.push({id,name});if(window.fixture.holdNext){window.fixture.holdNext=false;return new Promise(resolve=>{window.fixture.resolveClear=()=>{setDevices(old=>old.map(device=>device.deviceId===id?{...device,displayName:name||device.deviceName,localAlias:name||undefined}:device));resolve({deviceId:id,deviceName:'Reported device name',displayName:name||'Reported device name',localAlias:name||undefined})}})}if(window.fixture.fail)throw new Error('fixture_clear_failed');setDevices(old=>old.map(device=>device.deviceId===id?{...device,displayName:name||device.deviceName,localAlias:name||undefined}:device));return {deviceId:id,deviceName:'Reported device name',displayName:name||'Reported device name',localAlias:name||undefined}}}/>};createRoot(document.getElementById('root')).render(<Fixture/>);`,
     resolveDir: repo,
     loader: "tsx",
   },
@@ -33,8 +33,52 @@ try {
       content: await readFile(`${repo}/${css}`, "utf8"),
     });
   await page.addScriptTag({ path: `${out}/devices-requests.js` });
-  await page.getByRole("button", { name: /^Devices/ }).click();
-  await page
+  const devicesNav = page.getByRole("button", { name: /^Devices/ });
+  const requestsNav = page.getByRole("button", { name: /^Requests/ });
+  await devicesNav.click();
+  const trustedRows = page.locator(".peer-item:not(.active)");
+  assert.equal(await trustedRows.count(), 20, "all 20 Trusted Devices render");
+  const firstTrustedDevice = trustedRows.filter({
+    hasText: "12D3KooWJ7cZsGHAw84d9JLU6V3bqm1SGUvDg68RTNWJyPCduyfv",
+  });
+  const lastTrustedDevice = trustedRows.filter({
+    hasText: "Trusted device 20",
+  });
+  await lastTrustedDevice.scrollIntoViewIfNeeded();
+  const lastDeviceBounds = await lastTrustedDevice.boundingBox();
+  assert(
+    lastDeviceBounds &&
+      lastDeviceBounds.y >= 0 &&
+      lastDeviceBounds.y + lastDeviceBounds.height <= 844,
+    "the last Trusted Device can be scrolled fully into view"
+  );
+  assert.equal(await requestsNav.isVisible(), true);
+  assert.match(
+    await requestsNav.innerText(),
+    /4/,
+    "Requests count remains visible"
+  );
+  await requestsNav.click();
+  const pendingCards = page.locator(".pending-card");
+  assert.equal(
+    await pendingCards.count(),
+    4,
+    "all four pending Requests render"
+  );
+  const lastPendingRequest = pendingCards.filter({
+    hasText: "Waiting device 4",
+  });
+  await lastPendingRequest.scrollIntoViewIfNeeded();
+  const lastRequestBounds = await lastPendingRequest.boundingBox();
+  assert(
+    lastRequestBounds &&
+      lastRequestBounds.y >= 0 &&
+      lastRequestBounds.y + lastRequestBounds.height <= 844,
+    "the last pending Request can be scrolled fully into view"
+  );
+  assert.equal(await devicesNav.isVisible(), true);
+  await devicesNav.click();
+  await firstTrustedDevice
     .getByRole("button", { name: "Edit Local Device Alias", exact: true })
     .click();
   await page.evaluate(() => {
@@ -76,7 +120,7 @@ try {
     ],
     "Use device name clears only the local alias through the existing alias action"
   );
-  await page
+  await firstTrustedDevice
     .getByRole("button", { name: "Edit Local Device Alias", exact: true })
     .click();
   await alias.fill("Submitted before clear");
