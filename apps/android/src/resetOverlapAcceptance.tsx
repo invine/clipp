@@ -1,3 +1,4 @@
+import { overlapFailureReason } from "./resetOverlapTiming";
 import { resetOverlapHistoryAccepted } from "./resetOverlapHistory";
 import { overlapPorts } from "./resetOverlapAcceptancePorts";
 import { runResetOverlap } from "./resetOverlapJourney";
@@ -32,6 +33,8 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
     "clipCount",
     "pinnedCount",
     "markerMatchCount",
+    "overlapElapsedMs",
+    "overlapRemainingMs",
     "autoSync",
     "theme",
     "backgroundEnabled",
@@ -340,7 +343,8 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
               operationId: manifest.operationId,
               reviewedPeerId: manifest.reviewedPeerId,
             }),
-          stage: (stage) => emit(stage, { operationId: manifest.operationId }),
+          stage: (stage, timing) =>
+            emit(stage, { operationId: manifest.operationId, ...timing }),
           ingress: () =>
             new Promise<void>((resolve) => {
               button.addEventListener("click", () => resolve(), { once: true });
@@ -385,8 +389,11 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
           },
           Math.max(0, expiresAt - Date.now())
         );
-        void execute().catch(() =>
-          finish("operation-unconfirmed", { operationId: manifest.operationId })
+        void execute().catch((error: unknown) =>
+          finish("operation-unconfirmed", {
+            operationId: manifest.operationId,
+            error: overlapFailureReason(error),
+          })
         );
       } else refresh();
     },

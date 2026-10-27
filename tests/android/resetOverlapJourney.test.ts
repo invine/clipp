@@ -120,3 +120,29 @@ test("reset completion after ingress remains bounded", async () => {
     jest.useRealTimers();
   }
 });
+
+test("observed stages report the remaining bounded monotonic window", async () => {
+  const ports = createResetOverlapPorts(1000);
+  const background = ports.wrapBackground({
+    start: async (_value: boolean | null) => {},
+  });
+  const reset = ports.wrapReset({ acquireFence: async () => {} });
+  const remaining: number[] = [];
+  await runResetOverlap({
+    ports,
+    deadlineMs: 1000,
+    start: () => background.start(true),
+    begin: async () => {
+      await reset.acquireFence();
+      return "completed";
+    },
+    ingress: async () => {},
+    stage: (_stage, timing) => {
+      remaining.push(timing.overlapRemainingMs);
+    },
+  });
+  expect(remaining).toHaveLength(2);
+  expect(remaining[0]).toBeGreaterThanOrEqual(remaining[1]);
+  expect(remaining[0]).toBeLessThanOrEqual(1000);
+  expect(remaining[1]).toBeGreaterThanOrEqual(0);
+});

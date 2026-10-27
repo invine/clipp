@@ -1,3 +1,7 @@
+import {
+  OVERLAP_DEADLINE_MS,
+  overlapBudgetObservation,
+} from "./resetOverlapTiming";
 import type { createResetOverlapPorts } from "./resetOverlapPorts";
 
 /** Acceptance-only orchestration; ingress is performed by the independent native driver. */
@@ -7,15 +11,23 @@ export async function runResetOverlap<T>(options: {
   start(): Promise<unknown>;
   begin(): Promise<T>;
   ingress(): Promise<void>;
-  stage(value: "start-held" | "provisional-fence-held"): void;
+  stage(
+    value: "start-held" | "provisional-fence-held",
+    timing: ReturnType<typeof overlapBudgetObservation>
+  ): void;
 }): Promise<T> {
   const { ports } = options;
-  const deadlineMs = options.deadlineMs ?? 10000;
-  if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 10000)
+  const deadlineMs = options.deadlineMs ?? OVERLAP_DEADLINE_MS;
+  if (
+    !Number.isSafeInteger(deadlineMs) ||
+    deadlineMs < 1 ||
+    deadlineMs > OVERLAP_DEADLINE_MS
+  )
     throw new Error("invalid_overlap_deadline");
   ports.arm();
   const started = Promise.resolve().then(() => options.start());
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const startedAt = performance.now();
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("overlap_deadline")), deadlineMs);
   });
@@ -32,7 +44,10 @@ export async function runResetOverlap<T>(options: {
   try {
     if (!(await Promise.race([ports.startGate.ready, startFailure, deadline])))
       throw new Error("overlap_start_unavailable");
-    options.stage("start-held");
+    options.stage(
+      "start-held",
+      overlapBudgetObservation(startedAt, performance.now(), deadlineMs)
+    );
     begun = options.begin();
     const beginFailure = begun.then(
       () => {
@@ -52,7 +67,10 @@ export async function runResetOverlap<T>(options: {
       ]))
     )
       throw new Error("overlap_fence_unavailable");
-    options.stage("provisional-fence-held");
+    options.stage(
+      "provisional-fence-held",
+      overlapBudgetObservation(startedAt, performance.now(), deadlineMs)
+    );
     await Promise.race([
       options.ingress(),
       startFailure,

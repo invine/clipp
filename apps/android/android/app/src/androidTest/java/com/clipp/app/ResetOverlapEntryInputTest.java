@@ -72,7 +72,7 @@ public final class ResetOverlapEntryInputTest {
     private static final String[] PUBLIC_FIELDS = {"version", "caseId", "documentId", "stage", "operationId",
         "currentPeerId", "formerPeerId", "generatedPeerId", "clipCount", "pinnedCount", "markerMatchCount",
         "autoSync", "theme", "backgroundEnabled", "backgroundStateKnown", "localRetentionMs",
-        "sharingLifetimeMs", "historyAvailable", "receiptPresent", "error"};
+        "sharingLifetimeMs", "historyAvailable", "receiptPresent", "error", "overlapElapsedMs", "overlapRemainingMs"};
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     @Rule public final TestName method = new TestName();
     @Rule public final TestWatcher outcome = new TestWatcher() {
@@ -98,6 +98,8 @@ public final class ResetOverlapEntryInputTest {
     private String previousTrace = "";
     private boolean cleanupComplete;
     private String tapGuardReason = "none";
+    private JSONObject continueTap = new JSONObject();
+    private JSONObject postFailureProgress = new JSONObject();
     private int journeyCreated;
     private int journeyDestroyed;
     private int retiredPublicReads;
@@ -244,7 +246,7 @@ public final class ResetOverlapEntryInputTest {
         awaitProgress("provisional-fence-held", deadline);
         assertNativeRefusal(Intent.ACTION_SEND, marker("during-send"));
         assertNativeRefusal(Intent.ACTION_PROCESS_TEXT, marker("during-process"));
-        tap(web.button("Continue reset overlap"));
+        tapContinue(web.button("Continue reset overlap"));
         JSONObject replacement = awaitProgress("replacement-ready", deadline);
         assertReplacement(replacement, 0);
         assertNotEquals("Real Activity recreation must create a new public document", formerDocument, replacement.getString("documentId"));
@@ -436,7 +438,14 @@ public final class ResetOverlapEntryInputTest {
         documentId(value.getString("documentId"));
         String trace = value.getString("stage") + ":" + value.getString("documentId");
         if (!trace.equals(previousTrace)) {
-            if (progressTrace.length() < 16) progressTrace.put(new JSONObject().put("stage", value.getString("stage")).put("documentId", value.getString("documentId")));
+            if (progressTrace.length() < 16) {
+                JSONObject item = new JSONObject().put("stage", value.getString("stage"))
+                    .put("documentId", value.getString("documentId"))
+                    .put("observedUptimeMs", SystemClock.uptimeMillis());
+                if (value.has("overlapElapsedMs")) item.put("overlapElapsedMs", value.getLong("overlapElapsedMs"));
+                if (value.has("overlapRemainingMs")) item.put("overlapRemainingMs", value.getLong("overlapRemainingMs"));
+                progressTrace.put(item);
+            }
             else droppedTrace++;
             previousTrace = trace;
         }
@@ -542,40 +551,71 @@ public final class ResetOverlapEntryInputTest {
         catch (Exception | AssertionError failure) {
             // Classify only finite source guard literals. Helper timeout diagnostics
             // may contain rendered content, so never expose its message or cause chain.
-            tapGuardReason = safeTapGuardReason(failure);
+            tapGuardReason = ResetOverlapTapDiagnostics.classify(failure);
             throw new AssertionError("Physical ordinary UI input unconfirmed: " + failure.getClass().getSimpleName()
                 + ";guard=" + tapGuardReason);
         }
     }
 
-    private String safeTapGuardReason(Throwable failure) {
-        if (!(failure instanceof AssertionError)) return "unclassified";
-        String message = failure.getMessage();
-        if (message == null) return "unclassified";
-        switch (message) {
-            case "Target must be inside the visible web viewport": return "viewport-bounds";
-            case "Touch target must be inside the actual native WebView": return "native-webview-bounds";
-            case "Physical pointer requires the actual foreground app window": return "foreground-window";
-            case "Physical pointer requires the isolated app as active native window": return "isolated-active-window";
-            case "Bounded native observations must be requested off the UI thread": return "observation-off-ui-thread";
-            case "Native UI dispatch deadline expired": return "ui-dispatch-deadline";
-            case "Main Looper rejected native observation": return "ui-post-rejected";
-            case "Native UI observation interrupted": return "ui-observation-interrupted";
-            case "Native UI observation did not complete within its deadline": return "ui-observation-deadline";
-            case "Resolve native lifecycle ownership only on the UI thread": return "owner-ui-thread";
-            case "Native observation must retain its actual task owner": return "owner-task";
-            case "Actual Activity bridge required": return "activity-bridge";
-            case "Actual Activity-owned WebView required": return "activity-webview";
-            case "Public WebView result belongs to an obsolete Activity": return "obsolete-activity-result";
-            case "WebView evaluation timed out within shared UI/callback deadline": return "webview-evaluation-deadline";
-            case "WebView returned no evaluation result": return "webview-result-unavailable";
-            default:
-                // These two assertions append dynamic native dispatch diagnostics.
-                // Recognize the literal delimiter, but discard every suffix byte.
-                if (message.startsWith("Android must accept the one physical DOWN: ")) return "physical-down-not-accepted";
-                if (message.startsWith("Android must accept the one physical UP: ")) return "physical-up-not-accepted";
-                return "unclassified";
+    private void tapContinue(String element) throws Exception {
+        long started = SystemClock.uptimeMillis();
+        boolean failed = false;
+        try { tap(element); }
+        catch (Exception | AssertionError original) { failed = true; throw original; }
+        finally {
+            long finished = SystemClock.uptimeMillis();
+            try {
+                String dispatch = web.touchTimelineDiagnostics().optString("dispatch", "");
+                JSONObject timing = new JSONObject().put("startedUptimeMs", started).put("finishedUptimeMs", finished);
+                long down = ResetOverlapTapDiagnostics.dispatchUptime(dispatch, "downSent", finished);
+                String stage = ResetOverlapTapDiagnostics.dispatchPhase(dispatch);
+                timing.put("dispatchPhase", down >= started || "not-sent".equals(stage) ? stage : "unknown");
+                for (String field : new String[] {"downSent", "downReturned", "upSent", "upReturned"}) {
+                    long value = ResetOverlapTapDiagnostics.dispatchUptime(dispatch, field, finished);
+                    if (value >= started) timing.put(field + "UptimeMs", value);
+                }
+                continueTap = timing;
+            } catch (Throwable ignored) {
+                continueTap = new JSONObject();
+            }
+            if (failed) {
+                try { postFailureProgress = observeAfterFailedTap(); }
+                catch (Throwable ignored) { postFailureProgress = new JSONObject(); }
+            }
         }
+    }
+
+    private JSONObject observeAfterFailedTap() {
+        final MainActivity owner = resumedActivity;
+        final int createdBefore = created.get(), destroyedBefore = destroyed.get();
+        final String expectedDocument = lastProgress.optString("documentId", "");
+        final long started = SystemClock.uptimeMillis();
+        ResetOverlapBoundedObservation.Result<JSONObject> result = ResetOverlapBoundedObservation.read(() -> {
+            if (owner == null || owner.isDestroyed() || resumedActivity != owner) return null;
+            String selected = web.evaluate("(() => {const e=document.querySelector('#clipp-reset-owning-progress');"
+                + "if(!e || !e.textContent || e.textContent.length>4096)return null; const p=JSON.parse(e.textContent);"
+                + "const bounded=v=>typeof v==='string' && v.length<=128?v:'';"
+                + "return JSON.stringify({origin:location.origin,caseId:bounded(p.caseId),documentId:bounded(p.documentId),"
+                + "stage:bounded(p.stage),error:bounded(p.error)});})()");
+            if ("null".equals(selected)) return null;
+            JSONObject value = new JSONObject(selected);
+            if (resumedActivity != owner || owner.isDestroyed() || created.get() != createdBefore || destroyed.get() != destroyedBefore
+                || !"https://localhost".equals(value.optString("origin")) || !nonce.equals(value.optString("caseId"))
+                || !expectedDocument.equals(value.optString("documentId"))) return null;
+            return new JSONObject().put("stage", ResetOverlapTapDiagnostics.publicStage(value.optString("stage")))
+                .put("error", ResetOverlapTapDiagnostics.publicError(value.optString("error")))
+                .put("observedUptimeMs", SystemClock.uptimeMillis());
+        }, 1500);
+        try {
+            JSONObject safe = new JSONObject().put("startedUptimeMs", started)
+                .put("finishedUptimeMs", SystemClock.uptimeMillis());
+            if (resumedActivity != owner || (owner != null && owner.isDestroyed())
+                || created.get() != createdBefore || destroyed.get() != destroyedBefore)
+                return safe.put("status", "owner-changed");
+            safe.put("status", result.status);
+            if (result.value != null) safe.put("value", result.value);
+            return safe;
+        } catch (Exception ignored) { return new JSONObject(); }
     }
 
     private String matchingCards(String marker) {
@@ -627,6 +667,7 @@ public final class ResetOverlapEntryInputTest {
                 .put("outcome", result).put("failureClass", failureClass).put("tapGuardReason", tapGuardReason).put("pid", Process.myPid())
                 .put("manifestSha256", manifestSha256).put("indexSha256", indexSha256)
                 .put("publicProgress", lastProgress).put("progressTrace", progressTrace).put("droppedTrace", droppedTrace)
+                .put("continueTap", continueTap).put("postFailureProgress", postFailureProgress)
                 .put("journeyCreatedMainActivities", journeyCreated).put("journeyDestroyedMainActivities", journeyDestroyed)
                 .put("createdMainActivitiesAfterCleanup", created.get()).put("destroyedMainActivitiesAfterCleanup", destroyed.get())
                 .put("retiredPublicReads", retiredPublicReads)
