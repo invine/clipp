@@ -141,7 +141,10 @@ try {
     1
   );
   await page.getByRole("button", { name: /^Requests/ }).click();
-  await page.getByText("Waiting device", { exact: true }).waitFor();
+  await page
+    .locator(".pending-card")
+    .filter({ hasText: "Waiting device" })
+    .waitFor({ state: "visible" });
 } finally {
   await browser.close();
 }
