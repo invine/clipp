@@ -34,11 +34,12 @@ await build({
         { deviceId: "unknown-path-peer", deviceName: "Unknown path device", displayName: "Unknown path device" },
         { deviceId: "unicode-peer-a", deviceName: unicodeNameA, displayName: unicodeNameA },
         { deviceId: "unicode-peer-b", deviceName: unicodeNameB, displayName: unicodeNameB },
-        ...Array.from({ length: 13 }, (_, index) => ({
+        ...Array.from({ length: 12 }, (_, index) => ({
           deviceId: "trusted-" + (index + 8),
           deviceName: "Trusted device " + (index + 8),
           displayName: "Trusted device " + (index + 8),
         })),
+        { deviceId: "revoke-peer", deviceName: "Trusted device 20", displayName: "Trusted device 20" },
       ];
       const initialPending = Array.from({ length: 4 }, (_, index) => ({
         deviceId: "pending-peer-" + (index + 1),
@@ -55,6 +56,8 @@ await build({
         singleDevice,
         acceptedRequests: [],
         currentRequestVersions: { "pending-peer-1": "current-request-version" },
+        unpairCalls: [],
+        failRevocation: true,
       };
       function Fixture() {
         const [devices, setDevices] = useState(initialDevices);
@@ -62,7 +65,7 @@ await build({
         window.fixture.getDevices = () => devices;
         window.fixture.setDevices = setDevices;
         window.fixture.setPending = setPending;
-        // Synthetic public controls only; this fixture makes no OS delivery claim.
+        // Rendered synthetic controls/actions only; no OS delivery or membership convergence is claimed.
         return <ClipboardApp
           clips={[]}
           devices={devices}
@@ -76,15 +79,22 @@ await build({
           pinnedIds={[]}
           identity={{ deviceId: "local", deviceName: "This installation" }}
           notificationControls={{
-            state: { app: "blocked", channel: "blocked", displayError: "synthetic display failure" },
+            state: { app: "available", channel: "available", displayError: "synthetic display failure" },
             pending: false,
-            error: true,
+            error: false,
             refresh: async () => {},
             openSettings: async () => {},
             requestPermission: async () => {},
           }}
           onDeleteClip={() => {}}
-          onUnpair={() => {}}
+          onUnpair={async (id) => {
+            window.fixture.unpairCalls.push(id);
+            if (window.fixture.failRevocation) {
+              window.fixture.failRevocation = false;
+              throw new Error("fixture_revocation_failure");
+            }
+            setDevices((current) => current.filter((device) => device.deviceId !== id));
+          }}
           onAccept={async (request) => {
             window.fixture.acceptedRequests.push({ ...request });
             if (request.requestVersion !== window.fixture.currentRequestVersions[request.deviceId]) {
@@ -151,6 +161,14 @@ try {
       content: await readFile(`${repo}/${css}`, "utf8"),
     });
   await page.addScriptTag({ path: `${out}/devices-requests.js` });
+  await page.evaluate(() => {
+    window.fixture.confirmResponses = [false, true, true];
+    window.fixture.confirmMessages = [];
+    window.confirm = (message) => {
+      window.fixture.confirmMessages.push(message);
+      return window.fixture.confirmResponses.shift() ?? false;
+    };
+  });
   const devicesNav = page.getByRole("button", { name: /^Devices/ });
   const requestsNav = page.getByRole("button", { name: /^Requests/ });
   const pendingCards = page.locator(".pending-card");
@@ -354,6 +372,46 @@ try {
   assert.equal(
     await page.getByText("Connected · path unknown", { exact: true }).count(),
     1
+  );
+  const revocationRow = trustedRows.filter({ hasText: "revoke-peer" });
+  await revocationRow
+    .getByRole("button", { name: "Revoke device", exact: true })
+    .click();
+  assert.deepEqual(
+    await page.evaluate(() => window.fixture.unpairCalls),
+    [],
+    "dismissing the rendered Revoke confirmation performs no action"
+  );
+  assert.equal(await revocationRow.count(), 1);
+  await revocationRow
+    .getByRole("button", { name: "Revoke device", exact: true })
+    .click();
+  await page
+    .getByRole("alert")
+    .filter({
+      hasText:
+        "Device revocation could not be confirmed. Check the current device list.",
+    })
+    .waitFor({ state: "visible" });
+  assert.deepEqual(
+    await page.evaluate(() => window.fixture.unpairCalls),
+    ["revoke-peer"],
+    "confirmed Revoke reaches the rendered action port"
+  );
+  assert.equal(await revocationRow.count(), 1, "failed Revoke retains the row");
+  await revocationRow
+    .getByRole("button", { name: "Retry", exact: true })
+    .click();
+  await revocationRow.waitFor({ state: "detached" });
+  assert.deepEqual(
+    await page.evaluate(() => window.fixture.unpairCalls),
+    ["revoke-peer", "revoke-peer"],
+    "Retry confirms the rendered Revoke action again"
+  );
+  assert.equal(
+    await page.evaluate(() => window.fixture.confirmMessages.length),
+    3,
+    "cancel, confirm, and Retry each use the existing confirmation prompt"
   );
   await requestsNav.click();
   await page
