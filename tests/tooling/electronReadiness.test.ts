@@ -482,25 +482,36 @@ test("an explicit renewal preserves and references the failed history", () => {
 });
 
 function realOwnedRuntime(
-  mode: "normal" | "timeout" | "reuse" | "refused-signal" | "unobserved-signal",
+  mode:
+    | "normal"
+    | "timeout"
+    | "reuse"
+    | "refused-signal"
+    | "unobserved-signal"
+    | "held-ownership"
+    | "interrupted-launch",
   observerRoot?: string
 ) {
   workingRuntime();
+  const lifetime =
+    mode === "held-ownership" || mode === "interrupted-launch" ? 4000 : 1500;
+  const exitMarker = observerRoot ? observerRoot + ".exited" : undefined;
+  const childScript = `const fs=require('node:fs');${exitMarker ? `process.on('exit',()=>{try{fs.writeFileSync(${JSON.stringify(exitMarker)},'exited')}catch{}});` : ""}process.on('message',()=>process.exit(0));setTimeout(()=>process.exit(0),${lifetime});`;
   const adapter = path.join(repo, "node_modules/playwright/index.js");
   let source = readFileSync(adapter, "utf8");
   source =
-    "import {spawn} from 'node:child_process';\nimport {appendFileSync} from 'node:fs';\n" +
+    "import {spawn} from 'node:child_process';\nimport {appendFileSync,unlinkSync} from 'node:fs';\n" +
     source;
   source = source.replace(
     "const child = new EventEmitter(); child.pid = process.pid; child.exitCode = null; child.signalCode = null;",
-    `const child = spawn(process.execPath, ['-e', "process.on('message',()=>process.exit(0)); setTimeout(()=>process.exit(0),1500)", ${JSON.stringify(mode === "reuse" ? "unrelated-canary" : "")} || args[0]], {detached:true, stdio:['ignore','pipe','pipe','ipc']});`
+    `${exitMarker ? `try{unlinkSync(${JSON.stringify(exitMarker)})}catch{}` : ""}const child = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}, ${JSON.stringify(mode === "reuse" ? "unrelated-canary" : "")} || args[0]], {detached:true, stdio:['ignore','pipe','pipe','ipc']});`
   );
   const retainedChildren =
     process.env.CLIPP_OWNED_CHILD_EVIDENCE ??
     path.join(os.tmpdir(), "clipp-owned-fixture-children.jsonl");
   source = source.replace(
     "const win =",
-    `appendFileSync(${JSON.stringify(retainedChildren)},JSON.stringify({pid:child.pid,parentPid:process.pid,marker:args[0],mode:${JSON.stringify(mode)},startedAt:new Date().toISOString(),maximumLifetimeMs:1500})+'\\n'); appendFileSync(${JSON.stringify((observerRoot ?? retainedChildren) + ".ps")},process.pid+' '+child.pid+' Wed Oct 28 00:00:00 2026 '+args[0],{flag:"w",mode:0o600}); const win =`
+    `appendFileSync(${JSON.stringify(retainedChildren)},JSON.stringify({pid:child.pid,parentPid:process.pid,marker:args[0],mode:${JSON.stringify(mode)},startedAt:new Date().toISOString(),maximumLifetimeMs:${lifetime}})+'\\n'); appendFileSync(${JSON.stringify((observerRoot ?? retainedChildren) + ".ps")},process.pid+' '+child.pid+' Wed Oct 28 00:00:00 2026 '+args[0],{flag:"w",mode:0o600}); appendFileSync(${JSON.stringify((observerRoot ?? retainedChildren) + ".snapshot")},child.pid+' '+process.pid+' '+child.pid+' Wed Oct 28 00:00:00 2026 '+args[0],{flag:"w",mode:0o600}); appendFileSync(${JSON.stringify((observerRoot ?? retainedChildren) + ".launches")},'launched\\n'); const win =`
   );
   source = source.replace(
     "return await fn({app,BrowserWindow:",
@@ -516,10 +527,19 @@ function realOwnedRuntime(
       ? "close:async()=>{child.send('exit');}"
       : "close:async()=>new Promise(()=>{})"
   );
-  if (mode === "refused-signal" || mode === "unobserved-signal")
+  if (
+    mode === "refused-signal" ||
+    mode === "unobserved-signal" ||
+    mode === "held-ownership"
+  )
     source = source.replace(
       "const win =",
       `child.kill=()=>${mode === "unobserved-signal"}; const win =`
+    );
+  if (mode === "interrupted-launch")
+    source = source.replace(
+      "const win =",
+      "process.kill(process.pid,'SIGKILL'); const win ="
     );
   // In the unrelated-PID simulation the adapter releases its own canary after
   // the runner's bounded ownership check; the runner must never signal it.
@@ -950,3 +970,99 @@ test("filesystem source hashing receives the current deadline", () => {
     reason: "owned_command_deadline_exhausted",
   });
 });
+
+function controlledOwnershipObserver(observer: string) {
+  const quoted = (suffix: string) =>
+    "'" + (observer + suffix).replace(/'/g, "'\\''") + "'";
+  writeFileSync(
+    path.join(fixture, "bin/ps"),
+    `#!/bin/sh\ncase "$*" in *-ax*) read owned_pid rest < ${quoted(".snapshot")}; if test ! -e ${quoted(".exited")} && kill -0 "$owned_pid" 2>/dev/null; then cat ${quoted(".snapshot")}; fi ;; *ppid=*) cat ${quoted(".ps")} ;; *) printf '%s\\n' 'runner-start runner' ;; esac\n`,
+    { mode: 0o755 }
+  );
+}
+
+test("canonical unresolved ownership blocks a changed output and profile while the owned child lives", () => {
+  const observer = path.join(fixture, "owned-observation");
+  realOwnedRuntime("held-ownership", observer);
+  controlledOwnershipObserver(observer);
+  expect(run(["--cleanup-timeout-ms", "200"]).status).toBe(1);
+  expect(receipt()).toMatchObject({ shutdown: "uncertain-owned-process" });
+  const childPid = Number(
+    readFileSync(observer + ".snapshot", "utf8").split(" ")[0]
+  );
+  expect(() => process.kill(childPid, 0)).not.toThrow();
+  const continuation = run([
+    "--output",
+    path.join(fixture, "other-output"),
+    "--profile",
+    path.join(fixture, "other-profile"),
+    "--diagnostic-change",
+    "new observation",
+    "--expected-observation",
+    "old owned target is isolated",
+  ]);
+  expect(continuation.stderr).toContain("owned_target_active_or_uncertain");
+  expect(
+    readFileSync(observer + ".launches", "utf8")
+      .trim()
+      .split("\n")
+  ).toHaveLength(1);
+});
+
+test("interruption before child identity persistence retains launch uncertainty across profiles", async () => {
+  const observer = path.join(fixture, "interrupted-observation");
+  realOwnedRuntime("interrupted-launch", observer);
+  controlledOwnershipObserver(observer);
+  expect(run().signal).toBe("SIGKILL");
+  const childPid = Number(
+    readFileSync(observer + ".snapshot", "utf8").split(" ")[0]
+  );
+  expect(() => process.kill(childPid, 0)).not.toThrow();
+  const continuation = run([
+    "--output",
+    path.join(fixture, "other-output"),
+    "--profile",
+    path.join(fixture, "other-profile"),
+    "--diagnostic-change",
+    "recover interrupted launch",
+    "--expected-observation",
+    "owned target isolation",
+  ]);
+  expect(continuation.stderr).toContain("owned_target_active_or_uncertain");
+  expect(
+    readFileSync(observer + ".launches", "utf8")
+      .trim()
+      .split("\n")
+  ).toHaveLength(1);
+  const deadline = Date.now() + 6000;
+  while (!existsSync(observer + ".exited") && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(existsSync(observer + ".exited")).toBe(true);
+  realOwnedRuntime("normal", observer);
+  expect(
+    run([
+      "--output",
+      path.join(fixture, "verified-successor"),
+      "--profile",
+      path.join(fixture, "verified-profile"),
+      "--diagnostic-change",
+      "recover interrupted launch",
+      "--expected-observation",
+      "owned target isolation",
+    ]).status
+  ).toBe(0);
+  expect(
+    JSON.parse(
+      readFileSync(path.join(output, "attempt-1/receipt.json"), "utf8")
+    )
+  ).toMatchObject({
+    result: "failed",
+    stage: "interrupted",
+    classification: "unknown",
+  });
+  expect(
+    readFileSync(observer + ".launches", "utf8")
+      .trim()
+      .split("\n")
+  ).toHaveLength(2);
+}, 15000);

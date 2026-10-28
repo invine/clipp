@@ -189,6 +189,7 @@ try {
     renewal: values.renewal,
     successor: values.successor,
     importHistory: values["import-history"],
+    verifyTarget: verifyPreviousTarget,
     scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport}`,
     change: values["diagnostic-change"],
     expectation: values["expected-observation"],
@@ -230,6 +231,7 @@ const receipt = {
 };
 let electron;
 let ownedProcess;
+let launchIntentRecorded = false;
 function processIdentity(
   pid,
   timeoutMs = attempt.remainingMs(Math.min(1000, commandTimeout))
@@ -255,6 +257,78 @@ function processIdentity(
   const value = observation.stdout?.trim();
   if (observation.status !== 0 || !value) return null;
   return value;
+}
+// Only an unresolved canonical target needs this bounded current observation.
+// Missing launch identity is unknown until its worker is gone and the unique
+// launch marker is absent now; no historical descendant claim is made.
+function verifyPreviousTarget(target) {
+  const deadline = Date.now() + Math.min(commandTimeout, 1000);
+  const remaining = () => Math.max(0, deadline - Date.now());
+  const absent = (pid) => {
+    if (!Number.isSafeInteger(pid) || pid <= 1) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      return error.code === "ESRCH";
+    }
+  };
+  if (!target.marker || !Number.isSafeInteger(target.runnerPid)) return false;
+  if (Number.isSafeInteger(target.childPid)) {
+    if (absent(target.childPid)) return true;
+    if (remaining() <= 0) return false;
+    const state = spawnSync(
+      "ps",
+      ["-p", String(target.childPid), "-o", "stat="],
+      { encoding: "utf8", timeout: remaining(), maxBuffer: 1024 }
+    );
+    if (state.status === 0 && /^Z/.test(state.stdout.trim())) return true;
+    if (remaining() <= 0) return false;
+    const current = processIdentity(target.childPid, remaining());
+    if (current?.includes(target.marker)) return false;
+    if (current && target.identity) {
+      const currentStart = current.split(/\s+/).slice(2, 7).join(" ");
+      const recordedStart = target.identity.split(/\s+/).slice(2, 7).join(" ");
+      if (currentStart && recordedStart && currentStart !== recordedStart)
+        return true;
+    }
+    // A changed command/parent alone is not proof of PID replacement.
+    return false;
+  }
+  let workerAbsent = absent(target.runnerPid);
+  if (!workerAbsent && target.runnerFingerprint && remaining() > 0) {
+    const observed = spawnSync(
+      "ps",
+      ["-p", String(target.runnerPid), "-o", "lstart=", "-o", "command="],
+      { encoding: "utf8", timeout: remaining(), maxBuffer: 1024 * 1024 }
+    );
+    if (observed.status === 0 && observed.stdout.trim())
+      workerAbsent =
+        createHash("sha256").update(observed.stdout.trim()).digest("hex") !==
+        target.runnerFingerprint;
+  }
+  if (!workerAbsent || remaining() <= 0) return false;
+  const snapshot = spawnSync(
+    "ps",
+    [
+      "-ax",
+      "-o",
+      "pid=",
+      "-o",
+      "ppid=",
+      "-o",
+      "pgid=",
+      "-o",
+      "lstart=",
+      "-o",
+      "command=",
+    ],
+    { encoding: "utf8", timeout: remaining(), maxBuffer: 8 * 1024 * 1024 }
+  );
+  return (
+    snapshot.status === 0 &&
+    !snapshot.stdout.split("\n").some((line) => line.includes(target.marker))
+  );
 }
 function stillOwned(child, timeoutMs) {
   const current = processIdentity(child.pid, timeoutMs);
@@ -355,16 +429,15 @@ try {
           return error.code === "ESRCH";
         }
       };
-      assert(
-        Number.isSafeInteger(prior.runnerPid) && absent(prior.runnerPid),
-        "owned_profile_active_or_uncertain"
-      );
-      if (prior.childPid && !absent(prior.childPid)) {
-        const current = processIdentity(prior.childPid);
+      const verifiedCanonical =
+        prior.marker && attempt.clearedTarget?.marker === prior.marker;
+      if (!verifiedCanonical) {
         assert(
-          current &&
-            current !== prior.identity &&
-            !current.includes(prior.marker),
+          Number.isSafeInteger(prior.runnerPid) && absent(prior.runnerPid),
+          "owned_profile_active_or_uncertain"
+        );
+        assert(
+          prior.state === "prepared" || verifyPreviousTarget(prior),
           "owned_profile_active_or_uncertain"
         );
       }
@@ -374,7 +447,13 @@ try {
     }
     profileLock = await command(() => open(profileLockPath, "wx", 0o600));
     await command(() =>
-      profileLock.writeFile(JSON.stringify({ runnerPid: process.pid }))
+      profileLock.writeFile(
+        JSON.stringify({
+          runnerPid: process.pid,
+          state: "prepared",
+          marker: runner,
+        })
+      )
     );
   } finally {
     await command(() => profileAdmission.close());
@@ -391,6 +470,23 @@ try {
   );
   receipt.stage = "launch";
   receipt.classification = "runner";
+  const targetOwnership = {
+    runnerPid: process.pid,
+    profile: await command(() => realpath(values.profile)),
+    marker: runner,
+  };
+  await command(() =>
+    attempt.recordTarget({ ...targetOwnership, state: "launch-intent" })
+  );
+  launchIntentRecorded = true;
+  await command(() => profileLock.truncate(0));
+  await command(() =>
+    profileLock.write(
+      JSON.stringify({ ...targetOwnership, state: "launch-intent" }),
+      0,
+      "utf8"
+    )
+  );
   electron = await _electron.launch({
     args: [runner],
     cwd: root,
@@ -405,13 +501,23 @@ try {
     },
     timeout: attempt.remainingMs(Math.min(30_000, commandTimeout)),
   });
+  const launchedTarget = {
+    ...targetOwnership,
+    state: "launched",
+    childPid: electron.process().pid,
+  };
+  await command(() => attempt.recordTarget(launchedTarget));
   ownedProcess = processIdentity(electron.process().pid);
+  await command(() =>
+    attempt.recordTarget({ ...launchedTarget, identity: ownedProcess })
+  );
   await command(() => profileLock.truncate(0));
   await command(() =>
     profileLock.write(
       JSON.stringify({
         runnerPid: process.pid,
         childPid: electron.process().pid,
+        state: "launched",
         identity: ownedProcess,
         marker: runner,
       }),
@@ -711,6 +817,7 @@ try {
 } catch (error) {
   receipt.result = "failed";
   const safeReasons = [
+    "owned_target_active_or_uncertain",
     "owned_profile_active_or_uncertain",
     "owned_command_deadline_exhausted",
     "successor_candidate_binding_mismatch",
@@ -796,7 +903,7 @@ try {
 } finally {
   receipt.cleanupStartedAt = new Date().toISOString();
   const cleanupDeadline = Date.now() + cleanupTimeout;
-  let exitObserved = !electron;
+  let exitObserved = !launchIntentRecorded;
   const cleanupRemaining = () => Math.max(0, cleanupDeadline - Date.now());
   const cleanupStep = async (operation, maximum = cleanupRemaining()) => {
     const remaining = Math.min(maximum, cleanupRemaining());
@@ -898,10 +1005,17 @@ try {
             : "uncertain-owned-process";
         }
       }
-    } else receipt.shutdown = "not-launched";
+    } else {
+      receipt.shutdown = launchIntentRecorded
+        ? "uncertain-owned-process"
+        : "not-launched";
+      if (launchIntentRecorded)
+        failCleanup("owned_test_launch_ownership_unknown");
+    }
     await cleanupStep(() => Promise.all(logWrites));
     await cleanupStep(() => log?.close());
     assert(!logFailure, "owned_test_log_write_failed");
+    if (exitObserved) await cleanupStep(() => attempt.clearTarget());
     if (profileLock) {
       await cleanupStep(() => profileLock.close());
       if (exitObserved)

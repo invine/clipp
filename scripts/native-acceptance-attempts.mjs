@@ -216,6 +216,20 @@ export async function beginNativeAttempt(options) {
       if (error.code !== "ENOENT") throw error;
       await save(identityPath, identity);
     }
+    const targetPath = path.join(base, "unresolved-target.json");
+    let clearedTarget;
+    try {
+      const target = JSON.parse(await readFile(targetPath, "utf8"));
+      assert(
+        typeof options.verifyTarget === "function" &&
+          (await options.verifyTarget(target)),
+        "owned_target_active_or_uncertain"
+      );
+      await unlink(targetPath);
+      clearedTarget = target;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
     let generation = 0;
     let batchKind = "initial";
     let predecessor;
@@ -434,11 +448,12 @@ export async function beginNativeAttempt(options) {
           : false,
       diagnosticInitial: batchKind === "renewal",
     });
+    const runnerFingerprint = ownerFingerprint(process.pid);
     await writeFile(
       activePath,
       JSON.stringify({
         pid: process.pid,
-        fingerprint: ownerFingerprint(process.pid),
+        fingerprint: runnerFingerprint,
       }),
       {
         mode: 0o600,
@@ -473,6 +488,27 @@ export async function beginNativeAttempt(options) {
       ...attempt,
       history,
       successorCandidate: attempt.number === 1 ? successorCandidate : undefined,
+      clearedTarget,
+      async recordTarget(target) {
+        await save(targetPath, {
+          ...target,
+          attemptDirectory: attempt.directory,
+          history,
+          runnerFingerprint,
+        });
+      },
+      async clearTarget() {
+        try {
+          const target = JSON.parse(await readFile(targetPath, "utf8"));
+          assert(
+            target.attemptDirectory === attempt.directory,
+            "owned_target_ownership_changed"
+          );
+          await unlink(targetPath);
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+      },
       async finish(receipt) {
         receipt.history = { key, generation, path: history, predecessor };
         await attempt.finish(receipt);

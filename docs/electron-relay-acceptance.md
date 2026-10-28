@@ -158,11 +158,19 @@ cleanup, `product` for observed relay invariant violations after readiness, and
 failure cannot produce a pass and is retained separately when there was already
 a primary failure. Only the launched ChildProcess may be terminated, after its current parent,
 process group, start/command identity and unique launcher marker match the recorded ownership.
-An exited handle or mismatched/reused PID is never signalled. Missing process
+An exited handle or mismatched/reused PID is never signalled. Launch intent and
+unresolved target ownership are retained with the canonical semantic case across
+all output directories and profiles. Intent is saved before calling the launcher;
+the returned child PID is saved before process-identity inspection. Finishing an
+uncertain attempt retains that ownership record. A continuation checks the prior
+target before admission, even when it selects a fresh profile. If interruption
+left the child identity unknown, admission stays refused while the unique launch
+marker is currently present or process visibility is unavailable. After its old
+worker is gone, a bounded current marker observation can establish isolation;
+this makes no claim about every possible historical detached descendant. Missing process
 visibility preserves cleanup uncertainty and the profile ownership record. A
 successor checks current recorded ownership; it may proceed after the old owned
-child exited or the PID demonstrably belongs to another command. It does not
-claim every historical detached descendant was absent. Profile and log cleanup
+child exited or the PID demonstrably belongs to a replacement process. Profile and log cleanup
 failures are failures too.
 
 All artifacts are private (files mode 600, directories mode 700); receipts now
