@@ -6,6 +6,8 @@ nonprivate marker that a paired peer will send:
 ```sh
 node scripts/electron-relay-acceptance.mjs \
   --profile /absolute/isolated-test-profile \
+  --effort approved-effort-id \
+  --history-root /absolute/durable-private-evidence/native-history \
   --transport wss \
   --discovery https://approved-relay.example/v1/relay \
   --output /absolute/private-evidence-directory \
@@ -57,6 +59,8 @@ login, paired peer or host clipboard access:
 ```sh
 node scripts/electron-relay-acceptance.mjs \
   --profile /absolute/isolated-readiness-profile \
+  --effort approved-effort-id \
+  --history-root /absolute/durable-private-evidence/native-history \
   --transport wss \
   --output /absolute/durable-private-evidence/electron-readiness \
   --preflight-only
@@ -82,29 +86,56 @@ change; DOM/bridge availability alone cannot pass readiness. A readiness-only
 pass does not qualify relay transfer, provider login, native toolbar popups or
 any larger UX matrix.
 
-Keep one durable output directory per scenario, reusing it when diagnosing a
-failure even when the candidate, profile or environment changes. For a linked
-worktree the directory must physically reside outside that disposable checkout;
-a primary checkout may use its established ignored `.local` evidence directory.
-The directory has an exclusive runner lock, `attempts.json`, a latest
-`receipt.json`, and immutable-by-convention `attempt-1` through `attempt-5`
-directories containing receipts, launcher, private logs and private exception
-details. Do not discard or replace failed history to obtain more attempts. After
-an interrupted process, confirm the recorded owned process is stopped before
-removing a stale `.attempt.lock`; preserve `attempts.json` and existing attempt
-directories. Reusing the scenario directory after success is refused; a later
-candidate's normal qualification uses a separate, explicitly dated/revisioned
-scenario record.
+Select a stable `--effort` from the owning run record and one durable
+`--history-root` outside disposable worktrees. The semantic key combines that
+effort, readiness or transport/discovery scenario, hostname, OS and architecture.
+Candidate revisions, output directories, profiles and the optional human
+`--environment` label do not change that key. A per-user registry anchors its history location across linked worktrees and
+independent frozen candidate clones. Its default location follows the existing
+Acceptance convention: macOS `~/Library/Application Support/Clipp/Acceptance/native`,
+Windows `~/AppData/Local/Clipp/Acceptance/native`, or Linux
+`~/.local/state/clipp/acceptance/native`. An owning run may explicitly configure
+one canonical `CLIPP_ACCEPTANCE_STATE_ROOT` outside all checkouts. Keep that state
+location fixed across continuations and candidates; changing it requires explicit
+reconciliation of its registry and histories, not a new output label. Changing a
+registered history directory is refused. Preserve the registry with the evidence.
+
+`--output` receives `history.json` (the canonical history pointer), links to
+`attempts.json` and the current `attempt-N` directory, and a latest `receipt.json`.
+Canonical failed receipts and private artifacts remain under the history root.
+Exclusive admission and active-worker locks prevent concurrent diagnostic workers.
+If an active worker disappears, its unfinished attempt becomes an `unknown`
+interruption receipt; it still consumes an attempt. Live or unobservable ownership
+is refused. An interrupted admission transition requires operator reconciliation
+of its short-lived `.admission.lock`, preserving all existing history.
+
+Existing version-1 histories keep their original timing and attempt semantics.
+For the same semantic case, import earlier failures explicitly with one or more
+`--import-history /absolute/old/attempts.json` arguments on first registration.
+The runner copies their artifacts, retains each original history/attempt reference,
+adds their attempt counts, and preserves the earliest diagnostic start. It refuses
+active or incompatible histories and implicit replacement of a legacy output.
+An exhausted import remains exhausted. Keep the original failed evidence.
+
+A budget renewal requires an explicit authorized decision under the owning run's
+policy. Write a private JSON decision containing `previousHistory` (the canonical
+path in `history.json`), `authorizedBy` (the actual decision source) and `reason`.
+Use `--renewal /absolute/decision.json` together with a changed diagnosis and
+expected observation. The runner references the failed prior history and creates
+a separate budget generation whose first rebuild is diagnostic and charged; it never replaces the old failure. The decision
+file records authorization; creating it does not itself grant authorization.
 
 One initial attempt and at most four diagnostic attempts are allowed (five
 attempts total). After a
 failure, a retry requires both `--diagnostic-change` (changed hypothesis or
 environment) and `--expected-observation` (what will distinguish the diagnosis).
 An absent or repeated change is refused. A 20-minute diagnostic clock starts
-when the initial failure is recorded; diagnostic builds and shutdown consume
-that clock. Initial builds and normal acceptance are outside it. Existing
-per-command timeouts remain and diagnostic commands are additionally capped by
-the remaining budget. Failed readiness withholds the relay scenario; unrelated
+when the initial failure is recorded; diagnostic builds consume that clock.
+Initial builds and normal acceptance are outside it. Commands receive the
+remaining budget and retain their individual bounded limits. Native observations
+have a default 30-second command deadline (`--command-timeout-ms` may shorten
+it); cleanup has its own default ten-second allowance (`--cleanup-timeout-ms`
+may shorten it), outside the diagnostic clock. Failed readiness withholds the relay scenario; unrelated
 eligible work can continue.
 
 Receipts retain the failure stage and classification: `prerequisite` for
@@ -112,8 +143,14 @@ candidate/build setup, `runner` for target/focus/interaction, diagnostic limits 
 cleanup, `product` for observed relay invariant violations after readiness, and
 `unknown` for transfer timeout or unexplained transfer failures. A cleanup
 failure cannot produce a pass and is retained separately when there was already
-a primary failure. Only the launched ChildProcess may be terminated. Profile
-and log cleanup failures are failures too.
+a primary failure. Only the launched ChildProcess may be terminated, after its current parent,
+process group, start/command identity and unique launcher marker match the recorded ownership.
+An exited handle or mismatched/reused PID is never signalled. Missing process
+visibility preserves cleanup uncertainty and the profile ownership record. A
+successor checks current recorded ownership; it may proceed after the old owned
+child exited or the PID demonstrably belongs to another command. It does not
+claim every historical detached descendant was absent. Profile and log cleanup
+failures are failures too.
 
 All artifacts are private (files mode 600, directories mode 700); receipts now
 contain exact local target paths and must be reviewed/redacted before sharing.
@@ -180,7 +217,7 @@ On integrated local `main`, Node 24.16.0/npm 11.13.0 passed `npm run check`
 TCP, WebRTC Direct and bounded mixed-address fallback remain unverified.
 
 The runner gives its owned Electron process ten seconds to close. If runtime
-shutdown hangs, it terminates only that launched process, records
+shutdown hangs, it verifies current ownership before terminating that launched process, records
 `owned_test_shutdown_timeout`, and exits unsuccessfully. A received clip cannot
 turn this shutdown failure into a passed receipt. A nonzero or signaled process
 exit also fails acceptance; graceful shutdown requires exit code zero and no

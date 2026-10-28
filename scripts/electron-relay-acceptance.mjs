@@ -10,20 +10,30 @@ import {
   realpath,
   rm,
   lstat,
-  readlink,
 } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { _electron } from "playwright";
-import { beginNativeAttempt } from "./native-acceptance-attempts.mjs";
+import {
+  beginNativeAttempt,
+  nativeAcceptanceStateRoot,
+} from "./native-acceptance-attempts.mjs";
 import { sourceIdentity } from "./source-identity.mjs";
 
 const { values } = parseArgs({
   options: {
     profile: { type: "string" },
+    "history-root": { type: "string" },
+    effort: { type: "string" },
+    environment: { type: "string" },
+    renewal: { type: "string" },
+    "import-history": { type: "string", multiple: true },
+    "command-timeout-ms": { type: "string", default: "30000" },
+    "cleanup-timeout-ms": { type: "string", default: "10000" },
     "diagnostic-change": { type: "string" },
     "expected-observation": { type: "string" },
     "preflight-only": { type: "boolean", default: false },
@@ -35,7 +45,7 @@ const { values } = parseArgs({
     "timeout-seconds": { type: "string", default: "600" },
   },
 });
-for (const field of ["profile", "output"]) {
+for (const field of ["profile", "output", "history-root"]) {
   assert(
     values[field] && path.isAbsolute(values[field]),
     `absolute_${field}_required`
@@ -45,6 +55,7 @@ assert(
   ["tcp", "wss", "webrtc-direct"].includes(values.transport),
   "supported_transport_required"
 );
+assert(values.effort?.trim(), "stable_effort_required");
 let expectedDiscovery;
 if (!values["preflight-only"]) {
   assert(values["expect-clip"], "nonprivate_clip_marker_required");
@@ -59,6 +70,20 @@ if (!values["preflight-only"]) {
     "canonical_discovery_required"
   );
 }
+const commandTimeout = Number(values["command-timeout-ms"]);
+const cleanupTimeout = Number(values["cleanup-timeout-ms"]);
+assert(
+  Number.isSafeInteger(commandTimeout) &&
+    commandTimeout >= 50 &&
+    commandTimeout <= 30000,
+  "bounded_command_timeout_required"
+);
+assert(
+  Number.isSafeInteger(cleanupTimeout) &&
+    cleanupTimeout >= 50 &&
+    cleanupTimeout <= 10000,
+  "bounded_cleanup_timeout_required"
+);
 const timeout = Number(values["timeout-seconds"]) * 1_000;
 assert(
   Number.isSafeInteger(timeout) && timeout >= 1_000 && timeout <= 600_000,
@@ -69,13 +94,21 @@ const dist = path.join(root, "apps/electron/dist");
 // Evidence must survive disposal of a linked checkout. Primary repositories
 // may keep their established ignored local artifacts directory.
 await mkdir(values.output, { recursive: true, mode: 0o700 });
+await mkdir(values["history-root"], { recursive: true, mode: 0o700 });
 const canonicalOutput = await realpath(values.output);
+const canonicalHistory = await realpath(values["history-root"]);
 if ((await lstat(path.join(root, ".git"))).isFile()) {
   assert(
     path
       .relative(await realpath(root), canonicalOutput)
       .startsWith(`..${path.sep}`),
     "durable_output_outside_checkout_required"
+  );
+  assert(
+    path
+      .relative(await realpath(root), canonicalHistory)
+      .startsWith(`..${path.sep}`),
+    "durable_history_outside_checkout_required"
   );
 }
 async function artifactIdentity() {
@@ -112,10 +145,34 @@ async function artifactIdentity() {
   };
 }
 await mkdir(values.output, { recursive: true, mode: 0o700 });
+const stateRoot = nativeAcceptanceStateRoot();
+await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+const canonicalState = await realpath(stateRoot);
+assert(
+  path
+    .relative(await realpath(root), canonicalState)
+    .startsWith(`..${path.sep}`),
+  "acceptance_state_outside_checkout_required"
+);
+const registryRoot = path.join(canonicalState, "history-registry");
 let attempt;
 try {
   attempt = await beginNativeAttempt({
     output: values.output,
+    historyRoot: canonicalHistory,
+    registryRoot,
+    identity: {
+      effort: values.effort.trim(),
+      scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport + ":" + expectedDiscovery.href}`,
+      environment: {
+        host: os.hostname(),
+        platform: process.platform,
+        architecture: process.arch,
+        runtime: "electron",
+      },
+    },
+    renewal: values.renewal,
+    importHistory: values["import-history"],
     scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport}`,
     change: values["diagnostic-change"],
     expectation: values["expected-observation"],
@@ -148,8 +205,73 @@ const receipt = {
   mode: values["preflight-only"] ? "readiness-only" : "relay-transfer",
   result: "not-run",
   loginFlow: "not-observed-by-runner",
+  environmentLabel: values.environment,
+  attemptedObservation:
+    values["expected-observation"] ??
+    "owned Electron startup and native filter interaction",
+  recoveryAction:
+    "inspect classified failure and record a changed diagnosis before retry",
 };
 let electron;
+let ownedProcess;
+function processIdentity(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid)
+    return null;
+  const observation = spawnSync(
+    "ps",
+    [
+      "-p",
+      String(pid),
+      "-o",
+      "ppid=",
+      "-o",
+      "pgid=",
+      "-o",
+      "lstart=",
+      "-o",
+      "command=",
+    ],
+    { encoding: "utf8", timeout: 1000 }
+  );
+  const value = observation.stdout?.trim();
+  if (observation.status !== 0 || !value) return null;
+  return value;
+}
+function stillOwned(child) {
+  const current = processIdentity(child.pid);
+  return (
+    ownedProcess &&
+    current === ownedProcess &&
+    Number(current.split(/\s+/)[0]) === process.pid &&
+    current.includes(runner) &&
+    child.exitCode === null &&
+    child.signalCode === null
+  );
+}
+
+function boundMethods(target, methods) {
+  for (const method of methods) {
+    const invoke = target[method].bind(target);
+    target[method] = async (...args) => {
+      let timer;
+      const deadline = attempt.remainingMs(commandTimeout);
+      try {
+        return await Promise.race([
+          invoke(...args),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("owned_command_deadline_exhausted")),
+              deadline
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+  }
+  return target;
+}
 try {
   log = await open(path.join(evidenceDirectory, "runtime.log"), "a", 0o600);
   receipt.candidate = await sourceIdentity(root);
@@ -176,11 +298,47 @@ try {
   );
   attempt.assertBudget();
   await mkdir(values.profile, { recursive: true, mode: 0o700 });
-  profileLock = await open(
-    path.join(values.profile, ".clipp-relay-acceptance.lock"),
-    "wx",
-    0o600
+  const profileLockPath = path.join(
+    values.profile,
+    ".clipp-relay-acceptance.lock"
   );
+  const profileAdmissionPath = `${profileLockPath}.admission`;
+  const profileAdmission = await open(profileAdmissionPath, "wx", 0o600);
+  try {
+    try {
+      const prior = JSON.parse(await readFile(profileLockPath, "utf8"));
+      const absent = (pid) => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch (error) {
+          return error.code === "ESRCH";
+        }
+      };
+      assert(
+        Number.isSafeInteger(prior.runnerPid) && absent(prior.runnerPid),
+        "owned_profile_active_or_uncertain"
+      );
+      if (prior.childPid && !absent(prior.childPid)) {
+        const current = processIdentity(prior.childPid);
+        assert(
+          current &&
+            current !== prior.identity &&
+            !current.includes(prior.marker),
+          "owned_profile_active_or_uncertain"
+        );
+      }
+      await unlink(profileLockPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    profileLock = await open(profileLockPath, "wx", 0o600);
+    await profileLock.writeFile(JSON.stringify({ runnerPid: process.pid }));
+  } finally {
+    await profileAdmission.close();
+    await unlink(profileAdmissionPath);
+  }
+
   // Replace only the clipboard boundary: never read or write the host clipboard.
   await writeFile(
     runner,
@@ -201,6 +359,28 @@ try {
     },
     timeout: attempt.remainingMs(30_000),
   });
+  ownedProcess = processIdentity(electron.process().pid);
+  await profileLock.truncate(0);
+  await profileLock.write(
+    JSON.stringify({
+      runnerPid: process.pid,
+      childPid: electron.process().pid,
+      identity: ownedProcess,
+      marker: runner,
+    }),
+    0,
+    "utf8"
+  );
+  receipt.processOwnership = {
+    pid: electron.process().pid,
+    identityObserved: Boolean(ownedProcess),
+    groupId: ownedProcess ? Number(ownedProcess.split(/\s+/)[1]) : null,
+    isolatedGroup: ownedProcess
+      ? Number(ownedProcess.split(/\s+/)[1]) === electron.process().pid
+      : null,
+    scope: "direct-child-handle; detached descendants not proven absent",
+  };
+  boundMethods(electron, ["evaluate", "firstWindow", "browserWindow"]);
   electron.process().stdout?.on("data", (chunk) => {
     logWrites.push(
       log.write(chunk).catch((error) => {
@@ -220,7 +400,9 @@ try {
     timeout: attempt.remainingMs(30_000),
   });
   page.setDefaultTimeout(attempt.remainingMs(10_000));
+  boundMethods(page, ["evaluate", "waitForFunction"]);
   const window = await electron.browserWindow(page);
+  boundMethods(window, ["evaluate"]);
   const target = await electron.evaluate(
     ({ app }, expected) => ({
       pid: process.pid,
@@ -274,7 +456,7 @@ try {
     win.focus();
     win.webContents.focus();
   });
-  async function checkFocus() {
+  const checkFocus = async () => {
     const focused = await window.evaluate(
       (win) =>
         !win.isDestroyed() &&
@@ -291,11 +473,11 @@ try {
         (await page.evaluate(() => document.hasFocus())),
       "owned_window_not_focused"
     );
-  }
+  };
   // Activation is asynchronous on native desktops. Wait for its observable
   // result, then require ownership again before and after each input event.
   const focusDeadline = Date.now() + attempt.remainingMs(5_000);
-  while (true) {
+  for (;;) {
     try {
       await checkFocus();
       break;
@@ -475,6 +657,8 @@ try {
 } catch (error) {
   receipt.result = "failed";
   const safeReasons = [
+    "owned_profile_active_or_uncertain",
+    "owned_command_deadline_exhausted",
     "candidate_build_failed",
     "candidate_artifact_missing",
     "candidate_artifact_alias",
@@ -574,7 +758,7 @@ try {
     const closed = await Promise.race([
       close,
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve(false), 10_000);
+        timer = setTimeout(() => resolve(false), cleanupTimeout);
       }),
     ]);
     clearTimeout(timer);
@@ -602,7 +786,15 @@ try {
       receipt.result = "failed";
       // Kill only the ChildProcess returned by this launch; never target a name,
       // process group or another app that happens to share the profile label.
-      if (running) child.kill("SIGKILL");
+      if (running) {
+        if (stillOwned(child)) {
+          child.kill("SIGKILL");
+          receipt.cleanup.termination = "verified-owned-child-signalled";
+        } else {
+          receipt.shutdown = "uncertain-owned-process";
+          receipt.cleanup.termination = "ownership_uncertain_no_signal";
+        }
+      }
       await Promise.race([
         exited,
         new Promise((resolve) => {
@@ -615,25 +807,15 @@ try {
   } else {
     receipt.shutdown = "not-launched";
   }
-  try {
-    attempt.assertBudget();
-  } catch {
-    if (receipt.result === "passed") {
-      receipt.result = "failed";
-      receipt.stage = "diagnostic-budget";
-      receipt.classification = "runner";
-      receipt.reason = "diagnostic_time_budget_exhausted";
-      process.exitCode = 1;
-    }
-  }
   receipt.finishedAt = new Date().toISOString();
   try {
     await Promise.all(logWrites);
     await log?.close();
-    if (logFailure) throw logFailure;
+    assert(!logFailure, "owned_test_log_write_failed");
     if (profileLock) {
       await profileLock.close();
-      await unlink(path.join(values.profile, ".clipp-relay-acceptance.lock"));
+      if (receipt.shutdown !== "uncertain-owned-process")
+        await unlink(path.join(values.profile, ".clipp-relay-acceptance.lock"));
     }
   } catch {
     receipt.cleanup = {

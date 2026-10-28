@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
@@ -10,7 +10,6 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 const root = path.resolve(__dirname, "../..");
 let fixture: string;
@@ -48,7 +47,7 @@ beforeEach(() => {
   writeFileSync(path.join(repo, "package.json"), '{"type":"module"}');
   writeFileSync(
     path.join(repo, ".gitignore"),
-    "node_modules\napps/electron/dist\n"
+    "node_modules\napps/electron/dist\n.local\n"
   );
   for (const args of [
     ["init", "-q"],
@@ -73,6 +72,10 @@ function run(extra: string[] = []) {
     process.execPath,
     [
       path.join(repo, "scripts/electron-relay-acceptance.mjs"),
+      "--history-root",
+      path.join(fixture, "history"),
+      "--effort",
+      "approved-effort",
       "--profile",
       path.join(fixture, "profile"),
       "--output",
@@ -88,6 +91,7 @@ function run(extra: string[] = []) {
       timeout: 15000,
       env: {
         ...process.env,
+        CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
         PATH: path.join(fixture, "bin") + path.delimiter + process.env.PATH,
       },
     }
@@ -333,44 +337,384 @@ test("source edits during the build prevent a candidate provenance claim", () =>
   });
 });
 
-test("the initial Electron build is outside the diagnostic clock, but retry rebuild time counts", () => {
+test("initial setup time is excluded while diagnostic rebuild time exhausts the public budget", () => {
+  const clock = path.join(fixture, "clock.json");
+  const initial = Date.parse("2026-10-28T00:00:00Z");
+  writeFileSync(clock, String(initial));
+  const runner = path.join(repo, "scripts/electron-relay-acceptance.mjs");
+  writeFileSync(
+    runner,
+    `import {readFileSync as readClock} from 'node:fs';\nDate.now=()=>Number(readClock(${JSON.stringify(clock)},'utf8'));\n` +
+      readFileSync(runner, "utf8")
+  );
+  writeFileSync(
+    path.join(fixture, "bin/npm"),
+    `#!${process.execPath}\nimport fs from 'node:fs'; const clock=${JSON.stringify(clock)};fs.writeFileSync(clock,String(Number(fs.readFileSync(clock,'utf8'))+21*60*1000));process.exit(17);\n`,
+    { mode: 0o755 }
+  );
+  expect(run().status).toBe(1);
+  const history = JSON.parse(
+    readFileSync(path.join(output, "attempts.json"), "utf8")
+  );
+  expect(history.diagnosticStartedAt).toBe("2026-10-28T00:21:00.000Z");
+  const retry = [
+    "--diagnostic-change",
+    "repair build",
+    "--expected-observation",
+    "build succeeds",
+  ];
+  expect(run(retry).status).toBe(1);
   expect(
-    readFileSync(
-      path.join(repo, "scripts/electron-relay-acceptance.mjs"),
-      "utf8"
+    run([
+      "--diagnostic-change",
+      "repair host",
+      "--expected-observation",
+      "startup succeeds",
+    ]).stderr
+  ).toContain("diagnostic_time_budget_exhausted");
+  expect(
+    JSON.parse(readFileSync(path.join(output, "attempts.json"), "utf8"))
+      .attempts
+  ).toHaveLength(2);
+});
+
+test("semantic failure history survives an output-directory change", () => {
+  run([
+    "--history-root",
+    path.join(fixture, "history"),
+    "--effort",
+    "approved-effort",
+    "--environment",
+    "host-arm64",
+  ]);
+  const result = run([
+    "--history-root",
+    path.join(fixture, "history"),
+    "--effort",
+    "approved-effort",
+    "--environment",
+    "host-arm64",
+    "--output",
+    path.join(fixture, "other-output"),
+  ]);
+  expect(result.stderr).toContain("changed_diagnosis_required");
+  expect(existsSync(path.join(fixture, "other-output/receipt.json"))).toBe(
+    false
+  );
+});
+
+test("a hung owned-target observation receives a bounded command deadline", () => {
+  workingRuntime("hung-observation");
+  const adapter = path.join(repo, "node_modules/playwright/index.js");
+  writeFileSync(
+    adapter,
+    readFileSync(adapter, "utf8").replace(
+      "const previous = process.argv;",
+      "if (mode === 'hung-observation') return new Promise(()=>{}); const previous = process.argv;"
     )
-  ).toContain("deferDiagnosticClockUntilFailure: true");
-  const helperUrl = pathToFileURL(
-    path.join(repo, "scripts/native-acceptance-attempts.mjs")
-  ).href;
-  const source = `
-import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { beginNativeAttempt } from ${JSON.stringify(helperUrl)};
-let now = Date.parse('2026-10-25T00:00:00.000Z');
-const output = ${JSON.stringify(output)};
-const options = { output, scenario: 'electron-readiness', deferDiagnosticClockUntilFailure: true, now: () => now };
-const initial = await beginNativeAttempt(options);
-let history = JSON.parse(await readFile(output + '/attempts.json', 'utf8'));
-assert.equal(history.diagnosticStartedAt, null);
-now += 21 * 60 * 1000;
-initial.assertBudget();
-assert.equal(initial.remainingMs(180_000), 180_000);
-await initial.finish({ result: 'failed', stage: 'build', classification: 'prerequisite' });
-history = JSON.parse(await readFile(output + '/attempts.json', 'utf8'));
-assert.equal(history.diagnosticStartedAt, new Date(now).toISOString());
-const retry = await beginNativeAttempt({ ...options, change: 'repair build failure', expectation: 'candidate build succeeds' });
-assert.equal(retry.remainingMs(20 * 60 * 1000), 20 * 60 * 1000);
-now += 2 * 60 * 1000;
-assert.equal(retry.remainingMs(20 * 60 * 1000), 18 * 60 * 1000);
-`;
-  const result = spawnSync(
+  );
+  const result = run(["--command-timeout-ms", "100"]);
+  expect(result.status).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    stage: "target",
+    reason: "owned_command_deadline_exhausted",
+    shutdown: "graceful",
+  });
+});
+
+test("human environment labels cannot reset the same host scenario", () => {
+  run(["--environment", "first label"]);
+  expect(
+    run([
+      "--environment",
+      "new candidate or chat label",
+      "--output",
+      path.join(fixture, "renamed"),
+    ]).stderr
+  ).toContain("changed_diagnosis_required");
+});
+
+test("an explicit renewal preserves and references the failed history", () => {
+  run();
+  const pointer = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  const decision = path.join(fixture, "renewal.json");
+  writeFileSync(
+    decision,
+    JSON.stringify({
+      previousHistory: pointer.history,
+      authorizedBy: "approved operator decision",
+      reason: "new host access available",
+    })
+  );
+  expect(
+    run([
+      "--renewal",
+      decision,
+      "--diagnostic-change",
+      "new host route",
+      "--expected-observation",
+      "build succeeds",
+    ]).status
+  ).toBe(1);
+  const current = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  expect(current.generation).toBe(1);
+  const renewedHistory = JSON.parse(readFileSync(current.history, "utf8"));
+  expect(renewedHistory.diagnosticStartedAt).toBe(
+    renewedHistory.attempts[0].startedAt
+  );
+  expect(
+    JSON.parse(readFileSync(pointer.history, "utf8")).attempts
+  ).toHaveLength(1);
+  expect(
+    JSON.parse(readFileSync(current.history, "utf8")).attempts
+  ).toHaveLength(1);
+  expect(
+    existsSync(
+      path.join(path.dirname(pointer.history), "attempt-1/receipt.json")
+    )
+  ).toBe(true);
+});
+
+function realOwnedRuntime(mode: "normal" | "timeout" | "reuse") {
+  workingRuntime();
+  const adapter = path.join(repo, "node_modules/playwright/index.js");
+  let source = readFileSync(adapter, "utf8");
+  source =
+    "import {spawn} from 'node:child_process';\nimport {appendFileSync} from 'node:fs';\n" +
+    source;
+  source = source.replace(
+    "const child = new EventEmitter(); child.pid = process.pid; child.exitCode = null; child.signalCode = null;",
+    `const child = spawn(process.execPath, ['-e', "process.on('message',()=>process.exit(0)); setTimeout(()=>process.exit(0),1500)", ${JSON.stringify(mode === "reuse" ? "unrelated-canary" : "")} || args[0]], {detached:true, stdio:['ignore','pipe','pipe','ipc']});`
+  );
+  const retainedChildren =
+    process.env.CLIPP_OWNED_CHILD_EVIDENCE ??
+    path.join(os.tmpdir(), "clipp-owned-fixture-children.jsonl");
+  source = source.replace(
+    "const win =",
+    `appendFileSync(${JSON.stringify(retainedChildren)},JSON.stringify({pid:child.pid,parentPid:process.pid,marker:args[0],mode:${JSON.stringify(mode)},startedAt:new Date().toISOString(),maximumLifetimeMs:1500})+'\\n'); const win =`
+  );
+  source = source.replace(
+    "return await fn({app,BrowserWindow:",
+    "const value = await fn({app,BrowserWindow:"
+  );
+  source = source.replace(
+    "}},arg); } finally",
+    "}},arg); if(value?.pid) value.pid=child.pid; return value; } finally"
+  );
+  source = source.replace(
+    "close:async()=>{child.exitCode=mode.includes('shutdown')?1:0;child.emit('exit',child.exitCode,null);}",
+    mode === "normal"
+      ? "close:async()=>{child.send('exit');}"
+      : "close:async()=>new Promise(()=>{})"
+  );
+  // In the unrelated-PID simulation the adapter releases its own canary after
+  // the runner's bounded ownership check; the runner must never signal it.
+  if (mode === "reuse")
+    source = source.replace(
+      "const win =",
+      "setTimeout(()=>child.send('exit'),700); const win ="
+    );
+  writeFileSync(adapter, source);
+}
+
+test("a real owned child exits normally through the public runner", () => {
+  realOwnedRuntime("normal");
+  expect(run().status).toBe(0);
+  expect(receipt()).toMatchObject({
+    result: "passed",
+    shutdown: "graceful",
+    processOwnership: {
+      identityObserved: true,
+      isolatedGroup: true,
+      groupId: expect.any(Number),
+    },
+  });
+});
+
+test("bounded cleanup signals only a currently verified owned child", () => {
+  realOwnedRuntime("timeout");
+  expect(run(["--cleanup-timeout-ms", "100"]).status).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    cleanup: { termination: "verified-owned-child-signalled" },
+  });
+});
+
+test("a reused or mismatched process identity preserves cleanup uncertainty without signalling", () => {
+  realOwnedRuntime("reuse");
+  expect(run(["--cleanup-timeout-ms", "100"]).status).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    shutdown: "uncertain-owned-process",
+    cleanup: { termination: "ownership_uncertain_no_signal" },
+  });
+});
+
+test("concurrent admission is refused and interrupted history survives a new invocation", async () => {
+  const marker = path.join(fixture, "building");
+  writeFileSync(
+    path.join(fixture, "bin/npm"),
+    `#!${process.execPath}\nimport fs from 'node:fs';fs.writeFileSync(${JSON.stringify(marker)},'owned build');setTimeout(()=>process.exit(17),1000);\n`,
+    { mode: 0o755 }
+  );
+  const child = spawn(
     process.execPath,
-    ["--input-type=module", "-e", source],
+    [
+      path.join(repo, "scripts/electron-relay-acceptance.mjs"),
+      "--profile",
+      path.join(fixture, "profile"),
+      "--output",
+      output,
+      "--history-root",
+      path.join(fixture, "history"),
+      "--effort",
+      "approved-effort",
+      "--transport",
+      "wss",
+      "--preflight-only",
+    ],
     {
-      encoding: "utf8",
-      timeout: 10_000,
+      cwd: repo,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
+        PATH: path.join(fixture, "bin") + path.delimiter + process.env.PATH,
+      },
     }
   );
-  expect(result.status).toBe(0);
+  const exit = new Promise((resolve) => child.once("exit", resolve));
+  try {
+    const deadline = Date.now() + 5000;
+    while (!existsSync(marker) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(existsSync(marker)).toBe(true);
+    expect(
+      run([
+        "--diagnostic-change",
+        "concurrent change",
+        "--expected-observation",
+        "must not launch",
+      ]).stderr
+    ).toContain("diagnostic_attempt_active_or_ownership_uncertain");
+    child.kill("SIGKILL");
+    await exit;
+    writeFileSync(path.join(fixture, "bin/npm"), "#!/bin/sh\nexit 17\n", {
+      mode: 0o755,
+    });
+    expect(
+      run([
+        "--diagnostic-change",
+        "recover interruption",
+        "--expected-observation",
+        "build reaches launch",
+      ]).status
+    ).toBe(1);
+    const history = JSON.parse(
+      readFileSync(path.join(output, "attempts.json"), "utf8")
+    );
+    expect(history.attempts).toHaveLength(2);
+    expect(
+      JSON.parse(
+        readFileSync(path.join(output, "attempt-1/receipt.json"), "utf8")
+      )
+    ).toMatchObject({
+      result: "failed",
+      stage: "interrupted",
+      classification: "unknown",
+      reason: "runner_interrupted",
+    });
+  } finally {
+    if (child.exitCode === null && child.signalCode === null)
+      child.kill("SIGKILL");
+    await exit;
+  }
 }, 15000);
+
+test("changing the history directory cannot silently restart a registered scenario", () => {
+  run();
+  expect(
+    run([
+      "--history-root",
+      path.join(fixture, "new-history"),
+      "--output",
+      path.join(fixture, "new-output"),
+    ]).stderr
+  ).toContain("registered_history_location_changed");
+});
+
+test("explicit legacy import retains exhausted attempts and failed receipts", () => {
+  const legacy = path.join(fixture, "legacy");
+  mkdirSync(legacy);
+  const attempts = [1, 2, 3, 4, 5].map((number) => ({
+    number,
+    startedAt: "2026-10-28T00:00:00Z",
+    finishedAt: "2026-10-28T00:01:00Z",
+    result: "failed",
+    stage: "launch",
+    classification: "runner",
+    receipt: `attempt-${number}/receipt.json`,
+  }));
+  writeFileSync(
+    path.join(legacy, "attempts.json"),
+    JSON.stringify({
+      version: 1,
+      scenario: "electron-readiness",
+      diagnosticStartedAt: "2026-10-28T00:01:00Z",
+      attempts,
+    })
+  );
+  for (const attempt of attempts) {
+    mkdirSync(path.join(legacy, `attempt-${attempt.number}`));
+    writeFileSync(
+      path.join(legacy, attempt.receipt),
+      JSON.stringify({ result: "failed", reason: "historical-host-failure" })
+    );
+  }
+  expect(
+    run(["--import-history", path.join(legacy, "attempts.json")]).stderr
+  ).toContain("diagnostic_attempt_budget_exhausted");
+  expect(
+    JSON.parse(
+      readFileSync(path.join(legacy, "attempt-1/receipt.json"), "utf8")
+    )
+  ).toMatchObject({ reason: "historical-host-failure" });
+});
+
+test("independent frozen candidate clones share the failed semantic history", () => {
+  run();
+  const source = repo;
+  const clone = path.join(fixture, "independent-candidate");
+  const result = spawnSync(
+    "git",
+    ["clone", "--quiet", "--no-hardlinks", source, clone],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  mkdirSync(path.join(clone, "node_modules/playwright"), { recursive: true });
+  copyFileSync(
+    path.join(source, "node_modules/playwright/package.json"),
+    path.join(clone, "node_modules/playwright/package.json")
+  );
+  copyFileSync(
+    path.join(source, "node_modules/playwright/index.js"),
+    path.join(clone, "node_modules/playwright/index.js")
+  );
+  repo = clone;
+  expect(
+    run([
+      "--history-root",
+      path.join(fixture, "new-candidate-history"),
+      "--output",
+      path.join(fixture, "new-candidate-output"),
+    ]).stderr
+  ).toContain("registered_history_location_changed");
+  expect(
+    run(["--output", path.join(fixture, "candidate-output")]).stderr
+  ).toContain("changed_diagnosis_required");
+});
