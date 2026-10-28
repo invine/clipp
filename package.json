@@ -75,14 +75,16 @@
     "typecheck:electron": "tsc -p apps/electron/tsconfig.json --noEmit && tsc -p apps/electron/tsconfig.main.json --noEmit",
     "typecheck:android": "tsc -p apps/android/tsconfig.json --noEmit",
     "typecheck:extension": "tsc -p apps/extension/tsconfig.json --noEmit",
-    "check": "npm run typecheck && npm test -- --runInBand",
+    "check": "npm run typecheck && npm test -- --runInBand && npm run check:candidate",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint --ext .ts,.tsx packages apps tests",
     "lint:fix": "eslint --ext .ts,.tsx packages apps tests --fix",
     "relay:websocket": "tsx scripts/websocket-relay.ts",
     "release:android": "npm test -- --runInBand && npm run lint && npm --workspace apps/android run build && npm --workspace apps/android run cap:copy && npm --workspace apps/android run test:native:unit && npm --workspace apps/android run test:native:instrumentation && npm --workspace apps/android run build:native:release",
-    "prepare": "husky"
+    "prepare": "husky",
+    "acceptance:candidate": "node scripts/prepare-acceptance-candidate.mjs",
+    "check:candidate": "node --test tests/tooling/acceptanceCandidate.test.mjs"
   },
   "workspaces": [
     "apps/*",

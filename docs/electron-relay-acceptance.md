@@ -121,3 +121,61 @@ turn this shutdown failure into a passed receipt. A nonzero or signaled process
 exit also fails acceptance; graceful shutdown requires exit code zero and no
 signal. The private profile remains
 available for inspection; other Electron processes are unaffected.
+
+## Prepare a frozen candidate
+
+From the maintained source checkout, select an explicit committed revision and a
+tracked file defining the selected scenario. Preserve excluded dirty work in its
+original checkout with its owner recorded in the run record. Preparation reads
+committed source and never cleans that checkout.
+
+```sh
+npm run acceptance:candidate -- prepare \
+  --source /absolute/source-checkout \
+  --revision FULL_COMMITTED_REVISION \
+  --destination /absolute/new-acceptance-checkout \
+  --scenario electron-relay-wss \
+  --scenario-input docs/electron-relay-acceptance.md
+npm run acceptance:candidate -- verify \
+  --record /absolute/new-acceptance-checkout.candidate.json
+```
+
+Use Node.js 22.22.1 or newer and npm. Preparation creates a detached independent
+Git clone, runs `npm ci` with the selected lockfile and normal lifecycle scripts,
+then runs the existing Electron workspace build. It refuses existing
+destinations; failures preserve the partial checkout for diagnosis. Choose a new
+destination after correcting a failure. No shared dependency installation or
+manual native-module copying is supported.
+
+The mode-600 sibling candidate record binds the committed revision, all tracked
+input hashes (at most 20,000 files), Node/npm/platform/architecture, resolved
+installed Electron version, scenario definition and runner inputs, npm installation
+lock identity, preparation command version and built `dist` file hashes.
+Dependency checks reject external links in root and workspace installations;
+they do not certify every optional dependency or load native addons. Source and
+build changes during preparation fail before publication of the record.
+
+Keep this record and its checkout together outside disposable ticket worktrees.
+Before runtime acceptance, run `verify` using the same preparation command and
+toolchain. It fails for source mutation, moved checkouts, changed inputs,
+installation lock changes, external dependency links, changed Electron versions
+and missing or stale artifacts. The JSON result supplies the frozen artifact
+identity for runtime receipts. Launch the acceptance runner from the verified
+candidate checkout so its relative build and dependency paths select that build.
+Runtime adapters must compare their loaded or installed artifact with this record;
+verification alone does not establish what a running process has loaded.
+
+A relevant fix gets a new destination and record. Pass
+`--previous /absolute/previous.candidate.json --affected scenario-id,other-id`
+to bind the successor to a verified predecessor and explicitly name the affected
+scenarios. This records impact scope; it never invents reusable passing evidence.
+Leave the original frozen candidate intact. If it was mutated, preserve it as
+failed evidence and reconcile it before creating a successor through this path.
+
+`npm run check:candidate` runs disposable real-Git command fixtures as part of
+`npm run check`. These deterministic fixtures prove preparation control behavior.
+A real isolated install/build is still required for the selected application
+candidate. Actual native addon loading/ABI, startup, owned-window interaction,
+Pairing, and installed Android/Chrome artifact checks remain separate runtime
+qualification. The unmerged operational verification/status tools remain an
+external prerequisite; this command does not replace them.
