@@ -92,12 +92,12 @@ setTimeout(()=>{fs.writeFileSync(${JSON.stringify(path.join(fixture, "self-expir
     path.join(playwright, "index.js"),
     `
 import fs from 'node:fs';
-let opened=false,pinned=false,search='';
+let opened=false,pinned=false,search='',inventoryCalls=0,installAcked=false;
 const behavior=process.env.FIXTURE_BEHAVIOR;
 const locator={async click(){if(behavior==='input')throw new Error('unavailable_native_input');},async evaluate(){return true;},async fill(text){search=text;},async inputValue(){return search;},async waitFor(){},async isVisible(){return true;},first(){pinned=true;return this;}};
 const popup={url:()=> 'chrome-extension://fixture/src/popup.html',getByRole:()=>locator,getByTitle:()=>locator,getByPlaceholder:()=>locator,getByText:()=>locator,async evaluate(fn,arg){if(arg?.type==='getRuntimeState')return {state:{pinnedIds:pinned?['clip']:[]}};if(arg)return {ok:true};return {id:'fixture',isPopup:behavior!=='tab',memory:behavior!=='boundary',focused:true};}};
 const tab={url:()=> 'about:blank',async bringToFront(){}};
-const session={async send(method){if(method==='Extensions.getExtensions'){if(behavior==='worker')throw new Error('acceptance_operation_timeout');if(behavior==='private')throw new Error('SYNTHETIC_PRIVATE_CANARY');return {extensions:[{id:'fixture',enabled:true,path:${JSON.stringify(path.join(repo, "apps/extension/dist"))}}]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'tab'}};if(method==='Extensions.triggerAction')opened=true;return {};}};
+const session={async send(method){if(method==='Extensions.loadUnpacked'){installAcked=true;return {id:behavior==='delayed-wrong-id'?'other-id':'fixture'};}if(method==='Extensions.getExtensions'){inventoryCalls++;if(behavior.startsWith('delayed')&&(!installAcked||inventoryCalls<3))return {extensions:[]};if(behavior==='worker')throw new Error('acceptance_operation_timeout');if(behavior==='private')throw new Error('SYNTHETIC_PRIVATE_CANARY');return {extensions:[{id:'fixture',enabled:behavior!=='delayed-disabled',path:behavior==='delayed-wrong-path'?${JSON.stringify(path.join(repo, "apps/extension"))}:${JSON.stringify(path.join(repo, "apps/extension/dist"))}}]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'tab'}};if(method==='Extensions.triggerAction')opened=true;return {};}};
 const context={async addInitScript(){},serviceWorkers:()=>[{url:()=> 'chrome-extension://fixture/background.js'}],pages:()=>opened?[tab,popup]:[tab],async newCDPSession(){return session;}};
 export const chromium={executablePath:()=>${JSON.stringify(bin)},async connectOverCDP(){return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(behavior==='cleanup')throw new Error('cleanup_fixture');if(behavior==='reuse')return;const pid=Number(fs.readFileSync(${JSON.stringify(path.join(fixture, "pid"))},'utf8'));process.kill(pid,'SIGTERM');}};}};
  `
@@ -268,6 +268,18 @@ test("private driver errors never enter receipts or public output", () => {
       run.stderr +
       readFileSync(path.join(output, "receipt.json"), "utf8")
   ).not.toContain("SYNTHETIC_PRIVATE_CANARY");
+  const pointer = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  const history = JSON.parse(readFileSync(pointer.history, "utf8"));
+  const privateFile = path.join(
+    path.dirname(pointer.history),
+    `attempt-${history.attempts.length}`,
+    "failure.private.json"
+  );
+  expect(readFileSync(privateFile, "utf8")).toContain(
+    "SYNTHETIC_PRIVATE_CANARY"
+  );
 });
 test("cleanup failure suppresses success and retains canonical target ownership", () => {
   freeze();
@@ -599,3 +611,25 @@ test("unavailable child identity at launch and cleanup never authorizes a signal
       await new Promise((done) => setTimeout(done, 25));
   }
 }, 10000);
+
+test("the load acknowledgement waits for matching delayed extension inventory", () => {
+  freeze();
+  const run = invoke("delayed");
+  if (run.status !== 0) throw new Error(run.stdout + run.stderr);
+  expect(result()).toMatchObject({
+    result: "passed",
+    extension: { id: "fixture", pathMatches: true },
+  });
+});
+test.each(["delayed-wrong-id", "delayed-disabled", "delayed-wrong-path"])(
+  "%s cannot bypass acknowledged extension identity",
+  (mode) => {
+    freeze();
+    expect(invoke(mode).status).toBe(1);
+    expect(result()).toMatchObject({
+      failure: "wrong_target",
+      shutdown: "verified-owned-browser-closed",
+    });
+    expect(result().surface).toBeUndefined();
+  }
+);

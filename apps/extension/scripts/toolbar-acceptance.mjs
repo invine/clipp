@@ -209,6 +209,8 @@ export function targetGone(
 function errorCode(error, stage) {
   if (error?.message?.includes("diagnostic_")) return "diagnostic_limit";
   if (error?.message === "toolbar_target_mismatch") return "wrong_target";
+  if (error?.message === "extension_inventory_not_ready")
+    return "extension_installation_unavailable";
   if (
     error?.message?.includes("candidate") ||
     error?.message?.includes("artifact")
@@ -290,6 +292,12 @@ export async function runToolbarAcceptance(args) {
     targetOwnership,
     workerOwnership;
   let targetWritePending = false;
+  let privateFailure;
+  const protocol = {
+    acknowledgedId: null,
+    inventoryObservations: 0,
+    lastInventories: [],
+  };
   let exitObserved = false;
   const receipt = {
     result: "failed",
@@ -451,8 +459,6 @@ export async function runToolbarAcceptance(args) {
         "--enable-unsafe-extension-debugging",
         "--no-first-run",
         "--no-default-browser-check",
-        `--disable-extensions-except=${extension}`,
-        `--load-extension=${extension}`,
         "about:blank",
       ],
       { stdio: "ignore", detached: true }
@@ -534,31 +540,73 @@ export async function runToolbarAcceptance(args) {
     stage = "worker";
     operation = "observe_extension_identity";
     const session = await bounded(() => browser.newBrowserCDPSession());
-    let extensions = await bounded(() =>
-      session.send("Extensions.getExtensions")
-    );
-    let loaded;
-    for (const item of extensions.extensions) {
-      if (item.path && (await bounded(() => realpath(item.path))) === extension)
-        loaded = item;
-    }
-    if (!loaded) {
-      operation = "load_owned_unpacked_extension";
-      await bounded(() =>
-        session.send("Extensions.loadUnpacked", { path: extension })
-      );
-      extensions = await bounded(() =>
+    const inventory = async () => {
+      const result = await bounded(() =>
         session.send("Extensions.getExtensions")
       );
-      for (const item of extensions.extensions) {
-        if (
-          item.path &&
-          (await bounded(() => realpath(item.path))) === extension
-        )
-          loaded = item;
-      }
+      assert(
+        Array.isArray(result.extensions) && result.extensions.length <= 500,
+        "extension_inventory_invalid"
+      );
+      protocol.inventoryObservations++;
+      protocol.lastInventories.push({
+        count: result.extensions.length,
+        selected: result.extensions
+          .filter(
+            (item) =>
+              item.id === protocol.acknowledgedId || item.path === extension
+          )
+          .slice(0, 4)
+          .map((item) => ({
+            id: String(item.id).slice(0, 128),
+            path: String(item.path).slice(0, 4096),
+            enabled: item.enabled === true,
+          })),
+      });
+      if (protocol.lastInventories.length > 20)
+        protocol.lastInventories.shift();
+      return result.extensions;
+    };
+    await inventory();
+    operation = "load_owned_unpacked_extension";
+    const acknowledgement = await bounded(() =>
+      session.send("Extensions.loadUnpacked", { path: extension })
+    );
+    assert(
+      typeof acknowledgement.id === "string" &&
+        acknowledgement.id.length > 0 &&
+        acknowledgement.id.length <= 128,
+      "extension_load_acknowledgement_invalid"
+    );
+    protocol.acknowledgedId = acknowledgement.id;
+    operation = "observe_loaded_extension_inventory";
+    let loaded;
+    try {
+      loaded = await waitFor(async () => {
+        const entries = await inventory();
+        const selected = entries.find((item) => item.id === acknowledgement.id);
+        if (!selected) {
+          assert(
+            !entries.some((item) => item.path === extension),
+            "toolbar_target_mismatch"
+          );
+          return undefined;
+        }
+        assert(
+          selected.enabled === true && typeof selected.path === "string",
+          "toolbar_target_mismatch"
+        );
+        assert(
+          (await bounded(() => realpath(selected.path))) === extension,
+          "toolbar_target_mismatch"
+        );
+        return selected;
+      });
+    } catch (error) {
+      if (error.message === "acceptance_operation_timeout")
+        throw new Error("extension_inventory_not_ready");
+      throw error;
     }
-    assert(loaded?.id && loaded.enabled === true, "toolbar_target_mismatch");
     const extensionId = loaded.id;
     const worker = await waitFor(async () =>
       context
@@ -700,6 +748,15 @@ export async function runToolbarAcceptance(args) {
     receipt.classification = "none";
     receipt.stage = "complete";
   } catch (error) {
+    privateFailure = {
+      stage,
+      operation,
+      protocol,
+      error: {
+        name: String(error?.name ?? "UnknownError").slice(0, 128),
+        message: String(error?.message ?? "unknown").slice(0, 4096),
+      },
+    };
     receipt.stage = stage;
     receipt.operation = operation;
     receipt.failure = errorCode(error, stage);
@@ -725,6 +782,20 @@ export async function runToolbarAcceptance(args) {
         "owned_browser_cleanup"
       );
     };
+    if (privateFailure) {
+      try {
+        await cleanup(() =>
+          writeFile(
+            join(attempt.directory, "failure.private.json"),
+            JSON.stringify(privateFailure, null, 2) + "\n",
+            { flag: "wx", mode: 0o600 }
+          )
+        );
+        receipt.privateDiagnostics = "failure.private.json";
+      } catch {
+        receipt.privateDiagnostics = "unavailable";
+      }
+    }
     try {
       if (browser) await cleanup(() => browser.close());
       if (child?.pid && !exitObserved) {
