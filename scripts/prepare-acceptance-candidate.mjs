@@ -42,7 +42,7 @@ function childEnvironment() {
   );
   return isolatedEnvironment;
 }
-function run(bin, args, cwd, quiet = true) {
+function run(bin, args, cwd, quiet = true, exact = false) {
   const result = spawnSync(bin, args, {
     cwd,
     env: childEnvironment(),
@@ -55,7 +55,7 @@ function run(bin, args, cwd, quiet = true) {
     throw new Error(
       `${bin} ${args[0]} failed${result.stderr ? `: ${result.stderr.slice(-2000)}` : ""}`
     );
-  return result.stdout?.trim() ?? "";
+  return exact ? (result.stdout ?? "") : (result.stdout?.trim() ?? "");
 }
 function within(root, target) {
   const rel = relative(root, target);
@@ -92,7 +92,7 @@ function sourceInput(root, name) {
   return { link, sha256: digest(link) };
 }
 function tracked(root) {
-  const paths = run("git", ["ls-files", "-z"], root)
+  const paths = run("git", ["ls-files", "-z"], root, true, true)
     .split("\0")
     .filter(Boolean);
   if (paths.length > 20_000) throw new Error("candidate input limit exceeded");
@@ -398,6 +398,44 @@ try {
           })
         ),
         runtime: "electron",
+        checkout: record.source.checkout,
+        scenario: record.scenario.id,
+        runtimeVersion: record.runtimeVersion,
+        executable: file(
+          record.source.checkout,
+          relative(
+            record.source.checkout,
+            resolve(
+              record.source.checkout,
+              record.runtimeArtifacts.electron.path,
+              "dist",
+              readFileSync(
+                join(
+                  record.source.checkout,
+                  record.runtimeArtifacts.electron.path,
+                  "path.txt"
+                ),
+                "utf8"
+              ).trim()
+            )
+          )
+        ),
+        moduleAbi: existsSync(
+          join(
+            record.source.checkout,
+            record.runtimeArtifacts.electron.path,
+            "abi_version"
+          )
+        )
+          ? readFileSync(
+              join(
+                record.source.checkout,
+                record.runtimeArtifacts.electron.path,
+                "abi_version"
+              ),
+              "utf8"
+            ).trim()
+          : null,
       })
     );
   } else if (mode === "prepare") {

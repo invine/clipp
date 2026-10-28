@@ -515,3 +515,254 @@ test("cross-platform installer overrides cannot mislabel the selected runtime", 
   );
   assert.equal(existsSync(f.destination), false);
 });
+
+test("preserves exact leading whitespace and embedded newlines in tracked candidate paths", (t) => {
+  const name = " leading\nscenario.json";
+  const f = fixture(t, (source) =>
+    writeFileSync(join(source, name), '{"scenario":"exact-path"}')
+  );
+  const args = [...f.args];
+  args[args.indexOf("--scenario-input") + 1] = name;
+  const prepared = f.invoke(args);
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const record = JSON.parse(readFileSync(f.record));
+  assert.equal(record.scenario.input, name);
+  assert.equal(typeof record.inputs[name], "string");
+  assert.equal(f.invoke(["verify", "--record", f.record]).status, 0);
+});
+
+function frozenElectronFixture(
+  t,
+  nativeMode = "healthy",
+  scenario = "electron-readiness"
+) {
+  const f = fixture(t, (source) => {
+    for (const name of [
+      "electron-relay-acceptance.mjs",
+      "native-acceptance-attempts.mjs",
+      "source-identity.mjs",
+      "prepare-acceptance-candidate.mjs",
+      "electron-required-native.cjs",
+    ])
+      writeFileSync(
+        join(source, "scripts", name),
+        readFileSync(resolve("scripts", name))
+      );
+    for (const [directory, name, body] of [
+      [
+        "sqlite",
+        "better-sqlite3",
+        `module.exports=class Database{constructor(){${nativeMode === "missing" ? "require('./missing-required-addon.node');" : nativeMode === "abi" ? "throw Object.assign(new Error('NODE_MODULE_VERSION 137 does not match runtime 148'),{code:'ERR_DLOPEN_FAILED'});" : ""}}close(){}};`,
+      ],
+      ["wrtc", "@koush/wrtc", "module.exports={RTCPeerConnection:class{}};"],
+      [
+        "unselected",
+        "unselected-native",
+        "require('./unavailable-optional.node');",
+      ],
+    ]) {
+      mkdirSync(join(source, "packages", directory), { recursive: true });
+      writeFileSync(
+        join(source, "packages", directory, "package.json"),
+        JSON.stringify({ name, version: "1.0.0", main: "index.cjs" })
+      );
+      writeFileSync(join(source, "packages", directory, "index.cjs"), body);
+    }
+    mkdirSync(join(source, "packages/playwright"));
+    writeFileSync(
+      join(source, "packages/playwright/package.json"),
+      JSON.stringify({
+        name: "playwright",
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+      })
+    );
+    writeFileSync(
+      join(source, "packages/playwright/index.js"),
+      `
+import Module,{createRequire} from 'node:module';
+import vm from 'node:vm';
+import {EventEmitter} from 'node:events';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+const require=createRequire(import.meta.url);
+export const _electron={async launch({args,env,executablePath}){
+ const child=new EventEmitter();child.pid=process.pid;child.exitCode=null;child.signalCode=null;
+ const state={identity:{deviceId:'controlled-device'},clips:[],pinnedIds:[]};let filter='All';
+ const clipboard={readText:()=>'',writeText(){}};
+ const app={setName(){},getPath:()=>env.CLIPP_RELAY_ACCEPTANCE_PROFILE,focus(){},exit(){throw new Error('controlled runtime exit');}};
+ const win={id:1,isDestroyed:()=>false,isVisible:()=>true,isMinimized:()=>false,isFocused:()=>true,show(){},focus(){},restore(){},webContents:{focus(){},id:2,getOSProcessId:()=>7,getURL:()=>pathToFileURL(path.resolve('apps/electron/dist/renderer/index.html')).href,sendInputEvent(event){if(event.type==='mouseUp'){if(event.x>90){if(${JSON.stringify(nativeMode)}!=='pin-input-unobservable')state.pinnedIds=[state.clips[0].id];}else filter=event.x<30?'Pinned':'All';}}}};
+ const api={getState:async()=>{const content=clipboard.readText();if(content && !state.clips.some(clip=>clip.content===content))state.clips.push({id:'controlled-clip',content,originPeerId:state.identity.deviceId});return state;}};
+ const browser={window:{clipp:api},document:{hasFocus:()=>true}};const browserEvaluate=(fn,arg)=>vm.runInNewContext('('+String(fn)+')',browser)(arg);
+ const card={getByTitle:()=>({boundingBox:async()=>({x:100,y:1,width:10,height:10})}),waitFor:async()=>{if(filter!=='Pinned'||!state.pinnedIds.length)throw new Error('native pin not observed');}};
+ const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp') && !await browserEvaluate(fn,arg))throw new Error('public state observation failed');},getByRole:(_,options)=>({boundingBox:async()=>({x:options.name==='Pinned'?20:40,y:1,width:10,height:10})}),locator:()=>({filter:()=>card}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
+ const previousExecutable=process.execPath;const previousLoader=Module._load;
+ Object.defineProperty(process.versions,'electron',{value:'43.4.0',configurable:true});process.getSystemVersion=()=>'controlled';
+ Module._load=function(name,...rest){return name==='electron'?{app,clipboard}:previousLoader.call(this,name,...rest);};
+ try{if(executablePath)process.execPath=executablePath;require(args[0]);}finally{process.execPath=previousExecutable;Module._load=previousLoader;}
+ return{process:()=>child,firstWindow:async()=>{if(!globalThis.__clippProductStarted)throw new Error('product not started');return page;},browserWindow:async()=>({evaluate:async(fn,arg)=>fn(win,arg)}),evaluate:async(fn,arg)=>{const argv=process.argv;const executable=process.execPath;process.argv=[executablePath,args[0]];if(executablePath)process.execPath=executablePath;try{return await fn({app,clipboard,BrowserWindow:{getFocusedWindow:()=>win},safeStorage:{isEncryptionAvailable:()=>false}},arg);}finally{process.argv=argv;process.execPath=executable;}},close:async()=>{child.exitCode=0;child.emit('exit',0,null);}};
+}};
+`
+    );
+    writeFileSync(
+      join(source, "build-runtime.cjs"),
+      `const fs=require('node:fs');fs.mkdirSync('dist/renderer',{recursive:true});fs.writeFileSync('dist/main.cjs',${JSON.stringify(nativeMode === "unusable-window" ? "globalThis.__clippProductStarted=false;" : "globalThis.__clippProductStarted=true;")});fs.writeFileSync('dist/preload.js','// selected preload');fs.writeFileSync('dist/renderer/index.html','selected renderer');fs.appendFileSync('../../build-count','built\\n');for(const entry of ['main','preload'])fs.writeFileSync('dist/'+entry+'.meta.json',JSON.stringify({outputs:{['dist/'+entry+'.cjs']:{imports:[{path:'electron',external:true,kind:'require-call'},{path:'better-sqlite3',external:true,kind:'require-call'},{path:'@koush/wrtc',external:true,kind:'require-call'}]}}}));`
+    );
+    writeFileSync(
+      join(source, "install-runtime.cjs"),
+      `const fs=require('node:fs');fs.mkdirSync('packages/sqlite/prebuilds',{recursive:true});fs.writeFileSync('packages/sqlite/prebuilds/fixture.node','selected native fixture');`
+    );
+    writeFileSync(
+      join(source, "packages/electron/abi_version"),
+      process.versions.modules
+    );
+    writeFileSync(
+      join(source, ".gitignore"),
+      "node_modules\ndist\npath.txt\nprebuilds\nbuild-count\n"
+    );
+  });
+  f.args[f.args.indexOf("--scenario") + 1] = scenario;
+  const prepared = f.invoke();
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const accept = (extra = []) =>
+    run(
+      process.execPath,
+      [
+        join(f.destination, "scripts/electron-relay-acceptance.mjs"),
+        "--candidate-record",
+        f.record,
+        "--effort",
+        "frozen-fixture",
+        "--history-root",
+        join(f.root, "history"),
+        "--profile",
+        join(f.root, "profile"),
+        "--output",
+        join(f.root, "evidence"),
+        "--transport",
+        "wss",
+        ...(scenario === "electron-clipboard-history"
+          ? ["--scenario", "clipboard-history"]
+          : ["--preflight-only"]),
+        ...extra,
+      ],
+      f.destination,
+      { CLIPP_ACCEPTANCE_STATE_ROOT: join(f.root, "state") }
+    );
+  const receipt = () =>
+    JSON.parse(readFileSync(join(f.root, "evidence/receipt.json"), "utf8"));
+  return { ...f, accept, receipt };
+}
+
+test("the maintained Electron command consumes a frozen selected candidate without rebuilding or loading unused native branches", (t) => {
+  const f = frozenElectronFixture(t);
+  const originalBuild = readFileSync(
+    join(f.destination, "build-count"),
+    "utf8"
+  );
+  const accepted = f.accept();
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.equal(
+    readFileSync(join(f.destination, "build-count"), "utf8"),
+    originalBuild
+  );
+  assert.equal(
+    f.receipt().frozenCandidate.revision,
+    JSON.parse(readFileSync(f.record)).source.revision
+  );
+  assert.equal(f.receipt().result, "passed");
+});
+
+test("required native-loader absence fails at the owning runtime stage before product readiness", (t) => {
+  const f = frozenElectronFixture(t, "missing");
+  assert.notEqual(f.accept().status, 0);
+  assert.equal(f.receipt().stage, "required-native");
+  assert.equal(f.receipt().classification, "prerequisite");
+  assert.equal(f.receipt().reason, "required_native_module_missing");
+});
+
+test("owning-runtime native ABI failure remains a prerequisite failure rather than readiness", (t) => {
+  const f = frozenElectronFixture(t, "abi");
+  assert.notEqual(f.accept().status, 0);
+  assert.equal(f.receipt().stage, "required-native");
+  assert.equal(f.receipt().reason, "required_native_abi_mismatch");
+  assert.equal(f.receipt().classification, "prerequisite");
+});
+
+test("frozen Electron preflight rejects stale application and selected native identities", (t) => {
+  const f = frozenElectronFixture(t);
+  for (const [index, name] of [
+    "apps/electron/dist/main.cjs",
+    "packages/sqlite/prebuilds/fixture.node",
+  ].entries()) {
+    const file = join(f.destination, name);
+    const original = readFileSync(file);
+    writeFileSync(file, "stale selected bytes");
+    const result = f.accept(
+      index
+        ? [
+            "--diagnostic-change",
+            "verify changed native bytes",
+            "--expected-observation",
+            "frozen native identity refusal",
+          ]
+        : []
+    );
+    assert.notEqual(result.status, 0);
+    assert.equal(f.receipt().stage, "frozen-candidate");
+    assert.equal(f.receipt().classification, "prerequisite");
+    assert.equal(f.receipt().reason, "frozen_candidate_invalid");
+    writeFileSync(file, original);
+  }
+});
+
+test("the running source checkout must own the selected frozen candidate", (t) => {
+  const selected = frozenElectronFixture(t);
+  const other = frozenElectronFixture(t);
+  assert.notEqual(
+    selected.accept(["--candidate-record", other.record]).status,
+    0
+  );
+  assert.equal(selected.receipt().reason, "frozen_candidate_checkout_mismatch");
+});
+
+test("the frozen candidate scenario must match the selected runtime observation", (t) => {
+  const f = frozenElectronFixture(t, "healthy", "electron-wss");
+  assert.notEqual(f.accept().status, 0);
+  assert.equal(f.receipt().reason, "frozen_candidate_scenario_mismatch");
+});
+
+test("the frozen local-history scenario reaches capture and native pinning beyond readiness", (t) => {
+  const f = frozenElectronFixture(t, "healthy", "electron-clipboard-history");
+  const accepted = f.accept();
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.deepEqual(f.receipt().behavior, {
+    scenario: "clipboard-history",
+    localClipCaptured: true,
+    nativePinObserved: true,
+    pinnedFilterVisible: true,
+    persistedPublicState: true,
+    passed: true,
+  });
+  assert.equal(f.receipt().requiredNative.result, "passed");
+});
+
+test("required-native success cannot qualify an unusable product window", (t) => {
+  const f = frozenElectronFixture(t, "unusable-window");
+  assert.notEqual(f.accept().status, 0);
+  assert.equal(f.receipt().requiredNative.result, "passed");
+  assert.equal(f.receipt().stage, "product-startup");
+  assert.equal(f.receipt().reason, "product_startup_unavailable");
+});
+
+test("the selected history scenario fails when native pin input has no observable product effect", (t) => {
+  const f = frozenElectronFixture(
+    t,
+    "pin-input-unobservable",
+    "electron-clipboard-history"
+  );
+  assert.notEqual(f.accept().status, 0);
+  assert.equal(f.receipt().stage, "clipboard-history");
+  assert.notEqual(f.receipt().behavior?.passed, true);
+});
