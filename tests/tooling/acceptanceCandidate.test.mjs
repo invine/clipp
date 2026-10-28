@@ -582,12 +582,19 @@ function frozenElectronFixture(
       join(source, "packages/playwright/index.js"),
       `
 import Module,{createRequire} from 'node:module';
+import {writeFileSync,mkdirSync} from 'node:fs';
 import vm from 'node:vm';
 import {EventEmitter} from 'node:events';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 const require=createRequire(import.meta.url);
 export const _electron={async launch({args,env,executablePath}){
+ if(${JSON.stringify(nativeMode)}.startsWith('launch-')){
+   const observation=path.join(path.dirname(args[0]),'required-native.json');
+   if(${JSON.stringify(nativeMode)}==='launch-malformed')writeFileSync(observation,'{malformed observation');
+   if(${JSON.stringify(nativeMode)}==='launch-unreadable')mkdirSync(observation);
+   throw new Error('controlled GUI launch unavailable');
+ }
  const child=new EventEmitter();child.pid=process.pid;child.exitCode=null;child.signalCode=null;
  const state={identity:{deviceId:'controlled-device'},clips:[],pinnedIds:[]};let filter='All';
  const clipboard={readText:()=>'',writeText(){}};
@@ -766,3 +773,19 @@ test("the selected history scenario fails when native pin input has no observabl
   assert.equal(f.receipt().stage, "clipboard-history");
   assert.notEqual(f.receipt().behavior?.passed, true);
 });
+
+for (const mode of ["launch-absent", "launch-malformed", "launch-unreadable"]) {
+  test(`unavailable native observation (${mode}) remains launch evidence without a loader diagnosis`, (t) => {
+    const f = frozenElectronFixture(t, mode);
+    assert.notEqual(f.accept().status, 0);
+    assert.equal(f.receipt().stage, "launch");
+    assert.equal(f.receipt().classification, "runner");
+    assert.equal(f.receipt().reason, "native_observation_unavailable");
+    assert.equal(f.receipt().requiredNative, undefined);
+    assert.match(f.receipt().recoveryAction, /GUI|launch/i);
+    assert.doesNotMatch(
+      f.receipt().recoveryAction,
+      /fix reproducible setup|loader failure/i
+    );
+  });
+}

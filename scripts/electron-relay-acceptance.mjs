@@ -1018,19 +1018,44 @@ try {
   }
 } catch (caughtError) {
   let error = caughtError;
+  let nativeObservationUnavailable = false;
   if (frozenCandidate && receipt.stage === "required-native") {
     try {
-      receipt.requiredNative = JSON.parse(
+      const observation = JSON.parse(
         await command(() => readFile(nativeObservationFile, "utf8"))
       );
-      if (receipt.requiredNative.result === "failed")
-        error = new Error(receipt.requiredNative.reason);
-      else {
+      assert(
+        observation?.runtime &&
+          Array.isArray(observation.required) &&
+          ["passed", "failed"].includes(observation.result),
+        "native_observation_invalid"
+      );
+      if (observation.result === "failed") {
+        assert(
+          [
+            "required_native_module_missing",
+            "required_native_abi_mismatch",
+            "required_native_module_load_failed",
+            "required_native_wrong_candidate",
+            "frozen_candidate_runtime_mismatch",
+          ].includes(observation.reason),
+          "native_observation_invalid"
+        );
+        receipt.stage = "required-native";
+        receipt.classification = "prerequisite";
+        error = new Error(observation.reason);
+      } else {
         receipt.stage = "product-startup";
         receipt.classification = "unknown";
       }
+      receipt.requiredNative = observation;
     } catch {
-      /* Keep the original runtime launch failure if observation is unavailable. */
+      delete receipt.requiredNative;
+      nativeObservationUnavailable = true;
+      receipt.stage = "launch";
+      receipt.classification = "runner";
+      receipt.recoveryAction =
+        "check GUI access and owned Electron launch diagnostics before a changed retry; preserve this failed attempt";
     }
   }
   receipt.result = "failed";
@@ -1075,16 +1100,17 @@ try {
     "selected_relay_server_transport_not_observed",
     "relay_clip_receipt_timeout",
   ];
-  receipt.reason =
-    safeReasons.find(
-      (reason) =>
-        typeof error?.message === "string" && error.message.startsWith(reason)
-    ) ??
-    (receipt.stage === "interaction"
-      ? "readiness_interaction_failed"
-      : receipt.stage === "product-startup"
-        ? "product_startup_unavailable"
-        : "runtime_or_receipt_gate_failed");
+  receipt.reason = nativeObservationUnavailable
+    ? "native_observation_unavailable"
+    : (safeReasons.find(
+        (reason) =>
+          typeof error?.message === "string" && error.message.startsWith(reason)
+      ) ??
+      (receipt.stage === "interaction"
+        ? "readiness_interaction_failed"
+        : receipt.stage === "product-startup"
+          ? "product_startup_unavailable"
+          : "runtime_or_receipt_gate_failed"));
   if (
     [
       "identity_changed",
