@@ -290,7 +290,9 @@ test("UI hierarchy cleanup is skipped and reported when the diagnostic budget ex
     expect(receipt.uiHierarchyCleanup).toBe("not-run-deadline");
     expect(receipt.cleanup).not.toBe("passed");
     expect(calls).toContain("exec-out cat /data/local/tmp/clipp-readiness-");
-    expect(calls).not.toMatch(/shell rm -f \/data\/local\/tmp\/clipp-readiness/);
+    expect(calls).not.toMatch(
+      /shell rm -f \/data\/local\/tmp\/clipp-readiness/
+    );
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
@@ -436,5 +438,84 @@ test("Android readiness rejects an unavailable exact serial before touching anot
     );
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("public Android retries exclude initial execution and retain the first-failure deadline", () => {
+  const directory = mkdtempSync(join(tmpdir(), "clipp-android-clock-"));
+  try {
+    const candidate = join(directory, "app-acceptance.apk");
+    const output = join(directory, "evidence");
+    const preload = join(directory, "clock.mjs");
+    writeFileSync(
+      preload,
+      `
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+let now = Number(process.env.FIXTURE_NOW);
+Date.now = () => now;
+const readFile = fs.readFile;
+fs.readFile = async (file, ...args) => {
+  if (String(file) === ${JSON.stringify(candidate)}) {
+    now += Number(process.env.FIXTURE_INITIAL_DURATION);
+    throw Object.assign(new Error('fixture_candidate_missing'), {code:'ENOENT'});
+  }
+  return readFile(file, ...args);
+};
+syncBuiltinESMExports();
+`
+    );
+    const run = (now: number, duration: number, change?: string) =>
+      spawnSync(
+        process.execPath,
+        [
+          "--import",
+          preload,
+          join(repoRoot, "apps/android/scripts/android-readiness.mjs"),
+          "--serial",
+          "emulator-clock-fixture",
+          "--candidate-apk",
+          candidate,
+          "--output",
+          output,
+          ...(change
+            ? [
+                "--diagnostic-change",
+                change,
+                "--expected-observation",
+                "candidate becomes readable",
+              ]
+            : []),
+        ],
+        {
+          encoding: "utf8",
+          timeout: 10000,
+          env: {
+            ...process.env,
+            CLIPP_ANDROID_ADB: join(directory, "must-not-launch-adb"),
+            FIXTURE_NOW: String(now),
+            FIXTURE_INITIAL_DURATION: String(duration),
+          },
+        }
+      );
+    const start = Date.parse("2026-10-25T00:00:00.000Z");
+    const failure = start + 21 * 60_000;
+    expect(run(start, 21 * 60_000).status).not.toBe(0);
+    const historyPath = join(output, "attempts.json");
+    const history = () => JSON.parse(readFileSync(historyPath, "utf8"));
+    const first = history();
+    expect(first.diagnosticStartedAt).toBe(new Date(failure).toISOString());
+    expect(first.attempts[0].finishedAt).toBe(new Date(failure).toISOString());
+    const retry = run(failure + 11 * 60_000, 0, "repair missing candidate");
+    expect(retry.stderr).not.toContain("diagnostic_time_budget_exhausted");
+    const second = history();
+    expect(second.attempts).toHaveLength(2);
+    expect(second.attempts[0]).toEqual(first.attempts[0]);
+    expect(second.diagnosticStartedAt).toBe(first.diagnosticStartedAt);
+    const expired = run(failure + 20 * 60_000, 0, "replace candidate build");
+    expect(expired.stderr).toContain("diagnostic_time_budget_exhausted");
+    expect(history()).toEqual(second);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

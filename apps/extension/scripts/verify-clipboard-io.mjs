@@ -54,6 +54,7 @@ const attempt = await beginNativeAttempt({
   scenario: "chrome-clipboard",
   change: options.diagnosticChange,
   expectation: options.expectedObservation,
+  deferDiagnosticClockUntilFailure: true,
 });
 let profilePath;
 const probeServer = createServer((_request, response) => {

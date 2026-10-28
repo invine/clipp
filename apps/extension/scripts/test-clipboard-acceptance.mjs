@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -15,7 +22,10 @@ import extensionPackage from "../package.json" with { type: "json" };
 
 test("classifies only the two fixed Share Now feedback messages", () => {
   assert.equal(
-    classifyShareNowFeedback({ clipboardReadFailed: true, shareNowFailed: true }),
+    classifyShareNowFeedback({
+      clipboardReadFailed: true,
+      shareNowFailed: true,
+    }),
     "clipboard_read_failed"
   );
   assert.equal(
@@ -398,6 +408,111 @@ test("the same 20-minute deadline bounds the initial run and later retries", asy
     );
   } finally {
     Date.now = originalNow;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("public Chrome retries exclude initial execution and retain the first-failure deadline", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "clipp-chrome-clock-"));
+  try {
+    const repo = join(directory, "repo");
+    const scripts = join(repo, "apps/extension/scripts");
+    await mkdir(scripts, { recursive: true });
+    await mkdir(join(repo, "scripts"));
+    for (const name of ["verify-clipboard-io.mjs", "clipboard-acceptance.mjs"])
+      await copyFile(new URL(name, import.meta.url), join(scripts, name));
+    await copyFile(
+      new URL(
+        "../../../scripts/native-acceptance-attempts.mjs",
+        import.meta.url
+      ),
+      join(repo, "scripts/native-acceptance-attempts.mjs")
+    );
+    const playwright = join(repo, "node_modules/@playwright/test");
+    await mkdir(playwright, { recursive: true });
+    await writeFile(
+      join(playwright, "package.json"),
+      JSON.stringify({ type: "module", main: "index.js" })
+    );
+    await writeFile(
+      join(playwright, "index.js"),
+      "export const chromium = { launchPersistentContext() { throw new Error('unexpected_native_launch'); } };"
+    );
+    const preload = join(directory, "clock.mjs");
+    await writeFile(
+      preload,
+      `
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import { syncBuiltinESMExports } from 'node:module';
+let now = Number(process.env.FIXTURE_NOW);
+Date.now = () => now;
+os.homedir = () => ${JSON.stringify(directory)};
+const readFile = fs.readFile;
+fs.readFile = async (file, ...args) => {
+  if (String(file).endsWith('/dist/manifest.json')) {
+    now += Number(process.env.FIXTURE_INITIAL_DURATION);
+    throw Object.assign(new Error('fixture_candidate_missing'), {code:'ENOENT'});
+  }
+  return readFile(file, ...args);
+};
+syncBuiltinESMExports();
+`
+    );
+    const run = (now, duration, change) =>
+      spawnSync(
+        process.execPath,
+        [
+          "--import",
+          preload,
+          join(scripts, "verify-clipboard-io.mjs"),
+          "--authorization-reference",
+          "operational-reliability:D4:2026-10-25",
+          ...(change
+            ? [
+                "--attempt",
+                "diagnostic",
+                "--diagnostic-change",
+                change,
+                "--expected-observation",
+                "candidate becomes readable",
+              ]
+            : []),
+        ],
+        {
+          encoding: "utf8",
+          timeout: 10000,
+          env: {
+            ...process.env,
+            FIXTURE_NOW: String(now),
+            FIXTURE_INITIAL_DURATION: String(duration),
+          },
+        }
+      );
+    const start = Date.parse("2026-10-25T00:00:00.000Z");
+    const failure = start + 21 * 60_000;
+    assert.notEqual(run(start, 21 * 60_000).status, 0);
+    const historyPath = join(
+      persistentAttemptDirectory({ home: directory }),
+      "chrome-clipboard/attempts.json"
+    );
+    const history = () => readFile(historyPath, "utf8").then(JSON.parse);
+    const first = await history();
+    assert.equal(first.diagnosticStartedAt, new Date(failure).toISOString());
+    assert.equal(first.attempts[0].finishedAt, new Date(failure).toISOString());
+    const retry = run(failure + 11 * 60_000, 0, "repair missing candidate");
+    assert.doesNotMatch(
+      retry.stderr,
+      /diagnostic_time_budget_exhausted|unexpected_native_launch/
+    );
+    const second = await history();
+    assert.equal(second.attempts.length, 2);
+    assert.deepEqual(second.attempts[0], first.attempts[0]);
+    assert.equal(second.diagnosticStartedAt, first.diagnosticStartedAt);
+    const expired = run(failure + 20 * 60_000, 0, "replace candidate build");
+    assert.match(expired.stderr, /diagnostic_time_budget_exhausted/);
+    assert.deepEqual(await history(), second);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });

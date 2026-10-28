@@ -281,6 +281,7 @@ attempt = await beginNativeAttempt({
   scenario: `android-readiness-${serial}`,
   change: values["diagnostic-change"],
   expectation: values["expected-observation"],
+  deferDiagnosticClockUntilFailure: true,
 });
 const receipt = {
   schemaVersion: 1,
