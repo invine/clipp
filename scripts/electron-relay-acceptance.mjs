@@ -844,34 +844,42 @@ try {
       ({ clipboard }, text) => clipboard.writeText(text),
       marker
     );
-    await page.waitForFunction(
-      async (text) => {
-        const state = await window.clipp.getState();
-        return state.clips.some(
-          (clip) =>
-            clip.content === text &&
-            clip.originPeerId === state.identity.deviceId
+    const observePublicState = async (select, reason) => {
+      const deadline =
+        Date.now() + attempt.remainingMs(Math.min(timeout, 10_000));
+      while (Date.now() < deadline) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        const state = await command(
+          () => page.evaluate(() => window.clipp.getState()),
+          Math.min(commandTimeout, remaining)
         );
-      },
-      marker,
-      { timeout: attempt.remainingMs(10_000) }
+        if (Date.now() > deadline) break;
+        const observation = select(state);
+        if (observation) return observation;
+        const pause = Math.min(50, deadline - Date.now());
+        if (pause > 0)
+          await new Promise((resolve) => setTimeout(resolve, pause));
+      }
+      throw new Error(reason);
+    };
+    const captured = await observePublicState(
+      (state) =>
+        state.clips.find(
+          (clip) =>
+            !baseline.has(clip.id) &&
+            clip.content === marker &&
+            clip.originPeerId === state.identity.deviceId
+        ),
+      "local_clip_capture_failed"
     );
-    const captured = await page.evaluate(async (text) => {
-      const state = await window.clipp.getState();
-      return state.clips.find(
-        (clip) =>
-          clip.content === text && clip.originPeerId === state.identity.deviceId
-      );
-    }, marker);
-    assert(captured && !baseline.has(captured.id), "local_clip_capture_failed");
     const card = page
       .locator("article.history-card")
       .filter({ hasText: marker });
     await nativeClick(card.getByTitle("Pin", { exact: true }));
-    await page.waitForFunction(
-      async (id) => (await window.clipp.getState()).pinnedIds.includes(id),
-      captured.id,
-      { timeout: attempt.remainingMs(10_000) }
+    await observePublicState(
+      (state) => (state.pinnedIds.includes(captured.id) ? state : null),
+      "local_pin_state_failed"
     );
     await nativeClick(
       page.getByRole("button", { name: "Pinned", exact: true })

@@ -596,14 +596,14 @@ export const _electron={async launch({args,env,executablePath}){
    throw new Error('controlled GUI launch unavailable');
  }
  const child=new EventEmitter();child.pid=process.pid;child.exitCode=null;child.signalCode=null;
- const state={identity:{deviceId:'controlled-device'},clips:[],pinnedIds:[]};let filter='All';
+ const state={identity:{deviceId:'controlled-device'},clips:[],pinnedIds:[]};let filter='All';let captureReadyAt=0;let pinReadyAt=0;let pendingPin;
  const clipboard={readText:()=>'',writeText(){}};
  const app={setName(){},getPath:()=>env.CLIPP_RELAY_ACCEPTANCE_PROFILE,focus(){},exit(){throw new Error('controlled runtime exit');}};
- const win={id:1,isDestroyed:()=>false,isVisible:()=>true,isMinimized:()=>false,isFocused:()=>true,show(){},focus(){},restore(){},webContents:{focus(){},id:2,getOSProcessId:()=>7,getURL:()=>pathToFileURL(path.resolve('apps/electron/dist/renderer/index.html')).href,sendInputEvent(event){if(event.type==='mouseUp'){if(event.x>90){if(${JSON.stringify(nativeMode)}!=='pin-input-unobservable')state.pinnedIds=[state.clips[0].id];}else filter=event.x<30?'Pinned':'All';}}}};
- const api={getState:async()=>{const content=clipboard.readText();if(content && !state.clips.some(clip=>clip.content===content))state.clips.push({id:'controlled-clip',content,originPeerId:state.identity.deviceId});return state;}};
+ const win={id:1,isDestroyed:()=>false,isVisible:()=>true,isMinimized:()=>false,isFocused:()=>true,show(){},focus(){},restore(){},webContents:{focus(){},id:2,getOSProcessId:()=>7,getURL:()=>pathToFileURL(path.resolve('apps/electron/dist/renderer/index.html')).href,sendInputEvent(event){if(event.type==='mouseUp'){if(event.x>90){if(${JSON.stringify(nativeMode)}!=='pin-input-unobservable'){if(${JSON.stringify(nativeMode)}==='delayed-pin'){pinReadyAt=Date.now()+300;pendingPin=state.clips[0].id;}else state.pinnedIds=[state.clips[0].id];}}else filter=event.x<30?'Pinned':'All';}}}};
+ const api={getState:async()=>{const content=clipboard.readText();if(content && !captureReadyAt)captureReadyAt=Date.now()+300;if(content && !state.clips.some(clip=>clip.content===content) && (${JSON.stringify(nativeMode)}!=='delayed-capture'||Date.now()>=captureReadyAt))state.clips.push({id:'controlled-clip',content,originPeerId:state.identity.deviceId});if(pendingPin&&Date.now()>=pinReadyAt)state.pinnedIds=[pendingPin];return state;}};
  const browser={window:{clipp:api},document:{hasFocus:()=>true}};const browserEvaluate=(fn,arg)=>vm.runInNewContext('('+String(fn)+')',browser)(arg);
  const card={getByTitle:()=>({boundingBox:async()=>({x:100,y:1,width:10,height:10})}),waitFor:async()=>{if(filter!=='Pinned'||!state.pinnedIds.length)throw new Error('native pin not observed');}};
- const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp') && !await browserEvaluate(fn,arg))throw new Error('public state observation failed');},getByRole:(_,options)=>({boundingBox:async()=>({x:options.name==='Pinned'?20:40,y:1,width:10,height:10})}),locator:()=>({filter:()=>card}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
+ const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp')){const success=browserEvaluate(fn,arg);if(!success)throw new Error('public state observation failed');}},getByRole:(_,options)=>({boundingBox:async()=>({x:options.name==='Pinned'?20:40,y:1,width:10,height:10})}),locator:()=>({filter:()=>card}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
  const previousExecutable=process.execPath;const previousLoader=Module._load;
  Object.defineProperty(process.versions,'electron',{value:'43.4.0',configurable:true});process.getSystemVersion=()=>'controlled';
  Module._load=function(name,...rest){return name==='electron'?{app,clipboard}:previousLoader.call(this,name,...rest);};
@@ -769,7 +769,12 @@ test("the selected history scenario fails when native pin input has no observabl
     "pin-input-unobservable",
     "electron-clipboard-history"
   );
-  assert.notEqual(f.accept().status, 0);
+  const started = Date.now();
+  assert.notEqual(f.accept(["--timeout-seconds", "1"]).status, 0);
+  assert(
+    Date.now() - started < 5000,
+    "no-effect observation exceeded bounded scenario time"
+  );
   assert.equal(f.receipt().stage, "clipboard-history");
   assert.notEqual(f.receipt().behavior?.passed, true);
 });
@@ -789,3 +794,11 @@ for (const mode of ["launch-absent", "launch-malformed", "launch-unreadable"]) {
     );
   });
 }
+
+for (const mode of ["delayed-capture", "delayed-pin"])
+  test(`the local-history runner awaits ${mode} public state with the installed synchronous predicate contract`, (t) => {
+    const f = frozenElectronFixture(t, mode, "electron-clipboard-history");
+    const result = f.accept();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(f.receipt().behavior.passed, true);
+  });
