@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   chmodSync,
+  existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
@@ -43,7 +44,16 @@ function fixture(t, setup = () => {}) {
   mkdirSync(join(source, "packages/electron"), { recursive: true });
   writeFileSync(
     join(source, "packages/electron/package.json"),
-    JSON.stringify({ name: "electron", version: "43.4.0" })
+    JSON.stringify({
+      name: "electron",
+      version: "43.4.0",
+      bin: { "install-electron": "install.cjs" },
+    })
+  );
+  writeFileSync(
+    join(source, "packages/electron/install.cjs"),
+    `const fs=require('node:fs');const path=require('node:path');fs.mkdirSync(path.join(__dirname,'dist'),{recursive:true});fs.writeFileSync(path.join(__dirname,'dist/electron'),'runtime fixture',{mode:0o755});fs.writeFileSync(path.join(__dirname,'path.txt'),'electron');`,
+    { mode: 0o755 }
   );
   writeFileSync(
     join(source, "package.json"),
@@ -76,7 +86,7 @@ function fixture(t, setup = () => {}) {
   );
   writeFileSync(
     join(source, "install-runtime.cjs"),
-    `const fs=require('node:fs');fs.mkdirSync('packages/electron/dist',{recursive:true});fs.writeFileSync('packages/electron/dist/electron','runtime fixture',{mode:0o755});fs.writeFileSync('packages/electron/path.txt','electron');fs.mkdirSync('packages/fixture-runtime/dist',{recursive:true});fs.writeFileSync('packages/fixture-runtime/dist/index.cjs','module.exports="fixture"');`
+    `const fs=require('node:fs');fs.mkdirSync('packages/fixture-runtime/dist',{recursive:true});fs.writeFileSync('packages/fixture-runtime/dist/index.cjs','module.exports="fixture"');`
   );
   writeFileSync(
     join(source, "build-runtime.cjs"),
@@ -406,11 +416,11 @@ test("unselected installed tooling does not require universal artifact certifica
 
 test("preparation refuses an installed Electron package without its declared executable", (t) => {
   const f = fixture(t, (source) => {
-    const installer = join(source, "install-runtime.cjs");
+    const installer = join(source, "packages/electron/install.cjs");
     writeFileSync(
       installer,
       readFileSync(installer, "utf8").replace(
-        "fs.writeFileSync('packages/electron/dist/electron','runtime fixture',{mode:0o755});",
+        "fs.writeFileSync(path.join(__dirname,'dist/electron'),'runtime fixture',{mode:0o755});",
         ""
       )
     );
@@ -458,4 +468,50 @@ test("preparation rejects a missing external package emitted by the selected bui
   const result = f.invoke();
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /absent-runtime-input/);
+});
+
+test("prepares the installed pinned Electron distribution through its explicit installer", (t) => {
+  const f = fixture(t);
+  assert.equal(existsSync(join(f.source, "packages/electron/path.txt")), false);
+  const result = f.invoke();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    readFileSync(
+      join(f.destination, "packages/electron/dist/electron"),
+      "utf8"
+    ),
+    "runtime fixture"
+  );
+  assert.equal(f.invoke(["verify", "--record", f.record]).status, 0);
+});
+
+test("distribution overrides fail before cloning or touching a user distribution", (t) => {
+  const f = fixture(t);
+  const outside = join(f.root, "user-distribution");
+  mkdirSync(outside);
+  const canary = join(outside, "electron");
+  writeFileSync(canary, "preserve owned user distribution");
+  const result = run(process.execPath, [command, ...f.args], f.source, {
+    ELECTRON_OVERRIDE_DIST_PATH: outside,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ELECTRON_OVERRIDE_DIST_PATH is unsupported/);
+  assert.equal(existsSync(f.destination), false);
+  assert.equal(
+    readFileSync(canary, "utf8"),
+    "preserve owned user distribution"
+  );
+});
+
+test("cross-platform installer overrides cannot mislabel the selected runtime", (t) => {
+  const f = fixture(t);
+  const result = run(process.execPath, [command, ...f.args], f.source, {
+    ELECTRON_INSTALL_ARCH: "unsupported-other-architecture",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /unsupported Electron installation target override/
+  );
+  assert.equal(existsSync(f.destination), false);
 });

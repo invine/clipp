@@ -184,6 +184,29 @@ function electronVersion(root) {
     throw new Error("wrong-worktree Electron resolution");
   return JSON.parse(readFileSync(resolved)).version;
 }
+function provisionElectron(root) {
+  const manifestPath = realpathSync(
+    createRequire(join(root, "apps/electron/package.json")).resolve(
+      "electron/package.json"
+    )
+  );
+  if (!within(root, manifestPath))
+    throw new Error("wrong-worktree Electron installer resolution");
+  const packageRoot = dirname(manifestPath);
+  const manifest = JSON.parse(readFileSync(manifestPath));
+  const binary = manifest.bin?.["install-electron"];
+  if (typeof binary !== "string")
+    throw new Error(
+      "locked Electron package has no explicit install-electron entry"
+    );
+  const installer = resolve(packageRoot, binary);
+  if (
+    !within(packageRoot, installer) ||
+    !within(packageRoot, realpathSync(installer))
+  )
+    throw new Error("Electron installer must belong to locked package");
+  run(process.execPath, [file(root, relative(root, installer))], root, false);
+}
 function installedRuntime(root) {
   const resolver = createRequire(join(root, "apps/electron/package.json"));
   const electronRoot = dirname(
@@ -345,6 +368,21 @@ function parse(argv) {
 }
 try {
   const { mode, options: o } = parse(process.argv.slice(2));
+  if (process.env.ELECTRON_OVERRIDE_DIST_PATH !== undefined)
+    throw new Error(
+      "ELECTRON_OVERRIDE_DIST_PATH is unsupported for isolated candidates"
+    );
+  for (const [name, expected] of [
+    ["ELECTRON_INSTALL_PLATFORM", process.platform],
+    ["npm_config_platform", process.platform],
+    ["ELECTRON_INSTALL_ARCH", process.arch],
+    ["npm_config_arch", process.arch],
+  ]) {
+    if (process.env[name] && process.env[name] !== expected)
+      throw new Error(
+        `unsupported Electron installation target override: ${name}`
+      );
+  }
   if (mode === "verify") {
     if (!o.record || Object.keys(o).length !== 1)
       throw new Error("verify requires --record");
@@ -450,6 +488,9 @@ try {
     // npm owns installation and native lifecycle scripts; do not share dependencies.
     run("npm", ["ci", "--no-audit", "--no-fund"], destination, false);
     dependencies(destination);
+    // Electron 43 exposes explicit provisioning instead of a postinstall hook.
+    // Execute only the bin from npm's installed locked package, never a fetched CLI.
+    provisionElectron(destination);
     run(
       "npm",
       ["--workspace", "apps/electron", "run", "build"],

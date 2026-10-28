@@ -142,10 +142,21 @@ npm run acceptance:candidate -- verify \
 
 Use Node.js 22.22.1 or newer and npm. Preparation creates a detached independent
 Git clone, runs `npm ci` with the selected lockfile and normal lifecycle scripts,
-then runs the existing Electron workspace build. It refuses existing
+explicitly provisions the installed locked Electron package through its
+`install-electron` entry using Node, then runs the existing Electron workspace
+build. This is the installed-package equivalent of offline `npm exec --no --
+install-electron`; it cannot fetch a replacement CLI. Electron's installer may
+fetch the pinned distribution using its normal download/checksum handling. It refuses existing
 destinations; failures preserve the partial checkout for diagnosis. Choose a new
 destination after correcting a failure. No shared dependency installation or
 manual native-module copying is supported.
+
+Unset `ELECTRON_OVERRIDE_DIST_PATH`: preparation rejects it before cloning or
+running installation, so user distributions cannot become installation targets.
+Cross-platform/architecture installer overrides are also rejected unless they
+match the selected host. The downloaded distribution stays in the candidate's
+installed Electron package. Provisioning files does not launch Electron or load
+its native addons.
 
 The mode-600 sibling candidate record binds the committed revision, all tracked
 input hashes (at most 20,000 files), Node/npm/platform/architecture, resolved
