@@ -196,6 +196,8 @@ public final class ContinuityControlsInputTest {
         assertEquals("https://localhost/", web.evaluate("location.origin + '/'"));
         tapButton("Settings");
         web.await("Settings selected", "document.querySelector('nav button[aria-current=\"page\"]')?.textContent.trim() === 'Settings'");
+        awaitButton("Connections");
+        tapButton("Connections");
         awaitButton("Background help and recovery");
         scenario.onActivity(activity -> Log.i("ClippContinuityInput", "windowPx="
             + activity.getWindowManager().getCurrentWindowMetrics().getBounds()
