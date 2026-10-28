@@ -28,3 +28,7 @@
 The proposed [finite allocation and graph](../proposals/ticket-01/README.md) is integrated at `9a8613be108988032a37448d8253aeaf5f8096bc`, reviewed without a blocking proposal defect and preserved in the integration branch. It does not migrate live UX tickets. The public status CLI and real-Git transition tests are still absent from main; the agent-workflow integration owner must make that prerequisite available through its own lifecycle. This retained claim stays owned by `/root/graph` and releases active implementation capacity.
 
 After that prerequisite reaches main, update this spec integration from main, renew relevant source bindings and implement the remaining public-boundary requirements from a fresh ticket worktree based on its current integration tip. No proposal, checklist or fixture can qualify an unrun native action. The disposable documentation worktree may be retired after integration/evidence preservation; its source branch remains retained.
+
+## Prerequisite update
+
+The user-authorized consolidation put the public status CLI and real-Git suites on main at `7e8d4583c48ea5243209653ff82615182a2f9232`. The previous external availability blocker is cleared. This retained claim is ready to resume after the coordinator updates this spec integration from main and renews affected source bindings/checks; its unimplemented CLI criteria remain unchecked. No active implementer or native pass is implied.
