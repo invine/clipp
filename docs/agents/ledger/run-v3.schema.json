@@ -32,7 +32,18 @@
       "$ref": "run-v2.schema.json#/properties/tracker"
     },
     "repositories": {
-      "$ref": "run-v2.schema.json#/properties/repositories"
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 2,
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "$ref": "run-v1.schema.json#/properties/repositories/properties/client"
+        },
+        "relay": {
+          "$ref": "run-v1.schema.json#/properties/repositories/properties/relay"
+        }
+      }
     },
     "tickets": {
       "$ref": "run-v2.schema.json#/properties/tickets"
@@ -378,6 +389,11 @@
       "minItems": 0,
       "maxItems": 500,
       "uniqueItems": true
+    },
+    "selectedCandidateId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
     }
   }
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Read Git metadata and coordinator records only. No repair, dispatch or shell execution.
+import { compactRecovery, formatCompact } from "./lib/compact-recovery.mjs";
 import { inspectApplicability } from "./lib/evidence-applicability.mjs";
 import { execFileSync } from "node:child_process";
 import {
@@ -40,6 +41,10 @@ const requireValue = (condition, message) => {
 };
 const args = process.argv.slice(2);
 const json = args.includes("--json");
+const compact = args.includes("--compact");
+let currentLedger;
+let currentEntry;
+let entryReference;
 function readJson(path) {
   requireValue(
     statSync(path).size <= 1024 * 1024,
@@ -709,26 +714,54 @@ function inspectOperational(ledger, local, preserved) {
 function main() {
   if (args.includes("--help")) {
     console.log(
-      "Usage: node scripts/agent-status.mjs --ledger RUN.json --local LOCAL.json [--json]\nRead-only recovery status, run/output schemaVersion 1, 2 or 3; local schemaVersion 1; exit 1 withholds assignment. See docs/agents/recovery.md."
+      "Usage: node scripts/agent-status.mjs --ledger RUN.json --local LOCAL.json [--json] [--compact]\nOr: --entry ROLE:PATH --local LOCAL.json [--json] [--compact]\nRead-only recovery status, run/output schemaVersion 1, 2 or 3; local schemaVersion 1 (v3 also accepts local 2); exit 1 withholds assignment. See docs/agents/recovery.md."
     );
     return;
   }
   const inputs = {};
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
-    if (flag === "--json") continue;
+    if (["--json", "--compact"].includes(flag)) continue;
     requireValue(
-      ["--ledger", "--local"].includes(flag) && args[i + 1] && !inputs[flag],
+      ["--ledger", "--local", "--entry"].includes(flag) &&
+        args[i + 1] &&
+        !inputs[flag],
       `expected --ledger and --local once, got ${flag}`
     );
     inputs[flag] = args[++i];
   }
   requireValue(
-    inputs["--ledger"] && inputs["--local"],
-    "explicit --ledger and --local are required"
+    inputs["--local"] &&
+      Boolean(inputs["--ledger"]) !== Boolean(inputs["--entry"]),
+    "explicit --local and exactly one of --ledger or --entry are required"
   );
-  const ledger = readJson(inputs["--ledger"]);
   const local = readJson(inputs["--local"]);
+  requireValue(
+    [1, 2].includes(local.schemaVersion),
+    "unsupported local schemaVersion"
+  );
+  validate(
+    readJson(resolve(schemaRoot, `local-v${local.schemaVersion}.schema.json`)),
+    local,
+    "local"
+  );
+  if (inputs["--entry"]) {
+    const match = /^(client|relay):(.+)$/.exec(inputs["--entry"]);
+    requireValue(match, "entry must be ROLE:repository-relative-path");
+    entryReference = { role: match[1], path: match[2] };
+    currentEntry = JSON.parse(publicDocument(local.roots[match[1]], match[2]));
+    validate(
+      readJson(resolve(schemaRoot, "entry-v1.schema.json")),
+      currentEntry,
+      "entry"
+    );
+    inputs["--ledger"] = local.artifacts[currentEntry.runArtifact];
+    requireValue(
+      inputs["--ledger"] && isAbsolute(inputs["--ledger"]),
+      "entry runArtifact needs an absolute local artifact mapping"
+    );
+  }
+  const ledger = readJson(inputs["--ledger"]);
   requireValue(
     [1, 2, 3].includes(ledger.schemaVersion),
     "unsupported run schemaVersion"
@@ -738,11 +771,34 @@ function main() {
     ledger,
     "ledger"
   );
-  validate(
-    readJson(resolve(schemaRoot, "local-v1.schema.json")),
-    local,
-    "local"
+  requireValue(
+    ledger.schemaVersion === 3 || local.schemaVersion === 1,
+    "historical v1/v2 runs require local schemaVersion 1"
   );
+  if (ledger.schemaVersion === 3) {
+    const configured = Object.keys(ledger.repositories).sort().join(",");
+    requireValue(
+      Object.keys(local.roots).sort().join(",") === configured,
+      "v3 local roots must exactly match configured repository roles"
+    );
+    requireValue(
+      Object.keys(ledger.ownership.roles).sort().join(",") === configured,
+      "v3 ownership roles must exactly match configured repository roles"
+    );
+    for (const candidate of ledger.candidates ?? [])
+      requireValue(
+        Object.keys(candidate.revisions).sort().join(",") === configured,
+        "v3 candidate revisions must cover exactly configured repository roles"
+      );
+    for (const evidence of ledger.evidence)
+      requireValue(
+        Object.keys(evidence.revisions).every((role) =>
+          Object.hasOwn(ledger.repositories, role)
+        ),
+        "v3 observation revisions must use configured repository roles"
+      );
+  }
+  currentLedger = ledger;
   report.schemaVersion = ledger.schemaVersion;
   report.runId = ledger.runId;
   requireValue(
@@ -1387,6 +1443,8 @@ function main() {
         expanded = true;
       }
   }
+  for (const ticket of report.tickets)
+    ticket.evidenceBlocked = evidenceBlocked.has(ticket.path);
   if (!hasIntegrityFailure() && report.availableSlots)
     report.frontier = report.tickets
       .filter(
@@ -1402,6 +1460,71 @@ function main() {
           !ticket.operationalBlockers?.length
       )
       .map((ticket) => ticket.path);
+  if (
+    ledger.selectedCandidateId &&
+    !(ledger.candidates ?? []).some(
+      (item) => item.id === ledger.selectedCandidateId
+    )
+  )
+    diagnostic(
+      "candidate-selection",
+      "Selected candidate must name an existing v3 candidate"
+    );
+  if (currentEntry) {
+    if (
+      ledger.schemaVersion !== 3 ||
+      currentEntry.runId !== ledger.runId ||
+      currentEntry.canonical.role !== ledger.ownership?.canonical.role ||
+      currentEntry.canonical.path.replace(/\/$/, "") !==
+        ledger.ownership?.canonical.path.replace(/\/$/, "") ||
+      entryReference.role !== currentEntry.canonical.role ||
+      entryReference.path !==
+        `${currentEntry.canonical.path.replace(/\/$/, "")}/current.json` ||
+      Object.values(report.repositories).some(
+        (repo) =>
+          repo.branch !== repo.integrationBranch ||
+          repo.head !== repo.integrationTip
+      ) ||
+      Object.keys(currentEntry.integrationBranches).sort().join(",") !==
+        Object.keys(ledger.repositories).sort().join(",") ||
+      Object.entries(ledger.repositories).some(
+        ([role, repo]) =>
+          currentEntry.integrationBranches[role] !== repo.integrationBranch
+      )
+    )
+      diagnostic(
+        "entry-pointer",
+        "Reconcile entry run, canonical owner and integration branches with the selected ledger"
+      );
+    const candidate = (ledger.candidates ?? []).find(
+      (item) => item.id === currentEntry.candidateId
+    );
+    if (
+      !candidate ||
+      currentEntry.candidateId !== ledger.selectedCandidateId ||
+      Object.keys(candidate.revisions).length !==
+        Object.keys(report.repositories).length ||
+      Object.entries(report.repositories).some(
+        ([role, repo]) =>
+          !ancestor(
+            local.roots[role],
+            candidate.revisions[role],
+            repo.integrationTip
+          ) &&
+          !report.integrations.some(
+            (item) =>
+              item.role === role &&
+              item.sourceCommit === candidate.revisions[role] &&
+              item.integration === "verified-mapping"
+          )
+      )
+    )
+      diagnostic(
+        "entry-candidate",
+        "Reconcile entry candidate with the declared selected candidate and its integration ancestry or verified mapping"
+      );
+    if (hasIntegrityFailure()) report.frontier = [];
+  }
   report.complete = report.diagnostics.length === 0;
 }
 try {
@@ -1414,82 +1537,89 @@ if (!args.includes("--help")) {
     if (hasIntegrityFailure()) report.frontier = [];
     report.complete = false;
   }
-  const output = json
-    ? JSON.stringify(report)
-    : [
-        `${report.runId ?? "Run"}: ${report.complete ? "consistent" : "incomplete"} (${report.observedAt})`,
-        `Operational facts: ${report.operational.state}`,
-        ...(report.scenarios ?? []).map(
-          (item) =>
-            `Scenario ${item.id}: ${item.disposition}; owner ${item.primaryOwner} (${item.ownerStatus}); ${item.runtime}; qualification ${item.qualification}`
-        ),
-        ...(report.ownership
-          ? [
-              `Canonical: ${report.ownership.canonical.role}:${report.ownership.canonical.path}`,
-              ...Object.entries(report.ownership.roles).map(
-                ([role, responsibility]) => `${role}: ${responsibility}`
-              ),
-              `Specification: ${report.ownership.specification.role}:${report.ownership.specification.path}`,
-              `Decisions: ${report.ownership.decisions.role}:${report.ownership.decisions.path}`,
-              ...report.ownership.pointers.map(
-                (item) => `Pointer: ${item.role}:${item.path}`
-              ),
-              ...report.ownership.coverage.map(
-                (item) =>
-                  `${item.decision}: ${item.disposition}; ${item.requirements.join(", ") || "no retained requirement"}; source ${item.source.role}:${item.source.path}`
-              ),
-              ...report.ownership.artifacts.map(
-                (item) =>
-                  `${item.id}: ${item.available ? "available" : "unavailable"}`
-              ),
-            ]
-          : []),
-        ...Object.entries(report.repositories).map(
-          ([role, repo]) =>
-            `${role}: ${repo.branch ?? "detached"} ${repo.head}; integration ${repo.integrationBranch} ${repo.integrationTip}; ${repo.worktrees.length} worktrees, ${repo.stashes.length} stashes`
-        ),
-        ...Object.entries(report.repositories).flatMap(([role, repo]) => [
-          ...repo.worktrees.map(
+  const current = compact
+    ? compactRecovery(report, currentLedger, currentEntry)
+    : null;
+  const output = compact
+    ? json
+      ? JSON.stringify(current)
+      : formatCompact(current)
+    : json
+      ? JSON.stringify(report)
+      : [
+          `${report.runId ?? "Run"}: ${report.complete ? "consistent" : "incomplete"} (${report.observedAt})`,
+          `Operational facts: ${report.operational.state}`,
+          ...(report.scenarios ?? []).map(
             (item) =>
-              `${role} worktree ${JSON.stringify(item.path)}: ${item.branch ?? "detached"} ${item.head}; ${item.dirty ? `staged ${item.dirty.staged}, unstaged ${item.dirty.unstaged}, untracked ${item.dirty.untracked}` : "unavailable"}`
+              `Scenario ${item.id}: ${item.disposition}; owner ${item.primaryOwner} (${item.ownerStatus}); ${item.runtime}; qualification ${item.qualification}`
           ),
-          ...repo.stashes.map((item) => `${role} ${item.ref} ${item.commit}`),
-          ...repo.branches.map(
+          ...(report.ownership
+            ? [
+                `Canonical: ${report.ownership.canonical.role}:${report.ownership.canonical.path}`,
+                ...Object.entries(report.ownership.roles).map(
+                  ([role, responsibility]) => `${role}: ${responsibility}`
+                ),
+                `Specification: ${report.ownership.specification.role}:${report.ownership.specification.path}`,
+                `Decisions: ${report.ownership.decisions.role}:${report.ownership.decisions.path}`,
+                ...report.ownership.pointers.map(
+                  (item) => `Pointer: ${item.role}:${item.path}`
+                ),
+                ...report.ownership.coverage.map(
+                  (item) =>
+                    `${item.decision}: ${item.disposition}; ${item.requirements.join(", ") || "no retained requirement"}; source ${item.source.role}:${item.source.path}`
+                ),
+                ...report.ownership.artifacts.map(
+                  (item) =>
+                    `${item.id}: ${item.available ? "available" : "unavailable"}`
+                ),
+              ]
+            : []),
+          ...Object.entries(report.repositories).map(
+            ([role, repo]) =>
+              `${role}: ${repo.branch ?? "detached"} ${repo.head}; integration ${repo.integrationBranch} ${repo.integrationTip}; ${repo.worktrees.length} worktrees, ${repo.stashes.length} stashes`
+          ),
+          ...Object.entries(report.repositories).flatMap(([role, repo]) => [
+            ...repo.worktrees.map(
+              (item) =>
+                `${role} worktree ${JSON.stringify(item.path)}: ${item.branch ?? "detached"} ${item.head}; ${item.dirty ? `staged ${item.dirty.staged}, unstaged ${item.dirty.unstaged}, untracked ${item.dirty.untracked}` : "unavailable"}`
+            ),
+            ...repo.stashes.map((item) => `${role} ${item.ref} ${item.commit}`),
+            ...repo.branches.map(
+              (item) =>
+                `${role} branch ${item.branch} ${item.tip}; ${item.integration}; ${item.worktrees.length} worktrees`
+            ),
+          ]),
+          ...report.tickets.map(
+            (ticket) =>
+              `${ticket.path}: ${ticket.status}; decision ${ticket.decision?.assessment ?? "missing"}; ${ticket.externalBlockers.map((item) => `${item.owner}: ${item.reason}`).join(", ") || "no external blocker"}; ${Object.entries(
+                ticket.integration ?? {}
+              )
+                .map(([role, state]) => `${role} ${state}`)
+                .join(", ")}`
+          ),
+          ...report.claims.map(
+            (claim) =>
+              `${claim.ticket}: ${claim.owner} (${claim.activity}); ${Object.entries(
+                claim.repositories
+              )
+                .map(([role, repo]) => `${role} ${repo.integration}`)
+                .join(", ")}`
+          ),
+          ...report.integrations.map(
             (item) =>
-              `${role} branch ${item.branch} ${item.tip}; ${item.integration}; ${item.worktrees.length} worktrees`
+              `${item.ticket}:${item.role}: ${item.integration}, ${item.acceptance}; ${item.sourceCommit} -> ${item.integratedCommit}`
           ),
-        ]),
-        ...report.tickets.map(
-          (ticket) =>
-            `${ticket.path}: ${ticket.status}; decision ${ticket.decision?.assessment ?? "missing"}; ${ticket.externalBlockers.map((item) => `${item.owner}: ${item.reason}`).join(", ") || "no external blocker"}; ${Object.entries(
-              ticket.integration ?? {}
-            )
-              .map(([role, state]) => `${role} ${state}`)
-              .join(", ")}`
-        ),
-        ...report.claims.map(
-          (claim) =>
-            `${claim.ticket}: ${claim.owner} (${claim.activity}); ${Object.entries(
-              claim.repositories
-            )
-              .map(([role, repo]) => `${role} ${repo.integration}`)
-              .join(", ")}`
-        ),
-        ...report.integrations.map(
-          (item) =>
-            `${item.ticket}:${item.role}: ${item.integration}, ${item.acceptance}; ${item.sourceCommit} -> ${item.integratedCommit}`
-        ),
-        ...report.evidence.map(
-          (item) =>
-            `${item.id}: ${item.kind} ${item.outcome}, ${item.freshness}`
-        ),
-        ...(report.carryForwards ?? []).map(
-          (item) =>
-            `Carry-forward ${item.evidenceId}/${item.scenarioId}: candidate ${item.candidateId}; ${item.state}; reviewer ${item.reviewer}; ${item.reasons.join("; ")}`
-        ),
-        `Frontier (${report.availableSlots ?? 0} slots): ${report.frontier.join(", ") || "withheld/none"}`,
-        ...report.diagnostics.map((item) => `${item.code}: ${item.message}`),
-      ].join("\n");
+          ...report.evidence.map(
+            (item) =>
+              `${item.id}: ${item.kind} ${item.outcome}, ${item.freshness}`
+          ),
+          ...(report.carryForwards ?? []).map(
+            (item) =>
+              `Carry-forward ${item.evidenceId}/${item.scenarioId}: candidate ${item.candidateId}; ${item.state}; reviewer ${item.reviewer}; ${item.reasons.join("; ")}`
+          ),
+          `Frontier (${report.availableSlots ?? 0} slots): ${report.frontier.join(", ") || "withheld/none"}`,
+          ...report.diagnostics.map((item) => `${item.code}: ${item.message}`),
+        ].join("\n");
   if (Buffer.byteLength(output) > 1024 * 1024) {
     console.log(
       JSON.stringify({

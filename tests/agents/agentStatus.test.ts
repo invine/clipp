@@ -1765,6 +1765,19 @@ test("v3 verified scoped outputs unlock disabled reset UI while residual native 
   expect(result.status).toBe(0);
   const report = JSON.parse(result.stdout);
   expect(report.frontier).toEqual(names.slice(2, 4));
+  const compact = JSON.parse(run(complete, local, "--compact").stdout);
+  expect(compact.outputs[0]).toMatchObject({
+    status: "resolved",
+    integration: { client: "accepted", relay: "accepted" },
+  });
+  expect(compact.scenarios[0]).toMatchObject({ remaining: false });
+  expect(
+    compact.scenarios.find((item: { id: string }) => item.id === "Native")
+  ).toMatchObject({ remaining: true, qualification: "not-assessed" });
+  expect(compact.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: names[2],
+  });
   expect(
     report.tickets.find((item: { path: string }) => item.path === names[4])
   ).toMatchObject({
@@ -2340,4 +2353,471 @@ test("v3 accepts a correctly reviewed unrelated documentation path with leading 
   expect(JSON.parse(result.stdout).evidence[0].freshness).toBe(
     "carried-forward"
   );
+});
+
+test("compact entry walkthrough identifies current candidate, owners, pending output and next action", () => {
+  const base = setupApplicability();
+  const ledger = { ...base.ledger, selectedCandidateId: "current" };
+  const local = base.local;
+  const blocked = "02-blocked.md";
+  file(
+    join(client, ledger.tracker.path, blocked),
+    "# Retained owner\n\n**Status:** claimed\n\n**Blocked by:** None.\n"
+  );
+  const populated = {
+    ...ledger,
+    operational: {
+      deployments: [],
+      access: [],
+      authorizations: [
+        {
+          id: "fixture-local",
+          observedAt: "2026-10-28",
+          authorizationDate: "2026-10-28",
+          source: { kind: "public", ...ledger.ownership.decisions },
+          action: "Local fixture verification",
+          resources: ["owned fixture"],
+          limits: ["local only"],
+          status: "recorded",
+          statusAt: "2026-10-28",
+          statusSource: { kind: "public", ...ledger.ownership.decisions },
+        },
+      ],
+      requirements: [{ ticket: "01-first.md", records: ["fixture-local"] }],
+    },
+    tickets: [
+      ...ledger.tickets,
+      {
+        ...ledger.tickets[0],
+        path: blocked,
+        externalBlockers: [{ reason: "Host unavailable", owner: "host-owner" }],
+      },
+    ],
+    claims: [
+      {
+        id: "retained-02",
+        ticket: blocked,
+        owner: "native-owner",
+        coordinator: ledger.coordinator,
+        activity: "blocked",
+        repositories: {},
+      },
+    ],
+  };
+  const entry = {
+    schemaVersion: 1,
+    runId: ledger.runId,
+    canonical: ledger.ownership.canonical,
+    runArtifact: "active-run",
+    candidateId: "current",
+    integrationBranches: { client: "integration", relay: "integration" },
+  };
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify(entry)
+  );
+  run(populated, local);
+  const mapped = {
+    ...local,
+    artifacts: { ...local.artifacts, "active-run": join(root, "run.json") },
+  };
+  file(join(root, "local.json"), JSON.stringify(mapped));
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${ledger.ownership.canonical.path}/current.json`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  const current = JSON.parse(result.stdout);
+  expect(current.candidate).toMatchObject({
+    state: "current",
+    id: "current",
+    revisions: ledger.candidates[1].revisions,
+  });
+  expect(current.claims[0]).toMatchObject({
+    owner: "native-owner",
+    activity: "blocked",
+    coordinator: ledger.coordinator,
+  });
+  expect(current.outputs[1].blockers).toContainEqual({
+    kind: "external",
+    reason: "Host unavailable",
+    owner: "host-owner",
+  });
+  expect(current.canonical).toEqual(ledger.ownership.canonical);
+  expect(current.capacity).toMatchObject({ available: 2 });
+  expect(current.outputs[0]).toMatchObject({
+    ticket: "01-first.md",
+    status: "ready-for-agent",
+    scenarios: ["S1"],
+  });
+  expect(current.scenarios[0]).toMatchObject({
+    id: "S1",
+    owner: "01-first.md",
+    applicability: "available",
+    remaining: true,
+    qualification: "not-assessed",
+  });
+  expect(current.authorizations).toMatchObject({
+    state: "recorded",
+    records: [
+      {
+        id: "fixture-local",
+        status: "recorded",
+        action: "Local fixture verification",
+        limits: ["local only"],
+        permission: "not-assessed",
+      },
+    ],
+    requirements: [
+      { ticket: "01-first.md", records: ["fixture-local"], blockers: [] },
+    ],
+  });
+  expect(current.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "01-first.md",
+  });
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(result.stdout).not.toContain("never execute");
+
+  entry.candidateId = "original";
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify(entry)
+  );
+  const stale = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${ledger.ownership.canonical.path}/current.json`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(stale.status).toBe(1);
+  expect(JSON.parse(stale.stdout).nextActions).not.toContainEqual(
+    expect.objectContaining({ action: "dispatch" })
+  );
+  expect(JSON.parse(stale.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "entry-candidate" })
+  );
+  // Deliberately selecting the older integrated source is valid and preserves its identity.
+  file(
+    join(root, "run.json"),
+    JSON.stringify({ ...populated, selectedCandidateId: "original" })
+  );
+  const frozen = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${ledger.ownership.canonical.path}/current.json`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(frozen.status).toBe(0);
+  expect(frozen.stdout).toContain("Candidate: original");
+  expect(frozen.stdout).toContain(ledger.candidates[0].revisions.client);
+  expect(frozen.stdout).toContain('"action":"dispatch","ticket":"01-first.md"');
+});
+
+test.each([
+  "run",
+  "canonical",
+  "branch",
+  "root",
+  "missing-run",
+  "missing-entry",
+])("compact entry with %s mismatch withholds dispatch", (fault) => {
+  const base = setupApplicability();
+  const ledger = { ...base.ledger, selectedCandidateId: "current" };
+  const local = base.local;
+  const entry = {
+    schemaVersion: 1,
+    runId: ledger.runId,
+    canonical: { ...ledger.ownership.canonical },
+    runArtifact: "active-run",
+    candidateId: "current",
+    integrationBranches: { client: "integration", relay: "integration" },
+  };
+  if (fault === "run") entry.runId = "outdated";
+  if (fault === "canonical") entry.canonical.path = ".scratch/old";
+  if (fault === "branch") entry.integrationBranches.client = "old-integration";
+  if (fault === "root")
+    git(client, "checkout", "--quiet", "-b", "planning-copy");
+  const path = `${ledger.ownership.canonical.path}/current.json`;
+  if (fault !== "missing-entry")
+    file(join(client, path), JSON.stringify(entry));
+  run(ledger, local);
+  file(
+    join(root, "local.json"),
+    JSON.stringify({
+      ...local,
+      artifacts: {
+        ...local.artifacts,
+        "active-run": join(
+          root,
+          fault === "missing-run" ? "missing.json" : "run.json"
+        ),
+      },
+    })
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${path}`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(1);
+  expect(
+    JSON.parse(result.stdout).nextActions.filter(
+      (item: { action: string }) => item.action === "dispatch"
+    )
+  ).toEqual([]);
+});
+
+test("compact historical reports preserve unknown candidates and explicit revoked authorization references", () => {
+  const { ledger, local } = setupOperational();
+  ledger.operational.authorizations[0].status = "revoked";
+  const current = JSON.parse(run(ledger, local, "--compact").stdout);
+  expect(current.candidate.state).toBe("unknown");
+  expect(current.authorizations.records[0]).toMatchObject({
+    id: "clipboard",
+    status: "revoked",
+    permission: "not-assessed",
+    source: {
+      kind: "public",
+      role: "client",
+      path: ".scratch/feature/decisions.md",
+    },
+  });
+  expect(current.outputs[0].blockers).toContainEqual({
+    kind: "operational",
+    id: "clipboard",
+    state: "revoked",
+  });
+  expect(current.nextActions).toEqual([]);
+  expect(JSON.stringify(current)).not.toContain("PRIVATE_OPERATIONAL_CANARY");
+});
+
+test("compact scoped stale evidence preserves unrelated next actions", () => {
+  const { ledger, local } = setupApplicability();
+  file(
+    join(client, ledger.tracker.path, "02-independent.md"),
+    "# Independent\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  const next = {
+    ...ledger,
+    tickets: [
+      ...ledger.tickets,
+      { ...ledger.tickets[0], path: "02-independent.md" },
+    ],
+    carryForwards: [],
+  };
+  const result = run(next, local, "--compact");
+  expect(result.status).toBe(1);
+  const current = JSON.parse(result.stdout);
+  expect(current.outputs[0].blockers).toContainEqual(
+    expect.objectContaining({ kind: "evidence", code: "evidence-stale" })
+  );
+  expect(current.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "02-independent.md",
+  });
+});
+
+test("compact selected frozen candidate retains its identity while integration advances", () => {
+  const { ledger, local } = setupApplicability();
+  const result = run(
+    { ...ledger, selectedCandidateId: "original" },
+    local,
+    "--compact"
+  );
+  expect(result.status).toBe(0);
+  const current = JSON.parse(result.stdout);
+  expect(current.candidate).toMatchObject({
+    state: "selected",
+    id: "original",
+    revisions: ledger.candidates[0].revisions,
+    integrationState: "different-revisions",
+  });
+  expect(current.integration.client.revision).toBe(
+    ledger.candidates[1].revisions.client
+  );
+  expect(current.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "01-first.md",
+  });
+});
+
+test("v3 client-only compact entry resumes real candidate and active claim without a relay checkout", () => {
+  const { ledger, local } = setupScenarios();
+  rmSync(relay, { recursive: true, force: true });
+  const revision = ledger.repositories.client.integrationTip;
+  const implementation = join(root, "client implementation");
+  git(
+    client,
+    "worktree",
+    "add",
+    "--quiet",
+    "-b",
+    "client-ticket",
+    implementation
+  );
+  file(
+    join(client, ledger.tracker.path, "01-first.md"),
+    "# Owned\n\n**Status:** claimed\n\n**Blocked by:** None.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "02-next.md"),
+    "# Eligible\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  const candidate = {
+    id: "client-frozen",
+    revisions: { client: revision },
+    inputs: Object.fromEntries(
+      [
+        "toolchain",
+        "dependencies",
+        "build",
+        "runner",
+        "fault",
+        "artifact",
+        "environment",
+      ].map((key) => [key, "a".repeat(64)])
+    ),
+  };
+  const runRecord = {
+    ...ledger,
+    repositories: { client: ledger.repositories.client },
+    ownership: {
+      ...ledger.ownership,
+      roles: { client: "Client coordination and implementation" },
+      pointers: [],
+    },
+    tickets: ["01-first.md", "02-next.md"].map((path) => ({
+      ...ledger.tickets[0],
+      path,
+      roles: ["client"],
+    })),
+    claims: [
+      {
+        id: "client-claim",
+        ticket: "01-first.md",
+        owner: "client-worker",
+        coordinator: ledger.coordinator,
+        activity: "active",
+        repositories: {
+          client: {
+            branch: "client-ticket",
+            baseline: revision,
+            worktree: "client-ticket",
+            sourceCommits: [],
+          },
+        },
+      },
+    ],
+    candidates: [candidate],
+    selectedCandidateId: candidate.id,
+  };
+  const config = {
+    ...local,
+    schemaVersion: 2,
+    roots: { client },
+    worktrees: { "client-ticket": implementation },
+    artifacts: { ...local.artifacts, "active-run": join(root, "run.json") },
+  };
+  const entry = {
+    schemaVersion: 1,
+    runId: ledger.runId,
+    canonical: ledger.ownership.canonical,
+    runArtifact: "active-run",
+    candidateId: candidate.id,
+    integrationBranches: { client: "integration" },
+  };
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify(entry)
+  );
+  run(runRecord, config);
+  const invoke = () =>
+    spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--entry",
+        `client:${ledger.ownership.canonical.path}/current.json`,
+        "--local",
+        join(root, "local.json"),
+        "--compact",
+        "--json",
+      ],
+      { encoding: "utf8" }
+    );
+  const result = invoke();
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(Object.keys(report.integration)).toEqual(["client"]);
+  expect(report.candidate).toMatchObject({
+    id: "client-frozen",
+    revisions: { client: revision },
+  });
+  expect(report.claims[0]).toMatchObject({
+    owner: "client-worker",
+    activity: "active",
+  });
+  expect(report.capacity).toEqual({ active: 1, available: 1, maximum: 2 });
+  expect(report.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "02-next.md",
+  });
+  // Explicit role mismatches are integrity errors rather than invented companion ownership.
+  file(
+    join(root, "local.json"),
+    JSON.stringify({ ...config, roots: { client, relay } })
+  );
+  expect(invoke().status).toBe(1);
+  file(join(root, "local.json"), JSON.stringify(config));
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify({
+      ...entry,
+      integrationBranches: { client: "integration", relay: "unrelated" },
+    })
+  );
+  expect(invoke().status).toBe(1);
+});
+
+test("historical v1 runs retain local v1 and both-role requirements", () => {
+  const { ledger, local } = setup();
+  expect(run(ledger, local).status).toBe(0);
+  const newer = run(ledger, { ...local, schemaVersion: 2 });
+  expect(newer.status).toBe(1);
+  expect(JSON.parse(newer.stdout).diagnostics[0].message).toContain(
+    "historical v1/v2 runs require local schemaVersion 1"
+  );
+  const missing = run(ledger, { ...local, roots: { client } });
+  expect(missing.status).toBe(1);
 });
