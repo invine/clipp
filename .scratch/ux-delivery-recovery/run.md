@@ -20,3 +20,13 @@ Ticket-level claims and evidence follow below. No native gates have been observe
 
 - 01: claimed for `/root/graph`; graph/allocation preparation only until main supplies the public status CLI. Product semantics and live UX claims are preserved; no migration or activation.
 - 02: claimed for `/root/candidate`; candidate preparation on main’s existing acceptance/setup boundaries, no native qualification. Baselines and exact commits are recorded at handoff.
+
+## External prerequisite ownership and continuation
+
+- Agent-workflow integration owner: canonical `.scratch/agent-workflow/run.md` coordinator. Its local-only result is preserved on `codex/agent-workflow-integration`; main lacks its status CLI, tests and verify command. Ticket 01’s executable slice and later 03/08 require this prerequisite on main. Next action for that owner: review/integrate that effort through its own lifecycle; this spec does not authorize merging unrelated branches.
+- Operational-reliability integration owner: its canonical run coordinator. Preserve its dirty five-attempt amendment, verify/commit through its own lifecycle and integrate the prerequisite on main before 04 and runtime consumers 05–07 can proceed. No reset of diagnostic budgets or alternate three-attempt policy is accepted.
+- Once prerequisite main changes exist, update this integration from main, renew affected verification, and resume retained claims. Existing dependency edges still govern downstream dispatch. No PR/push is required by the local Markdown tracker.
+- Native scenarios in this run: not run. No toolbar-popup, Android installed-target, Electron startup or two-runtime Pairing claim follows from preparation fixtures.
+
+- 01 docs slice integrated by reviewed fast-forward: source and integration `9a8613be108988032a37448d8253aeaf5f8096bc` from baseline `72daac870fc834e4614a0f9459935fe03d1eea2e`. Five proposal files only; merger `/root/merge_graph` inspected scope/ancestry and preserved dirty coordinator metadata. Preparation QA: formatting, graph acyclicity/edges/finding conservation and source bindings. Public CLI/real-Git behavior remains blocked; claim releases active capacity but stays owned/unresolved.
+- 09: claimed for `/root/closure`; independent maintained review/closure guidance plus walkthrough using existing tracker conventions. Main lacks agent-workflow workflow.md; author the scoped review guidance without importing that effort, and link from existing agent-guide. Preserve the lineage policy supplied by the user.

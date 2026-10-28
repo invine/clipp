@@ -1,6 +1,6 @@
 # Reliable completion of UX implementation
 
-The [specification](spec.md) and its testing boundaries were approved on 2026-10-28. The user subsequently approved publication of this ten-ticket breakdown. This is the client-owned local tracker; publication has not claimed or implemented any ticket.
+The [specification](spec.md) and its testing boundaries were approved on 2026-10-28. The user subsequently approved publication of this ten-ticket breakdown. This is the active client-owned tracker on `codex/ux-delivery-recovery-integration`. Use the [current run](run.md) for lineage, dispatch, prerequisites and evidence; numbered ticket files own claims and resolution.
 
 ## Approved tickets
 

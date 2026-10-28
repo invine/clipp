@@ -5,7 +5,7 @@ Approval: specification and testing boundaries approved by the user on 2026-10-2
 Date: 2026-10-28
 Owner: client (Clipp)
 Scope: all six improvements from the UX implementation retrospective
-Execution: specification only; existing implementation claims and acceptance results are unchanged
+Execution: implementation underway; see run.md. Existing UX implementation claims and acceptance results are unchanged.
 
 ## Problem Statement
 
