@@ -27,3 +27,7 @@
 ## Native qualification continuation
 
 Source `99e3e77` includes both reviewed corrections and the current shared formatter. An independent committed checkout produced the real acceptance app/test APK pair with the installed SDK; public fixtures are separate evidence. The assigned operator is preparing only a fresh owned headless API31 guest on serial `emulator-5584`, with no existing phone/AVD or host clipboard access. Actual readiness and the focused native behavior remain pending their receipts. The original implementation owner and source handoff remain preserved.
+
+## Owned host outcome
+
+The frozen source `99e3e77` app/test pair built and its hashes/package IDs were verified. The fresh owned API31 guest remained ADB-offline after a bounded selected-serial reconnect, so no APK installation, focused native behavior, matrix or Pairing was run. Four semantic host/runner failures, including the corrected console line-ending diagnostic, retain their original clock and receipts. Both owned guest processes are stopped; all roots and `ticket-07-owned-host-handoff.json` remain in primary evidence. This is an environment qualification blocker, not an observed app failure or native pass. The next action is a concrete owned-guest boot/ADB recovery diagnosis before any further admitted attempt; an expired window requires a separate decision.
