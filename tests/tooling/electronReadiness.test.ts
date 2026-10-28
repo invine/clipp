@@ -67,7 +67,7 @@ beforeEach(() => {
   }
 });
 afterEach(() => rmSync(fixture, { recursive: true, force: true }));
-function run(extra: string[] = []) {
+function run(extra: string[] = [], environment: Record<string, string> = {}) {
   return spawnSync(
     process.execPath,
     [
@@ -91,6 +91,7 @@ function run(extra: string[] = []) {
       timeout: 15000,
       env: {
         ...process.env,
+        ...environment,
         CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
         PATH: path.join(fixture, "bin") + path.delimiter + process.env.PATH,
       },
@@ -413,7 +414,7 @@ test("a hung owned-target observation receives a bounded command deadline", () =
       "if (mode === 'hung-observation') return new Promise(()=>{}); const previous = process.argv;"
     )
   );
-  const result = run(["--command-timeout-ms", "100"]);
+  const result = run(["--command-timeout-ms", "500"]);
   expect(result.status).toBe(1);
   expect(receipt()).toMatchObject({
     result: "failed",
@@ -480,7 +481,10 @@ test("an explicit renewal preserves and references the failed history", () => {
   ).toBe(true);
 });
 
-function realOwnedRuntime(mode: "normal" | "timeout" | "reuse") {
+function realOwnedRuntime(
+  mode: "normal" | "timeout" | "reuse" | "refused-signal" | "unobserved-signal",
+  observerRoot?: string
+) {
   workingRuntime();
   const adapter = path.join(repo, "node_modules/playwright/index.js");
   let source = readFileSync(adapter, "utf8");
@@ -496,7 +500,7 @@ function realOwnedRuntime(mode: "normal" | "timeout" | "reuse") {
     path.join(os.tmpdir(), "clipp-owned-fixture-children.jsonl");
   source = source.replace(
     "const win =",
-    `appendFileSync(${JSON.stringify(retainedChildren)},JSON.stringify({pid:child.pid,parentPid:process.pid,marker:args[0],mode:${JSON.stringify(mode)},startedAt:new Date().toISOString(),maximumLifetimeMs:1500})+'\\n'); const win =`
+    `appendFileSync(${JSON.stringify(retainedChildren)},JSON.stringify({pid:child.pid,parentPid:process.pid,marker:args[0],mode:${JSON.stringify(mode)},startedAt:new Date().toISOString(),maximumLifetimeMs:1500})+'\\n'); appendFileSync(${JSON.stringify((observerRoot ?? retainedChildren) + ".ps")},process.pid+' '+child.pid+' Wed Oct 28 00:00:00 2026 '+args[0],{flag:"w",mode:0o600}); const win =`
   );
   source = source.replace(
     "return await fn({app,BrowserWindow:",
@@ -512,6 +516,11 @@ function realOwnedRuntime(mode: "normal" | "timeout" | "reuse") {
       ? "close:async()=>{child.send('exit');}"
       : "close:async()=>new Promise(()=>{})"
   );
+  if (mode === "refused-signal" || mode === "unobserved-signal")
+    source = source.replace(
+      "const win =",
+      `child.kill=()=>${mode === "unobserved-signal"}; const win =`
+    );
   // In the unrelated-PID simulation the adapter releases its own canary after
   // the runner's bounded ownership check; the runner must never signal it.
   if (mode === "reuse")
@@ -538,7 +547,7 @@ test("a real owned child exits normally through the public runner", () => {
 
 test("bounded cleanup signals only a currently verified owned child", () => {
   realOwnedRuntime("timeout");
-  expect(run(["--cleanup-timeout-ms", "100"]).status).toBe(1);
+  expect(run(["--cleanup-timeout-ms", "500"]).status).toBe(1);
   expect(receipt()).toMatchObject({
     result: "failed",
     cleanup: { termination: "verified-owned-child-signalled" },
@@ -547,7 +556,7 @@ test("bounded cleanup signals only a currently verified owned child", () => {
 
 test("a reused or mismatched process identity preserves cleanup uncertainty without signalling", () => {
   realOwnedRuntime("reuse");
-  expect(run(["--cleanup-timeout-ms", "100"]).status).toBe(1);
+  expect(run(["--cleanup-timeout-ms", "500"]).status).toBe(1);
   expect(receipt()).toMatchObject({
     result: "failed",
     shutdown: "uncertain-owned-process",
@@ -717,4 +726,227 @@ test("independent frozen candidate clones share the failed semantic history", ()
   expect(
     run(["--output", path.join(fixture, "candidate-output")]).stderr
   ).toContain("changed_diagnosis_required");
+});
+
+test("a passed semantic scenario admits an explicit changed-candidate successor and retains its predecessor", () => {
+  expect(run().status).toBe(1);
+  const earlierFailure = readFileSync(
+    path.join(output, "receipt.json"),
+    "utf8"
+  );
+  workingRuntime();
+  expect(
+    run([
+      "--diagnostic-change",
+      "repair prerequisite",
+      "--expected-observation",
+      "owned readiness succeeds",
+    ]).status
+  ).toBe(0);
+  const predecessor = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  const predecessorReceipt = readFileSync(
+    path.join(output, "receipt.json"),
+    "utf8"
+  );
+  writeFileSync(
+    path.join(repo, "candidate.txt"),
+    "relevant candidate change\n"
+  );
+  expect(spawnSync("git", ["add", "candidate.txt"], { cwd: repo }).status).toBe(
+    0
+  );
+  expect(
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-qm",
+        "successor",
+      ],
+      { cwd: repo }
+    ).status
+  ).toBe(0);
+  const revision = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repo,
+    encoding: "utf8",
+  }).stdout.trim();
+  const successor = path.join(fixture, "successor.json");
+  writeFileSync(
+    successor,
+    JSON.stringify({
+      previousHistory: predecessor.history,
+      candidateRevision: revision,
+      affectedScenarios: ["electron-readiness"],
+      reason: "changed source requires readiness qualification",
+    })
+  );
+  expect(run(["--successor", successor]).status).toBe(0);
+  const current = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  expect(current.generation).toBe(1);
+  expect(
+    JSON.parse(readFileSync(current.history, "utf8")).diagnosticStartedAt
+  ).toBe(null);
+  expect(
+    readFileSync(
+      path.join(path.dirname(predecessor.history), "attempt-2/receipt.json"),
+      "utf8"
+    )
+  ).toBe(predecessorReceipt);
+  expect(
+    readFileSync(
+      path.join(path.dirname(predecessor.history), "attempt-1/receipt.json"),
+      "utf8"
+    )
+  ).toBe(earlierFailure);
+  expect(receipt()).toMatchObject({
+    result: "passed",
+    candidate: { revision },
+    history: { predecessor: predecessor.history },
+  });
+});
+
+test("source provenance Git commands receive the current command deadline", () => {
+  writeFileSync(
+    path.join(fixture, "bin/git"),
+    `#!${process.execPath}\nsetTimeout(()=>process.exit(0),700);\n`,
+    { mode: 0o755 }
+  );
+  const started = Date.now();
+  expect(run(["--command-timeout-ms", "100"]).status).toBe(1);
+  expect(Date.now() - started).toBeLessThan(1500);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    stage: "build",
+    reason: "owned_command_deadline_exhausted",
+  });
+});
+
+test.each([
+  ["refused-signal", "verified-owned-child-signal-rejected"],
+  ["unobserved-signal", "verified-owned-child-signalled"],
+] as const)(
+  "%s retains profile ownership within one cleanup allowance",
+  (mode, termination) => {
+    const retained = path.join(fixture, "owned-children.jsonl");
+    realOwnedRuntime(mode, retained);
+    writeFileSync(
+      path.join(fixture, "bin/ps"),
+      `#!/bin/sh\ncase "$*" in *ppid=*) cat '${(retained + ".ps").replace(/'/g, "'\\''")}' ;; *) printf '%s\\n' 'runner-start runner' ;; esac\n`,
+      { mode: 0o755 }
+    );
+    expect(run(["--cleanup-timeout-ms", "200"]).status).toBe(1);
+    expect(receipt()).toMatchObject({
+      result: "failed",
+      shutdown: "uncertain-owned-process",
+      cleanup: { termination },
+    });
+    expect(
+      existsSync(path.join(fixture, "profile/.clipp-relay-acceptance.lock"))
+    ).toBe(true);
+    expect(
+      Date.parse(receipt().finishedAt) - Date.parse(receipt().cleanupStartedAt)
+    ).toBeLessThan(500);
+  }
+);
+
+test("locator observations use the current bounded command deadline", () => {
+  workingRuntime();
+  const adapter = path.join(repo, "node_modules/playwright/index.js");
+  writeFileSync(
+    adapter,
+    readFileSync(adapter, "utf8").replace(
+      "boundingBox:async()=>({x:1,y:1,width:10,height:10})",
+      "boundingBox:async()=>new Promise(()=>{})"
+    )
+  );
+  expect(run(["--command-timeout-ms", "500"]).status).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    stage: "interaction",
+    reason: "owned_command_deadline_exhausted",
+    shutdown: "graceful",
+  });
+});
+
+test("a successor batch cannot reset a failed semantic budget", () => {
+  run();
+  const previous = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  const decision = path.join(fixture, "invalid-successor.json");
+  writeFileSync(
+    decision,
+    JSON.stringify({
+      previousHistory: previous.history,
+      candidateRevision: "a".repeat(40),
+      affectedScenarios: ["electron-readiness"],
+      reason: "new label",
+    })
+  );
+  expect(run(["--successor", decision]).stderr).toContain(
+    "successor_requires_passed_history"
+  );
+  expect(
+    JSON.parse(readFileSync(previous.history, "utf8")).attempts
+  ).toHaveLength(1);
+});
+
+test("cleanup log draining shares the same bounded allowance", () => {
+  workingRuntime();
+  const preload = path.join(fixture, "filesystem-boundary.mjs");
+  writeFileSync(
+    preload,
+    `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';const original=fs.promises.open;fs.promises.open=async(...args)=>{const handle=await original(...args);if(String(args[0]).endsWith('/runtime.log')) handle.write=()=>new Promise(()=>{});return handle;};syncBuiltinESMExports();`
+  );
+  const adapter = path.join(repo, "node_modules/playwright/index.js");
+  writeFileSync(
+    adapter,
+    readFileSync(adapter, "utf8")
+      .replace("const win =", "child.stdout=new EventEmitter(); const win =")
+      .replace(
+        "close:async()=>{child.exitCode=",
+        "close:async()=>{child.stdout.emit('data',Buffer.from('controlled log'));child.exitCode="
+      )
+  );
+  expect(
+    run(["--cleanup-timeout-ms", "100"], {
+      NODE_OPTIONS: `--import=${preload}`,
+    }).status
+  ).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    stage: "cleanup",
+    reason: "owned_test_cleanup_deadline_exhausted",
+    shutdown: "graceful",
+  });
+  expect(
+    Date.parse(receipt().finishedAt) - Date.parse(receipt().cleanupStartedAt)
+  ).toBeLessThan(400);
+});
+
+test("filesystem source hashing receives the current deadline", () => {
+  writeFileSync(path.join(repo, "blocked-source.txt"), "controlled source");
+  const preload = path.join(fixture, "filesystem-boundary.mjs");
+  writeFileSync(
+    preload,
+    `import fs from 'node:fs';import {PassThrough} from 'node:stream';import {syncBuiltinESMExports} from 'node:module';const original=fs.createReadStream;fs.createReadStream=(file,...args)=>String(file).endsWith('/blocked-source.txt')?new PassThrough():original(file,...args);syncBuiltinESMExports();`
+  );
+  expect(
+    run(["--command-timeout-ms", "200"], {
+      NODE_OPTIONS: `--import=${preload}`,
+    }).status
+  ).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    stage: "build",
+    reason: "owned_command_deadline_exhausted",
+  });
 });

@@ -31,6 +31,7 @@ const { values } = parseArgs({
     effort: { type: "string" },
     environment: { type: "string" },
     renewal: { type: "string" },
+    successor: { type: "string" },
     "import-history": { type: "string", multiple: true },
     "command-timeout-ms": { type: "string", default: "30000" },
     "cleanup-timeout-ms": { type: "string", default: "10000" },
@@ -112,37 +113,51 @@ if ((await lstat(path.join(root, ".git"))).isFile()) {
   );
 }
 async function artifactIdentity() {
-  const files = [];
-  async function walk(directory) {
-    for (const name of (await readdir(directory)).sort()) {
-      const file = path.join(directory, name);
-      const stat = await lstat(file);
-      assert(!stat.isSymbolicLink(), "candidate_artifact_alias");
-      if (stat.isDirectory()) await walk(file);
-      else if (stat.isFile())
-        files.push({
-          path: path.relative(dist, file),
-          sha256: createHash("sha256")
-            .update(await readFile(file))
-            .digest("hex"),
-        });
-    }
-  }
-  try {
-    await walk(dist);
-  } catch (error) {
-    if (error.code === "ENOENT") throw new Error("candidate_artifact_missing");
-    throw error;
-  }
-  for (const required of ["main.cjs", "preload.js", "renderer/index.html"])
-    assert(
-      files.some((file) => file.path === required),
-      "candidate_artifact_missing"
+  const artifactDeadline = Date.now() + attempt.remainingMs(commandTimeout);
+  const artifactOperation = (operation) => {
+    const remaining = Math.min(
+      artifactDeadline - Date.now(),
+      attempt.remainingMs(commandTimeout)
     );
-  return {
-    sha256: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
-    files,
+    if (remaining <= 0) throw new Error("owned_command_deadline_exhausted");
+    return command(operation, remaining);
   };
+  return command(async () => {
+    const files = [];
+    async function walk(directory) {
+      for (const name of (
+        await artifactOperation(() => readdir(directory))
+      ).sort()) {
+        const file = path.join(directory, name);
+        const stat = await artifactOperation(() => lstat(file));
+        assert(!stat.isSymbolicLink(), "candidate_artifact_alias");
+        if (stat.isDirectory()) await walk(file);
+        else if (stat.isFile())
+          files.push({
+            path: path.relative(dist, file),
+            sha256: createHash("sha256")
+              .update(await artifactOperation(() => readFile(file)))
+              .digest("hex"),
+          });
+      }
+    }
+    try {
+      await walk(dist);
+    } catch (error) {
+      if (error.code === "ENOENT")
+        throw new Error("candidate_artifact_missing");
+      throw error;
+    }
+    for (const required of ["main.cjs", "preload.js", "renderer/index.html"])
+      assert(
+        files.some((file) => file.path === required),
+        "candidate_artifact_missing"
+      );
+    return {
+      sha256: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
+      files,
+    };
+  });
 }
 await mkdir(values.output, { recursive: true, mode: 0o700 });
 const stateRoot = nativeAcceptanceStateRoot();
@@ -172,6 +187,7 @@ try {
       },
     },
     renewal: values.renewal,
+    successor: values.successor,
     importHistory: values["import-history"],
     scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport}`,
     change: values["diagnostic-change"],
@@ -214,7 +230,10 @@ const receipt = {
 };
 let electron;
 let ownedProcess;
-function processIdentity(pid) {
+function processIdentity(
+  pid,
+  timeoutMs = attempt.remainingMs(Math.min(1000, commandTimeout))
+) {
   if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid)
     return null;
   const observation = spawnSync(
@@ -231,14 +250,14 @@ function processIdentity(pid) {
       "-o",
       "command=",
     ],
-    { encoding: "utf8", timeout: 1000 }
+    { encoding: "utf8", timeout: Math.max(1, timeoutMs) }
   );
   const value = observation.stdout?.trim();
   if (observation.status !== 0 || !value) return null;
   return value;
 }
-function stillOwned(child) {
-  const current = processIdentity(child.pid);
+function stillOwned(child, timeoutMs) {
+  const current = processIdentity(child.pid, timeoutMs);
   return (
     ownedProcess &&
     current === ownedProcess &&
@@ -249,33 +268,47 @@ function stillOwned(child) {
   );
 }
 
+async function command(operation, maximum = commandTimeout) {
+  const remaining = attempt.remainingMs(maximum);
+  let timer;
+  try {
+    const result = await Promise.race([
+      operation(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("owned_command_deadline_exhausted")),
+          remaining
+        );
+      }),
+    ]);
+    attempt.assertBudget();
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 function boundMethods(target, methods) {
   for (const method of methods) {
     const invoke = target[method].bind(target);
-    target[method] = async (...args) => {
-      let timer;
-      const deadline = attempt.remainingMs(commandTimeout);
-      try {
-        return await Promise.race([
-          invoke(...args),
-          new Promise((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error("owned_command_deadline_exhausted")),
-              deadline
-            );
-          }),
-        ]);
-      } finally {
-        clearTimeout(timer);
-      }
-    };
+    target[method] = (...args) => command(() => invoke(...args));
   }
   return target;
 }
 try {
-  log = await open(path.join(evidenceDirectory, "runtime.log"), "a", 0o600);
-  receipt.candidate = await sourceIdentity(root);
-  await rm(dist, { recursive: true, force: true });
+  log = await command(() =>
+    open(path.join(evidenceDirectory, "runtime.log"), "a", 0o600)
+  );
+  receipt.candidate = await sourceIdentity(root, {
+    remainingMs: (maximum) =>
+      attempt.remainingMs(Math.min(commandTimeout, maximum)),
+  });
+  if (attempt.successorCandidate)
+    assert(
+      receipt.candidate.revision === attempt.successorCandidate &&
+        !receipt.candidate.dirty,
+      "successor_candidate_binding_mismatch"
+    );
+  await command(() => rm(dist, { recursive: true, force: true }));
   attempt.assertBudget();
   const build = spawnSync(
     "npm",
@@ -292,21 +325,28 @@ try {
     artifacts: await artifactIdentity(),
   };
   assert.deepEqual(
-    await sourceIdentity(root),
+    await sourceIdentity(root, {
+      remainingMs: (maximum) =>
+        attempt.remainingMs(Math.min(commandTimeout, maximum)),
+    }),
     receipt.candidate,
     "candidate_source_changed_during_build"
   );
   attempt.assertBudget();
-  await mkdir(values.profile, { recursive: true, mode: 0o700 });
+  await command(() => mkdir(values.profile, { recursive: true, mode: 0o700 }));
   const profileLockPath = path.join(
     values.profile,
     ".clipp-relay-acceptance.lock"
   );
   const profileAdmissionPath = `${profileLockPath}.admission`;
-  const profileAdmission = await open(profileAdmissionPath, "wx", 0o600);
+  const profileAdmission = await command(() =>
+    open(profileAdmissionPath, "wx", 0o600)
+  );
   try {
     try {
-      const prior = JSON.parse(await readFile(profileLockPath, "utf8"));
+      const prior = JSON.parse(
+        await command(() => readFile(profileLockPath, "utf8"))
+      );
       const absent = (pid) => {
         try {
           process.kill(pid, 0);
@@ -328,22 +368,26 @@ try {
           "owned_profile_active_or_uncertain"
         );
       }
-      await unlink(profileLockPath);
+      await command(() => unlink(profileLockPath));
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
-    profileLock = await open(profileLockPath, "wx", 0o600);
-    await profileLock.writeFile(JSON.stringify({ runnerPid: process.pid }));
+    profileLock = await command(() => open(profileLockPath, "wx", 0o600));
+    await command(() =>
+      profileLock.writeFile(JSON.stringify({ runnerPid: process.pid }))
+    );
   } finally {
-    await profileAdmission.close();
-    await unlink(profileAdmissionPath);
+    await command(() => profileAdmission.close());
+    await command(() => unlink(profileAdmissionPath));
   }
 
   // Replace only the clipboard boundary: never read or write the host clipboard.
-  await writeFile(
-    runner,
-    `const { app, clipboard } = require('electron');\napp.setName(${JSON.stringify(values["app-name"])});\nlet memoryClipboard = '';\nclipboard.readText = () => memoryClipboard;\nclipboard.writeText = (text) => { memoryClipboard = text; };\nrequire(${JSON.stringify(path.join(root, "apps/electron/dist/main.cjs"))});\n`,
-    { mode: 0o600 }
+  await command(() =>
+    writeFile(
+      runner,
+      `const { app, clipboard } = require('electron');\napp.setName(${JSON.stringify(values["app-name"])});\nlet memoryClipboard = '';\nclipboard.readText = () => memoryClipboard;\nclipboard.writeText = (text) => { memoryClipboard = text; };\nrequire(${JSON.stringify(path.join(root, "apps/electron/dist/main.cjs"))});\n`,
+      { mode: 0o600 }
+    )
   );
   receipt.stage = "launch";
   receipt.classification = "runner";
@@ -354,22 +398,26 @@ try {
       ...process.env,
       CLIPP_LOG_LEVEL: "error",
       CLIPP_RELAY_ACCEPTANCE_TRANSPORT: values.transport,
-      CLIPP_RELAY_ACCEPTANCE_PROFILE: await realpath(values.profile),
+      CLIPP_RELAY_ACCEPTANCE_PROFILE: await command(() =>
+        realpath(values.profile)
+      ),
       VITE_DEV_SERVER_URL: "",
     },
-    timeout: attempt.remainingMs(30_000),
+    timeout: attempt.remainingMs(Math.min(30_000, commandTimeout)),
   });
   ownedProcess = processIdentity(electron.process().pid);
-  await profileLock.truncate(0);
-  await profileLock.write(
-    JSON.stringify({
-      runnerPid: process.pid,
-      childPid: electron.process().pid,
-      identity: ownedProcess,
-      marker: runner,
-    }),
-    0,
-    "utf8"
+  await command(() => profileLock.truncate(0));
+  await command(() =>
+    profileLock.write(
+      JSON.stringify({
+        runnerPid: process.pid,
+        childPid: electron.process().pid,
+        identity: ownedProcess,
+        marker: runner,
+      }),
+      0,
+      "utf8"
+    )
   );
   receipt.processOwnership = {
     pid: electron.process().pid,
@@ -397,9 +445,9 @@ try {
   });
   receipt.stage = "target";
   const page = await electron.firstWindow({
-    timeout: attempt.remainingMs(30_000),
+    timeout: attempt.remainingMs(Math.min(30_000, commandTimeout)),
   });
-  page.setDefaultTimeout(attempt.remainingMs(10_000));
+  page.setDefaultTimeout(attempt.remainingMs(Math.min(10_000, commandTimeout)));
   boundMethods(page, ["evaluate", "waitForFunction"]);
   const window = await electron.browserWindow(page);
   boundMethods(window, ["evaluate"]);
@@ -422,7 +470,8 @@ try {
   assert(
     target.pid === electron.process().pid &&
       target.launchArgumentMatches &&
-      path.resolve(target.profile) === (await realpath(values.profile)) &&
+      path.resolve(target.profile) ===
+        (await command(() => realpath(values.profile))) &&
       ownedWindow.url ===
         pathToFileURL(path.join(root, "apps/electron/dist/renderer/index.html"))
           .href,
@@ -487,9 +536,11 @@ try {
     }
   }
   for (const label of ["Pinned", "All"]) {
-    const box = await page
-      .getByRole("button", { name: label, exact: true })
-      .boundingBox();
+    const box = await command(() =>
+      page.getByRole("button", { name: label, exact: true }).boundingBox({
+        timeout: attempt.remainingMs(Math.min(10_000, commandTimeout)),
+      })
+    );
     assert(box, "interaction_control_unavailable");
     await checkFocus();
     await window.evaluate(
@@ -531,7 +582,10 @@ try {
     "candidate_build_changed_during_run"
   );
   assert.deepEqual(
-    await sourceIdentity(root),
+    await sourceIdentity(root, {
+      remainingMs: (maximum) =>
+        attempt.remainingMs(Math.min(commandTimeout, maximum)),
+    }),
     receipt.candidate,
     "candidate_source_changed_during_run"
   );
@@ -659,6 +713,7 @@ try {
   const safeReasons = [
     "owned_profile_active_or_uncertain",
     "owned_command_deadline_exhausted",
+    "successor_candidate_binding_mismatch",
     "candidate_build_failed",
     "candidate_artifact_missing",
     "candidate_artifact_alias",
@@ -739,98 +794,139 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  if (electron) {
-    const child = electron.process();
-    const exited = new Promise((resolve) => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        resolve(child.exitCode === 0 && child.signalCode === null);
-      } else {
-        child.once("exit", (code, signal) =>
-          resolve(code === 0 && signal === null)
-        );
-      }
-    });
+  receipt.cleanupStartedAt = new Date().toISOString();
+  const cleanupDeadline = Date.now() + cleanupTimeout;
+  let exitObserved = !electron;
+  const cleanupRemaining = () => Math.max(0, cleanupDeadline - Date.now());
+  const cleanupStep = async (operation, maximum = cleanupRemaining()) => {
+    const remaining = Math.min(maximum, cleanupRemaining());
+    if (remaining <= 0)
+      throw new Error("owned_test_cleanup_deadline_exhausted");
     let timer;
-    const close = electron.close().then(
-      () => exited,
-      () => exited
-    );
-    const closed = await Promise.race([
-      close,
-      new Promise((resolve) => {
-        timer = setTimeout(() => resolve(false), cleanupTimeout);
-      }),
-    ]);
-    clearTimeout(timer);
-    const running = child.exitCode === null && child.signalCode === null;
-    receipt.shutdown = closed
-      ? "graceful"
-      : running
-        ? "forced-owned-process"
-        : "failed-owned-process";
-    if (!closed) {
-      if (receipt.result === "passed") {
-        receipt.stage = "cleanup";
-        receipt.classification = "runner";
-        receipt.reason = running
-          ? "owned_test_shutdown_timeout"
-          : "owned_test_shutdown_failed";
-      }
-      receipt.cleanup = {
-        result: "failed",
-        classification: "runner",
-        reason: running
-          ? "owned_test_shutdown_timeout"
-          : "owned_test_shutdown_failed",
-      };
-      receipt.result = "failed";
-      // Kill only the ChildProcess returned by this launch; never target a name,
-      // process group or another app that happens to share the profile label.
-      if (running) {
-        if (stillOwned(child)) {
-          child.kill("SIGKILL");
-          receipt.cleanup.termination = "verified-owned-child-signalled";
-        } else {
-          receipt.shutdown = "uncertain-owned-process";
-          receipt.cleanup.termination = "ownership_uncertain_no_signal";
-        }
-      }
-      await Promise.race([
-        exited,
-        new Promise((resolve) => {
-          timer = setTimeout(resolve, 2_000);
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("owned_test_cleanup_deadline_exhausted")),
+            remaining
+          );
         }),
       ]);
+    } finally {
       clearTimeout(timer);
-      process.exitCode = 1;
     }
-  } else {
-    receipt.shutdown = "not-launched";
-  }
-  receipt.finishedAt = new Date().toISOString();
-  try {
-    await Promise.all(logWrites);
-    await log?.close();
-    assert(!logFailure, "owned_test_log_write_failed");
-    if (profileLock) {
-      await profileLock.close();
-      if (receipt.shutdown !== "uncertain-owned-process")
-        await unlink(path.join(values.profile, ".clipp-relay-acceptance.lock"));
-    }
-  } catch {
+  };
+  const failCleanup = (reason) => {
     receipt.cleanup = {
+      ...receipt.cleanup,
       result: "failed",
       classification: "runner",
-      reason: "owned_test_cleanup_failed",
+      reason,
     };
     if (receipt.result === "passed") {
       receipt.stage = "cleanup";
-      receipt.reason = "owned_test_cleanup_failed";
       receipt.classification = "runner";
+      receipt.reason = reason;
     }
     receipt.result = "failed";
     process.exitCode = 1;
+  };
+  try {
+    if (electron) {
+      const child = electron.process();
+      const exited = new Promise((resolve) => {
+        const observe = (code, signal) => {
+          exitObserved = true;
+          resolve(code === 0 && signal === null);
+        };
+        if (child.exitCode !== null || child.signalCode !== null)
+          observe(child.exitCode, child.signalCode);
+        else child.once("exit", observe);
+      });
+      let closed = false;
+      try {
+        closed = await cleanupStep(
+          () =>
+            Promise.race([
+              Promise.resolve()
+                .then(() => electron.close())
+                .then(
+                  () => exited,
+                  () => exited
+                ),
+              exited,
+            ]),
+          Math.max(1, Math.floor(cleanupTimeout * 0.6))
+        );
+      } catch {
+        closed = false;
+      }
+      receipt.shutdown = closed
+        ? "graceful"
+        : exitObserved
+          ? "failed-owned-process"
+          : "uncertain-owned-process";
+      if (!closed) {
+        failCleanup(
+          exitObserved
+            ? "owned_test_shutdown_failed"
+            : "owned_test_shutdown_timeout"
+        );
+        if (!exitObserved) {
+          if (
+            cleanupRemaining() > 0 &&
+            stillOwned(child, Math.min(1000, cleanupRemaining()))
+          ) {
+            const accepted = child.kill("SIGKILL");
+            receipt.cleanup.termination = accepted
+              ? "verified-owned-child-signalled"
+              : "verified-owned-child-signal-rejected";
+            if (accepted && cleanupRemaining() > 0) {
+              try {
+                await cleanupStep(
+                  () => exited,
+                  Math.max(1, Math.floor(cleanupRemaining() * 0.6))
+                );
+              } catch {
+                /* Retain uncertainty if exit was not observed. */
+              }
+            }
+          } else receipt.cleanup.termination = "ownership_uncertain_no_signal";
+          receipt.shutdown = exitObserved
+            ? "forced-owned-process"
+            : "uncertain-owned-process";
+        }
+      }
+    } else receipt.shutdown = "not-launched";
+    await cleanupStep(() => Promise.all(logWrites));
+    await cleanupStep(() => log?.close());
+    assert(!logFailure, "owned_test_log_write_failed");
+    if (profileLock) {
+      await cleanupStep(() => profileLock.close());
+      if (exitObserved)
+        await cleanupStep(() =>
+          unlink(path.join(values.profile, ".clipp-relay-acceptance.lock"))
+        );
+    }
+  } catch (error) {
+    failCleanup(
+      error.message === "owned_test_cleanup_deadline_exhausted"
+        ? error.message
+        : "owned_test_cleanup_failed"
+    );
+    if (electron && !exitObserved) receipt.shutdown = "uncertain-owned-process";
   }
+  if (electron && !exitObserved) {
+    // Stop retaining local observation handles at the cleanup deadline. Keep the
+    // profile ownership record; a successor must inspect that current child.
+    const child = electron.process();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    child.channel?.unref();
+    child.unref?.();
+  }
+  receipt.finishedAt = new Date().toISOString();
   await attempt.finish(receipt);
 }
 

@@ -125,6 +125,16 @@ expected observation. The runner references the failed prior history and creates
 a separate budget generation whose first rebuild is diagnostic and charged; it never replaces the old failure. The decision
 file records authorization; creating it does not itself grant authorization.
 
+After a passed scenario, a genuinely changed committed candidate may receive a
+new ordinary qualification batch. Supply `--successor /absolute/successor.json`
+with `previousHistory` (the current canonical history), `candidateRevision`
+(the new full committed revision), `affectedScenarios` (including
+`electron-readiness` or `electron-<transport>`) and `reason`. The runner requires
+a passed predecessor, binds the initial successor attempt to that clean revision,
+and retains the predecessor history/receipt. This first ordinary build has the
+initial-setup timing exemption. A failed scenario cannot use this path; subsequent
+diagnostics retain their existing attempt/time budget across candidate fixes.
+
 One initial attempt and at most four diagnostic attempts are allowed (five
 attempts total). After a
 failure, a retry requires both `--diagnostic-change` (changed hypothesis or
@@ -134,8 +144,11 @@ when the initial failure is recorded; diagnostic builds consume that clock.
 Initial builds and normal acceptance are outside it. Commands receive the
 remaining budget and retain their individual bounded limits. Native observations
 have a default 30-second command deadline (`--command-timeout-ms` may shorten
-it); cleanup has its own default ten-second allowance (`--cleanup-timeout-ms`
-may shorten it), outside the diagnostic clock. Failed readiness withholds the relay scenario; unrelated
+it); cleanup has its own default ten-second total allowance (`--cleanup-timeout-ms`
+may shorten it), outside the diagnostic clock. Graceful close, ownership inspection,
+forced-exit observation, log draining and profile-handle cleanup share that one
+allowance. Rejected signals or signals without an observed exit retain uncertain
+shutdown and the profile ownership record. Failed readiness withholds the relay scenario; unrelated
 eligible work can continue.
 
 Receipts retain the failure stage and classification: `prerequisite` for
@@ -216,8 +229,8 @@ On integrated local `main`, Node 24.16.0/npm 11.13.0 passed `npm run check`
 (73 suites, 600 tests and all runtime typechecks) and the Electron build.
 TCP, WebRTC Direct and bounded mixed-address fallback remain unverified.
 
-The runner gives its owned Electron process ten seconds to close. If runtime
-shutdown hangs, it verifies current ownership before terminating that launched process, records
+The runner gives cleanup a ten-second total allowance, reserving part for
+current ownership and exit observation. If runtime shutdown hangs, it verifies current ownership before terminating that launched process, records
 `owned_test_shutdown_timeout`, and exits unsuccessfully. A received clip cannot
 turn this shutdown failure into a passed receipt. A nonzero or signaled process
 exit also fails acceptance; graceful shutdown requires exit code zero and no

@@ -217,12 +217,19 @@ export async function beginNativeAttempt(options) {
       await save(identityPath, identity);
     }
     let generation = 0;
+    let batchKind = "initial";
+    let predecessor;
+    let successorCandidate;
     let previous;
     try {
       previous = JSON.parse(
         await readFile(path.join(base, "current.json"), "utf8")
       );
       generation = previous.generation;
+      batchKind =
+        previous.batchKind ?? (generation > 0 ? "renewal" : "initial");
+      predecessor = previous.predecessor;
+      successorCandidate = previous.successorCandidate;
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -280,6 +287,42 @@ export async function beginNativeAttempt(options) {
       previous = { generation: 0, history };
       await save(path.join(base, "current.json"), previous);
     }
+    if (options.successor) {
+      assert(!renewal, "successor_and_renewal_are_distinct");
+      const decision = JSON.parse(await readFile(options.successor, "utf8"));
+      assert(
+        previous &&
+          decision.previousHistory === previous.history &&
+          /^[a-f0-9]{40}$/.test(decision.candidateRevision ?? "") &&
+          Array.isArray(decision.affectedScenarios) &&
+          decision.affectedScenarios.includes(options.scenario) &&
+          decision.reason?.trim(),
+        "candidate_bound_successor_required"
+      );
+      const prior = JSON.parse(await readFile(previous.history, "utf8"));
+      assert(
+        prior.attempts.at(-1)?.result === "passed",
+        "successor_requires_passed_history"
+      );
+      const priorReceipt = JSON.parse(
+        await readFile(
+          path.join(
+            path.dirname(previous.history),
+            prior.attempts.at(-1).receipt
+          ),
+          "utf8"
+        )
+      );
+      assert(
+        priorReceipt.candidate?.revision !== decision.candidateRevision,
+        "successor_candidate_must_change"
+      );
+      predecessor = previous.history;
+      successorCandidate = decision.candidateRevision;
+      batchKind = "successor";
+      generation += 1;
+      await save(path.join(base, `successor-${generation}.json`), decision);
+    }
     if (renewal) {
       const decision = JSON.parse(await readFile(renewal, "utf8"));
       assert(
@@ -310,6 +353,9 @@ export async function beginNativeAttempt(options) {
       prior.renewedBy = { decision, recordedAt: new Date().toISOString() };
       await save(previous.history, prior);
       generation += 1;
+      batchKind = "renewal";
+      predecessor = previous.history;
+      successorCandidate = undefined;
       await save(path.join(base, `renewal-${generation}.json`), decision);
     }
     const directory = path.join(base, `budget-${generation}`);
@@ -383,8 +429,10 @@ export async function beginNativeAttempt(options) {
       ...options,
       output: directory,
       deferDiagnosticClockUntilFailure:
-        generation === 0 ? options.deferDiagnosticClockUntilFailure : false,
-      diagnosticInitial: generation > 0,
+        batchKind !== "renewal"
+          ? options.deferDiagnosticClockUntilFailure
+          : false,
+      diagnosticInitial: batchKind === "renewal",
     });
     await writeFile(
       activePath,
@@ -396,7 +444,13 @@ export async function beginNativeAttempt(options) {
         mode: 0o600,
       }
     );
-    await save(path.join(base, "current.json"), { generation, history });
+    await save(path.join(base, "current.json"), {
+      generation,
+      history,
+      batchKind,
+      predecessor,
+      successorCandidate,
+    });
     for (const [name, target] of [
       ["attempts.json", history],
       [`attempt-${attempt.number}`, attempt.directory],
@@ -418,8 +472,9 @@ export async function beginNativeAttempt(options) {
     return {
       ...attempt,
       history,
+      successorCandidate: attempt.number === 1 ? successorCandidate : undefined,
       async finish(receipt) {
-        receipt.history = { key, generation, path: history };
+        receipt.history = { key, generation, path: history, predecessor };
         await attempt.finish(receipt);
         await save(path.join(output, "receipt.json"), receipt);
       },
