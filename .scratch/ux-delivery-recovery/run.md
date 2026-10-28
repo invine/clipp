@@ -43,3 +43,11 @@ The user requested continued specification implementation. This integration inco
 - 04 is claimed for `/root/diagnostics`: implement durable semantic history, bounded policy/cleanup and Electron demonstration using the now-main-integrated five-attempt/first-failure policy. Native failures remain unqualified; no global/profile/clipboard permission expansion.
 
 Both preserve accepted ADR0004/0005/0006/0008/0012 product invariants. At most two implementers; no source file ownership overlap is planned (01 status/tests/docs;04 native policy/runner/tests/docs). Public test seams remain those explicitly approved in the specification. No additional test-seam approval is required. Previous frozen candidate127ad92 is retained as historical, not the new merged runtime candidate.
+
+## Ticket01 closure and next frontier
+
+Ticket01 is integrated at3a39a788d9a76aae1734cf00d8e54ff2d5b5e00b and resolved after public-boundary checks and independent reviews; its Answer owns the details. Ticket03 is saved as claimed for `/root/evidence_applicability`; the current worker must read this integration checkout’s canonical claim while its isolated branch is based on currentGit3a39a78. This bookkeeping is saved before dispatch and will be committed after the pending04 source commit to serialize repository hook/stash writes.04 continues independently on nativepolicy/runner;03 owns status/evidence/ledger docs. Existing approved test seams and product invariants are unchanged.
+
+## Current evidence and review boundary
+
+01 is resolved at3a39a78;03 is claimed and its public CLI implementation awaits central checks.04 control source is committed ata92df7f and has passed the full hook (81 suites/743 tests plus21 candidate fixtures) and host-owned-child checks(3/3). Standards found no required issue; Spec found three required corrections in deadline coverage, uncertain termination ownership and successful-history successor admission. The original04 implementer owns those fixes. Actual Electron UI readiness/interaction remains unrun and unqualified. Native preparation is held until the corrections are reviewed; no failed history or permissions were reset.

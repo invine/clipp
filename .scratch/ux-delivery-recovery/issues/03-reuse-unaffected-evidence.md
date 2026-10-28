@@ -4,7 +4,11 @@
 
 **Blocked by:** [01 — Define finite acceptance and refine the UX dependency graph](01-refine-acceptance-and-dependencies.md), [02 — Prepare a reproducible acceptance candidate](02-prepare-reproducible-candidate.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/evidence_applicability`
+
+**Claim:** ux-delivery-recovery-20261028-03; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 
