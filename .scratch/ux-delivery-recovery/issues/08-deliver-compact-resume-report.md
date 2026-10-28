@@ -4,7 +4,11 @@
 
 **Blocked by:** [01 — Define finite acceptance and refine the UX dependency graph](01-refine-acceptance-and-dependencies.md), [03 — Reuse unaffected evidence safely](03-reuse-unaffected-evidence.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/compact_resume`
+
+**Claim:** ux-delivery-recovery-20261028-08; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 
