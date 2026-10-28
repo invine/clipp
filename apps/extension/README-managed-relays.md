@@ -185,43 +185,100 @@ failed and not-run gates in the evidence ledger. Registered-ID Google, real
 credential rotation/suspension, both live transport transfers and independent
 configuration behavior remain required before completing ticket 15.
 
-## Chrome clipboard acceptance evidence
+## Actual toolbar acceptance
 
-Run the public acceptance command with the applicable user authorization
-reference supplied for that invocation:
+Use this maintained command from an independent committed candidate prepared by
+`acceptance:candidate`. Its record must identify this exact checkout. Keep evidence,
+registry and semantic history outside disposable worktrees. The first invocation
+builds the normal extension once and freezes an immutable extension/browser sidecar:
+
+```sh
+CLIPP_ACCEPTANCE_STATE_ROOT=/absolute/durable/native-state \
+node apps/extension/scripts/verify-clipboard-io.mjs \
+  --scenario toolbar-history --effort approved-effort \
+  --history-root /absolute/durable/native-history \
+  --output /absolute/durable/chrome-toolbar \
+  --candidate-record /absolute/candidate.candidate.json \
+  --extension-record /absolute/durable/extension-candidate.json \
+  --freeze-extension
+```
+
+Omit `--freeze-extension` to consume an existing frozen sidecar. A diagnostic
+rebuild uses a new sidecar location while preserving the same effort and history;
+its build time is charged to the diagnostic budget. The command verifies the
+base record through the existing public candidate verifier, the exact extension
+bytes, and browser executable/version before launch and verifies source/artifacts
+again after interaction. `--browser-executable` selects an explicit supported
+Chromium executable; its path/version/hash become frozen candidate inputs.
+
+The owned process uses a fresh profile and the experimental
+[Chrome DevTools Extensions API](https://chromedevtools.github.io/devtools-protocol/tot/Extensions/).
+It verifies the unpacked extension path/ID, triggers its actual action on the owned
+active tab, and requires `chrome.extension.getViews({type:"popup"})`, the matching
+extension ID, exact popup URL and focus. A normal tab cannot pass. Unsupported
+protocol/native input remains a prerequisite failure, with a recovery action.
+The normal popup first demonstrates Pinned/All filter interaction, then receives a
+synthetic Local Clip through the maintained message boundary, searches for it,
+pins it and observes persisted public pin state and the Pinned result.
+
+Before any popup application script runs, the owned browser context installs an
+isolated popup clipboard boundary. Reads return empty synthetic state and writes
+are rejected; installation failure stops that navigation. The popup must report
+that boundary before acceptance. This slice neither reads nor changes the host
+clipboard and needs no host clipboard authorization. It qualifies toolbar UI with
+that disclosed memory fixture, not system clipboard integration. Debugger/CDP
+attachment is recorded and can alter worker/popup lifetime; this run establishes
+no unaffected-worker-lifecycle, account, transfer or complete UX matrix claim.
+
+The shared policy permits one initial attempt and at most four changed diagnostic
+attempts. The twenty-minute diagnostic clock starts after the initial failure;
+ordinary initial setup is excluded. Every operation receives its remaining limit;
+cleanup has one separate ten-second allowance. Retries require both
+`--diagnostic-change 'changed hypothesis'` and
+`--expected-observation 'distinguishing result'`. Effort, semantic scenario and host
+key history; renaming output, profile or candidate does not reset failures. The
+per-user registry (or one owning `CLIPP_ACCEPTANCE_STATE_ROOT`) anchors the durable
+history location across checkouts. Keep it fixed across continuations.
+
+Receipts record readiness, selected behavior, actual surface, candidate and
+clipboard/debugger limits separately. Cleanup closes only the owned browser,
+signals only its current verified direct child if necessary, and checks recorded
+worker/child birth identity and the current profile marker before removal. A
+changed command alone cannot establish PID replacement. Live or unobservable
+worker launch intent remains reserved, including before a child PID is saved. Uncertain cleanup retains canonical target
+ownership and fails acceptance. No signal targets unrelated Chrome or a shared
+process group; historical detached-descendant absence is not asserted.
+
+## Historical tab/offscreen clipboard fixture
+
+The existing `test:clipboard` command still runs the tab/offscreen fixture. It
+requires a per-invocation authorization reference of `EFFORT:RECORD:DATE`; optional
+`--effort EFFORT` must match that scope. The parser verifies context consistency,
+not user permission: reconcile the actual recorded consent before executing it.
+The package command embeds no authorization or permanent effort-specific bypass.
 
 ```sh
 npm --workspace apps/extension run test:clipboard -- \
-  --authorization-reference operational-reliability:D4:2026-10-25
+  --effort approved-effort \
+  --authorization-reference approved-effort:consent:2026-10-28
 ```
 
-The command rebuilds the candidate, creates its own throwaway Chromium profile,
-loads only that candidate, identifies the loaded extension ID, proves a visible
-popup interaction by searching history and observing its matching result, and
-exercises the extension-page and offscreen clipboard paths. Its receipt records
-the source revision, build SHA-256, interaction result and clipboard side
-effects. It does not qualify Chrome's toolbar popup. The authorization reference
-is required each time; it is not embedded in the package script. The runner
-does not read, save, or restore prior clipboard content.
+This fixture intentionally writes synthetic host clipboard values, seeds one
+before any popup focus can read prior clipboard data, and never retains/restores
+prior clipboard contents. It remains labeled `toolbar-popup-not-qualified`.
+It now uses the same semantic policy and bounded cleanup. Its default durable
+location comes from the existing per-user Chrome acceptance state; explicit
+`--history-root` and `--output` are registered and cannot restart a failed scenario.
+Old version-1 attempt directories remain preserved. If one exists, reconcile the
+same effort and explicitly supply `--import-history /absolute/old/attempts.json`;
+imports retain failed receipts and budgets. No old result is relabeled passed.
 
-Retry state and sanitized receipts are kept in the fixed per-user durable
-application state directory, outside disposable worktrees. The runner does not
-accept a state-directory or scenario override, so retries cannot reset their
-history by selecting a new location. After a failed initial attempt, a
-diagnostic rerun must provide both a distinct hypothesis and its expected
-observation:
+Run deterministic public controls with:
 
 ```sh
-npm --workspace apps/extension run test:clipboard -- \
-  --authorization-reference operational-reliability:D4:2026-10-25 \
-  --attempt diagnostic \
-  --diagnostic-change 'increase the service worker readiness wait' \
-  --expected-observation 'the owned worker is ready before the popup opens'
+npm test -- --runInBand tests/extension/chromeToolbarAcceptance.test.ts
+npm --workspace apps/extension run test:clipboard:contract
 ```
 
-The shared native retry policy allows one initial attempt plus at most four
-diagnostic attempts (five attempts total) and enforces a 20-minute total
-deadline from the initial attempt's start, including
-checks during the run. Cleanup failures are reported and fail the command.
-Public argument, UI-interaction and retry-policy fixtures can be run with
-`npm --workspace apps/extension run test:clipboard:contract`.
+Driver fixtures qualify command behavior only. Actual toolbar qualification needs
+the supported-host command and its own candidate-bound receipt.

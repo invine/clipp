@@ -419,7 +419,11 @@ test("public Chrome retries exclude initial execution and retain the first-failu
     const scripts = join(repo, "apps/extension/scripts");
     await mkdir(scripts, { recursive: true });
     await mkdir(join(repo, "scripts"));
-    for (const name of ["verify-clipboard-io.mjs", "clipboard-acceptance.mjs"])
+    for (const name of [
+      "verify-clipboard-io.mjs",
+      "clipboard-acceptance.mjs",
+      "toolbar-acceptance.mjs",
+    ])
       await copyFile(new URL(name, import.meta.url), join(scripts, name));
     await copyFile(
       new URL(
@@ -438,6 +442,10 @@ test("public Chrome retries exclude initial execution and retain the first-failu
       join(playwright, "index.js"),
       "export const chromium = { launchPersistentContext() { throw new Error('unexpected_native_launch'); } };"
     );
+    await mkdir(join(directory, "bin"));
+    await writeFile(join(directory, "bin/npm"), "#!/bin/sh\nexit 0\n", {
+      mode: 0o755,
+    });
     const preload = join(directory, "clock.mjs");
     await writeFile(
       preload,
@@ -484,6 +492,8 @@ syncBuiltinESMExports();
           timeout: 10000,
           env: {
             ...process.env,
+            CLIPP_ACCEPTANCE_STATE_ROOT: join(directory, "state"),
+            PATH: join(directory, "bin") + ":" + process.env.PATH,
             FIXTURE_NOW: String(now),
             FIXTURE_INITIAL_DURATION: String(duration),
           },
@@ -494,7 +504,7 @@ syncBuiltinESMExports();
     assert.notEqual(run(start, 21 * 60_000).status, 0);
     const historyPath = join(
       persistentAttemptDirectory({ home: directory }),
-      "chrome-clipboard/attempts.json"
+      "semantic/operational-reliability/chrome-clipboard/attempts.json"
     );
     const history = () => readFile(historyPath, "utf8").then(JSON.parse);
     const first = await history();
@@ -515,4 +525,24 @@ syncBuiltinESMExports();
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("clipboard authorization context is supplied per effort rather than fixed in source", () => {
+  const selected = parseClipboardAcceptanceArgs([
+    "--effort",
+    "approved-fixture-effort",
+    "--authorization-reference",
+    "approved-fixture-effort:consent:2026-10-28",
+  ]);
+  assert.equal(selected.effort, "approved-fixture-effort");
+  assert.throws(
+    () =>
+      parseClipboardAcceptanceArgs([
+        "--effort",
+        "other-effort",
+        "--authorization-reference",
+        "approved-fixture-effort:consent:2026-10-28",
+      ]),
+    /authorization_reference_not_applicable/
+  );
 });
