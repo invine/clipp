@@ -31,7 +31,8 @@ describe("Chrome offscreen clipboard bridge", () => {
     const fixture = offscreenDocumentFixture(true);
     const writeText = createOffscreenClipboardWriter(fixture.document);
     const bridge = createExtensionClipboardBridge(async (request) =>
-      handleExtensionClipboardRequest(request, writeText));
+      handleExtensionClipboardRequest(request, writeText)
+    );
     const accept = jest.fn();
     const clipboard = createRuntimeClipboardService({
       capabilities: RUNTIME_CAPABILITIES.chromeExtension,
@@ -53,17 +54,29 @@ describe("Chrome offscreen clipboard bridge", () => {
 
     expect(fixture.execCommand).toHaveBeenCalledWith("copy");
     expect(fixture.valueAtCopy()).toBe(remoteClip.content);
-    await expect(clipboard.processLocalText(remoteClip.content)).resolves.toBeNull();
+    await expect(
+      clipboard.processLocalText(remoteClip.content)
+    ).resolves.toBeNull();
     expect(accept).not.toHaveBeenCalled();
     await clipboard.stop();
   });
 
   it("rejects failed offscreen writes and invalid requests", async () => {
-    const failed = createExtensionClipboardBridge(async () => ({ ok: false, error: "denied" }));
+    const failed = createExtensionClipboardBridge(async () => ({
+      ok: false,
+      error: "denied",
+    }));
 
     await expect(failed.writeText("secret")).rejects.toThrow("denied");
-    expect(isExtensionClipboardRequest({ action: "clipboardWrite" })).toBe(false);
-    expect(isExtensionClipboardRequest({ action: "clipboardRead" })).toBe(false);
+    expect(isExtensionClipboardRequest({ action: "clipboardWrite" })).toBe(
+      false
+    );
+    expect(isExtensionClipboardRequest({ action: "clipboardRead" })).toBe(
+      false
+    );
+    expect(
+      isExtensionClipboardRequest({ action: "clipboardWrite", text: "x" })
+    ).toBe(true);
   });
 
   it("copies exact text through a temporary offscreen control and removes it", async () => {
@@ -116,7 +129,7 @@ function offscreenDocumentFixture(copyResult: boolean) {
     setAttribute: jest.fn(),
   };
   const appendChild = jest.fn();
-  const execCommand = jest.fn(() => {
+  const execCommand = jest.fn((_command: "copy") => {
     copiedValue = control.value;
     return copyResult;
   });

@@ -1,14 +1,62 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+} from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
+import { beginNativeAttempt } from "../../../scripts/native-acceptance-attempts.mjs";
+import {
+  classifyShareNowFeedback,
+  parseClipboardAcceptanceArgs,
+  persistentAttemptDirectory,
+  raceAcceptanceOperation,
+  verifyPopupHistorySearch,
+} from "./clipboard-acceptance.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const extensionPath = resolve(scriptDirectory, "..", "dist");
-const profilePath = await mkdtemp(join(tmpdir(), "clipp-clipboard-io-"));
+const repositoryRoot = resolve(scriptDirectory, "../../..");
+const shareNowHistoryEffectTimeoutMs = 30_000;
+const options = parseClipboardAcceptanceArgs(process.argv.slice(2));
+if (options.validateOnly) {
+  console.log(
+    JSON.stringify({
+      valid: true,
+      authorizationReference: options.authorizationReference,
+      attempt: options.attempt,
+    })
+  );
+  process.exit(0);
+}
+const configuredStateRoot = resolve(persistentAttemptDirectory());
+await mkdir(configuredStateRoot, { recursive: true, mode: 0o700 });
+const stateRoot = await realpath(configuredStateRoot);
+const stateRelative = relative(repositoryRoot, stateRoot);
+assert(
+  stateRelative === ".." ||
+    stateRelative.startsWith(`..${sep}`) ||
+    isAbsolute(stateRelative),
+  "attempt_history_must_be_outside_checkout"
+);
+const attemptOutput = join(stateRoot, "chrome-clipboard");
+const attempt = await beginNativeAttempt({
+  output: attemptOutput,
+  scenario: "chrome-clipboard",
+  change: options.diagnosticChange,
+  expectation: options.expectedObservation,
+  deferDiagnosticClockUntilFailure: true,
+});
+let profilePath;
 const probeServer = createServer((_request, response) => {
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   response.end("<!doctype html><title>Clipp clipboard probe</title>");
@@ -16,86 +64,368 @@ const probeServer = createServer((_request, response) => {
 
 let context;
 let probe;
-let originalClipboardText;
-let canRestoreClipboard = false;
+let stage = "prerequisite";
+let operationLabel = "create_owned_profile";
+let extensionId;
+let candidate;
+let browserVersion;
+let shareNowDialogObserved = false;
+let shareNowDialogDismissalError;
+let shareNowObservation;
+let clipboardUsed = false;
+let clipboardChanged = false;
+let outcome = "runner_failure";
 try {
-  const probeOrigin = await listen(probeServer);
-  context = await chromium.launchPersistentContext(profilePath, {
-    headless: false,
-    ignoreDefaultArgs: ["--disable-extensions"],
-    args: [
-      `--disable-extensions-except=${extensionPath}`,
-      `--load-extension=${extensionPath}`,
-    ],
-  });
+  profilePath = await withinBudget(() =>
+    mkdtemp(join(tmpdir(), "clipp-clipboard-io-"))
+  );
+  operationLabel = "identify_built_candidate";
+  candidate = await withinBudget(() =>
+    identifyCandidate(extensionPath, repositoryRoot)
+  );
+  attempt.assertBudget();
+  stage = "runner_setup";
+  operationLabel = "listen_local_probe";
+  const probeOrigin = await withinBudget(() => listen(probeServer));
+  attempt.assertBudget();
+  operationLabel = "launch_owned_chromium";
+  context = await withinBudget(() =>
+    chromium.launchPersistentContext(profilePath, {
+      headless: false,
+      ignoreDefaultArgs: ["--disable-extensions"],
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+      ],
+    })
+  );
+  browserVersion = context.browser()?.version() ?? "unknown";
+  attempt.assertBudget();
 
+  stage = "prerequisite";
+  operationLabel = "discover_extension_service_worker";
   let serviceWorker = context.serviceWorkers()[0];
-  if (!serviceWorker) {
-    serviceWorker = await context.waitForEvent("serviceworker", { timeout: 15_000 });
-  }
-  const extensionId = new URL(serviceWorker.url()).host;
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: probeOrigin });
-  probe = await context.newPage();
-  await probe.goto(probeOrigin);
-  await probe.bringToFront();
-  try {
-    originalClipboardText = await readClipboard(probe);
-    canRestoreClipboard = true;
-  } catch {
-    // The regression still runs when the host cannot expose the previous text value.
-  }
+  if (!serviceWorker)
+    serviceWorker = await withinBudget(
+      () =>
+        context.waitForEvent("serviceworker", {
+          timeout: remainingMs(15_000),
+        }),
+      15_000
+    );
+  attempt.assertBudget();
+  extensionId = new URL(serviceWorker.url()).host;
+  operationLabel = "grant_probe_clipboard_permissions";
+  await withinBudget(() =>
+    context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: probeOrigin,
+    })
+  );
+  attempt.assertBudget();
+  probe = await withinBudget(() => context.newPage());
+  operationLabel = "load_probe_page";
+  await withinBudget(() => probe.goto(probeOrigin));
+  await withinBudget(() => probe.bringToFront());
+  // D4 authorizes this effort to overwrite the clipboard. We neither read nor retain
+  // clipboard contents and do not attempt restoration.
 
+  stage = "interaction_preflight";
+  operationLabel = "open_readiness_popup";
+  const popup = await withinBudget(() => context.newPage());
+  await withinBudget(() =>
+    popup.goto(`chrome-extension://${extensionId}/src/popup.html`)
+  );
+  assert.equal(
+    await withinBudget(() => popup.evaluate(() => chrome.runtime.id)),
+    extensionId
+  );
+  candidate.loadedExtensionId = extensionId;
+  assert.deepEqual(await extensionMessage(popup, { type: "clearHistory" }), {
+    ok: true,
+  });
+  operationLabel = "capture_readiness_fixture";
+  const readinessText = "clipp-readiness-search-interaction";
+  await captureFixture(popup, readinessText);
+  const interactionPreflight = await verifyPopupHistorySearch(
+    popup,
+    readinessText,
+    withinBudget,
+    remainingMs
+  );
+  operationLabel = "close_readiness_popup";
+  attempt.assertBudget();
+  await withinBudget(() => popup.close());
+
+  stage = "clipboard_acceptance";
+  operationLabel = "write_offscreen_clipboard_fixture";
   const offscreenText = "clipp-offscreen-writer-verification";
+  clipboardUsed = true;
   const offscreenResponse = await sendToOffscreen(serviceWorker, {
     action: "clipboardWrite",
     text: offscreenText,
   });
   assert.deepEqual(offscreenResponse, { ok: true });
+  clipboardChanged = true;
+  operationLabel = "confirm_offscreen_clipboard_write";
   assert.equal(await readClipboard(probe), offscreenText);
 
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/src/popup.html`);
-  await extensionMessage(popup, { type: "clearHistory" });
-
-  const retainedText = "clipp-retained-copy-verification";
-  const retainedClip = await captureFixture(popup, retainedText);
-  await writeClipboard(probe, "clipp-copy-sentinel");
-  await popup.bringToFront();
-  await popup.reload();
-  const retainedCard = popup.locator("article").filter({ hasText: retainedText }).first();
-  await retainedCard.locator("button").filter({ hasText: "Copy" }).click();
-  await waitForClipboard(probe, retainedText);
-  await popup.bringToFront();
-  assert.equal(await popup.getByText(
-    "Could not copy this Clip. Your clipboard and history were not changed.",
-    { exact: true },
-  ).isVisible().catch(() => false), false);
-  const reusedHistory = await waitForHistory(popup, (clips) =>
-    clips.filter((clip) => clip.content === retainedText && clip.id !== retainedClip.id).length > 0);
-  assert.ok(reusedHistory.some((clip) => clip.content === retainedText && clip.id !== retainedClip.id));
-
-  const shareNowText = "  clipp-share-now\r\nverification  ";
-  await writeClipboard(probe, shareNowText);
-  await popup.bringToFront();
-  await popup.waitForTimeout(500);
-  const historyBeforeShare = await extensionMessage(popup, { type: "getClipHistory" });
-  const observedIds = new Set((historyBeforeShare?.clips ?? []).map((clip) => clip.id));
-  await popup.locator("button").filter({ hasText: "Share Now" }).click();
-  const sharedHistory = await waitForHistory(
-    popup,
-    (clips) => clips.some((clip) => clip.content === shareNowText && !observedIds.has(clip.id)),
+  operationLabel = "open_acceptance_popup";
+  const acceptancePopup = await withinBudget(() => context.newPage());
+  await withinBudget(() =>
+    acceptancePopup.goto(`chrome-extension://${extensionId}/src/popup.html`)
   );
-  assert.ok(sharedHistory.some((clip) => clip.content === shareNowText && !observedIds.has(clip.id)));
 
-  await popup.close();
-  console.log("MV3 extension clipboard I/O verified in real Chromium.");
+  const shareNowText = "clipp-share-now-verification";
+  clipboardChanged = true;
+  operationLabel = "write_share_fixture";
+  await writeClipboard(probe, shareNowText);
+  await withinBudget(() => acceptancePopup.bringToFront());
+  await withinBudget(() => acceptancePopup.waitForTimeout(500));
+  const historyBeforeShare = await extensionMessage(acceptancePopup, {
+    type: "getClipHistory",
+  });
+  const observedIds = new Set(
+    (historyBeforeShare?.clips ?? []).map((clip) => clip.id)
+  );
+  const existingShareNowAlertVisible = await withinBudget(() =>
+    acceptancePopup
+      .getByRole("alert")
+      .isVisible()
+      .catch(() => false)
+  );
+  const observeShareNowDialog = async (dialog) => {
+    shareNowDialogObserved = true;
+    shareNowObservation = {
+      ...shareNowObservation,
+      nativeDialogObserved: true,
+    };
+    try {
+      await dialog.dismiss();
+    } catch (error) {
+      shareNowDialogDismissalError = error;
+    }
+  };
+  acceptancePopup.on("dialog", observeShareNowDialog);
+  operationLabel = "observe_share_now_response";
+  shareNowObservation = await installShareNowResponseObserver(
+    acceptancePopup,
+    shareNowText
+  );
+  operationLabel = "click_share_now_action";
+  await withinBudget(() =>
+    acceptancePopup.locator("button").filter({ hasText: "Share Now" }).click()
+  );
+  operationLabel = "verify_share_history_effect";
+  const sharedHistory = await waitForHistory(
+    acceptancePopup,
+    (clips) =>
+      clips.some(
+        (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
+      ),
+    shareNowHistoryEffectTimeoutMs,
+    async () => {
+      const liveObservation = await withinBudget(() =>
+        acceptancePopup.evaluate(() => ({
+          clipboardRead: window.__clippShareNowClipboardRead,
+          shareNowMessageSent: window.__clippShareNowMessageSent === true,
+          response: window.__clippShareNowResponse,
+        }))
+      );
+      if (
+        liveObservation.clipboardRead ||
+        liveObservation.shareNowMessageSent ||
+        liveObservation.response
+      ) {
+        shareNowObservation = {
+          ...shareNowObservation,
+          ...(liveObservation.shareNowMessageSent
+            ? { shareNowMessageSent: true }
+            : {}),
+          ...(liveObservation.clipboardRead
+            ? { clipboardRead: liveObservation.clipboardRead }
+            : {}),
+          ...(liveObservation.response
+            ? { response: liveObservation.response }
+            : {}),
+        };
+      }
+      const responseObservation = liveObservation.response;
+      if (responseObservation?.ok === false) {
+        const error = new Error("share_now_failure_feedback");
+        error.code = "share_now_failure_feedback";
+        throw error;
+      }
+      const feedbackCode = await visibleShareNowFeedbackCode(acceptancePopup);
+      if (feedbackCode) {
+        shareNowObservation = {
+          ...shareNowObservation,
+          feedbackCode,
+        };
+        const error = new Error("share_now_failure_feedback");
+        error.code = "share_now_failure_feedback";
+        throw error;
+      }
+      if (shareNowDialogDismissalError) throw shareNowDialogDismissalError;
+      if (shareNowDialogObserved) return true;
+      const alertVisible = await withinBudget(() =>
+        acceptancePopup
+          .getByRole("alert")
+          .isVisible()
+          .catch(() => false)
+      );
+      return alertVisible && !existingShareNowAlertVisible;
+    }
+  );
+  assert.ok(
+    sharedHistory.some(
+      (clip) => clip.content === shareNowText && !observedIds.has(clip.id)
+    )
+  );
+
+  operationLabel = "close_acceptance_popup";
+  await withinBudget(() => acceptancePopup.close());
+  outcome = "passed";
+  console.log(
+    JSON.stringify({
+      status: outcome,
+      stage: "complete",
+      authorizationReference: options.authorizationReference,
+      candidate,
+      profileOwned: true,
+      processOwnership: "runner-launched Chromium context",
+      browserVersion,
+      profilePath,
+      extensionId,
+      shareNowObservation,
+      interactionPreflight,
+      clipboard: {
+        hostClipboardUsed: clipboardUsed,
+        changed: clipboardChanged,
+        restoration: "not_requested_by_authorization",
+      },
+      acceptance: "extension-page-and-offscreen; toolbar-popup-not-qualified",
+    })
+  );
+} catch (error) {
+  outcome = classifyFailure(stage, error);
+  console.error(
+    JSON.stringify({
+      status: outcome,
+      stage,
+      operation: error?.operation ?? operationLabel,
+      authorizationReference: options.authorizationReference,
+      candidate,
+      extensionId,
+      shareNowObservation,
+      clipboard: {
+        hostClipboardUsed: clipboardUsed,
+        changed: clipboardChanged,
+        restoration: "not_requested_by_authorization",
+      },
+      errorName: error?.name ?? "UnknownError",
+      errorCode: error?.code ?? null,
+    })
+  );
+  throw error;
 } finally {
-  if (probe && canRestoreClipboard) {
-    try { await writeClipboard(probe, originalClipboardText); } catch { /* best-effort cleanup */ }
+  const cleanupErrors = [];
+  try {
+    await context?.close();
+  } catch (error) {
+    cleanupErrors.push(`browser_close:${error.message}`);
   }
-  await context?.close();
-  await close(probeServer);
-  await rm(profilePath, { recursive: true, force: true });
+  try {
+    await close(probeServer);
+  } catch (error) {
+    cleanupErrors.push(`probe_server_close:${error.message}`);
+  }
+  try {
+    if (profilePath) await rm(profilePath, { recursive: true, force: true });
+  } catch (error) {
+    cleanupErrors.push(`owned_profile_remove:${error.message}`);
+  }
+  const finalStatus =
+    cleanupErrors.length && outcome === "passed" ? "cleanup_failure" : outcome;
+  await attempt.finish({
+    result: finalStatus,
+    stage: outcome === "passed" ? "complete" : stage,
+    operation: outcome === "passed" ? "complete" : operationLabel,
+    classification: outcome === "passed" ? "none" : outcome,
+    authorizationReference: options.authorizationReference,
+    candidate,
+    profileOwned: true,
+    processOwnership: "runner-launched Chromium context",
+    browserVersion,
+    profilePath,
+    extensionId,
+    shareNowObservation,
+    clipboard: {
+      hostClipboardUsed: clipboardUsed,
+      changed: clipboardChanged,
+      restoration: "not_requested_by_authorization",
+    },
+    ...(cleanupErrors.length ? { cleanupFailures: cleanupErrors } : {}),
+  });
+  if (cleanupErrors.length)
+    throw new Error(`acceptance_cleanup_failed:${cleanupErrors.join(",")}`);
+}
+
+async function identifyCandidate(extensionDirectory, root) {
+  const manifest = JSON.parse(
+    await readFile(join(extensionDirectory, "manifest.json"), "utf8")
+  );
+  const sourceRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  const sourceDirty =
+    execFileSync("git", ["status", "--porcelain"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim().length > 0;
+  const files = await listFiles(extensionDirectory);
+  const digest = createHash("sha256");
+  for (const file of files) {
+    digest.update(file.slice(extensionDirectory.length));
+    digest.update(await readFile(file));
+  }
+  return {
+    sourceRevision,
+    sourceDirty,
+    buildSha256: digest.digest("hex"),
+    manifestVersion: manifest.version,
+    candidatePath: extensionDirectory,
+  };
+}
+
+async function listFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await listFiles(path)));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files.sort();
+}
+
+function classifyFailure(currentStage, error) {
+  if (error?.code === "share_now_failure_feedback") return "product_failure";
+  if (
+    error?.message === "diagnostic_time_budget_exhausted" ||
+    error?.message === "acceptance_operation_timeout"
+  )
+    return "runner_failure";
+  if (
+    currentStage === "prerequisite" ||
+    currentStage === "interaction_preflight"
+  )
+    return "prerequisite_failure";
+  if (currentStage === "runner_setup") return "runner_failure";
+  if (error?.name === "AssertionError") return "product_failure";
+  if (error?.name === "TimeoutError" || error?.name === "TargetClosedError")
+    return "runner_failure";
+  return "unknown_failure";
 }
 
 async function listen(server) {
@@ -111,48 +441,193 @@ async function listen(server) {
 async function close(server) {
   if (!server.listening) return;
   await new Promise((resolveClose, rejectClose) => {
-    server.close((error) => error ? rejectClose(error) : resolveClose());
+    server.close((error) => (error ? rejectClose(error) : resolveClose()));
   });
 }
 
 async function pollUntil(timeoutMs, probe) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + remainingMs(timeoutMs);
   while (Date.now() < deadline) {
-    const result = await probe();
+    attempt.assertBudget();
+    const result = await withinBudget(
+      probe,
+      Math.max(1, deadline - Date.now())
+    );
     if (result !== undefined) return result;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    await withinBudget(
+      () => new Promise((resolveDelay) => setTimeout(resolveDelay, 100)),
+      Math.min(100, deadline - Date.now())
+    );
   }
+  attempt.assertBudget();
   return undefined;
 }
 
+function remainingMs(maximum) {
+  return attempt.remainingMs(maximum);
+}
+
+async function withinBudget(run, maximum = 30_000) {
+  attempt.assertBudget();
+  const timeout = remainingMs(maximum);
+  try {
+    const result = await raceAcceptanceOperation(run, timeout, operationLabel);
+    attempt.assertBudget();
+    return result;
+  } catch (error) {
+    if (error?.message === "acceptance_operation_timeout")
+      error.operation ??= operationLabel;
+    throw error;
+  }
+}
+
 async function readClipboard(page) {
-  await page.bringToFront();
-  return await page.evaluate(async () => await navigator.clipboard.readText());
+  await withinBudget(() => page.bringToFront());
+  return await withinBudget(() =>
+    page.evaluate(async () => await navigator.clipboard.readText())
+  );
 }
 
 async function writeClipboard(page, text) {
-  await page.bringToFront();
-  await page.evaluate(async (value) => await navigator.clipboard.writeText(value), text);
+  await withinBudget(() => page.bringToFront());
+  await withinBudget(() =>
+    page.evaluate(
+      async (value) => await navigator.clipboard.writeText(value),
+      text
+    )
+  );
 }
 
 async function waitForClipboard(page, expected) {
   const matched = await pollUntil(10_000, async () =>
-    await readClipboard(page) === expected ? true : undefined);
+    (await readClipboard(page)) === expected ? true : undefined
+  );
   if (matched) return;
   assert.equal(await readClipboard(page), expected);
 }
 
 async function extensionMessage(page, message) {
-  return await page.evaluate(async (payload) => await chrome.runtime.sendMessage(payload), message);
+  return await withinBudget(() =>
+    page.evaluate(
+      async (payload) => await chrome.runtime.sendMessage(payload),
+      message
+    )
+  );
+}
+
+async function installShareNowResponseObserver(page, expectedClipboardText) {
+  return await withinBudget(() =>
+    page.evaluate((expected) => {
+      const clipboard = navigator.clipboard;
+      const originalReadText = clipboard.readText.bind(clipboard);
+      const observedReadText = async () => {
+        try {
+          const text = await originalReadText();
+          const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
+          window.__clippShareNowClipboardRead = {
+            matched: text === expected,
+            lineEndingNormalizedMatch:
+              normalizeLineEndings(text) === normalizeLineEndings(expected),
+            empty: text.length === 0,
+            errorCode: null,
+          };
+          return text;
+        } catch {
+          window.__clippShareNowClipboardRead = {
+            matched: false,
+            errorCode: "clipboard_read_failed",
+          };
+          throw new Error("clipboard_read_failed");
+        }
+      };
+      let clipboardReadObserverInstalled = false;
+      try {
+        Object.defineProperty(clipboard, "readText", {
+          configurable: true,
+          value: observedReadText,
+        });
+        clipboardReadObserverInstalled =
+          clipboard.readText === observedReadText;
+      } catch {
+        // The background response remains observable if the method is not replaceable.
+      }
+      const runtime = chrome.runtime;
+      const original = runtime.sendMessage.bind(runtime);
+      const observedSendMessage = (...args) => {
+        const message = args[0];
+        let callbackIndex = args.length - 1;
+        while (callbackIndex >= 0 && typeof args[callbackIndex] !== "function")
+          callbackIndex -= 1;
+        if (message?.type === "shareNow") {
+          window.__clippShareNowMessageSent = true;
+        }
+        if (message?.type === "shareNow" && callbackIndex >= 0) {
+          const callback = args[callbackIndex];
+          args[callbackIndex] = (response) => {
+            window.__clippShareNowResponse = {
+              ok: response?.ok === true,
+              errorCode:
+                typeof response?.error === "string" &&
+                /^[a-z0-9_]{1,80}$/.test(response.error)
+                  ? response.error
+                  : response?.error
+                    ? "unclassified"
+                    : null,
+            };
+            callback(response);
+          };
+        }
+        return original(...args);
+      };
+      let responseObserverInstalled = false;
+      try {
+        Object.defineProperty(runtime, "sendMessage", {
+          configurable: true,
+          value: observedSendMessage,
+        });
+        responseObserverInstalled = runtime.sendMessage === observedSendMessage;
+      } catch {
+        // The static UI feedback observer remains available.
+      }
+      return { clipboardReadObserverInstalled, responseObserverInstalled };
+    }, expectedClipboardText)
+  );
+}
+
+async function visibleShareNowFeedbackCode(page) {
+  const clipboardReadFailed = await withinBudget(() =>
+    page
+      .getByText(
+        "Could not read the current clipboard. Keep Clipp open and try again.",
+        { exact: true }
+      )
+      .isVisible()
+      .catch(() => false)
+  );
+  const shareNowFailed = await withinBudget(() =>
+    page
+      .getByText("Could not save or share the current clipboard.", {
+        exact: true,
+      })
+      .isVisible()
+      .catch(() => false)
+  );
+  return classifyShareNowFeedback({ clipboardReadFailed, shareNowFailed });
 }
 
 async function sendToOffscreen(serviceWorker, message) {
   let latest;
   const successful = await pollUntil(15_000, async () => {
     try {
-      latest = await serviceWorker.evaluate(
-        async (payload) => await chrome.runtime.sendMessage({ target: "offscreen", ...payload }),
-        message,
+      latest = await withinBudget(() =>
+        serviceWorker.evaluate(
+          async (payload) =>
+            await chrome.runtime.sendMessage({
+              target: "offscreen",
+              ...payload,
+            }),
+          message
+        )
       );
       if (latest?.ok === true) return latest;
     } catch {
@@ -173,9 +648,19 @@ async function captureFixture(popup, text) {
   throw new Error("clipboard_fixture_capture_timeout");
 }
 
-async function waitForHistory(popup, predicate) {
+async function waitForHistory(
+  popup,
+  predicate,
+  timeoutMs = 10_000,
+  detectShareNowFailure
+) {
   let clips = [];
-  const matched = await pollUntil(10_000, async () => {
+  const matched = await pollUntil(timeoutMs, async () => {
+    if (detectShareNowFailure && (await detectShareNowFailure())) {
+      const error = new Error("share_now_failure_feedback");
+      error.code = "share_now_failure_feedback";
+      throw error;
+    }
     const response = await extensionMessage(popup, { type: "getClipHistory" });
     clips = response?.clips ?? [];
     return predicate(clips) ? clips : undefined;

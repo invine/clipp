@@ -1,6 +1,6 @@
 # Agent workflow improvement plan
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 Canonical tracker for retrospective improvements 1, 3, 5 and 7 across Clipp and clipp-relay. The [specification](spec.md) defines behavior; the five tickets below are the sole claimable tasks. The operator approved the test boundaries and dependency graph on 2026-10-07.
 

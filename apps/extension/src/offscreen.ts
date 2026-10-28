@@ -297,6 +297,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
     if (isExtensionClipboardRequest(msg)) {
+      if (
+        !authorizedBackgroundControl(sender, chrome.runtime.id, BACKGROUND_URL)
+      ) {
+        sendResponse({ ok: false, error: "clipboard_request_unauthorized" });
+        return false;
+      }
       sendResponse(
         await handleExtensionClipboardRequest(msg, writeClipboardText)
       );

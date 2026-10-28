@@ -1,7 +1,7 @@
 # Electron managed relay acceptance
 
-Build with `npm --workspace apps/electron run build`, then run the actual
-Electron runtime with a nonprivate marker that a paired peer will send:
+The runner rebuilds the actual Electron candidate before launch. Run it with a
+nonprivate marker that a paired peer will send:
 
 ```sh
 node scripts/electron-relay-acceptance.mjs \
@@ -30,8 +30,8 @@ the UI if necessary. Complete Google authorization with the system browser.
 Pair through the normal Pairing Target and approval actions if this profile
 has no paired peer. Send the exact marker from that peer after the runner says
 it is ready. The runner observes the application's public preload bridge and
-main-process native clipboard boundary; it does not automate Google or other
-runtime UI, receive token strings, or extract stored credentials.
+main-process native clipboard boundary; it performs the harmless readiness interaction below but does not automate
+Google, receive token strings, or extract stored credentials.
 
 Only the Electron clipboard boundary is replaced with memory so the operator's
 system clipboard is neither read nor changed. A pass requires a new Remote Clip
@@ -49,17 +49,82 @@ inferring a transport pass from the configured filter alone. A timeout, degraded
 state, plaintext fallback, direct peer path or
 absence of clip receipt cannot produce a pass.
 
-The output directory contains a mode-600 receipt and private runtime log. Failed
-runs also retain a mode-600 `failure.private.json` with exception details; keep
-this file private and inspect it before retrying an unexplained early exit.
-The public receipt reports only an allowlisted error class and assertion reason,
-including decorated assertion messages. The
-receipt records runtime/platform/provider, statuses and boolean path/receipt
-evidence, without tokens, Peer IDs, clip content or account identity. Keep logs,
-profiles, runner wrappers and screenshots ignored and private. The harness
-reports Google authorization as unobserved: record actual browser callback/
-exchange separately. Storage failure and rotation tests using deterministic
-providers establish only the credential seam, not native provider behavior.
+## Readiness and diagnostic evidence
+
+Use a fresh, isolated profile to check native readiness without a relay, provider
+login, paired peer or host clipboard access:
+
+```sh
+node scripts/electron-relay-acceptance.mjs \
+  --profile /absolute/isolated-readiness-profile \
+  --transport wss \
+  --output /absolute/durable-private-evidence/electron-readiness \
+  --preflight-only
+```
+
+Every invocation removes the candidate's generated `apps/electron/dist`, runs
+`npm --workspace apps/electron run build` with a three-minute limit, and records
+Git revision, dirty state, a source fingerprint, and hashes of every generated
+artifact. The source must remain unchanged during the build and preflight, and
+built artifacts must remain unchanged through the interaction. A successful
+no-op build cannot reuse stale output. Tracked symbolic links contribute their
+link identity to the source fingerprint; installed dependency binaries are not
+claimed to be source files. The observed Electron executable path and runtime
+versions are recorded separately.
+
+Before relay assertions, the runner verifies the launched PID, launch argument,
+canonical profile, owned BrowserWindow/webContents IDs, renderer PID and exact
+built renderer URL. It activates only its owned app and window, waits at most
+five seconds for native focus, and checks native and renderer focus before and
+after native mouse input toggles History **Pinned**, then **All**. The normal
+renderer must show the resulting active filter. This is a harmless filter
+change; DOM/bridge availability alone cannot pass readiness. A readiness-only
+pass does not qualify relay transfer, provider login, native toolbar popups or
+any larger UX matrix.
+
+Keep one durable output directory per scenario, reusing it when diagnosing a
+failure even when the candidate, profile or environment changes. For a linked
+worktree the directory must physically reside outside that disposable checkout;
+a primary checkout may use its established ignored `.local` evidence directory.
+The directory has an exclusive runner lock, `attempts.json`, a latest
+`receipt.json`, and immutable-by-convention `attempt-1` through `attempt-5`
+directories containing receipts, launcher, private logs and private exception
+details. Do not discard or replace failed history to obtain more attempts. After
+an interrupted process, confirm the recorded owned process is stopped before
+removing a stale `.attempt.lock`; preserve `attempts.json` and existing attempt
+directories. Reusing the scenario directory after success is refused; a later
+candidate's normal qualification uses a separate, explicitly dated/revisioned
+scenario record.
+
+One initial attempt and at most four diagnostic attempts are allowed (five
+attempts total). After a
+failure, a retry requires both `--diagnostic-change` (changed hypothesis or
+environment) and `--expected-observation` (what will distinguish the diagnosis).
+An absent or repeated change is refused. A 20-minute diagnostic clock starts
+when the initial failure is recorded; diagnostic builds and shutdown consume
+that clock. Initial builds and normal acceptance are outside it. Existing
+per-command timeouts remain and diagnostic commands are additionally capped by
+the remaining budget. Failed readiness withholds the relay scenario; unrelated
+eligible work can continue.
+
+Receipts retain the failure stage and classification: `prerequisite` for
+candidate/build setup, `runner` for target/focus/interaction, diagnostic limits or
+cleanup, `product` for observed relay invariant violations after readiness, and
+`unknown` for transfer timeout or unexplained transfer failures. A cleanup
+failure cannot produce a pass and is retained separately when there was already
+a primary failure. Only the launched ChildProcess may be terminated. Profile
+and log cleanup failures are failures too.
+
+All artifacts are private (files mode 600, directories mode 700); receipts now
+contain exact local target paths and must be reviewed/redacted before sharing.
+Only allowlisted error classes and reasons enter the receipt; exception details
+and diagnostic prose stay in private evidence. No tokens, Peer IDs, clip content
+or provider account identity are added to receipts. The clipboard metadata
+explicitly reports `hostUsed: false`, `hostChanged: false`, and restoration
+`not-requested`: the existing memory fixture remains in place. Google
+authorization remains unobserved by this runner; record actual browser
+callback/exchange separately. Deterministic command fixtures qualify only the
+runner gates, never actual native readiness or provider behavior.
 
 The normal Electron adapter currently prefers WSS to avoid libp2p joining a
 stalled private TCP dial for the same relay Peer ID. The specification requires

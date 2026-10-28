@@ -184,3 +184,44 @@ transport evidence. Record candidate commit, OS/Chrome version, transport, passe
 failed and not-run gates in the evidence ledger. Registered-ID Google, real
 credential rotation/suspension, both live transport transfers and independent
 configuration behavior remain required before completing ticket 15.
+
+## Chrome clipboard acceptance evidence
+
+Run the public acceptance command with the applicable user authorization
+reference supplied for that invocation:
+
+```sh
+npm --workspace apps/extension run test:clipboard -- \
+  --authorization-reference operational-reliability:D4:2026-10-25
+```
+
+The command rebuilds the candidate, creates its own throwaway Chromium profile,
+loads only that candidate, identifies the loaded extension ID, proves a visible
+popup interaction by searching history and observing its matching result, and
+exercises the extension-page and offscreen clipboard paths. Its receipt records
+the source revision, build SHA-256, interaction result and clipboard side
+effects. It does not qualify Chrome's toolbar popup. The authorization reference
+is required each time; it is not embedded in the package script. The runner
+does not read, save, or restore prior clipboard content.
+
+Retry state and sanitized receipts are kept in the fixed per-user durable
+application state directory, outside disposable worktrees. The runner does not
+accept a state-directory or scenario override, so retries cannot reset their
+history by selecting a new location. After a failed initial attempt, a
+diagnostic rerun must provide both a distinct hypothesis and its expected
+observation:
+
+```sh
+npm --workspace apps/extension run test:clipboard -- \
+  --authorization-reference operational-reliability:D4:2026-10-25 \
+  --attempt diagnostic \
+  --diagnostic-change 'increase the service worker readiness wait' \
+  --expected-observation 'the owned worker is ready before the popup opens'
+```
+
+The shared native retry policy allows one initial attempt plus at most four
+diagnostic attempts (five attempts total) and enforces a 20-minute total
+deadline from the initial attempt's start, including
+checks during the run. Cleanup failures are reported and fail the command.
+Public argument, UI-interaction and retry-policy fixtures can be run with
+`npm --workspace apps/extension run test:clipboard:contract`.

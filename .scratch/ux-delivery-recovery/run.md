@@ -1,10 +1,10 @@
 # UX delivery recovery current run
 
-Coordinator: `/root`; user authorized implement-spec on 2026-10-28. Start at this record and the selected [numbered ticket](README.md). Only this integration checkout’s numbered ticket files own current status, assignee and dependencies; frozen candidate copies are historical source snapshots. The user subsequently authorized both prerequisite merges. They are now on local main at `7e8d4583c48ea5243209653ff82615182a2f9232`; this specification remains incomplete. Next: update this dedicated integration from main, renew affected checks and candidate applicability, then resume the canonical ticket frontier.
+Coordinator: `/root`; user authorized implement-spec on 2026-10-28. Start at this record and the selected [numbered ticket](README.md). Only this integration checkout’s numbered ticket files own current status, assignee and dependencies; frozen candidate copies are historical source snapshots. The user subsequently authorized both prerequisite merges. They are now on local main at `7e8d4583c48ea5243209653ff82615182a2f9232`; this specification remains incomplete. This merge consumes main; resume the retained01 claim and newly claimed04 after recording the resulting integration revision. Renew affected checks and candidate applicability rather than relabeling prior results.
 
 ## Candidate and lineage
 
-- Client main baseline: `479e05caef8318043b3381bec8af720abe2d8ae9`; original preparation baseline. A later authorized prerequisite consolidation advanced main to `7e8d4583c48ea5243209653ff82615182a2f9232`; this integration has not yet consumed it. Integration branch: `codex/ux-delivery-recovery-integration`, created at that exact main hash in its own worktree. Ticket branches began at this integration and incorporated its current tip before handoff.
+- Client main baseline: `479e05caef8318043b3381bec8af720abe2d8ae9`; original preparation baseline. A later authorized prerequisite consolidation advanced main to `7e8d4583c48ea5243209653ff82615182a2f9232`; this merge consumes it, resolving the package-script conflict by retaining both candidate checks and main verification. Integration branch: `codex/ux-delivery-recovery-integration`, created at that exact main hash in its own worktree. Ticket branches began at this integration and incorporated its current tip before handoff.
 - Frozen tooling-qualification candidate: `127ad92b92cfc9332f7fe9749bd70b5aac660dff`, Electron 43.4.0 on macOS arm64, Node 26.12.1/npm 11.20.0. Its independent installed checkout/record live under primary-root `.local/ux-delivery-recovery/candidates/electron-20261028-3`. Artifact identity: `178e80e70dc9b2e383ed2d41025966bad2c8833669b0531dabed9845c50638be`. This is not adoption of the active UX product branch.
 - Local root/artifact locations are supplied by primary-root `.local/ux-delivery-recovery/evidence/local.json` (location manifest, not an executable status ledger). Current integration HEAD is read from Git; reporting-only commits do not relabel the frozen candidate as newly executed.
 
@@ -34,3 +34,12 @@ Primary dirty files, existing worktrees/branches and six pre-existing stashes re
 ## Prerequisite consolidation receipt
 
 The user explicitly requested both merges and analysis of unrelated changes. Local main contains agent-workflow `a2e1a64` and operational-reliability `d3eeb3e` plus related corrections at `7e8d458`. Exact merge/verification/review/preservation receipts are in primary-root `.local/prerequisite-merges/evidence/merge-complete.json`. Native and hosted profiles were not run. The unrelated Electron DNS-recovery patch passed 25 focused tests but was excluded from these prerequisite commits and remains unchanged in the primary checkout. This integration’s own code and frozen candidate are unchanged by this reporting update.
+
+## Resumed dispatch
+
+The user requested continued specification implementation. This integration incorporates main7e8d458; `package.json` retains `check:candidate`, `acceptance:candidate` and `verify`. Root installs isolated dependencies and runs the enabled hook/checks before the merge commit. Exact resulting revision and ticket baselines are recorded in local evidence after commit.
+
+- 01 remains with `/root/graph`: complete public scenario/graph validation and real-Git transition fixtures against the existing proposed allocation; no live UX migration or product activation.
+- 04 is claimed for `/root/diagnostics`: implement durable semantic history, bounded policy/cleanup and Electron demonstration using the now-main-integrated five-attempt/first-failure policy. Native failures remain unqualified; no global/profile/clipboard permission expansion.
+
+Both preserve accepted ADR0004/0005/0006/0008/0012 product invariants. At most two implementers; no source file ownership overlap is planned (01 status/tests/docs;04 native policy/runner/tests/docs). Public test seams remain those explicitly approved in the specification. No additional test-seam approval is required. Previous frozen candidate127ad92 is retained as historical, not the new merged runtime candidate.

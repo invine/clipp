@@ -171,13 +171,7 @@ If you add or change a user action in `ClipboardApp`, verify which runtimes need
 
 Use npm workspace commands from the repo root.
 
-### Common commands
-
-- `npm test`
-- `npm run lint`
-- `npm --workspace apps/electron run build`
-- `npm --workspace apps/android run build`
-- `npm --workspace apps/extension run build`
+For verification and acceptance, start from [project operations](agents/operations.md). Command definitions live in the root and workspace `package.json` scripts.
 
 ### Runtime-specific notes
 
