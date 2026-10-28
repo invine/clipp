@@ -161,8 +161,12 @@ function invoke(args, stage, classification = "prerequisite") {
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
   if (result.error || result.status !== 0) {
     const error = new Error(
-      `${stage}: ${output || result.error?.message || `exit ${result.status}`}`
+      result.error?.code === "ETIMEDOUT"
+        ? "android_adb_timeout"
+        : "android_adb_failed"
     );
+    error.privateDetail =
+      output || result.error?.stack || `exit ${result.status}`;
     error.stage = stage;
     error.classification =
       result.error?.code === "ETIMEDOUT" ? "runner" : classification;
@@ -170,6 +174,38 @@ function invoke(args, stage, classification = "prerequisite") {
   }
   assertWithinBudget(stage);
   return output;
+}
+
+async function diagnosticStep(stage, operation) {
+  const remaining = remainingTimeout(stage);
+  let timer;
+  try {
+    const result = await Promise.race([
+      operation(AbortSignal.timeout(remaining)),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              Object.assign(new Error("android_operation_deadline_exhausted"), {
+                stage,
+                classification: "runner",
+              })
+            ),
+          remaining
+        );
+      }),
+    ]);
+    assertWithinBudget(stage);
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function publicFailure(error) {
+  const first = String(error.message || "").split("\n", 1)[0];
+  return /^[a-z][a-z0-9_]{0,95}$/.test(first)
+    ? first
+    : "android_operation_failed";
 }
 
 async function cleanupStep(operation) {
@@ -248,7 +284,9 @@ async function candidateIdentity() {
   );
   if (provenance.schemaVersion === 2) {
     assert(
-      (await realpath(provenance.source.checkout)) === (await realpath(root)),
+      (await diagnosticStep("candidate", () =>
+        realpath(provenance.source.checkout)
+      )) === (await diagnosticStep("candidate", () => realpath(root))),
       "candidate_checkout_mismatch"
     );
     assert(!provenance.dirty, "frozen_candidate_must_be_committed");
@@ -344,8 +382,8 @@ async function verifyInstalledCandidate(
     "installed_package_base_apk_missing"
   );
 
-  const temporaryDirectory = await mkdtemp(
-    path.join(os.tmpdir(), "clipp-android-installed-apk-")
+  const temporaryDirectory = await diagnosticStep("installed-candidate", () =>
+    mkdtemp(path.join(os.tmpdir(), "clipp-android-installed-apk-"))
   );
   const localApk = path.join(temporaryDirectory, "installed-base.apk");
   let failure;
@@ -353,7 +391,9 @@ async function verifyInstalledCandidate(
   try {
     invoke(["pull", paths[0], localApk], "installed-candidate");
     assertWithinBudget("installed-candidate");
-    const details = await stat(localApk);
+    const details = await diagnosticStep("installed-candidate", () =>
+      stat(localApk)
+    );
     assert(
       details.isFile() && details.size > 0,
       "installed_candidate_pull_empty"
@@ -459,15 +499,24 @@ function readUiHierarchy() {
 }
 
 const stateRoot = nativeAcceptanceStateRoot();
-await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+await diagnosticStep("preparation", () =>
+  mkdir(stateRoot, { recursive: true, mode: 0o700 })
+);
 const historyRoot = values["history-root"] || path.join(stateRoot, "history");
 assert(path.isAbsolute(historyRoot), "absolute_history_root_required");
-await mkdir(historyRoot, { recursive: true, mode: 0o700 });
+await diagnosticStep("preparation", () =>
+  mkdir(historyRoot, { recursive: true, mode: 0o700 })
+);
 for (const directory of [values.output, stateRoot, historyRoot]) {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await diagnosticStep("preparation", () =>
+    mkdir(directory, { recursive: true, mode: 0o700 })
+  );
   assert(
     path
-      .relative(await realpath(root), await realpath(directory))
+      .relative(
+        await diagnosticStep("preparation", () => realpath(root)),
+        await diagnosticStep("preparation", () => realpath(directory))
+      )
       .startsWith(`..${path.sep}`),
     "durable_android_history_outside_checkout_required"
   );
@@ -498,8 +547,13 @@ try {
   attempt = await beginNativeAttempt({
     ordinaryScope,
     output: values.output,
-    historyRoot: await realpath(historyRoot),
-    registryRoot: path.join(await realpath(stateRoot), "history-registry"),
+    historyRoot: await diagnosticStep("preparation", () =>
+      realpath(historyRoot)
+    ),
+    registryRoot: path.join(
+      await diagnosticStep("preparation", () => realpath(stateRoot)),
+      "history-registry"
+    ),
     identity: {
       effort: values.effort,
       scenario: "android-native-acceptance",
@@ -753,10 +807,12 @@ try {
         current = {};
       }
     }
-    await writeFile(
-      path.join(attempt.directory, "native-behavior.private.log"),
-      output,
-      { mode: 0o600 }
+    await diagnosticStep("behavior", (signal) =>
+      writeFile(
+        path.join(attempt.directory, "native-behavior.private.log"),
+        output,
+        { mode: 0o600, signal }
+      )
     );
     if (failed)
       throw Object.assign(new Error("native_behavior_failed"), {
@@ -777,6 +833,7 @@ try {
       passed: true,
     };
   }
+  assertWithinBudget(receipt.stage);
   receipt.result = "passed";
   receipt.classification = "none";
 } catch (error) {
@@ -786,10 +843,23 @@ try {
     (/deadline|budget_exhausted|AbortError/i.test(error.message)
       ? "runner"
       : receipt.classification);
-  receipt.failure = error.message;
+  receipt.failure = publicFailure(error);
+  receipt.recoveryAction =
+    "Inspect private attempt evidence, repair the named stage on the owned target, and retry with a changed hypothesis within the existing budget.";
+  try {
+    await cleanupStep(() =>
+      writeFile(
+        path.join(attempt.directory, "failure.private.log"),
+        `${error.stack || error.message}\n${error.privateDetail || ""}`,
+        { mode: 0o600 }
+      )
+    );
+  } catch {
+    receipt.failureEvidence = "unavailable";
+  }
   if (error.cleanupFailure) {
     receipt.cleanup = "failed";
-    receipt.cleanupFailure = error.cleanupFailure;
+    receipt.cleanupFailure = publicFailure({ message: error.cleanupFailure });
   }
 } finally {
   if (launched) {
@@ -799,11 +869,11 @@ try {
     } catch (error) {
       receipt.appCleanup = "failed";
       receipt.cleanup = "failed";
-      receipt.cleanupFailure = error.message;
+      receipt.cleanupFailure = publicFailure(error);
       if (receipt.result === "passed") {
         receipt.stage = "cleanup";
         receipt.classification = "runner";
-        receipt.failure = error.message;
+        receipt.failure = publicFailure(error);
       }
       receipt.result = "failed";
     }

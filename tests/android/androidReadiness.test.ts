@@ -47,6 +47,8 @@ function runReadiness({
   entrypoint,
   nativeResults = "all",
   cleanupFails = false,
+  failingAdbCanary = false,
+  advanceEvidenceClock = false,
   instrumentationTarget = "com.clipp.app.acceptance",
 }: {
   webView?: boolean;
@@ -69,6 +71,8 @@ function runReadiness({
   entrypoint?: string;
   nativeResults?: "all" | "missing" | "ignored" | "zero" | "focus-fails";
   cleanupFails?: boolean;
+  failingAdbCanary?: boolean;
+  advanceEvidenceClock?: boolean;
   instrumentationTarget?: string;
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "clipp-android-ready-"));
@@ -293,12 +297,41 @@ esac
 `
   );
   chmodSync(adb, 0o755);
+  const preload = join(directory, "evidence-clock.mjs");
+  writeFileSync(
+    preload,
+    `
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+const original = fs.writeFile;
+let offset = 0;
+const originalNow = Date.now;
+Date.now = () => originalNow() + offset;
+fs.writeFile = async (file, ...args) => {
+  const result = await original(file, ...args);
+  if (String(file).endsWith('native-behavior.private.log')) offset += 21 * 60_000;
+  return result;
+};
+syncBuiltinESMExports();
+`
+  );
+  if (failingAdbCanary) {
+    const original = readFileSync(adb, "utf8");
+    writeFileSync(
+      adb,
+      original.replace(
+        'case "$*" in',
+        'case "$*" in\n  "get-state") echo SYNTHETIC_PRIVATE_DIAGNOSTIC >&2; exit 1 ;;'
+      )
+    );
+  }
   const invoke = (extra: string[] = []) =>
     spawnSync(
       entrypoint ? "npm" : process.execPath,
       entrypoint
         ? ["--workspace", "apps/android", "run", entrypoint, "--", ...extra]
         : [
+            ...(advanceEvidenceClock ? ["--import", preload] : []),
             join(sourceRoot, "apps/android/scripts/android-readiness.mjs"),
             "--serial",
             serial,
@@ -437,7 +470,7 @@ test("diagnostic adb work is bounded by the remaining 20-minute budget", () => {
     );
     expect(receipt.stage).toBe("device");
     expect(receipt.classification).toBe("runner");
-    expect(receipt.failure).toContain("spawnSync");
+    expect(receipt.failure).toBe("android_adb_timeout");
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
@@ -1047,6 +1080,54 @@ test("a failed matrix cannot use narrower focused coverage to launder a new ordi
     expect(
       JSON.parse(readFileSync(receipt.history.path, "utf8")).attempts
     ).toHaveLength(1);
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("failed Android driver details stay private across receipt and command output", () => {
+  const run = runReadiness({ failingAdbCanary: true });
+  try {
+    expect(run.result.status).toBe(1);
+    const receiptText = readFileSync(join(run.output, "receipt.json"), "utf8");
+    expect(receiptText + run.result.stdout + run.result.stderr).not.toContain(
+      "SYNTHETIC_PRIVATE_DIAGNOSTIC"
+    );
+    const receipt = JSON.parse(receiptText);
+    expect(receipt.failure).toBe("android_adb_failed");
+    const history = JSON.parse(readFileSync(receipt.history.path, "utf8"));
+    const privateFile = join(
+      receipt.history.path,
+      "..",
+      history.attempts.at(-1).receipt,
+      "..",
+      "failure.private.log"
+    );
+    expect(readFileSync(privateFile, "utf8")).toContain(
+      "SYNTHETIC_PRIVATE_DIAGNOSTIC"
+    );
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android evidence persistence cannot establish pass after the remaining diagnostic deadline", () => {
+  const run = runReadiness({
+    frozenPair: true,
+    suite: "focused",
+    timeoutBudgetMs: 60000,
+    advanceEvidenceClock: true,
+  });
+  try {
+    expect(run.result.status).toBe(1);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.classification).toBe("runner");
+    expect(receipt.failure).toContain("diagnostic_time_budget_exhausted");
+    expect(receipt.behavior?.passed).not.toBe(true);
+    expect(receipt.ordinaryScope).toBeUndefined();
+    expect(receipt.appCleanup).toBe("passed");
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
