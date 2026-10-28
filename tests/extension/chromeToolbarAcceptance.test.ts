@@ -78,7 +78,7 @@ const fs=require('node:fs'),path=require('node:path');
 if(process.argv.includes('--version')){console.log('Fixture Chromium 1');process.exit(0);}
 const dir=process.argv.find(x=>x.startsWith('--user-data-dir=')).split('=').slice(1).join('=');
 fs.writeFileSync(path.join(dir,'DevToolsActivePort'),'12345\\n/devtools/browser/fixture');fs.writeFileSync(${JSON.stringify(path.join(fixture, "pid"))},String(process.pid));
-setTimeout(()=>process.exit(0),4000);
+setTimeout(()=>{fs.writeFileSync(${JSON.stringify(path.join(fixture, "self-expired"))},"expired");process.exit(0);},4000);
 `,
     { mode: 0o755 }
   );
@@ -115,7 +115,12 @@ cp.spawn = (bin,args,opts) => {
  const argument = args.find(x=>x.startsWith('--user-data-dir='));
  if(argument) fs.writeFileSync(profileRecord,argument.slice('--user-data-dir='.length));
  const child = spawn(bin,args,opts);
- if(argument && child.pid) fs.writeFileSync(${JSON.stringify(path.join(fixture, "pid"))},String(child.pid));
+ if(argument && child.pid) {
+  fs.writeFileSync(${JSON.stringify(path.join(fixture, "pid"))},String(child.pid));
+  if(process.env.FIXTURE_BEHAVIOR==='unidentified' && process.env.CLIPP_CHROME_OWNED_CHILD_EVIDENCE) fs.appendFileSync(process.env.CLIPP_CHROME_OWNED_CHILD_EVIDENCE,JSON.stringify({pid:child.pid,profile:argument.slice('--user-data-dir='.length),expiresAfterMs:4000})+'\\n');
+  const kill=child.kill.bind(child);
+  child.kill=signal=>{fs.appendFileSync(${JSON.stringify(path.join(fixture, "signals"))},String(signal)+'\\n');return kill(signal);};
+ }
  return child;
 };
 const original = cp.spawnSync;
@@ -132,9 +137,10 @@ cp.spawnSync = (bin,args,options) => {
   let childPid;
   try { childPid = Number(fs.readFileSync(${JSON.stringify(path.join(fixture, "pid"))},'utf8')); } catch {}
   if(pid !== childPid) return {status:0,stdout:'123 Wed Oct 28 09:00:00 2026 fixture-worker'};
+  if(process.env.FIXTURE_BEHAVIOR==='unidentified') return {status:2,stdout:''};
   const profile = fs.readFileSync(profileRecord,'utf8');
   observations++;
-  return {status:0,stdout:'123 Wed Oct 28 10:00:00 2026 '+(process.env.FIXTURE_BEHAVIOR==='reuse' && observations>1?'reused fixture ':'owned fixture ')+'--user-data-dir='+profile};
+  return {status:0,stdout:'123 Wed Oct 28 10:00:00 2026 '+(process.env.FIXTURE_BEHAVIOR==='reuse' && observations>1?'reused fixture ':'owned fixture ')+${JSON.stringify(bin)}+' --user-data-dir='+profile};
  } catch { return {status:1,stdout:''}; }
 };
 const rename = fs.promises.rename;
@@ -557,3 +563,39 @@ test.each(["missing-recorded-birth", "unknown-observation"])(
     expect(readFileSync(canonical, "utf8")).toBe(retained);
   }
 );
+
+test("unavailable child identity at launch and cleanup never authorizes a signal", async () => {
+  freeze();
+  const expired = path.join(fixture, "self-expired");
+  try {
+    const run = invoke("unidentified");
+    expect(run.status).toBe(1);
+    expect(existsSync(path.join(fixture, "signals"))).toBe(false);
+    expect(result()).toMatchObject({
+      result: "failed",
+      classification: "cleanup",
+      shutdown: "unknown",
+    });
+    const pointer = JSON.parse(
+      readFileSync(path.join(output, "history.json"), "utf8")
+    );
+    const target = JSON.parse(
+      readFileSync(
+        path.join(fixture, "history", pointer.key, "unresolved-target.json"),
+        "utf8"
+      )
+    );
+    expect(target).toMatchObject({
+      pid: Number(readFileSync(path.join(fixture, "pid"), "utf8")),
+      runnerBirth: workerBirth,
+      phase: "pid-recorded",
+    });
+    expect(target.birth).toBeUndefined();
+  } finally {
+    // The unidentified controlled child owns a four-second self-expiry. Preserve
+    // its PID/marker until that boundary, including when a signal regression fails.
+    const deadline = Date.now() + 4500;
+    while (!existsSync(expired) && Date.now() < deadline)
+      await new Promise((done) => setTimeout(done, 25));
+  }
+}, 10000);

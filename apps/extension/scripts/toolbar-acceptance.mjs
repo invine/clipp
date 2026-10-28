@@ -467,11 +467,14 @@ export async function runToolbarAcceptance(args) {
     assert(
       identity.birth &&
         identity.fingerprint &&
+        identity.command.includes(executable) &&
         identity.command.includes(`--user-data-dir=${profile}`),
       "browser_identity_unavailable"
     );
+    identity.executable = executable;
     await recordOwnership({
       pid: child.pid,
+      executable: identity.executable,
       birth: identity.birth,
       fingerprint: identity.fingerprint,
       phase: "identity-observed",
@@ -747,7 +750,16 @@ export async function runToolbarAcceptance(args) {
             Math.max(1, Math.min(1000, cleanupDeadline - Date.now()))
           );
           assert(
-            current.fingerprint === identity?.fingerprint,
+            identity?.fingerprint &&
+              identity?.birth &&
+              identity?.executable &&
+              current.fingerprint &&
+              current.birth &&
+              current.command &&
+              current.birth === identity.birth &&
+              current.fingerprint === identity.fingerprint &&
+              current.command.includes(identity.executable) &&
+              current.command.includes(`--user-data-dir=${profile}`),
             "browser_cleanup_identity_uncertain"
           );
           child.kill("SIGTERM");
