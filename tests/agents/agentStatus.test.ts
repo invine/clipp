@@ -2821,3 +2821,38 @@ test("historical v1 runs retain local v1 and both-role requirements", () => {
   const missing = run(ledger, { ...local, roots: { client } });
   expect(missing.status).toBe(1);
 });
+
+test("malformed compact entry never discloses its contents in human or JSON recovery output", () => {
+  const { ledger, local } = setupScenarios();
+  run(ledger, local);
+  const canary = "LEAK08";
+  const entryPath = `${ledger.ownership.canonical.path}/current.json`;
+  file(join(client, entryPath), canary);
+  for (const format of [[], ["--json"]]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--entry",
+        `client:${entryPath}`,
+        "--local",
+        join(root, "local.json"),
+        "--compact",
+        ...format,
+      ],
+      { encoding: "utf8" }
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout + result.stderr).not.toContain(canary);
+    expect(result.stdout).toContain("Malformed JSON entry metadata");
+    if (format.length) {
+      const current = JSON.parse(result.stdout);
+      expect(current.nextActions).toEqual([
+        expect.objectContaining({ action: "reconcile", code: "invalid-input" }),
+      ]);
+      expect(current.diagnostics).toEqual([
+        expect.objectContaining({ code: "invalid-input" }),
+      ]);
+    }
+  }
+});

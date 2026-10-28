@@ -749,7 +749,12 @@ function main() {
     const match = /^(client|relay):(.+)$/.exec(inputs["--entry"]);
     requireValue(match, "entry must be ROLE:repository-relative-path");
     entryReference = { role: match[1], path: match[2] };
-    currentEntry = JSON.parse(publicDocument(local.roots[match[1]], match[2]));
+    const entryText = publicDocument(local.roots[match[1]], match[2]);
+    try {
+      currentEntry = JSON.parse(entryText);
+    } catch {
+      throw new Error(`Malformed JSON entry metadata: ${inputs["--entry"]}`);
+    }
     validate(
       readJson(resolve(schemaRoot, "entry-v1.schema.json")),
       currentEntry,
