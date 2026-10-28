@@ -136,6 +136,248 @@
         },
         "additionalProperties": false
       }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "revisions": {
+            "$ref": "run-v1.schema.json#/properties/evidence/items/properties/revisions"
+          },
+          "inputs": {
+            "type": "object",
+            "properties": {
+              "toolchain": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "dependencies": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "build": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "runner": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "fault": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "artifact": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "environment": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "toolchain",
+              "dependencies",
+              "build",
+              "runner",
+              "fault",
+              "artifact",
+              "environment"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "revisions", "inputs"],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 500,
+      "uniqueItems": true
+    },
+    "evidenceBindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "candidateId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "scenarioIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "scenarioDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "minLength": 64,
+            "maxLength": 64
+          },
+          "relevantInputs": {
+            "type": "array",
+            "items": {
+              "$ref": "run-v2.schema.json#/properties/ownership/properties/specification"
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "evidenceId",
+          "candidateId",
+          "scenarioIds",
+          "scenarioDigest",
+          "relevantInputs"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 500,
+      "uniqueItems": true
+    },
+    "carryForwards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "scenarioId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "candidateId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "relevantInputs": {
+            "type": "array",
+            "items": {
+              "$ref": "run-v2.schema.json#/properties/ownership/properties/specification"
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "assessedChanges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "enum": ["client", "relay"]
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "assessment": {
+                  "enum": [
+                    "status-only",
+                    "documentation-only",
+                    "unrelated",
+                    "changed",
+                    "unknown"
+                  ]
+                },
+                "rationale": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "before": {
+                  "type": "string",
+                  "minLength": 6,
+                  "maxLength": 40,
+                  "pattern": "^(absent|[a-f0-9]{40})$"
+                },
+                "after": {
+                  "type": "string",
+                  "minLength": 6,
+                  "maxLength": 40,
+                  "pattern": "^(absent|[a-f0-9]{40})$"
+                }
+              },
+              "required": [
+                "role",
+                "path",
+                "assessment",
+                "rationale",
+                "before",
+                "after"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 0,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "evidenceId",
+          "scenarioId",
+          "candidateId",
+          "relevantInputs",
+          "assessedChanges",
+          "rationale",
+          "reviewer"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 500,
+      "uniqueItems": true
     }
   }
 }

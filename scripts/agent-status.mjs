@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Read Git metadata and coordinator records only. No repair, dispatch or shell execution.
+import { inspectApplicability } from "./lib/evidence-applicability.mjs";
 import { execFileSync } from "node:child_process";
 import {
   lstatSync,
@@ -30,8 +31,10 @@ const report = {
   frontier: [],
   diagnostics: [],
 };
-const diagnostic = (code, message) =>
-  report.diagnostics.push({ code, message });
+const diagnostic = (code, message, ticket) =>
+  report.diagnostics.push({ code, message, ...(ticket ? { ticket } : {}) });
+const hasIntegrityFailure = () =>
+  report.diagnostics.some((item) => !item.ticket);
 const requireValue = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -1155,6 +1158,18 @@ function main() {
     };
   }
   if (ledger.schemaVersion >= 2) inspectOperational(ledger, local, preserved);
+  const applicability =
+    ledger.schemaVersion === 3
+      ? inspectApplicability(
+          ledger,
+          report.repositories,
+          local.roots,
+          git,
+          portable,
+          rawGit
+        )
+      : null;
+  if (applicability) report.carryForwards = applicability.records;
   const evidenceIds = new Set();
   for (const item of ledger.evidence) {
     requireValue(
@@ -1185,11 +1200,13 @@ function main() {
           item.revisions[role] !== report.repositories[role]?.integrationTip
       )
     ) {
-      freshness = "stale";
-      diagnostic(
-        "evidence-stale",
-        `${item.id}: renew evidence at current integration revisions`
-      );
+      freshness = applicability?.applicable(item) ? "carried-forward" : "stale";
+      if (freshness === "stale")
+        diagnostic(
+          "evidence-stale",
+          `${item.id}: renew evidence or review applicability at current integration revisions`,
+          ledger.schemaVersion === 3 ? ticket.path : undefined
+        );
     }
     if (!item.artifacts.map(available).every(Boolean))
       freshness = "unavailable";
@@ -1203,7 +1220,7 @@ function main() {
       (item) =>
         item.ticket === ticket.path &&
         item.outcome === "passed" &&
-        item.freshness === "fresh"
+        ["fresh", "carried-forward"].includes(item.freshness)
     );
     return (
       required.every((profile) =>
@@ -1322,7 +1339,8 @@ function main() {
       if (!accepted(ticket))
         diagnostic(
           "resolution-evidence",
-          `${ticket.path}: resolution requires fresh passed profiles and Standards/Spec reviews for every role`
+          `${ticket.path}: resolution requires applicable passed profiles and Standards/Spec reviews for every role`,
+          ledger.schemaVersion === 3 ? ticket.path : undefined
         );
       if (
         ticket.decision?.assessment === "pending" ||
@@ -1352,11 +1370,29 @@ function main() {
         ];
       })
     );
-  if (!report.diagnostics.length && report.availableSlots)
+  const evidenceBlocked = new Set(
+    report.diagnostics
+      .filter((item) => item.ticket && !accepted(tickets.get(item.ticket)))
+      .map((item) => item.ticket)
+  );
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const ticket of report.tickets)
+      if (
+        !evidenceBlocked.has(ticket.path) &&
+        ticket.dependencies.some((path) => evidenceBlocked.has(path))
+      ) {
+        evidenceBlocked.add(ticket.path);
+        expanded = true;
+      }
+  }
+  if (!hasIntegrityFailure() && report.availableSlots)
     report.frontier = report.tickets
       .filter(
         (ticket) =>
           ticket.status === "ready-for-agent" &&
+          !evidenceBlocked.has(ticket.path) &&
           !claimed.has(ticket.path) &&
           ticket.decision?.assessment !== "pending" &&
           !ticket.externalBlockers.length &&
@@ -1375,7 +1411,7 @@ try {
 }
 if (!args.includes("--help")) {
   if (report.diagnostics.length) {
-    report.frontier = [];
+    if (hasIntegrityFailure()) report.frontier = [];
     report.complete = false;
   }
   const output = json
@@ -1446,6 +1482,10 @@ if (!args.includes("--help")) {
         ...report.evidence.map(
           (item) =>
             `${item.id}: ${item.kind} ${item.outcome}, ${item.freshness}`
+        ),
+        ...(report.carryForwards ?? []).map(
+          (item) =>
+            `Carry-forward ${item.evidenceId}/${item.scenarioId}: candidate ${item.candidateId}; ${item.state}; reviewer ${item.reviewer}; ${item.reasons.join("; ")}`
         ),
         `Frontier (${report.availableSlots ?? 0} slots): ${report.frontier.join(", ") || "withheld/none"}`,
         ...report.diagnostics.map((item) => `${item.code}: ${item.message}`),

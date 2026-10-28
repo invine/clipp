@@ -1,21 +1,21 @@
 # Finite scenario allocation: ledger v3
 
-Use [run schema v3](run-v3.schema.json) when an effort needs a finite acceptance allocation. It extends v2 ownership and optional operational records with a required, nonempty `scenarios` array, bounded to 500 entries. Historical v1/v2 inputs and their freshness rules remain unchanged. V3 currently also retains the exact-current-integration-tip evidence rule; evidence applicability is a separate change.
+Use [run schema v3](run-v3.schema.json) when an effort needs a finite acceptance allocation. It extends v2 ownership and optional operational records with a required, nonempty `scenarios` array, bounded to 500 entries. Historical v1/v2 inputs and their freshness rules remain unchanged. V3 supports separate [reviewed evidence applicability](applicability-v3.md) records; without an applicable carry-forward, evidence still requires the exact current integration tip.
 
 Each scenario records:
 
-| Field                 | Meaning                                                                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | Unique criterion/case ID. Separate required runtime cases use distinct IDs.                                                                 |
-| `requirement`         | Public `{role, path}` requirement source in a participating repository. Availability uses file metadata, without reading requirement prose. |
-| `consumingOutput`     | The output this scenario qualifies or supplies.                                                                                             |
-| `runtime`             | Runtime/surface required for this bounded case.                                                                                             |
-| `prerequisites`       | Numbered filenames already present in the primary owner's canonical dependency graph, directly or transitively.                             |
-| `expectedObservation` | Observable required behavior; descriptive text is never executed.                                                                           |
-| `evidenceType`        | Required observation/evidence boundary, distinguishing public checks from actual native journeys.                                           |
-| `primaryOwner`        | Exactly one existing canonical numbered ticket filename. This is qualification ownership, separate from its Assignee/claim.                 |
-| `contributors`        | Other existing canonical numbered tickets supplying contributions. Contributor links add no dependency or qualification.                    |
-| `disposition`         | Existing `Candidate`, `External` or `Retained` classification.                                                                              |
+| Field                 | Meaning                                                                                                                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | Unique criterion/case ID. Separate required runtime cases use distinct IDs.                                                                                                                               |
+| `requirement`         | Public `{role, path}` requirement source in a participating repository. Availability uses file metadata. V3 applicability reads bounded canonical issue blobs only to prove closure metadata equivalence. |
+| `consumingOutput`     | The output this scenario qualifies or supplies.                                                                                                                                                           |
+| `runtime`             | Runtime/surface required for this bounded case.                                                                                                                                                           |
+| `prerequisites`       | Numbered filenames already present in the primary owner's canonical dependency graph, directly or transitively.                                                                                           |
+| `expectedObservation` | Observable required behavior; descriptive text is never executed.                                                                                                                                         |
+| `evidenceType`        | Required observation/evidence boundary, distinguishing public checks from actual native journeys.                                                                                                         |
+| `primaryOwner`        | Exactly one existing canonical numbered ticket filename. This is qualification ownership, separate from its Assignee/claim.                                                                               |
+| `contributors`        | Other existing canonical numbered tickets supplying contributions. Contributor links add no dependency or qualification.                                                                                  |
+| `disposition`         | Existing `Candidate`, `External` or `Retained` classification.                                                                                                                                            |
 
 For example, a disabled reset UI consumer can reference completed Settings-composition and qualified host-seam tickets in `prerequisites`. Its residual native collector and final reset qualification keep their own owners. Final qualification's numbered issue must still depend on the integrated UI. The command never imports proposed graph edges, overrides numbered ticket fields or creates missing owners. Proposed IDs 37/38 therefore fail as owners until coordinator adoption creates the actual numbered tickets and updates the graph and allocation together.
 
