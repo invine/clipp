@@ -1,0 +1,205 @@
+{
+  "purpose": "Dated read-only source binding for a proposed migration; numbered live issue files remain authoritative. No results or status changes are asserted.",
+  "observedDate": "2026-10-28",
+  "role": "client",
+  "sourceRootRelativeToPrimary": ".local/ux-implementation/worktrees/integration",
+  "sourceHead": "a46d5f42cf97224955d9c3dccc89665ecb59d5ee",
+  "files": [
+    {
+      "path": ".scratch/ux-implementation/spec.md",
+      "sha256": "50de8e173958c1316f40dae3de9a8e9a27282835aaf59e8be2f77de62462f257"
+    },
+    {
+      "path": ".scratch/ux-implementation/run.md",
+      "sha256": "54e2eef7bd78641cbef6a4e60994402cbb11a1653d7524967c2545725b4b5598"
+    },
+    {
+      "path": ".scratch/ux-implementation/catalog.json",
+      "sha256": "2c347d4df8bda58f080fdc4d60e8d31edcf313a4fb6adef7de307d41d8bbad29"
+    },
+    {
+      "path": ".scratch/ux-implementation/traceability.md",
+      "sha256": "8d528cbf27c1893f25eb82b3620e1cd9fdda16e0de2d018b27739466f906521e"
+    },
+    {
+      "path": ".scratch/ux-implementation/validation-coverage.md",
+      "sha256": "0d7e4226b5ea2b4a1394cea68351c867c0080abc5a841f6d647786f65cec2e4f"
+    },
+    {
+      "path": ".scratch/ux-implementation/finding-status.md",
+      "sha256": "17d960fbea94572f2e02805d03f6a1ee65d0c70beefd2773132b5caebeb8419b"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/01-repair-chrome-preference-integrity.md",
+      "sha256": "2562307709233fe885a1845f7f01e5bca0974cbca70554d6a550e2382e47f0cc"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/02-reconcile-authoritative-history.md",
+      "sha256": "f171808b228005c225e79d35bb6a5ceb47b5ad3d9686a18d783b7829696067d9"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/03-confirm-clear-all-history.md",
+      "sha256": "7b497bbf59e1bf6bb29e976226a669cc42cbc505ccc0e9615a8d3f028e3f45ac"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/04-retain-name-and-alias-edits.md",
+      "sha256": "1bf07576666a47fdf1a8225392e3e5b43b56a204bc09ce129cd5813e5c33c9fa"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/05-report-immediate-pairing-results.md",
+      "sha256": "1bc270e6d3df1a85cbea1c4f538726de87c8e6d4d31c6a38833860854a7a06cc"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/06-report-qr-and-payload-copy-results.md",
+      "sha256": "5d7998bd4d766f63eb244574ce6f1deb074b7faeba7bcd84c2037a2a47276379"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/07-preserve-session-tasks-and-editor-recovery.md",
+      "sha256": "8fd4f7fad5552eb0162c6245da6f275527948dae69958858732fe17ca0db8c1e"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/08-compose-actionable-recovery-issues.md",
+      "sha256": "fc1e618ec49c75f25235a7577b2629f2612589915c640700e4c137571a8e327f"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/09-recover-chrome-focus-capture.md",
+      "sha256": "6d947f088fb5c2a78c986eef648b2abffdf6ac5ef404ba1b17980ddca921b394"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/10-project-authoritative-pairing-outcomes.md",
+      "sha256": "377a723ce74564912b211c193aebdd23380f9b74aff7949a7394173c2ac380cd"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/11-deliver-complete-chrome-management.md",
+      "sha256": "cdbf02e6055c586e49b272f8c7b95ac70f124d8c05fd05a38e0003ed00964f15"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/12-integrate-android-content-bounds.md",
+      "sha256": "1a4c419f9c19616c11e6a5d7abb761789fffa0cf05fd4c2711639206d2f509ed"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/13-integrate-native-task-input.md",
+      "sha256": "ba52d90ef6608da234401b537811f1b2383a14fe6cae7746e312686b3a49190a"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/14-diagnose-android-scanner-provider.md",
+      "sha256": "07a9624b58926904c51d1ff6efc139d9bf6b13408472a0a7cf863b04c3937f66"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/15-repair-android-scanner-lifecycle.md",
+      "sha256": "75fe6ce31bd34aaaee11cbf786663125cdeb0dd5681f29b54db3c7076315d6d5"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/16-repair-notifications-and-requests-entry.md",
+      "sha256": "419cdb9f79fbc115a2b665c98c2d69b88dade1c865cb6e4950790ebab64d7601"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/17-unify-local-assets-and-shared-controls.md",
+      "sha256": "47b1e72ededa12858be0b261867dadc54eec8e98f67b2ca4a0259888334b0d31"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/18-implement-persisted-themes.md",
+      "sha256": "225cccd2917098b5ffa21ade3658b01ff59caa4360a393db8a06f5d75e986555"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/19-deliver-accessible-navigation-and-reflow.md",
+      "sha256": "d614390e7cbed94c3dd25916635baeadface351ccb1901d900ffdb493bfac6e6"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/20-wire-retention-and-sharing-lifetime.md",
+      "sha256": "5d0cf7220bce876c46f73e119358380f74e27c812548463a75c13fdf93a5b9b9"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/21-deliver-compact-history-and-details.md",
+      "sha256": "9cc42f429318bd181b96a60fe4dd9e380cc49e7234ed685c3c55eb11c6b52ee6"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/22-present-s2-connection-summary.md",
+      "sha256": "e744fa4fe6bcb47660a456c3db483eab456acffab058a8fcc0ec4391ce571d8d"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/23-deliver-m1-devices-and-alias-clearing.md",
+      "sha256": "193ef969b139a2186884097c3b6d31ef06f7e59809f9b366d7d3f45911bf75bc"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/24-deliver-m3-settings.md",
+      "sha256": "3199a52ba8b494d5c59e7ee29d055702dd062c3145e10065a3956de13a3374fd"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/25-repair-android-continuity-controls.md",
+      "sha256": "69c9bc22ead7a8f57f8d19cda2e09d37e3ec3112bf76ce649581b210af908f81"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/26-simplify-desktop-tray-and-qualify-dock.md",
+      "sha256": "6dfbdbf4e7e1df5009b233b0f2a4199c5b9eb618a1be2caf8749d0d886eb1384"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/27-implement-durable-manual-reset.md",
+      "sha256": "f5f6a136210de8354e0a75fc14681db944bc9d4c72cd41e4b3e4bd35366d45a4"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/28-integrate-durable-reset-storage.md",
+      "sha256": "9570b0e2d3a9c0269db15fd1c91cf3b93fb84f3df84192e7132060b1cac5cf41"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/29-fence-reset-runtime-work.md",
+      "sha256": "ad8f75a7e2801246f79e39ff8c22468f7189f51de6e24296b687ab26e2b43cba"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/30-integrate-manual-reset-ui.md",
+      "sha256": "3a33ebd95451915d1f15cf446b21802bc40e3bad1eee4b3d3f8214472414b5f8"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/31-qualify-manual-reset-recovery.md",
+      "sha256": "8d3dffc5af590c5d156149545b49f4a83d5e2ab8f1fbf195940092b999f69649"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/32-deliver-local-assets-and-android-shared-controls.md",
+      "sha256": "473c9f8b0937b3853ec8f204df8ad27f985b56b8359372a71c8f82070209cfc3"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/33-deliver-pairing-outcome-interface-and-electron-journey.md",
+      "sha256": "b8b26884f06c7129912605fe7d0db65fb8a08fd83eac6bf196bd5e16d5e1aa92"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/34-deliver-android-electron-task-input.md",
+      "sha256": "0b1be43a5c4baa383d80a8622ecbc29385e4cb95ebab616464d4149b5465343c"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/35-deliver-chrome-management-and-task-input.md",
+      "sha256": "4e128ec16309985dda343fe60a44721b0975a3ed0bd0e8d3ef5912637e3ca911"
+    },
+    {
+      "path": ".scratch/ux-implementation/issues/36-deliver-android-task-input.md",
+      "sha256": "d1e6811f6f68bf23979e74b3eb2c918240f87e86e168920562b185d27d83145c"
+    },
+    {
+      "path": ".scratch/ux-implementation/decisions/20261011-current-toolbar-check-omission.md",
+      "sha256": "c1ab3816500b8e2c4019d24c35f48acd5ffccb05cd168264d546142f446a75e5"
+    },
+    {
+      "path": ".scratch/ux-implementation/decisions/20261017-tt35-user-acceptance.md",
+      "sha256": "f9a77b965d04ebd42150f7af1394cdf831326178996f71291638f6ef78885904"
+    },
+    {
+      "path": ".scratch/ux-implementation/decisions/20261021-g14-17-19-user-acceptance.md",
+      "sha256": "f254e15803483a39965051fc641baf39a2a194595f974f10f2bfaf61994d3ca1"
+    },
+    {
+      "path": ".scratch/ux-implementation/decisions/20261024-chrome-options-fullscreen-search-return-exclusion.md",
+      "sha256": "99b1cd5a04f08de75edf9b760651b94bb8afee9c40c661e908f62f21131a0916"
+    },
+    {
+      "path": ".scratch/ux-implementation/decisions/20261027-ticket21-user-acceptance.md",
+      "sha256": "96374d4cb4b3a6d4e7bda6d6ceb75f59314a624111ad1b9f9ab2c521ab5645a1"
+    },
+    {
+      "path": ".scratch/ux-implementation/decisions/20261027-ticket22-user-acceptance.md",
+      "sha256": "0555bc5d6324839a765f7ee93ed34cd3ebadbcdc49cdc7fb3d70d069e9d782b8"
+    },
+    {
+      "path": ".scratch/ux-implementation-plan/manual-identity-reset-proposal.md",
+      "sha256": "03efde2959d4ed4aff8303f6733315cd1ce5aafacf89a49e85fc1d67d7c96553"
+    }
+  ]
+}

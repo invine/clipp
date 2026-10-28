@@ -1,0 +1,369 @@
+{
+  "purpose": "Proposed dependency and criterion allocation only; no ticket statuses, claims or measured results. Apply only through delivery-recovery ticket 10 after validation.",
+  "sourceHead": "a46d5f42cf97224955d9c3dccc89665ecb59d5ee",
+  "tickets": [
+    {
+      "id": "01",
+      "path": "issues/01-repair-chrome-preference-integrity.md",
+      "title": "Repair Chrome preference integrity",
+      "band": 1,
+      "dependencies": [],
+      "findings": ["C01", "C10"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#chrome-preference-integrity"
+    },
+    {
+      "id": "02",
+      "path": "issues/02-reconcile-authoritative-history.md",
+      "title": "Reconcile authoritative History and queries",
+      "band": 1,
+      "dependencies": ["01"],
+      "findings": ["C09"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#authoritative-history-and-query-reconciliation"
+    },
+    {
+      "id": "03",
+      "path": "issues/03-confirm-clear-all-history.md",
+      "title": "Confirm and recover Clear all local history",
+      "band": 1,
+      "dependencies": ["02"],
+      "findings": ["E09"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#explicit-clear-all-local-history"
+    },
+    {
+      "id": "04",
+      "path": "issues/04-retain-name-and-alias-edits.md",
+      "title": "Retain Device Name and alias edits",
+      "band": 1,
+      "dependencies": ["01"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#retained-device-name-and-alias-edits"
+    },
+    {
+      "id": "05",
+      "path": "issues/05-report-immediate-pairing-results.md",
+      "title": "Report immediate Pairing and approval results",
+      "band": 1,
+      "dependencies": ["01"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#immediate-pairing-and-approval-outcomes"
+    },
+    {
+      "id": "06",
+      "path": "issues/06-report-qr-and-payload-copy-results.md",
+      "title": "Report QR generation and payload Copy results",
+      "band": 1,
+      "dependencies": ["01"],
+      "findings": ["C08"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#truthful-qr-generation-and-payload-copy"
+    },
+    {
+      "id": "07",
+      "path": "issues/07-preserve-session-tasks-and-editor-recovery.md",
+      "title": "Preserve session tasks and editor recovery",
+      "band": 1,
+      "dependencies": ["03", "04", "05"],
+      "findings": ["E05", "E11"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#session-tasks-and-remaining-editor-recovery"
+    },
+    {
+      "id": "08",
+      "path": "issues/08-compose-actionable-recovery-issues.md",
+      "title": "Compose actionable recovery issues",
+      "band": 1,
+      "dependencies": ["05", "07"],
+      "findings": ["E02", "C04", "A13", "A17"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#actionable-issue-composition"
+    },
+    {
+      "id": "09",
+      "path": "issues/09-recover-chrome-focus-capture.md",
+      "title": "Recover Chrome focus capture",
+      "band": 1,
+      "dependencies": ["01", "08"],
+      "findings": ["C16"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#chrome-automatic-capture-recovery"
+    },
+    {
+      "id": "10",
+      "path": "issues/10-project-authoritative-pairing-outcomes.md",
+      "title": "Qualify Android and Chrome authoritative Pairing outcomes",
+      "band": 1,
+      "dependencies": ["33"],
+      "findings": ["C07"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#authoritative-pairing-outcomes"
+    },
+    {
+      "id": "11",
+      "path": "issues/11-deliver-complete-chrome-management.md",
+      "title": "Collect Chrome management and secure handoff qualification",
+      "band": 1,
+      "dependencies": ["35"],
+      "findings": ["C11", "C12"],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#complete-chrome-management-and-secure-destination-handoff"
+    },
+    {
+      "id": "12",
+      "path": "issues/12-integrate-android-content-bounds.md",
+      "title": "Integrate Android content bounds and IME",
+      "band": 1,
+      "dependencies": [],
+      "findings": ["A01", "A02"],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#android-content-bounds-and-ime"
+    },
+    {
+      "id": "13",
+      "path": "issues/13-integrate-native-task-input.md",
+      "title": "Collect native task input and focus qualification",
+      "band": 1,
+      "dependencies": ["34", "35", "36"],
+      "findings": ["A03"],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#native-task-input-and-focus"
+    },
+    {
+      "id": "14",
+      "path": "issues/14-diagnose-android-scanner-provider.md",
+      "title": "Diagnose the Android scanner provider",
+      "band": 1,
+      "dependencies": [],
+      "findings": [],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#android-scanner-provider-diagnosis"
+    },
+    {
+      "id": "15",
+      "path": "issues/15-repair-android-scanner-lifecycle.md",
+      "title": "Repair Android scanner safety and lifecycle",
+      "band": 1,
+      "dependencies": ["05", "08", "12", "36", "14"],
+      "findings": ["A08", "A09"],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#android-scanner-safety-and-lifecycle"
+    },
+    {
+      "id": "16",
+      "path": "issues/16-repair-notifications-and-requests-entry.md",
+      "title": "Repair notifications, permissions and Requests entry",
+      "band": 1,
+      "dependencies": ["07", "08", "35", "34", "36"],
+      "findings": ["A07"],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#notifications-permission-recovery-and-requests-entry"
+    },
+    {
+      "id": "17",
+      "path": "issues/17-unify-local-assets-and-shared-controls.md",
+      "title": "Qualify desktop shared controls and collect cross-surface styling",
+      "band": 1,
+      "dependencies": ["32"],
+      "findings": ["E01", "C03", "A04", "A11", "C15"],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#local-assets-shared-controls-and-host-stylesheet-integration"
+    },
+    {
+      "id": "18",
+      "path": "issues/18-implement-persisted-themes.md",
+      "title": "Implement persisted System, Light and Dark",
+      "band": 1,
+      "dependencies": ["01", "32"],
+      "findings": ["E13", "C05"],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#persisted-system-light-and-dark"
+    },
+    {
+      "id": "19",
+      "path": "issues/19-deliver-accessible-navigation-and-reflow.md",
+      "title": "Deliver accessible navigation and task reflow",
+      "band": 1,
+      "dependencies": ["07", "12", "32"],
+      "findings": [
+        "E03",
+        "E04",
+        "E06",
+        "E07",
+        "C06",
+        "A10",
+        "A14",
+        "A15",
+        "A18"
+      ],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#accessible-responsive-navigation-and-task-presentation"
+    },
+    {
+      "id": "20",
+      "path": "issues/20-wire-retention-and-sharing-lifetime.md",
+      "title": "Wire local retention and Clip Sharing Lifetime",
+      "band": 1,
+      "dependencies": ["01", "02", "32"],
+      "findings": ["C02"],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#real-local-retention-and-clip-sharing-lifetime"
+    },
+    {
+      "id": "21",
+      "path": "issues/21-deliver-compact-history-and-details.md",
+      "title": "Deliver compact History and full details",
+      "band": 2,
+      "dependencies": ["02", "03", "07", "35", "17", "18", "19"],
+      "findings": ["E08", "E15", "C13", "A12"],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#compact-history-full-details-and-safe-preview-text"
+    },
+    {
+      "id": "22",
+      "path": "issues/22-present-s2-connection-summary.md",
+      "title": "Present the S2 connection summary",
+      "band": 2,
+      "dependencies": ["02", "08", "17", "19"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#s2-connection-summary-and-panel"
+    },
+    {
+      "id": "23",
+      "path": "issues/23-deliver-m1-devices-and-alias-clearing.md",
+      "title": "Deliver M1 Devices, Requests and alias clearing",
+      "band": 2,
+      "dependencies": [
+        "04",
+        "05",
+        "07",
+        "33",
+        "35",
+        "17",
+        "18",
+        "19",
+        "21",
+        "22"
+      ],
+      "findings": ["E12", "E16"],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#m1-devices-requests-and-alias-clearing"
+    },
+    {
+      "id": "24",
+      "path": "issues/24-deliver-m3-settings.md",
+      "title": "Deliver M3 Settings and management tasks",
+      "band": 2,
+      "dependencies": ["07", "35", "17", "18", "19", "20", "25", "37"],
+      "findings": ["E14", "C14", "A05", "A16"],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#m3-settings-and-existing-management-tasks"
+    },
+    {
+      "id": "25",
+      "path": "issues/25-repair-android-continuity-controls.md",
+      "title": "Repair Android continuity controls",
+      "band": 2,
+      "dependencies": ["08", "32"],
+      "findings": ["A06"],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#android-continuity-controls"
+    },
+    {
+      "id": "26",
+      "path": "issues/26-simplify-desktop-tray-and-qualify-dock.md",
+      "title": "Simplify the desktop tray and qualify Dock behavior",
+      "band": 3,
+      "dependencies": [],
+      "findings": ["E10", "E17"],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#desktop-tray-and-window-behavior"
+    },
+    {
+      "id": "27",
+      "path": "issues/27-implement-durable-manual-reset.md",
+      "title": "Implement the durable manual reset transition",
+      "band": 3,
+      "dependencies": [],
+      "findings": [],
+      "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#private-durable-state-and-public-interface"
+    },
+    {
+      "id": "28",
+      "path": "issues/28-integrate-durable-reset-storage.md",
+      "title": "Integrate durable reset storage adapters",
+      "band": 3,
+      "dependencies": ["27"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#runtime-responsibilities"
+    },
+    {
+      "id": "29",
+      "path": "issues/29-fence-reset-runtime-work.md",
+      "title": "Fence reset runtime work and restart",
+      "band": 3,
+      "dependencies": ["28", "30"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#runtime-responsibilities"
+    },
+    {
+      "id": "30",
+      "path": "issues/30-integrate-manual-reset-ui.md",
+      "title": "Integrate authenticated manual reset actions and UI",
+      "band": 3,
+      "dependencies": ["07", "08", "35", "19", "37", "38"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#transition-and-failure-behavior"
+    },
+    {
+      "id": "31",
+      "path": "issues/31-qualify-manual-reset-recovery.md",
+      "title": "Qualify manual reset faults and restart recovery",
+      "band": 3,
+      "dependencies": ["30", "24", "29"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#failure-and-restart-acceptance-matrix"
+    },
+    {
+      "id": "32",
+      "path": "issues/32-deliver-local-assets-and-android-shared-controls.md",
+      "title": "Deliver local assets and Android shared controls",
+      "band": 1,
+      "dependencies": [],
+      "findings": [],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#local-assets-shared-controls-and-host-stylesheet-integration"
+    },
+    {
+      "id": "33",
+      "path": "issues/33-deliver-pairing-outcome-interface-and-electron-journey.md",
+      "title": "Deliver the compatible Pairing outcome interface and Electron journey",
+      "band": 1,
+      "dependencies": ["02", "05", "07"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#authoritative-pairing-outcomes"
+    },
+    {
+      "id": "34",
+      "path": "issues/34-deliver-android-electron-task-input.md",
+      "title": "Deliver Electron task input and collect remaining host qualification",
+      "band": 1,
+      "dependencies": ["07", "12", "32"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#native-task-input-and-focus"
+    },
+    {
+      "id": "35",
+      "path": "issues/35-deliver-chrome-management-and-task-input.md",
+      "title": "Deliver complete Chrome management, secure handoff and task input",
+      "band": 1,
+      "dependencies": ["02", "03", "06", "07", "08", "32", "33"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/correctness-delivery-proposal.md#complete-chrome-management-and-secure-destination-handoff"
+    },
+    {
+      "id": "36",
+      "path": "issues/36-deliver-android-task-input.md",
+      "title": "Deliver Android task input against existing tasks",
+      "band": 1,
+      "dependencies": ["07", "12", "32"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#native-task-input-and-focus"
+    },
+    {
+      "id": "37",
+      "proposedPath": "issues/37-deliver-compatible-settings-output.md",
+      "title": "Deliver compatible Settings composition for reset UI",
+      "dependencies": ["07", "35", "17", "18", "19", "20", "25"],
+      "findings": [],
+      "contributorsTo": ["24:E14", "24:C14", "24:A05", "24:A16", "26:E10"],
+      "criterionScope": "S24.1-S24.3; native presentation/settings collection stays 24"
+    },
+    {
+      "id": "38",
+      "proposedPath": "issues/38-qualify-reset-host-seam.md",
+      "title": "Qualify runtime reset host seam for integrated UI",
+      "dependencies": ["28"],
+      "findings": [],
+      "contributorsTo": ["29:G41", "31:G41"],
+      "criterionScope": "R29.1-R29.3; complete integrated runtime/clipboard journeys stay 29/31"
+    }
+  ]
+}
