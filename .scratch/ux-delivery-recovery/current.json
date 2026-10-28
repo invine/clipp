@@ -6,7 +6,7 @@
     "path": ".scratch/ux-delivery-recovery"
   },
   "runArtifact": "active-run",
-  "candidateId": "electron-readiness-20261028-4",
+  "candidateId": "electron-history-20261028-7",
   "integrationBranches": {
     "client": "codex/ux-delivery-recovery-integration"
   }

@@ -23,3 +23,11 @@
 - [ ] Complete focused checks and applicable verification/review. Missing host access or unavailable required authorization remains an explicit blocker; fixture passes do not close the native portion.
 
 **Scope boundary:** This is one reliable Chrome acceptance slice, not the entire UX popup matrix, account sign-in or live relay qualification. Product transport and clipboard capability boundaries remain unchanged.
+
+## Review correction
+
+Sourcecb61696 passed full checks and Standards review. Spec requires retained ownership when a known live target loses its profile command marker, and a worker-identity guard across no-PID launch intent so concurrent admission cannot erase it. The original owner supplies affected public-command controls and audits remaining-deadline coverage in the new adapter. Actual toolbar qualification is held until the corrected source is reviewed; fixture passes do not qualify it.
+
+## Native qualification continuation
+
+The user-authorized renewal retained all original failures. The actual Chrome 156 run verified the exact enabled extension identity/path, then rejected `Extensions.triggerAction` because it received a page target. Reviewed correction `ed0a64c` maps the owned page to one verified tab target; its frozen candidate is prepared. The renewal expired before that retry, so native toolbar/Local Clip/Pin qualification remains open. The coordinator stopped at the limit and is awaiting an explicit further decision. Primary evidence contains the immutable budgets and `ticket-06-renewal-1-stopped.json`.

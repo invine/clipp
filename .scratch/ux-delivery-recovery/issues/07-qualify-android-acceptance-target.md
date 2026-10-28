@@ -4,7 +4,11 @@
 
 **Blocked by:** [02 — Prepare a reproducible acceptance candidate](02-prepare-reproducible-candidate.md), [04 — Enforce durable diagnostic limits through an existing runner](04-enforce-diagnostic-limits.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/chrome`
+
+**Claim:** ux-delivery-recovery-20261028-07; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 
@@ -19,3 +23,7 @@
 - [ ] Complete applicable checks and review. Missing required native prerequisites leave the affected qualification open with a named recovery action rather than a fabricated pass.
 
 **Scope boundary:** This ticket does not require the full UX native matrix, physical-device breadth, account sign-in or the complete Pairing journey. Ticket 10 uses the qualified runner during adoption.
+
+## Native qualification continuation
+
+Source `99e3e77` includes both reviewed corrections and the current shared formatter. An independent committed checkout produced the real acceptance app/test APK pair with the installed SDK; public fixtures are separate evidence. The assigned operator is preparing only a fresh owned headless API31 guest on serial `emulator-5584`, with no existing phone/AVD or host clipboard access. Actual readiness and the focused native behavior remain pending their receipts. The original implementation owner and source handoff remain preserved.
