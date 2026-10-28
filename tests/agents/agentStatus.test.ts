@@ -2533,7 +2533,7 @@ test("compact entry walkthrough identifies current candidate, owners, pending ou
   expect(frozen.status).toBe(0);
   expect(frozen.stdout).toContain("Candidate: original");
   expect(frozen.stdout).toContain(ledger.candidates[0].revisions.client);
-  expect(frozen.stdout).toContain('"action":"dispatch","ticket":"01-first.md"');
+  expect(frozen.stdout).toContain("Next: dispatch (1); 01-first.md");
 });
 
 test.each([
@@ -2855,4 +2855,155 @@ test("malformed compact entry never discloses its contents in human or JSON reco
       ]);
     }
   }
+});
+
+test("human compact recovery summarizes 88 scenarios while JSON retains complete actionable details", () => {
+  const { ledger, local } = setupOperational();
+  const scenarioDescription =
+    "The selected acceptance candidate preserves the original exact runtime, build and diagnostic inputs while the owned native user journey remains subject to its complete qualified observation and cleanup criteria.";
+  const ticketNames = [
+    "01-first.md",
+    ...Array.from(
+      { length: 9 },
+      (_, index) => `${String(index + 2).padStart(2, "0")}-workflow-output.md`
+    ),
+  ];
+  const tracker = ledger.tracker.path;
+  for (const name of ticketNames)
+    file(
+      join(client, tracker, name),
+      `# Output\n\n**Status:** ${name === "01-first.md" ? "claimed" : "ready-for-agent"}\n\n**Blocked by:** None.\n`
+    );
+  const revision = ledger.repositories.client.integrationTip;
+  const populated = {
+    ...ledger,
+    schemaVersion: 3,
+    tickets: ticketNames.map((path) => ({
+      ...ledger.tickets[0],
+      path,
+      externalBlockers:
+        path !== ticketNames[1]
+          ? [
+              {
+                reason:
+                  "Selected native host is unavailable until its owner restores access",
+                owner: "host-owner",
+              },
+            ]
+          : [],
+    })),
+    claims: [
+      {
+        id: "retained-native",
+        ticket: "01-first.md",
+        owner: "native-owner",
+        coordinator: ledger.coordinator,
+        activity: "blocked",
+        repositories: {},
+      },
+    ],
+    scenarios: Array.from({ length: 88 }, (_, index) => ({
+      id: `criterion-${index + 1}`,
+      consumingOutput: scenarioDescription,
+      runtime: "Electron, Chrome toolbar popup and Android native",
+      expectedObservation: scenarioDescription,
+      evidenceType:
+        "candidate-bound actual native receipt and independent reviews",
+      primaryOwner: ticketNames[index % ticketNames.length],
+      requirement: ledger.ownership.specification,
+      prerequisites: [],
+      contributors: [],
+      disposition: "Candidate",
+    })),
+    candidates: [
+      {
+        id: "frozen-summary-candidate",
+        revisions: {
+          client: revision,
+          relay: ledger.repositories.relay.integrationTip,
+        },
+        inputs: Object.fromEntries(
+          [
+            "toolchain",
+            "dependencies",
+            "build",
+            "runner",
+            "fault",
+            "artifact",
+            "environment",
+          ].map((key) => [key, "a".repeat(64)])
+        ),
+      },
+    ],
+    selectedCandidateId: "frozen-summary-candidate",
+  };
+  const machine = run(populated, local, "--compact");
+  expect(machine.status).toBe(0);
+  const details = JSON.parse(machine.stdout);
+  expect(details.scenarios).toHaveLength(88);
+  expect(details.scenarios[87].output).toBe(scenarioDescription);
+  expect(details.authorizations.records[0].limits).toEqual(
+    ledger.operational.authorizations[0].limits
+  );
+  const human = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(human.status).toBe(0);
+  expect(human.stdout.split("\n").length).toBeLessThan(35);
+  expect(Buffer.byteLength(human.stdout)).toBeLessThan(6000);
+  expect(human.stdout).toContain("Candidate: frozen-summary-candidate");
+  expect(human.stdout).toContain(revision);
+  expect(human.stdout).toContain("native-owner (blocked)");
+  expect(human.stdout).toContain("Capacity: 0/2 active; 2 available");
+  expect(human.stdout).toContain("Scenarios: 88 total; 88 remaining");
+  expect(human.stdout).toContain("clipboard: recorded");
+  expect(human.stdout).toContain("client:.scratch/feature/decisions.md");
+  expect(human.stdout).toContain("limits: see references");
+  expect(human.stdout).toContain("Next: dispatch");
+  expect(human.stdout).toContain("02-workflow-output.md");
+  expect(human.stdout).toContain("--json");
+  expect(human.stdout).not.toContain(scenarioDescription);
+  expect(human.stdout).not.toContain("PRIVATE_OPERATIONAL_CANARY");
+  expect(human.stdout.split("Selected native host")).toHaveLength(2);
+  for (const scenario of populated.scenarios)
+    scenario.requirement = {
+      role: "client",
+      path: ".scratch/feature/missing-requirement.md",
+    };
+  const invalid = run(populated, local, "--compact");
+  expect(invalid.status).toBe(1);
+  expect(
+    JSON.parse(invalid.stdout).diagnostics.filter(
+      (item: { code: string }) => item.code === "scenario-reference"
+    )
+  ).toHaveLength(88);
+  const reconcile = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(reconcile.status).toBe(1);
+  expect(reconcile.stdout.split("\n").length).toBeLessThan(35);
+  expect(Buffer.byteLength(reconcile.stdout)).toBeLessThan(6000);
+  expect(reconcile.stdout).toContain("Next: reconcile scenario-reference (88)");
+  expect(reconcile.stdout).toContain(
+    "requirement must reference an available public file"
+  );
+  expect(reconcile.stdout).not.toContain("Next: dispatch");
 });
