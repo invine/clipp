@@ -1,3 +1,4 @@
+/* global chrome */
 import assert from "node:assert/strict";
 import {
   mkdir,
@@ -6,15 +7,20 @@ import {
   readFile,
   realpath,
   rm,
+  lstat,
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, hostname, platform, arch } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
-import { beginNativeAttempt } from "../../../scripts/native-acceptance-attempts.mjs";
+import {
+  beginNativeAttempt,
+  nativeAcceptanceStateRoot,
+} from "../../../scripts/native-acceptance-attempts.mjs";
+import { targetGone } from "./toolbar-acceptance.mjs";
 import {
   classifyShareNowFeedback,
   parseClipboardAcceptanceArgs,
@@ -22,6 +28,19 @@ import {
   raceAcceptanceOperation,
   verifyPopupHistorySearch,
 } from "./clipboard-acceptance.mjs";
+
+// The selected native toolbar scenario keeps the historical tab/offscreen fixture
+// available under its existing default command and labels their surfaces separately.
+if (process.argv.includes("--scenario")) {
+  const { runToolbarAcceptance } = await import("./toolbar-acceptance.mjs");
+  try {
+    await runToolbarAcceptance(process.argv.slice(2));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const extensionPath = resolve(scriptDirectory, "..", "dist");
@@ -48,10 +67,58 @@ assert(
     isAbsolute(stateRelative),
   "attempt_history_must_be_outside_checkout"
 );
-const attemptOutput = join(stateRoot, "chrome-clipboard");
+const attemptOutput =
+  options.output ??
+  join(stateRoot, "semantic", options.effort, "chrome-clipboard");
+const historyRoot =
+  options.historyRoot ?? join(stateRoot, "semantic", "history");
+assert(
+  isAbsolute(attemptOutput) && isAbsolute(historyRoot),
+  "absolute_history_paths_required"
+);
+for (const directory of [attemptOutput, historyRoot]) {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const selected = await realpath(directory);
+  const rel = relative(repositoryRoot, selected);
+  assert(
+    rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel),
+    "attempt_history_must_be_outside_checkout"
+  );
+}
+const legacyHistory = join(stateRoot, "chrome-clipboard", "attempts.json");
+let registered = false;
+try {
+  registered = (await lstat(join(attemptOutput, "history.json"))).isFile();
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+try {
+  if (!registered && (await lstat(legacyHistory)).isFile())
+    assert(
+      options.importHistory === legacyHistory,
+      "legacy_history_import_required"
+    );
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+await mkdir(historyRoot, { recursive: true, mode: 0o700 });
 const attempt = await beginNativeAttempt({
   output: attemptOutput,
   scenario: "chrome-clipboard",
+  historyRoot: await realpath(historyRoot),
+  registryRoot: nativeAcceptanceStateRoot(),
+  identity: {
+    effort: options.effort,
+    scenario: "chrome-clipboard",
+    environment: {
+      hostname: hostname(),
+      platform: platform(),
+      arch: arch(),
+      runtime: "chromium",
+    },
+  },
+  verifyTarget: targetGone,
+  importHistory: options.importHistory ? [options.importHistory] : undefined,
   change: options.diagnosticChange,
   expectation: options.expectedObservation,
   deferDiagnosticClockUntilFailure: true,
@@ -72,10 +139,22 @@ let browserVersion;
 let shareNowDialogObserved = false;
 let shareNowDialogDismissalError;
 let shareNowObservation;
+let interactionPreflight;
 let clipboardUsed = false;
 let clipboardChanged = false;
 let outcome = "runner_failure";
 try {
+  operationLabel = "build_extension_candidate";
+  await withinBudget(
+    () =>
+      execFileSync("npm", ["run", "build"], {
+        cwd: resolve(scriptDirectory, ".."),
+        stdio: "pipe",
+        timeout: remainingMs(180000),
+        maxBuffer: 1024 * 1024,
+      }),
+    180000
+  );
   profilePath = await withinBudget(() =>
     mkdtemp(join(tmpdir(), "clipp-clipboard-io-"))
   );
@@ -89,6 +168,7 @@ try {
   const probeOrigin = await withinBudget(() => listen(probeServer));
   attempt.assertBudget();
   operationLabel = "launch_owned_chromium";
+  await attempt.recordTarget({ profile: profilePath, phase: "launch-intent" });
   context = await withinBudget(() =>
     chromium.launchPersistentContext(profilePath, {
       headless: false,
@@ -126,9 +206,15 @@ try {
   operationLabel = "load_probe_page";
   await withinBudget(() => probe.goto(probeOrigin));
   await withinBudget(() => probe.bringToFront());
-  // D4 authorizes this effort to overwrite the clipboard. We neither read nor retain
-  // clipboard contents and do not attempt restoration.
+  // The invocation supplies its effort-scoped authorization reference. Record only
+  // synthetic outcomes; do not retain prior clipboard contents or attempt restoration.
 
+  // Popup focus captures clipboard text. Seed only a permitted synthetic value
+  // before any popup opens, so the historical fixture cannot ingest prior data.
+  operationLabel = "seed_owned_synthetic_clipboard";
+  clipboardUsed = true;
+  clipboardChanged = true;
+  await writeClipboard(probe, "clipp-readiness-owned-synthetic");
   stage = "interaction_preflight";
   operationLabel = "open_readiness_popup";
   const popup = await withinBudget(() => context.newPage());
@@ -146,7 +232,7 @@ try {
   operationLabel = "capture_readiness_fixture";
   const readinessText = "clipp-readiness-search-interaction";
   await captureFixture(popup, readinessText);
-  const interactionPreflight = await verifyPopupHistorySearch(
+  interactionPreflight = await verifyPopupHistorySearch(
     popup,
     readinessText,
     withinBudget,
@@ -285,27 +371,6 @@ try {
   operationLabel = "close_acceptance_popup";
   await withinBudget(() => acceptancePopup.close());
   outcome = "passed";
-  console.log(
-    JSON.stringify({
-      status: outcome,
-      stage: "complete",
-      authorizationReference: options.authorizationReference,
-      candidate,
-      profileOwned: true,
-      processOwnership: "runner-launched Chromium context",
-      browserVersion,
-      profilePath,
-      extensionId,
-      shareNowObservation,
-      interactionPreflight,
-      clipboard: {
-        hostClipboardUsed: clipboardUsed,
-        changed: clipboardChanged,
-        restoration: "not_requested_by_authorization",
-      },
-      acceptance: "extension-page-and-offscreen; toolbar-popup-not-qualified",
-    })
-  );
 } catch (error) {
   outcome = classifyFailure(stage, error);
   console.error(
@@ -326,31 +391,52 @@ try {
       errorCode: error?.code ?? null,
     })
   );
-  throw error;
+  process.exitCode = 1;
 } finally {
   const cleanupErrors = [];
+  const cleanupDeadline = Date.now() + 10000;
+  const cleanup = (operation, label) =>
+    raceAcceptanceOperation(
+      operation,
+      Math.max(1, cleanupDeadline - Date.now()),
+      label
+    );
   try {
-    await context?.close();
+    await cleanup(() => context?.close(), "owned_browser_close");
+    if (profilePath)
+      assert(
+        targetGone({ profile: profilePath }, cleanupDeadline),
+        "owned_browser_close_unobserved"
+      );
+    await cleanup(() => attempt.clearTarget(), "owned_target_release");
   } catch (error) {
-    cleanupErrors.push(`browser_close:${error.message}`);
+    cleanupErrors.push("browser_close_unobserved");
   }
   try {
-    await close(probeServer);
+    await cleanup(() => close(probeServer), "owned_probe_close");
   } catch (error) {
-    cleanupErrors.push(`probe_server_close:${error.message}`);
+    cleanupErrors.push("probe_server_close_unobserved");
   }
   try {
-    if (profilePath) await rm(profilePath, { recursive: true, force: true });
+    if (profilePath && !cleanupErrors.length)
+      await cleanup(
+        () => rm(profilePath, { recursive: true, force: true }),
+        "owned_profile_remove"
+      );
   } catch (error) {
-    cleanupErrors.push(`owned_profile_remove:${error.message}`);
+    cleanupErrors.push("owned_profile_remove_failed");
   }
   const finalStatus =
     cleanupErrors.length && outcome === "passed" ? "cleanup_failure" : outcome;
-  await attempt.finish({
+  const finalReceipt = {
     result: finalStatus,
     stage: outcome === "passed" ? "complete" : stage,
     operation: outcome === "passed" ? "complete" : operationLabel,
-    classification: outcome === "passed" ? "none" : outcome,
+    classification: cleanupErrors.length
+      ? "cleanup_failure"
+      : outcome === "passed"
+        ? "none"
+        : outcome,
     authorizationReference: options.authorizationReference,
     candidate,
     profileOwned: true,
@@ -365,9 +451,12 @@ try {
       restoration: "not_requested_by_authorization",
     },
     ...(cleanupErrors.length ? { cleanupFailures: cleanupErrors } : {}),
-  });
-  if (cleanupErrors.length)
-    throw new Error(`acceptance_cleanup_failed:${cleanupErrors.join(",")}`);
+    interactionPreflight,
+    acceptance: "extension-page-and-offscreen; toolbar-popup-not-qualified",
+  };
+  await attempt.finish(finalReceipt);
+  console.log(JSON.stringify(finalReceipt));
+  if (cleanupErrors.length) process.exitCode = 1;
 }
 
 async function identifyCandidate(extensionDirectory, root) {

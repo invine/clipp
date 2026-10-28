@@ -1,8 +1,6 @@
 import { homedir } from "node:os";
 import { join as posixJoin, win32 } from "node:path";
 
-export const AUTHORIZATION_REFERENCE = "operational-reliability:D4:2026-10-25";
-
 export async function raceAcceptanceOperation(operation, timeoutMs, label) {
   let timer;
   const task = Promise.resolve().then(operation);
@@ -32,6 +30,10 @@ export function parseClipboardAcceptanceArgs(args) {
     else if (
       [
         "--authorization-reference",
+        "--effort",
+        "--history-root",
+        "--output",
+        "--import-history",
         "--attempt",
         "--diagnostic-change",
         "--expected-observation",
@@ -54,8 +56,15 @@ export function parseClipboardAcceptanceArgs(args) {
     throw new Error("invalid_attempt_kind");
   if (!options.authorizationReference)
     throw new Error("authorization_reference_required");
-  if (options.authorizationReference !== AUTHORIZATION_REFERENCE)
+  const scope = /^([a-zA-Z0-9][a-zA-Z0-9._-]*):[^\s:]+:[^\s:]+$/.exec(
+    options.authorizationReference
+  )?.[1];
+  options.effort = values.get("--effort") ?? scope;
+  if (!scope || scope !== options.effort)
     throw new Error("authorization_reference_not_applicable");
+  options.historyRoot = values.get("--history-root");
+  options.output = values.get("--output");
+  options.importHistory = values.get("--import-history");
   if (options.attempt === "diagnostic") {
     if (!options.diagnosticChange)
       throw new Error("changed_hypothesis_required");
