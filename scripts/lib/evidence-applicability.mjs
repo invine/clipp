@@ -193,7 +193,7 @@ export function inspectApplicability(
         continue;
       }
       // Name-only raw output avoids executing diff drivers and never exposes blobs.
-      const changes = git(
+      const changes = rawGit(
         roots[role],
         "diff",
         "--no-ext-diff",

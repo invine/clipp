@@ -1829,13 +1829,18 @@ function blob(repo: string, revision: string, path: string) {
   }
 }
 
-function setupApplicability(requirementIsOwner = false) {
+function setupApplicability(
+  requirementIsOwner = false,
+  relevantPath = "tracked.txt"
+) {
   const { ledger, local } = setupScenarios();
   if (requirementIsOwner)
     ledger.scenarios[0].requirement = {
       role: "client",
       path: `${ledger.tracker.path}/01-first.md`,
     };
+  if (relevantPath !== "tracked.txt")
+    git(client, "mv", "tracked.txt", relevantPath);
   for (const repo of [client, relay]) {
     git(repo, "add", ".");
     git(repo, "commit", "--quiet", "-m", "record public contract");
@@ -1857,7 +1862,7 @@ function setupApplicability(requirementIsOwner = false) {
     environment:
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   };
-  const relevantInputs = [{ role: "client", path: "tracked.txt" }];
+  const relevantInputs = [{ role: "client", path: relevantPath }];
   file(join(client, "notes.md"), "Reporting update only\n");
   git(client, "add", ".");
   git(client, "commit", "--quiet", "-m", "reporting update");
@@ -2280,3 +2285,59 @@ test.each([false, true])(
     expect(result.status).toBe(acceptanceChanged ? 1 : 0);
   }
 );
+
+test("v3 preserves leading whitespace in changed relevant paths rather than accepting an assessment for a nonexistent trimmed path", () => {
+  const { ledger, local } = setupApplicability(false, " tracked.txt");
+  file(join(client, " tracked.txt"), "Changed relevant runtime input\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change leading-space input");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path: "tracked.txt",
+      before: "absent",
+      after: "absent",
+      assessment: "unrelated",
+      rationale:
+        "Incorrect assessment names an absent path without leading whitespace",
+    });
+  const result = run(ledger, local);
+  const report = JSON.parse(result.stdout);
+  expect(result.status).toBe(1);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "client: tracked.txt: acceptance or execution input changed"
+  );
+  expect(report.carryForwards[0].reasons).toContain(
+    "client:tracked.txt: assessment does not match actual Git changes"
+  );
+});
+
+test("v3 accepts a correctly reviewed unrelated documentation path with leading whitespace", () => {
+  const { ledger, local } = setupApplicability();
+  const path = " notes.md";
+  file(join(client, path), "Unrelated reviewed reporting text\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "review leading-space documentation");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: "absent",
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment: "documentation-only",
+      rationale:
+        "Exact public documentation path changes no contract or execution input",
+    });
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe(
+    "carried-forward"
+  );
+});
