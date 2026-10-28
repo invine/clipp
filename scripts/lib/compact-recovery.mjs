@@ -214,21 +214,93 @@ export function compactRecovery(report, ledger, entry) {
 }
 
 export function formatCompact(current) {
+  const brief = (value) => {
+    const text = String(value).replace(/\s+/g, " ").trim();
+    return text.length > 160 ? `${text.slice(0, 157)}…` : text;
+  };
+  const list = (values) => {
+    const unique = [...new Set(values)];
+    return `${unique.slice(0, 3).join(", ")}${unique.length > 3 ? ` (+${unique.length - 3} more)` : ""}`;
+  };
+  const reference = (value) =>
+    value?.kind === "artifact"
+      ? `artifact:${value.id}`
+      : value?.role
+        ? `${value.role}:${value.path}`
+        : "unknown";
+  const groups = new Map();
+  for (const output of current.outputs) {
+    for (const blocker of output.blockers) {
+      // Evidence diagnostics already have an actionable reconciliation group below.
+      if (blocker.kind === "evidence") continue;
+      const label =
+        blocker.kind === "dependency"
+          ? `dependency ${blocker.ticket}`
+          : blocker.kind === "external"
+            ? `${blocker.owner}: ${brief(blocker.reason)}`
+            : blocker.kind === "operational"
+              ? `operational ${blocker.id}: ${blocker.state}`
+              : blocker.kind === "decision"
+                ? "decision pending"
+                : "acceptance pending";
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(output.ticket);
+    }
+  }
+  const actions = new Map();
+  for (const action of current.nextActions) {
+    const key =
+      action.action === "reconcile"
+        ? `reconcile ${action.code}`
+        : action.action;
+    if (!actions.has(key))
+      actions.set(key, { items: [], example: action.message });
+    actions.get(key).items.push(action);
+  }
+  const remaining = current.scenarios.filter((item) => item.remaining).length;
+  const applicable = current.scenarios.filter(
+    (item) => item.applicability === "available"
+  ).length;
   return [
     `${current.runId ?? "Run"}: ${current.complete ? "consistent" : "incomplete"} (${current.observedAt})`,
     `Canonical: ${current.canonical.role ? `${current.canonical.role}:${current.canonical.path}` : "unknown"}`,
-    `Candidate: ${current.candidate.id ?? "unknown"}; ${JSON.stringify(current.candidate.revisions)}`,
-    `Integration: ${JSON.stringify(current.integration)}`,
+    `Candidate: ${current.candidate.id ?? "unknown"}; ${Object.entries(
+      current.candidate.revisions
+    )
+      .map(([role, revision]) => `${role}:${revision}`)
+      .join(
+        ", "
+      )}; ${current.candidate.integrationState ?? "identity unknown"}`,
+    ...Object.entries(current.integration).map(
+      ([role, item]) => `Integration ${role}: ${item.branch} ${item.revision}`
+    ),
     `Capacity: ${current.capacity.active}/${current.capacity.maximum} active; ${current.capacity.available} available`,
     ...current.outputs.map(
       (item) =>
-        `${item.ticket}: ${item.status}; owners ${item.owners.map((owner) => `${owner.owner} (${owner.activity})`).join(", ") || "none"}; integration ${JSON.stringify(item.integration)}; scenarios ${item.scenarios.join(", ") || "none"}; blockers ${JSON.stringify(item.blockers)}`
+        `${item.ticket}: ${item.status}; owner ${item.owners.map((owner) => `${owner.owner} (${owner.activity})`).join(", ") || "none"}; scenarios ${item.scenarios.length}; integration ${
+          Object.entries(item.integration ?? {})
+            .map(([role, state]) => `${role} ${state}`)
+            .join(", ") || "unknown"
+        }; blockers ${item.blockers.length}`
     ),
-    ...current.scenarios.map(
+    `Scenarios: ${current.scenarios.length} total; ${remaining} remaining; applicability ${applicable} available, ${current.scenarios.length - applicable} pending; qualification details --json`,
+    ...[...groups].map(
+      ([label, tickets]) => `Blocked: ${label}; ${list(tickets)}`
+    ),
+    `Authorizations: ${current.authorizations.state}; permission not-assessed`,
+    ...current.authorizations.records.map(
       (item) =>
-        `Scenario ${item.id}: ${item.output}; ${item.runtime}; owner ${item.owner}; ${item.disposition}; remaining ${item.remaining}; applicability ${item.applicability}; qualification ${item.qualification}; evidence ${JSON.stringify(item.evidence)}`
+        `Authorization ${item.id}: ${item.status}; references ${list([reference(item.source), reference(item.statusSource)])}; limits: see references (${item.limits?.length ?? 0} recorded)${item.supersededBy ? `; superseded by ${item.supersededBy}` : ""}`
     ),
-    `Authorizations: ${current.authorizations.state}; permission not-assessed; ${JSON.stringify(current.authorizations.records)}; requirements ${JSON.stringify(current.authorizations.requirements)}`,
-    ...current.nextActions.map((item) => `Next: ${JSON.stringify(item)}`),
+    ...(current.authorizations.requirements.length
+      ? [
+          `Authorization requirements: ${current.authorizations.requirements.length}; ticket/record scope --json`,
+        ]
+      : []),
+    ...[...actions].map(
+      ([key, group]) =>
+        `Next: ${key} (${group.items.length}); ${list(group.items.map((item) => item.ticket ?? "run"))}${group.example ? `; ${brief(group.example)}` : ""}`
+    ),
+    "Details: selected canonical ticket; --compact --json for all scenarios, blockers, evidence and authorization scope.",
   ].join("\n");
 }
