@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -1817,5 +1818,526 @@ test("human v3 status shows scenario owner and explicitly unassessed qualificati
   expect(result.status).toBe(0);
   expect(result.stdout).toContain(
     "Scenario S1: Candidate; owner 01-first.md (ready-for-agent); shared UI; qualification not-assessed"
+  );
+});
+
+function blob(repo: string, revision: string, path: string) {
+  try {
+    return git(repo, "rev-parse", "--verify", `${revision}:${path}`);
+  } catch {
+    return "absent";
+  }
+}
+
+function setupApplicability(
+  requirementIsOwner = false,
+  relevantPath = "tracked.txt"
+) {
+  const { ledger, local } = setupScenarios();
+  if (requirementIsOwner)
+    ledger.scenarios[0].requirement = {
+      role: "client",
+      path: `${ledger.tracker.path}/01-first.md`,
+    };
+  if (relevantPath !== "tracked.txt")
+    git(client, "mv", "tracked.txt", relevantPath);
+  for (const repo of [client, relay]) {
+    git(repo, "add", ".");
+    git(repo, "commit", "--quiet", "-m", "record public contract");
+  }
+  const revisions = {
+    client: git(client, "rev-parse", "HEAD"),
+    relay: git(relay, "rev-parse", "HEAD"),
+  };
+  const inputs = {
+    toolchain:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    dependencies:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    build: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    runner: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    fault: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    artifact:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    environment:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  };
+  const relevantInputs = [{ role: "client", path: relevantPath }];
+  file(join(client, "notes.md"), "Reporting update only\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "reporting update");
+  const current = { ...revisions, client: git(client, "rev-parse", "HEAD") };
+  return {
+    local,
+    ledger: {
+      ...ledger,
+      repositories: {
+        client: {
+          ...ledger.repositories.client,
+          integrationTip: current.client,
+        },
+        relay: { ...ledger.repositories.relay, integrationTip: current.relay },
+      },
+      evidence: ["verification", "standards", "spec"].map((kind) => ({
+        id: kind,
+        ticket: "01-first.md",
+        kind,
+        outcome: "passed",
+        profile: "routine",
+        command: "never execute",
+        reviewer: "original-reviewer",
+        tools: { node: process.version },
+        observedAt: "2026-10-28T01:00:00Z",
+        revisions,
+        artifacts: ["preserved"],
+      })),
+      candidates: [
+        { id: "original", revisions, inputs },
+        { id: "current", revisions: current, inputs },
+      ],
+      evidenceBindings: ["verification", "standards", "spec"].map(
+        (evidenceId) => ({
+          evidenceId,
+          candidateId: "original",
+          scenarioIds: ["S1"],
+          scenarioDigest: createHash("sha256")
+            .update(JSON.stringify(ledger.scenarios))
+            .digest("hex"),
+          relevantInputs,
+        })
+      ),
+      carryForwards: ["verification", "standards", "spec"].map(
+        (evidenceId) => ({
+          evidenceId,
+          scenarioId: "S1",
+          candidateId: "current",
+          relevantInputs,
+          assessedChanges: [
+            {
+              role: "client",
+              path: "notes.md",
+              before: "absent",
+              after: blob(client, current.client, "notes.md"),
+              assessment: "documentation-only",
+              rationale:
+                "Reporting text changes no acceptance meaning or execution input",
+            },
+          ],
+          rationale: "Unchanged scenario and inputs after review",
+          reviewer: "applicability-reviewer",
+        })
+      ),
+    },
+  };
+}
+
+test("v3 retains original observations with explicit reviewed applicability to a new candidate", () => {
+  const { ledger, local } = setupApplicability();
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.evidence[0]).toMatchObject({
+    outcome: "passed",
+    revisions: ledger.evidence[0].revisions,
+    observedAt: "2026-10-28T01:00:00Z",
+    freshness: "carried-forward",
+  });
+  expect(report.carryForwards[0]).toMatchObject({
+    evidenceId: "verification",
+    candidateId: "current",
+    state: "applicable",
+    reviewer: "applicability-reviewer",
+  });
+  expect(report.scenarios[0].qualification).toBe("not-assessed");
+});
+
+test("v3 refuses changed acceptance prose despite a documentation-only assessment and preserves an independent frontier", () => {
+  const { ledger, local } = setupApplicability();
+  const requirement = ledger.ownership.specification.path;
+  file(
+    join(client, requirement),
+    "# Specification\n\n## Artifact ownership\n\nReset must now execute immediately.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "02-independent.md"),
+    "# Independent\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "03-consumer.md"),
+    "# Consumer\n\n**Status:** ready-for-agent\n\n**Blocked by:** [01](01-first.md).\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change acceptance contract");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  ledger.tickets.push(
+    ...["02-independent.md", "03-consumer.md"].map((path) => ({
+      ...ledger.tickets[0],
+      path,
+    }))
+  );
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push(
+      ...[
+        requirement,
+        `${ledger.tracker.path}/02-independent.md`,
+        `${ledger.tracker.path}/03-consumer.md`,
+      ].map((path) => ({
+        role: "client",
+        path,
+        before: blob(client, ledger.candidates[0].revisions.client, path),
+        after: blob(client, ledger.candidates[1].revisions.client, path),
+        assessment: "documentation-only",
+        rationale: "Filename-based exemption must not qualify acceptance prose",
+      }))
+    );
+  const result = run(ledger, local);
+  const report = JSON.parse(result.stdout);
+  expect(result.status).toBe(1);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    `${"client"}:${requirement}: acceptance or execution input changed`
+  );
+  expect(report.frontier).toEqual(["02-independent.md"]);
+});
+
+test("v3 refuses an assessment copied onto a different change at the same path", () => {
+  const { ledger, local } = setupApplicability();
+  file(
+    join(client, "notes.md"),
+    "A different reporting change has not been reviewed\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "unreviewed replacement");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  const result = run(ledger, local);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe("stale");
+});
+
+test.each([
+  ["relevant runtime source", "tracked.txt", "documentation-only"],
+  ["workspace lockfile", "package-lock.json", "unrelated"],
+  ["build runner", "scripts/build.mjs", "unrelated"],
+  ["unknown source impact", "new-runtime.ts", "unknown"],
+])("v3 withholds evidence after %s changes", (_label, path, assessment) => {
+  const { ledger, local } = setupApplicability();
+  file(join(client, path), "Changed execution behavior\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change execution inputs");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: blob(client, ledger.candidates[0].revisions.client, path),
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment,
+      rationale: "Impact assessment for changed input",
+    });
+  const report = JSON.parse(run(ledger, local).stdout);
+  expect(
+    report.evidence.every(
+      (item: { freshness: string }) => item.freshness === "stale"
+    )
+  ).toBe(true);
+  expect(report.carryForwards[0].state).toBe("review-required");
+});
+
+test.each([
+  "toolchain",
+  "dependencies",
+  "build",
+  "runner",
+  "fault",
+  "artifact",
+  "environment",
+])("v3 changed %s fingerprint invalidates applicability", (key) => {
+  const { ledger, local } = setupApplicability();
+  // Give the new candidate a distinct input object rather than modifying history.
+  ledger.candidates[1].inputs = {
+    ...ledger.candidates[1].inputs,
+    [key]: "b".repeat(64),
+  };
+  const report = JSON.parse(run(ledger, local).stdout);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "Candidate execution inputs changed"
+  );
+});
+
+test.each(["failed", "not-run", "unavailable"])(
+  "v3 never carries original %s evidence into a passing result",
+  (outcome) => {
+    const { ledger, local } = setupApplicability();
+    ledger.evidence[0].outcome = outcome;
+    const report = JSON.parse(run(ledger, local).stdout);
+    expect(report.evidence[0]).toMatchObject({
+      outcome,
+      freshness: "stale",
+      revisions: ledger.evidence[0].revisions,
+    });
+    expect(report.carryForwards[0].state).toBe("review-required");
+  }
+);
+
+test("v3 status-only ticket updates retain evidence when acceptance sources and execution inputs remain unchanged", () => {
+  const { ledger, local } = setupApplicability();
+  const path = `${ledger.tracker.path}/01-first.md`;
+  file(
+    join(client, path),
+    "# Ticket\n\n**Status:** deferred\n\n**Blocked by:** None.\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "coordinator status update");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: blob(client, ledger.candidates[0].revisions.client, path),
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment: "status-only",
+      rationale: "Only coordinator status changed; contract is unchanged",
+    });
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe(
+    "carried-forward"
+  );
+});
+
+test("v3 missing impact assessments stay unknown and legacy v2 retains exact-tip semantics", () => {
+  const { ledger, local } = setupApplicability();
+  ledger.carryForwards[0].assessedChanges = [];
+  expect(JSON.parse(run(ledger, local).stdout).evidence[0].freshness).toBe(
+    "stale"
+  );
+  const historical = Object.fromEntries(
+    Object.entries(ledger).filter(
+      ([key]) =>
+        ![
+          "candidates",
+          "evidenceBindings",
+          "carryForwards",
+          "scenarios",
+        ].includes(key)
+    )
+  );
+  historical.schemaVersion = 2;
+  const report = JSON.parse(run(historical, local).stdout);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.frontier).toEqual([]);
+});
+
+test("v3 carried required evidence releases a resolved output's consumer only with real integration receipts", () => {
+  const { ledger, local } = setupApplicability();
+  const path = `${ledger.tracker.path}/01-first.md`;
+  file(
+    join(client, path),
+    "# Ticket\n\n**Status:** resolved\n\n**Blocked by:** None.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "02-consumer.md"),
+    "# Consumer\n\n**Status:** ready-for-agent\n\n**Blocked by:** [01](01-first.md).\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "coordinator resolution and consumer");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push(
+      ...[path, `${ledger.tracker.path}/02-consumer.md`].map((path) => ({
+        role: "client",
+        path,
+        before: blob(client, ledger.candidates[0].revisions.client, path),
+        after: blob(client, ledger.candidates[1].revisions.client, path),
+        assessment: "status-only",
+        rationale:
+          "Coordinator status and dependency metadata only; unchanged acceptance sources",
+      }))
+    );
+  const complete = {
+    ...ledger,
+    tickets: [
+      ...ledger.tickets,
+      { ...ledger.tickets[0], path: "02-consumer.md" },
+    ],
+    integrations: ["client", "relay"].map((role) => ({
+      ticket: "01-first.md",
+      role,
+      sourceCommit:
+        role === "client"
+          ? ledger.candidates[0].revisions.client
+          : ledger.candidates[0].revisions.relay,
+      integratedCommit:
+        role === "client"
+          ? ledger.candidates[0].revisions.client
+          : ledger.candidates[0].revisions.relay,
+      verifiedBy: ledger.coordinator,
+      artifact: "preserved",
+    })),
+  };
+  const result = run(complete, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).frontier).toEqual(["02-consumer.md"]);
+  complete.integrations = [];
+  const missing = JSON.parse(run(complete, local).stdout);
+  expect(missing.frontier).toEqual([]);
+  expect(missing.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "resolution-integration" })
+  );
+});
+
+test("v3 changed scenario meaning and missing required roots cannot be masked by applicability", () => {
+  const { ledger, local } = setupApplicability();
+  ledger.scenarios[0].expectedObservation = "A new accepted behavior";
+  const report = JSON.parse(run(ledger, local).stdout);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "Scenario acceptance allocation changed"
+  );
+  local.roots.relay = join(root, "missing repository");
+  const missing = JSON.parse(run(ledger, local).stdout);
+  expect(missing.frontier).toEqual([]);
+  expect(missing.complete).toBe(false);
+});
+
+test("v3 applicability stays read-only and never executes evidence commands or reads private artifacts", () => {
+  const { ledger, local } = setupApplicability();
+  const sentinel = join(root, "command-executed");
+  ledger.evidence[0].command = `${process.execPath} -e "require('fs').writeFileSync('${sentinel}', 'bad')"`;
+  const before = {
+    refs: git(client, "show-ref"),
+    status: git(client, "status", "--porcelain=v1"),
+    index: readFileSync(join(client, ".git/index")).toString("base64"),
+    artifact: readFileSync(local.artifacts.preserved).toString("base64"),
+  };
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(() => readFileSync(sentinel)).toThrow();
+  expect({
+    refs: git(client, "show-ref"),
+    status: git(client, "status", "--porcelain=v1"),
+    index: readFileSync(join(client, ".git/index")).toString("base64"),
+    artifact: readFileSync(local.artifacts.preserved).toString("base64"),
+  }).toEqual(before);
+});
+
+test.each([false, true])(
+  "v3 retains canonical issue requirements across only reviewed closure metadata (acceptance changed: %s)",
+  (acceptanceChanged) => {
+    const { ledger, local } = setupApplicability(true);
+    const path = ledger.scenarios[0].requirement.path;
+    file(
+      join(client, path),
+      `# Ticket\n\n**Status:** resolved\n\n**Assignee:** coordinator\n\n**Blocked by:** None.\n${acceptanceChanged ? "\nNew acceptance obligation.\n" : ""}`
+    );
+    git(client, "add", ".");
+    git(client, "commit", "--quiet", "-m", "coordinator closure metadata");
+    ledger.repositories.client.integrationTip = git(
+      client,
+      "rev-parse",
+      "HEAD"
+    );
+    ledger.candidates[1].revisions.client =
+      ledger.repositories.client.integrationTip;
+    for (const carry of ledger.carryForwards)
+      carry.assessedChanges.push({
+        role: "client",
+        path,
+        before: blob(client, ledger.candidates[0].revisions.client, path),
+        after: blob(client, ledger.candidates[1].revisions.client, path),
+        assessment: "status-only",
+        rationale:
+          "Reviewed exact canonical issue closure metadata; acceptance body unchanged",
+      });
+    const complete = {
+      ...ledger,
+      integrations: ["client", "relay"].map((role) => ({
+        ticket: "01-first.md",
+        role,
+        sourceCommit:
+          role === "client"
+            ? ledger.candidates[0].revisions.client
+            : ledger.candidates[0].revisions.relay,
+        integratedCommit:
+          role === "client"
+            ? ledger.candidates[0].revisions.client
+            : ledger.candidates[0].revisions.relay,
+        verifiedBy: ledger.coordinator,
+        artifact: "preserved",
+      })),
+    };
+    const result = run(complete, local);
+    const report = JSON.parse(result.stdout);
+    expect(report.evidence[0].freshness).toBe(
+      acceptanceChanged ? "stale" : "carried-forward"
+    );
+    expect(result.status).toBe(acceptanceChanged ? 1 : 0);
+  }
+);
+
+test("v3 preserves leading whitespace in changed relevant paths rather than accepting an assessment for a nonexistent trimmed path", () => {
+  const { ledger, local } = setupApplicability(false, " tracked.txt");
+  file(join(client, " tracked.txt"), "Changed relevant runtime input\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change leading-space input");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path: "tracked.txt",
+      before: "absent",
+      after: "absent",
+      assessment: "unrelated",
+      rationale:
+        "Incorrect assessment names an absent path without leading whitespace",
+    });
+  const result = run(ledger, local);
+  const report = JSON.parse(result.stdout);
+  expect(result.status).toBe(1);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "client: tracked.txt: acceptance or execution input changed"
+  );
+  expect(report.carryForwards[0].reasons).toContain(
+    "client:tracked.txt: assessment does not match actual Git changes"
+  );
+});
+
+test("v3 accepts a correctly reviewed unrelated documentation path with leading whitespace", () => {
+  const { ledger, local } = setupApplicability();
+  const path = " notes.md";
+  file(join(client, path), "Unrelated reviewed reporting text\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "review leading-space documentation");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: "absent",
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment: "documentation-only",
+      rationale:
+        "Exact public documentation path changes no contract or execution input",
+    });
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe(
+    "carried-forward"
   );
 });
