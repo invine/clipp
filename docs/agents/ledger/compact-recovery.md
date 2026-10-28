@@ -48,6 +48,12 @@ v1/v2 records retain unknown candidate identity.
 
 ## Reading the report
 
+Human `--compact` summarizes outputs and scenario counts, groups repeated blockers
+and actions, and points to authorization sources for limits. Shortened lists show
+how many entries remain; reconciliation groups retain one example. Use
+`--compact --json` for every scenario, blocker, observation and exact authorization
+scope, then open the selected canonical ticket.
+
 Read `candidate`, `integration`, `claims`, `outputs`, `scenarios`, `capacity`,
 `authorizations` and `nextActions` in that order, then open only the selected
 canonical ticket. Outputs group the existing per-ticket integration states,
