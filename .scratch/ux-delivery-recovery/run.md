@@ -17,3 +17,6 @@ Main lacks `scripts/agent-status.mjs`, `tests/agents/agentStatus.test.ts`, `scri
 ## Dispatch and evidence
 
 Ticket-level claims and evidence follow below. No native gates have been observed in this run.
+
+- 01: claimed for `/root/graph`; graph/allocation preparation only until main supplies the public status CLI. Product semantics and live UX claims are preserved; no migration or activation.
+- 02: claimed for `/root/candidate`; candidate preparation on main’s existing acceptance/setup boundaries, no native qualification. Baselines and exact commits are recorded at handoff.

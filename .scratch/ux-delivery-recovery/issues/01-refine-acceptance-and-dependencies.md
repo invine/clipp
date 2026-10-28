@@ -4,7 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/graph`
+
+**Claim:** ux-delivery-recovery-20261028-01; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 
