@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  chmodSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
@@ -33,7 +34,7 @@ function run(bin, args, cwd, environment = {}) {
     env: { ...cleanEnvironment, HUSKY: "0", ...environment },
   });
 }
-function fixture(t) {
+function fixture(t, setup = () => {}) {
   const root = mkdtempSync(join(tmpdir(), "clipp-candidate-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, "source");
@@ -46,25 +47,44 @@ function fixture(t) {
   );
   writeFileSync(
     join(source, "package.json"),
-    JSON.stringify({ private: true, workspaces: ["apps/*", "packages/*"] })
+    JSON.stringify({
+      private: true,
+      workspaces: ["apps/*", "packages/*"],
+      scripts: { postinstall: "node install-runtime.cjs" },
+    })
   );
   writeFileSync(
     join(source, "apps/electron/package.json"),
     JSON.stringify({
       name: "clipp-electron",
       version: "1.0.0",
-      scripts: {
-        build:
-          "node -e \"require('fs').mkdirSync('dist',{recursive:true});require('fs').writeFileSync('dist/main.cjs','fixture')\"",
-      },
+      scripts: { build: "node ../../build-runtime.cjs" },
     })
   );
   writeFileSync(
     join(source, "scripts/electron-relay-acceptance.mjs"),
     "// fixture runner v1"
   );
+  mkdirSync(join(source, "packages/fixture-runtime"), { recursive: true });
+  writeFileSync(
+    join(source, "packages/fixture-runtime/package.json"),
+    JSON.stringify({
+      name: "fixture-runtime",
+      version: "1.0.0",
+      main: "dist/index.cjs",
+    })
+  );
+  writeFileSync(
+    join(source, "install-runtime.cjs"),
+    `const fs=require('node:fs');fs.mkdirSync('packages/electron/dist',{recursive:true});fs.writeFileSync('packages/electron/dist/electron','runtime fixture',{mode:0o755});fs.writeFileSync('packages/electron/path.txt','electron');fs.mkdirSync('packages/fixture-runtime/dist',{recursive:true});fs.writeFileSync('packages/fixture-runtime/dist/index.cjs','module.exports="fixture"');`
+  );
+  writeFileSync(
+    join(source, "build-runtime.cjs"),
+    `const fs=require('node:fs');fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/main.cjs','fixture');for(const entry of ['main','preload'])fs.writeFileSync('dist/'+entry+'.meta.json',JSON.stringify({outputs:{['dist/'+entry+'.cjs']:{imports:[{path:'electron',external:true,kind:'require-call'},{path:'fixture-runtime',external:true,kind:'require-call'},{path:'node:fs',external:true,kind:'require-call'}]}}}));`
+  );
   writeFileSync(join(source, "scenario.json"), '{"scenario":"fixture"}');
-  writeFileSync(join(source, ".gitignore"), "node_modules\ndist\n");
+  writeFileSync(join(source, ".gitignore"), "node_modules\ndist\npath.txt\n");
+  setup(source);
   const install = run(
     "npm",
     [
@@ -310,4 +330,132 @@ test("hook Git context cannot redirect candidate preparation or mutate its paren
     readFileSync(join(parent.source, "parent-work.txt"), "utf8"),
     "preserve hook owner work"
   );
+});
+
+test("prepares tracked internal dependency links before their generated targets exist", (t) => {
+  const f = fixture(t, (source) =>
+    symlinkSync("node_modules/node-datachannel/build", join(source, "build"))
+  );
+  const result = f.invoke();
+  assert.equal(result.status, 0, result.stderr);
+  const record = JSON.parse(readFileSync(f.record));
+  assert.equal(record.inputs.build.link, "node_modules/node-datachannel/build");
+  assert.equal(f.invoke(["verify", "--record", f.record]).status, 0);
+});
+
+test("tracked external source links remain rejected", (t) => {
+  const f = fixture(t, (source) =>
+    symlinkSync("../foreign-worktree/build", join(source, "build"))
+  );
+  const result = f.invoke();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /wrong-worktree source link/);
+});
+
+test("a tracked dangling link cannot substitute for a required scenario input", (t) => {
+  const f = fixture(t, (source) => {
+    rmSync(join(source, "scenario.json"));
+    symlinkSync("generated/missing.json", join(source, "scenario.json"));
+  });
+  const result = f.invoke();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ENOENT|regular candidate file/);
+});
+
+test("rejects installed runtime executable and emitted external module mutation", (t) => {
+  const f = fixture(t);
+  const result = f.invoke();
+  assert.equal(result.status, 0, result.stderr);
+  for (const name of [
+    "packages/electron/dist/electron",
+    "packages/fixture-runtime/dist/index.cjs",
+  ]) {
+    const target = join(f.destination, name);
+    const original = readFileSync(target);
+    writeFileSync(target, "mutated installed runtime bytes");
+    const mutated = f.invoke(["verify", "--record", f.record]);
+    assert.notEqual(mutated.status, 0, name);
+    assert.match(mutated.stderr, /runtime artifacts changed/);
+    writeFileSync(target, original);
+  }
+  assert.equal(f.invoke(["verify", "--record", f.record]).status, 0);
+});
+
+test("missing runtime executables and changed execution permissions invalidate a candidate", (t) => {
+  const f = fixture(t);
+  assert.equal(f.invoke().status, 0);
+  const executable = join(f.destination, "packages/electron/dist/electron");
+  const original = readFileSync(executable);
+  rmSync(executable);
+  assert.notEqual(f.invoke(["verify", "--record", f.record]).status, 0);
+  writeFileSync(executable, original, { mode: 0o755 });
+  chmodSync(executable, 0o644);
+  const result = f.invoke(["verify", "--record", f.record]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /runtime artifacts changed/);
+});
+
+test("unselected installed tooling does not require universal artifact certification", (t) => {
+  const f = fixture(t);
+  assert.equal(f.invoke().status, 0);
+  const tooling = join(f.destination, "node_modules/unused-tooling");
+  mkdirSync(tooling);
+  writeFileSync(join(tooling, "index.js"), "unselected tool bytes");
+  assert.equal(f.invoke(["verify", "--record", f.record]).status, 0);
+});
+
+test("preparation refuses an installed Electron package without its declared executable", (t) => {
+  const f = fixture(t, (source) => {
+    const installer = join(source, "install-runtime.cjs");
+    writeFileSync(
+      installer,
+      readFileSync(installer, "utf8").replace(
+        "fs.writeFileSync('packages/electron/dist/electron','runtime fixture',{mode:0o755});",
+        ""
+      )
+    );
+  });
+  const result = f.invoke();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ENOENT|installed Electron/);
+});
+
+test("emitted dynamic imports resolve import-only packages without loading them", (t) => {
+  const f = fixture(t, (source) => {
+    writeFileSync(
+      join(source, "packages/fixture-runtime/package.json"),
+      JSON.stringify({
+        name: "fixture-runtime",
+        version: "1.0.0",
+        exports: { ".": { import: "./dist/index.cjs" } },
+      })
+    );
+    const builder = join(source, "build-runtime.cjs");
+    writeFileSync(
+      builder,
+      readFileSync(builder, "utf8").replace(
+        "path:'fixture-runtime',external:true,kind:'require-call'",
+        "path:'fixture-runtime',external:true,kind:'dynamic-import'"
+      )
+    );
+  });
+  const result = f.invoke();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.invoke(["verify", "--record", f.record]).status, 0);
+});
+
+test("preparation rejects a missing external package emitted by the selected build", (t) => {
+  const f = fixture(t, (source) => {
+    const builder = join(source, "build-runtime.cjs");
+    writeFileSync(
+      builder,
+      readFileSync(builder, "utf8").replace(
+        "path:'fixture-runtime'",
+        "path:'absent-runtime-input'"
+      )
+    );
+  });
+  const result = f.invoke();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /absent-runtime-input/);
 });

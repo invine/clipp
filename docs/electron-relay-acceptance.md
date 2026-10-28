@@ -151,15 +151,35 @@ The mode-600 sibling candidate record binds the committed revision, all tracked
 input hashes (at most 20,000 files), Node/npm/platform/architecture, resolved
 installed Electron version, scenario definition and runner inputs, npm installation
 lock identity, preparation command version and built `dist` file hashes.
-Dependency checks reject external links in root and workspace installations;
+Tracked source symlinks bind their link text; internal generated targets may be
+absent before installation. Declared package, runner and scenario inputs still
+require regular files. Dependency checks reject external links in root and workspace installations;
 they do not certify every optional dependency or load native addons. Source and
 build changes during preparation fail before publication of the record.
+
+The main/preload build commands emit esbuild metadata alongside their bundles.
+Preparation uses those current build outputs to select external package inputs,
+with Node built-ins supplied by the bound Electron distribution. It requires
+Electron's installed `path.txt` contract and the declared executable, and binds
+installed package/distribution bytes, internal symlink identities and executable
+permission bits. It also binds each package actually emitted as an external
+import, resolved with the corresponding require/import condition. Packages only
+listed in build configuration are not prerequisites when the build does not emit
+them. Nested `node_modules` are excluded from these package snapshots; this is
+an explicit build-boundary snapshot, not transitive import certification.
+
+The selected installed-runtime snapshot allows at most 32 packages, 50,000
+aggregate filesystem entries and 2 GiB aggregate file bytes, with a 512 MiB
+single-file limit. Each build metadata file is limited to 4 MiB. Missing selected
+packages or the Electron executable fail preparation. The returned artifact
+identity combines application and installed-runtime snapshots. Checking file
+presence and identity does not load native modules or prove their ABI/startup.
 
 Keep this record and its checkout together outside disposable ticket worktrees.
 Before runtime acceptance, run `verify` using the same preparation command and
 toolchain. It fails for source mutation, moved checkouts, changed inputs,
-installation lock changes, external dependency links, changed Electron versions
-and missing or stale artifacts. The JSON result supplies the frozen artifact
+installation lock changes, external dependency links, changed Electron versions,
+changed runtime bytes or execution permissions, and missing or stale artifacts. The JSON result supplies the frozen artifact
 identity for runtime receipts. Launch the acceptance runner from the verified
 candidate checkout so its relative build and dependency paths select that build.
 Runtime adapters must compare their loaded or installed artifact with this record;
