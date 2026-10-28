@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 
 import {
@@ -11,6 +11,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  existsSync,
 } from "node:fs";
 import os from "node:os";
 
@@ -113,57 +114,75 @@ const spawn = cp.spawn;
 cp.spawn = (bin,args,opts) => {
  const argument = args.find(x=>x.startsWith('--user-data-dir='));
  if(argument) fs.writeFileSync(profileRecord,argument.slice('--user-data-dir='.length));
- return spawn(bin,args,opts);
+ const child = spawn(bin,args,opts);
+ if(argument && child.pid) fs.writeFileSync(${JSON.stringify(path.join(fixture, "pid"))},String(child.pid));
+ return child;
 };
 const original = cp.spawnSync;
 let observations = 0;
 cp.spawnSync = (bin,args,options) => {
  if(bin!=='ps') return original(bin,args,options);
- if(args[0]==='-ax') return {status:0,stdout:''};
+ let supplied = {};
+ try { supplied = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(fixture, "observations.json"))},'utf8')); } catch {}
+ if(args[0]==='-ax') return {status:0,stdout:supplied.snapshot??''};
+ const pid = Number(args[1]);
+ if(String(pid) in supplied) return supplied[pid] === null ? {status:1,stdout:''} : {status:0,stdout:supplied[pid]};
  try {
-  process.kill(Number(args[1]),0);
+  process.kill(pid,0);
+  let childPid;
+  try { childPid = Number(fs.readFileSync(${JSON.stringify(path.join(fixture, "pid"))},'utf8')); } catch {}
+  if(pid !== childPid) return {status:0,stdout:'123 Wed Oct 28 09:00:00 2026 fixture-worker'};
   const profile = fs.readFileSync(profileRecord,'utf8');
   observations++;
-  return {status:0,stdout:(process.env.FIXTURE_BEHAVIOR==='reuse' && observations>1?'reused fixture ':'owned fixture ')+'--user-data-dir='+profile};
+  return {status:0,stdout:'123 Wed Oct 28 10:00:00 2026 '+(process.env.FIXTURE_BEHAVIOR==='reuse' && observations>1?'reused fixture ':'owned fixture ')+'--user-data-dir='+profile};
  } catch { return {status:1,stdout:''}; }
 };
+const rename = fs.promises.rename;
+fs.promises.rename = async (from,to) => {
+ await rename(from,to);
+ if(String(to).endsWith('/unresolved-target.json') && process.env.FIXTURE_HOLD_INTENT) {
+  fs.writeFileSync(${JSON.stringify(path.join(fixture, "intent-ready"))},'ready');
+  await new Promise((done)=>{const poll=setInterval(()=>{if(fs.existsSync(${JSON.stringify(path.join(fixture, "release-intent"))})){clearInterval(poll);done();}},20);setTimeout(()=>{clearInterval(poll);done();},3000);});
+ }
+ if(String(to).endsWith('/unresolved-target.json') && process.env.FIXTURE_STALL_INTENT) await new Promise(()=>{});
+};
+if(process.env.FIXTURE_STALL_INTENT){const timeout=globalThis.setTimeout;globalThis.setTimeout=(task,ms,...args)=>timeout(task,ms===15000?1000:ms,...args);}
 syncBuiltinESMExports();
 `
   );
 });
 afterEach(() => rmSync(fixture, { recursive: true, force: true }));
+function argumentsFor(extra: string[] = [], selectedOutput = output) {
+  return [
+    "--import",
+    path.join(fixture, "process.mjs"),
+    path.join(repo, "apps/extension/scripts/verify-clipboard-io.mjs"),
+    "--scenario",
+    "toolbar-history",
+    "--effort",
+    "fixture-effort",
+    "--history-root",
+    path.join(fixture, "history"),
+    "--output",
+    selectedOutput,
+    "--candidate-record",
+    path.join(fixture, "base.json"),
+    "--extension-record",
+    path.join(fixture, "extension.json"),
+    ...extra,
+  ];
+}
 function invoke(behavior = "", extra: string[] = [], selectedOutput = output) {
-  return spawnSync(
-    process.execPath,
-    [
-      "--import",
-      path.join(fixture, "process.mjs"),
-      path.join(repo, "apps/extension/scripts/verify-clipboard-io.mjs"),
-      "--scenario",
-      "toolbar-history",
-      "--effort",
-      "fixture-effort",
-      "--history-root",
-      path.join(fixture, "history"),
-      "--output",
-      selectedOutput,
-      "--candidate-record",
-      path.join(fixture, "base.json"),
-      "--extension-record",
-      path.join(fixture, "extension.json"),
-      ...extra,
-    ],
-    {
-      cwd: repo,
-      encoding: "utf8",
-      timeout: 12000,
-      env: {
-        ...process.env,
-        FIXTURE_BEHAVIOR: behavior,
-        CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
-      },
-    }
-  );
+  return spawnSync(process.execPath, argumentsFor(extra, selectedOutput), {
+    cwd: repo,
+    encoding: "utf8",
+    timeout: 12000,
+    env: {
+      ...process.env,
+      FIXTURE_BEHAVIOR: behavior,
+      CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
+    },
+  });
 }
 function result() {
   return JSON.parse(readFileSync(path.join(output, "receipt.json"), "utf8"));
@@ -336,3 +355,205 @@ test("a reused process fingerprint withholds signaling and retains uncertainty",
     shutdown: "unknown",
   });
 });
+
+function seedOwnership(
+  target: Record<string, unknown>,
+  observations: Record<string, unknown>
+) {
+  freeze();
+  writeFileSync(path.join(repo, "apps/extension/dist/src/popup.html"), "stale");
+  expect(invoke().status).toBe(1);
+  const pointer = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  const canonical = path.join(
+    fixture,
+    "history",
+    pointer.key,
+    "unresolved-target.json"
+  );
+  writeFileSync(canonical, JSON.stringify(target));
+  writeFileSync(
+    path.join(fixture, "observations.json"),
+    JSON.stringify(observations)
+  );
+  return canonical;
+}
+const workerBirth = "Wed Oct 28 09:00:00 2026";
+const childBirth = "Wed Oct 28 10:00:00 2026";
+const retry = [
+  "--diagnostic-change",
+  "observe retained ownership",
+  "--expected-observation",
+  "safe isolation is established",
+];
+test("a live target with unchanged birth retains ownership after its command changes", () => {
+  const profile = path.join(fixture, "retained-profile");
+  const canonical = seedOwnership(
+    {
+      profile,
+      runnerPid: 777000,
+      runnerBirth: workerBirth,
+      pid: 777001,
+      birth: childBirth,
+      fingerprint: "original-command",
+    },
+    {
+      777000: null,
+      777001: `123 ${childBirth} changed-command-without-profile`,
+    }
+  );
+  const retained = readFileSync(canonical, "utf8");
+  const run = invoke("", retry);
+  expect(run.stderr).toContain("owned_target_active_or_uncertain");
+  expect(readFileSync(canonical, "utf8")).toBe(retained);
+});
+test("a proven different target birth can admit a safe successor without signaling it", () => {
+  const profile = path.join(fixture, "retained-profile");
+  seedOwnership(
+    {
+      profile,
+      runnerPid: 777000,
+      runnerBirth: workerBirth,
+      pid: 777001,
+      birth: childBirth,
+    },
+    {
+      777000: null,
+      777001: "123 Thu Oct 29 11:00:00 2026 unrelated-replacement",
+    }
+  );
+  const run = invoke("", retry);
+  expect(run.stderr).not.toContain("owned_target_active_or_uncertain");
+  expect(run.stdout).toContain('"failure":"stale_candidate"');
+});
+test("a live worker launch intent with no child PID cannot be cleared by admission", () => {
+  const canonical = seedOwnership(
+    {
+      profile: path.join(fixture, "retained-profile"),
+      runnerPid: 777000,
+      runnerBirth: workerBirth,
+      phase: "launch-intent",
+    },
+    { 777000: `123 ${workerBirth} fixture-worker` }
+  );
+  const retained = readFileSync(canonical, "utf8");
+  expect(invoke("", retry).stderr).toContain(
+    "owned_target_active_or_uncertain"
+  );
+  expect(readFileSync(canonical, "utf8")).toBe(retained);
+});
+test("an interrupted launch with an observed current profile remains uncertain", () => {
+  const profile = path.join(fixture, "retained-profile");
+  const canonical = seedOwnership(
+    {
+      profile,
+      runnerPid: 777000,
+      runnerBirth: workerBirth,
+      phase: "launch-intent",
+    },
+    { 777000: null, snapshot: `777001 --user-data-dir=${profile}` }
+  );
+  const retained = readFileSync(canonical, "utf8");
+  expect(invoke("", retry).stderr).toContain(
+    "owned_target_active_or_uncertain"
+  );
+  expect(readFileSync(canonical, "utf8")).toBe(retained);
+});
+test("concurrent admission preserves the live worker's durable pre-PID launch intent", async () => {
+  freeze();
+  const first = spawn(process.execPath, argumentsFor(), {
+    cwd: repo,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
+      FIXTURE_BEHAVIOR: "tab",
+      FIXTURE_HOLD_INTENT: "1",
+    },
+  });
+  const exited = new Promise<number | null>((done) => first.once("exit", done));
+  try {
+    const ready = path.join(fixture, "intent-ready");
+    const until = Date.now() + 4000;
+    while (!existsSync(ready) && Date.now() < until)
+      await new Promise((done) => setTimeout(done, 20));
+    expect(existsSync(ready)).toBe(true);
+    const pointer = JSON.parse(
+      readFileSync(path.join(output, "history.json"), "utf8")
+    );
+    const canonical = path.join(
+      fixture,
+      "history",
+      pointer.key,
+      "unresolved-target.json"
+    );
+    const retained = readFileSync(canonical, "utf8");
+    const concurrent = invoke("", retry, path.join(fixture, "second-output"));
+    expect(concurrent.status).toBe(1);
+    expect(readFileSync(canonical, "utf8")).toBe(retained);
+  } finally {
+    writeFileSync(path.join(fixture, "release-intent"), "release");
+    await exited;
+  }
+}, 10000);
+test("a timed out durable intent write retains uncertainty and withholds browser launch", () => {
+  freeze();
+  const run = spawnSync(process.execPath, argumentsFor(), {
+    cwd: repo,
+    encoding: "utf8",
+    timeout: 10000,
+    env: {
+      ...process.env,
+      CLIPP_ACCEPTANCE_STATE_ROOT: path.join(fixture, "state"),
+      FIXTURE_STALL_INTENT: "1",
+    },
+  });
+  expect(run.status).toBe(1);
+  const receipt = result();
+  expect(receipt).toMatchObject({
+    result: "failed",
+    failure: "command_timeout",
+    classification: "cleanup",
+    shutdown: "unknown",
+  });
+  const pointer = JSON.parse(
+    readFileSync(path.join(output, "history.json"), "utf8")
+  );
+  const target = JSON.parse(
+    readFileSync(
+      path.join(fixture, "history", pointer.key, "unresolved-target.json"),
+      "utf8"
+    )
+  );
+  expect(target).toMatchObject({ phase: "launch-intent" });
+  expect(target.pid).toBeUndefined();
+}, 10000);
+
+test.each(["missing-recorded-birth", "unknown-observation"])(
+  "%s cannot release a still-live target",
+  (mode) => {
+    const profile = path.join(fixture, "retained-profile");
+    const canonical = seedOwnership(
+      {
+        profile,
+        runnerPid: 777000,
+        runnerBirth: workerBirth,
+        pid: 777001,
+        ...(mode === "missing-recorded-birth" ? {} : { birth: childBirth }),
+      },
+      {
+        777000: null,
+        777001:
+          mode === "unknown-observation"
+            ? "unparseable-live-observation"
+            : `123 ${childBirth} changed-command`,
+      }
+    );
+    const retained = readFileSync(canonical, "utf8");
+    expect(invoke("", retry).stderr).toContain(
+      "owned_target_active_or_uncertain"
+    );
+    expect(readFileSync(canonical, "utf8")).toBe(retained);
+  }
+);

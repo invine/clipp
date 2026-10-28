@@ -242,8 +242,10 @@ history location across checkouts. Keep it fixed across continuations.
 
 Receipts record readiness, selected behavior, actual surface, candidate and
 clipboard/debugger limits separately. Cleanup closes only the owned browser,
-signals only its current verified direct child if necessary, and checks the
-current profile marker before removal. Uncertain cleanup retains canonical target
+signals only its current verified direct child if necessary, and checks recorded
+worker/child birth identity and the current profile marker before removal. A
+changed command alone cannot establish PID replacement. Live or unobservable
+worker launch intent remains reserved, including before a child PID is saved. Uncertain cleanup retains canonical target
 ownership and fails acceptance. No signal targets unrelated Chrome or a shared
 process group; historical detached-descendant absence is not asserted.
 

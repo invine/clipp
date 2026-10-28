@@ -20,7 +20,7 @@ import {
   beginNativeAttempt,
   nativeAcceptanceStateRoot,
 } from "../../../scripts/native-acceptance-attempts.mjs";
-import { targetGone } from "./toolbar-acceptance.mjs";
+import { targetGone, runnerOwnership } from "./toolbar-acceptance.mjs";
 import {
   classifyShareNowFeedback,
   parseClipboardAcceptanceArgs,
@@ -57,9 +57,11 @@ if (options.validateOnly) {
   );
   process.exit(0);
 }
+const setup = (task) =>
+  raceAcceptanceOperation(task, 15000, "prepare_durable_history");
 const configuredStateRoot = resolve(persistentAttemptDirectory());
-await mkdir(configuredStateRoot, { recursive: true, mode: 0o700 });
-const stateRoot = await realpath(configuredStateRoot);
+await setup(() => mkdir(configuredStateRoot, { recursive: true, mode: 0o700 }));
+const stateRoot = await setup(() => realpath(configuredStateRoot));
 const stateRelative = relative(repositoryRoot, stateRoot);
 assert(
   stateRelative === ".." ||
@@ -77,8 +79,8 @@ assert(
   "absolute_history_paths_required"
 );
 for (const directory of [attemptOutput, historyRoot]) {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const selected = await realpath(directory);
+  await setup(() => mkdir(directory, { recursive: true, mode: 0o700 }));
+  const selected = await setup(() => realpath(directory));
   const rel = relative(repositoryRoot, selected);
   assert(
     rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel),
@@ -88,12 +90,14 @@ for (const directory of [attemptOutput, historyRoot]) {
 const legacyHistory = join(stateRoot, "chrome-clipboard", "attempts.json");
 let registered = false;
 try {
-  registered = (await lstat(join(attemptOutput, "history.json"))).isFile();
+  registered = (
+    await setup(() => lstat(join(attemptOutput, "history.json")))
+  ).isFile();
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
 }
 try {
-  if (!registered && (await lstat(legacyHistory)).isFile())
+  if (!registered && (await setup(() => lstat(legacyHistory))).isFile())
     assert(
       options.importHistory === legacyHistory,
       "legacy_history_import_required"
@@ -101,11 +105,11 @@ try {
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
 }
-await mkdir(historyRoot, { recursive: true, mode: 0o700 });
+await setup(() => mkdir(historyRoot, { recursive: true, mode: 0o700 }));
 const attempt = await beginNativeAttempt({
   output: attemptOutput,
   scenario: "chrome-clipboard",
-  historyRoot: await realpath(historyRoot),
+  historyRoot: await setup(() => realpath(historyRoot)),
   registryRoot: nativeAcceptanceStateRoot(),
   identity: {
     effort: options.effort,
@@ -124,6 +128,9 @@ const attempt = await beginNativeAttempt({
   deferDiagnosticClockUntilFailure: true,
 });
 let profilePath;
+let targetOwnership;
+let targetWritePending = false;
+let launchAttempted = false;
 const probeServer = createServer((_request, response) => {
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   response.end("<!doctype html><title>Clipp clipboard probe</title>");
@@ -168,7 +175,17 @@ try {
   const probeOrigin = await withinBudget(() => listen(probeServer));
   attempt.assertBudget();
   operationLabel = "launch_owned_chromium";
-  await attempt.recordTarget({ profile: profilePath, phase: "launch-intent" });
+  targetOwnership = {
+    ...runnerOwnership(remainingMs(1000)),
+    profile: profilePath,
+    phase: "launch-intent",
+  };
+  await withinBudget(async () => {
+    targetWritePending = true;
+    await attempt.recordTarget(targetOwnership);
+    targetWritePending = false;
+  });
+  launchAttempted = true;
   context = await withinBudget(() =>
     chromium.launchPersistentContext(profilePath, {
       headless: false,
@@ -403,9 +420,10 @@ try {
     );
   try {
     await cleanup(() => context?.close(), "owned_browser_close");
-    if (profilePath)
+    assert(!targetWritePending, "ownership_write_pending");
+    if (profilePath && launchAttempted)
       assert(
-        targetGone({ profile: profilePath }, cleanupDeadline),
+        targetGone(targetOwnership, cleanupDeadline, targetOwnership),
         "owned_browser_close_unobserved"
       );
     await cleanup(() => attempt.clearTarget(), "owned_target_release");

@@ -137,35 +137,75 @@ function processIdentity(pid, timeout = 1000) {
   );
   if (p.status === 1 && !p.stdout.trim()) return { absent: true };
   if (p.status !== 0 || !p.stdout.trim()) return { unknown: true };
-  return { fingerprint: hash(p.stdout.trim()), command: p.stdout.trim() };
+  const row =
+    /^\s*\d+\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+([\s\S]+)$/.exec(
+      p.stdout
+    );
+  if (!row) return { unknown: true };
+  return {
+    birth: row[1].replace(/\s+/g, " "),
+    fingerprint: hash(p.stdout.trim()),
+    command: row[2],
+  };
 }
-export function targetGone(target, deadline = Date.now() + 2000) {
-  if (typeof target.profile !== "string" || !isAbsolute(target.profile))
+export function runnerOwnership(timeout = 1000) {
+  const identity = processIdentity(process.pid, timeout);
+  return { runnerPid: process.pid, runnerBirth: identity.birth };
+}
+export function targetGone(
+  target,
+  deadline = Date.now() + 2000,
+  finishedRunner
+) {
+  if (
+    !target ||
+    typeof target.profile !== "string" ||
+    !isAbsolute(target.profile) ||
+    !Number.isSafeInteger(target.runnerPid)
+  )
     return false;
   const remaining = () => Math.max(1, Math.min(1000, deadline - Date.now()));
   if (Date.now() >= deadline) return false;
+  const runner = processIdentity(target.runnerPid, remaining());
+  if (runner.unknown) return false;
+  if (!runner.absent) {
+    const replaced = Boolean(
+      target.runnerBirth && runner.birth && target.runnerBirth !== runner.birth
+    );
+    const currentFinisher = Boolean(
+      finishedRunner?.runnerPid === process.pid &&
+      target.runnerPid === process.pid &&
+      target.runnerBirth &&
+      finishedRunner.runnerBirth === target.runnerBirth &&
+      runner.birth === target.runnerBirth
+    );
+    if (!replaced && !currentFinisher) return false;
+  }
+  if (Date.now() >= deadline) return false;
   if (target.pid) {
-    const identity = processIdentity(target.pid, remaining());
+    const child = processIdentity(target.pid, remaining());
+    if (child.unknown) return false;
+    // A command or parent change does not establish replacement of a known PID.
     if (
-      identity.unknown ||
-      (!identity.absent &&
-        identity.command.includes(`--user-data-dir=${target.profile}`))
+      !child.absent &&
+      (!target.birth || !child.birth || target.birth === child.birth)
     )
       return false;
   }
   if (Date.now() >= deadline) return false;
-  const p = spawnSync("ps", ["-ax", "-o", "pid=,command="], {
+  const snapshot = spawnSync("ps", ["-ax", "-o", "pid=,command="], {
     encoding: "utf8",
     timeout: remaining(),
     maxBuffer: 2 * 1024 * 1024,
   });
   return (
-    p.status === 0 &&
-    !p.stdout
+    snapshot.status === 0 &&
+    !snapshot.stdout
       .split("\n")
       .some((line) => line.includes(`--user-data-dir=${target.profile}`))
   );
 }
+
 function errorCode(error, stage) {
   if (error?.message?.includes("diagnostic_")) return "diagnostic_limit";
   if (error?.message === "toolbar_target_mismatch") return "wrong_target";
@@ -195,9 +235,13 @@ export async function runToolbarAcceptance(args) {
     );
     return;
   }
+  // Before admission, only path setup is permitted. Its finite cap precedes
+  // the persisted diagnostic-time check; no native launch can bypass that check.
+  const setup = (task) =>
+    raceAcceptanceOperation(task, 15000, "prepare_durable_paths");
   for (const name of ["history-root", "output"]) {
-    await mkdir(options[name], { recursive: true, mode: 0o700 });
-    options[name] = await realpath(options[name]);
+    await setup(() => mkdir(options[name], { recursive: true, mode: 0o700 }));
+    options[name] = await setup(() => realpath(options[name]));
     const rel = relative(root, options[name]);
     assert(
       rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel),
@@ -205,7 +249,7 @@ export async function runToolbarAcceptance(args) {
     );
   }
   const recordLocation = join(
-    await realpath(dirname(options["extension-record"])),
+    await setup(() => realpath(dirname(options["extension-record"]))),
     options["extension-record"].split(sep).at(-1)
   );
   const recordRelative = relative(root, recordLocation);
@@ -237,7 +281,15 @@ export async function runToolbarAcceptance(args) {
   });
   let stage = "candidate";
   let operation = "verify_frozen_candidate";
-  let child, browser, context, profile, identity, candidate;
+  let child,
+    browser,
+    context,
+    profile,
+    identity,
+    candidate,
+    targetOwnership,
+    workerOwnership;
+  let targetWritePending = false;
   let exitObserved = false;
   const receipt = {
     result: "failed",
@@ -262,6 +314,14 @@ export async function runToolbarAcceptance(args) {
     attempt.assertBudget();
     return result;
   }
+  async function recordOwnership(update) {
+    targetOwnership = { ...targetOwnership, ...update };
+    await bounded(async () => {
+      targetWritePending = true;
+      await attempt.recordTarget(targetOwnership);
+      targetWritePending = false;
+    });
+  }
   function command(bin, argv, maximum = 60000) {
     attempt.assertBudget();
     try {
@@ -279,7 +339,7 @@ export async function runToolbarAcceptance(args) {
   async function verifyBase() {
     const base = await bounded(() => json(options["candidate-record"]));
     assert(
-      (await realpath(base.source.checkout)) === root,
+      (await bounded(() => realpath(base.source.checkout))) === root,
       "candidate_wrong_checkout"
     );
     const verified = JSON.parse(
@@ -310,8 +370,8 @@ export async function runToolbarAcceptance(args) {
   try {
     const base = await verifyBase();
     const extension = join(root, "apps/extension/dist");
-    const executable = await realpath(
-      options["browser-executable"] ?? chromium.executablePath()
+    const executable = await bounded(() =>
+      realpath(options["browser-executable"] ?? chromium.executablePath())
     );
     const browserIdentity = {
       path: executable,
@@ -320,14 +380,14 @@ export async function runToolbarAcceptance(args) {
     };
     if (options["freeze-extension"]) {
       try {
-        await lstat(options["extension-record"]);
+        await bounded(() => lstat(options["extension-record"]));
         throw new Error("candidate_extension_record_already_exists");
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }
       try {
         assert(
-          !(await lstat(extension)).isSymbolicLink(),
+          !(await bounded(() => lstat(extension))).isSymbolicLink(),
           "extension_artifact_alias"
         );
       } catch (error) {
@@ -344,10 +404,12 @@ export async function runToolbarAcceptance(args) {
         artifacts: await bounded(() => artifacts(extension)),
         browser: browserIdentity,
       };
-      await writeFile(
-        options["extension-record"],
-        JSON.stringify(frozen, null, 2) + "\n",
-        { flag: "wx", mode: 0o600 }
+      await bounded(() =>
+        writeFile(
+          options["extension-record"],
+          JSON.stringify(frozen, null, 2) + "\n",
+          { flag: "wx", mode: 0o600 }
+        )
       );
     }
     candidate = await bounded(() => json(options["extension-record"]));
@@ -375,10 +437,12 @@ export async function runToolbarAcceptance(args) {
       extensionSha256: hash(JSON.stringify(candidate.artifacts)),
       browser: browserIdentity,
     };
-    profile = await mkdtemp(join(attempt.directory, "profile-"));
+    profile = await bounded(() => mkdtemp(join(attempt.directory, "profile-")));
+    workerOwnership = runnerOwnership(attempt.remainingMs(1000));
+    targetOwnership = { ...workerOwnership, profile };
     stage = "launch";
     operation = "launch_owned_browser";
-    await attempt.recordTarget({ profile, phase: "launch-intent" });
+    await recordOwnership({ phase: "launch-intent" });
     child = spawn(
       executable,
       [
@@ -398,20 +462,17 @@ export async function runToolbarAcceptance(args) {
       exitObserved = true;
     });
     assert(child.pid, "browser_launch_failed");
-    await attempt.recordTarget({
-      profile,
-      pid: child.pid,
-      phase: "pid-recorded",
-    });
-    identity = processIdentity(child.pid);
+    await recordOwnership({ pid: child.pid, phase: "pid-recorded" });
+    identity = processIdentity(child.pid, attempt.remainingMs(1000));
     assert(
-      identity.fingerprint &&
+      identity.birth &&
+        identity.fingerprint &&
         identity.command.includes(`--user-data-dir=${profile}`),
       "browser_identity_unavailable"
     );
-    await attempt.recordTarget({
-      profile,
+    await recordOwnership({
       pid: child.pid,
+      birth: identity.birth,
       fingerprint: identity.fingerprint,
       phase: "identity-observed",
     });
@@ -475,7 +536,8 @@ export async function runToolbarAcceptance(args) {
     );
     let loaded;
     for (const item of extensions.extensions) {
-      if (item.path && (await realpath(item.path)) === extension) loaded = item;
+      if (item.path && (await bounded(() => realpath(item.path))) === extension)
+        loaded = item;
     }
     if (!loaded) {
       operation = "load_owned_unpacked_extension";
@@ -486,7 +548,10 @@ export async function runToolbarAcceptance(args) {
         session.send("Extensions.getExtensions")
       );
       for (const item of extensions.extensions) {
-        if (item.path && (await realpath(item.path)) === extension)
+        if (
+          item.path &&
+          (await bounded(() => realpath(item.path))) === extension
+        )
           loaded = item;
       }
     }
@@ -698,9 +763,10 @@ export async function runToolbarAcceptance(args) {
           );
         }
       }
+      assert(!targetWritePending, "ownership_write_pending");
       if (profile)
         assert(
-          targetGone({ profile, pid: child?.pid }, cleanupDeadline),
+          targetGone(targetOwnership, cleanupDeadline, workerOwnership),
           "browser_cleanup_unobserved"
         );
       if (profile)
