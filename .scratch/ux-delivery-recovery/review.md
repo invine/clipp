@@ -45,3 +45,7 @@ Affected fix reviews at `c722cd4bd761e5e9815e937d77c6ea1b08a65750` corrected bot
 The real frozen candidate at127ad92 passed provisioning/build/verify and exact-candidate full checks. Original failed observations remain intact. Ticket02 is resolved by the coordinator on its scoped requirements; ticket01 and all unavailable native/adoption requirements remain unresolved. Final reporting edits change only result/status navigation, not candidate source, build inputs, runner, scenario definition or required acceptance meaning; no result is relabeled as a new run. Git containment and unchanged execution inputs remain separate from historical observations. This does not claim the unavailable applicability CLI passed.
 
 Standards: zero blocking/optional findings. Spec: two required findings corrected, zero outstanding delivered-slice findings. Full-spec completion is withheld for named main-first prerequisites and unrun adoption/native gates.
+
+## Resumed slices
+
+01 source3a39a788d9a76aae1734cf00d8e54ff2d5b5e00b passed independent Standards and Spec reviews with zero findings and the full hook; its scoped outcome is resolved.04 sourcea92df7f81382a27e2cf4cdefd24979024950ef8b has zero Standards findings and three required Spec corrections. The original implementer will fix those; affected-diff review follows. The native demonstration is a separate missing observation, not a code-review pass. Reports are preserved as `review-01-*-3a39a78.md` and `review-04-*-a92df7f.md` in durable primary-root evidence.
