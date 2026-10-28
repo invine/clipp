@@ -19,3 +19,9 @@
 - [ ] Complete applicable project checks and source/evidence review. State which Pairing prerequisites are ready without claiming the complete rejection/acceptance/restart/exchange matrix.
 
 **Scope boundary:** Ticket 10 demonstrates the actual two-runtime Pairing path during adoption. This ticket completes the Electron preparation and focused runtime slice independently of Android or Chrome availability. Required operational-reliability source must be available through main.
+
+## Concrete setup regression retained for this ticket
+
+The03 exact-path audit found the same `.trim()` pattern in `prepare-acceptance-candidate.mjs`: `tracked()` reads `git ls-files -z` through `run()`, which trims the first path. A valid leading-whitespace tracked filename can be misidentified or omitted from the input manifest. Preserve the exact NUL-delimited path stream and add a public candidate-command regression at this existing setup seam. This is a concrete source/input mapping defect, not a new product scenario or broad dependency-audit gate. The03 impact-assessment instance is fixed in its own scope; this preparation-instance correction belongs here.
+
+Native preparation notes are preserved at primary-root `.local/ux-delivery-recovery/evidence/native-preparation-notes.md`. Locked better-sqlite3 has a bundled arm64 N-API prebuild; absent `build/Release` is not proof of a missing addon. Verify actual loading/product startup rather than inventing a rebuild prerequisite.
