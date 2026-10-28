@@ -11,6 +11,7 @@ import {
 import path from "node:path";
 
 const budgetMs = 20 * 60 * 1000;
+const maxAttempts = 5;
 async function save(file, value) {
   await writeFile(`${file}.tmp`, JSON.stringify(value, null, 2) + "\n", {
     mode: 0o600,
@@ -51,7 +52,10 @@ export async function beginNativeAttempt({
         Array.isArray(history.attempts),
       "attempt_history_invalid"
     );
-    assert(history.attempts.length < 3, "diagnostic_attempt_budget_exhausted");
+    assert(
+      history.attempts.length < maxAttempts,
+      "diagnostic_attempt_budget_exhausted"
+    );
     if (history.attempts.length) {
       assert(
         history.attempts.at(-1).result !== "passed",

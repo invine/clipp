@@ -216,35 +216,32 @@ test("failed owned-process cleanup cannot turn readiness into a pass", () => {
   ).toEqual(receipt());
 });
 
-test("only two distinct diagnostic attempts are admitted and every failed receipt remains available", () => {
+test("four distinct diagnostic attempts are admitted and every failed receipt remains available", () => {
   run();
-  const retry = [
-    "--diagnostic-change",
-    "repair build tool",
-    "--expected-observation",
-    "build reaches native launch",
-  ];
-  run(retry);
-  expect(run(retry).stderr).toContain("unchanged_diagnosis_refused");
-  run([
-    "--diagnostic-change",
-    "replace broken dependency fixture",
-    "--expected-observation",
-    "build exits zero",
-  ]);
+  for (let retryNumber = 1; retryNumber <= 4; retryNumber += 1) {
+    const retry = [
+      "--diagnostic-change",
+      `diagnosis ${retryNumber}`,
+      "--expected-observation",
+      `distinguishing observation ${retryNumber}`,
+    ];
+    run(retry);
+    if (retryNumber === 1)
+      expect(run(retry).stderr).toContain("unchanged_diagnosis_refused");
+  }
   expect(
     run([
       "--diagnostic-change",
-      "another change",
+      "fifth diagnostic change",
       "--expected-observation",
-      "build succeeds",
+      "fifth diagnostic observation",
     ]).stderr
   ).toContain("diagnostic_attempt_budget_exhausted");
   const history = JSON.parse(
     readFileSync(path.join(output, "attempts.json"), "utf8")
   );
-  expect(history.attempts).toHaveLength(3);
-  for (const number of [1, 2, 3])
+  expect(history.attempts).toHaveLength(5);
+  for (const number of [1, 2, 3, 4, 5])
     expect(
       JSON.parse(
         readFileSync(

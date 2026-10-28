@@ -8,7 +8,7 @@
 
 - [x] Candidate/build provenance, process/profile/window ownership and harmless focused interaction are checked before product assertions.
 - [x] Prerequisite, runner, product and unknown failures are distinguishable with retained stage evidence.
-- [x] Initial attempt plus two changed-hypothesis diagnostic attempts within 20 diagnostic minutes is enforced across invocations; initial build and normal matrix execution stay outside the diagnostic budget.
+- [x] One initial attempt plus four changed-hypothesis diagnostic attempts (five total) within 20 diagnostic minutes is enforced across invocations; initial build and normal matrix execution stay outside the diagnostic budget.
 - [x] Existing memory clipboard and owned-process cleanup remain; deterministic public runner checks and an available native readiness demonstration are recorded.
 
 ## Context

@@ -67,7 +67,7 @@ Add a strict real-database PR job using the existing smoke facilities. Strengthe
 
 ### Bounded diagnosis
 
-- Permit one initial attempt and at most two diagnostic attempts per failed scenario, within 20 minutes of troubleshooting. Initial builds and normal matrix execution are outside this budget; repeated rebuilds for diagnosis consume diagnostic time.
+- Permit one initial attempt and at most four diagnostic attempts per failed scenario (five attempts total), within 20 minutes of troubleshooting. Initial builds and normal matrix execution are outside this budget; repeated rebuilds for diagnosis consume diagnostic time.
 - Before a retry, preserve the prior result and record the changed hypothesis/environment plus expected distinguishing observation. An unchanged retry is ineligible even if capacity remains. Resume from preserved attempt history rather than resetting the budget through another invocation.
 - Retain existing per-command timeouts. Stop at the attempt/time bound, preserve the unresolved failure and continue unrelated eligible work. This is a small procedure and record within existing runners/run evidence, not an autonomous troubleshooting framework.
 

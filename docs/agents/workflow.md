@@ -14,6 +14,20 @@ Establish [canonical ownership and decision coverage](issue-tracker.md#establish
 
 Inspect current Git facts before trusting a dated record. Two repositories have two tips and separate integration steps; recording both does not make their integration atomic. Completion: every required role is accessible, its current integration baseline is identified, and the run's ownership and limits are explicit.
 
+## Spec worktrees and branch lineage
+
+Each spec owns a dedicated integration branch and worktree in every repository it changes. Before creating them, resolve that repository's `main` commit explicitly and record its full hash in the spec's run record. Create `codex/<spec>-integration` in its own worktree from that hash, regardless of which branch the primary checkout currently has checked out. At creation, verify that the integration worktree's HEAD equals the recorded `main` hash. Leave the shared primary checkout available to other work.
+
+For example, persistence and relay portal workspace each start from `main` in separate integration worktrees. Each coordinator merges only tickets belonging to its own spec into its integration branch. Record the spec, repository, starting `main` hash, integration branch and integration worktree together; separate specs have separate run records and claims. Resume an existing integration worktree only after verifying that it belongs to the same spec and its recorded lineage matches Git.
+
+Create each ticket's branch and isolated worktree from its own spec's current integration tip, recording that exact baseline before dispatch. Incorporate that same integration branch's latest tip before handoff, preserve dirty work, and merge the reviewed result back into that integration branch. Ticket worktrees therefore inherit completed prerequisites within their spec.
+
+Use the stock `implement-spec` skill for ticket execution, merging, review and cleanup. The spec integration branch is also the feature branch and may be the PR head; no separate replay branch is required. Keep this repository-specific baseline policy here rather than customizing the installed skill.
+
+If a spec needs another spec's unmerged work, record the dependency and keep the affected tickets blocked until that prerequisite reaches `main`, then update from `main` and renew affected verification. Continue independent eligible tickets. An alternative base or stacked arrangement requires an explicit user instruction; another spec's integration branch is not an implicit prerequisite baseline.
+
+Before pushing or opening a PR, inspect `git merge-base main HEAD`, `git log --oneline main..HEAD`, `git diff --stat main...HEAD`, and `git diff --name-only main...HEAD` from the spec integration worktree. Compare the commits and files with the spec and its ticket integration records. Ancestry alone does not prove scope: an unrelated integration branch can also descend from `main`. Completion: the spec owns an isolated, recorded integration lineage and the PR comparison contains only its approved scope.
+
 ## Assess decisions before dispatch
 
 The coordinator adds a short assessment to the ticket context or a linked decision record. Record the requested observable outcome, affected glossary concepts, relevant accepted decision references and the invariants the interpretation preserves or changes. For routine work, a sentence stating the preserved invariants with the relevant ADR is sufficient.

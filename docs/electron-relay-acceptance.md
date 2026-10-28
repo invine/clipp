@@ -87,7 +87,7 @@ failure even when the candidate, profile or environment changes. For a linked
 worktree the directory must physically reside outside that disposable checkout;
 a primary checkout may use its established ignored `.local` evidence directory.
 The directory has an exclusive runner lock, `attempts.json`, a latest
-`receipt.json`, and immutable-by-convention `attempt-1` through `attempt-3`
+`receipt.json`, and immutable-by-convention `attempt-1` through `attempt-5`
 directories containing receipts, launcher, private logs and private exception
 details. Do not discard or replace failed history to obtain more attempts. After
 an interrupted process, confirm the recorded owned process is stopped before
@@ -96,7 +96,8 @@ directories. Reusing the scenario directory after success is refused; a later
 candidate's normal qualification uses a separate, explicitly dated/revisioned
 scenario record.
 
-One initial attempt and at most two diagnostic attempts are allowed. After a
+One initial attempt and at most four diagnostic attempts are allowed (five
+attempts total). After a
 failure, a retry requires both `--diagnostic-change` (changed hypothesis or
 environment) and `--expected-observation` (what will distinguish the diagnosis).
 An absent or repeated change is refused. A 20-minute diagnostic clock starts

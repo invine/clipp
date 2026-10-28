@@ -1,4 +1,19 @@
 import { createDefaultPreset } from "ts-jest";
+import { execFileSync } from "node:child_process";
+
+// Hooks export selectors for the parent repository. Fixture Git commands must
+// select their own repositories; keep these selectors out of test processes.
+const localGitEnvironment = new Set(
+  execFileSync("git", ["rev-parse", "--local-env-vars"], {
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+);
+for (const name of Object.keys(process.env)) {
+  if (localGitEnvironment.has(name) || /^GIT_CONFIG_(KEY|VALUE)_/.test(name))
+    delete process.env[name];
+}
 
 const tsJestTransformCfg = createDefaultPreset().transform;
 

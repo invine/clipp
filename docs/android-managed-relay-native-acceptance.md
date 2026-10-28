@@ -73,8 +73,9 @@ the current source tree and candidate bytes.
 Missing targets, provider/readiness failures and runner failures stop before
 the product test command. The receipt records stage and failure class. Reuse
 the evidence directory for retries: the shared policy permits one initial
-attempt and at most two diagnostic attempts in 20 minutes, each requiring a
-distinct changed hypothesis and expected observation. The preflight does not
+attempt and at most four diagnostic attempts (five attempts total) in 20
+minutes, each requiring a distinct changed hypothesis and expected
+observation. The preflight does not
 change device settings, probe barcode availability, install/uninstall packages
 or alter user data. Its cleanup status is `not-required`; fixture teardown
 remains the responsibility of instrumentation tests that create fixture data.

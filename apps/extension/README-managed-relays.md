@@ -219,8 +219,9 @@ npm --workspace apps/extension run test:clipboard -- \
   --expected-observation 'the owned worker is ready before the popup opens'
 ```
 
-The shared native retry policy allows at most two diagnostic attempts and
-enforces a 20-minute total deadline from the initial attempt's start, including
+The shared native retry policy allows one initial attempt plus at most four
+diagnostic attempts (five attempts total) and enforces a 20-minute total
+deadline from the initial attempt's start, including
 checks during the run. Cleanup failures are reported and fail the command.
 Public argument, UI-interaction and retry-policy fixtures can be run with
 `npm --workspace apps/extension run test:clipboard:contract`.
