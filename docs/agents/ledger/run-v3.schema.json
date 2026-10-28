@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "coordinator",
+    "maxImplementers",
+    "tracker",
+    "repositories",
+    "tickets",
+    "claims",
+    "integrations",
+    "evidence",
+    "ownership",
+    "scenarios"
+  ],
+  "additionalProperties": false,
+  "$id": "https://clipp.local/agent-workflow/run-v3.schema.json",
+  "title": "Clipp agent workflow run v3: finite scenario allocation",
+  "properties": {
+    "runId": {
+      "$ref": "run-v2.schema.json#/properties/runId"
+    },
+    "coordinator": {
+      "$ref": "run-v2.schema.json#/properties/coordinator"
+    },
+    "maxImplementers": {
+      "$ref": "run-v2.schema.json#/properties/maxImplementers"
+    },
+    "tracker": {
+      "$ref": "run-v2.schema.json#/properties/tracker"
+    },
+    "repositories": {
+      "$ref": "run-v2.schema.json#/properties/repositories"
+    },
+    "tickets": {
+      "$ref": "run-v2.schema.json#/properties/tickets"
+    },
+    "claims": {
+      "$ref": "run-v2.schema.json#/properties/claims"
+    },
+    "integrations": {
+      "$ref": "run-v2.schema.json#/properties/integrations"
+    },
+    "evidence": {
+      "$ref": "run-v2.schema.json#/properties/evidence"
+    },
+    "ownership": {
+      "$ref": "run-v2.schema.json#/properties/ownership"
+    },
+    "operational": {
+      "$ref": "run-v2.schema.json#/properties/operational"
+    },
+    "schemaVersion": {
+      "const": 3
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "consumingOutput",
+          "runtime",
+          "expectedObservation",
+          "evidenceType",
+          "primaryOwner",
+          "requirement",
+          "prerequisites",
+          "contributors",
+          "disposition"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "consumingOutput": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "runtime": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "expectedObservation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "evidenceType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "primaryOwner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "requirement": {
+            "$ref": "run-v2.schema.json#/properties/ownership/properties/specification"
+          },
+          "prerequisites": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minItems": 0,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "contributors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minItems": 0,
+            "maxItems": 500,
+            "uniqueItems": true
+          },
+          "disposition": {
+            "enum": ["Candidate", "External", "Retained"]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

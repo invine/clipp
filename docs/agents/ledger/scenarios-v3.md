@@ -1,0 +1,26 @@
+# Finite scenario allocation: ledger v3
+
+Use [run schema v3](run-v3.schema.json) when an effort needs a finite acceptance allocation. It extends v2 ownership and optional operational records with a required, nonempty `scenarios` array, bounded to 500 entries. Historical v1/v2 inputs and their freshness rules remain unchanged. V3 currently also retains the exact-current-integration-tip evidence rule; evidence applicability is a separate change.
+
+Each scenario records:
+
+| Field                 | Meaning                                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | Unique criterion/case ID. Separate required runtime cases use distinct IDs.                                                                 |
+| `requirement`         | Public `{role, path}` requirement source in a participating repository. Availability uses file metadata, without reading requirement prose. |
+| `consumingOutput`     | The output this scenario qualifies or supplies.                                                                                             |
+| `runtime`             | Runtime/surface required for this bounded case.                                                                                             |
+| `prerequisites`       | Numbered filenames already present in the primary owner's canonical dependency graph, directly or transitively.                             |
+| `expectedObservation` | Observable required behavior; descriptive text is never executed.                                                                           |
+| `evidenceType`        | Required observation/evidence boundary, distinguishing public checks from actual native journeys.                                           |
+| `primaryOwner`        | Exactly one existing canonical numbered ticket filename. This is qualification ownership, separate from its Assignee/claim.                 |
+| `contributors`        | Other existing canonical numbered tickets supplying contributions. Contributor links add no dependency or qualification.                    |
+| `disposition`         | Existing `Candidate`, `External` or `Retained` classification.                                                                              |
+
+For example, a disabled reset UI consumer can reference completed Settings-composition and qualified host-seam tickets in `prerequisites`. Its residual native collector and final reset qualification keep their own owners. Final qualification's numbered issue must still depend on the integrated UI. The command never imports proposed graph edges, overrides numbered ticket fields or creates missing owners. Proposed IDs 37/38 therefore fail as owners until coordinator adoption creates the actual numbered tickets and updates the graph and allocation together.
+
+The public status command reports each scenario with derived `ownerStatus` and `qualification: not-assessed`. Consistent allocation or a resolved owner is not a measured scenario pass, runtime activation, permission or administrative acceptance. Preserve scoped acceptance decisions and original observations separately in their existing records. The coordinator and semantic Spec review remain responsible for coverage completeness, requirement meaning and product availability controls.
+
+Duplicate IDs, unavailable primary owners/contributors/requirements and missing or unrepresented prerequisites produce actionable diagnostics and withhold the entire frontier. The existing canonical graph checker also rejects missing dependencies and cycles. Existing resolution checks require integration receipts, fresh required verification and Standards/Spec reviews before a resolved scoped output can release its consumer. Residual native qualification can remain open without blocking a consumer that does not depend on it.
+
+New required scenarios need a recorded concrete defect or changed requirement, including its source, owner and affected scope, before the coordinator updates the finite allocation. Incidental preparation discoveries do not silently expand it. This document and the command do not migrate live UX tickets or turn historical administrative acceptance into observation.

@@ -1556,3 +1556,266 @@ test("operational records reject invalid source references and credential-bearin
     "https://operator:private-token@example.invalid/";
   expect(run(ledger, local).status).toBe(1);
 });
+
+function setupScenarios() {
+  const { ledger, local } = setupOwnership();
+  return {
+    ledger: {
+      ...ledger,
+      schemaVersion: 3,
+      scenarios: [
+        {
+          id: "S1",
+          requirement: ledger.ownership.specification,
+          consumingOutput:
+            "Settings composition behind runtime availability controls",
+          runtime: "shared UI",
+          prerequisites: [] as string[],
+          expectedObservation:
+            "Reset remains unavailable until runtime qualification",
+          evidenceType: "public UI and bridge checks",
+          primaryOwner: "01-first.md",
+          contributors: [] as string[],
+          disposition: "Candidate",
+        },
+      ],
+    },
+    local,
+  };
+}
+
+test("v3 reports finite scenario ownership through canonical numbered tickets without granting qualification", () => {
+  const { ledger, local } = setupScenarios();
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.schemaVersion).toBe(3);
+  expect(report.scenarios).toEqual([
+    {
+      ...ledger.scenarios[0],
+      ownerStatus: "ready-for-agent",
+      qualification: "not-assessed",
+    },
+  ]);
+  expect(report.frontier).toEqual(["01-first.md"]);
+  expect(result.stdout).not.toContain("private artifact canary");
+});
+
+test("v3 withholds assignments for an unadopted primary qualification owner", () => {
+  const { ledger, local } = setupScenarios();
+  ledger.scenarios[0].primaryOwner = "37-proposed-settings.md";
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  const report = JSON.parse(result.stdout);
+  expect(report.frontier).toEqual([]);
+  expect(report.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "scenario-owner" })
+  );
+});
+
+test("v3 rejects inconsistent scenario references and duplicate criterion allocation", () => {
+  const { ledger, local } = setupScenarios();
+  const scenario = ledger.scenarios[0];
+  for (const [scenarios, code] of [
+    [[scenario, { ...scenario, runtime: "Electron" }], "scenario-duplicate"],
+    [
+      [{ ...scenario, requirement: { role: "client", path: "absent.md" } }],
+      "scenario-reference",
+    ],
+    [
+      [{ ...scenario, prerequisites: ["38-missing-host.md"] }],
+      "scenario-dependency",
+    ],
+    [
+      [{ ...scenario, contributors: ["24-missing-collector.md"] }],
+      "scenario-contributor",
+    ],
+    [[{ ...scenario, prerequisites: ["01-first.md"] }], "scenario-dependency"],
+  ] as const) {
+    const result = run({ ...ledger, scenarios }, local);
+    expect(result.status).toBe(1);
+    const report = JSON.parse(result.stdout);
+    expect(report.frontier).toEqual([]);
+    expect(report.diagnostics).toContainEqual(
+      expect.objectContaining({ code })
+    );
+  }
+});
+
+test("v3 verified scoped outputs unlock disabled reset UI while residual native and final qualification remain open", () => {
+  const { ledger, local } = setupScenarios();
+  const names = [
+    "01-first.md",
+    "02-host.md",
+    "03-reset-ui.md",
+    "04-native.md",
+    "05-final.md",
+  ];
+  const addTicket = (path: string, status: string, dependencies: string[]) =>
+    file(
+      join(client, ledger.tracker.path, path),
+      `# Scoped output\n\n**Status:** ${status}\n\n**Blocked by:** ${dependencies.length ? dependencies.map((name) => `[${name}](${name})`).join(", ") : "None."}\n`
+    );
+  addTicket(names[1], "ready-for-agent", []);
+  addTicket(names[2], "ready-for-agent", names.slice(0, 2));
+  addTicket(names[3], "ready-for-agent", names.slice(0, 1));
+  addTicket(names[4], "ready-for-agent", names.slice(2, 4));
+  const scenarios = [
+    ledger.scenarios[0],
+    {
+      ...ledger.scenarios[0],
+      id: "UI",
+      primaryOwner: names[2],
+      prerequisites: names.slice(0, 2),
+    },
+    {
+      ...ledger.scenarios[0],
+      id: "Native",
+      primaryOwner: names[3],
+      prerequisites: names.slice(0, 1),
+      runtime: "Electron, Chrome popup/full-page, Android native",
+      evidenceType: "actual native journeys",
+    },
+    {
+      ...ledger.scenarios[0],
+      id: "Final",
+      primaryOwner: names[4],
+      prerequisites: names.slice(2, 4),
+      expectedObservation:
+        "Same-candidate reset recovery and normal clipboard baseline through integrated UI",
+    },
+  ];
+  const pending = {
+    ...ledger,
+    tickets: names.map((path) => ({ ...ledger.tickets[0], path })),
+    scenarios,
+  };
+  expect(JSON.parse(run(pending, local).stdout).frontier).toEqual(
+    names.slice(0, 2)
+  );
+
+  // A split/status edit alone cannot qualify a predecessor.
+  for (const name of names.slice(0, 2)) addTicket(name, "resolved", []);
+  const split = run(pending, local);
+  expect(split.status).toBe(1);
+  expect(JSON.parse(split.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "resolution-evidence" })
+  );
+
+  git(client, "checkout", "--quiet", "-b", "scoped-output");
+  file(
+    join(client, "scoped-output.txt"),
+    "Settings composition and qualified host seam; reset availability stays disabled\n"
+  );
+  git(client, "add", "scoped-output.txt");
+  git(client, "commit", "--quiet", "-m", "scoped compatible inputs");
+  const source = git(client, "rev-parse", "HEAD");
+  git(client, "checkout", "--quiet", "integration");
+  git(
+    client,
+    "merge",
+    "--quiet",
+    "--no-ff",
+    "scoped-output",
+    "-m",
+    "integrate scoped inputs"
+  );
+  const revisions = {
+    client: git(client, "rev-parse", "HEAD"),
+    relay: ledger.repositories.relay.integrationTip,
+  };
+  const complete = {
+    ...pending,
+    repositories: {
+      ...ledger.repositories,
+      client: {
+        ...ledger.repositories.client,
+        integrationTip: revisions.client,
+      },
+    },
+    integrations: names.slice(0, 2).flatMap((name) =>
+      ["client", "relay"].map((role) => ({
+        ticket: name,
+        role,
+        sourceCommit: role === "client" ? source : revisions.relay,
+        integratedCommit:
+          role === "client" ? revisions.client : revisions.relay,
+        verifiedBy: ledger.coordinator,
+        artifact: "preserved",
+      }))
+    ),
+    evidence: names.slice(0, 2).flatMap((name) =>
+      ["verification", "standards", "spec"].map((kind) => ({
+        id: `${name}-${kind}`,
+        ticket: name,
+        kind,
+        outcome: "passed",
+        profile: "routine",
+        command: `descriptive only $(touch '${join(root, "forbidden")}')`,
+        reviewer: "reviewer",
+        tools: { node: process.version },
+        observedAt: new Date().toISOString(),
+        revisions,
+        artifacts: ["preserved"],
+      }))
+    ),
+  };
+  const result = run(complete, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.frontier).toEqual(names.slice(2, 4));
+  expect(
+    report.tickets.find((item: { path: string }) => item.path === names[4])
+  ).toMatchObject({
+    status: "ready-for-agent",
+    dependencies: names.slice(2, 4),
+  });
+  expect(
+    report.scenarios
+      .slice(1)
+      .map((item: { ownerStatus: string; qualification: string }) => [
+        item.ownerStatus,
+        item.qualification,
+      ])
+  ).toEqual([
+    ["ready-for-agent", "not-assessed"],
+    ["ready-for-agent", "not-assessed"],
+    ["ready-for-agent", "not-assessed"],
+  ]);
+  expect(readdirSync(root)).not.toContain("forbidden");
+  expect(result.stdout).not.toContain("private artifact canary");
+
+  addTicket(names[2], "ready-for-agent", ["99-missing.md"]);
+  const missing = run(complete, local);
+  expect(missing.status).toBe(1);
+  expect(JSON.parse(missing.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "missing-dependency" })
+  );
+  addTicket(names[2], "ready-for-agent", [names[4]]);
+  const cycle = run(complete, local);
+  expect(cycle.status).toBe(1);
+  expect(JSON.parse(cycle.stdout).frontier).toEqual([]);
+  expect(JSON.parse(cycle.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "cyclic-dependency" })
+  );
+});
+
+test("human v3 status shows scenario owner and explicitly unassessed qualification", () => {
+  const { ledger, local } = setupScenarios();
+  run(ledger, local);
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain(
+    "Scenario S1: Candidate; owner 01-first.md (ready-for-agent); shared UI; qualification not-assessed"
+  );
+});

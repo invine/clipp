@@ -482,6 +482,59 @@ function inspectOwnership(ledger, local) {
     }
   }
 }
+function inspectScenarios(ledger, local, tickets) {
+  const ids = new Set();
+  function dependsOn(owner, prerequisite, visited = new Set()) {
+    if (visited.has(owner)) return false;
+    visited.add(owner);
+    return (tickets.get(owner)?.dependencies ?? []).some(
+      (path) => path === prerequisite || dependsOn(path, prerequisite, visited)
+    );
+  }
+  for (const scenario of ledger.scenarios) {
+    if (ids.has(scenario.id))
+      diagnostic(
+        "scenario-duplicate",
+        `${scenario.id}: each scenario criterion needs exactly one primary allocation; use distinct IDs for separate runtime cases`
+      );
+    ids.add(scenario.id);
+    if (!tickets.has(scenario.primaryOwner))
+      diagnostic(
+        "scenario-owner",
+        `${scenario.id}: primary qualification owner ${scenario.primaryOwner} must be an existing canonical numbered ticket`
+      );
+    if (
+      !Object.hasOwn(ledger.ownership.roles, scenario.requirement.role) ||
+      scenario.requirement.path.split(/[\\/]/).includes(".local") ||
+      !referenceAvailable(scenario.requirement, local)
+    )
+      diagnostic(
+        "scenario-reference",
+        `${scenario.id}: requirement must reference an available public file in a participating repository`
+      );
+    for (const path of scenario.prerequisites)
+      if (
+        !tickets.has(path) ||
+        path === scenario.primaryOwner ||
+        !dependsOn(scenario.primaryOwner, path)
+      )
+        diagnostic(
+          "scenario-dependency",
+          `${scenario.id}: prerequisite ${path} must exist in the primary owner's canonical dependency graph`
+        );
+    for (const path of scenario.contributors)
+      if (!tickets.has(path) || path === scenario.primaryOwner)
+        diagnostic(
+          "scenario-contributor",
+          `${scenario.id}: contributor ${path} must name another existing canonical numbered ticket`
+        );
+  }
+  report.scenarios = ledger.scenarios.map((scenario) => ({
+    ...scenario,
+    ownerStatus: tickets.get(scenario.primaryOwner)?.status ?? "unavailable",
+    qualification: "not-assessed",
+  }));
+}
 function inspectOperational(ledger, local, preserved) {
   if (!ledger.operational) return;
   const byId = new Map();
@@ -653,7 +706,7 @@ function inspectOperational(ledger, local, preserved) {
 function main() {
   if (args.includes("--help")) {
     console.log(
-      "Usage: node scripts/agent-status.mjs --ledger RUN.json --local LOCAL.json [--json]\nRead-only recovery status, run/output schemaVersion 1 or 2; local schemaVersion 1; exit 1 withholds assignment. See docs/agents/recovery.md."
+      "Usage: node scripts/agent-status.mjs --ledger RUN.json --local LOCAL.json [--json]\nRead-only recovery status, run/output schemaVersion 1, 2 or 3; local schemaVersion 1; exit 1 withholds assignment. See docs/agents/recovery.md."
     );
     return;
   }
@@ -674,7 +727,7 @@ function main() {
   const ledger = readJson(inputs["--ledger"]);
   const local = readJson(inputs["--local"]);
   requireValue(
-    [1, 2].includes(ledger.schemaVersion),
+    [1, 2, 3].includes(ledger.schemaVersion),
     "unsupported run schemaVersion"
   );
   validate(
@@ -690,7 +743,7 @@ function main() {
   report.schemaVersion = ledger.schemaVersion;
   report.runId = ledger.runId;
   requireValue(
-    ledger.schemaVersion === 2 || ledger.tracker.role === "client",
+    ledger.schemaVersion >= 2 || ledger.tracker.role === "client",
     "canonical tracker must belong to client role"
   );
   for (const [role, saved] of Object.entries(ledger.repositories)) {
@@ -724,7 +777,7 @@ function main() {
         ),
       "client and relay must select distinct repositories"
     );
-  if (ledger.schemaVersion === 2) inspectOwnership(ledger, local);
+  if (ledger.schemaVersion >= 2) inspectOwnership(ledger, local);
   const trackerRoot = local.roots[ledger.tracker.role];
   const tracker = selected(trackerRoot, ledger.tracker.path);
   const paths = readdirSync(tracker)
@@ -866,6 +919,7 @@ function main() {
     visited.add(path);
   }
   paths.forEach(visit);
+  if (ledger.schemaVersion === 3) inspectScenarios(ledger, local, tickets);
   const claimIds = new Set();
   const claimed = new Set();
   const implementationBranches = new Set();
@@ -1069,7 +1123,7 @@ function main() {
         "absolute artifact path required"
       );
       statSync(local.artifacts[id]);
-      if (ledger.schemaVersion === 2 && !preserved(local.artifacts[id])) {
+      if (ledger.schemaVersion >= 2 && !preserved(local.artifacts[id])) {
         diagnostic(
           "artifact-unpreserved",
           `${id}: preserve required evidence outside linked implementation/integration worktrees`
@@ -1085,7 +1139,7 @@ function main() {
       return false;
     }
   }
-  if (ledger.schemaVersion === 2) {
+  if (ledger.schemaVersion >= 2) {
     for (const flag of ["--ledger", "--local"])
       if (!preserved(inputs[flag]))
         diagnostic(
@@ -1100,7 +1154,7 @@ function main() {
       })),
     };
   }
-  if (ledger.schemaVersion === 2) inspectOperational(ledger, local, preserved);
+  if (ledger.schemaVersion >= 2) inspectOperational(ledger, local, preserved);
   const evidenceIds = new Set();
   for (const item of ledger.evidence) {
     requireValue(
@@ -1329,6 +1383,10 @@ if (!args.includes("--help")) {
     : [
         `${report.runId ?? "Run"}: ${report.complete ? "consistent" : "incomplete"} (${report.observedAt})`,
         `Operational facts: ${report.operational.state}`,
+        ...(report.scenarios ?? []).map(
+          (item) =>
+            `Scenario ${item.id}: ${item.disposition}; owner ${item.primaryOwner} (${item.ownerStatus}); ${item.runtime}; qualification ${item.qualification}`
+        ),
         ...(report.ownership
           ? [
               `Canonical: ${report.ownership.canonical.role}:${report.ownership.canonical.path}`,
