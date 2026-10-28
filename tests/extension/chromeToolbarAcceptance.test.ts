@@ -97,7 +97,10 @@ const behavior=process.env.FIXTURE_BEHAVIOR;
 const locator={async click(){if(behavior==='input')throw new Error('unavailable_native_input');},async evaluate(){return true;},async fill(text){search=text;},async inputValue(){return search;},async waitFor(){},async isVisible(){return true;},first(){pinned=true;return this;}};
 const popup={url:()=> 'chrome-extension://fixture/src/popup.html',getByRole:()=>locator,getByTitle:()=>locator,getByPlaceholder:()=>locator,getByText:()=>locator,async evaluate(fn,arg){if(arg?.type==='getRuntimeState')return {state:{pinnedIds:pinned?['clip']:[]}};if(arg)return {ok:true};return {id:'fixture',isPopup:behavior!=='tab',memory:behavior!=='boundary',focused:true};}};
 const tab={url:()=> 'about:blank',async bringToFront(){}};
-const session={async send(method){if(method==='Extensions.loadUnpacked'){installAcked=true;return {id:behavior==='delayed-wrong-id'?'other-id':'fixture'};}if(method==='Extensions.getExtensions'){inventoryCalls++;if(behavior.startsWith('delayed')&&(!installAcked||inventoryCalls<3))return {extensions:[]};if(behavior==='worker')throw new Error('acceptance_operation_timeout');if(behavior==='private')throw new Error('SYNTHETIC_PRIVATE_CANARY');return {extensions:[{id:'fixture',enabled:behavior!=='delayed-disabled',path:behavior==='delayed-wrong-path'?${JSON.stringify(path.join(repo, "apps/extension"))}:${JSON.stringify(path.join(repo, "apps/extension/dist"))}}]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'tab'}};if(method==='Extensions.triggerAction')opened=true;return {};}};
+const session={async send(method,params){if(method==='Extensions.loadUnpacked'){installAcked=true;return {id:behavior==='delayed-wrong-id'?'other-id':'fixture'};}if(method==='Extensions.getExtensions'){inventoryCalls++;if(behavior.startsWith('delayed')&&(!installAcked||inventoryCalls<3))return {extensions:[]};if(behavior==='worker')throw new Error('acceptance_operation_timeout');if(behavior==='private')throw new Error('SYNTHETIC_PRIVATE_CANARY');return {extensions:[{id:'fixture',enabled:behavior!=='delayed-disabled',path:behavior==='delayed-wrong-path'?${JSON.stringify(path.join(repo, "apps/extension"))}:${JSON.stringify(path.join(repo, "apps/extension/dist"))}}]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'page-id',type:'page',url:'about:blank',browserContextId:'owned-context'}};
+if(method==='Target.getTargets')return {targetInfos:[{targetId:'tab-id',type:'tab',url:behavior==='tab-url-mismatch'?'https://wrong.invalid/':'about:blank',browserContextId:behavior==='tab-context-mismatch'?'different-context':'owned-context'},...(behavior==='ambiguous-tab'?[{targetId:'second-tab-id',type:'tab',url:'about:blank',browserContextId:'owned-context'}]:[])]};
+if(method==='Browser.getWindowForTarget')return {windowId:behavior==='tab-window-mismatch'&&params.targetId!=='page-id'?2:1};
+if(method==='Extensions.triggerAction'){if(params.targetId!=='tab-id')throw new Error('Action can only be triggered on a tab target.');opened=true;}return {};}};
 const context={async addInitScript(){},serviceWorkers:()=>[{url:()=> 'chrome-extension://fixture/background.js'}],pages:()=>opened?[tab,popup]:[tab],async newCDPSession(){return session;}};
 export const chromium={executablePath:()=>${JSON.stringify(bin)},async connectOverCDP(){return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(behavior==='cleanup')throw new Error('cleanup_fixture');if(behavior==='reuse')return;const pid=Number(fs.readFileSync(${JSON.stringify(path.join(fixture, "pid"))},'utf8'));process.kill(pid,'SIGTERM');}};}};
  `
@@ -633,3 +636,31 @@ test.each(["delayed-wrong-id", "delayed-disabled", "delayed-wrong-path"])(
     expect(result().surface).toBeUndefined();
   }
 );
+
+test("the action maps a renderer page to its unique owned browser tab", () => {
+  freeze();
+  const run = invoke();
+  if (run.status !== 0) throw new Error(run.stdout + run.stderr);
+  expect(result()).toMatchObject({
+    result: "passed",
+    actionTarget: {
+      pageTargetId: "page-id",
+      tabTargetId: "tab-id",
+      windowId: 1,
+    },
+  });
+});
+test.each([
+  "ambiguous-tab",
+  "tab-url-mismatch",
+  "tab-context-mismatch",
+  "tab-window-mismatch",
+])("%s withholds the actual toolbar action", (mode) => {
+  freeze();
+  expect(invoke(mode).status).toBe(1);
+  expect(result()).toMatchObject({
+    failure: "wrong_target",
+    shutdown: "verified-owned-browser-closed",
+  });
+  expect(result().surface).toBeUndefined();
+});

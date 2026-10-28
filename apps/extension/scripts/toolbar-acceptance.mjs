@@ -621,14 +621,87 @@ export async function runToolbarAcceptance(args) {
     const tab = context.pages()[0] ?? (await bounded(() => context.newPage()));
     await bounded(() => tab.bringToFront());
     const tabSession = await bounded(() => context.newCDPSession(tab));
-    const { targetInfo: tabTarget } = await bounded(() =>
+    operation = "identify_owned_browser_tab";
+    const { targetInfo: pageTarget } = await bounded(() =>
       tabSession.send("Target.getTargetInfo")
     );
+    const pageUrl = tab.url();
+    assert(
+      pageTarget.type === "page" &&
+        typeof pageTarget.targetId === "string" &&
+        pageTarget.url === pageUrl,
+      "toolbar_target_mismatch"
+    );
+    const pageWindow = await bounded(() =>
+      session.send("Browser.getWindowForTarget", {
+        targetId: pageTarget.targetId,
+      })
+    );
+    assert(
+      Number.isSafeInteger(pageWindow.windowId) && pageWindow.windowId >= 0,
+      "toolbar_target_mismatch"
+    );
+    const { targetInfos } = await bounded(() =>
+      session.send("Target.getTargets", {
+        filter: [{ type: "tab", exclude: false }, { exclude: true }],
+      })
+    );
+    assert(
+      Array.isArray(targetInfos) && targetInfos.length <= 500,
+      "toolbar_target_mismatch"
+    );
+    const matchingTabs = [];
+    protocol.tabMapping = {
+      pageTargetId: pageTarget.targetId,
+      pageType: pageTarget.type,
+      pageUrl: pageUrl.slice(0, 4096),
+      pageWindowId: pageWindow.windowId,
+      tabCount: targetInfos.filter((item) => item.type === "tab").length,
+      candidates: [],
+    };
+    for (const item of targetInfos) {
+      if (
+        item.type !== "tab" ||
+        item.url !== pageUrl ||
+        item.browserContextId !== pageTarget.browserContextId
+      )
+        continue;
+      if (
+        pageTarget.browserContextId === undefined &&
+        browser.contexts().length !== 1
+      )
+        continue;
+      assert(
+        typeof item.targetId === "string" &&
+          item.targetId !== pageTarget.targetId,
+        "toolbar_target_mismatch"
+      );
+      const tabWindow = await bounded(() =>
+        session.send("Browser.getWindowForTarget", { targetId: item.targetId })
+      );
+      if (protocol.tabMapping.candidates.length < 10)
+        protocol.tabMapping.candidates.push({
+          targetId: item.targetId.slice(0, 128),
+          windowId: tabWindow.windowId,
+          contextMatched: true,
+          urlMatched: true,
+        });
+      if (tabWindow.windowId === pageWindow.windowId) matchingTabs.push(item);
+    }
+    assert(matchingTabs.length === 1, "toolbar_target_mismatch");
+    const actionTab = matchingTabs[0];
+    receipt.actionTarget = {
+      pageTargetId: pageTarget.targetId,
+      tabTargetId: actionTab.targetId,
+      windowId: pageWindow.windowId,
+      urlMatched: true,
+      contextMatched: true,
+    };
     operation = "trigger_actual_toolbar_action";
     await bounded(() =>
       session.send("Extensions.triggerAction", {
         id: extensionId,
-        targetId: tabTarget.targetId,
+        targetId: actionTab.targetId,
       })
     );
     const popup = await waitFor(async () =>
