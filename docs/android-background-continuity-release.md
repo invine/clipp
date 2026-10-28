@@ -21,39 +21,48 @@ The export must not contain Clip content, raw share intents, private keys, signa
 
 ## Automated release checks
 
-Use JDK 21 before running the complete gate. Gradle Managed Virtual Devices provision and exercise the required API 31, 33, 34, 35, and 36 targets; API 32 follows the API 31-compatible path and is available through the optional connected-emulator command:
+Use JDK 21 and an isolated, committed checkout with its own `npm ci`. Build one frozen acceptance APK pair into a new directory outside that checkout. The builder rejects a development-server override, records source/toolchain identities, checks both package manifests, and leaves installation to the operator:
 
 ```sh
 export JAVA_HOME=/path/to/jdk-21
-npm run release:android
+export ANDROID_HOME=/path/to/Android/sdk
+export CLIPP_ANDROID_AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
+npm --workspace apps/android run build:native:acceptance-candidate -- --output /absolute/durable/candidate-01
 ```
 
-The gate runs the full shared Jest suite, lint, Android web production build, Capacitor asset copy, Android unit tests, the managed-device instrumentation matrix, and the native release build. `apps/android` also exposes the matrix, every required API target, and an optional already-connected API 31+ emulator path:
+Select a fresh, owned API 31+ emulator with host clipboard sharing disabled. Preserve existing phones, guests, packages and settings. Install only `com.clipp.app.acceptance` and `com.clipp.app.acceptance.test` from that frozen directory, using the same explicit serial for both installs and acceptance:
 
 ```sh
-npm --workspace apps/android run test:native:unit
-npm --workspace apps/android run test:native:instrumentation
-npm --workspace apps/android run test:native:instrumentation:api31
-npm --workspace apps/android run test:native:instrumentation:api33
-npm --workspace apps/android run test:native:instrumentation:api34
-npm --workspace apps/android run test:native:instrumentation:api35
-npm --workspace apps/android run test:native:instrumentation:api36
-npm --workspace apps/android run test:native:instrumentation:connected
-npm --workspace apps/android run build:native:release
+export CLIPP_TEST_SERIAL=emulator-5556
+export CLIPP_ANDROID_CANDIDATE_APK=/absolute/durable/candidate-01/app-acceptance.apk
+export CLIPP_ANDROID_EVIDENCE_DIR=/absolute/durable/evidence/android-native
+export CLIPP_ACCEPTANCE_STATE_ROOT=/absolute/durable/evidence/native-state
+export CLIPP_ACCEPTANCE_EFFORT=your-existing-effort
+"$ANDROID_HOME/platform-tools/adb" -s "$CLIPP_TEST_SERIAL" install "$CLIPP_ANDROID_CANDIDATE_APK"
+"$ANDROID_HOME/platform-tools/adb" -s "$CLIPP_TEST_SERIAL" install /absolute/durable/candidate-01/app-acceptance-androidTest.apk
+npm --workspace apps/android run test:native:instrumentation:focused
 ```
+
+The focused command observes boot, API/emulator facts, both installed APK hashes, supported WebView diagnostics, target-filtered instrumentation, the owning bundled WebView URL, focused Activity and an observable Tab control change. It then runs the existing durable explicit-text queue/repeated-event native case. The receipt names actual passed tests; this focused result qualifies only that selected device and behavior. Compilation, mock controls, inventory output and package presence do not establish a native pass.
+
+All instrumentation aliases use this same installed-candidate/selected-serial runner. `test:native:instrumentation` and `:matrix` run the finite 27-test matrix; `:connected` uses the selected emulator; `:api31`, `:api33`, `:api34`, `:api35`, and `:api36` additionally check the observed API. They neither rebuild nor select a Gradle-managed guest after preflight. Run the matrix for each separately owned target required by the release scope. `npm run release:android` also runs shared tests, lint, web/copy, native unit tests and a release build, and requires these selected-candidate environment variables.
+
+One semantic history covers the Android acceptance family across aliases, output directories, candidate labels and emulator ports. Keep the effort and durable state root for the whole effort. After failure, a retry requires `--diagnostic-change` and `--expected-observation`; five attempts or twenty minutes after the first failure exhaust that batch. Initial setup and successful ordinary expansion exclude setup time until their own first failure. Retain failed receipts and use the shared explicit renewal decision when exhausted. A passed focused run may expand to the same frozen pair's strict matrix superset with its predecessor retained; zero, missing or ignored-only native results cannot establish coverage. Repeating/narrowing successful coverage or changing the pair requires the existing explicit successor policy with the actual new committed revision.
+
+ADB work uses the remaining diagnostic deadline. Cleanup has a separate bounded allowance and removes only runner-created temporary files and force-stops the acceptance package. Cleanup failure cannot pass. The operator retains ownership of emulator lifecycle and the two installed acceptance packages, records their later removal/shutdown, and preserves normal packages and settings. Host/device command output stays in private attempt artifacts; share the concise receipt after checking it.
 
 Coverage is deliberately split at the settled seams:
 
-| Requirement | Automated evidence |
-| --- | --- |
-| API 31+ opt-in, service startup acknowledgement and visible-boundary retry, all notification states/actions, effective notification availability, usable Trusted Device count, heartbeat loss, focus-gated capture, Home/screen-off, task-removal and reboot policy | `tests/android/backgroundContinuity.test.ts` |
-| durable selected-text/Sharesheet actions, distinct event identity, newest-only pending live application, at-most-once resume retry, Auto Sync/history/rotation cancellation | `tests/android/clipContinuity.test.ts` |
-| historical reconciliation never writes the system clipboard | `tests/core/sync/historyReconciliation.test.ts` and runtime conformance tests |
-| Android discovery and cold/warm ingress | `BackgroundContinuityManifestTest` on managed APIs 31, 33, 34, 35, and 36 |
-| native foreground notification/actions, service-lifetime partial wake-lock acquisition/release, heartbeat expiry, task removal, reboot notification, version-appropriate notification degradation, payload-free diagnostics | `BackgroundContinuityLifecycleTest` on managed APIs 31, 33, 34, 35, and 36 |
-| 512-event bound, schema allowlist, notification availability independent of the failure counter, repeated-failure qualification | `BackgroundContinuityDiagnosticsTest` on managed APIs 31, 33, 34, 35, and 36 |
+| Requirement                                                                                                                                                                                                                                                         | Automated evidence                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| API 31+ opt-in, service startup acknowledgement and visible-boundary retry, all notification states/actions, effective notification availability, usable Trusted Device count, heartbeat loss, focus-gated capture, Home/screen-off, task-removal and reboot policy | `tests/android/backgroundContinuity.test.ts`                                               |
+| durable selected-text/Sharesheet actions, distinct event identity, newest-only pending live application, at-most-once resume retry, Auto Sync/history/rotation cancellation                                                                                         | `tests/android/clipContinuity.test.ts`                                                     |
+| historical reconciliation never writes the system clipboard                                                                                                                                                                                                         | `tests/core/sync/historyReconciliation.test.ts` and runtime conformance tests              |
+| Android discovery and cold/warm ingress                                                                                                                                                                                                                             | `BackgroundContinuityManifestTest` on each selected API 31, 33, 34, 35, and 36 emulator    |
+| native foreground notification/actions, service-lifetime partial wake-lock acquisition/release, heartbeat expiry, task removal, reboot notification, version-appropriate notification degradation, payload-free diagnostics                                         | `BackgroundContinuityLifecycleTest` on each selected API 31, 33, 34, 35, and 36 emulator   |
+| 512-event bound, schema allowlist, notification availability independent of the failure counter, repeated-failure qualification                                                                                                                                     | `BackgroundContinuityDiagnosticsTest` on each selected API 31, 33, 34, 35, and 36 emulator |
 
-Do not substitute instrumentation compilation for the managed-device matrix. Record every API result in ticket 04. Notification blocking is exercised on API 31–32-compatible paths; runtime notification-permission denial is exercised on API 33 and later. Task Manager Stop is required only where the platform exposes it, but every API must preserve the user-stop invariant.
+Do not substitute instrumentation compilation for the selected-device matrix. Record every API result in ticket 04. Notification blocking is exercised on API 31–32-compatible paths; runtime notification-permission denial is exercised on API 33 and later. Task Manager Stop is required only where the platform exposes it, but every API must preserve the user-stop invariant.
 
 ## Physical qualification boundary
 

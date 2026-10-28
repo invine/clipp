@@ -14,71 +14,11 @@ isolated build is for native storage/lifecycle tests, not browser login acceptan
 
 ## Build and run
 
-Use the installed Android SDK and JDK 21. Build web assets and sync Capacitor
-before native builds. In symlinked npm worktrees, sync rewrites generated
-`capacitor.settings.gradle` paths; those local paths should not be committed.
-The Gradle init script redirects dependency build outputs into this checkout.
+Use the [frozen Android candidate and selected-device procedure](android-background-continuity-release.md#automated-release-checks). It builds the isolated app/test APK pair with JDK 21 and the installed SDK, freezes their hashes and committed source identity, then verifies both installed packages on the selected owned emulator before any product fixture. The maintained focused and matrix aliases use that same serial for boot/WebView/focus/input checks and actual instrumentation; they do not rebuild or select another Gradle guest after readiness.
 
-```sh
-npm --workspace apps/android run build
-npm --workspace apps/android run cap:sync
-cd apps/android/android
-./gradlew -I ../scripts/native-acceptance.init.gradle -PclippAcceptance \
-  :app:assembleAcceptance :app:assembleAcceptanceAndroidTest
-```
+The focused command observes the durable explicit-text queue/repeated-event case. The finite matrix adds the credential, lifecycle, manifest and diagnostic cases listed below. Both use the shared durable effort/history policy across aliases and output locations; a focused pass remains a limited observation. Fixture compilation and injected driver tests remain separate from actual native results.
 
-Inspect both APK application IDs before installation. On an authorized test
-phone, install only `app/build/outputs/apk/acceptance/app-acceptance.apk` and
-`app/build/outputs/apk/androidTest/acceptance/app-acceptance-androidTest.apk`.
-Run the fixture classes through the acceptance instrumentation runner:
-
-```sh
-adb -s "$CLIPP_TEST_SERIAL" shell am instrument -w \
-  -e class com.clipp.app.ManagedRelayCredentialStoreTest,com.clipp.app.BackgroundContinuityLifecycleTest,com.clipp.app.BackgroundContinuityManifestTest,com.clipp.app.BackgroundContinuityDiagnosticsTest \
-  com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-Managed-emulator npm instrumentation scripts also select this isolated variant.
-The connected acceptance command requires `CLIPP_TEST_SERIAL`, the exact
-installed acceptance APK in `CLIPP_ANDROID_CANDIDATE_APK`, and an absolute,
-durable `CLIPP_ANDROID_EVIDENCE_DIR`. Build the candidate and its provenance
-sidecar with the following command. Install that APK and its matching test APK
-on the selected API 31+ emulator, then run the readiness-gated test command:
-
-```sh
-npm --workspace apps/android run build:native:acceptance-candidate
-CLIPP_TEST_SERIAL=emulator-5554 \
-CLIPP_ANDROID_CANDIDATE_APK="$PWD/android/app/build/outputs/apk/acceptance/app-acceptance.apk" \
-CLIPP_ANDROID_EVIDENCE_DIR="$HOME/clipp-evidence/android-readiness" \
-npm --workspace apps/android run test:native:instrumentation:connected
-```
-
-Before instrumentation, the readiness gate uses that exact serial for the
-device state, completed boot, API level, installed acceptance package, active
-WebView provider/version from `dumpsys webviewupdate`, target-package-filtered
-acceptance instrumentation probe, app launch and a harmless Tab interaction.
-The probe verifies the exact focused activity and requires Tab to move focus to
-a different accessible control; only hashed control descriptors are retained.
-The default matrix and API-specific/connected instrumentation commands run
-this same gate before Gradle. It pulls the installed base APK into a private
-temporary directory, hashes it and compares it to the supplied candidate;
-split APK installs and unreadable packages fail closed. Temporary-file cleanup
-is checked and recorded. The subsequent Gradle command inherits
-`ANDROID_SERIAL` for the same device. Each ADB invocation is bounded by the
-remaining diagnostic budget. The candidate receipt includes its file
-hash, source revision and dirty state, alongside the installed base APK hash.
-Do not use an unrelated APK renamed to
-`app-acceptance.apk`; readiness verifies the adjacent provenance sidecar against
-the current source tree and candidate bytes.
-Missing targets, provider/readiness failures and runner failures stop before
-the product test command. The receipt records stage and failure class. Reuse
-the evidence directory for retries: the shared policy permits one initial
-attempt and at most four diagnostic attempts (five attempts total) in 20
-minutes, each requiring a distinct changed hypothesis and expected
-observation. The preflight does not
-change device settings, probe barcode availability, install/uninstall packages
-or alter user data. Its cleanup status is `not-required`; fixture teardown
-remains the responsibility of instrumentation tests that create fixture data.
+Normal `com.clipp.app` storage, credentials, settings and pre-existing phones remain outside this procedure's ownership. The runner cleans only its temporary files and force-stops `com.clipp.app.acceptance`; the operator owns later removal of the two acceptance packages and shutdown of the fresh guest. Preserve every failed receipt when changing hypotheses, candidates or coverage.
 
 For an actual process boundary, run these phases separately. Each method checks
 the isolated package before its fixture; each phase contains only a synthetic

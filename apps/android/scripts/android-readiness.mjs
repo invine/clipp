@@ -1,24 +1,47 @@
 /** Readiness gate for the exact Android candidate and serial used by acceptance. */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  mkdir,
+  realpath,
+  writeFile,
+} from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { sourceIdentity } from "./android-candidate-provenance.mjs";
-import { beginNativeAttempt } from "../../../scripts/native-acceptance-attempts.mjs";
+import {
+  beginNativeAttempt,
+  nativeAcceptanceStateRoot,
+} from "../../../scripts/native-acceptance-attempts.mjs";
 
 const { values } = parseArgs({
   options: {
     serial: { type: "string" },
+    effort: {
+      type: "string",
+      default:
+        process.env.CLIPP_ACCEPTANCE_EFFORT || "clipp-android-acceptance",
+    },
+    "history-root": { type: "string" },
+    "import-history": { type: "string", multiple: true },
+    renewal: { type: "string" },
+    successor: { type: "string" },
+    suite: { type: "string", default: "readiness" },
+    "expected-api": { type: "string" },
     "candidate-apk": { type: "string" },
     output: { type: "string" },
     "diagnostic-change": { type: "string" },
     "expected-observation": { type: "string" },
     timeout: { type: "string", default: "20" },
+    "cleanup-timeout": { type: "string", default: "10" },
   },
 });
 for (const field of ["serial", "candidate-apk", "output"]) {
@@ -35,6 +58,15 @@ assert(
   "bounded_timeout_required"
 );
 
+const cleanupTimeout = Number(values["cleanup-timeout"]) * 1000;
+assert(
+  Number.isSafeInteger(cleanupTimeout) &&
+    cleanupTimeout > 0 &&
+    cleanupTimeout <= 30000,
+  "bounded_cleanup_timeout_required"
+);
+let cleanupSpent = 0;
+const cleanupRemaining = () => Math.max(0, cleanupTimeout - cleanupSpent);
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../.."
@@ -45,6 +77,56 @@ const adb = process.env.CLIPP_ANDROID_ADB || "adb";
 const appPackage = "com.clipp.app.acceptance";
 const testPackage = "com.clipp.app.acceptance.test";
 const activity = `${appPackage}/com.clipp.app.MainActivity`;
+const nativeCases = {
+  ManagedRelayCredentialStoreTest: [
+    "fixturesRejectTheOperatorApplication",
+    "onlyExactPrivateCallbackResolvesToClipp",
+    "nativeCredentialKeyCannotBeExported",
+    "recreatedNativeStoreRetainsOnlyEndpointScopedRenewableCredentials",
+    "ciphertextIsAuthenticatedAndCorruptionRequiresLogin",
+    "missingKeystoreKeyErasesRestoredCiphertext",
+    "ciphertextFileIsExcludedFromCloudBackupAndDeviceTransfer",
+  ],
+  BackgroundContinuityLifecycleTest: [
+    "serviceStartupPublishesPrivacySafeStatusAndNotificationActions",
+    "pauseResumeAndStopRemainUserControlledBoundaries",
+    "serviceHoldsPartialWakeLockUntilUserStops",
+    "heartbeatLossStopsTheEmptyServiceAndRecordsAnObservedFailure",
+    "removingTheApplicationTaskStopsBackgroundContinuity",
+    "rebootOffersReconnectWithoutStartingTheService",
+    "blockedNotificationAvailabilityDoesNotCountAsARuntimeFailure",
+    "ingressAndPendingApplicationDiagnosticsNeverContainTheirPayloadsOrIdentifiers",
+  ],
+  BackgroundContinuityManifestTest: [
+    "backgroundContinuityDeclaresPartialWakeLockPermission",
+    "taskRemovalIsDeliveredToBackgroundContinuityService",
+    "androidDiscoversProcessTextAndSharesheetIngress",
+    "explicitTextQueueSurvivesRestartAndPreservesRepeatedEventIdentity",
+    "persistenceFailureNeverReportsAnActionAsQueued",
+    "actionQueueUpdatesAreAtomicAcrossStoreInstances",
+    "coldProcessTextIntentReachesTheDurableQueueBeforeRuntimeLaunch",
+    "warmSharesheetIntentReachesTheDurableQueue",
+  ],
+  BackgroundContinuityDiagnosticsTest: [
+    "exportIsBoundedAndUsesOnlyThePrivacyReviewedSchema",
+    "repeatedObservedFailuresMarkTheConfigurationLimitedAndEnableGuidance",
+    "diagnosticExportReusesOneBoundedCacheFile",
+    "reconnectDurationDoesNotSpanStoppedSessions",
+  ],
+};
+const focusedCase =
+  "com.clipp.app.BackgroundContinuityManifestTest#explicitTextQueueSurvivesRestartAndPreservesRepeatedEventIdentity";
+const matrixCases = Object.entries(nativeCases).flatMap(([name, methods]) =>
+  methods.map((method) => `com.clipp.app.${name}#${method}`)
+);
+const nativeCoverage =
+  values.suite === "focused"
+    ? [focusedCase]
+    : values.suite === "matrix"
+      ? matrixCases
+      : [];
+const requestedCoverage = ["android-owned-readiness", ...nativeCoverage];
+let launched = false;
 let attempt;
 let uiHierarchyCleanup = "not-required";
 
@@ -90,14 +172,87 @@ function invoke(args, stage, classification = "prerequisite") {
   return output;
 }
 
+async function cleanupStep(operation) {
+  const remaining = cleanupRemaining();
+  assert(remaining > 0, "android_cleanup_deadline_exhausted");
+  const started = performance.now();
+  let timer;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("android_cleanup_deadline_exhausted")),
+          remaining
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    cleanupSpent += performance.now() - started;
+  }
+}
+function cleanupAdb(args) {
+  const remaining = cleanupRemaining();
+  assert(remaining > 0, "android_cleanup_deadline_exhausted");
+  const started = performance.now();
+  try {
+    const result = spawnSync(adb, ["-s", serial, ...args], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: Math.max(1, Math.floor(remaining)),
+      maxBuffer: 1024 * 1024,
+    });
+    assert(
+      !result.error && result.status === 0,
+      "owned_android_cleanup_failed"
+    );
+  } finally {
+    cleanupSpent += performance.now() - started;
+  }
+}
+function candidateFingerprint(provenance) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        revision: provenance.revision,
+        sourceSha256: provenance.sourceSha256,
+        app: provenance.artifactSha256,
+        test: provenance.testArtifact.sha256,
+      })
+    )
+    .digest("hex");
+}
 async function candidateIdentity() {
-  const apk = await readFile(values["candidate-apk"]);
+  const apk = await readFile(values["candidate-apk"], {
+    signal: AbortSignal.timeout(remainingTimeout("candidate")),
+  });
   const provenance = JSON.parse(
-    await readFile(`${values["candidate-apk"]}.provenance.json`, "utf8")
+    await readFile(`${values["candidate-apk"]}.provenance.json`, {
+      encoding: "utf8",
+      signal: AbortSignal.timeout(remainingTimeout("candidate")),
+    })
   );
-  const currentSource = await sourceIdentity(root);
+  const currentSource = await sourceIdentity(root, {
+    remainingMs: (maximum) => attempt.remainingMs(Math.min(timeout, maximum)),
+  });
   assert.equal(path.basename(values["candidate-apk"]), "app-acceptance.apk");
-  assert.equal(provenance.schemaVersion, 1, "candidate_provenance_invalid");
+  if (values.suite !== "readiness")
+    assert(
+      provenance.schemaVersion === 2 && provenance.testArtifact,
+      "frozen_android_candidate_required"
+    );
+  assert(
+    [1, 2].includes(provenance.schemaVersion),
+    "candidate_provenance_invalid"
+  );
+  if (provenance.schemaVersion === 2) {
+    assert(
+      (await realpath(provenance.source.checkout)) === (await realpath(root)),
+      "candidate_checkout_mismatch"
+    );
+    assert(!provenance.dirty, "frozen_candidate_must_be_committed");
+  }
   assert.equal(
     provenance.applicationId,
     appPackage,
@@ -117,7 +272,37 @@ async function candidateIdentity() {
     currentSource,
     "candidate_source_changed_after_build"
   );
+  let testArtifact;
+  if (provenance.schemaVersion === 2) {
+    const test = provenance.testArtifact;
+    assert(
+      test?.file === "app-acceptance-androidTest.apk" &&
+        test.applicationId === testPackage &&
+        test.targetPackage === appPackage,
+      "candidate_test_package_mismatch"
+    );
+    const testPath = path.join(
+      path.dirname(values["candidate-apk"]),
+      test.file
+    );
+    assert.equal(
+      await sha256File(testPath),
+      test.sha256,
+      "candidate_test_artifact_changed_after_build"
+    );
+    testArtifact = {
+      path: testPath,
+      sha256: test.sha256,
+      appPackage: testPackage,
+    };
+  }
   return {
+    frozen: provenance.schemaVersion === 2,
+    testArtifact,
+    fingerprint:
+      provenance.schemaVersion === 2
+        ? candidateFingerprint(provenance)
+        : undefined,
     path: path.basename(values["candidate-apk"]),
     sha256: provenance.artifactSha256,
     revision: provenance.revision,
@@ -127,13 +312,22 @@ async function candidateIdentity() {
   };
 }
 
-async function sha256File(file) {
+async function sha256File(file, stage = "candidate") {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  for await (const chunk of createReadStream(file, {
+    signal: AbortSignal.timeout(remainingTimeout(stage)),
+  })) {
+    assertWithinBudget(stage);
+    hash.update(chunk);
+  }
   return hash.digest("hex");
 }
 
-async function verifyInstalledCandidate(packagePaths, candidateHash) {
+async function verifyInstalledCandidate(
+  packagePaths,
+  candidateHash,
+  selectedPackage = appPackage
+) {
   const paths = packagePaths
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -157,25 +351,22 @@ async function verifyInstalledCandidate(packagePaths, candidateHash) {
   let failure;
   let installedSha256;
   try {
-    execFileSync(adb, ["-s", serial, "pull", paths[0], localApk], {
-      cwd: root,
-      encoding: "utf8",
-      timeout: remainingTimeout("installed-candidate"),
-      maxBuffer: 1024 * 1024,
-    });
+    invoke(["pull", paths[0], localApk], "installed-candidate");
     assertWithinBudget("installed-candidate");
     const details = await stat(localApk);
     assert(
       details.isFile() && details.size > 0,
       "installed_candidate_pull_empty"
     );
-    installedSha256 = await sha256File(localApk);
+    installedSha256 = await sha256File(localApk, "installed-candidate");
     assertWithinBudget("installed-candidate");
   } catch (error) {
     failure = error;
   }
   try {
-    await rm(temporaryDirectory, { recursive: true, force: false });
+    await cleanupStep(() =>
+      rm(temporaryDirectory, { recursive: true, force: false })
+    );
   } catch (error) {
     if (failure) failure.cleanupFailure = error.message;
     else
@@ -190,7 +381,7 @@ async function verifyInstalledCandidate(packagePaths, candidateHash) {
   }
   if (failure) throw failure;
   return {
-    package: appPackage,
+    package: selectedPackage,
     devicePath: paths[0],
     sha256: installedSha256,
     matchesCandidate: installedSha256 === candidateHash,
@@ -228,61 +419,111 @@ function focusedNodeFingerprint(hierarchy) {
 
 function readUiHierarchy() {
   const devicePath = `/data/local/tmp/clipp-readiness-${process.pid}-${attempt.number}.xml`;
+  let hierarchy;
+  let failure;
   try {
-    const dumpResult = invoke(
+    const dumped = invoke(
       ["shell", "uiautomator", "dump", devicePath],
       "interaction",
       "runner"
     );
     assert.match(
-      dumpResult,
+      dumped,
       /(?:hierarchy|hierchary) dumped to/i,
       "ui_hierarchy_dump_failed"
     );
-    const hierarchy = invoke(
+    hierarchy = invoke(
       ["exec-out", "cat", devicePath],
       "interaction",
       "runner"
     );
     assert.match(hierarchy, /^<?xml|<hierarchy\b/i, "ui_hierarchy_unreadable");
-    return hierarchy;
-  } finally {
-    // Leave enough time to bound the cleanup command itself. A skipped or
-    // failed XML removal must never be represented by the APK temp cleanup.
-    try {
-      if (remainingTimeout("cleanup") <= 250) {
-        uiHierarchyCleanup = "not-run-deadline";
-        throw Object.assign(new Error("ui_hierarchy_cleanup_deadline"), {
-          stage: "cleanup",
-          classification: "runner",
-          cleanupFailure: "ui_hierarchy_cleanup_deadline",
-        });
-      }
-      invoke(["shell", "rm", "-f", devicePath], "cleanup", "runner");
-      uiHierarchyCleanup = "passed";
-    } catch (error) {
-      if (
-        error.message === "diagnostic_time_budget_exhausted" ||
-        error.message === "ui_hierarchy_cleanup_deadline"
-      ) {
-        uiHierarchyCleanup = "not-run-deadline";
-        error.cleanupFailure = "ui_hierarchy_cleanup_deadline";
-      } else if (uiHierarchyCleanup !== "not-run-deadline") {
-        uiHierarchyCleanup = "failed";
-        error.cleanupFailure = error.message;
-      }
-      throw error;
-    }
+  } catch (error) {
+    failure = error;
   }
+  try {
+    cleanupAdb(["shell", "rm", "-f", devicePath]);
+    uiHierarchyCleanup = "passed";
+  } catch (error) {
+    uiHierarchyCleanup = "failed";
+    if (failure) failure.cleanupFailure = "ui_hierarchy_cleanup_failed";
+    else
+      failure = Object.assign(error, {
+        cleanupFailure: "ui_hierarchy_cleanup_failed",
+        stage: "cleanup",
+        classification: "runner",
+      });
+  }
+  if (failure) throw failure;
+  return hierarchy;
 }
 
-attempt = await beginNativeAttempt({
-  output: values.output,
-  scenario: `android-readiness-${serial}`,
-  change: values["diagnostic-change"],
-  expectation: values["expected-observation"],
-  deferDiagnosticClockUntilFailure: true,
-});
+const stateRoot = nativeAcceptanceStateRoot();
+await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+const historyRoot = values["history-root"] || path.join(stateRoot, "history");
+assert(path.isAbsolute(historyRoot), "absolute_history_root_required");
+await mkdir(historyRoot, { recursive: true, mode: 0o700 });
+for (const directory of [values.output, stateRoot, historyRoot]) {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  assert(
+    path
+      .relative(await realpath(root), await realpath(directory))
+      .startsWith(`..${path.sep}`),
+    "durable_android_history_outside_checkout_required"
+  );
+}
+assert(
+  ["readiness", "focused", "matrix"].includes(values.suite),
+  "supported_suite_required"
+);
+let ordinaryScope;
+if (requestedCoverage.length) {
+  try {
+    const declared = JSON.parse(
+      await readFile(`${values["candidate-apk"]}.provenance.json`, {
+        encoding: "utf8",
+        signal: AbortSignal.timeout(timeout),
+      })
+    );
+    if (declared.schemaVersion === 2 && declared.testArtifact)
+      ordinaryScope = {
+        candidate: candidateFingerprint(declared),
+        units: requestedCoverage,
+      };
+  } catch {
+    /* The candidate stage records absent or invalid provenance after admission. */
+  }
+}
+try {
+  attempt = await beginNativeAttempt({
+    ordinaryScope,
+    output: values.output,
+    historyRoot: await realpath(historyRoot),
+    registryRoot: path.join(await realpath(stateRoot), "history-registry"),
+    identity: {
+      effort: values.effort,
+      scenario: "android-native-acceptance",
+      environment: {
+        host: os.hostname(),
+        platform: process.platform,
+        architecture: process.arch,
+        runtime: "android",
+        targetFamily: "acceptance-emulator-api31+",
+      },
+    },
+    scenario: "android-native-acceptance",
+    change: values["diagnostic-change"],
+    expectation: values["expected-observation"],
+    importHistory: values["import-history"],
+    renewal: values.renewal,
+    successor: values.successor,
+    deferDiagnosticClockUntilFailure: true,
+  });
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
 const receipt = {
   schemaVersion: 1,
   result: "failed",
@@ -297,6 +538,12 @@ const receipt = {
 
 try {
   receipt.candidate = await candidateIdentity();
+  if (attempt.successorCandidate)
+    assert(
+      receipt.candidate.revision === attempt.successorCandidate &&
+        !receipt.candidate.dirty,
+      "successor_candidate_binding_mismatch"
+    );
   assertWithinBudget("candidate");
   assert.equal(receipt.candidate.appPackage, appPackage);
   receipt.stage = "device";
@@ -314,6 +561,18 @@ try {
   assert(Number(receipt.androidApi) >= 31, "android_api_31_required");
   receipt.isEmulator = invoke(["shell", "getprop", "ro.kernel.qemu"], "device");
   assert.equal(receipt.isEmulator, "1", "android_emulator_required");
+  if (values["expected-api"])
+    assert.equal(
+      receipt.androidApi,
+      values["expected-api"],
+      "selected_android_api_mismatch"
+    );
+  receipt.deviceFacts = {
+    api: receipt.androidApi,
+    fingerprint: invoke(["shell", "getprop", "ro.build.fingerprint"], "device"),
+    model: invoke(["shell", "getprop", "ro.product.model"], "device"),
+    hardware: invoke(["shell", "getprop", "ro.hardware"], "device"),
+  };
 
   receipt.stage = "installed-candidate";
   receipt.installedPackage = invoke(
@@ -333,6 +592,22 @@ try {
     receipt.installedCandidate.matchesCandidate,
     "installed_candidate_differs_from_supplied_apk"
   );
+  if (receipt.candidate.testArtifact) {
+    receipt.stage = "installed-test-candidate";
+    const testPaths = invoke(
+      ["shell", "pm", "path", testPackage],
+      "installed-test-candidate"
+    );
+    receipt.installedTestCandidate = await verifyInstalledCandidate(
+      testPaths,
+      receipt.candidate.testArtifact.sha256,
+      testPackage
+    );
+    assert(
+      receipt.installedTestCandidate.matchesCandidate,
+      "installed_test_candidate_differs"
+    );
+  }
   receipt.stage = "webview";
   receipt.webViewDiagnostic = invoke(
     ["shell", "dumpsys", "webviewupdate"],
@@ -365,6 +640,7 @@ try {
       ),
     "acceptance_instrumentation_unavailable"
   );
+  launched = true;
   receipt.instrumentationProbe = invoke(
     [
       "shell",
@@ -373,7 +649,9 @@ try {
       "-w",
       "-e",
       "class",
-      "com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext",
+      receipt.candidate.frozen
+        ? "com.clipp.app.AcceptanceReadinessTest#bundledWebViewStarts"
+        : "com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext",
       `${testPackage}/androidx.test.runner.AndroidJUnitRunner`,
     ],
     "instrumentation",
@@ -386,7 +664,22 @@ try {
     throw error;
   }
 
+  if (receipt.candidate.frozen) {
+    const observed = receipt.instrumentationProbe.match(
+      /^INSTRUMENTATION_STATUS: clipp_bundled_url=(\S+)$/m
+    )?.[1];
+    const parsed = observed ? new URL(observed) : null;
+    assert(
+      parsed?.origin === "https://localhost" &&
+        ["/", "/index.html"].includes(parsed.pathname) &&
+        !parsed.search &&
+        !parsed.hash,
+      "bundled_webview_url_required"
+    );
+    receipt.bundledWebViewUrl = observed;
+  }
   receipt.stage = "interaction";
+  receipt.classification = "runner";
   receipt.launch = invoke(
     ["shell", "am", "start", "-W", "-n", activity],
     "interaction",
@@ -421,17 +714,105 @@ try {
   );
   receipt.interaction = "tab_changed_focused_accessible_control";
 
+  receipt.verifiedCoverage = ["android-owned-readiness"];
+  if (values.suite !== "readiness") {
+    receipt.stage = "behavior";
+    receipt.classification = "unknown";
+    const classes =
+      values.suite === "focused"
+        ? focusedCase
+        : Object.keys(nativeCases)
+            .map((name) => `com.clipp.app.${name}`)
+            .join(",");
+    const output = invoke(
+      [
+        "shell",
+        "am",
+        "instrument",
+        "-w",
+        "-r",
+        "-e",
+        "class",
+        classes,
+        `${testPackage}/androidx.test.runner.AndroidJUnitRunner`,
+      ],
+      "behavior",
+      "unknown"
+    );
+    const passed = new Set();
+    let current = {};
+    let failed = false;
+    for (const line of output.split(/\r?\n/)) {
+      const field = line.match(/^INSTRUMENTATION_STATUS: (class|test)=(.*)$/);
+      if (field) current[field[1]] = field[2].trim();
+      const status = line.match(/^INSTRUMENTATION_STATUS_CODE: (-?\d+)$/);
+      if (status) {
+        if (status[1] === "0" && current.class && current.test)
+          passed.add(`${current.class}#${current.test}`);
+        if (["-1", "-2"].includes(status[1])) failed = true;
+        current = {};
+      }
+    }
+    await writeFile(
+      path.join(attempt.directory, "native-behavior.private.log"),
+      output,
+      { mode: 0o600 }
+    );
+    if (failed)
+      throw Object.assign(new Error("native_behavior_failed"), {
+        classification: "product",
+      });
+    if (
+      !/OK \([1-9]\d* tests?\)/.test(output) ||
+      !nativeCoverage.every((unit) => passed.has(unit))
+    )
+      throw Object.assign(new Error("native_behavior_coverage_missing"), {
+        classification: "runner",
+      });
+    receipt.verifiedCoverage = requestedCoverage;
+    receipt.behavior = {
+      suite: values.suite,
+      observedPassedTests: [...passed].sort(),
+      requiredTests: nativeCoverage.length,
+      passed: true,
+    };
+  }
   receipt.result = "passed";
   receipt.classification = "none";
 } catch (error) {
   receipt.stage = error.stage || receipt.stage;
-  receipt.classification = error.classification || "prerequisite";
+  receipt.classification =
+    error.classification ||
+    (/deadline|budget_exhausted|AbortError/i.test(error.message)
+      ? "runner"
+      : receipt.classification);
   receipt.failure = error.message;
   if (error.cleanupFailure) {
     receipt.cleanup = "failed";
     receipt.cleanupFailure = error.cleanupFailure;
   }
 } finally {
+  if (launched) {
+    try {
+      cleanupAdb(["shell", "am", "force-stop", appPackage]);
+      receipt.appCleanup = "passed";
+    } catch (error) {
+      receipt.appCleanup = "failed";
+      receipt.cleanup = "failed";
+      receipt.cleanupFailure = error.message;
+      if (receipt.result === "passed") {
+        receipt.stage = "cleanup";
+        receipt.classification = "runner";
+        receipt.failure = error.message;
+      }
+      receipt.result = "failed";
+    }
+  }
+  receipt.cleanupScope = {
+    package: appPackage,
+    emulatorLifecycle: "externally-owned",
+    normalPackagesChanged: false,
+  };
   receipt.uiHierarchyCleanup = uiHierarchyCleanup;
   receipt.finishedAt = new Date().toISOString();
   await attempt.finish(receipt);

@@ -171,6 +171,20 @@ function ownerFingerprint(pid) {
 export async function beginNativeAttempt(options) {
   if (!options.identity) return beginLegacyAttempt(options);
   const { output, historyRoot, identity, renewal } = options;
+  const ordinaryScope = options.ordinaryScope;
+  if (ordinaryScope)
+    assert(
+      /^[a-f0-9]{64}$/.test(ordinaryScope.candidate ?? "") &&
+        Array.isArray(ordinaryScope.units) &&
+        ordinaryScope.units.length > 0 &&
+        ordinaryScope.units.length <= 64 &&
+        new Set(ordinaryScope.units).size === ordinaryScope.units.length &&
+        ordinaryScope.units.every(
+          (unit) =>
+            typeof unit === "string" && unit.length > 0 && unit.length <= 256
+        ),
+      "ordinary_scope_invalid"
+    );
   assert(path.isAbsolute(historyRoot ?? ""), "absolute_history_root_required");
   assert(
     identity.effort?.trim() && identity.scenario && identity.environment,
@@ -246,6 +260,55 @@ export async function beginNativeAttempt(options) {
       successorCandidate = previous.successorCandidate;
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
+    }
+    if (previous?.ordinaryScope)
+      assert(ordinaryScope, "ordinary_scope_required_for_continuation");
+    if (ordinaryScope && previous) {
+      const prior = JSON.parse(await readFile(previous.history, "utf8"));
+      if (
+        prior.attempts.at(-1)?.result === "passed" &&
+        !options.successor &&
+        !renewal
+      ) {
+        const receipt = JSON.parse(
+          await readFile(
+            path.join(
+              path.dirname(previous.history),
+              prior.attempts.at(-1).receipt
+            ),
+            "utf8"
+          )
+        );
+        const observed = receipt.ordinaryScope;
+        assert(observed, "ordinary_prior_scope_unavailable");
+        assert(
+          observed.candidate === ordinaryScope.candidate,
+          "ordinary_candidate_mismatch"
+        );
+        assert(
+          ordinaryScope.units.length > observed.units.length &&
+            observed.units.every((unit) => ordinaryScope.units.includes(unit)),
+          "ordinary_coverage_not_expanded"
+        );
+        generation += 1;
+        batchKind = "ordinary";
+        predecessor = previous.history;
+        successorCandidate = undefined;
+        await save(path.join(base, `ordinary-${generation}.json`), {
+          predecessor,
+          ordinaryScope,
+        });
+      } else if (
+        prior.attempts.at(-1)?.result !== "passed" &&
+        previous.ordinaryScope
+      ) {
+        assert(
+          previous.ordinaryScope.units.every((unit) =>
+            ordinaryScope.units.includes(unit)
+          ),
+          "ordinary_coverage_cannot_narrow"
+        );
+      }
     }
     if (options.importHistory?.length) {
       assert(!previous, "history_import_requires_unregistered_budget");
@@ -465,6 +528,7 @@ export async function beginNativeAttempt(options) {
       batchKind,
       predecessor,
       successorCandidate,
+      ordinaryScope,
     });
     for (const [name, target] of [
       ["attempts.json", history],
@@ -510,6 +574,22 @@ export async function beginNativeAttempt(options) {
         }
       },
       async finish(receipt) {
+        if (ordinaryScope && receipt.result === "passed") {
+          if (
+            Array.isArray(receipt.verifiedCoverage) &&
+            ordinaryScope.units.every((unit) =>
+              receipt.verifiedCoverage.includes(unit)
+            )
+          )
+            receipt.ordinaryScope = ordinaryScope;
+          else
+            Object.assign(receipt, {
+              result: "failed",
+              stage: "coverage",
+              classification: "runner",
+              reason: "ordinary_coverage_unobserved",
+            });
+        }
         receipt.history = { key, generation, path: history, predecessor };
         await attempt.finish(receipt);
         await save(path.join(output, "receipt.json"), receipt);
