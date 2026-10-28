@@ -12,7 +12,7 @@ import {
   lstat,
 } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -27,6 +27,8 @@ import { sourceIdentity } from "./source-identity.mjs";
 const { values } = parseArgs({
   options: {
     profile: { type: "string" },
+    "candidate-record": { type: "string" },
+    scenario: { type: "string" },
     "history-root": { type: "string" },
     effort: { type: "string" },
     environment: { type: "string" },
@@ -57,8 +59,29 @@ assert(
   "supported_transport_required"
 );
 assert(values.effort?.trim(), "stable_effort_required");
+if (values["candidate-record"])
+  assert(
+    path.isAbsolute(values["candidate-record"]),
+    "absolute_candidate_record_required"
+  );
+const selectedScenario =
+  values.scenario ??
+  (values["preflight-only"] ? "readiness" : "relay-transfer");
+assert(
+  ["readiness", "clipboard-history", "relay-transfer"].includes(
+    selectedScenario
+  ),
+  "supported_scenario_required"
+);
+assert(
+  !values.scenario || !values["preflight-only"],
+  "select_scenario_or_preflight_only"
+);
+if (selectedScenario !== "readiness")
+  assert(values["candidate-record"], "frozen_candidate_record_required");
+const scenarioIdentity = `electron-${selectedScenario === "relay-transfer" ? values.transport : selectedScenario}`;
 let expectedDiscovery;
-if (!values["preflight-only"]) {
+if (selectedScenario === "relay-transfer") {
   assert(values["expect-clip"], "nonprivate_clip_marker_required");
   expectedDiscovery = new URL(values.discovery);
   assert(
@@ -178,7 +201,10 @@ try {
     registryRoot,
     identity: {
       effort: values.effort.trim(),
-      scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport + ":" + expectedDiscovery.href}`,
+      scenario:
+        selectedScenario === "relay-transfer"
+          ? `${scenarioIdentity}:${expectedDiscovery.href}`
+          : scenarioIdentity,
       environment: {
         host: os.hostname(),
         platform: process.platform,
@@ -190,7 +216,7 @@ try {
     successor: values.successor,
     importHistory: values["import-history"],
     verifyTarget: verifyPreviousTarget,
-    scenario: `electron-${values["preflight-only"] ? "readiness" : values.transport}`,
+    scenario: scenarioIdentity,
     change: values["diagnostic-change"],
     expectation: values["expected-observation"],
     // The initial build and normal acceptance are outside diagnostic time. The
@@ -207,6 +233,10 @@ let log;
 let logFailure;
 const logWrites = [];
 const runner = path.join(evidenceDirectory, "launch.cjs");
+const nativeObservationFile = path.join(
+  evidenceDirectory,
+  "required-native.json"
+);
 const receipt = {
   startedAt: new Date().toISOString(),
   runtime: "actual-electron",
@@ -217,9 +247,9 @@ const receipt = {
     hostChanged: false,
     restoration: "not-requested",
   },
-  stage: "build",
+  stage: values["candidate-record"] ? "frozen-candidate" : "build",
   classification: "prerequisite",
-  mode: values["preflight-only"] ? "readiness-only" : "relay-transfer",
+  mode: selectedScenario === "readiness" ? "readiness-only" : selectedScenario,
   result: "not-run",
   loginFlow: "not-observed-by-runner",
   environmentLabel: values.environment,
@@ -232,6 +262,7 @@ const receipt = {
 let electron;
 let ownedProcess;
 let launchIntentRecorded = false;
+let frozenCandidate;
 function processIdentity(
   pid,
   timeoutMs = attempt.remainingMs(Math.min(1000, commandTimeout))
@@ -382,30 +413,97 @@ try {
         !receipt.candidate.dirty,
       "successor_candidate_binding_mismatch"
     );
-  await command(() => rm(dist, { recursive: true, force: true }));
-  attempt.assertBudget();
-  const build = spawnSync(
-    "npm",
-    ["--workspace", "apps/electron", "run", "build"],
-    {
-      cwd: root,
-      timeout: attempt.remainingMs(180_000),
-      stdio: ["ignore", log.fd, log.fd],
-    }
-  );
-  assert.equal(build.status, 0, "candidate_build_failed");
-  receipt.build = {
-    command: "npm --workspace apps/electron run build",
-    artifacts: await artifactIdentity(),
-  };
-  assert.deepEqual(
-    await sourceIdentity(root, {
-      remainingMs: (maximum) =>
-        attempt.remainingMs(Math.min(commandTimeout, maximum)),
-    }),
-    receipt.candidate,
-    "candidate_source_changed_during_build"
-  );
+  if (values["candidate-record"]) {
+    const record = JSON.parse(
+      await command(() => readFile(values["candidate-record"], "utf8"))
+    );
+    assert(
+      (await command(() => realpath(record.source.checkout))) ===
+        (await command(() => realpath(root))),
+      "frozen_candidate_checkout_mismatch"
+    );
+    assert(
+      record.source.revision === receipt.candidate.revision &&
+        !receipt.candidate.dirty,
+      "frozen_candidate_source_mismatch"
+    );
+    assert(
+      record.scenario.id === scenarioIdentity &&
+        record.scenario.runner === "scripts/electron-relay-acceptance.mjs",
+      "frozen_candidate_scenario_mismatch"
+    );
+    const verification = spawnSync(
+      process.execPath,
+      [
+        path.join(root, "scripts/prepare-acceptance-candidate.mjs"),
+        "verify",
+        "--record",
+        values["candidate-record"],
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        timeout: attempt.remainingMs(commandTimeout),
+        maxBuffer: 2 * 1024 * 1024,
+      }
+    );
+    if (verification.error?.code === "ETIMEDOUT")
+      throw new Error("owned_command_deadline_exhausted");
+    assert(
+      verification.status === 0,
+      `frozen_candidate_invalid: ${verification.stderr ?? ""}`
+    );
+    frozenCandidate = JSON.parse(verification.stdout.trim());
+    receipt.frozenCandidate = {
+      record: values["candidate-record"],
+      revision: frozenCandidate.revision,
+      artifact: frozenCandidate.artifact,
+      scenario: frozenCandidate.scenario,
+      runtimeVersion: frozenCandidate.runtimeVersion,
+    };
+    const files = Object.entries(record.artifacts)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, sha256]) => ({ path: name, sha256 }));
+    for (const required of ["main.cjs", "preload.js", "renderer/index.html"])
+      assert(
+        files.some((file) => file.path === required),
+        "candidate_artifact_missing"
+      );
+    receipt.build = {
+      command: "frozen-candidate-no-rebuild",
+      artifacts: {
+        files,
+        sha256: createHash("sha256")
+          .update(JSON.stringify(files))
+          .digest("hex"),
+      },
+    };
+  } else {
+    await command(() => rm(dist, { recursive: true, force: true }));
+    attempt.assertBudget();
+    const build = spawnSync(
+      "npm",
+      ["--workspace", "apps/electron", "run", "build"],
+      {
+        cwd: root,
+        timeout: attempt.remainingMs(180_000),
+        stdio: ["ignore", log.fd, log.fd],
+      }
+    );
+    assert.equal(build.status, 0, "candidate_build_failed");
+    receipt.build = {
+      command: "npm --workspace apps/electron run build",
+      artifacts: await artifactIdentity(),
+    };
+    assert.deepEqual(
+      await sourceIdentity(root, {
+        remainingMs: (maximum) =>
+          attempt.remainingMs(Math.min(commandTimeout, maximum)),
+      }),
+      receipt.candidate,
+      "candidate_source_changed_during_build"
+    );
+  }
   attempt.assertBudget();
   await command(() => mkdir(values.profile, { recursive: true, mode: 0o700 }));
   const profileLockPath = path.join(
@@ -460,16 +558,19 @@ try {
     await command(() => unlink(profileAdmissionPath));
   }
 
+  const nativePreparation = frozenCandidate
+    ? `if (!require(${JSON.stringify(path.join(root, "scripts/electron-required-native.cjs"))})(${JSON.stringify({ root, expected: { runtimeVersion: frozenCandidate.runtimeVersion, moduleAbi: frozenCandidate.moduleAbi, executable: frozenCandidate.executable, platform: process.platform, architecture: process.arch }, output: nativeObservationFile })})) { app.exit(1); } else `
+    : "";
   // Replace only the clipboard boundary: never read or write the host clipboard.
   await command(() =>
     writeFile(
       runner,
-      `const { app, clipboard } = require('electron');\napp.setName(${JSON.stringify(values["app-name"])});\nlet memoryClipboard = '';\nclipboard.readText = () => memoryClipboard;\nclipboard.writeText = (text) => { memoryClipboard = text; };\nrequire(${JSON.stringify(path.join(root, "apps/electron/dist/main.cjs"))});\n`,
+      `const { app, clipboard } = require('electron');\napp.setName(${JSON.stringify(values["app-name"])});\nlet memoryClipboard = '';\nclipboard.readText = () => memoryClipboard;\nclipboard.writeText = (text) => { memoryClipboard = text; };\n${nativePreparation}require(${JSON.stringify(path.join(root, "apps/electron/dist/main.cjs"))});\n`,
       { mode: 0o600 }
     )
   );
-  receipt.stage = "launch";
-  receipt.classification = "runner";
+  receipt.stage = frozenCandidate ? "required-native" : "launch";
+  receipt.classification = frozenCandidate ? "prerequisite" : "runner";
   const targetOwnership = {
     runnerPid: process.pid,
     profile: await command(() => realpath(values.profile)),
@@ -488,6 +589,7 @@ try {
     )
   );
   electron = await _electron.launch({
+    ...(frozenCandidate ? { executablePath: frozenCandidate.executable } : {}),
     args: [runner],
     cwd: root,
     env: {
@@ -507,6 +609,16 @@ try {
     childPid: electron.process().pid,
   };
   await command(() => attempt.recordTarget(launchedTarget));
+  if (frozenCandidate) {
+    receipt.requiredNative = JSON.parse(
+      await command(() => readFile(nativeObservationFile, "utf8"))
+    );
+    assert(
+      receipt.requiredNative.result === "passed",
+      receipt.requiredNative.reason ?? "required_native_module_load_failed"
+    );
+  }
+  receipt.classification = "runner";
   ownedProcess = processIdentity(electron.process().pid);
   await command(() =>
     attempt.recordTarget({ ...launchedTarget, identity: ownedProcess })
@@ -549,7 +661,8 @@ try {
       })
     );
   });
-  receipt.stage = "target";
+  receipt.stage = frozenCandidate ? "product-startup" : "target";
+  if (frozenCandidate) receipt.classification = "unknown";
   const page = await electron.firstWindow({
     timeout: attempt.remainingMs(Math.min(30_000, commandTimeout)),
   });
@@ -573,6 +686,12 @@ try {
     url: win.webContents.getURL(),
   }));
   receipt.target = { ...target, ...ownedWindow };
+  if (frozenCandidate)
+    assert(
+      path.resolve(target.executable) ===
+        (await command(() => realpath(frozenCandidate.executable))),
+      "frozen_candidate_runtime_mismatch"
+    );
   assert(
     target.pid === electron.process().pid &&
       target.launchArgumentMatches &&
@@ -601,6 +720,13 @@ try {
     null,
     { timeout: attempt.remainingMs(10_000) }
   );
+  if (frozenCandidate)
+    receipt.productStartup = {
+      entry: "apps/electron/dist/main.cjs",
+      ownedWindowObserved: true,
+      publicBridgeUsable: true,
+    };
+  receipt.classification = "runner";
   await electron.evaluate(async ({ app }) => {
     if (process.platform === "darwin") await app.dock?.show();
     app.focus({ steal: true });
@@ -641,9 +767,9 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  for (const label of ["Pinned", "All"]) {
+  const nativeClick = async (locator) => {
     const box = await command(() =>
-      page.getByRole("button", { name: label, exact: true }).boundingBox({
+      locator.boundingBox({
         timeout: attempt.remainingMs(Math.min(10_000, commandTimeout)),
       })
     );
@@ -670,6 +796,10 @@ try {
         y: Math.round(box.y + box.height / 2),
       }
     );
+    await checkFocus();
+  };
+  for (const label of ["Pinned", "All"]) {
+    await nativeClick(page.getByRole("button", { name: label, exact: true }));
     await page.waitForFunction(
       (text) =>
         [...document.querySelectorAll("button")].some(
@@ -701,7 +831,87 @@ try {
     passed: true,
   };
   attempt.assertBudget();
-  if (values["preflight-only"]) {
+  if (selectedScenario === "readiness") {
+    receipt.result = "passed";
+    receipt.classification = "none";
+  } else if (selectedScenario === "clipboard-history") {
+    receipt.stage = "clipboard-history";
+    receipt.classification = "product";
+    const initial = await page.evaluate(() => window.clipp.getState());
+    const baseline = new Set(initial.clips.map((clip) => clip.id));
+    const marker = `clipp-native-local-${randomUUID()}`;
+    await electron.evaluate(
+      ({ clipboard }, text) => clipboard.writeText(text),
+      marker
+    );
+    const observePublicState = async (select, reason) => {
+      const deadline =
+        Date.now() + attempt.remainingMs(Math.min(timeout, 10_000));
+      while (Date.now() < deadline) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        const state = await command(
+          () => page.evaluate(() => window.clipp.getState()),
+          Math.min(commandTimeout, remaining)
+        );
+        if (Date.now() > deadline) break;
+        const observation = select(state);
+        if (observation) return observation;
+        const pause = Math.min(50, deadline - Date.now());
+        if (pause > 0)
+          await new Promise((resolve) => setTimeout(resolve, pause));
+      }
+      throw new Error(reason);
+    };
+    const captured = await observePublicState(
+      (state) =>
+        state.clips.find(
+          (clip) =>
+            !baseline.has(clip.id) &&
+            clip.content === marker &&
+            clip.originPeerId === state.identity.deviceId
+        ),
+      "local_clip_capture_failed"
+    );
+    const card = page
+      .locator("article.history-card")
+      .filter({ hasText: marker });
+    await nativeClick(card.getByTitle("Pin", { exact: true }));
+    await observePublicState(
+      (state) => (state.pinnedIds.includes(captured.id) ? state : null),
+      "local_pin_state_failed"
+    );
+    await nativeClick(
+      page.getByRole("button", { name: "Pinned", exact: true })
+    );
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll("button")].some(
+          (button) =>
+            button.textContent?.trim() === "Pinned" &&
+            button.classList.contains("active")
+        ),
+      null,
+      { timeout: attempt.remainingMs(10_000) }
+    );
+    await command(() =>
+      card.waitFor({ state: "visible", timeout: attempt.remainingMs(10_000) })
+    );
+    const persisted = await page.evaluate(() => window.clipp.getState());
+    assert(
+      persisted.identity.deviceId === initial.identity.deviceId &&
+        persisted.pinnedIds.includes(captured.id) &&
+        persisted.clips.some((clip) => clip.id === captured.id),
+      "local_pin_state_failed"
+    );
+    receipt.behavior = {
+      scenario: "clipboard-history",
+      localClipCaptured: true,
+      nativePinObserved: true,
+      pinnedFilterVisible: true,
+      persistedPublicState: true,
+      passed: true,
+    };
     receipt.result = "passed";
     receipt.classification = "none";
   } else {
@@ -814,9 +1024,67 @@ try {
       "Clip checks passed; waiting for the owned Electron process to close."
     );
   }
-} catch (error) {
+} catch (caughtError) {
+  let error = caughtError;
+  let nativeObservationUnavailable = false;
+  if (frozenCandidate && receipt.stage === "required-native") {
+    try {
+      const observation = JSON.parse(
+        await command(() => readFile(nativeObservationFile, "utf8"))
+      );
+      assert(
+        observation?.runtime &&
+          Array.isArray(observation.required) &&
+          ["passed", "failed"].includes(observation.result),
+        "native_observation_invalid"
+      );
+      if (observation.result === "failed") {
+        assert(
+          [
+            "required_native_module_missing",
+            "required_native_abi_mismatch",
+            "required_native_module_load_failed",
+            "required_native_wrong_candidate",
+            "frozen_candidate_runtime_mismatch",
+          ].includes(observation.reason),
+          "native_observation_invalid"
+        );
+        receipt.stage = "required-native";
+        receipt.classification = "prerequisite";
+        error = new Error(observation.reason);
+      } else {
+        receipt.stage = "product-startup";
+        receipt.classification = "unknown";
+      }
+      receipt.requiredNative = observation;
+    } catch {
+      delete receipt.requiredNative;
+      nativeObservationUnavailable = true;
+      receipt.stage = "launch";
+      receipt.classification = "runner";
+      receipt.recoveryAction =
+        "check GUI access and owned Electron launch diagnostics before a changed retry; preserve this failed attempt";
+    }
+  }
   receipt.result = "failed";
+  if (receipt.stage === "frozen-candidate")
+    receipt.recoveryAction =
+      "prepare a successor from committed source with the maintained candidate command; preserve this failed record";
+  if (receipt.stage === "required-native")
+    receipt.recoveryAction =
+      "inspect the owning-runtime loader failure, fix reproducible setup and prepare a successor; preserve this failed record";
   const safeReasons = [
+    "local_clip_capture_failed",
+    "local_pin_state_failed",
+    "required_native_module_missing",
+    "required_native_abi_mismatch",
+    "required_native_module_load_failed",
+    "required_native_wrong_candidate",
+    "frozen_candidate_checkout_mismatch",
+    "frozen_candidate_source_mismatch",
+    "frozen_candidate_scenario_mismatch",
+    "frozen_candidate_invalid",
+    "frozen_candidate_runtime_mismatch",
     "owned_target_active_or_uncertain",
     "owned_profile_active_or_uncertain",
     "owned_command_deadline_exhausted",
@@ -840,14 +1108,17 @@ try {
     "selected_relay_server_transport_not_observed",
     "relay_clip_receipt_timeout",
   ];
-  receipt.reason =
-    safeReasons.find(
-      (reason) =>
-        typeof error?.message === "string" && error.message.startsWith(reason)
-    ) ??
-    (receipt.stage === "interaction"
-      ? "readiness_interaction_failed"
-      : "runtime_or_receipt_gate_failed");
+  receipt.reason = nativeObservationUnavailable
+    ? "native_observation_unavailable"
+    : (safeReasons.find(
+        (reason) =>
+          typeof error?.message === "string" && error.message.startsWith(reason)
+      ) ??
+      (receipt.stage === "interaction"
+        ? "readiness_interaction_failed"
+        : receipt.stage === "product-startup"
+          ? "product_startup_unavailable"
+          : "runtime_or_receipt_gate_failed"));
   if (
     [
       "identity_changed",
@@ -859,6 +1130,15 @@ try {
     ].includes(receipt.reason)
   )
     receipt.classification = "product";
+  if (
+    [
+      "owned_target_mismatch",
+      "owned_window_not_focused",
+      "interaction_control_unavailable",
+      "owned_command_deadline_exhausted",
+    ].includes(receipt.reason)
+  )
+    receipt.classification = "runner";
   if (receipt.reason === "diagnostic_time_budget_exhausted")
     receipt.classification = "runner";
   const safeClasses = [
@@ -1046,8 +1326,10 @@ try {
 
 if (receipt.result === "passed") {
   console.log(
-    values["preflight-only"]
+    selectedScenario === "readiness"
       ? "Passed: owned Electron readiness, native interaction and shutdown; relay transfer not tested."
-      : "Passed: selected relay transfer and owned Electron shutdown."
+      : selectedScenario === "clipboard-history"
+        ? "Passed: frozen Electron local capture, native pinning and owned shutdown; Pairing and relay transfer not tested."
+        : "Passed: selected relay transfer and owned Electron shutdown."
   );
 }
