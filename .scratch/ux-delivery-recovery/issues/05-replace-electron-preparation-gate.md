@@ -4,7 +4,11 @@
 
 **Blocked by:** [02 — Prepare a reproducible acceptance candidate](02-prepare-reproducible-candidate.md), [04 — Enforce durable diagnostic limits through an existing runner](04-enforce-diagnostic-limits.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/diagnostics`
+
+**Claim:** ux-delivery-recovery-20261028-05; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 

@@ -4,9 +4,7 @@
 
 **Blocked by:** [01 — Define finite acceptance and refine the UX dependency graph](01-refine-acceptance-and-dependencies.md), [03 — Reuse unaffected evidence safely](03-reuse-unaffected-evidence.md).
 
-**Status:** claimed
-
-**Assignee:** `/root/compact_resume`
+**Status:** resolved
 
 **Claim:** ux-delivery-recovery-20261028-08; coordinator `/root`.
 
@@ -23,3 +21,11 @@
 - [ ] Complete applicable checks and review. Supply the verified migration for ticket 10 to apply to the active UX effort; retain pre-existing worktrees and artifacts.
 
 **Scope boundary:** This ticket delivers current-state recovery and its verified migration. It does not automatically mutate claims, close tickets or clean up historical worktrees.
+
+## Answer
+
+Integrated source `449ae0f6fd8e4abb80ec111882b5a644c41ba1e2` plus required privacy correction `1102f814f0d9f99e0aa806e0400951348de6139f` by reviewed fast-forward. The existing read-only CLI now derives compact candidate, integration, claims, output/scenario applicability, capacity, authorization and next-action views. Its bounded current entry validates run/candidate/branch/canonical references. V3/local-v2 permits the actual configured client-only role without inventing a relay checkout; historical v1/v2 behavior remains covered.
+
+The public real-Git walkthrough and compatibility suite passed 71 cases as part of the enabled hook: 81 suites/792 tests and 21 candidate fixtures passed. The populated client-only fixture preserves a selected frozen candidate, linked active claim and correct next ticket; malformed entry human/JSON output excludes the private canary. Both source review axes and affected privacy reviews have no remaining findings. Exact commands/logs and review reports are preserved under primary-root `.local/ux-delivery-recovery/evidence/`, including `ticket-08-source-hook.log`, `ticket-08-privacy-hook.log` and `review-08-{standards,spec}-{449ae0f,1102f81}.md`.
+
+The maintained [migration](../../../docs/agents/ledger/compact-recovery.md) supplies ticket10's adoption procedure. This recovery effort's own current entry and formal local ledger are populated separately from the preservation manifest; original observations, failures and unknown applicability remain explicit. The active UX effort has not been migrated or qualified by this closure. Ticket10 owns its coordinated adoption.

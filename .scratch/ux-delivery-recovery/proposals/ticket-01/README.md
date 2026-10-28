@@ -1,6 +1,6 @@
 # Ticket 01: proposed finite UX allocation
 
-Prepared 2026-10-28 for [ticket 01](../../issues/01-refine-acceptance-and-dependencies.md). This is a preparation slice for the live migration owned by delivery-recovery ticket 10. It changes no UX issue, claim, qualification, product action or authorization. The coordinator retains unresolved ticket 01 until its public CLI requirements are implemented and verified.
+Prepared 2026-10-28 for [ticket 01](../../issues/01-refine-acceptance-and-dependencies.md). This is a preparation slice for the live migration owned by delivery-recovery ticket 10. It changes no UX issue, claim, qualification, product action or authorization. Ticket01 now has reviewed public CLI validation; its canonical Answer owns closure. The proposed live UX migration remains with ticket10.
 
 ## Resume and validate
 

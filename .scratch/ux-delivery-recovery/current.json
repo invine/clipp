@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runId": "ux-delivery-recovery-20261028",
+  "canonical": {
+    "role": "client",
+    "path": ".scratch/ux-delivery-recovery"
+  },
+  "runArtifact": "active-run",
+  "candidateId": "electron-readiness-20261028-4",
+  "integrationBranches": {
+    "client": "codex/ux-delivery-recovery-integration"
+  }
+}
