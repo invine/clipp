@@ -4,7 +4,11 @@
 
 **Blocked by:** [05 — Replace Electron's exhaustive preparation gate](05-replace-electron-preparation-gate.md), [06 — Run trustworthy Chrome acceptance on the intended surface](06-qualify-chrome-acceptance-surface.md), [07 — Deliver the verified Android acceptance tooling](07-qualify-android-acceptance-target.md), [08 — Resume from one compact, authoritative report](08-deliver-compact-resume-report.md), [09 — Make review and ticket closure advance the work](09-streamline-review-and-closure.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/review_04_spec`
+
+**Claim:** ux-delivery-recovery-20261028-10; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 

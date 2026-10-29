@@ -4,7 +4,7 @@
 
 **Blocked by:** [07 — Deliver the verified Android acceptance tooling](07-qualify-android-acceptance-target.md).
 
-**Status:** claimed
+**Status:** resolved
 
 **Assignee:** `/root/chrome`
 
