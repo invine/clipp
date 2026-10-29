@@ -1,3 +1,9 @@
+jest.mock(
+  "@multiformats/multiaddr",
+  () => ({ multiaddr: (value: string) => ({ toString: () => value }) }),
+  { virtual: true }
+);
+
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -55,8 +61,12 @@ function connectedRuntime(compiled = true) {
   let background: (...args: any[]) => unknown = () => {},
     offscreen: (...args: any[]) => unknown = () => {};
   const base = { Promise, Set, Map, setTimeout, Error };
+  const relayConfiguration = jest.requireActual(
+    path.resolve("apps/extension/src/managedRelayConfiguration.ts")
+  );
   const worker = vm.createContext({
     ...base,
+    ...relayConfiguration,
     chrome: {
       runtime: {
         id,
@@ -65,15 +75,23 @@ function connectedRuntime(compiled = true) {
             background = fn;
           },
         },
-        sendMessage: (message: unknown, respond: (value: unknown) => void) =>
-          offscreen(message, { id, url: backgroundUrl }, respond),
+        sendMessage: (message: any, respond: (value: unknown) => void) =>
+          message.action === "setManagedRelays"
+            ? respond({ ok: true })
+            : offscreen(message, { id, url: backgroundUrl }, respond),
       },
     },
   });
   execute(
     `let offscreenInitialized = true, offscreenOwned = true, offscreenCreateFlight = null, offscreenInitFlight = null;
 const startupResetChecked = true, startupResetReady = Promise.resolve(), offscreenReady = Promise.resolve();
-const clipboardSync = { isAutoSync: () => true };`,
+const clipboardSync = { isAutoSync: () => true };
+let managedConfigurations = [], managedStates = [], persistedConfigurations = [], managedConfigurationUpdate = Promise.resolve();
+const managedConfigurationsReady = Promise.resolve();
+const POPUP_URL = "chrome-extension://${id}/src/popup.html", OPTIONS_URL = "chrome-extension://${id}/src/options.html";
+const managedCredentials = { eraseCredentials: async () => {} };
+const managedConfigurationStore = { readNewModel: async () => persistedConfigurations, writeNewModel: async (next) => { persistedConfigurations = next; } };
+const sharedRuntime = { publishState: async () => {} };`,
     worker
   );
   if (generationFenced) {
@@ -87,6 +105,21 @@ const clipboardSync = { isAutoSync: () => true };`,
       'const uuidv4 = () => "synthetic-generation"; const identityWork = createIdentityBoundWorkFence();',
       worker
     );
+  }
+  execute(
+    functions("apps/extension/src/managedRelayUi.ts", ["authorizedRelayUi"]),
+    worker
+  );
+  if (relayConfiguration.createChromeRelayMutationOwner) {
+    const owner = source(backgroundFile).statements.find(
+      (node) =>
+        ts.isVariableStatement(node) &&
+        node.declarationList.declarations.some(
+          (declaration) => declaration.name.getText() === "relayMutationOwner"
+        )
+    );
+    if (!owner) throw new Error("actual relay mutation owner missing");
+    execute(owner.getText(), worker);
   }
   execute(
     functions(backgroundFile, [
@@ -133,8 +166,65 @@ const transport = {getConnectedPeers: () => ["synthetic-peer"], getPeerConnectio
   );
   const request = (handler: typeof background, message: unknown, url: string) =>
     new Promise<any>((resolve) => handler(message, { id, url }, resolve));
+  const pageUrl = `chrome-extension://${id}/src/options.html`;
+  const message = (value: unknown, senderUrl = pageUrl) =>
+    request(background, value, senderUrl);
+  const uiFile = fs.existsSync(
+    path.resolve("apps/extension/src/ExtensionApp.tsx")
+  )
+    ? "apps/extension/src/ExtensionApp.tsx"
+    : "apps/extension/src/options.tsx";
+  let action: ts.FunctionDeclaration | undefined;
+  let save: ts.JsxAttribute | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "relayAction")
+      action = node;
+    if (
+      ts.isJsxAttribute(node) &&
+      ["onSetConfigurations", "onMutateManagedRelay"].includes(
+        node.name.getText()
+      )
+    )
+      save = node;
+    ts.forEachChild(node, visit);
+  };
+  visit(source(uiFile));
+  if (
+    !action ||
+    !save?.initializer ||
+    !ts.isJsxExpression(save.initializer) ||
+    !save.initializer.expression
+  )
+    throw new Error("actual page relay Save contract missing");
+  const fieldScoped = save.name.getText() === "onMutateManagedRelay";
+  const page = vm.createContext({
+    ...base,
+    chrome: {
+      runtime: {
+        sendMessage: (value: unknown, reply: (value: unknown) => void) => {
+          void message(value).then(reply);
+        },
+      },
+    },
+  });
+  execute(
+    `${action.getText()}
+let renderedConfigurations; const setManagedRelayConfigurations = (next) => { renderedConfigurations = next; }; const saveRelay = ${save.initializer.expression.getText()};`,
+    page
+  );
   return {
     generationFenced,
+    fieldScoped,
+    message,
+    saveRelay(configuration: unknown) {
+      page.configuration = configuration;
+      return vm.runInContext(
+        fieldScoped
+          ? 'saveRelay({ type: "add", configuration })'
+          : "saveRelay([configuration])",
+        page
+      );
+    },
     status: () =>
       request(
         background,
@@ -201,4 +291,41 @@ test("ordinary offscreen builds cannot acquire acceptance proof from the status 
     autoSync: true,
     started: true,
   });
+});
+
+test("the actual page relay Save contract reaches its registered background configuration owner", async () => {
+  const runtime = connectedRuntime();
+  const configuration = {
+    key: "normal-form-generated-key",
+    name: "Pairing relay",
+    kind: "managed",
+    discoveryUrl: "https://relay.example/v1/relay",
+  };
+  const result = await runtime.saveRelay(configuration);
+  if (runtime.fieldScoped)
+    expect(result).toMatchObject({
+      status: "applied",
+      configurationApplied: true,
+    });
+  expect(await runtime.message({ type: "managedRelayGet" })).toMatchObject({
+    ok: true,
+    configurations: [configuration],
+  });
+  expect(
+    await runtime.message(
+      { type: "managedRelayGet" },
+      "chrome-extension://" + "a".repeat(32) + "/content.html"
+    )
+  ).toEqual({ ok: false, error: "relay_ui_unauthorized" });
+  if (runtime.fieldScoped) {
+    expect(
+      await runtime.message({
+        type: "managedRelaySet",
+        configurations: [configuration],
+      })
+    ).toEqual({ ok: false, error: "invalid_relay_key" });
+    expect(await runtime.message({ type: "managedRelayGet" })).toMatchObject({
+      configurations: [configuration],
+    });
+  }
 });
