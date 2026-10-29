@@ -34,6 +34,8 @@ function runReadiness({
   installedMatches = true,
   splitPackage = false,
   interactionChanges = true,
+  uiControls = true,
+  timeoutSeconds = 20,
   windowDumpFormat = "summary",
   uiDumpSpelling = "hierarchy",
   timeoutBudgetMs,
@@ -58,6 +60,8 @@ function runReadiness({
   installedMatches?: boolean;
   splitPackage?: boolean;
   interactionChanges?: boolean;
+  uiControls?: boolean;
+  timeoutSeconds?: number;
   windowDumpFormat?: "summary" | "windows-only";
   uiDumpSpelling?: "hierarchy" | "hierchary";
   timeoutBudgetMs?: number;
@@ -133,13 +137,15 @@ function runReadiness({
   const uiStateFile = join(directory, "ui-state.xml");
   const uiBefore = join(directory, "ui-before.xml");
   const uiAfter = join(directory, "ui-after.xml");
+  const webViewNode =
+    '<node package="com.clipp.app.acceptance" class="android.webkit.WebView" bounds="[0,63][1080,1920]" focusable="true" clickable="false" focused="true" text="private text" content-desc="private description">';
   writeFileSync(
     uiBefore,
-    '<hierarchy><node package="com.clipp.app.acceptance" class="android.widget.EditText" resource-id="com.clipp.app.acceptance:id/search" bounds="[0,0][100,40]" focusable="true" clickable="true" focused="true" text="private text" /></hierarchy>'
+    `<hierarchy>${webViewNode}${uiControls ? '<node package="com.clipp.app.acceptance" class="android.widget.EditText" resource-id="com.clipp.app.acceptance:id/search" bounds="[0,0][100,40]" focusable="true" clickable="true" focused="true" text="private text" />' : ""}</node></hierarchy>`
   );
   writeFileSync(
     uiAfter,
-    '<hierarchy><node package="com.clipp.app.acceptance" class="android.widget.Button" resource-id="com.clipp.app.acceptance:id/history" bounds="[0,50][100,90]" focusable="true" clickable="true" focused="true" text="private text" /></hierarchy>'
+    `<hierarchy>${webViewNode}${uiControls ? '<node package="com.clipp.app.acceptance" class="android.widget.Button" resource-id="com.clipp.app.acceptance:id/history" bounds="[0,50][100,90]" focusable="true" clickable="true" focused="true" text="private text" />' : ""}</node></hierarchy>`
   );
   writeFileSync(uiStateFile, readFileSync(uiBefore));
   if (timeoutBudgetMs !== undefined) {
@@ -337,6 +343,8 @@ syncBuiltinESMExports();
             serial,
             "--suite",
             suite,
+            "--timeout",
+            String(timeoutSeconds),
             "--candidate-apk",
             candidate,
             "--output",
@@ -435,7 +443,7 @@ test("Android readiness rejects a visible window-list entry without explicit foc
 });
 
 test("Android readiness fails when the UI action produces no observable effect", () => {
-  const run = runReadiness({ interactionChanges: false });
+  const run = runReadiness({ interactionChanges: false, timeoutSeconds: 1 });
   try {
     expect(run.result.status).not.toBe(0);
     const receipt = JSON.parse(
@@ -443,6 +451,30 @@ test("Android readiness fails when the UI action produces no observable effect",
     );
     expect(receipt.stage).toBe("interaction");
     expect(receipt.failure).toContain("candidate_ui_interaction_no_effect");
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test("Android readiness refuses a focused WebView without app controls", () => {
+  const run = runReadiness({ uiControls: false, timeoutSeconds: 1 });
+  try {
+    expect(run.result.status).toBe(1);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.failure).toBe("candidate_ui_controls_unavailable");
+    expect(readFileSync(run.argsFile, "utf8")).not.toContain(
+      "shell input keyevent KEYCODE_TAB"
+    );
+    const evidence = readFileSync(
+      join(run.output, "attempt-1", "ui-structure.private.json"),
+      "utf8"
+    );
+    expect(evidence).toContain("android.webkit.WebView");
+    expect(evidence).not.toMatch(
+      /private text|private description|content-desc|"text"/
+    );
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }

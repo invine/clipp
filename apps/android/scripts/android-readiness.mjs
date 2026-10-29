@@ -151,11 +151,16 @@ function remainingTimeout(stage) {
   }
 }
 
-function invoke(args, stage, classification = "prerequisite") {
+function invoke(
+  args,
+  stage,
+  classification = "prerequisite",
+  maximum = timeout
+) {
   const result = spawnSync(adb, ["-s", serial, ...args], {
     cwd: root,
     encoding: "utf8",
-    timeout: remainingTimeout(stage),
+    timeout: Math.min(remainingTimeout(stage), maximum),
     maxBuffer: 1024 * 1024,
   });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
@@ -436,28 +441,72 @@ function focusedActivity(windowDump) {
   return match?.[1] ?? null;
 }
 
-function focusedNodeFingerprint(hierarchy) {
-  const nodes = hierarchy.match(/<node\b[^>]*>/g) ?? [];
-  const focused = nodes.find((node) => {
-    const packageName = node.match(/\bpackage="([^"]*)"/)?.[1];
-    return packageName === appPackage && /\bfocused="true"/.test(node);
-  });
+const uiStructure = {};
+function structuralNodes(hierarchy) {
+  return (hierarchy.match(/<node\b[^>]*>/g) ?? [])
+    .filter((node) => node.match(/\bpackage="([^"]*)"/)?.[1] === appPackage)
+    .slice(0, 256)
+    .map((node) =>
+      Object.fromEntries(
+        [
+          "class",
+          "resource-id",
+          "bounds",
+          "focused",
+          "clickable",
+          "focusable",
+        ].map((name) => [
+          name,
+          (node.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "").slice(
+            0,
+            160
+          ),
+        ])
+      )
+    );
+}
+function isInteractiveControl(node) {
+  return (
+    node.class !== "android.webkit.WebView" &&
+    (node.clickable === "true" || node.focusable === "true")
+  );
+}
+function focusedNodeFingerprint(nodes) {
+  const focused = nodes
+    .filter((node) => isInteractiveControl(node) && node.focused === "true")
+    .at(-1);
   if (!focused) return null;
-
-  // Avoid retaining user-visible text or content descriptions from the UI tree.
-  const attribute = (name) =>
-    focused.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "";
   const descriptor = [
-    attribute("class"),
-    attribute("resource-id"),
-    attribute("bounds"),
-    attribute("clickable"),
-    attribute("focusable"),
-  ].join("\n");
+    "class",
+    "resource-id",
+    "bounds",
+    "clickable",
+    "focusable",
+  ]
+    .map((name) => focused[name])
+    .join("\n");
   return createHash("sha256").update(descriptor).digest("hex");
 }
+async function observeControls(phase, accepts, failure) {
+  const deadline = Date.now() + Math.min(5000, remainingTimeout("interaction"));
+  do {
+    const nodes = structuralNodes(readUiHierarchy(deadline));
+    uiStructure[phase] = nodes;
+    if (accepts(nodes)) return nodes;
+    const remaining = Math.min(
+      deadline - Date.now(),
+      remainingTimeout("interaction")
+    );
+    if (remaining <= 0) break;
+    await diagnosticStep(
+      "interaction",
+      () => new Promise((done) => setTimeout(done, Math.min(100, remaining)))
+    );
+  } while (Date.now() < deadline);
+  throw new Error(failure);
+}
 
-function readUiHierarchy() {
+function readUiHierarchy(deadline) {
   const devicePath = `/data/local/tmp/clipp-readiness-${process.pid}-${attempt.number}.xml`;
   let hierarchy;
   let failure;
@@ -465,7 +514,8 @@ function readUiHierarchy() {
     const dumped = invoke(
       ["shell", "uiautomator", "dump", devicePath],
       "interaction",
-      "runner"
+      "runner",
+      Math.max(1, deadline - Date.now())
     );
     assert.match(
       dumped,
@@ -475,7 +525,8 @@ function readUiHierarchy() {
     hierarchy = invoke(
       ["exec-out", "cat", devicePath],
       "interaction",
-      "runner"
+      "runner",
+      Math.max(1, deadline - Date.now())
     );
     assert.match(hierarchy, /^<?xml|<hierarchy\b/i, "ui_hierarchy_unreadable");
   } catch (error) {
@@ -747,8 +798,18 @@ try {
     receipt.focusBeforeActivity === activity,
     "candidate_window_not_owned"
   );
-  const hierarchyBefore = readUiHierarchy();
-  receipt.focusBefore = focusedNodeFingerprint(hierarchyBefore);
+  const controlsBefore = await observeControls(
+    "before",
+    (nodes) => nodes.some(isInteractiveControl),
+    "candidate_ui_controls_unavailable"
+  );
+  receipt.focusBefore = focusedNodeFingerprint(controlsBefore);
+  assert(
+    focusedActivity(
+      invoke(["shell", "dumpsys", "window"], "interaction", "runner")
+    ) === activity,
+    "candidate_window_not_owned"
+  );
   receipt.input = invoke(
     ["shell", "input", "keyevent", "KEYCODE_TAB"],
     "interaction",
@@ -761,7 +822,21 @@ try {
     receipt.focusAfterActivity === activity,
     "candidate_lost_window_focus"
   );
-  receipt.focusAfter = focusedNodeFingerprint(readUiHierarchy());
+  const controlsAfter = await observeControls(
+    "after",
+    (nodes) => {
+      const focused = focusedNodeFingerprint(nodes);
+      return focused && focused !== receipt.focusBefore;
+    },
+    "candidate_ui_interaction_no_effect"
+  );
+  receipt.focusAfter = focusedNodeFingerprint(controlsAfter);
+  assert(
+    focusedActivity(
+      invoke(["shell", "dumpsys", "window"], "interaction", "runner")
+    ) === activity,
+    "candidate_lost_window_focus"
+  );
   assert(
     receipt.focusAfter && receipt.focusAfter !== receipt.focusBefore,
     "candidate_ui_interaction_no_effect"
@@ -856,6 +931,19 @@ try {
     );
   } catch {
     receipt.failureEvidence = "unavailable";
+  }
+  if (Object.keys(uiStructure).length) {
+    try {
+      await cleanupStep(() =>
+        writeFile(
+          path.join(attempt.directory, "ui-structure.private.json"),
+          JSON.stringify(uiStructure),
+          { mode: 0o600 }
+        )
+      );
+    } catch {
+      receipt.uiStructureEvidence = "unavailable";
+    }
   }
   if (error.cleanupFailure) {
     receipt.cleanup = "failed";
