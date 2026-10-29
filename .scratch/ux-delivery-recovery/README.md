@@ -3,7 +3,7 @@
 **Owning repository:** client (Clipp)
 **Canonical feature directory:** client:`.scratch/ux-delivery-recovery/`
 
-The [specification](spec.md) and its testing boundaries were approved on 2026-10-28. The user subsequently approved publication of this ten-ticket breakdown. This is the active client-owned tracker on `codex/ux-delivery-recovery-integration`. Start at the [current entry](current.json) and derived report; numbered ticket files own claims and resolution. The [continuation](run.md) records local configuration locations, evidence exceptions and preservation.
+The [specification](spec.md) and its testing boundaries were approved on 2026-10-28. The user subsequently approved publication of the original ten-ticket breakdown. The [scope-preserving Android refinement](android-qualification-refinement.md) retains its native qualification as ticket 11. This is the active client-owned tracker on `codex/ux-delivery-recovery-integration`. Start at the [current entry](current.json) and derived report; numbered ticket files own claims and resolution. The [continuation](run.md) records local configuration locations, evidence exceptions and preservation.
 
 ```sh
 node scripts/agent-status.mjs --entry client:.scratch/ux-delivery-recovery/current.json --local /absolute/primary/.local/ux-delivery-recovery/evidence/recovery-local.json --compact
@@ -13,18 +13,19 @@ Supply the actual primary checkout path. Add `--json` for the same derived field
 
 ## Approved tickets
 
-| Ticket                                                | Deliverable                                      | Blocked by         |
-| ----------------------------------------------------- | ------------------------------------------------ | ------------------ |
-| [01](issues/01-refine-acceptance-and-dependencies.md) | Finite acceptance and refined UX dependencies    | None               |
-| [02](issues/02-prepare-reproducible-candidate.md)     | Reproducible frozen candidate                    | None               |
-| [03](issues/03-reuse-unaffected-evidence.md)          | Safe evidence reuse and scoped invalidation      | 01, 02             |
-| [04](issues/04-enforce-diagnostic-limits.md)          | Durable diagnostic limits through Electron       | None               |
-| [05](issues/05-replace-electron-preparation-gate.md)  | Finite Electron preparation and native startup   | 02, 04             |
-| [06](issues/06-qualify-chrome-acceptance-surface.md)  | Intended Chrome target and actual popup scenario | 02, 04             |
-| [07](issues/07-qualify-android-acceptance-target.md)  | Intended Android candidate and native scenario   | 02, 04             |
-| [08](issues/08-deliver-compact-resume-report.md)      | Compact authoritative recovery                   | 01, 03             |
-| [09](issues/09-streamline-review-and-closure.md)      | Review, scheduling and prompt closure            | None               |
-| [10](issues/10-adopt-and-demonstrate-workflow.md)     | Active UX adoption and end-to-end demonstration  | 05, 06, 07, 08, 09 |
+| Ticket                                                | Deliverable                                        | Blocked by         |
+| ----------------------------------------------------- | -------------------------------------------------- | ------------------ |
+| [01](issues/01-refine-acceptance-and-dependencies.md) | Finite acceptance and refined UX dependencies      | None               |
+| [02](issues/02-prepare-reproducible-candidate.md)     | Reproducible frozen candidate                      | None               |
+| [03](issues/03-reuse-unaffected-evidence.md)          | Safe evidence reuse and scoped invalidation        | 01, 02             |
+| [04](issues/04-enforce-diagnostic-limits.md)          | Durable diagnostic limits through Electron         | None               |
+| [05](issues/05-replace-electron-preparation-gate.md)  | Finite Electron preparation and native startup     | 02, 04             |
+| [06](issues/06-qualify-chrome-acceptance-surface.md)  | Intended Chrome target and actual popup scenario   | 02, 04             |
+| [07](issues/07-qualify-android-acceptance-target.md)  | Verified Android acceptance tooling                | 02, 04             |
+| [08](issues/08-deliver-compact-resume-report.md)      | Compact authoritative recovery                     | 01, 03             |
+| [09](issues/09-streamline-review-and-closure.md)      | Review, scheduling and prompt closure              | None               |
+| [10](issues/10-adopt-and-demonstrate-workflow.md)     | Active UX adoption and end-to-end demonstration    | 05, 06, 07, 08, 09 |
+| [11](issues/11-qualify-android-native-output.md)      | Retained actual Android readiness/behavior/cleanup | 07                 |
 
 The numbered files own their Status and Blocked by fields. The initial frontier was 01, 02, 04 and 09; use the derived report for current eligibility and capacity. External prerequisites are checked separately before dispatch.
 
@@ -40,9 +41,11 @@ Tickets 01 and 08 produce verified graph and recovery migrations; ticket 10 coor
 | ---------------------------------------------------------- | ------------------------ |
 | Finite preparation instead of exhaustive local proof gates | 02, 05, 10               |
 | Scoped outputs and proper qualification dependencies       | 01, 03, 10               |
-| Stable candidate and applicable evidence                   | 02, 03, 05–07            |
-| Bounded native readiness and diagnosis                     | 04–07                    |
+| Stable candidate and applicable evidence                   | 02, 03, 05–07, 11        |
+| Bounded native readiness and diagnosis                     | 04–07, 11                |
 | Review, scheduling and closure                             | 09, 10                   |
 | Canonical navigation and compact recovery                  | 08, 10                   |
 
 Each ticket specifies its own acceptance and scope limits. Existing project operations, verification and preservation rules apply; source pointers and accepted product invariants are collected in the parent specification. An implementation run establishes its own current Git and durable evidence records rather than treating this publication as execution evidence.
+
+The scoped Android tooling output 07 is resolved on reviewed/checked source `36aadacaeeece30feca0b816dc3a17293db71e37`; this is not native qualification. Ticket 10 selects the qualified Chrome/Electron path after its scoped prerequisites are satisfied. Ticket 11 retains all actual Android criteria, named ownership and exhausted semantic history; whole-effort acceptance remains incomplete while that qualification is open. Read [the exact criterion allocation](android-qualification-refinement.md) before changing any of those owners or dependencies.

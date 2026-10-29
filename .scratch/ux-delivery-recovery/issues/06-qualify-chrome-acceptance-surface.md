@@ -4,7 +4,7 @@
 
 **Blocked by:** [02 — Prepare a reproducible acceptance candidate](02-prepare-reproducible-candidate.md), [04 — Enforce durable diagnostic limits through an existing runner](04-enforce-diagnostic-limits.md).
 
-**Status:** claimed
+**Status:** resolved
 
 **Assignee:** `/root/chrome`
 
