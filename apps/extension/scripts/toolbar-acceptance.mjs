@@ -877,8 +877,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         },
         readState: () =>
           request({ type: "getRuntimeState" }).then((reply) => reply?.state),
-        readTransportStatus: () =>
-          request({ target: "offscreen", action: "getStatus" }),
+        readTransportStatus: () => request({ type: "getStatus" }),
       };
     };
     const openPopup = async () => {
@@ -1170,10 +1169,10 @@ export async function runToolbarAcceptance(args, relayHooks) {
           ? popup
               .locator("article.history-card")
               .filter({ hasText: text })
-              .getByTitle("Pin", { exact: true })
+              .getByTitle(/^Pin(?: Clip)?$/, { exact: true })
               .click({ timeout: attempt.remainingMs(5000) })
           : popup
-              .getByTitle("Pin", { exact: true })
+              .getByTitle(/^Pin(?: Clip)?$/, { exact: true })
               .first()
               .click({ timeout: attempt.remainingMs(5000) })
       );
@@ -1228,12 +1227,23 @@ export async function runToolbarAcceptance(args, relayHooks) {
               async open() {
                 popup = await openPopup();
               },
-              click: (name) =>
-                focusedInput(() =>
-                  popup
-                    .getByRole("button", { name, exact: true })
-                    .click({ timeout: attempt.remainingMs(5000) })
-                ),
+              async click(name, { ifPresent = false } = {}) {
+                const control = popup.getByRole("button", {
+                  name:
+                    name === "Requests"
+                      ? /^Requests(?:\s*(?:\((?:\d+|loading|unavailable)\)|active requests))?$/
+                      : name,
+                  exact: true,
+                });
+                if (ifPresent) {
+                  const count = await bounded(() => control.count());
+                  assert(count <= 1, "pairing_close_control_ambiguous");
+                  if (count === 0) return;
+                }
+                await focusedInput(() =>
+                  control.click({ timeout: attempt.remainingMs(5000) })
+                );
+              },
               async typeTarget(text) {
                 await focusedInput(() =>
                   popup

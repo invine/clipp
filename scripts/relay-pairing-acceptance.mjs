@@ -301,6 +301,12 @@ async function performPairing({ electron, chrome }, bounded, until, discovery) {
       Buffer.byteLength(target) <= 22000,
     "pairing_public_signed_target_required"
   );
+  await bounded(() =>
+    electron.click("Close QR dialog", undefined, { ifPresent: true })
+  );
+  await bounded(() =>
+    electron.click("Close Pairing", undefined, { ifPresent: true })
+  );
   await bounded(chrome.open);
   for (const label of ["Devices", "Pair this device", "Paste pairing text"])
     await bounded(() => chrome.click(label));
@@ -332,6 +338,8 @@ async function performPairing({ electron, chrome }, bounded, until, discovery) {
       route(states[1], ids[0])
     );
   }, "pairing_signed_request_unobserved");
+  await bounded(() => chrome.click("Back to Pairing", { ifPresent: true }));
+  await bounded(() => chrome.click("Close Pairing", { ifPresent: true }));
   await bounded(() => electron.click("Requests"));
   await bounded(() =>
     electron.click("Accept", `[data-session-focus="request:${ids[1]}"]`)

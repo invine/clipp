@@ -970,7 +970,7 @@ export async function runElectronAcceptance(args, relayHooks) {
       const card = page
         .locator("article.history-card")
         .filter({ hasText: marker });
-      await nativeClick(card.getByTitle("Pin", { exact: true }));
+      await nativeClick(card.getByTitle(/^Pin(?: Clip)?$/, { exact: true }));
       await observePublicState(
         (state) => (state.pinnedIds.includes(captured.id) ? state : null),
         "local_pin_state_failed"
@@ -1017,7 +1017,7 @@ export async function runElectronAcceptance(args, relayHooks) {
               readState: () => page.evaluate(() => window.clipp.getState()),
               copyTarget: () =>
                 electron.evaluate(({ clipboard }) => clipboard.readText()),
-              async click(name, selector) {
+              async click(name, selector, { ifPresent = false } = {}) {
                 await electron.evaluate(({ app }) => {
                   app.focus({ steal: true });
                 });
@@ -1037,13 +1037,23 @@ export async function runElectronAcceptance(args, relayHooks) {
                     await new Promise((done) => setTimeout(done, 50));
                   }
                 }
-                await nativeClick(
-                  selector
-                    ? page
-                        .locator(selector)
-                        .getByRole("button", { name, exact: true })
-                    : page.getByRole("button", { name, exact: true })
-                );
+                const control = selector
+                  ? page
+                      .locator(selector)
+                      .getByRole("button", { name, exact: true })
+                  : page.getByRole("button", {
+                      name:
+                        name === "Requests"
+                          ? /^Requests(?:\s*(?:\((?:\d+|loading|unavailable)\)|active requests))?$/
+                          : name,
+                      exact: true,
+                    });
+                if (ifPresent) {
+                  const count = await command(() => control.count());
+                  assert(count <= 1, "pairing_close_control_ambiguous");
+                  if (count === 0) return;
+                }
+                await nativeClick(control);
               },
             }),
           relayHooks.maximumMs
