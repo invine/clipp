@@ -14,32 +14,11 @@ isolated build is for native storage/lifecycle tests, not browser login acceptan
 
 ## Build and run
 
-Use the installed Android SDK and JDK 21. Build web assets and sync Capacitor
-before native builds. In symlinked npm worktrees, sync rewrites generated
-`capacitor.settings.gradle` paths; those local paths should not be committed.
-The Gradle init script redirects dependency build outputs into this checkout.
+Use the [frozen Android candidate and selected-device procedure](android-background-continuity-release.md#automated-release-checks). It builds the isolated app/test APK pair with JDK 21 and the installed SDK, freezes their hashes and committed source identity, then verifies both installed packages on the selected owned emulator before any product fixture. The maintained focused and matrix aliases use that same serial for boot/WebView/focus/input checks and actual instrumentation; they do not rebuild or select another Gradle guest after readiness.
 
-```sh
-npm --workspace apps/android run build
-npm --workspace apps/android run cap:sync
-cd apps/android/android
-./gradlew -I ../scripts/native-acceptance.init.gradle -PclippAcceptance \
-  :app:assembleAcceptance :app:assembleAcceptanceAndroidTest
-```
+The focused command observes the durable explicit-text queue/repeated-event case. The finite matrix adds the credential, lifecycle, manifest and diagnostic cases listed below. Both use the shared durable effort/history policy across aliases and output locations; a focused pass remains a limited observation. Fixture compilation and injected driver tests remain separate from actual native results.
 
-Inspect both APK application IDs before installation. On an authorized test
-phone, install only `app/build/outputs/apk/acceptance/app-acceptance.apk` and
-`app/build/outputs/apk/androidTest/acceptance/app-acceptance-androidTest.apk`.
-Run the fixture classes through the acceptance instrumentation runner:
-
-```sh
-adb -s "$CLIPP_TEST_SERIAL" shell am instrument -w \
-  -e class com.clipp.app.ManagedRelayCredentialStoreTest,com.clipp.app.BackgroundContinuityLifecycleTest,com.clipp.app.BackgroundContinuityManifestTest,com.clipp.app.BackgroundContinuityDiagnosticsTest \
-  com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-Managed-emulator npm instrumentation scripts also select this isolated variant.
-The existing connected-emulator script retains its API 31+ emulator preflight.
+Normal `com.clipp.app` storage, credentials, settings and pre-existing phones remain outside this procedure's ownership. The runner cleans only its temporary files and force-stops `com.clipp.app.acceptance`; the operator owns later removal of the two acceptance packages and shutdown of the fresh guest. Preserve every failed receipt when changing hypotheses, candidates or coverage.
 
 For an actual process boundary, run these phases separately. Each method checks
 the isolated package before its fixture; each phase contains only a synthetic

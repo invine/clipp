@@ -1,10 +1,10 @@
 # Deliver Android task input against existing tasks
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-android-input-36
 Priority band: 1
-Blocked by: 07, 12, 32
+**Blocked by:** [07](07-preserve-session-tasks-and-editor-recovery.md), [12](12-integrate-android-content-bounds.md), [32](32-deliver-local-assets-and-android-shared-controls.md)
 Dispatch: 2026-10-20 coordinator scope-preserving host allocation from reviewed claim34
 Parent: [Clipp UX implementation](../spec.md)
 

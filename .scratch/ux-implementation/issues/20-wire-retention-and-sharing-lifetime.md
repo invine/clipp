@@ -1,10 +1,10 @@
 # Wire local retention and Clip Sharing Lifetime
 
 Type: implementation
-Status: claimed
+**Status:** resolved
 Assignee: ux-retention-20
 Priority band: 1
-Blocked by: 01, 02, 32
+**Blocked by:** [01](01-repair-chrome-preference-integrity.md), [02](02-reconcile-authoritative-history.md), [32](32-deliver-local-assets-and-android-shared-controls.md)
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -51,7 +51,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Dispatch assessment — 2026-10-12
 
@@ -92,3 +92,17 @@ A bounded source inspection at clean `46807b895fed4e81b71a304eac5646ee186ae4bd` 
 Integrated ec638624 repairs the reproduced retention-save/control-queue cycle through the existing settings owner; 7518306 repairs Capacitor Integer/Long decoding of valid native action numbers with finite/integer/safe-range validation. Actual client RED/GREEN, required checks and unchanged hooks pass154 suites/1168tests; mandatory mergers and independent Standards0/Spec0 are recorded. Fresh ec638 full verify passes all typechecks/three builds; native-only751 compiles and passes all three actual policy phases with exact source/APK bindings.
 
 Actual SEND/PROCESS_TEXT admissions preserve immutable deadlines and firstStoredAt through force-stop/new PID; zero retention removes unpinned history, preserves a pin, then real Unpin removes it without resurrection. Root readonly metadata audit passes. Exact ignored evidence: `retention20-native-number-integrated-verification-20261017.json` and `retention20-number-native-metadata-audit-20261017.json`. This does not qualify physical chooser, pending-capture/abrupt-stop/IndexedDB-outage G35, Chrome G36 or Electron restart/presentation portions. Remaining audit `retention20-remaining-coverage-audit-20261017.md` retains those gates.20 stays claimed.
+
+## Chrome and Electron live runtime continuation — 2026-10-27
+
+At integration `59fe2925d382de8a3e661c9aaf321fc23477a1a8`, with the recorded pre-existing dirty source state preserved, actual Chrome for Testing 143.0.7499.4 and the Electron development runtime ran in isolated temporary profiles. Chrome's production extension build passed. The Chrome checks used real extension service-worker/Options pages and IndexedDB; a synthetic marker was supplied via the extension's text-processing message path, with no system clipboard read or write. Zero retention removed the unpinned marker, preserved its pin, and removed it after Unpin. Two live views retained concurrent retention and theme writes, and a fresh view restored both. Nonpreset retention `123456 ms` and sharing lifetime `654321 ms` rendered exact Custom values and survived stopping the extension service worker and activating it again. The service-worker CDP target disappeared before reopening the extension page and reappeared afterward; Chrome reused its target ID.
+
+The Electron dev app used `/private/tmp/clipp-ux20-electron-restart-20261027`, verified the isolated path, saved those same nonpreset settings through existing runtime actions, was stopped, and relaunched against the same profile. Its new runtime session restored both values and the Settings UI showed the exact Custom values. The app, renderer server, Chrome contexts and temporary profiles were closed/removed after checks. Full receipt and retained runner scripts: ignored `.local/ux-implementation/run-20261027/ticket20-runtime-qualification-01/receipt.json` and sibling `.mjs` files. Tested integration commit and tracked dirty diff hash are bound in that receipt.
+
+This qualifies the described Chrome local-retention effect and the Chrome/Electron settings persistence/restart portions only. It does not close all G35/G36 ordering/fault/native presentation requirements. Android was continued after the OnePlus was unlocked: the isolated acceptance package rendered the accepted retention/lifetime defaults, explanations and selector choices; selected 365-day retention plus 7-day lifetime survived force-stop/relaunch; restoring 30 days and 24 hours also survived a second restart. No Clip data changed, and the phone returned to the operator package. The installed acceptance package was version1.0.2 and its install followed the local APK build by four minutes, but the exact installed APK hash could not be read from Android's private package path, so this is rendered Android settings/process-persistence evidence, not an exact binary-bound pass. Receipt and captures: `.local/ux-implementation/run-20261027/ticket20-runtime-qualification-01/android-ui/`; detailed run note is in [the workflow record](../run.md#ticket-20-android-settings-ui-continuation--2026-10-27). G35/G36 ingress, pending capture, ordering, fault and affected-current-view requirements remain partially unqualified. Ticket20 stays claimed; no source behavior changed or broad finding closure is inferred.
+
+## Integrated qualification and resolution — 2026-10-27
+
+Coordinator resolved ticket20 at integration HEAD `59fe2925d382de8a3e661c9aaf321fc23477a1a8` after the Chrome retention-specific stale reply, actual partial cleanup/persistence failure and rendered Retry, and isolated Electron process/restart cases passed. Controlled fault instrumentation and evidence limits are recorded in `.local/ux-implementation/ticket20-fault-20261027/receipt.md` and `.local/ux-implementation/ticket20-continuation-20261027/receipt.md`; the sampled dirty hashes are post-run snapshots, not frozen full-tree bindings. Historical Android evidence retains its original APK-bound scope; `.local/ux-implementation/ticket20-fault-20261027/android-source-mapping-20261027.json` maps its source to the current candidate. No current Android exact-binary pass is implied.
+
+Independent Standards and Spec evidence reviews found no actionable production standards issue or confirmed missing ticket behavior. At this HEAD and preserved non-scratch tracked diff SHA-256 `33db3741e9edc12872fab23fbe67935f8654bb5cf879660a9dfb4d2ac916d65c`, host-access `npm run verify` passed all typechecks, 178 suites / 1,365 tests and three production builds (lint 0 errors / 935 warnings). The first sandboxed run failed browser and loopback host restrictions and was interrupted; it is not a pass. Log: `/private/tmp/clipp-ux20-verify-20261027.log`. External transfer enforcement and retained chooser/OEM/assistive limitations remain unchanged. Finding C02 remains open until ticket24's contribution is qualified.

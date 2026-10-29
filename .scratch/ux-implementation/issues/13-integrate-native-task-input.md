@@ -1,10 +1,10 @@
 # Collect native task input and focus qualification
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-input-collector-13
 Priority band: 1
-Blocked by: 34, 35, 36
+**Blocked by:** [34](34-deliver-android-electron-task-input.md), [35](35-deliver-chrome-management-and-task-input.md), [36](36-deliver-android-task-input.md)
 Dispatch: authorized UX run ux-implementation-20261010; coordinator native qualification collection
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -49,7 +49,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14
 

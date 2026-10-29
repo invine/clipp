@@ -4,7 +4,7 @@ Use this procedure before assigning implementation, reviewing its scope, integra
 
 ## Establish the run
 
-The coordinator records these facts before dispatch:
+Establish [canonical ownership and decision coverage](issue-tracker.md#establish-ownership) before creating plans or tickets. The coordinator records these facts before dispatch:
 
 - Run identifier and coordinator; canonical tracker, specification and ticket paths.
 - Participating repository roles (`client` for Clipp, `relay` for clipp-relay), explicit local root mapping, approved starting commits and one integration branch with its observed full commit hash per role. Tracked references use roles and repository-relative paths; local roots and private artifact directories are supplied explicitly.
@@ -13,6 +13,20 @@ The coordinator records these facts before dispatch:
 - An inventory of existing worktrees, dirty state, retained branches, stashes and required ignored artifacts. Preserve these separately from newly created implementation worktrees.
 
 Inspect current Git facts before trusting a dated record. Two repositories have two tips and separate integration steps; recording both does not make their integration atomic. Completion: every required role is accessible, its current integration baseline is identified, and the run's ownership and limits are explicit.
+
+## Spec worktrees and branch lineage
+
+Each spec owns a dedicated integration branch and worktree in every repository it changes. Before creating them, resolve that repository's `main` commit explicitly and record its full hash in the spec's run record. Create `codex/<spec>-integration` in its own worktree from that hash, regardless of which branch the primary checkout currently has checked out. At creation, verify that the integration worktree's HEAD equals the recorded `main` hash. Leave the shared primary checkout available to other work.
+
+For example, persistence and relay portal workspace each start from `main` in separate integration worktrees. Each coordinator merges only tickets belonging to its own spec into its integration branch. Record the spec, repository, starting `main` hash, integration branch and integration worktree together; separate specs have separate run records and claims. Resume an existing integration worktree only after verifying that it belongs to the same spec and its recorded lineage matches Git.
+
+Create each ticket's branch and isolated worktree from its own spec's current integration tip, recording that exact baseline before dispatch. Incorporate that same integration branch's latest tip before handoff, preserve dirty work, and merge the reviewed result back into that integration branch. Ticket worktrees therefore inherit completed prerequisites within their spec.
+
+Use the stock `implement-spec` skill for ticket execution, merging, review and cleanup. The spec integration branch is also the feature branch and may be the PR head; no separate replay branch is required. Keep this repository-specific baseline policy here rather than customizing the installed skill.
+
+If a spec needs another spec's unmerged work, record the dependency and keep the affected tickets blocked until that prerequisite reaches `main`, then update from `main` and renew affected verification. Continue independent eligible tickets. An alternative base or stacked arrangement requires an explicit user instruction; another spec's integration branch is not an implicit prerequisite baseline.
+
+Before pushing or opening a PR, inspect `git merge-base main HEAD`, `git log --oneline main..HEAD`, `git diff --stat main...HEAD`, and `git diff --name-only main...HEAD` from the spec integration worktree. Compare the commits and files with the spec and its ticket integration records. Ancestry alone does not prove scope: an unrelated integration branch can also descend from `main`. Completion: the spec owns an isolated, recorded integration lineage and the PR comparison contains only its approved scope.
 
 ## Assess decisions before dispatch
 
@@ -62,7 +76,7 @@ Record the following evidence together, using full commit hashes and explicit re
 | Review       | Standards and Spec outcomes, exact reviewed revisions per role, findings and their disposition, reviewer identity and artifact references. Spec review compares requested behavior and the assessment with the implementation and accepted decision; Standards review assesses project conventions and judgment calls. |
 | Resolution   | Coordinator's determination that the scoped result is integrated, reviewed and freshly verified; links to the evidence and any independent remaining acceptance work. Only then update the canonical ticket to resolved.                                                                                               |
 
-A local commit alone proves neither integration nor acceptance. If a required artifact is missing or a tested/reviewed revision changed, mark that evidence unavailable or stale and renew the affected checks/review before resolution. Private artifacts may have explicit local references without copying their contents into Git. For cross-repository work, every participating role needs evidence for its result; incomplete integration stays visible.
+A local commit alone proves neither integration nor acceptance. If a required artifact is missing, mark that evidence unavailable and renew the affected checks/review before resolution. When a tested/reviewed revision changes, v1/v2 require renewal; v3 can retain original observations only through separate [reviewed applicability records](ledger/applicability-v3.md) binding unchanged requirements and execution inputs to the new candidate. Changed relevant inputs invalidate affected evidence; unknown impact requires review or rerun. Private artifacts may have explicit local references without copying their contents into Git. For cross-repository work, every participating role needs evidence for its result; incomplete integration stays visible.
 
 Deterministic validation can check required fields, references, Git facts and command results. It cannot establish semantic ADR compliance; human Spec review owns that comparison. Validate documentation with maintained-link checks, a fresh-context walkthrough and the two transport scenarios above, without tests tied to exact prose. Complete the effort with Standards and Spec reviews across both repositories and fix findings before the coordinator closes it.
 
@@ -73,7 +87,7 @@ Use the [read-only status command and durable ledger](recovery.md) to reconstruc
 1. Reopen the canonical tracker and run metadata, then inspect both selected repositories: HEAD/branch, integration tip, worktree identities and dirty counts, branch containment and stash identifiers. Inspect metadata first; source secrets, stash contents and runtime profiles are unnecessary for status.
 2. Compare observed Git with saved claims, baselines, integration mappings and evidence. Report inaccessible required roots/worktrees, duplicate claims, missing/cyclic dependencies, ticket/ownership disagreement, changed recorded tips and missing/stale artifacts. Withhold assignments that depend on inconsistent state; the coordinator reconciles the records with current facts. Elapsed time never releases a claim automatically.
 3. Locate committed but unintegrated results and preserved dirty/ignored work. A retained branch or stash is preservation evidence, not demonstrated integration. Resume the existing claim or integrate its result only after checking its scope, decision evidence and current baseline. Record each role's integration independently if an interruption happened between repositories.
-4. Keep decision/external blockers and owners visible; select other eligible work within the active-agent bound. Renew evidence after integrating or changing revisions, then resolve only through the preceding completion gate.
+4. Keep decision/external blockers and owners visible; select other eligible work within the active-agent bound. Renew affected evidence after integrating or changing revisions, or record valid v3 applicability without changing original observations, then resolve only through the preceding completion gate.
 5. Clean up only newly created implementation worktrees after required artifacts are preserved and integration is verified. Retain pre-existing worktrees, branches, stashes and uncommitted files unless separately authorized for cleanup.
 
 Completion: the coordinator can account for every active claim and outstanding result from current records and Git, required work is retained, unsafe assignments are withheld, and fresh evidence supports any resolution. Dated recovery reports remain evidence of their recorded environment, not current checkout truth.

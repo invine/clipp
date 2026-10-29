@@ -177,6 +177,9 @@ test("agent entry points resolve maintained local navigation links", () => {
     "docs/agents/operations.md",
     "docs/agents/source-lookup.md",
     "docs/agents/domain.md",
+    "docs/agents/issue-tracker.md",
+    "docs/agents/recovery.md",
+    "docs/agents/ledger/ownership-v2.md",
   ]) {
     const text = readFileSync(join(project, document), "utf8");
     const links = [...text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)];

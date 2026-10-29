@@ -1,10 +1,10 @@
 # Repair notifications, permissions and Requests entry
 
 Type: implementation
-Status: claimed
+**Status:** claimed
 Assignee: ux-notifications-16
 Priority band: 1
-Blocked by: 07, 08, 35, 34, 36
+**Blocked by:** [07](07-preserve-session-tasks-and-editor-recovery.md), [08](08-compose-actionable-recovery-issues.md), [35](35-deliver-chrome-management-and-task-input.md), [34](34-deliver-android-electron-task-input.md), [36](36-deliver-android-task-input.md)
 Dispatch: 2026-10-20 coordinator claim after resolved07/08/35/34/36
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -51,7 +51,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14
 
@@ -68,3 +68,7 @@ Claim ux-notifications-16 after genuinely complete07/08/35/34/36. Preserve accep
 Use a fresh isolated client worktree/branch from this coordinator commit; root supplies its exact identity/baseline and bounded source/native evidence pointers before dispatch. Apply TDD through actual public notification availability/selection and destination/session owners, with external native notification/permission ports controlled only at their existing boundary. Prove actual consuming host/bridge paths across Electron/Chrome/Android. Diagnose the concrete Electron error before changing behavior. Source tests are supporting evidence, never actual delivery/selection qualification.
 
 Root alone owns broad-check serialization, actual SDK/CUA/clipboard/notification/permission/native intervals, mandatory merger, independent Standards/Spec and fresh integrated verification. No source author may launch native tools, change host permissions/global settings, fabricate storage/preferences/requests, use private UI/store/bridge hooks, enable30 or mutate an operator/account/relay profile. Standing user authorizations persist; no repeated approval request. At most two active source implementers: scanner15 diagnostic-stage work and16.29 source is frozen/reviewed/integrated; its Android-shell continuation stays prepared but undispatched. Preserve all native failures, external/retained qualifications and TT35-only acceptance.
+
+## Adopted finite preparation — 2026-10-29
+
+Use the maintained [candidate preparation and qualification boundary](../adoption.md#candidate-preparation-and-qualification) for the selected scenario. Earlier exhaustive SEAL/preparation failures remain historical evidence, not a prerequisite to repeat that entire graph before this selected journey. Keep every original case, actual surface/native matrix, required authorization, route/transport policy, collector contribution and External/Retained limit. A frozen preflight is not Pairing, delivery, lifecycle or full consumer qualification; bind actual results to the exact candidate and changed input scope.

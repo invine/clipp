@@ -1,10 +1,10 @@
 # Present the S2 connection summary
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-summary-22
 Priority band: 2
-Blocked by: 02, 08, 17, 19
+**Blocked by:** [02](02-reconcile-authoritative-history.md), [08](08-compose-actionable-recovery-issues.md), [17](17-unify-local-assets-and-shared-controls.md), [19](19-deliver-accessible-navigation-and-reflow.md)
 Dispatch: authorized UX implementation run ux-implementation-20261010; coordinator claim ux-summary-22
 Parent: [Clipp UX implementation](../spec.md)
 

@@ -1,10 +1,10 @@
 # Deliver compact History and full details
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-compact-history-21
 Priority band: 2
-Blocked by: 02, 03, 07, 35, 17, 18, 19
+**Blocked by:** [02](02-reconcile-authoritative-history.md), [03](03-confirm-clear-all-history.md), [07](07-preserve-session-tasks-and-editor-recovery.md), [35](35-deliver-chrome-management-and-task-input.md), [17](17-unify-local-assets-and-shared-controls.md), [18](18-implement-persisted-themes.md), [19](19-deliver-accessible-navigation-and-reflow.md)
 Dispatch: authorized UX implementation run ux-implementation-20261010; coordinator claim ux-compact-history-21
 Parent: [Clipp UX implementation](../spec.md)
 

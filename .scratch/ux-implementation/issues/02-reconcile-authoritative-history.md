@@ -1,10 +1,10 @@
 # Reconcile authoritative History and queries
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-history-02
 Priority band: 1
-Blocked by: 01
+**Blocked by:** [01](01-repair-chrome-preference-integrity.md)
 Dispatch: integrated and reviewed in UX implementation run `ux-implementation-20261010`; branch and evidence in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 

@@ -1,10 +1,10 @@
 # Deliver Electron task input and collect remaining host qualification
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-native-input-34
 Priority band: 1
-Blocked by: 07, 12, 32
+**Blocked by:** [07](07-preserve-session-tasks-and-editor-recovery.md), [12](12-integrate-android-content-bounds.md), [32](32-deliver-local-assets-and-android-shared-controls.md)
 Dispatch: 2026-10-14 coordinator claim; approved scope-preserving allocation recorded in run.md
 Parent: [Clipp UX implementation](../spec.md)
 

@@ -1,10 +1,10 @@
 # Preserve session tasks and editor recovery
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-session-07
 Priority band: 1
-Blocked by: 03, 04, 05
+**Blocked by:** [03](03-confirm-clear-all-history.md), [04](04-retain-name-and-alias-edits.md), [05](05-report-immediate-pairing-results.md)
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -50,14 +50,13 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Dispatch assessment — 2026-10-11
 
 Preserves the accepted session/task, field-scoped Save and truthful partial-result contracts, glossary Admission/Device Identity/Relay Configuration semantics, and ADR-0012 single retained-session fallback. Predecessors 03/04/05 are resolved. All first-milestone source is integrated and reviewed; ticket 06 retains priority in the other implementer slot for its still-required Android payload Copy gate. The first checkpoint remains incomplete until that qualification passes. This next independent correctness ticket consumes no unqualified ticket 06 output and creates no exemption or new dependency. No more than two implementers are active.
 
 Coordinator-owned claim: `ux-session-07`, client branch `codex/ux-07-session-recovery`, isolated worktree `/Users/invine/src/js/clipp/.local/ux-implementation/worktrees/ticket-07`, created from the claim commit on `codex/ux-implementation-integration`. Read-only preparation: `/private/tmp/clipp-ux-implementation-20261010/ticket-07-prep.md`. Required native intervals must be scheduled with the coordinator; ticket 06 currently owns the isolated emulator. Real sign-in remains deferred. Host clipboard intervals are closed.
-
 
 ## Answer
 

@@ -1,10 +1,10 @@
 # Qualify manual reset faults and restart recovery
 
 Type: implementation
-Status: open
+**Status:** ready-for-agent
 Assignee: none
 Priority band: 3
-Blocked by: 30
+**Blocked by:** [30](30-integrate-manual-reset-ui.md), [24](24-deliver-m3-settings.md), [29](29-fence-reset-runtime-work.md)
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -23,8 +23,10 @@ The [approved package contract](../../ux-implementation-plan/manual-identity-res
 ## Dependencies and integration
 
 - [Integrate authenticated manual reset actions and UI](30-integrate-manual-reset-ui.md) — consume its completed, scoped output.
+- [Deliver M3 Settings and management tasks](24-deliver-m3-settings.md) — consume its completed, scoped output.
+- [Fence reset runtime work and restart](29-fence-reset-runtime-work.md) — consume its completed, scoped output.
 
-Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
+Only the output scoped here must be complete. Native collectors keep their own criteria; a proposed allocation, source fixture or unavailable runtime cannot supply their observation. Follow [phase admission](../spec.md#delivery-order-and-completion).
 
 ## Verification and acceptance
 
@@ -48,4 +50,8 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
+
+## Adopted dependency allocation — 2026-10-29
+
+Final F31.1–F31.11 follows actual integrated UI30 plus Settings24 and runtime29. Host38 and core/storage27/28 contribute scoped evidence with checked applicability; no split or source integration activates an unqualified runtime.

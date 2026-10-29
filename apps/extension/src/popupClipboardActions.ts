@@ -9,7 +9,7 @@ class PopupClipboardReadError extends Error {
 
 export async function shareCurrentPopupClipboard(
   readText: () => Promise<string>,
-  shareNow: (text: string) => Promise<void>,
+  shareNow: (text: string) => Promise<void>
 ): Promise<void> {
   let text: string;
   try {
@@ -22,7 +22,7 @@ export async function shareCurrentPopupClipboard(
 
 export function isAuthorizedPopupShareNowSender(
   senderUrl: string | undefined,
-  popupUrl: string,
+  popupUrl: string
 ): boolean {
   return senderUrl === popupUrl;
 }

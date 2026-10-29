@@ -1,10 +1,10 @@
 # Deliver complete Chrome management, secure handoff and task input
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-chrome-management-35
 Priority band: 1
-Blocked by: 02, 03, 06, 07, 08, 32, 33
+**Blocked by:** [02](02-reconcile-authoritative-history.md), [03](03-confirm-clear-all-history.md), [06](06-report-qr-and-payload-copy-results.md), [07](07-preserve-session-tasks-and-editor-recovery.md), [08](08-compose-actionable-recovery-issues.md), [32](32-deliver-local-assets-and-android-shared-controls.md), [33](33-deliver-pairing-outcome-interface-and-electron-journey.md)
 Dispatch: 2026-10-14 coordinator claim; approved scope-preserving allocation recorded in run.md
 Parent: [Clipp UX implementation](../spec.md)
 

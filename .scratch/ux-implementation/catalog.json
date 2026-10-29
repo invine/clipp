@@ -1,5 +1,5 @@
 {
-  "status": "Execution in progress under authorized run ux-implementation-20261010; issue files own status/claims",
+  "status": "Execution continues under ux-implementation-20261010; adopted finite Settings/reset allocation. Numbered issues own status/claims; current report derives eligibility.",
   "tickets": [
     {
       "id": "01",
@@ -234,7 +234,7 @@
       "path": "issues/24-deliver-m3-settings.md",
       "title": "Deliver M3 Settings and management tasks",
       "band": 2,
-      "dependencies": ["07", "35", "17", "18", "19", "20", "25"],
+      "dependencies": ["07", "35", "17", "18", "19", "20", "25", "37"],
       "findings": ["E14", "C14", "A05", "A16"],
       "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#m3-settings-and-existing-management-tasks"
     },
@@ -279,7 +279,7 @@
       "path": "issues/29-fence-reset-runtime-work.md",
       "title": "Fence reset runtime work and restart",
       "band": 3,
-      "dependencies": ["28"],
+      "dependencies": ["28", "30"],
       "findings": [],
       "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#runtime-responsibilities"
     },
@@ -288,7 +288,7 @@
       "path": "issues/30-integrate-manual-reset-ui.md",
       "title": "Integrate authenticated manual reset actions and UI",
       "band": 3,
-      "dependencies": ["07", "08", "35", "19", "24", "29"],
+      "dependencies": ["07", "08", "35", "19", "37", "38"],
       "findings": [],
       "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#transition-and-failure-behavior"
     },
@@ -297,7 +297,7 @@
       "path": "issues/31-qualify-manual-reset-recovery.md",
       "title": "Qualify manual reset faults and restart recovery",
       "band": 3,
-      "dependencies": ["30"],
+      "dependencies": ["30", "24", "29"],
       "findings": [],
       "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#failure-and-restart-acceptance-matrix"
     },
@@ -345,6 +345,24 @@
       "dependencies": ["07", "12", "32"],
       "findings": [],
       "contract": "../ux-implementation-plan/native-host-delivery-proposal.md#native-task-input-and-focus"
+    },
+    {
+      "id": "37",
+      "path": "issues/37-deliver-compatible-settings-output.md",
+      "title": "Deliver compatible Settings composition for reset UI",
+      "band": 2,
+      "dependencies": ["07", "35", "17", "18", "19", "20", "25"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/workspace-delivery-proposal.md#m3-settings-and-existing-management-tasks"
+    },
+    {
+      "id": "38",
+      "path": "issues/38-qualify-reset-host-seam.md",
+      "title": "Qualify runtime reset host seam for integrated UI",
+      "band": 3,
+      "dependencies": ["28"],
+      "findings": [],
+      "contract": "../ux-implementation-plan/manual-identity-reset-proposal.md#runtime-responsibilities"
     }
   ]
 }

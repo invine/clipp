@@ -2,6 +2,14 @@
 
 Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`.
 
+## Establish ownership
+
+Before creating a plan, specification or tickets, choose one owning repository and canonical `.scratch/<feature-slug>/` directory. Its README identifies that owner and each participating repository's responsibility. Each companion repository keeps a README pointer to that directory, resolved against explicit repository roots; claimable tickets belong only to the owner.
+
+Keep a compact `decisions.md` beside the specification: decision ID, source, disposition and specification requirements. Retain superseded proposals when their absence would make the accepted decision ambiguous. Review every accepted decision for coverage. The [v2 ownership contract](ledger/ownership-v2.md) defines mechanically checked references and the existing status CLI integration; semantic completeness remains Spec review work.
+
+Keep mutable run records and private evidence outside disposable worktrees and Git. Tracked references use repository roles and relative paths; the local configuration supplies roots and artifact locations. Existing auth/logging ownership and historical records stay in place; apply this convention to new efforts rather than migrating history.
+
 ## Conventions
 
 - One feature per directory: `.scratch/<feature-slug>/`

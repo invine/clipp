@@ -1,10 +1,10 @@
 # Repair Android scanner safety and lifecycle
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-scanner-15
 Priority band: 1
-Blocked by: 05, 08, 12, 36, 14
+**Blocked by:** [05](05-report-immediate-pairing-results.md), [08](08-compose-actionable-recovery-issues.md), [12](12-integrate-android-content-bounds.md), [36](36-deliver-android-task-input.md), [14](14-diagnose-android-scanner-provider.md)
 Dispatch: 2026-10-20 coordinator claim after completed Android36 allocation
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -49,7 +49,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14
 

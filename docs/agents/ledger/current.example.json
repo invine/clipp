@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runId": "replace-with-active-run-id",
+  "canonical": {
+    "role": "client",
+    "path": ".scratch/FEATURE"
+  },
+  "runArtifact": "active-run",
+  "candidateId": "replace-with-selected-candidate-id",
+  "integrationBranches": {
+    "client": "codex/FEATURE-integration"
+  }
+}

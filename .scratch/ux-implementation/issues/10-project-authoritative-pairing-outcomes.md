@@ -1,10 +1,10 @@
 # Qualify Android and Chrome authoritative Pairing outcomes
 
 Type: implementation
-Status: claimed
+**Status:** claimed
 Assignee: ux-outcomes-10
 Priority band: 1
-Blocked by: 33
+**Blocked by:** [33](33-deliver-pairing-outcome-interface-and-electron-journey.md)
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -46,7 +46,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Dispatch assessment — 2026-10-11
 
@@ -65,3 +65,7 @@ Integrated `npm run verify` passes 112 suites/836 tests and all three builds, ze
 ## Scope-preserving delivery refinement — 2026-10-12
 
 The approved spec permits separate numbered host outputs. Ticket 33 owns the already compatible common outcome interface and completed Electron G01 at current candidate `b722826ceba8680460ae34e92b73260445863850`. This residual retains every required Android/Chrome native G01 case and stays claimed. Chrome management ticket 11 and Devices ticket 23 consume the completed interface through 33 and retain their own affected native/cutover gates; neither may cite Electron as a Chrome/Android native pass. C07 remains open with this residual as collector. Broader G31, OS clipboard, managed-route/auth, account and hardware/assistive dispositions are unchanged.
+
+## Adopted finite preparation — 2026-10-29
+
+Use the maintained [candidate preparation and qualification boundary](../adoption.md#candidate-preparation-and-qualification) for the selected scenario. Earlier exhaustive SEAL/preparation failures remain historical evidence, not a prerequisite to repeat that entire graph before this selected journey. Keep every original case, actual surface/native matrix, required authorization, route/transport policy, collector contribution and External/Retained limit. A frozen preflight is not Pairing, delivery, lifecycle or full consumer qualification; bind actual results to the exact candidate and changed input scope.

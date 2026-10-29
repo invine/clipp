@@ -112,10 +112,8 @@ test("Android managed-device release matrix covers every required platform seam"
     expect(gradle).toContain(`clippApi${apiLevel}`);
     expect(gradle).toContain(`apiLevel = ${apiLevel}`);
     expect(packageJson).toContain(`test:native:instrumentation:api${apiLevel}`);
-    expect(packageJson).toContain(`clippApi${apiLevel}AcceptanceAndroidTest`);
+    expect(packageJson).toContain(`--expected-api ${apiLevel}`);
   }
-  expect(packageJson).toContain(
-    "backgroundContinuityGroupAcceptanceAndroidTest"
-  );
-  expect(packageJson).toContain("-PclippAcceptance");
+  expect(packageJson).toContain("--suite matrix");
+  expect(packageJson).not.toContain("GroupAcceptanceAndroidTest");
 });

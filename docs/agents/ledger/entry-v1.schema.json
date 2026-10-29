@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Current effort pointer (local paths supplied separately)",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "canonical",
+    "runArtifact",
+    "candidateId",
+    "integrationBranches"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "canonical": {
+      "$ref": "run-v2.schema.json#/properties/ownership/properties/specification"
+    },
+    "runArtifact": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "candidateId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "integrationBranches": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "relay": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "minProperties": 1,
+      "maxProperties": 2
+    }
+  }
+}

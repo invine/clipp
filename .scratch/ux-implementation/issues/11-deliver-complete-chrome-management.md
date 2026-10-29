@@ -1,10 +1,10 @@
 # Collect Chrome management and secure handoff qualification
 
 Type: implementation
-Status: claimed
+**Status:** claimed
 Assignee: ux-chrome-collector-11
 Priority band: 1
-Blocked by: 35
+**Blocked by:** [35](35-deliver-chrome-management-and-task-input.md)
 Dispatch: 2026-10-17 coordinator claim; TT35 acceptance preserved
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -48,7 +48,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Pairing scope refinement — 2026-10-12
 
@@ -71,3 +71,7 @@ Two isolated implementers completed the current slices. Runtime source `07fc3e3a
 Author check and actual unchanged sanitized hook pass 152 suites / 1,135 tests. Mandatory fast-forward merger preserves the exact source/tree `4fa27143c1ea28244e912a3e354c83167b14216e`; independent Standards and Spec reviews each report zero findings. Fresh root `npm run verify` on the clean integrated source passes 152 suites / 1,135 tests, all typechecks/all three production builds, lint 0 errors / 888 warnings. Hash-bound evidence: ignored run `tt11-integrated-verification.json`, runtime handoff/merge, consumer contribution and both review reports. Original RED and sandbox Git-lock failure remain preserved.
 
 TT35 remains resolved under its explicit acceptance decision; no deferred TT35 check is reopened or relabelled as agent-observed. TT11 remains claimed for its own native/input/lifecycle and original desktop/navigation/notification collector contributions; C11/C12 remain open. Native preflight found an existing Chrome for Testing process whose ownership was not assumed, so no new browser/profile or clipboard interval was opened and it was left undisturbed. No new harness/preparation, renewed approval request, account/operator/relay change or popup retirement occurred. Source acceptance does not manufacture native evidence. Primary dirty hashes, stashes, pre-existing worktrees/branches and clean relay are preserved.
+
+## Adopted finite preparation — 2026-10-29
+
+Use the maintained [candidate preparation and qualification boundary](../adoption.md#candidate-preparation-and-qualification) for the selected scenario. Earlier exhaustive SEAL/preparation failures remain historical evidence, not a prerequisite to repeat that entire graph before this selected journey. Keep every original case, actual surface/native matrix, required authorization, route/transport policy, collector contribution and External/Retained limit. A frozen preflight is not Pairing, delivery, lifecycle or full consumer qualification; bind actual results to the exact candidate and changed input scope.

@@ -1,42 +1,41 @@
 # Deliver M3 Settings and management tasks
 
 Type: implementation
-Status: open
-Assignee: none
+**Status:** claimed
+Assignee: ux-settings-24
 Priority band: 2
-Blocked by: 07, 35, 17, 18, 19, 20, 25
-Dispatch: plan approved; awaiting an authorized execution run
+**Blocked by:** [07](07-preserve-session-tasks-and-editor-recovery.md), [35](35-deliver-chrome-management-and-task-input.md), [17](17-unify-local-assets-and-shared-controls.md), [18](18-implement-persisted-themes.md), [19](19-deliver-accessible-navigation-and-reflow.md), [20](20-wire-retention-and-sharing-lifetime.md), [25](25-repair-android-continuity-controls.md), [37](37-deliver-compatible-settings-output.md)
+Dispatch: retained `ux-settings-24` claim; scoped continuation follows current prerequisites, ownership and evidence.
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
 
-M3 Settings keeps routine preferences reachable and advanced detail on demand.
+Collect the actual changed M3 Settings presentation and native management journeys, S24.4–S24.6, while preserving claim `ux-settings-24`. Compatible composition S24.1–S24.3 belongs to [37](37-deliver-compatible-settings-output.md).
 
 ## Work and boundaries
 
-Compose General, Connections and Advanced using existing repaired tasks/actions. Place working theme/Auto Sync/retention/lifetime and concise Android continuity; relay details expand intentionally. Advanced includes Clear; reserve Generate new identity until its complete qualified path exists.
+Qualify dense relays/devices, long endpoints, General/Connections/Advanced navigation, actual writes/reopen, failure/Retry and retained editor state through resize. Observe permission/help/diagnostics, native text/IME, final controls and concise continuity state/benefit/limits. Collect E14/C14/A05/A16 and E10 reachability contributions from 23/19/25/08 and 37.
 
-No dead settings controls, new sign-out/account switch, hidden long values, changed relay defaults or draft loss. Keep separate login/portal/remove semantics and truthful partial effects.
-
-The [approved package contract](../../ux-implementation-plan/workspace-delivery-proposal.md#m3-settings-and-existing-management-tasks) is normative detail for this ticket. Preserve the [shared interfaces](../../ux-implementation-plan/shared-interface-proposal.md) and [specification invariants](../spec.md#preserved-contracts). Update every affected live runtime bridge with its consumer; do not leave a successful helper behind a broken caller.
+Consume 37's working composition without repeating its source ownership. Existing login/portal/remove semantics, relay defaults, draft retention and unavailable Generate new identity placement remain unchanged. The [Settings contract](../../ux-implementation-plan/workspace-delivery-proposal.md#m3-settings-and-existing-management-tasks), [allocation](../scenario-allocation.md) and scoped decisions remain normative.
 
 ## Dependencies and integration
 
 - [Preserve session tasks and editor recovery](07-preserve-session-tasks-and-editor-recovery.md) — consume its completed, scoped output.
 - [Deliver complete Chrome management, secure handoff and task input](35-deliver-chrome-management-and-task-input.md) — consume its completed, scoped output.
-- [Unify local assets and shared controls](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
+- [Qualify desktop shared controls and collect cross-surface styling](17-unify-local-assets-and-shared-controls.md) — consume its completed, scoped output.
 - [Implement persisted System, Light and Dark](18-implement-persisted-themes.md) — consume its completed, scoped output.
 - [Deliver accessible navigation and task reflow](19-deliver-accessible-navigation-and-reflow.md) — consume its completed, scoped output.
 - [Wire local retention and Clip Sharing Lifetime](20-wire-retention-and-sharing-lifetime.md) — consume its completed, scoped output.
 - [Repair Android continuity controls](25-repair-android-continuity-controls.md) — consume its completed, scoped output.
+- [Deliver compatible Settings composition for reset UI](37-deliver-compatible-settings-output.md) — consume its completed, scoped output.
 
-Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
+Only the output scoped here must be complete. Native collectors keep their own criteria; a proposed allocation, source fixture or unavailable runtime cannot supply their observation. Follow [phase admission](../spec.md#delivery-order-and-completion).
 
 ## Verification and acceptance
 
-Test dense relays/devices, long endpoints, category navigation, actual settings writes/reopen, failure/Retry and retained editor through resize. Verify permission/help/diagnostics and final controls with native text/IME; migration reuses existing handoff.
+S24.4: candidate-bound dense/long-data category navigation, actual writes/reopen, failure/Retry and editor/resize journeys. S24.5: native text/IME, permission/help/diagnostics, full values and last-control reachability. S24.6: attributable Devices/Requests/general navigation and relay reachability contributions, preserving every E14/C14/A05/A16 and E10 owner.
 
-Run the [common candidate gates](../spec.md#verification-and-evidence) plus affected suites/builds/native checks. Record exact revision/dirty state, environment, commands and actual outcomes. Preserve regressions through the owning interface; use rendered/native evidence for the behavior that requires it, not implementation-mirroring helper tests.
+Use [finite candidate preparation and affected gates](../adoption.md#candidate-preparation-and-qualification). The remaining native cases require actual observations; scoped predecessor acceptance is not an inherited consumer pass. Preserve every historical failed/not-run result below.
 
 ## Coverage and closure
 
@@ -53,8 +52,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14
 
 Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.
+
+## Adopted allocation — 2026-10-29
+
+The [reviewed refinement](../adoption.md#settings-and-reset-allocation) assigns S24.1–S24.3 to 37 and S24.4–S24.6 to this retained claim. Original historical notes remain evidence of their dates, not current status. All original primary finding ownership and scoped decisions remain unchanged.

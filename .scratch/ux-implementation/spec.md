@@ -3,13 +3,13 @@
 Status: approved implementation plan — accepted 2026-10-10
 Date: 2026-10-10
 Repository role: client
-Execution: not started; all implementation tickets unclaimed
+Execution: implementation in progress; canonical numbered issues and the [current report](README.md) own claims and remaining qualification.
 
 ## Outcome and entry point
 
 Implement the approved Clipp UX across Electron, Chrome toolbar popup, Chrome full-page management and Android through small verifiable changes. Deliver correctness and usable controls first, then the compact workspace, then additional controls. The first checkpoint is **Reliable state and recoverable actions on existing surfaces**, beginning with Chrome preference integrity.
 
-This specification consolidates the accepted [planning decisions](../ux-implementation-plan/map.md) and completed [UX handoff](../ux-study/handoff.md). The user accepted the final plan on 2026-10-10; the [final planning resolution](../ux-implementation-plan/issues/07-finalize-validation-and-implementation-backlog.md#answer) records acceptance of this backlog and its evidence gates. Prior approvals remain authoritative. Planning is complete; implementation has not started.
+This specification consolidates the accepted [planning decisions](../ux-implementation-plan/map.md) and completed [UX handoff](../ux-study/handoff.md). The user accepted the final plan on 2026-10-10; the [final planning resolution](../ux-implementation-plan/issues/07-finalize-validation-and-implementation-backlog.md#answer) records acceptance of this backlog and its evidence gates. Prior approvals remain authoritative. Planning is complete; implementation is in progress under the retained execution run.
 
 Start with this document, the selected individual ticket, its linked package contract and relevant coverage rows. The [ticket index](backlog.md) provides named dependencies. [Traceability](traceability.md) covers all 51 findings, three additions, six study categories and 23 scenario families. [Validation coverage](validation-coverage.md) assigns each carried qualification. The machine-readable [catalog](catalog.json) supports validation; individual ticket Status/Assignee/Blocked by fields remain the canonical execution state. No separate status is maintained in the catalog.
 
@@ -89,6 +89,8 @@ Use the accepted [layout matrix](../ux-study/layout-state-contract.md#implementa
 The [coverage ledger](validation-coverage.md) supplies the precise Candidate/External/Retained disposition for each gap. Required native Pairing, notifications, focused clipboard recovery and new reset durability need actual candidate evidence. Do not repeat the entire historical study for every small edit; execute the affected scenario/profile and retain all required outstanding claims. Final integration collects the four-surface matrix and broad findings after their contributors exist.
 
 Real clipboard checks need a new isolated synthetic-marker interval; prior clipboard gates are off. Global display/permission changes need their own coordinated interval; the prior display mode is restored. Real sign-in remains user-deferred and must not restart without their request. Unavailable external display/native 1×, VoiceOver and accepted Android assistive/physical/OEM gaps retain their explicit limits. No data-mutating fixture is installed in an operator app/profile.
+
+The [adopted finite preparation procedure](adoption.md#candidate-preparation-and-qualification) replaces obsolete exhaustive SEAL preparation for a selected scenario while retaining all original behavior/native matrix and scoped acceptance requirements. The maintained commands, exact candidate and reviewed applicability own preparation; passing a source fixture or a different native scenario cannot satisfy a missing product case.
 
 ## Existing external ownership
 

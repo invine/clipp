@@ -1,10 +1,10 @@
 # Repair Chrome preference integrity
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-preferences-01
 Priority band: 1
-Blocked by: none
+**Blocked by:** None.
 Dispatch: integrated and reviewed in UX implementation run `ux-implementation-20261010`; branch and evidence in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 

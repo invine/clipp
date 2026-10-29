@@ -1,10 +1,10 @@
 # Deliver the compatible Pairing outcome interface and Electron journey
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-outcomes-10
 Priority band: 1
-Blocked by: 02, 05, 07
+**Blocked by:** [02](02-reconcile-authoritative-history.md), [05](05-report-immediate-pairing-results.md), [07](07-preserve-session-tasks-and-editor-recovery.md)
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; scope refinement in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 

@@ -1,10 +1,10 @@
 # Deliver M1 Devices, Requests and alias clearing
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-devices-23
 Priority band: 2
-Blocked by: 04, 05, 07, 33, 35, 17, 18, 19, 21, 22
+**Blocked by:** [04](04-retain-name-and-alias-edits.md), [05](05-report-immediate-pairing-results.md), [07](07-preserve-session-tasks-and-editor-recovery.md), [33](33-deliver-pairing-outcome-interface-and-electron-journey.md), [35](35-deliver-chrome-management-and-task-input.md), [17](17-unify-local-assets-and-shared-controls.md), [18](18-implement-persisted-themes.md), [19](19-deliver-accessible-navigation-and-reflow.md), [21](21-deliver-compact-history-and-details.md), [22](22-present-s2-connection-summary.md)
 Dispatch: authorized UX implementation run `ux-implementation-20261027`; claim recorded in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 

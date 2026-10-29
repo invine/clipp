@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -1039,4 +1040,1970 @@ test("oversized local branch inventories fail visibly and withhold the frontier"
       }),
     ])
   );
+});
+
+function setupOwnership() {
+  const { ledger, local } = setup();
+  const canonical = { role: "client", path: ".scratch/feature" };
+  const specification = { role: "client", path: ".scratch/feature/spec.md" };
+  const decisions = { role: "client", path: ".scratch/feature/decisions.md" };
+  const pointer = { role: "relay", path: ".scratch/feature/README.md" };
+  const header =
+    "**Owning repository:** client (Clipp).  \n**Canonical feature directory:** client:`.scratch/feature/`.\n";
+  file(join(client, canonical.path, "README.md"), header);
+  file(join(relay, pointer.path), header);
+  file(
+    join(client, specification.path),
+    "# Specification\n\n## Artifact ownership\n"
+  );
+  file(join(client, decisions.path), "private decision prose canary\n");
+  file(
+    join(client, canonical.path, "issues/01-first.md"),
+    readFileSync(join(client, "tickets/01-first.md"), "utf8")
+  );
+  file(join(root, "preserved/evidence.txt"), "private artifact canary\n");
+  return {
+    ledger: {
+      ...ledger,
+      schemaVersion: 2,
+      tracker: { role: "client", path: ".scratch/feature/issues" },
+      ownership: {
+        canonical,
+        specification,
+        decisions,
+        roles: {
+          client: "Coordination and client",
+          relay: "Relay implementation",
+        },
+        pointers: [pointer],
+        coverage: [
+          {
+            decision: "D1",
+            source: decisions,
+            disposition: "accepted",
+            requirements: ["Artifact ownership"],
+          },
+        ],
+        artifacts: ["preserved"],
+      },
+    },
+    local: {
+      ...local,
+      artifacts: { preserved: join(root, "preserved/evidence.txt") },
+    },
+  };
+}
+
+test("v2 discovers canonical ownership and decision coverage without rewriting v1 or reading private evidence", () => {
+  const { ledger, local } = setupOwnership();
+  const before = [client, relay].map((repo) => ({
+    index: readFileSync(join(repo, ".git/index")),
+    refs: git(repo, "show-ref"),
+    status: git(repo, "status", "--porcelain=v1"),
+  }));
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.schemaVersion).toBe(2);
+  expect(report.ownership).toEqual({
+    ...ledger.ownership,
+    artifacts: [{ id: "preserved", available: true }],
+  });
+  expect(report.frontier).toEqual(["01-first.md"]);
+  expect(result.stdout).not.toContain("private decision prose canary");
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(result.stdout).not.toContain(local.artifacts.preserved);
+  expect(
+    [client, relay].map((repo) => ({
+      index: readFileSync(join(repo, ".git/index")),
+      refs: git(repo, "show-ref"),
+      status: git(repo, "status", "--porcelain=v1"),
+    }))
+  ).toEqual(before);
+  expect(JSON.parse(readFileSync(join(root, "run.json"), "utf8"))).toEqual(
+    ledger
+  );
+});
+
+test("v2 withholds assignments when companion ownership conflicts with the canonical tracker", () => {
+  const { ledger, local } = setupOwnership();
+  file(
+    join(relay, ledger.ownership.pointers[0].path),
+    "**Owning repository:** relay\n**Canonical feature directory:** relay:`.scratch/feature/`\n"
+  );
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).frontier).toEqual([]);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "ownership-pointer" }),
+    ])
+  );
+});
+
+test("v2 rejects a tracker outside its owner feature and companion copies of claimable tickets", () => {
+  const { ledger, local } = setupOwnership();
+  ledger.tracker.path = "tickets";
+  file(
+    join(relay, ".scratch/feature/issues/01-copy.md"),
+    "**Status:** ready-for-agent\n"
+  );
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "ownership-consistency" }),
+      expect.objectContaining({ code: "ownership-duplicate" }),
+    ])
+  );
+});
+
+test("v2 reports unavailable decision/spec references and uncovered accepted decisions", () => {
+  const { ledger, local } = setupOwnership();
+  rmSync(join(client, ledger.ownership.specification.path));
+  rmSync(join(client, ledger.ownership.decisions.path));
+  ledger.ownership.coverage[0].requirements = [];
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "ownership-reference" }),
+      expect.objectContaining({ code: "decision-coverage" }),
+    ])
+  );
+  expect(JSON.parse(result.stdout).frontier).toEqual([]);
+});
+
+test("v2 keeps private artifacts outside disposable worktrees and reports missing preserved evidence without disclosure", () => {
+  const { ledger, local } = setupOwnership();
+  const disposable = join(root, "disposable");
+  git(client, "worktree", "add", "--quiet", "-b", "disposable", disposable);
+  file(join(disposable, "evidence.txt"), "private artifact canary\n");
+  local.artifacts.preserved = join(disposable, "evidence.txt");
+  let result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "artifact-unpreserved" }),
+    ])
+  );
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(readFileSync(local.artifacts.preserved, "utf8")).toBe(
+    "private artifact canary\n"
+  );
+  local.artifacts.preserved = join(root, "missing-artifact");
+  result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).ownership.artifacts).toEqual([
+    { id: "preserved", available: false },
+  ]);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "artifact-unavailable" }),
+    ])
+  );
+});
+
+test("v2 refuses a durable ledger stored in a disposable worktree", () => {
+  const { ledger, local } = setupOwnership();
+  const disposable = join(root, "disposable");
+  git(client, "worktree", "add", "--quiet", "-b", "disposable", disposable);
+  run(ledger, local);
+  file(join(disposable, "run.json"), JSON.stringify(ledger));
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(disposable, "run.json"),
+      "--local",
+      join(root, "local.json"),
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "input-unpreserved" }),
+    ])
+  );
+  expect(
+    JSON.parse(readFileSync(join(disposable, "run.json"), "utf8"))
+  ).toEqual(ledger);
+});
+
+test("v2 detects a coverage reference to a missing specification heading", () => {
+  const { ledger, local } = setupOwnership();
+  ledger.ownership.coverage[0].requirements = ["Missing requirement"];
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  expect(JSON.parse(result.stdout).diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "decision-coverage" }),
+    ])
+  );
+});
+
+test("v2 supports a relay-owned single-role effort without inventing companion participation", () => {
+  const { ledger, local } = setupOwnership();
+  const { canonical, specification, decisions } = ledger.ownership;
+  file(
+    join(relay, canonical.path, "README.md"),
+    "**Owning repository:** relay\n**Canonical feature directory:** relay:`.scratch/feature/`\n"
+  );
+  for (const path of [
+    specification.path,
+    decisions.path,
+    ledger.tracker.path + "/01-first.md",
+  ])
+    file(join(relay, path), readFileSync(join(client, path), "utf8"));
+  const next = {
+    ...ledger,
+    tracker: { ...ledger.tracker, role: "relay" },
+    tickets: ledger.tickets.map((item) => ({ ...item, roles: ["relay"] })),
+    ownership: {
+      ...ledger.ownership,
+      canonical: { ...canonical, role: "relay" },
+      specification: { ...specification, role: "relay" },
+      decisions: { ...decisions, role: "relay" },
+      roles: { relay: "Coordination and implementation" },
+      pointers: [],
+      coverage: ledger.ownership.coverage.map((item) => ({
+        ...item,
+        source: { ...decisions, role: "relay" },
+      })),
+    },
+  };
+  const result = run(next, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).frontier).toEqual(["01-first.md"]);
+});
+
+test("human v2 status displays canonical ownership, decision coverage and artifact availability", () => {
+  const { ledger, local } = setupOwnership();
+  run(ledger, local);
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Canonical: client:.scratch/feature");
+  expect(result.stdout).toContain("D1: accepted; Artifact ownership");
+  expect(result.stdout).toContain("preserved: available");
+  expect(result.stdout).not.toContain("private artifact canary");
+});
+
+test("historical v1 and v2 records keep absent operational facts unknown", () => {
+  const historical = setup();
+  const before = JSON.stringify(historical.ledger);
+  const result = run(historical.ledger, historical.local);
+  expect(JSON.parse(result.stdout).operational).toEqual({ state: "unknown" });
+  expect(readFileSync(join(root, "run.json"), "utf8")).toBe(before);
+  rmSync(root, { recursive: true, force: true });
+  const { ledger, local } = setupOwnership();
+  const current = run(ledger, local);
+  expect(current.status).toBe(0);
+  expect(JSON.parse(current.stdout).operational).toEqual({ state: "unknown" });
+  expect(JSON.parse(current.stdout).frontier).toEqual(["01-first.md"]);
+  const explicitlyUnknown = run(
+    {
+      ...ledger,
+      operational: {
+        deployments: [],
+        access: [],
+        authorizations: [],
+        requirements: [],
+      },
+    },
+    local
+  );
+  expect(JSON.parse(explicitlyUnknown.stdout).operational).toMatchObject({
+    state: "recorded",
+    deploymentsState: "unknown",
+    accessState: "unknown",
+    authorizationsState: "unknown",
+  });
+});
+
+function setupOperational() {
+  const { ledger, local } = setupOwnership();
+  const source = { kind: "artifact", id: "operational-source" };
+  file(join(root, "preserved/operational.txt"), "PRIVATE_OPERATIONAL_CANARY");
+  return {
+    ledger: {
+      ...ledger,
+      operational: {
+        deployments: [
+          {
+            id: "deployment",
+            displayName: "prod (user wording)",
+            identity: {
+              context: "fixture-context",
+              namespace: "test",
+              release: "relay-test",
+              publicEndpoint: "https://relay.example.invalid",
+            },
+            observedAt: "2026-10-25",
+            source,
+            qualification: {
+              status: "limited",
+              observedAt: "2026-10-25",
+              revisions: { relay: ledger.repositories.relay.integrationTip },
+              source,
+              limits: ["Client acceptance outstanding"],
+            },
+          },
+        ],
+        access: [
+          {
+            id: "github",
+            service: "GitHub",
+            route: "Authenticated Chrome web UI",
+            observedAt: "2026-10-25",
+            source,
+            resources: ["fixture/relay"],
+            recheck: `Inspect supported connector, then existing Chrome session; $(touch '${join(root, "forbidden")}')`,
+          },
+        ],
+        authorizations: [
+          {
+            id: "clipboard",
+            observedAt: "2026-10-25",
+            authorizationDate: "2026-10-25",
+            source: {
+              kind: "public",
+              role: "client",
+              path: ".scratch/feature/decisions.md",
+            },
+            action: "Overwrite clipboard for this effort's native tests",
+            resources: ["Owned native test clipboard"],
+            limits: [
+              "No publication of clipboard data",
+              "Restoration not required",
+            ],
+            status: "recorded",
+            statusAt: "2026-10-25",
+            statusSource: {
+              kind: "public",
+              role: "client",
+              path: ".scratch/feature/decisions.md",
+            },
+            supersededBy: undefined as string | undefined,
+          },
+        ],
+        requirements: [{ ticket: "01-first.md", records: ["clipboard"] }],
+      },
+    },
+    local: {
+      ...local,
+      artifacts: {
+        ...local.artifacts,
+        "operational-source": join(root, "preserved/operational.txt"),
+      },
+    },
+  };
+}
+
+test("operational status preserves exact target and dated scope without executing rechecks or disclosing private sources", () => {
+  const { ledger, local } = setupOperational();
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.operational.deployments[0]).toMatchObject({
+    displayName: "prod (user wording)",
+    identity: {
+      context: "fixture-context",
+      namespace: "test",
+      release: "relay-test",
+      publicEndpoint: "https://relay.example.invalid",
+    },
+    qualification: { status: "limited", freshness: "matching-revisions" },
+    availability: "available",
+    currentState: "unverified",
+  });
+  expect(report.operational).toMatchObject({
+    deploymentsState: "recorded",
+    accessState: "recorded",
+    authorizationsState: "recorded",
+  });
+  expect(report.operational.access[0]).toMatchObject({
+    route: "Authenticated Chrome web UI",
+    currentAvailability: "unverified",
+    observedAt: "2026-10-25",
+  });
+  expect(report.operational.authorizations[0]).toMatchObject({
+    status: "recorded",
+    permission: "not-assessed",
+  });
+  expect(report.frontier).toEqual(["01-first.md"]);
+  expect(result.stdout).not.toContain("PRIVATE_OPERATIONAL_CANARY");
+  expect(result.stdout).not.toContain(local.artifacts["operational-source"]);
+  expect(readdirSync(root)).not.toContain("forbidden");
+  expect(JSON.parse(readFileSync(join(root, "run.json"), "utf8"))).toEqual(
+    ledger
+  );
+});
+
+test("unavailable operational evidence and unknown facts block only dependent tickets", () => {
+  const { ledger, local } = setupOperational();
+  const unrelated = { ...ledger.tickets[0], path: "02-unrelated.md" };
+  ledger.tickets.push(unrelated);
+  file(
+    join(client, ledger.tracker.path, unrelated.path),
+    "# Unrelated\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  ledger.operational.requirements[0].records = ["github", "missing-fact"];
+  rmSync(local.artifacts["operational-source"]);
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.complete).toBe(true);
+  expect(report.frontier).toEqual(["02-unrelated.md"]);
+  expect(report.operational.requirements).toEqual([
+    {
+      ticket: "01-first.md",
+      records: ["github", "missing-fact"],
+      blockers: [
+        { id: "github", state: "unavailable" },
+        { id: "missing-fact", state: "unknown" },
+      ],
+    },
+  ]);
+  expect(report.operational.deployments[0].qualification.availability).toBe(
+    "unavailable"
+  );
+});
+
+test("revoked and superseded authorization history is visible without granting permission", () => {
+  const { ledger, local } = setupOperational();
+  const prior = ledger.operational.authorizations[0];
+  prior.status = "superseded";
+  prior.statusAt = "2026-10-26";
+  prior.supersededBy = "clipboard-v2";
+  ledger.operational.authorizations.push({
+    ...prior,
+    id: "clipboard-v2",
+    authorizationDate: "2026-10-26",
+    status: "revoked",
+    statusAt: "2026-10-27",
+  });
+  delete ledger.operational.authorizations[1].supersededBy;
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(
+    report.operational.authorizations.map(
+      (item: {
+        id: string;
+        status: string;
+        supersededBy?: string;
+        permission: string;
+      }) => ({
+        id: item.id,
+        status: item.status,
+        supersededBy: item.supersededBy,
+        permission: item.permission,
+      })
+    )
+  ).toEqual([
+    {
+      id: "clipboard",
+      status: "superseded",
+      supersededBy: "clipboard-v2",
+      permission: "not-assessed",
+    },
+    { id: "clipboard-v2", status: "revoked", permission: "not-assessed" },
+  ]);
+  expect(report.operational.requirements).toEqual([
+    {
+      ticket: "01-first.md",
+      records: ["clipboard"],
+      blockers: [{ id: "clipboard", state: "superseded" }],
+    },
+  ]);
+  expect(report.frontier).toEqual([]);
+  expect(JSON.parse(readFileSync(join(root, "run.json"), "utf8"))).toEqual(
+    ledger
+  );
+});
+
+test("operational requirements reject malformed authorization transitions and unknown ticket references", () => {
+  const { ledger, local } = setupOperational();
+  ledger.operational.authorizations[0].status = "revoked";
+  ledger.operational.authorizations[0].supersededBy = "missing";
+  expect(run(ledger, local).status).toBe(1);
+  ledger.operational.authorizations[0].status = "superseded";
+  expect(run(ledger, local).status).toBe(1);
+  ledger.operational.authorizations[0].status = "recorded";
+  delete ledger.operational.authorizations[0].supersededBy;
+  ledger.operational.requirements[0].ticket = "missing.md";
+  expect(run(ledger, local).status).toBe(1);
+});
+
+test("operational records reject invalid source references and credential-bearing routes", () => {
+  const { ledger, local } = setupOperational();
+  ledger.operational.access[0].source.kind = "public";
+  expect(run(ledger, local).status).toBe(1);
+  ledger.operational.access[0].source.kind = "artifact";
+  ledger.operational.access[0].route =
+    "https://operator:private-token@example.invalid/";
+  expect(run(ledger, local).status).toBe(1);
+});
+
+function setupScenarios() {
+  const { ledger, local } = setupOwnership();
+  return {
+    ledger: {
+      ...ledger,
+      schemaVersion: 3,
+      scenarios: [
+        {
+          id: "S1",
+          requirement: ledger.ownership.specification,
+          consumingOutput:
+            "Settings composition behind runtime availability controls",
+          runtime: "shared UI",
+          prerequisites: [] as string[],
+          expectedObservation:
+            "Reset remains unavailable until runtime qualification",
+          evidenceType: "public UI and bridge checks",
+          primaryOwner: "01-first.md",
+          contributors: [] as string[],
+          disposition: "Candidate",
+        },
+      ],
+    },
+    local,
+  };
+}
+
+test("v3 reports finite scenario ownership through canonical numbered tickets without granting qualification", () => {
+  const { ledger, local } = setupScenarios();
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.schemaVersion).toBe(3);
+  expect(report.scenarios).toEqual([
+    {
+      ...ledger.scenarios[0],
+      ownerStatus: "ready-for-agent",
+      qualification: "not-assessed",
+    },
+  ]);
+  expect(report.frontier).toEqual(["01-first.md"]);
+  expect(result.stdout).not.toContain("private artifact canary");
+});
+
+test("v3 withholds assignments for an unadopted primary qualification owner", () => {
+  const { ledger, local } = setupScenarios();
+  ledger.scenarios[0].primaryOwner = "37-proposed-settings.md";
+  const result = run(ledger, local);
+  expect(result.status).toBe(1);
+  const report = JSON.parse(result.stdout);
+  expect(report.frontier).toEqual([]);
+  expect(report.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "scenario-owner" })
+  );
+});
+
+test("v3 rejects inconsistent scenario references and duplicate criterion allocation", () => {
+  const { ledger, local } = setupScenarios();
+  const scenario = ledger.scenarios[0];
+  for (const [scenarios, code] of [
+    [[scenario, { ...scenario, runtime: "Electron" }], "scenario-duplicate"],
+    [
+      [{ ...scenario, requirement: { role: "client", path: "absent.md" } }],
+      "scenario-reference",
+    ],
+    [
+      [{ ...scenario, prerequisites: ["38-missing-host.md"] }],
+      "scenario-dependency",
+    ],
+    [
+      [{ ...scenario, contributors: ["24-missing-collector.md"] }],
+      "scenario-contributor",
+    ],
+    [[{ ...scenario, prerequisites: ["01-first.md"] }], "scenario-dependency"],
+  ] as const) {
+    const result = run({ ...ledger, scenarios }, local);
+    expect(result.status).toBe(1);
+    const report = JSON.parse(result.stdout);
+    expect(report.frontier).toEqual([]);
+    expect(report.diagnostics).toContainEqual(
+      expect.objectContaining({ code })
+    );
+  }
+});
+
+test("v3 verified scoped outputs unlock disabled reset UI while residual native and final qualification remain open", () => {
+  const { ledger, local } = setupScenarios();
+  const names = [
+    "01-first.md",
+    "02-host.md",
+    "03-reset-ui.md",
+    "04-native.md",
+    "05-final.md",
+  ];
+  const addTicket = (path: string, status: string, dependencies: string[]) =>
+    file(
+      join(client, ledger.tracker.path, path),
+      `# Scoped output\n\n**Status:** ${status}\n\n**Blocked by:** ${dependencies.length ? dependencies.map((name) => `[${name}](${name})`).join(", ") : "None."}\n`
+    );
+  addTicket(names[1], "ready-for-agent", []);
+  addTicket(names[2], "ready-for-agent", names.slice(0, 2));
+  addTicket(names[3], "ready-for-agent", names.slice(0, 1));
+  addTicket(names[4], "ready-for-agent", names.slice(2, 4));
+  const scenarios = [
+    ledger.scenarios[0],
+    {
+      ...ledger.scenarios[0],
+      id: "UI",
+      primaryOwner: names[2],
+      prerequisites: names.slice(0, 2),
+    },
+    {
+      ...ledger.scenarios[0],
+      id: "Native",
+      primaryOwner: names[3],
+      prerequisites: names.slice(0, 1),
+      runtime: "Electron, Chrome popup/full-page, Android native",
+      evidenceType: "actual native journeys",
+    },
+    {
+      ...ledger.scenarios[0],
+      id: "Final",
+      primaryOwner: names[4],
+      prerequisites: names.slice(2, 4),
+      expectedObservation:
+        "Same-candidate reset recovery and normal clipboard baseline through integrated UI",
+    },
+  ];
+  const pending = {
+    ...ledger,
+    tickets: names.map((path) => ({ ...ledger.tickets[0], path })),
+    scenarios,
+  };
+  expect(JSON.parse(run(pending, local).stdout).frontier).toEqual(
+    names.slice(0, 2)
+  );
+
+  // A split/status edit alone cannot qualify a predecessor.
+  for (const name of names.slice(0, 2)) addTicket(name, "resolved", []);
+  const split = run(pending, local);
+  expect(split.status).toBe(1);
+  expect(JSON.parse(split.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "resolution-evidence" })
+  );
+
+  git(client, "checkout", "--quiet", "-b", "scoped-output");
+  file(
+    join(client, "scoped-output.txt"),
+    "Settings composition and qualified host seam; reset availability stays disabled\n"
+  );
+  git(client, "add", "scoped-output.txt");
+  git(client, "commit", "--quiet", "-m", "scoped compatible inputs");
+  const source = git(client, "rev-parse", "HEAD");
+  git(client, "checkout", "--quiet", "integration");
+  git(
+    client,
+    "merge",
+    "--quiet",
+    "--no-ff",
+    "scoped-output",
+    "-m",
+    "integrate scoped inputs"
+  );
+  const revisions = {
+    client: git(client, "rev-parse", "HEAD"),
+    relay: ledger.repositories.relay.integrationTip,
+  };
+  const complete = {
+    ...pending,
+    repositories: {
+      ...ledger.repositories,
+      client: {
+        ...ledger.repositories.client,
+        integrationTip: revisions.client,
+      },
+    },
+    integrations: names.slice(0, 2).flatMap((name) =>
+      ["client", "relay"].map((role) => ({
+        ticket: name,
+        role,
+        sourceCommit: role === "client" ? source : revisions.relay,
+        integratedCommit:
+          role === "client" ? revisions.client : revisions.relay,
+        verifiedBy: ledger.coordinator,
+        artifact: "preserved",
+      }))
+    ),
+    evidence: names.slice(0, 2).flatMap((name) =>
+      ["verification", "standards", "spec"].map((kind) => ({
+        id: `${name}-${kind}`,
+        ticket: name,
+        kind,
+        outcome: "passed",
+        profile: "routine",
+        command: `descriptive only $(touch '${join(root, "forbidden")}')`,
+        reviewer: "reviewer",
+        tools: { node: process.version },
+        observedAt: new Date().toISOString(),
+        revisions,
+        artifacts: ["preserved"],
+      }))
+    ),
+  };
+  const result = run(complete, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.frontier).toEqual(names.slice(2, 4));
+  const compact = JSON.parse(run(complete, local, "--compact").stdout);
+  expect(compact.outputs[0]).toMatchObject({
+    status: "resolved",
+    integration: { client: "accepted", relay: "accepted" },
+  });
+  expect(compact.scenarios[0]).toMatchObject({ remaining: false });
+  expect(
+    compact.scenarios.find((item: { id: string }) => item.id === "Native")
+  ).toMatchObject({ remaining: true, qualification: "not-assessed" });
+  expect(compact.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: names[2],
+  });
+  expect(
+    report.tickets.find((item: { path: string }) => item.path === names[4])
+  ).toMatchObject({
+    status: "ready-for-agent",
+    dependencies: names.slice(2, 4),
+  });
+  expect(
+    report.scenarios
+      .slice(1)
+      .map((item: { ownerStatus: string; qualification: string }) => [
+        item.ownerStatus,
+        item.qualification,
+      ])
+  ).toEqual([
+    ["ready-for-agent", "not-assessed"],
+    ["ready-for-agent", "not-assessed"],
+    ["ready-for-agent", "not-assessed"],
+  ]);
+  expect(readdirSync(root)).not.toContain("forbidden");
+  expect(result.stdout).not.toContain("private artifact canary");
+
+  addTicket(names[2], "ready-for-agent", ["99-missing.md"]);
+  const missing = run(complete, local);
+  expect(missing.status).toBe(1);
+  expect(JSON.parse(missing.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "missing-dependency" })
+  );
+  addTicket(names[2], "ready-for-agent", [names[4]]);
+  const cycle = run(complete, local);
+  expect(cycle.status).toBe(1);
+  expect(JSON.parse(cycle.stdout).frontier).toEqual([]);
+  expect(JSON.parse(cycle.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "cyclic-dependency" })
+  );
+});
+
+test("human v3 status shows scenario owner and explicitly unassessed qualification", () => {
+  const { ledger, local } = setupScenarios();
+  run(ledger, local);
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain(
+    "Scenario S1: Candidate; owner 01-first.md (ready-for-agent); shared UI; qualification not-assessed"
+  );
+});
+
+function blob(repo: string, revision: string, path: string) {
+  try {
+    return git(repo, "rev-parse", "--verify", `${revision}:${path}`);
+  } catch {
+    return "absent";
+  }
+}
+
+function setupApplicability(
+  requirementIsOwner = false,
+  relevantPath = "tracked.txt"
+) {
+  const { ledger, local } = setupScenarios();
+  if (requirementIsOwner)
+    ledger.scenarios[0].requirement = {
+      role: "client",
+      path: `${ledger.tracker.path}/01-first.md`,
+    };
+  if (relevantPath !== "tracked.txt")
+    git(client, "mv", "tracked.txt", relevantPath);
+  for (const repo of [client, relay]) {
+    git(repo, "add", ".");
+    git(repo, "commit", "--quiet", "-m", "record public contract");
+  }
+  const revisions = {
+    client: git(client, "rev-parse", "HEAD"),
+    relay: git(relay, "rev-parse", "HEAD"),
+  };
+  const inputs = {
+    toolchain:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    dependencies:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    build: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    runner: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    fault: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    artifact:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    environment:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  };
+  const relevantInputs = [{ role: "client", path: relevantPath }];
+  file(join(client, "notes.md"), "Reporting update only\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "reporting update");
+  const current = { ...revisions, client: git(client, "rev-parse", "HEAD") };
+  return {
+    local,
+    ledger: {
+      ...ledger,
+      repositories: {
+        client: {
+          ...ledger.repositories.client,
+          integrationTip: current.client,
+        },
+        relay: { ...ledger.repositories.relay, integrationTip: current.relay },
+      },
+      evidence: ["verification", "standards", "spec"].map((kind) => ({
+        id: kind,
+        ticket: "01-first.md",
+        kind,
+        outcome: "passed",
+        profile: "routine",
+        command: "never execute",
+        reviewer: "original-reviewer",
+        tools: { node: process.version },
+        observedAt: "2026-10-28T01:00:00Z",
+        revisions,
+        artifacts: ["preserved"],
+      })),
+      candidates: [
+        { id: "original", revisions, inputs },
+        { id: "current", revisions: current, inputs },
+      ],
+      evidenceBindings: ["verification", "standards", "spec"].map(
+        (evidenceId) => ({
+          evidenceId,
+          candidateId: "original",
+          scenarioIds: ["S1"],
+          scenarioDigest: createHash("sha256")
+            .update(JSON.stringify(ledger.scenarios))
+            .digest("hex"),
+          relevantInputs,
+        })
+      ),
+      carryForwards: ["verification", "standards", "spec"].map(
+        (evidenceId) => ({
+          evidenceId,
+          scenarioId: "S1",
+          candidateId: "current",
+          relevantInputs,
+          assessedChanges: [
+            {
+              role: "client",
+              path: "notes.md",
+              before: "absent",
+              after: blob(client, current.client, "notes.md"),
+              assessment: "documentation-only",
+              rationale:
+                "Reporting text changes no acceptance meaning or execution input",
+            },
+          ],
+          rationale: "Unchanged scenario and inputs after review",
+          reviewer: "applicability-reviewer",
+        })
+      ),
+    },
+  };
+}
+
+test("v3 retains original observations with explicit reviewed applicability to a new candidate", () => {
+  const { ledger, local } = setupApplicability();
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(report.evidence[0]).toMatchObject({
+    outcome: "passed",
+    revisions: ledger.evidence[0].revisions,
+    observedAt: "2026-10-28T01:00:00Z",
+    freshness: "carried-forward",
+  });
+  expect(report.carryForwards[0]).toMatchObject({
+    evidenceId: "verification",
+    candidateId: "current",
+    state: "applicable",
+    reviewer: "applicability-reviewer",
+  });
+  expect(report.scenarios[0].qualification).toBe("not-assessed");
+});
+
+test("v3 refuses changed acceptance prose despite a documentation-only assessment and preserves an independent frontier", () => {
+  const { ledger, local } = setupApplicability();
+  const requirement = ledger.ownership.specification.path;
+  file(
+    join(client, requirement),
+    "# Specification\n\n## Artifact ownership\n\nReset must now execute immediately.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "02-independent.md"),
+    "# Independent\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "03-consumer.md"),
+    "# Consumer\n\n**Status:** ready-for-agent\n\n**Blocked by:** [01](01-first.md).\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change acceptance contract");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  ledger.tickets.push(
+    ...["02-independent.md", "03-consumer.md"].map((path) => ({
+      ...ledger.tickets[0],
+      path,
+    }))
+  );
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push(
+      ...[
+        requirement,
+        `${ledger.tracker.path}/02-independent.md`,
+        `${ledger.tracker.path}/03-consumer.md`,
+      ].map((path) => ({
+        role: "client",
+        path,
+        before: blob(client, ledger.candidates[0].revisions.client, path),
+        after: blob(client, ledger.candidates[1].revisions.client, path),
+        assessment: "documentation-only",
+        rationale: "Filename-based exemption must not qualify acceptance prose",
+      }))
+    );
+  const result = run(ledger, local);
+  const report = JSON.parse(result.stdout);
+  expect(result.status).toBe(1);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    `${"client"}:${requirement}: acceptance or execution input changed`
+  );
+  expect(report.frontier).toEqual(["02-independent.md"]);
+});
+
+test("v3 refuses an assessment copied onto a different change at the same path", () => {
+  const { ledger, local } = setupApplicability();
+  file(
+    join(client, "notes.md"),
+    "A different reporting change has not been reviewed\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "unreviewed replacement");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  const result = run(ledger, local);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe("stale");
+});
+
+test.each([
+  ["relevant runtime source", "tracked.txt", "documentation-only"],
+  ["workspace lockfile", "package-lock.json", "unrelated"],
+  ["build runner", "scripts/build.mjs", "unrelated"],
+  ["unknown source impact", "new-runtime.ts", "unknown"],
+])("v3 withholds evidence after %s changes", (_label, path, assessment) => {
+  const { ledger, local } = setupApplicability();
+  file(join(client, path), "Changed execution behavior\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change execution inputs");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: blob(client, ledger.candidates[0].revisions.client, path),
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment,
+      rationale: "Impact assessment for changed input",
+    });
+  const report = JSON.parse(run(ledger, local).stdout);
+  expect(
+    report.evidence.every(
+      (item: { freshness: string }) => item.freshness === "stale"
+    )
+  ).toBe(true);
+  expect(report.carryForwards[0].state).toBe("review-required");
+});
+
+test.each([
+  "toolchain",
+  "dependencies",
+  "build",
+  "runner",
+  "fault",
+  "artifact",
+  "environment",
+])("v3 changed %s fingerprint invalidates applicability", (key) => {
+  const { ledger, local } = setupApplicability();
+  // Give the new candidate a distinct input object rather than modifying history.
+  ledger.candidates[1].inputs = {
+    ...ledger.candidates[1].inputs,
+    [key]: "b".repeat(64),
+  };
+  const report = JSON.parse(run(ledger, local).stdout);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "Candidate execution inputs changed"
+  );
+});
+
+test.each(["failed", "not-run", "unavailable"])(
+  "v3 never carries original %s evidence into a passing result",
+  (outcome) => {
+    const { ledger, local } = setupApplicability();
+    ledger.evidence[0].outcome = outcome;
+    const report = JSON.parse(run(ledger, local).stdout);
+    expect(report.evidence[0]).toMatchObject({
+      outcome,
+      freshness: "stale",
+      revisions: ledger.evidence[0].revisions,
+    });
+    expect(report.carryForwards[0].state).toBe("review-required");
+  }
+);
+
+test("v3 status-only ticket updates retain evidence when acceptance sources and execution inputs remain unchanged", () => {
+  const { ledger, local } = setupApplicability();
+  const path = `${ledger.tracker.path}/01-first.md`;
+  file(
+    join(client, path),
+    "# Ticket\n\n**Status:** deferred\n\n**Blocked by:** None.\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "coordinator status update");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: blob(client, ledger.candidates[0].revisions.client, path),
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment: "status-only",
+      rationale: "Only coordinator status changed; contract is unchanged",
+    });
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe(
+    "carried-forward"
+  );
+});
+
+test("v3 missing impact assessments stay unknown and legacy v2 retains exact-tip semantics", () => {
+  const { ledger, local } = setupApplicability();
+  ledger.carryForwards[0].assessedChanges = [];
+  expect(JSON.parse(run(ledger, local).stdout).evidence[0].freshness).toBe(
+    "stale"
+  );
+  const historical = Object.fromEntries(
+    Object.entries(ledger).filter(
+      ([key]) =>
+        ![
+          "candidates",
+          "evidenceBindings",
+          "carryForwards",
+          "scenarios",
+        ].includes(key)
+    )
+  );
+  historical.schemaVersion = 2;
+  const report = JSON.parse(run(historical, local).stdout);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.frontier).toEqual([]);
+});
+
+test("v3 carried required evidence releases a resolved output's consumer only with real integration receipts", () => {
+  const { ledger, local } = setupApplicability();
+  const path = `${ledger.tracker.path}/01-first.md`;
+  file(
+    join(client, path),
+    "# Ticket\n\n**Status:** resolved\n\n**Blocked by:** None.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "02-consumer.md"),
+    "# Consumer\n\n**Status:** ready-for-agent\n\n**Blocked by:** [01](01-first.md).\n"
+  );
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "coordinator resolution and consumer");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push(
+      ...[path, `${ledger.tracker.path}/02-consumer.md`].map((path) => ({
+        role: "client",
+        path,
+        before: blob(client, ledger.candidates[0].revisions.client, path),
+        after: blob(client, ledger.candidates[1].revisions.client, path),
+        assessment: "status-only",
+        rationale:
+          "Coordinator status and dependency metadata only; unchanged acceptance sources",
+      }))
+    );
+  const complete = {
+    ...ledger,
+    tickets: [
+      ...ledger.tickets,
+      { ...ledger.tickets[0], path: "02-consumer.md" },
+    ],
+    integrations: ["client", "relay"].map((role) => ({
+      ticket: "01-first.md",
+      role,
+      sourceCommit:
+        role === "client"
+          ? ledger.candidates[0].revisions.client
+          : ledger.candidates[0].revisions.relay,
+      integratedCommit:
+        role === "client"
+          ? ledger.candidates[0].revisions.client
+          : ledger.candidates[0].revisions.relay,
+      verifiedBy: ledger.coordinator,
+      artifact: "preserved",
+    })),
+  };
+  const result = run(complete, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).frontier).toEqual(["02-consumer.md"]);
+  complete.integrations = [];
+  const missing = JSON.parse(run(complete, local).stdout);
+  expect(missing.frontier).toEqual([]);
+  expect(missing.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "resolution-integration" })
+  );
+});
+
+test("v3 changed scenario meaning and missing required roots cannot be masked by applicability", () => {
+  const { ledger, local } = setupApplicability();
+  ledger.scenarios[0].expectedObservation = "A new accepted behavior";
+  const report = JSON.parse(run(ledger, local).stdout);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "Scenario acceptance allocation changed"
+  );
+  local.roots.relay = join(root, "missing repository");
+  const missing = JSON.parse(run(ledger, local).stdout);
+  expect(missing.frontier).toEqual([]);
+  expect(missing.complete).toBe(false);
+});
+
+test("v3 applicability stays read-only and never executes evidence commands or reads private artifacts", () => {
+  const { ledger, local } = setupApplicability();
+  const sentinel = join(root, "command-executed");
+  ledger.evidence[0].command = `${process.execPath} -e "require('fs').writeFileSync('${sentinel}', 'bad')"`;
+  const before = {
+    refs: git(client, "show-ref"),
+    status: git(client, "status", "--porcelain=v1"),
+    index: readFileSync(join(client, ".git/index")).toString("base64"),
+    artifact: readFileSync(local.artifacts.preserved).toString("base64"),
+  };
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(() => readFileSync(sentinel)).toThrow();
+  expect({
+    refs: git(client, "show-ref"),
+    status: git(client, "status", "--porcelain=v1"),
+    index: readFileSync(join(client, ".git/index")).toString("base64"),
+    artifact: readFileSync(local.artifacts.preserved).toString("base64"),
+  }).toEqual(before);
+});
+
+test.each([false, true])(
+  "v3 retains canonical issue requirements across only reviewed closure metadata (acceptance changed: %s)",
+  (acceptanceChanged) => {
+    const { ledger, local } = setupApplicability(true);
+    const path = ledger.scenarios[0].requirement.path;
+    file(
+      join(client, path),
+      `# Ticket\n\n**Status:** resolved\n\n**Assignee:** coordinator\n\n**Blocked by:** None.\n${acceptanceChanged ? "\nNew acceptance obligation.\n" : ""}`
+    );
+    git(client, "add", ".");
+    git(client, "commit", "--quiet", "-m", "coordinator closure metadata");
+    ledger.repositories.client.integrationTip = git(
+      client,
+      "rev-parse",
+      "HEAD"
+    );
+    ledger.candidates[1].revisions.client =
+      ledger.repositories.client.integrationTip;
+    for (const carry of ledger.carryForwards)
+      carry.assessedChanges.push({
+        role: "client",
+        path,
+        before: blob(client, ledger.candidates[0].revisions.client, path),
+        after: blob(client, ledger.candidates[1].revisions.client, path),
+        assessment: "status-only",
+        rationale:
+          "Reviewed exact canonical issue closure metadata; acceptance body unchanged",
+      });
+    const complete = {
+      ...ledger,
+      integrations: ["client", "relay"].map((role) => ({
+        ticket: "01-first.md",
+        role,
+        sourceCommit:
+          role === "client"
+            ? ledger.candidates[0].revisions.client
+            : ledger.candidates[0].revisions.relay,
+        integratedCommit:
+          role === "client"
+            ? ledger.candidates[0].revisions.client
+            : ledger.candidates[0].revisions.relay,
+        verifiedBy: ledger.coordinator,
+        artifact: "preserved",
+      })),
+    };
+    const result = run(complete, local);
+    const report = JSON.parse(result.stdout);
+    expect(report.evidence[0].freshness).toBe(
+      acceptanceChanged ? "stale" : "carried-forward"
+    );
+    expect(result.status).toBe(acceptanceChanged ? 1 : 0);
+  }
+);
+
+test("v3 preserves leading whitespace in changed relevant paths rather than accepting an assessment for a nonexistent trimmed path", () => {
+  const { ledger, local } = setupApplicability(false, " tracked.txt");
+  file(join(client, " tracked.txt"), "Changed relevant runtime input\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "change leading-space input");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path: "tracked.txt",
+      before: "absent",
+      after: "absent",
+      assessment: "unrelated",
+      rationale:
+        "Incorrect assessment names an absent path without leading whitespace",
+    });
+  const result = run(ledger, local);
+  const report = JSON.parse(result.stdout);
+  expect(result.status).toBe(1);
+  expect(report.evidence[0].freshness).toBe("stale");
+  expect(report.carryForwards[0].reasons).toContain(
+    "client: tracked.txt: acceptance or execution input changed"
+  );
+  expect(report.carryForwards[0].reasons).toContain(
+    "client:tracked.txt: assessment does not match actual Git changes"
+  );
+});
+
+test("v3 accepts a correctly reviewed unrelated documentation path with leading whitespace", () => {
+  const { ledger, local } = setupApplicability();
+  const path = " notes.md";
+  file(join(client, path), "Unrelated reviewed reporting text\n");
+  git(client, "add", ".");
+  git(client, "commit", "--quiet", "-m", "review leading-space documentation");
+  ledger.repositories.client.integrationTip = git(client, "rev-parse", "HEAD");
+  ledger.candidates[1].revisions.client =
+    ledger.repositories.client.integrationTip;
+  for (const carry of ledger.carryForwards)
+    carry.assessedChanges.push({
+      role: "client",
+      path,
+      before: "absent",
+      after: blob(client, ledger.candidates[1].revisions.client, path),
+      assessment: "documentation-only",
+      rationale:
+        "Exact public documentation path changes no contract or execution input",
+    });
+  const result = run(ledger, local);
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).evidence[0].freshness).toBe(
+    "carried-forward"
+  );
+});
+
+test("compact entry walkthrough identifies current candidate, owners, pending output and next action", () => {
+  const base = setupApplicability();
+  const ledger = { ...base.ledger, selectedCandidateId: "current" };
+  const local = base.local;
+  const blocked = "02-blocked.md";
+  file(
+    join(client, ledger.tracker.path, blocked),
+    "# Retained owner\n\n**Status:** claimed\n\n**Blocked by:** None.\n"
+  );
+  const populated = {
+    ...ledger,
+    operational: {
+      deployments: [],
+      access: [],
+      authorizations: [
+        {
+          id: "fixture-local",
+          observedAt: "2026-10-28",
+          authorizationDate: "2026-10-28",
+          source: { kind: "public", ...ledger.ownership.decisions },
+          action: "Local fixture verification",
+          resources: ["owned fixture"],
+          limits: ["local only"],
+          status: "recorded",
+          statusAt: "2026-10-28",
+          statusSource: { kind: "public", ...ledger.ownership.decisions },
+        },
+      ],
+      requirements: [{ ticket: "01-first.md", records: ["fixture-local"] }],
+    },
+    tickets: [
+      ...ledger.tickets,
+      {
+        ...ledger.tickets[0],
+        path: blocked,
+        externalBlockers: [{ reason: "Host unavailable", owner: "host-owner" }],
+      },
+    ],
+    claims: [
+      {
+        id: "retained-02",
+        ticket: blocked,
+        owner: "native-owner",
+        coordinator: ledger.coordinator,
+        activity: "blocked",
+        repositories: {},
+      },
+    ],
+  };
+  const entry = {
+    schemaVersion: 1,
+    runId: ledger.runId,
+    canonical: ledger.ownership.canonical,
+    runArtifact: "active-run",
+    candidateId: "current",
+    integrationBranches: { client: "integration", relay: "integration" },
+  };
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify(entry)
+  );
+  run(populated, local);
+  const mapped = {
+    ...local,
+    artifacts: { ...local.artifacts, "active-run": join(root, "run.json") },
+  };
+  file(join(root, "local.json"), JSON.stringify(mapped));
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${ledger.ownership.canonical.path}/current.json`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(0);
+  const current = JSON.parse(result.stdout);
+  expect(current.candidate).toMatchObject({
+    state: "current",
+    id: "current",
+    revisions: ledger.candidates[1].revisions,
+  });
+  expect(current.claims[0]).toMatchObject({
+    owner: "native-owner",
+    activity: "blocked",
+    coordinator: ledger.coordinator,
+  });
+  expect(current.outputs[1].blockers).toContainEqual({
+    kind: "external",
+    reason: "Host unavailable",
+    owner: "host-owner",
+  });
+  expect(current.canonical).toEqual(ledger.ownership.canonical);
+  expect(current.capacity).toMatchObject({ available: 2 });
+  expect(current.outputs[0]).toMatchObject({
+    ticket: "01-first.md",
+    status: "ready-for-agent",
+    scenarios: ["S1"],
+  });
+  expect(current.scenarios[0]).toMatchObject({
+    id: "S1",
+    owner: "01-first.md",
+    applicability: "available",
+    remaining: true,
+    qualification: "not-assessed",
+  });
+  expect(current.authorizations).toMatchObject({
+    state: "recorded",
+    records: [
+      {
+        id: "fixture-local",
+        status: "recorded",
+        action: "Local fixture verification",
+        limits: ["local only"],
+        permission: "not-assessed",
+      },
+    ],
+    requirements: [
+      { ticket: "01-first.md", records: ["fixture-local"], blockers: [] },
+    ],
+  });
+  expect(current.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "01-first.md",
+  });
+  expect(result.stdout).not.toContain("private artifact canary");
+  expect(result.stdout).not.toContain("never execute");
+
+  entry.candidateId = "original";
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify(entry)
+  );
+  const stale = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${ledger.ownership.canonical.path}/current.json`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(stale.status).toBe(1);
+  expect(JSON.parse(stale.stdout).nextActions).not.toContainEqual(
+    expect.objectContaining({ action: "dispatch" })
+  );
+  expect(JSON.parse(stale.stdout).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "entry-candidate" })
+  );
+  // Deliberately selecting the older integrated source is valid and preserves its identity.
+  file(
+    join(root, "run.json"),
+    JSON.stringify({ ...populated, selectedCandidateId: "original" })
+  );
+  const frozen = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${ledger.ownership.canonical.path}/current.json`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(frozen.status).toBe(0);
+  expect(frozen.stdout).toContain("Candidate: original");
+  expect(frozen.stdout).toContain(ledger.candidates[0].revisions.client);
+  expect(frozen.stdout).toContain("Next: dispatch (1); 01-first.md");
+});
+
+test.each([
+  "run",
+  "canonical",
+  "branch",
+  "root",
+  "missing-run",
+  "missing-entry",
+])("compact entry with %s mismatch withholds dispatch", (fault) => {
+  const base = setupApplicability();
+  const ledger = { ...base.ledger, selectedCandidateId: "current" };
+  const local = base.local;
+  const entry = {
+    schemaVersion: 1,
+    runId: ledger.runId,
+    canonical: { ...ledger.ownership.canonical },
+    runArtifact: "active-run",
+    candidateId: "current",
+    integrationBranches: { client: "integration", relay: "integration" },
+  };
+  if (fault === "run") entry.runId = "outdated";
+  if (fault === "canonical") entry.canonical.path = ".scratch/old";
+  if (fault === "branch") entry.integrationBranches.client = "old-integration";
+  if (fault === "root")
+    git(client, "checkout", "--quiet", "-b", "planning-copy");
+  const path = `${ledger.ownership.canonical.path}/current.json`;
+  if (fault !== "missing-entry")
+    file(join(client, path), JSON.stringify(entry));
+  run(ledger, local);
+  file(
+    join(root, "local.json"),
+    JSON.stringify({
+      ...local,
+      artifacts: {
+        ...local.artifacts,
+        "active-run": join(
+          root,
+          fault === "missing-run" ? "missing.json" : "run.json"
+        ),
+      },
+    })
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--entry",
+      `client:${path}`,
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(result.status).toBe(1);
+  expect(
+    JSON.parse(result.stdout).nextActions.filter(
+      (item: { action: string }) => item.action === "dispatch"
+    )
+  ).toEqual([]);
+});
+
+test("compact historical reports preserve unknown candidates and explicit revoked authorization references", () => {
+  const { ledger, local } = setupOperational();
+  ledger.operational.authorizations[0].status = "revoked";
+  const current = JSON.parse(run(ledger, local, "--compact").stdout);
+  expect(current.candidate.state).toBe("unknown");
+  expect(current.authorizations.records[0]).toMatchObject({
+    id: "clipboard",
+    status: "revoked",
+    permission: "not-assessed",
+    source: {
+      kind: "public",
+      role: "client",
+      path: ".scratch/feature/decisions.md",
+    },
+  });
+  expect(current.outputs[0].blockers).toContainEqual({
+    kind: "operational",
+    id: "clipboard",
+    state: "revoked",
+  });
+  expect(current.nextActions).toEqual([]);
+  expect(JSON.stringify(current)).not.toContain("PRIVATE_OPERATIONAL_CANARY");
+});
+
+test("compact scoped stale evidence preserves unrelated next actions", () => {
+  const { ledger, local } = setupApplicability();
+  file(
+    join(client, ledger.tracker.path, "02-independent.md"),
+    "# Independent\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  const next = {
+    ...ledger,
+    tickets: [
+      ...ledger.tickets,
+      { ...ledger.tickets[0], path: "02-independent.md" },
+    ],
+    carryForwards: [],
+  };
+  const result = run(next, local, "--compact");
+  expect(result.status).toBe(1);
+  const current = JSON.parse(result.stdout);
+  expect(current.outputs[0].blockers).toContainEqual(
+    expect.objectContaining({ kind: "evidence", code: "evidence-stale" })
+  );
+  expect(current.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "02-independent.md",
+  });
+});
+
+test("compact selected frozen candidate retains its identity while integration advances", () => {
+  const { ledger, local } = setupApplicability();
+  const result = run(
+    { ...ledger, selectedCandidateId: "original" },
+    local,
+    "--compact"
+  );
+  expect(result.status).toBe(0);
+  const current = JSON.parse(result.stdout);
+  expect(current.candidate).toMatchObject({
+    state: "selected",
+    id: "original",
+    revisions: ledger.candidates[0].revisions,
+    integrationState: "different-revisions",
+  });
+  expect(current.integration.client.revision).toBe(
+    ledger.candidates[1].revisions.client
+  );
+  expect(current.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "01-first.md",
+  });
+});
+
+test("v3 client-only compact entry resumes real candidate and active claim without a relay checkout", () => {
+  const { ledger, local } = setupScenarios();
+  rmSync(relay, { recursive: true, force: true });
+  const revision = ledger.repositories.client.integrationTip;
+  const implementation = join(root, "client implementation");
+  git(
+    client,
+    "worktree",
+    "add",
+    "--quiet",
+    "-b",
+    "client-ticket",
+    implementation
+  );
+  file(
+    join(client, ledger.tracker.path, "01-first.md"),
+    "# Owned\n\n**Status:** claimed\n\n**Blocked by:** None.\n"
+  );
+  file(
+    join(client, ledger.tracker.path, "02-next.md"),
+    "# Eligible\n\n**Status:** ready-for-agent\n\n**Blocked by:** None.\n"
+  );
+  const candidate = {
+    id: "client-frozen",
+    revisions: { client: revision },
+    inputs: Object.fromEntries(
+      [
+        "toolchain",
+        "dependencies",
+        "build",
+        "runner",
+        "fault",
+        "artifact",
+        "environment",
+      ].map((key) => [key, "a".repeat(64)])
+    ),
+  };
+  const runRecord = {
+    ...ledger,
+    repositories: { client: ledger.repositories.client },
+    ownership: {
+      ...ledger.ownership,
+      roles: { client: "Client coordination and implementation" },
+      pointers: [],
+    },
+    tickets: ["01-first.md", "02-next.md"].map((path) => ({
+      ...ledger.tickets[0],
+      path,
+      roles: ["client"],
+    })),
+    claims: [
+      {
+        id: "client-claim",
+        ticket: "01-first.md",
+        owner: "client-worker",
+        coordinator: ledger.coordinator,
+        activity: "active",
+        repositories: {
+          client: {
+            branch: "client-ticket",
+            baseline: revision,
+            worktree: "client-ticket",
+            sourceCommits: [],
+          },
+        },
+      },
+    ],
+    candidates: [candidate],
+    selectedCandidateId: candidate.id,
+  };
+  const config = {
+    ...local,
+    schemaVersion: 2,
+    roots: { client },
+    worktrees: { "client-ticket": implementation },
+    artifacts: { ...local.artifacts, "active-run": join(root, "run.json") },
+  };
+  const entry = {
+    schemaVersion: 1,
+    runId: ledger.runId,
+    canonical: ledger.ownership.canonical,
+    runArtifact: "active-run",
+    candidateId: candidate.id,
+    integrationBranches: { client: "integration" },
+  };
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify(entry)
+  );
+  run(runRecord, config);
+  const invoke = () =>
+    spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--entry",
+        `client:${ledger.ownership.canonical.path}/current.json`,
+        "--local",
+        join(root, "local.json"),
+        "--compact",
+        "--json",
+      ],
+      { encoding: "utf8" }
+    );
+  const result = invoke();
+  expect(result.status).toBe(0);
+  const report = JSON.parse(result.stdout);
+  expect(Object.keys(report.integration)).toEqual(["client"]);
+  expect(report.candidate).toMatchObject({
+    id: "client-frozen",
+    revisions: { client: revision },
+  });
+  expect(report.claims[0]).toMatchObject({
+    owner: "client-worker",
+    activity: "active",
+  });
+  expect(report.capacity).toEqual({ active: 1, available: 1, maximum: 2 });
+  expect(report.nextActions).toContainEqual({
+    action: "dispatch",
+    ticket: "02-next.md",
+  });
+  // Explicit role mismatches are integrity errors rather than invented companion ownership.
+  file(
+    join(root, "local.json"),
+    JSON.stringify({ ...config, roots: { client, relay } })
+  );
+  expect(invoke().status).toBe(1);
+  file(join(root, "local.json"), JSON.stringify(config));
+  file(
+    join(client, ledger.ownership.canonical.path, "current.json"),
+    JSON.stringify({
+      ...entry,
+      integrationBranches: { client: "integration", relay: "unrelated" },
+    })
+  );
+  expect(invoke().status).toBe(1);
+});
+
+test("historical v1 runs retain local v1 and both-role requirements", () => {
+  const { ledger, local } = setup();
+  expect(run(ledger, local).status).toBe(0);
+  const newer = run(ledger, { ...local, schemaVersion: 2 });
+  expect(newer.status).toBe(1);
+  expect(JSON.parse(newer.stdout).diagnostics[0].message).toContain(
+    "historical v1/v2 runs require local schemaVersion 1"
+  );
+  const missing = run(ledger, { ...local, roots: { client } });
+  expect(missing.status).toBe(1);
+});
+
+test("malformed compact entry never discloses its contents in human or JSON recovery output", () => {
+  const { ledger, local } = setupScenarios();
+  run(ledger, local);
+  const canary = "LEAK08";
+  const entryPath = `${ledger.ownership.canonical.path}/current.json`;
+  file(join(client, entryPath), canary);
+  for (const format of [[], ["--json"]]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--entry",
+        `client:${entryPath}`,
+        "--local",
+        join(root, "local.json"),
+        "--compact",
+        ...format,
+      ],
+      { encoding: "utf8" }
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout + result.stderr).not.toContain(canary);
+    expect(result.stdout).toContain("Malformed JSON entry metadata");
+    if (format.length) {
+      const current = JSON.parse(result.stdout);
+      expect(current.nextActions).toEqual([
+        expect.objectContaining({ action: "reconcile", code: "invalid-input" }),
+      ]);
+      expect(current.diagnostics).toEqual([
+        expect.objectContaining({ code: "invalid-input" }),
+      ]);
+    }
+  }
+});
+
+test("human compact recovery summarizes 88 scenarios while JSON retains complete actionable details", () => {
+  const { ledger, local } = setupOperational();
+  const scenarioDescription =
+    "The selected acceptance candidate preserves the original exact runtime, build and diagnostic inputs while the owned native user journey remains subject to its complete qualified observation and cleanup criteria.";
+  const ticketNames = [
+    "01-first.md",
+    ...Array.from(
+      { length: 9 },
+      (_, index) => `${String(index + 2).padStart(2, "0")}-workflow-output.md`
+    ),
+  ];
+  const tracker = ledger.tracker.path;
+  for (const name of ticketNames)
+    file(
+      join(client, tracker, name),
+      `# Output\n\n**Status:** ${name === "01-first.md" ? "claimed" : "ready-for-agent"}\n\n**Blocked by:** None.\n`
+    );
+  const revision = ledger.repositories.client.integrationTip;
+  const populated = {
+    ...ledger,
+    schemaVersion: 3,
+    tickets: ticketNames.map((path) => ({
+      ...ledger.tickets[0],
+      path,
+      externalBlockers:
+        path !== ticketNames[1]
+          ? [
+              {
+                reason:
+                  "Selected native host is unavailable until its owner restores access",
+                owner: "host-owner",
+              },
+            ]
+          : [],
+    })),
+    claims: [
+      {
+        id: "retained-native",
+        ticket: "01-first.md",
+        owner: "native-owner",
+        coordinator: ledger.coordinator,
+        activity: "blocked",
+        repositories: {},
+      },
+    ],
+    scenarios: Array.from({ length: 88 }, (_, index) => ({
+      id: `criterion-${index + 1}`,
+      consumingOutput: scenarioDescription,
+      runtime: "Electron, Chrome toolbar popup and Android native",
+      expectedObservation: scenarioDescription,
+      evidenceType:
+        "candidate-bound actual native receipt and independent reviews",
+      primaryOwner: ticketNames[index % ticketNames.length],
+      requirement: ledger.ownership.specification,
+      prerequisites: [],
+      contributors: [],
+      disposition: "Candidate",
+    })),
+    candidates: [
+      {
+        id: "frozen-summary-candidate",
+        revisions: {
+          client: revision,
+          relay: ledger.repositories.relay.integrationTip,
+        },
+        inputs: Object.fromEntries(
+          [
+            "toolchain",
+            "dependencies",
+            "build",
+            "runner",
+            "fault",
+            "artifact",
+            "environment",
+          ].map((key) => [key, "a".repeat(64)])
+        ),
+      },
+    ],
+    selectedCandidateId: "frozen-summary-candidate",
+  };
+  const machine = run(populated, local, "--compact");
+  expect(machine.status).toBe(0);
+  const details = JSON.parse(machine.stdout);
+  expect(details.scenarios).toHaveLength(88);
+  expect(details.scenarios[87].output).toBe(scenarioDescription);
+  expect(details.authorizations.records[0].limits).toEqual(
+    ledger.operational.authorizations[0].limits
+  );
+  const human = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(human.status).toBe(0);
+  expect(human.stdout.split("\n").length).toBeLessThan(35);
+  expect(Buffer.byteLength(human.stdout)).toBeLessThan(6000);
+  expect(human.stdout).toContain("Candidate: frozen-summary-candidate");
+  expect(human.stdout).toContain(revision);
+  expect(human.stdout).toContain("native-owner (blocked)");
+  expect(human.stdout).toContain("Capacity: 0/2 active; 2 available");
+  expect(human.stdout).toContain("Scenarios: 88 total; 88 remaining");
+  expect(human.stdout).toContain("clipboard: recorded");
+  expect(human.stdout).toContain("client:.scratch/feature/decisions.md");
+  expect(human.stdout).toContain("limits: see references");
+  expect(human.stdout).toContain("Next: dispatch");
+  expect(human.stdout).toContain("02-workflow-output.md");
+  expect(human.stdout).toContain("--json");
+  expect(human.stdout).not.toContain(scenarioDescription);
+  expect(human.stdout).not.toContain("PRIVATE_OPERATIONAL_CANARY");
+  expect(human.stdout.split("Selected native host")).toHaveLength(2);
+  for (const scenario of populated.scenarios)
+    scenario.requirement = {
+      role: "client",
+      path: ".scratch/feature/missing-requirement.md",
+    };
+  const invalid = run(populated, local, "--compact");
+  expect(invalid.status).toBe(1);
+  expect(
+    JSON.parse(invalid.stdout).diagnostics.filter(
+      (item: { code: string }) => item.code === "scenario-reference"
+    )
+  ).toHaveLength(88);
+  const reconcile = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "--ledger",
+      join(root, "run.json"),
+      "--local",
+      join(root, "local.json"),
+      "--compact",
+    ],
+    { encoding: "utf8" }
+  );
+  expect(reconcile.status).toBe(1);
+  expect(reconcile.stdout.split("\n").length).toBeLessThan(35);
+  expect(Buffer.byteLength(reconcile.stdout)).toBeLessThan(6000);
+  expect(reconcile.stdout).toContain("Next: reconcile scenario-reference (88)");
+  expect(reconcile.stdout).toContain(
+    "requirement must reference an available public file"
+  );
+  expect(reconcile.stdout).not.toContain("Next: dispatch");
 });

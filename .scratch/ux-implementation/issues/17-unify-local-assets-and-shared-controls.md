@@ -1,10 +1,10 @@
 # Qualify desktop shared controls and collect cross-surface styling
 
 Type: implementation
-Status: resolved
+**Status:** resolved
 Assignee: ux-issues-08
 Priority band: 1
-Blocked by: 32
+**Blocked by:** [32](32-deliver-local-assets-and-android-shared-controls.md)
 Dispatch: authorized UX implementation run `ux-implementation-20261010`; claim and branch details in [run record](../run.md)
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -59,7 +59,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Dispatch assessment — 2026-10-11
 

@@ -214,6 +214,8 @@ Good "anchor" files by task:
 - Peer connectivity issues: `packages/core/network/node.ts`, `packages/core/network/engine.ts`
 - Renderer action wiring: `apps/electron/src/preload.ts`, `apps/android/src/client.ts`, `apps/extension/src/background.ts`
 
+For candidate review, fix review, evidence-batch closure or next-assignment selection, follow [review and closure](agents/review-and-closure.md).
+
 ## 11. Existing Docs Worth Reading
 
 - `AGENTS.md`

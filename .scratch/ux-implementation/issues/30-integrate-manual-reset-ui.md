@@ -1,10 +1,10 @@
 # Integrate authenticated manual reset actions and UI
 
 Type: implementation
-Status: open
+**Status:** ready-for-agent
 Assignee: none
 Priority band: 3
-Blocked by: 07, 08, 35, 19, 24, 29
+**Blocked by:** [07](07-preserve-session-tasks-and-editor-recovery.md), [08](08-compose-actionable-recovery-issues.md), [35](35-deliver-chrome-management-and-task-input.md), [19](19-deliver-accessible-navigation-and-reflow.md), [37](37-deliver-compatible-settings-output.md), [38](38-qualify-reset-host-seam.md)
 Dispatch: plan approved; awaiting an authorized execution run
 Parent: [Clipp UX implementation](../spec.md)
 
@@ -26,10 +26,10 @@ The [approved package contract](../../ux-implementation-plan/manual-identity-res
 - [Compose actionable recovery issues](08-compose-actionable-recovery-issues.md) — consume its completed, scoped output.
 - [Deliver complete Chrome management, secure handoff and task input](35-deliver-chrome-management-and-task-input.md) — consume its completed, scoped output.
 - [Deliver accessible navigation and task reflow](19-deliver-accessible-navigation-and-reflow.md) — consume its completed, scoped output.
-- [Deliver M3 Settings and management tasks](24-deliver-m3-settings.md) — consume its completed, scoped output.
-- [Fence reset runtime work and restart](29-fence-reset-runtime-work.md) — consume its completed, scoped output.
+- [Deliver compatible Settings composition for reset UI](37-deliver-compatible-settings-output.md) — consume its completed, scoped output.
+- [Qualify runtime reset host seam for integrated UI](38-qualify-reset-host-seam.md) — consume its completed, scoped output.
 
-Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
+Only the output scoped here must be complete. Native collectors keep their own criteria; a proposed allocation, source fixture or unavailable runtime cannot supply their observation. Follow [phase admission](../spec.md#delivery-order-and-completion).
 
 ## Verification and acceptance
 
@@ -53,8 +53,12 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14
 
 Proposed under the approved cross-runtime refinement and existing-task/functional-management integration boundaries.34 supplies Android/Electron generic native input against resolved07/12/32;35 co-delivers complete Chrome management and Chrome13 input against resolved02/03/06/07/08/32/33. Original13/11 remain collectors;17/19/15/16/10 keep every residual desktop/navigation/scanner/notification/Pairing gate and contribution. Each consumer retains its own affected presentation/native/cutover gates. Consume genuinely completed scoped outputs only; no source-only resolution or finding closure. Root must accept and apply the full allocation before any new claim.
+
+## Adopted dependency allocation — 2026-10-29
+
+Consume completed Settings composition 37 and actual qualified host seam 38. A source-only fixture cannot satisfy 38. Keep per-runtime reset availability closed until the complete mandatory path is qualified; native Settings24 and integrated runtime29 remain final collector prerequisites through31.

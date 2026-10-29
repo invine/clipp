@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Read Git metadata and coordinator records only. No repair, dispatch or shell execution.
+import { compactRecovery, formatCompact } from "./lib/compact-recovery.mjs";
+import { inspectApplicability } from "./lib/evidence-applicability.mjs";
 import { execFileSync } from "node:child_process";
 import {
   lstatSync,
@@ -11,6 +13,11 @@ import {
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const schemaRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../docs/agents/ledger"
+);
+
 const report = {
   schemaVersion: 1,
   observedAt: new Date().toISOString(),
@@ -21,16 +28,23 @@ const report = {
   claims: [],
   integrations: [],
   evidence: [],
+  operational: { state: "unknown" },
   frontier: [],
   diagnostics: [],
 };
-const diagnostic = (code, message) =>
-  report.diagnostics.push({ code, message });
+const diagnostic = (code, message, ticket) =>
+  report.diagnostics.push({ code, message, ...(ticket ? { ticket } : {}) });
+const hasIntegrityFailure = () =>
+  report.diagnostics.some((item) => !item.ticket);
 const requireValue = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 const args = process.argv.slice(2);
 const json = args.includes("--json");
+const compact = args.includes("--compact");
+let currentLedger;
+let currentEntry;
+let entryReference;
 function readJson(path) {
   requireValue(
     statSync(path).size <= 1024 * 1024,
@@ -42,8 +56,15 @@ function readJson(path) {
     throw new Error(`Malformed JSON metadata: ${path}`);
   }
 }
-// This deliberately supports just the keywords used by the two checked-in schemas.
+// This deliberately supports just the keywords used by the checked-in schemas.
 function validate(schema, value, path = "input") {
+  if (schema.$ref) {
+    const [file, pointer] = schema.$ref.split("#/");
+    const referenced = pointer
+      .split("/")
+      .reduce((part, key) => part[key], readJson(resolve(schemaRoot, file)));
+    return validate(referenced, value, path);
+  }
   if (schema.const !== undefined)
     requireValue(value === schema.const, `${path}: expected ${schema.const}`);
   if (schema.enum)
@@ -287,46 +308,506 @@ function observeRepository(root, saved) {
     branches,
   };
 }
+function publicDocument(root, path) {
+  const target = selected(root, path);
+  requireValue(
+    !path.split("/").includes(".local") &&
+      realpathSync(target) === resolve(realpathSync(root), portable(path)) &&
+      lstatSync(target).isFile() &&
+      statSync(target).size <= 128 * 1024,
+    "reference must be a bounded regular public file"
+  );
+  return readFileSync(target, "utf8");
+}
+function ownershipPointer(root, path, canonical) {
+  const text = publicDocument(root, path);
+  const owners = [
+    ...text.matchAll(
+      /^\*\*Owning repository:\*\*[ \t]*(client|relay)\b[^\r\n]*$/gm
+    ),
+  ];
+  const directories = [
+    ...text.matchAll(
+      /^\*\*Canonical feature directory:\*\*[ \t]*(client|relay):`([^`]+)`[^\r\n]*$/gm
+    ),
+  ];
+  requireValue(
+    owners.length === 1 &&
+      directories.length === 1 &&
+      owners[0][1] === canonical.role &&
+      directories[0][1] === canonical.role &&
+      directories[0][2].replace(/\/$/, "") ===
+        canonical.path.replace(/\/$/, ""),
+    "pointer must identify the canonical owner and feature directory"
+  );
+}
+// Public role-relative references are metadata-only; private artifacts use local IDs.
+function referenceAvailable(reference, local) {
+  try {
+    return statSync(
+      selected(local.roots[reference.role], reference.path)
+    ).isFile();
+  } catch {
+    return false;
+  }
+}
+function inspectOwnership(ledger, local) {
+  const ownership = ledger.ownership;
+  const canonical = ownership.canonical;
+  const directory = canonical.path.replace(/\/$/, "");
+  try {
+    portable(directory);
+    requireValue(
+      /^\.scratch\/[^/]+$/.test(directory) &&
+        ledger.tracker.role === canonical.role &&
+        ledger.tracker.path === `${directory}/issues` &&
+        ownership.specification.role === canonical.role &&
+        ownership.specification.path === `${directory}/spec.md` &&
+        ownership.decisions.role === canonical.role &&
+        ownership.decisions.path === `${directory}/decisions.md`,
+      "owner must contain the canonical tracker, specification and decisions"
+    );
+    const roles = Object.keys(ownership.roles);
+    requireValue(
+      roles.includes(canonical.role) &&
+        ledger.tickets.every((ticket) =>
+          ticket.roles.every((role) => roles.includes(role))
+        ) &&
+        ownership.pointers.length === roles.length - 1 &&
+        new Set(ownership.pointers.map((pointer) => pointer.role)).size ===
+          ownership.pointers.length &&
+        ownership.pointers.every(
+          (pointer) =>
+            pointer.role !== canonical.role && roles.includes(pointer.role)
+        ),
+      "each companion role requires exactly one pointer"
+    );
+  } catch {
+    diagnostic(
+      "ownership-consistency",
+      "Reconcile canonical owner, feature directory, tracker, specification, decisions and participating roles"
+    );
+  }
+  for (const reference of [
+    ownership.specification,
+    ownership.decisions,
+    ...ownership.coverage.map((item) => item.source),
+  ]) {
+    if (
+      !Object.hasOwn(ownership.roles, reference.role) ||
+      !referenceAvailable(reference, local)
+    )
+      diagnostic(
+        "ownership-reference",
+        `${reference.role}:${reference.path}: required public reference unavailable`
+      );
+  }
+  const headings = new Map();
+  try {
+    const text = publicDocument(
+      local.roots[ownership.specification.role],
+      ownership.specification.path
+    );
+    let fence = null;
+    for (const line of text.split(/\r?\n/)) {
+      const delimiter = line.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (delimiter) {
+        if (!fence) fence = delimiter[1];
+        else if (
+          delimiter[1][0] === fence[0] &&
+          delimiter[1].length >= fence.length
+        )
+          fence = null;
+        continue;
+      }
+      const heading =
+        !fence && line.match(/^ {0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/);
+      if (heading)
+        headings.set(heading[1], (headings.get(heading[1]) ?? 0) + 1);
+    }
+  } catch {
+    diagnostic(
+      "ownership-reference",
+      "Canonical specification must be an available bounded public Markdown file"
+    );
+  }
+  const decisions = new Set();
+  for (const item of ownership.coverage) {
+    if (
+      decisions.has(item.decision) ||
+      (item.disposition === "accepted" && !item.requirements.length) ||
+      item.requirements.some((heading) => headings.get(heading) !== 1)
+    )
+      diagnostic(
+        "decision-coverage",
+        `${item.decision}: require a unique decision ID and existing unambiguous specification headings; accepted decisions need coverage`
+      );
+    decisions.add(item.decision);
+  }
+  for (const pointer of ownership.pointers) {
+    try {
+      const target = selected(local.roots[pointer.role], pointer.path);
+      requireValue(
+        pointer.path.endsWith("/README.md"),
+        "companion pointer must be a README"
+      );
+      const parent = dirname(target);
+      const entries = readdirSync(parent);
+      requireValue(entries.length <= 500, "companion directory exceeds limit");
+      let tickets = [];
+      if (entries.includes("issues"))
+        tickets = readdirSync(selected(parent, "issues"));
+      requireValue(
+        !entries.includes("spec.md") &&
+          ![...entries, ...tickets].some((name) => /^\d+-.*\.md$/.test(name)),
+        "companion directory contains a duplicate specification or numbered tickets"
+      );
+    } catch {
+      diagnostic(
+        "ownership-duplicate",
+        `${pointer.role}:${pointer.path}: require an accessible pointer-only companion directory`
+      );
+    }
+  }
+  for (const reference of [
+    {
+      role: ownership.canonical.role,
+      path: `${ownership.canonical.path.replace(/\/$/, "")}/README.md`,
+    },
+    ...ownership.pointers,
+  ]) {
+    try {
+      ownershipPointer(
+        local.roots[reference.role],
+        reference.path,
+        ownership.canonical
+      );
+    } catch {
+      diagnostic(
+        "ownership-pointer",
+        `${reference.role}:${reference.path}: canonical owner/directory pointer missing or inconsistent`
+      );
+    }
+  }
+}
+function inspectScenarios(ledger, local, tickets) {
+  const ids = new Set();
+  function dependsOn(owner, prerequisite, visited = new Set()) {
+    if (visited.has(owner)) return false;
+    visited.add(owner);
+    return (tickets.get(owner)?.dependencies ?? []).some(
+      (path) => path === prerequisite || dependsOn(path, prerequisite, visited)
+    );
+  }
+  for (const scenario of ledger.scenarios) {
+    if (ids.has(scenario.id))
+      diagnostic(
+        "scenario-duplicate",
+        `${scenario.id}: each scenario criterion needs exactly one primary allocation; use distinct IDs for separate runtime cases`
+      );
+    ids.add(scenario.id);
+    if (!tickets.has(scenario.primaryOwner))
+      diagnostic(
+        "scenario-owner",
+        `${scenario.id}: primary qualification owner ${scenario.primaryOwner} must be an existing canonical numbered ticket`
+      );
+    if (
+      !Object.hasOwn(ledger.ownership.roles, scenario.requirement.role) ||
+      scenario.requirement.path.split(/[\\/]/).includes(".local") ||
+      !referenceAvailable(scenario.requirement, local)
+    )
+      diagnostic(
+        "scenario-reference",
+        `${scenario.id}: requirement must reference an available public file in a participating repository`
+      );
+    for (const path of scenario.prerequisites)
+      if (
+        !tickets.has(path) ||
+        path === scenario.primaryOwner ||
+        !dependsOn(scenario.primaryOwner, path)
+      )
+        diagnostic(
+          "scenario-dependency",
+          `${scenario.id}: prerequisite ${path} must exist in the primary owner's canonical dependency graph`
+        );
+    for (const path of scenario.contributors)
+      if (!tickets.has(path) || path === scenario.primaryOwner)
+        diagnostic(
+          "scenario-contributor",
+          `${scenario.id}: contributor ${path} must name another existing canonical numbered ticket`
+        );
+  }
+  report.scenarios = ledger.scenarios.map((scenario) => ({
+    ...scenario,
+    ownerStatus: tickets.get(scenario.primaryOwner)?.status ?? "unavailable",
+    qualification: "not-assessed",
+  }));
+}
+function inspectOperational(ledger, local, preserved) {
+  if (!ledger.operational) return;
+  const byId = new Map();
+  const operationalRows = [
+    ...ledger.operational.deployments.map((item) => ["deployment", item]),
+    ...ledger.operational.access.map((item) => ["access", item]),
+    ...ledger.operational.authorizations.map((item) => ["authorization", item]),
+  ];
+  const validDate = (value) => Number.isFinite(Date.parse(value));
+  const validateSource = (source, label) => {
+    if (source.kind === "public")
+      requireValue(
+        ["client", "relay"].includes(source.role) &&
+          typeof source.path === "string" &&
+          source.path.length > 0,
+        `${label}: public source requires repository role and relative path`
+      );
+    if (source.kind === "artifact")
+      requireValue(
+        typeof source.id === "string" && source.id.length > 0,
+        `${label}: artifact source requires artifact id`
+      );
+  };
+  for (const [kind, item] of operationalRows) {
+    requireValue(
+      !byId.has(item.id),
+      `duplicate operational record id: ${item.id}`
+    );
+    requireValue(
+      validDate(item.observedAt),
+      `${item.id}: observedAt must be a date`
+    );
+    validateSource(item.source, item.id);
+    if (kind === "deployment") {
+      requireValue(
+        validDate(item.qualification.observedAt),
+        `${item.id}: qualification observedAt must be a date`
+      );
+      validateSource(item.qualification.source, `${item.id} qualification`);
+      requireValue(
+        !/:[^/@\s]+@/.test(item.identity.publicEndpoint),
+        `${item.id}: public endpoint must not contain embedded credentials`
+      );
+    }
+    if (kind === "access")
+      requireValue(
+        !/:[^/@\s]+@/.test(item.route),
+        `${item.id}: access route must not contain embedded credentials`
+      );
+    if (kind === "authorization") {
+      requireValue(
+        validDate(item.authorizationDate),
+        `${item.id}: authorizationDate must be a date`
+      );
+      requireValue(
+        validDate(item.statusAt),
+        `${item.id}: statusAt must be a date`
+      );
+      requireValue(
+        Date.parse(item.statusAt) >= Date.parse(item.authorizationDate),
+        `${item.id}: statusAt precedes authorization`
+      );
+      validateSource(item.statusSource, `${item.id} status`);
+      requireValue(
+        item.status === "superseded"
+          ? typeof item.supersededBy === "string" &&
+              item.supersededBy.length > 0 &&
+              item.supersededBy !== item.id
+          : item.supersededBy === undefined,
+        `${item.id}: supersededBy must only identify a replacement authorization`
+      );
+    }
+    byId.set(item.id, { kind, item });
+  }
+  for (const { kind, item } of byId.values())
+    if (kind === "authorization" && item.status === "superseded")
+      requireValue(
+        byId.has(item.supersededBy),
+        `${item.id}: superseded authorization reference unavailable`
+      );
+  function sourceAvailable(source) {
+    if (source.kind === "public") return referenceAvailable(source, local);
+    try {
+      const path = local.artifacts[source.id];
+      return isAbsolute(path) && !!statSync(path) && preserved(path);
+    } catch {
+      return false;
+    }
+  }
+  const records = (items) =>
+    items.map((item) => ({
+      ...item,
+      availability: sourceAvailable(item.source) ? "available" : "unavailable",
+    }));
+  const requirements = ledger.operational.requirements.map((requirement) => {
+    const ticket = report.tickets.find(
+      (item) => item.path === requirement.ticket
+    );
+    requireValue(
+      ticket,
+      `${requirement.ticket}: operational requirement ticket unavailable`
+    );
+    const states = requirement.records.map((id) => {
+      const record = byId.get(id);
+      if (!record) return { id, state: "unknown" };
+      const { kind, item } = record;
+      let state =
+        sourceAvailable(item.source) &&
+        (kind !== "authorization" || sourceAvailable(item.statusSource))
+          ? "available"
+          : "unavailable";
+      if (
+        kind === "authorization" &&
+        ["revoked", "superseded"].includes(item.status)
+      )
+        state = item.status;
+      return { id, state };
+    });
+    return {
+      ticket: requirement.ticket,
+      records: requirement.records,
+      blockers: states.filter(({ state }) => state !== "available"),
+    };
+  });
+  report.operational = {
+    state: "recorded",
+    deploymentsState: ledger.operational.deployments.length
+      ? "recorded"
+      : "unknown",
+    accessState: ledger.operational.access.length ? "recorded" : "unknown",
+    authorizationsState: ledger.operational.authorizations.length
+      ? "recorded"
+      : "unknown",
+    deployments: records(ledger.operational.deployments).map((item) => ({
+      ...item,
+      currentState: "unverified",
+      qualification: {
+        ...item.qualification,
+        availability: sourceAvailable(item.qualification.source)
+          ? "available"
+          : "unavailable",
+        freshness: Object.entries(item.qualification.revisions).every(
+          ([role, revision]) =>
+            report.repositories[role]?.integrationTip === revision
+        )
+          ? "matching-revisions"
+          : "stale",
+      },
+    })),
+    access: records(ledger.operational.access).map((item) => ({
+      ...item,
+      currentAvailability: "unverified",
+    })),
+    authorizations: records(ledger.operational.authorizations).map((item) => ({
+      ...item,
+      statusAvailability: sourceAvailable(item.statusSource)
+        ? "available"
+        : "unavailable",
+      permission: "not-assessed",
+    })),
+    requirements,
+  };
+  for (const ticket of report.tickets) {
+    ticket.operationalBlockers = requirements
+      .filter((item) => item.ticket === ticket.path)
+      .flatMap((item) => item.blockers);
+  }
+}
 function main() {
   if (args.includes("--help")) {
     console.log(
-      "Usage: node scripts/agent-status.mjs --ledger RUN.json --local LOCAL.json [--json]\nRead-only recovery status, output schemaVersion 1; exit 1 withholds assignment. See docs/agents/recovery.md."
+      "Usage: node scripts/agent-status.mjs --ledger RUN.json --local LOCAL.json [--json] [--compact]\nOr: --entry ROLE:PATH --local LOCAL.json [--json] [--compact]\nRead-only recovery status, run/output schemaVersion 1, 2 or 3; local schemaVersion 1 (v3 also accepts local 2); exit 1 withholds assignment. See docs/agents/recovery.md."
     );
     return;
   }
   const inputs = {};
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
-    if (flag === "--json") continue;
+    if (["--json", "--compact"].includes(flag)) continue;
     requireValue(
-      ["--ledger", "--local"].includes(flag) && args[i + 1] && !inputs[flag],
+      ["--ledger", "--local", "--entry"].includes(flag) &&
+        args[i + 1] &&
+        !inputs[flag],
       `expected --ledger and --local once, got ${flag}`
     );
     inputs[flag] = args[++i];
   }
   requireValue(
-    inputs["--ledger"] && inputs["--local"],
-    "explicit --ledger and --local are required"
+    inputs["--local"] &&
+      Boolean(inputs["--ledger"]) !== Boolean(inputs["--entry"]),
+    "explicit --local and exactly one of --ledger or --entry are required"
   );
-  const ledger = readJson(inputs["--ledger"]);
   const local = readJson(inputs["--local"]);
-  const schemaRoot = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../docs/agents/ledger"
+  requireValue(
+    [1, 2].includes(local.schemaVersion),
+    "unsupported local schemaVersion"
   );
   validate(
-    readJson(resolve(schemaRoot, "run-v1.schema.json")),
-    ledger,
-    "ledger"
-  );
-  validate(
-    readJson(resolve(schemaRoot, "local-v1.schema.json")),
+    readJson(resolve(schemaRoot, `local-v${local.schemaVersion}.schema.json`)),
     local,
     "local"
   );
+  if (inputs["--entry"]) {
+    const match = /^(client|relay):(.+)$/.exec(inputs["--entry"]);
+    requireValue(match, "entry must be ROLE:repository-relative-path");
+    entryReference = { role: match[1], path: match[2] };
+    const entryText = publicDocument(local.roots[match[1]], match[2]);
+    try {
+      currentEntry = JSON.parse(entryText);
+    } catch {
+      throw new Error(`Malformed JSON entry metadata: ${inputs["--entry"]}`);
+    }
+    validate(
+      readJson(resolve(schemaRoot, "entry-v1.schema.json")),
+      currentEntry,
+      "entry"
+    );
+    inputs["--ledger"] = local.artifacts[currentEntry.runArtifact];
+    requireValue(
+      inputs["--ledger"] && isAbsolute(inputs["--ledger"]),
+      "entry runArtifact needs an absolute local artifact mapping"
+    );
+  }
+  const ledger = readJson(inputs["--ledger"]);
+  requireValue(
+    [1, 2, 3].includes(ledger.schemaVersion),
+    "unsupported run schemaVersion"
+  );
+  validate(
+    readJson(resolve(schemaRoot, `run-v${ledger.schemaVersion}.schema.json`)),
+    ledger,
+    "ledger"
+  );
+  requireValue(
+    ledger.schemaVersion === 3 || local.schemaVersion === 1,
+    "historical v1/v2 runs require local schemaVersion 1"
+  );
+  if (ledger.schemaVersion === 3) {
+    const configured = Object.keys(ledger.repositories).sort().join(",");
+    requireValue(
+      Object.keys(local.roots).sort().join(",") === configured,
+      "v3 local roots must exactly match configured repository roles"
+    );
+    requireValue(
+      Object.keys(ledger.ownership.roles).sort().join(",") === configured,
+      "v3 ownership roles must exactly match configured repository roles"
+    );
+    for (const candidate of ledger.candidates ?? [])
+      requireValue(
+        Object.keys(candidate.revisions).sort().join(",") === configured,
+        "v3 candidate revisions must cover exactly configured repository roles"
+      );
+    for (const evidence of ledger.evidence)
+      requireValue(
+        Object.keys(evidence.revisions).every((role) =>
+          Object.hasOwn(ledger.repositories, role)
+        ),
+        "v3 observation revisions must use configured repository roles"
+      );
+  }
+  currentLedger = ledger;
+  report.schemaVersion = ledger.schemaVersion;
   report.runId = ledger.runId;
   requireValue(
-    ledger.tracker.role === "client",
+    ledger.schemaVersion >= 2 || ledger.tracker.role === "client",
     "canonical tracker must belong to client role"
   );
   for (const [role, saved] of Object.entries(ledger.repositories)) {
@@ -360,6 +841,7 @@ function main() {
         ),
       "client and relay must select distinct repositories"
     );
+  if (ledger.schemaVersion >= 2) inspectOwnership(ledger, local);
   const trackerRoot = local.roots[ledger.tracker.role];
   const tracker = selected(trackerRoot, ledger.tracker.path);
   const paths = readdirSync(tracker)
@@ -501,6 +983,7 @@ function main() {
     visited.add(path);
   }
   paths.forEach(visit);
+  if (ledger.schemaVersion === 3) inspectScenarios(ledger, local, tickets);
   const claimIds = new Set();
   const claimed = new Set();
   const implementationBranches = new Set();
@@ -678,6 +1161,25 @@ function main() {
     );
   report.activeImplementers = active.length;
   report.availableSlots = Math.max(0, ledger.maxImplementers - active.length);
+  function preserved(path) {
+    const target = realpathSync(path);
+    const disposable = Object.values(report.repositories).flatMap(
+      (repository) =>
+        repository.worktrees
+          .filter((worktree) => {
+            try {
+              return statSync(resolve(worktree.path, ".git")).isFile();
+            } catch {
+              return true;
+            }
+          })
+          .map((worktree) => worktree.path)
+    );
+    return !disposable.some((path) => {
+      const worktree = realpathSync(path);
+      return target === worktree || target.startsWith(`${worktree}${sep}`);
+    });
+  }
   function available(id) {
     try {
       requireValue(
@@ -685,6 +1187,13 @@ function main() {
         "absolute artifact path required"
       );
       statSync(local.artifacts[id]);
+      if (ledger.schemaVersion >= 2 && !preserved(local.artifacts[id])) {
+        diagnostic(
+          "artifact-unpreserved",
+          `${id}: preserve required evidence outside linked implementation/integration worktrees`
+        );
+        return false;
+      }
       return true;
     } catch {
       diagnostic(
@@ -694,6 +1203,34 @@ function main() {
       return false;
     }
   }
+  if (ledger.schemaVersion >= 2) {
+    for (const flag of ["--ledger", "--local"])
+      if (!preserved(inputs[flag]))
+        diagnostic(
+          "input-unpreserved",
+          `${flag}: keep mutable records outside linked implementation/integration worktrees`
+        );
+    report.ownership = {
+      ...ledger.ownership,
+      artifacts: ledger.ownership.artifacts.map((id) => ({
+        id,
+        available: available(id),
+      })),
+    };
+  }
+  if (ledger.schemaVersion >= 2) inspectOperational(ledger, local, preserved);
+  const applicability =
+    ledger.schemaVersion === 3
+      ? inspectApplicability(
+          ledger,
+          report.repositories,
+          local.roots,
+          git,
+          portable,
+          rawGit
+        )
+      : null;
+  if (applicability) report.carryForwards = applicability.records;
   const evidenceIds = new Set();
   for (const item of ledger.evidence) {
     requireValue(
@@ -724,11 +1261,13 @@ function main() {
           item.revisions[role] !== report.repositories[role]?.integrationTip
       )
     ) {
-      freshness = "stale";
-      diagnostic(
-        "evidence-stale",
-        `${item.id}: renew evidence at current integration revisions`
-      );
+      freshness = applicability?.applicable(item) ? "carried-forward" : "stale";
+      if (freshness === "stale")
+        diagnostic(
+          "evidence-stale",
+          `${item.id}: renew evidence or review applicability at current integration revisions`,
+          ledger.schemaVersion === 3 ? ticket.path : undefined
+        );
     }
     if (!item.artifacts.map(available).every(Boolean))
       freshness = "unavailable";
@@ -742,7 +1281,7 @@ function main() {
       (item) =>
         item.ticket === ticket.path &&
         item.outcome === "passed" &&
-        item.freshness === "fresh"
+        ["fresh", "carried-forward"].includes(item.freshness)
     );
     return (
       required.every((profile) =>
@@ -861,7 +1400,8 @@ function main() {
       if (!accepted(ticket))
         diagnostic(
           "resolution-evidence",
-          `${ticket.path}: resolution requires fresh passed profiles and Standards/Spec reviews for every role`
+          `${ticket.path}: resolution requires applicable passed profiles and Standards/Spec reviews for every role`,
+          ledger.schemaVersion === 3 ? ticket.path : undefined
         );
       if (
         ticket.decision?.assessment === "pending" ||
@@ -891,19 +1431,105 @@ function main() {
         ];
       })
     );
-  if (!report.diagnostics.length && report.availableSlots)
+  const evidenceBlocked = new Set(
+    report.diagnostics
+      .filter((item) => item.ticket && !accepted(tickets.get(item.ticket)))
+      .map((item) => item.ticket)
+  );
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const ticket of report.tickets)
+      if (
+        !evidenceBlocked.has(ticket.path) &&
+        ticket.dependencies.some((path) => evidenceBlocked.has(path))
+      ) {
+        evidenceBlocked.add(ticket.path);
+        expanded = true;
+      }
+  }
+  for (const ticket of report.tickets)
+    ticket.evidenceBlocked = evidenceBlocked.has(ticket.path);
+  if (!hasIntegrityFailure() && report.availableSlots)
     report.frontier = report.tickets
       .filter(
         (ticket) =>
           ticket.status === "ready-for-agent" &&
+          !evidenceBlocked.has(ticket.path) &&
           !claimed.has(ticket.path) &&
           ticket.decision?.assessment !== "pending" &&
           !ticket.externalBlockers.length &&
           ticket.dependencies.every(
             (path) => tickets.get(path)?.status === "resolved"
-          )
+          ) &&
+          !ticket.operationalBlockers?.length
       )
       .map((ticket) => ticket.path);
+  if (
+    ledger.selectedCandidateId &&
+    !(ledger.candidates ?? []).some(
+      (item) => item.id === ledger.selectedCandidateId
+    )
+  )
+    diagnostic(
+      "candidate-selection",
+      "Selected candidate must name an existing v3 candidate"
+    );
+  if (currentEntry) {
+    if (
+      ledger.schemaVersion !== 3 ||
+      currentEntry.runId !== ledger.runId ||
+      currentEntry.canonical.role !== ledger.ownership?.canonical.role ||
+      currentEntry.canonical.path.replace(/\/$/, "") !==
+        ledger.ownership?.canonical.path.replace(/\/$/, "") ||
+      entryReference.role !== currentEntry.canonical.role ||
+      entryReference.path !==
+        `${currentEntry.canonical.path.replace(/\/$/, "")}/current.json` ||
+      Object.values(report.repositories).some(
+        (repo) =>
+          repo.branch !== repo.integrationBranch ||
+          repo.head !== repo.integrationTip
+      ) ||
+      Object.keys(currentEntry.integrationBranches).sort().join(",") !==
+        Object.keys(ledger.repositories).sort().join(",") ||
+      Object.entries(ledger.repositories).some(
+        ([role, repo]) =>
+          currentEntry.integrationBranches[role] !== repo.integrationBranch
+      )
+    )
+      diagnostic(
+        "entry-pointer",
+        "Reconcile entry run, canonical owner and integration branches with the selected ledger"
+      );
+    const candidate = (ledger.candidates ?? []).find(
+      (item) => item.id === currentEntry.candidateId
+    );
+    if (
+      !candidate ||
+      currentEntry.candidateId !== ledger.selectedCandidateId ||
+      Object.keys(candidate.revisions).length !==
+        Object.keys(report.repositories).length ||
+      Object.entries(report.repositories).some(
+        ([role, repo]) =>
+          !ancestor(
+            local.roots[role],
+            candidate.revisions[role],
+            repo.integrationTip
+          ) &&
+          !report.integrations.some(
+            (item) =>
+              item.role === role &&
+              item.sourceCommit === candidate.revisions[role] &&
+              item.integration === "verified-mapping"
+          )
+      )
+    )
+      diagnostic(
+        "entry-candidate",
+        "Reconcile entry candidate with the declared selected candidate and its integration ancestry or verified mapping"
+      );
+    if (hasIntegrityFailure()) report.frontier = [];
+  }
   report.complete = report.diagnostics.length === 0;
 }
 try {
@@ -913,59 +1539,96 @@ try {
 }
 if (!args.includes("--help")) {
   if (report.diagnostics.length) {
-    report.frontier = [];
+    if (hasIntegrityFailure()) report.frontier = [];
     report.complete = false;
   }
-  const output = json
-    ? JSON.stringify(report)
-    : [
-        `${report.runId ?? "Run"}: ${report.complete ? "consistent" : "incomplete"} (${report.observedAt})`,
-        ...Object.entries(report.repositories).map(
-          ([role, repo]) =>
-            `${role}: ${repo.branch ?? "detached"} ${repo.head}; integration ${repo.integrationBranch} ${repo.integrationTip}; ${repo.worktrees.length} worktrees, ${repo.stashes.length} stashes`
-        ),
-        ...Object.entries(report.repositories).flatMap(([role, repo]) => [
-          ...repo.worktrees.map(
+  const current = compact
+    ? compactRecovery(report, currentLedger, currentEntry)
+    : null;
+  const output = compact
+    ? json
+      ? JSON.stringify(current)
+      : formatCompact(current)
+    : json
+      ? JSON.stringify(report)
+      : [
+          `${report.runId ?? "Run"}: ${report.complete ? "consistent" : "incomplete"} (${report.observedAt})`,
+          `Operational facts: ${report.operational.state}`,
+          ...(report.scenarios ?? []).map(
             (item) =>
-              `${role} worktree ${JSON.stringify(item.path)}: ${item.branch ?? "detached"} ${item.head}; ${item.dirty ? `staged ${item.dirty.staged}, unstaged ${item.dirty.unstaged}, untracked ${item.dirty.untracked}` : "unavailable"}`
+              `Scenario ${item.id}: ${item.disposition}; owner ${item.primaryOwner} (${item.ownerStatus}); ${item.runtime}; qualification ${item.qualification}`
           ),
-          ...repo.stashes.map((item) => `${role} ${item.ref} ${item.commit}`),
-          ...repo.branches.map(
+          ...(report.ownership
+            ? [
+                `Canonical: ${report.ownership.canonical.role}:${report.ownership.canonical.path}`,
+                ...Object.entries(report.ownership.roles).map(
+                  ([role, responsibility]) => `${role}: ${responsibility}`
+                ),
+                `Specification: ${report.ownership.specification.role}:${report.ownership.specification.path}`,
+                `Decisions: ${report.ownership.decisions.role}:${report.ownership.decisions.path}`,
+                ...report.ownership.pointers.map(
+                  (item) => `Pointer: ${item.role}:${item.path}`
+                ),
+                ...report.ownership.coverage.map(
+                  (item) =>
+                    `${item.decision}: ${item.disposition}; ${item.requirements.join(", ") || "no retained requirement"}; source ${item.source.role}:${item.source.path}`
+                ),
+                ...report.ownership.artifacts.map(
+                  (item) =>
+                    `${item.id}: ${item.available ? "available" : "unavailable"}`
+                ),
+              ]
+            : []),
+          ...Object.entries(report.repositories).map(
+            ([role, repo]) =>
+              `${role}: ${repo.branch ?? "detached"} ${repo.head}; integration ${repo.integrationBranch} ${repo.integrationTip}; ${repo.worktrees.length} worktrees, ${repo.stashes.length} stashes`
+          ),
+          ...Object.entries(report.repositories).flatMap(([role, repo]) => [
+            ...repo.worktrees.map(
+              (item) =>
+                `${role} worktree ${JSON.stringify(item.path)}: ${item.branch ?? "detached"} ${item.head}; ${item.dirty ? `staged ${item.dirty.staged}, unstaged ${item.dirty.unstaged}, untracked ${item.dirty.untracked}` : "unavailable"}`
+            ),
+            ...repo.stashes.map((item) => `${role} ${item.ref} ${item.commit}`),
+            ...repo.branches.map(
+              (item) =>
+                `${role} branch ${item.branch} ${item.tip}; ${item.integration}; ${item.worktrees.length} worktrees`
+            ),
+          ]),
+          ...report.tickets.map(
+            (ticket) =>
+              `${ticket.path}: ${ticket.status}; decision ${ticket.decision?.assessment ?? "missing"}; ${ticket.externalBlockers.map((item) => `${item.owner}: ${item.reason}`).join(", ") || "no external blocker"}; ${Object.entries(
+                ticket.integration ?? {}
+              )
+                .map(([role, state]) => `${role} ${state}`)
+                .join(", ")}`
+          ),
+          ...report.claims.map(
+            (claim) =>
+              `${claim.ticket}: ${claim.owner} (${claim.activity}); ${Object.entries(
+                claim.repositories
+              )
+                .map(([role, repo]) => `${role} ${repo.integration}`)
+                .join(", ")}`
+          ),
+          ...report.integrations.map(
             (item) =>
-              `${role} branch ${item.branch} ${item.tip}; ${item.integration}; ${item.worktrees.length} worktrees`
+              `${item.ticket}:${item.role}: ${item.integration}, ${item.acceptance}; ${item.sourceCommit} -> ${item.integratedCommit}`
           ),
-        ]),
-        ...report.tickets.map(
-          (ticket) =>
-            `${ticket.path}: ${ticket.status}; decision ${ticket.decision?.assessment ?? "missing"}; ${ticket.externalBlockers.map((item) => `${item.owner}: ${item.reason}`).join(", ") || "no external blocker"}; ${Object.entries(
-              ticket.integration ?? {}
-            )
-              .map(([role, state]) => `${role} ${state}`)
-              .join(", ")}`
-        ),
-        ...report.claims.map(
-          (claim) =>
-            `${claim.ticket}: ${claim.owner} (${claim.activity}); ${Object.entries(
-              claim.repositories
-            )
-              .map(([role, repo]) => `${role} ${repo.integration}`)
-              .join(", ")}`
-        ),
-        ...report.integrations.map(
-          (item) =>
-            `${item.ticket}:${item.role}: ${item.integration}, ${item.acceptance}; ${item.sourceCommit} -> ${item.integratedCommit}`
-        ),
-        ...report.evidence.map(
-          (item) =>
-            `${item.id}: ${item.kind} ${item.outcome}, ${item.freshness}`
-        ),
-        `Frontier (${report.availableSlots ?? 0} slots): ${report.frontier.join(", ") || "withheld/none"}`,
-        ...report.diagnostics.map((item) => `${item.code}: ${item.message}`),
-      ].join("\n");
+          ...report.evidence.map(
+            (item) =>
+              `${item.id}: ${item.kind} ${item.outcome}, ${item.freshness}`
+          ),
+          ...(report.carryForwards ?? []).map(
+            (item) =>
+              `Carry-forward ${item.evidenceId}/${item.scenarioId}: candidate ${item.candidateId}; ${item.state}; reviewer ${item.reviewer}; ${item.reasons.join("; ")}`
+          ),
+          `Frontier (${report.availableSlots ?? 0} slots): ${report.frontier.join(", ") || "withheld/none"}`,
+          ...report.diagnostics.map((item) => `${item.code}: ${item.message}`),
+        ].join("\n");
   if (Buffer.byteLength(output) > 1024 * 1024) {
     console.log(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: report.schemaVersion,
         complete: false,
         frontier: [],
         diagnostics: [

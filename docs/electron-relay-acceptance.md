@@ -1,11 +1,15 @@
 # Electron managed relay acceptance
 
-Build with `npm --workspace apps/electron run build`, then run the actual
-Electron runtime with a nonprivate marker that a paired peer will send:
+The selected scenario consumes a frozen candidate prepared by the maintained
+candidate command below. Run from that candidate checkout with its record and a
+nonprivate marker that a paired peer will send:
 
 ```sh
 node scripts/electron-relay-acceptance.mjs \
+  --candidate-record /absolute/frozen.candidate.json \
   --profile /absolute/isolated-test-profile \
+  --effort approved-effort-id \
+  --history-root /absolute/durable-private-evidence/native-history \
   --transport wss \
   --discovery https://approved-relay.example/v1/relay \
   --output /absolute/private-evidence-directory \
@@ -30,8 +34,8 @@ the UI if necessary. Complete Google authorization with the system browser.
 Pair through the normal Pairing Target and approval actions if this profile
 has no paired peer. Send the exact marker from that peer after the runner says
 it is ready. The runner observes the application's public preload bridge and
-main-process native clipboard boundary; it does not automate Google or other
-runtime UI, receive token strings, or extract stored credentials.
+main-process native clipboard boundary; it performs the harmless readiness interaction below but does not automate
+Google, receive token strings, or extract stored credentials.
 
 Only the Electron clipboard boundary is replaced with memory so the operator's
 system clipboard is neither read nor changed. A pass requires a new Remote Clip
@@ -49,17 +53,192 @@ inferring a transport pass from the configured filter alone. A timeout, degraded
 state, plaintext fallback, direct peer path or
 absence of clip receipt cannot produce a pass.
 
-The output directory contains a mode-600 receipt and private runtime log. Failed
-runs also retain a mode-600 `failure.private.json` with exception details; keep
-this file private and inspect it before retrying an unexplained early exit.
-The public receipt reports only an allowlisted error class and assertion reason,
-including decorated assertion messages. The
-receipt records runtime/platform/provider, statuses and boolean path/receipt
-evidence, without tokens, Peer IDs, clip content or account identity. Keep logs,
-profiles, runner wrappers and screenshots ignored and private. The harness
-reports Google authorization as unobserved: record actual browser callback/
-exchange separately. Storage failure and rotation tests using deterministic
-providers establish only the credential seam, not native provider behavior.
+## Readiness and diagnostic evidence
+
+Use a fresh, isolated profile to check native readiness without a relay, provider
+login, paired peer or host clipboard access:
+
+```sh
+node scripts/electron-relay-acceptance.mjs \
+  --candidate-record /absolute/frozen.candidate.json \
+  --profile /absolute/isolated-readiness-profile \
+  --effort approved-effort-id \
+  --history-root /absolute/durable-private-evidence/native-history \
+  --transport wss \
+  --output /absolute/durable-private-evidence/electron-readiness \
+  --preflight-only
+```
+
+With `--candidate-record`, the runner calls the maintained candidate `verify`
+command within its remaining deadline. It requires the record's checkout to be
+the executing runner's source root, its committed revision to match clean source,
+and its scenario to match the selected observation. Verification checks the
+existing source, lockfile, installation, build and selected-runtime identities.
+The runner launches the record's verified Electron executable and leaves the
+frozen build unchanged. It performs no installation or rebuilding during this
+path. Stale application/native bytes or a wrong checkout/scenario fail at the
+`frozen-candidate` prerequisite stage.
+
+The owning Electron process then loads exactly the required startup dependencies:
+construct/close an in-memory `better-sqlite3` Database and load `@koush/wrtc`.
+The loader chooses the installed supported prebuild; absence of an old
+`build/Release` path is not a missing-addon finding. Native observations record
+Electron/Node, module ABI, Node-API, OS/architecture and resolved package entry
+paths. Missing selected loaders, actual ABI/load failures and wrong-runtime
+observations fail at `required-native`, separately from actual product startup.
+The wrapper then requires the real `main.cjs`; an owned usable product window and
+public bridge remain necessary. A successful native probe alone cannot pass.
+Unselected optional/tooling branches need no universal loading proof.
+
+For existing readiness/control callers, `--preflight-only` without a candidate
+record retains the earlier bounded local build behavior: remove generated dist,
+build with a three-minute limit, and record source/build identities. Its result
+is scoped readiness evidence, not frozen-candidate consumption or ticket05
+qualification. Selected local behavior and relay qualification require a record.
+
+Before relay assertions, the runner verifies the launched PID, launch argument,
+canonical profile, owned BrowserWindow/webContents IDs, renderer PID and exact
+built renderer URL. It activates only its owned app and window, waits at most
+five seconds for native focus, and checks native and renderer focus before and
+after native mouse input toggles History **Pinned**, then **All**. The normal
+renderer must show the resulting active filter. This is a harmless filter
+change; DOM/bridge availability alone cannot pass readiness. A readiness-only
+pass does not qualify relay transfer, provider login, native toolbar popups or
+any larger UX matrix.
+
+### Focused local History behavior
+
+Prepare with scenario ID `electron-clipboard-history`, then run from that frozen
+checkout:
+
+```sh
+node scripts/electron-relay-acceptance.mjs \
+  --candidate-record /absolute/frozen.candidate.json \
+  --effort approved-effort-id \
+  --history-root /absolute/durable-private-evidence/native-history \
+  --profile /absolute/isolated-history-profile \
+  --transport wss \
+  --output /absolute/durable-private-evidence/electron-history \
+  --scenario clipboard-history
+```
+
+After readiness, the runner writes a fresh synthetic marker only to its memory
+clipboard boundary, observes the product capture a new Local Clip through its
+public bridge, clicks that Clip's **Pin** control with native mouse input, opens
+**Pinned**, and verifies the visible Clip and persisted public pinned state.
+The profile remains disposable and owned. This proves the selected local capture
+and pinning behavior; it does not qualify Pairing, provider login, restart, remote
+exchange or the complete UX matrix. Native startup/interaction remains an actual
+supported-host gate; public command fixtures establish control behavior only.
+
+Candidate scenario IDs are `electron-readiness` for `--preflight-only`,
+`electron-clipboard-history` for the focused local case, or `electron-tcp`,
+`electron-wss`, `electron-webrtc-direct` for selected relay transfer. Keep the
+same approved effort/state/history across successor candidates for a scenario.
+
+This maintained frozen preflight replaces the selected Electron preparation
+SEAL/dependency-graph prerequisite. Earlier failed SEAL attempts remain historical
+failures and receive no new passing label. UX ticket10 owns adoption of this
+boundary in its existing private Pairing harness and the two-runtime journey;
+this guide does not migrate or close that owner's outstanding matrix.
+
+Select a stable `--effort` from the owning run record and one durable
+`--history-root` outside disposable worktrees. The semantic key combines that
+effort, readiness or transport/discovery scenario, hostname, OS and architecture.
+Candidate revisions, output directories, profiles and the optional human
+`--environment` label do not change that key. A per-user registry anchors its history location across linked worktrees and
+independent frozen candidate clones. Its default location follows the existing
+Acceptance convention: macOS `~/Library/Application Support/Clipp/Acceptance/native`,
+Windows `~/AppData/Local/Clipp/Acceptance/native`, or Linux
+`~/.local/state/clipp/acceptance/native`. An owning run may explicitly configure
+one canonical `CLIPP_ACCEPTANCE_STATE_ROOT` outside all checkouts. Keep that state
+location fixed across continuations and candidates; changing it requires explicit
+reconciliation of its registry and histories, not a new output label. Changing a
+registered history directory is refused. Preserve the registry with the evidence.
+
+`--output` receives `history.json` (the canonical history pointer), links to
+`attempts.json` and the current `attempt-N` directory, and a latest `receipt.json`.
+Canonical failed receipts and private artifacts remain under the history root.
+Exclusive admission and active-worker locks prevent concurrent diagnostic workers.
+If an active worker disappears, its unfinished attempt becomes an `unknown`
+interruption receipt; it still consumes an attempt. Live or unobservable ownership
+is refused. An interrupted admission transition requires operator reconciliation
+of its short-lived `.admission.lock`, preserving all existing history.
+
+Existing version-1 histories keep their original timing and attempt semantics.
+For the same semantic case, import earlier failures explicitly with one or more
+`--import-history /absolute/old/attempts.json` arguments on first registration.
+The runner copies their artifacts, retains each original history/attempt reference,
+adds their attempt counts, and preserves the earliest diagnostic start. It refuses
+active or incompatible histories and implicit replacement of a legacy output.
+An exhausted import remains exhausted. Keep the original failed evidence.
+
+A budget renewal requires an explicit authorized decision under the owning run's
+policy. Write a private JSON decision containing `previousHistory` (the canonical
+path in `history.json`), `authorizedBy` (the actual decision source) and `reason`.
+Use `--renewal /absolute/decision.json` together with a changed diagnosis and
+expected observation. The runner references the failed prior history and creates
+a separate budget generation whose first rebuild is diagnostic and charged; it never replaces the old failure. The decision
+file records authorization; creating it does not itself grant authorization.
+
+After a passed scenario, a genuinely changed committed candidate may receive a
+new ordinary qualification batch. Supply `--successor /absolute/successor.json`
+with `previousHistory` (the current canonical history), `candidateRevision`
+(the new full committed revision), `affectedScenarios` (including
+`electron-readiness` or `electron-<transport>`) and `reason`. The runner requires
+a passed predecessor, binds the initial successor attempt to that clean revision,
+and retains the predecessor history/receipt. This first ordinary build has the
+initial-setup timing exemption. A failed scenario cannot use this path; subsequent
+diagnostics retain their existing attempt/time budget across candidate fixes.
+
+One initial attempt and at most four diagnostic attempts are allowed (five
+attempts total). After a
+failure, a retry requires both `--diagnostic-change` (changed hypothesis or
+environment) and `--expected-observation` (what will distinguish the diagnosis).
+An absent or repeated change is refused. A 20-minute diagnostic clock starts
+when the initial failure is recorded; diagnostic builds consume that clock.
+Initial builds and normal acceptance are outside it. Commands receive the
+remaining budget and retain their individual bounded limits. Native observations
+have a default 30-second command deadline (`--command-timeout-ms` may shorten
+it); cleanup has its own default ten-second total allowance (`--cleanup-timeout-ms`
+may shorten it), outside the diagnostic clock. Graceful close, ownership inspection,
+forced-exit observation, log draining and profile-handle cleanup share that one
+allowance. Rejected signals or signals without an observed exit retain uncertain
+shutdown and the profile ownership record. Failed readiness withholds the relay scenario; unrelated
+eligible work can continue.
+
+Receipts retain the failure stage and classification: `prerequisite` for
+candidate/build setup, `runner` for target/focus/interaction, diagnostic limits or
+cleanup, `product` for observed relay invariant violations after readiness, and
+`unknown` for transfer timeout or unexplained transfer failures. A cleanup
+failure cannot produce a pass and is retained separately when there was already
+a primary failure. Only the launched ChildProcess may be terminated, after its current parent,
+process group, start/command identity and unique launcher marker match the recorded ownership.
+An exited handle or mismatched/reused PID is never signalled. Launch intent and
+unresolved target ownership are retained with the canonical semantic case across
+all output directories and profiles. Intent is saved before calling the launcher;
+the returned child PID is saved before process-identity inspection. Finishing an
+uncertain attempt retains that ownership record. A continuation checks the prior
+target before admission, even when it selects a fresh profile. If interruption
+left the child identity unknown, admission stays refused while the unique launch
+marker is currently present or process visibility is unavailable. After its old
+worker is gone, a bounded current marker observation can establish isolation;
+this makes no claim about every possible historical detached descendant. Missing process
+visibility preserves cleanup uncertainty and the profile ownership record. A
+successor checks current recorded ownership; it may proceed after the old owned
+child exited or the PID demonstrably belongs to a replacement process. Profile and log cleanup
+failures are failures too.
+
+All artifacts are private (files mode 600, directories mode 700); receipts now
+contain exact local target paths and must be reviewed/redacted before sharing.
+Only allowlisted error classes and reasons enter the receipt; exception details
+and diagnostic prose stay in private evidence. No tokens, Peer IDs, clip content
+or provider account identity are added to receipts. The clipboard metadata
+explicitly reports `hostUsed: false`, `hostChanged: false`, and restoration
+`not-requested`: the existing memory fixture remains in place. Google
+authorization remains unobserved by this runner; record actual browser
+callback/exchange separately. Deterministic command fixtures qualify only the
+runner gates, never actual native readiness or provider behavior.
 
 The normal Electron adapter currently prefers WSS to avoid libp2p joining a
 stalled private TCP dial for the same relay Peer ID. The specification requires
@@ -114,10 +293,101 @@ On integrated local `main`, Node 24.16.0/npm 11.13.0 passed `npm run check`
 (73 suites, 600 tests and all runtime typechecks) and the Electron build.
 TCP, WebRTC Direct and bounded mixed-address fallback remain unverified.
 
-The runner gives its owned Electron process ten seconds to close. If runtime
-shutdown hangs, it terminates only that launched process, records
+The runner gives cleanup a ten-second total allowance, reserving part for
+current ownership and exit observation. If runtime shutdown hangs, it verifies current ownership before terminating that launched process, records
 `owned_test_shutdown_timeout`, and exits unsuccessfully. A received clip cannot
 turn this shutdown failure into a passed receipt. A nonzero or signaled process
 exit also fails acceptance; graceful shutdown requires exit code zero and no
 signal. The private profile remains
 available for inspection; other Electron processes are unaffected.
+
+## Prepare a frozen candidate
+
+From the maintained source checkout, select an explicit committed revision and a
+tracked file defining the selected scenario. Preserve excluded dirty work in its
+original checkout with its owner recorded in the run record. Preparation reads
+committed source and never cleans that checkout.
+
+```sh
+npm run acceptance:candidate -- prepare \
+  --source /absolute/source-checkout \
+  --revision FULL_COMMITTED_REVISION \
+  --destination /absolute/new-acceptance-checkout \
+  --scenario electron-wss \
+  --scenario-input docs/electron-relay-acceptance.md
+npm run acceptance:candidate -- verify \
+  --record /absolute/new-acceptance-checkout.candidate.json
+```
+
+Use Node.js 22.22.1 or newer and npm. Preparation creates a detached independent
+Git clone, runs `npm ci` with the selected lockfile and normal lifecycle scripts,
+explicitly provisions the installed locked Electron package through its
+`install-electron` entry using Node, then runs the existing Electron workspace
+build. This is the installed-package equivalent of offline `npm exec --no --
+install-electron`; it cannot fetch a replacement CLI. Electron's installer may
+fetch the pinned distribution using its normal download/checksum handling. It refuses existing
+destinations; failures preserve the partial checkout for diagnosis. Choose a new
+destination after correcting a failure. No shared dependency installation or
+manual native-module copying is supported.
+
+Unset `ELECTRON_OVERRIDE_DIST_PATH`: preparation rejects it before cloning or
+running installation, so user distributions cannot become installation targets.
+Cross-platform/architecture installer overrides are also rejected unless they
+match the selected host. The downloaded distribution stays in the candidate's
+installed Electron package. Provisioning files does not launch Electron or load
+its native addons.
+
+The mode-600 sibling candidate record binds the committed revision, all tracked
+input hashes (at most 20,000 files), Node/npm/platform/architecture, resolved
+installed Electron version, scenario definition and runner inputs, npm installation
+lock identity, preparation command version and built `dist` file hashes.
+Tracked paths preserve the exact NUL-delimited Git listing, including leading
+whitespace and embedded newlines. Source symlinks bind their link text; internal generated targets may be
+absent before installation. Declared package, runner and scenario inputs still
+require regular files. Dependency checks reject external links in root and workspace installations;
+they do not certify every optional dependency or load native addons. Source and
+build changes during preparation fail before publication of the record.
+
+The main/preload build commands emit esbuild metadata alongside their bundles.
+Preparation uses those current build outputs to select external package inputs,
+with Node built-ins supplied by the bound Electron distribution. It requires
+Electron's installed `path.txt` contract and the declared executable, and binds
+installed package/distribution bytes, internal symlink identities and executable
+permission bits. It also binds each package actually emitted as an external
+import, resolved with the corresponding require/import condition. Packages only
+listed in build configuration are not prerequisites when the build does not emit
+them. Nested `node_modules` are excluded from these package snapshots; this is
+an explicit build-boundary snapshot, not transitive import certification.
+
+The selected installed-runtime snapshot allows at most 32 packages, 50,000
+aggregate filesystem entries and 2 GiB aggregate file bytes, with a 512 MiB
+single-file limit. Each build metadata file is limited to 4 MiB. Missing selected
+packages or the Electron executable fail preparation. The returned artifact
+identity combines application and installed-runtime snapshots. Checking file
+presence and identity does not load native modules or prove their ABI/startup.
+
+Keep this record and its checkout together outside disposable ticket worktrees.
+Before runtime acceptance, run `verify` using the same preparation command and
+toolchain. It fails for source mutation, moved checkouts, changed inputs,
+installation lock changes, external dependency links, changed Electron versions,
+changed runtime bytes or execution permissions, and missing or stale artifacts. The JSON result supplies the frozen artifact
+identity for runtime receipts. Launch the acceptance runner from the verified
+candidate checkout so its relative build and dependency paths select that build.
+The Electron runner consumes this record and records its selected native loader,
+actual executable and product startup observations; verification alone does not
+establish what a running process has loaded.
+
+A relevant fix gets a new destination and record. Pass
+`--previous /absolute/previous.candidate.json --affected scenario-id,other-id`
+to bind the successor to a verified predecessor and explicitly name the affected
+scenarios. This records impact scope; it never invents reusable passing evidence.
+Leave the original frozen candidate intact. If it was mutated, preserve it as
+failed evidence and reconcile it before creating a successor through this path.
+
+`npm run check:candidate` runs disposable real-Git command fixtures as part of
+`npm run check`. These deterministic fixtures prove preparation control behavior.
+A real isolated install/build is still required for the selected application
+candidate. Actual native addon loading/ABI, startup, owned-window interaction,
+Pairing, and installed Android/Chrome artifact checks remain separate runtime
+qualification. The shared diagnostic policy and runtime commands remain separate from
+preparation; this command does not replace their actual native observations.

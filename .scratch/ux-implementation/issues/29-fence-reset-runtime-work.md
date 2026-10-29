@@ -1,36 +1,35 @@
 # Fence reset runtime work and restart
 
 Type: implementation
-Status: claimed
+**Status:** claimed
 Assignee: ux-reset-runtime-29
 Priority band: 3
-Blocked by: 28
+**Blocked by:** [28](28-integrate-durable-reset-storage.md), [30](30-integrate-manual-reset-ui.md)
 Dispatch: 2026-10-16 whole-backlog continuation after qualified storage28; two implementers
 Parent: [Clipp UX implementation](../spec.md)
 
 ## Outcome
 
-Accepted reset prevents all stale identity work and restarts only after finalization.
+Qualify complete integrated reset runtime/restart/ingress/clipboard behavior R29.4–R29.6 after real UI 30, preserving claim `ux-reset-runtime-29`. Actual host-seam output R29.1–R29.3 belongs to [38](38-qualify-reset-host-seam.md).
 
 ## Work and boundaries
 
-Gate/drain cached writers, capture/Pairing/QR/notification callbacks and every startup path. Chrome background fences offscreen creation/retries/storage writes and old handoffs. Android durably fences/clears native explicit ingress and pending clipboard pointer; suspend continuity without changing preferences.
+Re-exercise accepted/manual recovery and startup through actual UI 30 and each supported owning host. Cover late writers and callback fencing, unknown/incomplete acceptance, restart/relaunch failure, strict native queues/ingress/pointer cleanup and preference preservation. Scoped actual host observations from 38 may be reused only with checked applicability.
 
-Unknown/incomplete reset cannot start old/new services. Reject new native ingress during incomplete setup rather than queue it for replacement. Rebuild cached manager after cleanup; normal baseline does not reattribute old clipboard content.
-
-The [approved package contract](../../ux-implementation-plan/manual-identity-reset-proposal.md#runtime-responsibilities) is normative detail for this ticket. Preserve the [shared interfaces](../../ux-implementation-plan/shared-interface-proposal.md) and [specification invariants](../spec.md#preserved-contracts). Update every affected live runtime bridge with its consumer; do not leave a successful helper behind a broken caller.
+Observe unchanged synthetic clipboard through reset/restart and later deliberately changed values under ordinary policy. Consume the external Chrome restart-recapture boundary rather than waiving it. The [runtime contract](../../ux-implementation-plan/manual-identity-reset-proposal.md#runtime-responsibilities) remains normative; final matrix ownership stays 31 and no normal reset action is activated by this split.
 
 ## Dependencies and integration
 
 - [Integrate durable reset storage adapters](28-integrate-durable-reset-storage.md) — consume its completed, scoped output.
+- [Integrate authenticated manual reset actions and UI](30-integrate-manual-reset-ui.md) — consume its completed, scoped output.
 
-Only the output scoped here must be complete to resolve this ticket. Later consumers requalify their changed presentation; broad finding collection is separate and cannot block this ticket on its own descendants. Follow [phase admission](../spec.md#delivery-order-and-completion) rather than treating file numbers as an execution sequence.
+Only the output scoped here must be complete. Native collectors keep their own criteria; a proposed allocation, source fixture or unavailable runtime cannot supply their observation. Follow [phase admission](../spec.md#delivery-order-and-completion).
 
 ## Verification and acceptance
 
-Exercise late writers, worker/service/activity restart, independent native enqueue and relaunch failure through actual host seams. Qualify strict native queue cleanup and preferences. Consume/revalidate external Chrome restart baseline guarantee before claiming it for reset.
+R29.4: integrated native runtime/restart journeys reproduce the host-seam invariants through the real accepted/manual recovery path. R29.5: actual unchanged/changed synthetic clipboard baseline with external Chrome ownership intact. R29.6: native queue/ingress/pointer cleanup and preserved preferences across replacement, reopen and relaunch failure.
 
-Run the [common candidate gates](../spec.md#verification-and-evidence) plus affected suites/builds/native checks. Record exact revision/dirty state, environment, commands and actual outcomes. Preserve regressions through the owning interface; use rendered/native evidence for the behavior that requires it, not implementation-mirroring helper tests.
+Use [finite candidate preparation and affected gates](../adoption.md#candidate-preparation-and-qualification). Public seams support regression; actual host/native evidence and checked applicability qualify these residual cases. Preserve historical implementation and failed native observations below. F31 remains the sole final whole-reset matrix owner.
 
 ## Coverage and closure
 
@@ -52,7 +51,7 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
-Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work. No code, native operation, commit, push or deployment has occurred for this planning ticket.
+Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Dispatch — 2026-10-16
 
@@ -99,3 +98,7 @@ Three original RED records, the initial loopback sandbox failure, pre-refinement
 The existing real SQLite runtime/lifecycle seam reproduced incomplete startup remaining retired after a conclusive preparation rejection with no intent write. Two post-admission paths were affected: an eligibility read throwing, and eligibility returning false after a transient key-derivation failure. After successful provisional-fence release, both now publish proven nonacceptance so the existing startup owner rebuilds incomplete startup. A completed active runtime remains usable; ambiguous acceptance or failed fence release remains fenced. No reset action is enabled.
 
 Separate RED cases and final focused5-suite/99-test GREEN are preserved, alongside the initial full152-suite/1,152-test pass before the adjacent validation-path correction. Final source/check/hook/latest-tip evidence is in ignored run `resume29-handoff-20261017.json`; mandatory merge, independent reviews and final integrated routine verification are recorded in `resume19-29-integrated-verification-20261017.json`.29 remains claimed for its required actual production/native restart, ingress/queue and clipboard qualification. TT35's bounded acceptance is unchanged; no30 activation or G41/31 completion follows.
+
+## Adopted allocation — 2026-10-29
+
+[38](38-qualify-reset-host-seam.md) owns R29.1–R29.3 actual host output; this claim retains R29.4–R29.6 after 30. Existing historical source/native observations are not upgraded. Original external Chrome baseline ownership and [31](31-qualify-manual-reset-recovery.md) final qualification remain required.
