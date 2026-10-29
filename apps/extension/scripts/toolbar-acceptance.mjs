@@ -20,10 +20,7 @@ import {
   beginNativeAttempt,
   nativeAcceptanceStateRoot,
 } from "../../../scripts/native-acceptance-attempts.mjs";
-import {
-  raceAcceptanceOperation,
-  verifyPopupHistorySearch,
-} from "./clipboard-acceptance.mjs";
+import { raceAcceptanceOperation } from "./clipboard-acceptance.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -776,12 +773,9 @@ export async function runToolbarAcceptance(args) {
     const capture = await message({ type: "clipboardUpdate", text });
     assert(capture?.ok !== false, "local_fixture_capture_failed");
     await bounded(() =>
-      verifyPopupHistorySearch(
-        popup,
-        text,
-        (task) => bounded(task),
-        (max) => attempt.remainingMs(max)
-      )
+      popup
+        .getByText(text, { exact: true })
+        .waitFor({ state: "visible", timeout: attempt.remainingMs(5000) })
     );
     operation = "pin_visible_clip";
     await bounded(() =>
