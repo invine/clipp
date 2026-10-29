@@ -274,7 +274,7 @@ case "$*" in
     ;;
   "shell dumpsys webviewupdate") ${webView ? "echo 'Current WebView package (name, version): (com.android.webview, 133.0.6943.49)'" : "echo 'Current WebView package is null'"} ;;
   "shell pm list instrumentation com.clipp.app.acceptance") echo 'instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=${instrumentationTarget})' ;;
-  "shell am instrument -w -e class com.clipp.app.AcceptanceReadinessTest#bundledWebViewStarts com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? `${bundledUrl ? `echo 'INSTRUMENTATION_STATUS: clipp_bundled_url=${bundledUrl}';` : ""} echo 'OK (1 test)'` : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
+  "shell am instrument -w -e class com.clipp.app.AcceptanceReadinessTest#bundledWebViewStarts com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? `${bundledUrl ? `echo 'com.clipp.app.AcceptanceReadinessTest:INSTRUMENTATION_STATUS: clipp_bundled_url=${bundledUrl}';` : ""} echo 'OK (1 test)'` : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
   "shell am instrument -w -e class com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? "echo 'OK (1 test)'" : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
   "shell am instrument -w -r -e class com.clipp.app.BackgroundContinuityManifestTest#explicitTextQueueSurvivesRestartAndPreservesRepeatedEventIdentity com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") cat <<'FOCUSED'
 ${statuses([focused])}

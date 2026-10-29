@@ -720,7 +720,7 @@ try {
 
   if (receipt.candidate.frozen) {
     const observed = receipt.instrumentationProbe.match(
-      /^INSTRUMENTATION_STATUS: clipp_bundled_url=(\S+)$/m
+      /^(?:com\.clipp\.app\.AcceptanceReadinessTest:)?INSTRUMENTATION_STATUS: clipp_bundled_url=(\S+)$/m
     )?.[1];
     const parsed = observed ? new URL(observed) : null;
     assert(
