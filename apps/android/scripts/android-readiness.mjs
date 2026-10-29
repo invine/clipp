@@ -746,7 +746,7 @@ try {
     "acceptance_instrumentation_unavailable"
   );
   launched = true;
-  receipt.instrumentationProbe = invoke(
+  const probe = invoke(
     [
       "shell",
       "am",
@@ -755,13 +755,50 @@ try {
       "-e",
       "class",
       receipt.candidate.frozen
-        ? "com.clipp.app.AcceptanceReadinessTest#bundledWebViewStarts"
+        ? "com.clipp.app.AcceptanceReadinessTest#bundledWebViewAcceptsNativeTab"
         : "com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext",
       `${testPackage}/androidx.test.runner.AndroidJUnitRunner`,
     ],
     "instrumentation",
     "runner"
   );
+  for (const phase of ["before", "after"]) {
+    const matched = probe.match(
+      new RegExp(
+        `^(?:com\\.clipp\\.app\\.AcceptanceReadinessTest:)?INSTRUMENTATION_STATUS: clipp_ui_structure_${phase}=(.*)$`,
+        "m"
+      )
+    )?.[1];
+    if (matched && matched.length <= 256000) {
+      try {
+        const nodes = JSON.parse(matched);
+        assert(Array.isArray(nodes) && nodes.length <= 256);
+        uiStructure[phase] = nodes.map((node) =>
+          Object.fromEntries(
+            [
+              "class",
+              "resource-id",
+              "bounds",
+              "focused",
+              "clickable",
+              "focusable",
+            ].map((key) => [
+              key,
+              typeof node?.[key] === "string" ? node[key].slice(0, 160) : "",
+            ])
+          )
+        );
+      } catch {
+        receipt.uiStructureEvidence = "unavailable";
+      }
+    }
+  }
+  receipt.instrumentationProbe = probe
+    .split(/\r?\n/)
+    .filter(
+      (line) => !line.includes("INSTRUMENTATION_STATUS: clipp_ui_structure_")
+    )
+    .join("\n");
   if (!/OK \(1 test\)/.test(receipt.instrumentationProbe)) {
     const error = new Error("instrumentation_probe_failed");
     error.stage = "instrumentation";
@@ -785,62 +822,93 @@ try {
   }
   receipt.stage = "interaction";
   receipt.classification = "runner";
-  receipt.launch = invoke(
-    ["shell", "am", "start", "-W", "-n", activity],
-    "interaction",
-    "runner"
-  );
-  assert(/Status: ok/.test(receipt.launch), "candidate_launch_failed");
-  receipt.focusBeforeActivity = focusedActivity(
-    invoke(["shell", "dumpsys", "window"], "interaction", "runner")
-  );
-  assert(
-    receipt.focusBeforeActivity === activity,
-    "candidate_window_not_owned"
-  );
-  const controlsBefore = await observeControls(
-    "before",
-    (nodes) => nodes.some(isInteractiveControl),
-    "candidate_ui_controls_unavailable"
-  );
-  receipt.focusBefore = focusedNodeFingerprint(controlsBefore);
-  assert(
-    focusedActivity(
+  if (receipt.candidate.frozen) {
+    const status = (name) =>
+      probe.match(
+        new RegExp(
+          `^(?:com\\.clipp\\.app\\.AcceptanceReadinessTest:)?INSTRUMENTATION_STATUS: ${name}=(\\S+)$`,
+          "m"
+        )
+      )?.[1];
+    const owner = status("clipp_ui_owner");
+    assert(owner === activity, "candidate_window_not_owned");
+    assert(
+      status("clipp_ui_controls_ready") === "true",
+      "candidate_ui_controls_unavailable"
+    );
+    const before = status("clipp_ui_focus_before");
+    const after = status("clipp_ui_focus_after");
+    assert(
+      status("clipp_ui_input") === "KEYCODE_TAB" &&
+        /^(?:none|[a-f0-9]{64})$/.test(before ?? "") &&
+        /^[a-f0-9]{64}$/.test(after ?? ""),
+      "native_interaction_observation_required"
+    );
+    assert(after !== before, "candidate_ui_interaction_no_effect");
+    receipt.focusBeforeActivity = owner;
+    receipt.focusAfterActivity = owner;
+    receipt.focusBefore = before === "none" ? null : before;
+    receipt.focusAfter = after;
+    receipt.interactionObservation =
+      "owning-ActivityScenario-native-UiAutomation";
+  } else {
+    receipt.launch = invoke(
+      ["shell", "am", "start", "-W", "-n", activity],
+      "interaction",
+      "runner"
+    );
+    assert(/Status: ok/.test(receipt.launch), "candidate_launch_failed");
+    receipt.focusBeforeActivity = focusedActivity(
       invoke(["shell", "dumpsys", "window"], "interaction", "runner")
-    ) === activity,
-    "candidate_window_not_owned"
-  );
-  receipt.input = invoke(
-    ["shell", "input", "keyevent", "KEYCODE_TAB"],
-    "interaction",
-    "runner"
-  );
-  receipt.focusAfterActivity = focusedActivity(
-    invoke(["shell", "dumpsys", "window"], "interaction", "runner")
-  );
-  assert(
-    receipt.focusAfterActivity === activity,
-    "candidate_lost_window_focus"
-  );
-  const controlsAfter = await observeControls(
-    "after",
-    (nodes) => {
-      const focused = focusedNodeFingerprint(nodes);
-      return focused && focused !== receipt.focusBefore;
-    },
-    "candidate_ui_interaction_no_effect"
-  );
-  receipt.focusAfter = focusedNodeFingerprint(controlsAfter);
-  assert(
-    focusedActivity(
+    );
+    assert(
+      receipt.focusBeforeActivity === activity,
+      "candidate_window_not_owned"
+    );
+    const controlsBefore = await observeControls(
+      "before",
+      (nodes) => nodes.some(isInteractiveControl),
+      "candidate_ui_controls_unavailable"
+    );
+    receipt.focusBefore = focusedNodeFingerprint(controlsBefore);
+    assert(
+      focusedActivity(
+        invoke(["shell", "dumpsys", "window"], "interaction", "runner")
+      ) === activity,
+      "candidate_window_not_owned"
+    );
+    receipt.input = invoke(
+      ["shell", "input", "keyevent", "KEYCODE_TAB"],
+      "interaction",
+      "runner"
+    );
+    receipt.focusAfterActivity = focusedActivity(
       invoke(["shell", "dumpsys", "window"], "interaction", "runner")
-    ) === activity,
-    "candidate_lost_window_focus"
-  );
-  assert(
-    receipt.focusAfter && receipt.focusAfter !== receipt.focusBefore,
-    "candidate_ui_interaction_no_effect"
-  );
+    );
+    assert(
+      receipt.focusAfterActivity === activity,
+      "candidate_lost_window_focus"
+    );
+    const controlsAfter = await observeControls(
+      "after",
+      (nodes) => {
+        const focused = focusedNodeFingerprint(nodes);
+        return focused && focused !== receipt.focusBefore;
+      },
+      "candidate_ui_interaction_no_effect"
+    );
+    receipt.focusAfter = focusedNodeFingerprint(controlsAfter);
+    assert(
+      focusedActivity(
+        invoke(["shell", "dumpsys", "window"], "interaction", "runner")
+      ) === activity,
+      "candidate_lost_window_focus"
+    );
+    assert(
+      receipt.focusAfter && receipt.focusAfter !== receipt.focusBefore,
+      "candidate_ui_interaction_no_effect"
+    );
+  }
   receipt.interaction = "tab_changed_focused_accessible_control";
 
   receipt.verifiedCoverage = ["android-owned-readiness"];

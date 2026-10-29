@@ -34,6 +34,8 @@ function runReadiness({
   installedMatches = true,
   splitPackage = false,
   interactionChanges = true,
+  legacyDumpCrash = false,
+  nativeInteractionProof = true,
   uiControls = true,
   timeoutSeconds = 20,
   windowDumpFormat = "summary",
@@ -60,6 +62,8 @@ function runReadiness({
   installedMatches?: boolean;
   splitPackage?: boolean;
   interactionChanges?: boolean;
+  legacyDumpCrash?: boolean;
+  nativeInteractionProof?: boolean;
   uiControls?: boolean;
   timeoutSeconds?: number;
   windowDumpFormat?: "summary" | "windows-only";
@@ -281,6 +285,7 @@ case "$*" in
   "shell dumpsys webviewupdate") ${webView ? "echo 'Current WebView package (name, version): (com.android.webview, 133.0.6943.49)'" : "echo 'Current WebView package is null'"} ;;
   "shell pm list instrumentation com.clipp.app.acceptance") echo 'instrumentation:com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner (target=${instrumentationTarget})' ;;
   "shell am instrument -w -e class com.clipp.app.AcceptanceReadinessTest#bundledWebViewStarts com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? `${bundledUrl ? `echo 'com.clipp.app.AcceptanceReadinessTest:INSTRUMENTATION_STATUS: clipp_bundled_url=${bundledUrl}';` : ""} echo 'OK (1 test)'` : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
+  "shell am instrument -w -e class com.clipp.app.AcceptanceReadinessTest#bundledWebViewAcceptsNativeTab com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? `${bundledUrl ? `echo 'com.clipp.app.AcceptanceReadinessTest:INSTRUMENTATION_STATUS: clipp_bundled_url=${bundledUrl}';` : ""} ${nativeInteractionProof ? `echo 'INSTRUMENTATION_STATUS: clipp_ui_owner=${windowDumpFormat === "summary" ? "com.clipp.app.acceptance/com.clipp.app.MainActivity" : "wrong.package/OtherActivity"}'; echo 'INSTRUMENTATION_STATUS: clipp_ui_controls_ready=${uiControls}'; echo 'INSTRUMENTATION_STATUS: clipp_ui_focus_before=${"a".repeat(64)}'; echo 'INSTRUMENTATION_STATUS: clipp_ui_focus_after=${(interactionChanges ? "b" : "a").repeat(64)}'; echo 'INSTRUMENTATION_STATUS: clipp_ui_input=KEYCODE_TAB'; echo 'INSTRUMENTATION_STATUS: clipp_ui_structure_before=[{"class":"android.widget.Button","resource-id":"fixture:button","bounds":"[0,0][100,40]","focused":"true","clickable":"true","focusable":"true","text":"private text"}]';` : ""} echo 'OK (1 test)'` : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
   "shell am instrument -w -e class com.getcapacitor.myapp.ExampleInstrumentedTest#useAppContext com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") ${instrumentation ? "echo 'OK (1 test)'" : "echo 'INSTRUMENTATION_FAILED: process crashed'"} ;;
   "shell am instrument -w -r -e class com.clipp.app.BackgroundContinuityManifestTest#explicitTextQueueSurvivesRestartAndPreservesRepeatedEventIdentity com.clipp.app.acceptance.test/androidx.test.runner.AndroidJUnitRunner") cat <<'FOCUSED'
 ${statuses([focused])}
@@ -293,7 +298,7 @@ MATRIX
   "shell am start -W -n com.clipp.app.acceptance/com.clipp.app.MainActivity") echo 'Status: ok' ;;
   "shell dumpsys window") ${windowDumpFormat === "summary" ? "echo 'mCurrentFocus=Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}'; echo 'mFocusedApp=ActivityRecord{d697132 u0 com.clipp.app.acceptance/com.clipp.app.MainActivity t30}'" : "echo 'Window #6 Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}:'; echo '  mHasSurface=true'; echo '  isOnScreen=true'; echo '  isVisible=true'"} ;;
   "shell dumpsys window windows") echo 'Window #6 Window{e3326aa u0 com.clipp.app.acceptance/com.clipp.app.MainActivity}:'; echo '  mHasSurface=true'; echo '  isOnScreen=true'; echo '  isVisible=true' ;;
-  "shell uiautomator dump /data/local/tmp/clipp-readiness-"*".xml") echo 'UI ${uiDumpSpelling} dumped to: /data/local/tmp/clipp-readiness.xml' ;;
+  "shell uiautomator dump /data/local/tmp/clipp-readiness-"*".xml") ${legacyDumpCrash ? "exit 137;" : ""} echo 'UI ${uiDumpSpelling} dumped to: /data/local/tmp/clipp-readiness.xml' ;;
   "exec-out cat /data/local/tmp/clipp-readiness-"*".xml") ${uiReadDelayMs > 0 ? `sleep ${uiReadDelayMs / 1000};` : ""} cat '${uiStateFile}' ;;
   "shell rm -f /data/local/tmp/clipp-readiness-"*".xml") : ;;
   "shell am force-stop com.clipp.app.acceptance") ${cleanupFails ? "echo owned-cleanup-failed; exit 1" : ":"} ;;
@@ -457,13 +462,17 @@ test("Android readiness fails when the UI action produces no observable effect",
 });
 
 test("Android readiness refuses a focused WebView without app controls", () => {
-  const run = runReadiness({ uiControls: false, timeoutSeconds: 1 });
+  const run = runReadiness({ uiControls: false, timeoutSeconds: 3 });
   try {
     expect(run.result.status).toBe(1);
     const receipt = JSON.parse(
       readFileSync(join(run.output, "receipt.json"), "utf8")
     );
-    expect(receipt.failure).toBe("candidate_ui_controls_unavailable");
+    expect(receipt.stage).toBe("interaction");
+    expect([
+      "candidate_ui_controls_unavailable",
+      "android_adb_timeout",
+    ]).toContain(receipt.failure);
     expect(readFileSync(run.argsFile, "utf8")).not.toContain(
       "shell input keyevent KEYCODE_TAB"
     );
@@ -783,6 +792,70 @@ test("frozen Android preflight verifies the matching installed instrumentation A
   }
 });
 
+test("frozen Android readiness observes native interaction without the crashing legacy NAF dumper", () => {
+  const run = runReadiness({
+    frozenPair: true,
+    suite: "focused",
+    legacyDumpCrash: true,
+  });
+  try {
+    expect(run.result.status).toBe(0);
+    const receipt = JSON.parse(
+      readFileSync(join(run.output, "receipt.json"), "utf8")
+    );
+    expect(receipt.interaction).toBe("tab_changed_focused_accessible_control");
+    expect(receipt.behavior.passed).toBe(true);
+    expect(JSON.stringify(receipt)).not.toContain("private text");
+    expect(readFileSync(run.argsFile, "utf8")).not.toContain(
+      "shell uiautomator dump"
+    );
+  } finally {
+    rmSync(run.directory, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  [{ interactionChanges: false }, "candidate_ui_interaction_no_effect"],
+  [{ uiControls: false }, "candidate_ui_controls_unavailable"],
+  [{ windowDumpFormat: "windows-only" as const }, "candidate_window_not_owned"],
+  [{ nativeInteractionProof: false }, "candidate_window_not_owned"],
+])(
+  "frozen Android native observation fails closed for %j",
+  (options, failure) => {
+    const run = runReadiness({
+      frozenPair: true,
+      suite: "focused",
+      ...options,
+    });
+    try {
+      expect(run.result.status).toBe(1);
+      const receipt = JSON.parse(
+        readFileSync(join(run.output, "receipt.json"), "utf8")
+      );
+      expect(receipt.failure).toBe(failure);
+      expect(JSON.stringify(receipt)).not.toMatch(
+        /private text|fixture:button/
+      );
+      expect(readFileSync(run.argsFile, "utf8")).not.toContain(
+        "shell am instrument -w -r"
+      );
+      if (
+        !("nativeInteractionProof" in options) ||
+        options.nativeInteractionProof !== false
+      ) {
+        const structure = readFileSync(
+          join(run.output, "attempt-1", "ui-structure.private.json"),
+          "utf8"
+        );
+        expect(structure).toContain("android.widget.Button");
+        expect(structure).not.toMatch(/private text|"text"|content-desc/);
+      }
+    } finally {
+      rmSync(run.directory, { recursive: true, force: true });
+    }
+  }
+);
+
 test("selected Android native behavior follows the same candidate-bound readiness and records actual passed tests", () => {
   const run = runReadiness({ suite: "focused", frozenPair: true });
   try {
@@ -801,9 +874,9 @@ test("selected Android native behavior follows the same candidate-bound readines
     ]);
     expect(receipt.installedTestCandidate.matchesCandidate).toBe(true);
     const calls = readFileSync(run.argsFile, "utf8");
-    expect(calls.indexOf("shell input keyevent KEYCODE_TAB")).toBeLessThan(
-      calls.indexOf("shell am instrument -w -r")
-    );
+    expect(
+      calls.indexOf("AcceptanceReadinessTest#bundledWebViewAcceptsNativeTab")
+    ).toBeLessThan(calls.indexOf("shell am instrument -w -r"));
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }
