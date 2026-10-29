@@ -31,3 +31,11 @@ Sourcecb61696 passed full checks and Standards review. Spec requires retained ow
 ## Native qualification continuation
 
 The user-authorized renewal retained all original failures. The actual Chrome 156 run verified the exact enabled extension identity/path, then rejected `Extensions.triggerAction` because it received a page target. Reviewed correction `ed0a64c` maps the owned page to one verified tab target; its frozen candidate is prepared. The renewal expired before that retry, so native toolbar/Local Clip/Pin qualification remains open. The coordinator stopped at the limit and is awaiting an explicit further decision. Primary evidence contains the immutable budgets and `ticket-06-renewal-1-stopped.json`.
+
+## Answer
+
+The maintained toolbar command consumes a verified frozen base plus extension sidecar, verifies the actual browser and acknowledged enabled extension/path, maps the owned page to its unique browser tab target, and opens the real toolbar popup through the browser action. Clipboard substitution precedes extension startup. The popup must report its own extension ID, popup view type, focus and memory boundary before filter input is accepted.
+
+Source `90ebaae` corrects the native surface adapter: the narrow popup hides header Search, so this selected scenario waits for the visible Local Clip before the unchanged Pin/Pinned/public-state checks. The legacy ordinary-tab search helper remains unchanged. A public CLI regression failed before this correction and passed afterward; both affected reviews found no blockers, and the required hook passed 83 suites/848 tests plus 36 candidate cases. Integration mapping and exact review patch binding are preserved in primary evidence.
+
+Frozen candidate 4 at source `90ebaae` passed the actual toolbar popup, filter interaction, Local Clip, Pin/Pinned state and verified owned-browser shutdown. Original failures, the user-authorized renewal decisions and immutable receipts remain preserved. Debugger attachment does not qualify unaffected worker lifetime, broader lifecycle, other surfaces or Pairing. The current entry/report owns successor applicability and the final coordinator resolution; the successful historical receipt is not relabeled as a later execution.

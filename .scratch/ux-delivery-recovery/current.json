@@ -6,7 +6,7 @@
     "path": ".scratch/ux-delivery-recovery"
   },
   "runArtifact": "active-run",
-  "candidateId": "electron-history-20261029-8",
+  "candidateId": "chrome-toolbar-20261029-5",
   "integrationBranches": {
     "client": "codex/ux-delivery-recovery-integration"
   }
