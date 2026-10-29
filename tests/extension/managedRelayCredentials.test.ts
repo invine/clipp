@@ -279,9 +279,14 @@ describe("Chrome managed relay credentials", () => {
   it("opens one browser flow for concurrent explicit login requests", async () => {
     const { service, identity, fetchToken } = harness();
     let complete!: (callback: string) => void;
+    let started!: () => void;
+    const launchStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     const launch = jest.fn(
       (url: string) =>
         new Promise<string>((resolve) => {
+          started();
           complete = () =>
             resolve(
               `${identity.redirectUrl}?code=x&state=${new URL(url).searchParams.get("state")}`
@@ -291,10 +296,11 @@ describe("Chrome managed relay credentials", () => {
     identity.launch = launch;
     const first = service.interactiveLogin(endpoint);
     const second = service.interactiveLogin(endpoint);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await launchStarted;
     expect(launch).toHaveBeenCalledTimes(1);
     complete(identity.redirectUrl);
     await Promise.all([first, second]);
+    expect(launch).toHaveBeenCalledTimes(1);
     expect(fetchToken).toHaveBeenCalledTimes(1);
   });
 });

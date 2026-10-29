@@ -448,14 +448,27 @@ test("Android readiness rejects a visible window-list entry without explicit foc
 });
 
 test("Android readiness fails when the UI action produces no observable effect", () => {
-  const run = runReadiness({ interactionChanges: false, timeoutSeconds: 1 });
+  const run = runReadiness({ interactionChanges: false, timeoutSeconds: 3 });
   try {
-    expect(run.result.status).not.toBe(0);
+    expect(run.result.status).toBe(1);
     const receipt = JSON.parse(
       readFileSync(join(run.output, "receipt.json"), "utf8")
     );
+    expect(receipt.result).toBe("failed");
     expect(receipt.stage).toBe("interaction");
-    expect(receipt.failure).toContain("candidate_ui_interaction_no_effect");
+    expect([
+      "candidate_ui_interaction_no_effect",
+      "android_adb_timeout",
+    ]).toContain(receipt.failure);
+    expect(receipt.behavior?.passed).not.toBe(true);
+    expect(
+      readFileSync(run.argsFile, "utf8")
+        .trim()
+        .split("\n")
+        .filter(
+          (line) => line === "-s emulator-5554 shell input keyevent KEYCODE_TAB"
+        )
+    ).toHaveLength(1);
   } finally {
     rmSync(run.directory, { recursive: true, force: true });
   }

@@ -1,6 +1,6 @@
 /* global chrome */
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import {
   mkdir,
@@ -31,6 +31,12 @@ const known = new Set([
   "candidate-record",
   "extension-record",
   "browser-executable",
+  "registered-extension-id",
+  "discovery",
+  "extension-directory",
+  "profile-root",
+  "profile-record",
+  "timeout-seconds",
   "diagnostic-change",
   "expected-observation",
 ]);
@@ -54,7 +60,11 @@ function optionsFor(args) {
     }
   }
   assert(
-    options.scenario === "toolbar-history",
+    [
+      "toolbar-history",
+      "toolbar-relay-pairing",
+      "toolbar-relay-account-preparation",
+    ].includes(options.scenario),
     "unsupported_toolbar_scenario"
   );
   for (const name of [
@@ -221,8 +231,43 @@ function errorCode(error, stage) {
   return stage === "behavior" ? "unknown_failure" : "prerequisite_failure";
 }
 
-export async function runToolbarAcceptance(args) {
+export async function runToolbarAcceptance(args, relayHooks) {
   const options = optionsFor(args);
+  const pairing = options.scenario === "toolbar-relay-pairing";
+  const preparation = options.scenario === "toolbar-relay-account-preparation";
+  const ownedRelay = pairing || preparation;
+  const setupMaximum = Number(options["timeout-seconds"] ?? 600) * 1000;
+  assert(
+    Number.isSafeInteger(setupMaximum) &&
+      setupMaximum >= 1000 &&
+      setupMaximum <= 600000,
+    "bounded_account_preparation_timeout_required"
+  );
+  if (ownedRelay) {
+    if (pairing) assert(relayHooks, "joint_pairing_runner_required");
+    const discovery = new URL(options.discovery);
+    assert(
+      discovery.protocol === "https:" &&
+        !discovery.username &&
+        !discovery.password &&
+        !discovery.search &&
+        !discovery.hash &&
+        discovery.pathname === "/v1/relay" &&
+        discovery.href === options.discovery,
+      "canonical_discovery_required"
+    );
+    assert(
+      /^[a-p]{32}$/.test(options["registered-extension-id"] ?? ""),
+      "pairing_registered_extension_required"
+    );
+    assert(!options["freeze-extension"], "pairing_frozen_extension_required");
+  } else
+    assert(
+      !options["extension-directory"] &&
+        !options["profile-root"] &&
+        !options["profile-record"],
+      "external_extension_requires_pairing"
+    );
   if (options["validate-only"]) {
     console.log(
       JSON.stringify({
@@ -258,31 +303,54 @@ export async function runToolbarAcceptance(args) {
       isAbsolute(recordRelative),
     "durable_extension_record_outside_checkout_required"
   );
-  const attempt = await beginNativeAttempt({
-    output: options.output,
-    historyRoot: options["history-root"],
-    registryRoot: nativeAcceptanceStateRoot(),
-    identity: {
-      effort: options.effort,
-      scenario: "chrome-toolbar-history",
-      environment: {
-        hostname: hostname(),
-        platform: platform(),
-        arch: arch(),
-        runtime: "chromium",
+  const profileLease =
+    relayHooks?.profileLease ??
+    (preparation
+      ? await (
+          await import("./owned-relay-profile.mjs")
+        ).acquireOwnedRelayProfile(options, {
+          preparation: true,
+          verifyClosed: targetGone,
+        })
+      : undefined);
+  if (pairing) assert(profileLease, "owned_relay_profile_preparation_required");
+  const phaseDeadline = preparation ? Date.now() + setupMaximum : Infinity;
+  let attempt;
+  try {
+    attempt = await beginNativeAttempt({
+      output: options.output,
+      historyRoot: options["history-root"],
+      registryRoot: nativeAcceptanceStateRoot(),
+      identity: {
+        effort: options.effort,
+        scenario: ownedRelay
+          ? `chrome-${options.scenario}:${options.discovery}`
+          : "chrome-toolbar-history",
+        environment: {
+          hostname: hostname(),
+          platform: platform(),
+          arch: arch(),
+          runtime: "chromium",
+        },
       },
-    },
-    scenario: "chrome-toolbar-history",
-    change: options["diagnostic-change"],
-    expectation: options["expected-observation"],
-    deferDiagnosticClockUntilFailure: true,
-    verifyTarget: targetGone,
-  });
+      scenario: ownedRelay
+        ? `chrome-${options.scenario}:${options.discovery}`
+        : "chrome-toolbar-history",
+      change: options["diagnostic-change"],
+      expectation: options["expected-observation"],
+      deferDiagnosticClockUntilFailure: true,
+      verifyTarget: targetGone,
+    });
+  } catch (error) {
+    await profileLease?.releaseUnlaunched();
+    throw error;
+  }
   let stage = "candidate";
   let operation = "verify_frozen_candidate";
   let child,
     browser,
     context,
+    browserSession,
     profile,
     identity,
     candidate,
@@ -290,33 +358,45 @@ export async function runToolbarAcceptance(args) {
     workerOwnership;
   let targetWritePending = false;
   let privateFailure;
+  let preparedObservation;
   const protocol = {
     acknowledgedId: null,
     inventoryObservations: 0,
     lastInventories: [],
   };
   let exitObserved = false;
+  if (profileLease) profile = profileLease.profile;
   const receipt = {
     result: "failed",
     classification: "prerequisite",
     stage,
-    scenario: "toolbar-history",
+    scenario: options.scenario,
     clipboard: {
       hostUsed: false,
       hostChanged: false,
-      boundary: "popup-memory-read-empty-write-rejected",
+      boundary: ownedRelay
+        ? "per-context-private-memory-before-product-startup"
+        : "popup-memory-read-empty-write-rejected",
     },
     debugger: { attached: false, unaffectedWorkerLifecycleQualified: false },
     shutdown: "not-launched",
   };
   async function bounded(task, maximum = 15000) {
     attempt.assertBudget();
+    assert(
+      Date.now() < phaseDeadline,
+      "account_preparation_deadline_exhausted"
+    );
     const result = await raceAcceptanceOperation(
       task,
-      attempt.remainingMs(maximum),
+      Math.min(attempt.remainingMs(maximum), phaseDeadline - Date.now()),
       operation
     );
     attempt.assertBudget();
+    assert(
+      Date.now() < phaseDeadline,
+      "account_preparation_deadline_exhausted"
+    );
     return result;
   }
   async function recordOwnership(update) {
@@ -324,6 +404,7 @@ export async function runToolbarAcceptance(args) {
     await bounded(async () => {
       targetWritePending = true;
       await attempt.recordTarget(targetOwnership);
+      if (profileLease) await profileLease.recordTarget(targetOwnership);
       targetWritePending = false;
     });
   }
@@ -333,7 +414,10 @@ export async function runToolbarAcceptance(args) {
       return execFileSync(bin, argv, {
         cwd: root,
         encoding: "utf8",
-        timeout: attempt.remainingMs(maximum),
+        timeout: Math.min(
+          attempt.remainingMs(maximum),
+          phaseDeadline - Date.now()
+        ),
         maxBuffer: 1024 * 1024,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -374,7 +458,17 @@ export async function runToolbarAcceptance(args) {
   }
   try {
     const base = await verifyBase();
-    const extension = join(root, "apps/extension/dist");
+    const stagedExtension = join(
+      root,
+      ownedRelay
+        ? "apps/extension/.local/relay-acceptance/wss"
+        : "apps/extension/dist"
+    );
+    const loadPath = options["extension-directory"] ?? stagedExtension;
+    assert(isAbsolute(loadPath), "absolute_extension_load_path_required");
+    const extension = ownedRelay
+      ? await bounded(() => realpath(loadPath))
+      : stagedExtension;
     const executable = await bounded(() =>
       realpath(options["browser-executable"] ?? chromium.executablePath())
     );
@@ -436,13 +530,56 @@ export async function runToolbarAcceptance(args) {
       candidate.artifacts,
       "candidate_extension_artifacts_changed"
     );
+    if (ownedRelay) {
+      assert(
+        candidate.registeredExtensionId ===
+          options["registered-extension-id"] &&
+          candidate.stagedExtensionPath === stagedExtension &&
+          candidate.relayAcceptanceTransport === "wss" &&
+          candidate.acceptanceMemoryClipboard === true &&
+          candidate.rawLoadPath === loadPath &&
+          candidate.realLoadPath === extension,
+        "pairing_registration_mapping_mismatch"
+      );
+      assert.deepEqual(
+        await bounded(() => artifacts(stagedExtension)),
+        candidate.artifacts,
+        "candidate_staged_extension_changed"
+      );
+      await bounded(() =>
+        profileLease.bind({
+          sourceRevision: candidate.sourceRevision,
+          baseArtifact: candidate.baseArtifact,
+          browser: browserIdentity,
+          rawLoadPath: loadPath,
+          realLoadPath: extension,
+          registeredExtensionId: options["registered-extension-id"],
+          bundleSha256: hash(JSON.stringify(candidate.artifacts)),
+          relayAcceptanceTransport: "wss",
+          acceptanceMemoryClipboard: true,
+        })
+      );
+      if (pairing)
+        await bounded(
+          () =>
+            relayHooks.beforeNative({
+              attempt,
+              revision: candidate.sourceRevision,
+            }),
+          relayHooks.maximumMs
+        );
+    }
     receipt.candidate = {
       revision: candidate.sourceRevision,
       baseArtifact: candidate.baseArtifact,
       extensionSha256: hash(JSON.stringify(candidate.artifacts)),
       browser: browserIdentity,
     };
-    profile = await bounded(() => mkdtemp(join(attempt.directory, "profile-")));
+    if (!profileLease)
+      profile = await bounded(() =>
+        mkdtemp(join(attempt.directory, "profile-"))
+      );
+    if (profileLease) await bounded(() => profileLease.prepareLaunch());
     workerOwnership = runnerOwnership(attempt.remainingMs(1000));
     targetOwnership = { ...workerOwnership, profile };
     stage = "launch";
@@ -483,6 +620,11 @@ export async function runToolbarAcceptance(args) {
       phase: "identity-observed",
     });
     const port = await waitFor(async () => {
+      if (ownedRelay)
+        assert(
+          !exitObserved && child.exitCode === null && child.signalCode === null,
+          "owned_profile_launcher_exited"
+        );
       try {
         return (
           await readFile(join(profile, "DevToolsActivePort"), "utf8")
@@ -496,6 +638,15 @@ export async function runToolbarAcceptance(args) {
       /^\d+$/.test(port[0]) && port[1]?.startsWith("/devtools/browser/"),
       "owned_debug_endpoint_invalid"
     );
+    if (ownedRelay) {
+      const current = processIdentity(child.pid, attempt.remainingMs(1000));
+      assert(
+        !exitObserved &&
+          current.birth === identity.birth &&
+          current.fingerprint === identity.fingerprint,
+        "owned_profile_launcher_exited"
+      );
+    }
     browser = await bounded(() =>
       chromium.connectOverCDP(`http://127.0.0.1:${port[0]}`, {
         timeout: attempt.remainingMs(15000),
@@ -514,14 +665,17 @@ export async function runToolbarAcceptance(args) {
     // Init scripts run before the popup's own focus listener. On installation
     // failure, stop navigation before application code can read the host clipboard.
     await bounded(() =>
-      context.addInitScript(() => {
+      context.addInitScript((privateMemory) => {
+        let memoryText = "";
         try {
           Object.defineProperty(navigator, "clipboard", {
             configurable: false,
             value: Object.freeze({
-              readText: async () => "",
-              writeText: async () => {
-                throw new Error("acceptance_memory_clipboard_write_refused");
+              readText: async () => (privateMemory ? memoryText : ""),
+              writeText: async (text) => {
+                if (privateMemory) memoryText = text;
+                else
+                  throw new Error("acceptance_memory_clipboard_write_refused");
               },
             }),
           });
@@ -532,11 +686,12 @@ export async function runToolbarAcceptance(args) {
           window.stop();
           location.replace("about:blank#clipboard-boundary-unavailable");
         }
-      })
+      }, ownedRelay)
     );
     stage = "worker";
     operation = "observe_extension_identity";
     const session = await bounded(() => browser.newBrowserCDPSession());
+    browserSession = session;
     const inventory = async () => {
       const result = await bounded(() =>
         session.send("Extensions.getExtensions")
@@ -555,8 +710,14 @@ export async function runToolbarAcceptance(args) {
           )
           .slice(0, 4)
           .map((item) => ({
-            id: String(item.id).slice(0, 128),
-            path: String(item.path).slice(0, 4096),
+            id: ownedRelay
+              ? item.id === options["registered-extension-id"]
+                ? options["registered-extension-id"]
+                : "unmatched-extension"
+              : String(item.id).slice(0, 128),
+            ...(ownedRelay
+              ? { pathMatches: item.path === extension }
+              : { path: String(item.path).slice(0, 4096) }),
             enabled: item.enabled === true,
           })),
       });
@@ -567,7 +728,7 @@ export async function runToolbarAcceptance(args) {
     await inventory();
     operation = "load_owned_unpacked_extension";
     const acknowledgement = await bounded(() =>
-      session.send("Extensions.loadUnpacked", { path: extension })
+      session.send("Extensions.loadUnpacked", { path: loadPath })
     );
     assert(
       typeof acknowledgement.id === "string" &&
@@ -575,6 +736,11 @@ export async function runToolbarAcceptance(args) {
         acknowledgement.id.length <= 128,
       "extension_load_acknowledgement_invalid"
     );
+    if (ownedRelay)
+      assert(
+        acknowledgement.id === options["registered-extension-id"],
+        "pairing_registration_mapping_mismatch"
+      );
     protocol.acknowledgedId = acknowledgement.id;
     operation = "observe_loaded_extension_inventory";
     let loaded;
@@ -593,6 +759,11 @@ export async function runToolbarAcceptance(args) {
           selected.enabled === true && typeof selected.path === "string",
           "toolbar_target_mismatch"
         );
+        if (ownedRelay)
+          assert(
+            selected.path === extension || selected.path === loadPath,
+            "toolbar_target_mismatch"
+          );
         assert(
           (await bounded(() => realpath(selected.path))) === extension,
           "toolbar_target_mismatch"
@@ -605,6 +776,11 @@ export async function runToolbarAcceptance(args) {
       throw error;
     }
     const extensionId = loaded.id;
+    if (ownedRelay)
+      assert(
+        extensionId === options["registered-extension-id"],
+        "pairing_registration_mapping_mismatch"
+      );
     const worker = await waitFor(async () =>
       context
         .serviceWorkers()
@@ -614,196 +790,475 @@ export async function runToolbarAcceptance(args) {
       new URL(worker.url()).host === extensionId,
       "toolbar_target_mismatch"
     );
-    receipt.extension = { id: extensionId, pathMatches: true };
-    const tab = context.pages()[0] ?? (await bounded(() => context.newPage()));
-    await bounded(() => tab.bringToFront());
-    const tabSession = await bounded(() => context.newCDPSession(tab));
-    operation = "identify_owned_browser_tab";
-    const { targetInfo: pageTarget } = await bounded(() =>
-      tabSession.send("Target.getTargetInfo")
-    );
-    const pageUrl = tab.url();
-    assert(
-      pageTarget.type === "page" &&
-        typeof pageTarget.targetId === "string" &&
-        pageTarget.url === pageUrl,
-      "toolbar_target_mismatch"
-    );
-    const pageWindow = await bounded(() =>
-      session.send("Browser.getWindowForTarget", {
-        targetId: pageTarget.targetId,
-      })
-    );
-    assert(
-      Number.isSafeInteger(pageWindow.windowId) && pageWindow.windowId >= 0,
-      "toolbar_target_mismatch"
-    );
-    const { targetInfos } = await bounded(() =>
-      session.send("Target.getTargets", {
-        filter: [{ type: "tab", exclude: false }, { exclude: true }],
-      })
-    );
-    assert(
-      Array.isArray(targetInfos) && targetInfos.length <= 500,
-      "toolbar_target_mismatch"
-    );
-    const matchingTabs = [];
-    protocol.tabMapping = {
-      pageTargetId: pageTarget.targetId,
-      pageType: pageTarget.type,
-      pageUrl: pageUrl.slice(0, 4096),
-      pageWindowId: pageWindow.windowId,
-      tabCount: targetInfos.filter((item) => item.type === "tab").length,
-      candidates: [],
+    receipt.extension = {
+      id: extensionId,
+      pathMatches: true,
+      ...(pairing
+        ? {
+            rawLoadPath: loadPath,
+            realLoadPath: extension,
+            expectedId: options["registered-extension-id"],
+            bundleSha256: hash(JSON.stringify(candidate.artifacts)),
+          }
+        : {}),
     };
-    for (const item of targetInfos) {
-      if (
-        item.type !== "tab" ||
-        item.url !== pageUrl ||
-        item.browserContextId !== pageTarget.browserContextId
-      )
-        continue;
-      if (
-        pageTarget.browserContextId === undefined &&
-        browser.contexts().length !== 1
-      )
-        continue;
+    const openManagement = async () => {
+      const page = await bounded(() => context.newPage());
+      await bounded(() =>
+        page.goto(`chrome-extension://${extensionId}/src/options.html`)
+      );
       assert(
-        typeof item.targetId === "string" &&
-          item.targetId !== pageTarget.targetId,
+        page.url() === `chrome-extension://${extensionId}/src/options.html`,
         "toolbar_target_mismatch"
       );
-      const tabWindow = await bounded(() =>
-        session.send("Browser.getWindowForTarget", { targetId: item.targetId })
+      const mapping = await bounded(() =>
+        page.evaluate(() => ({
+          id: chrome.runtime.id,
+          earlyMemory: window.__clippAcceptanceEarlyMemoryClipboard === true,
+        }))
       );
-      if (protocol.tabMapping.candidates.length < 10)
-        protocol.tabMapping.candidates.push({
-          targetId: item.targetId.slice(0, 128),
-          windowId: tabWindow.windowId,
-          contextMatched: true,
-          urlMatched: true,
-        });
-      if (tabWindow.windowId === pageWindow.windowId) matchingTabs.push(item);
-    }
-    assert(matchingTabs.length === 1, "toolbar_target_mismatch");
-    const actionTab = matchingTabs[0];
-    receipt.actionTarget = {
-      pageTargetId: pageTarget.targetId,
-      tabTargetId: actionTab.targetId,
-      windowId: pageWindow.windowId,
-      urlMatched: true,
-      contextMatched: true,
-    };
-    operation = "trigger_actual_toolbar_action";
-    await bounded(() =>
-      session.send("Extensions.triggerAction", {
-        id: extensionId,
-        targetId: actionTab.targetId,
-      })
-    );
-    const popup = await waitFor(async () =>
-      context
-        .pages()
-        .find(
-          (page) =>
-            page.url() === `chrome-extension://${extensionId}/src/popup.html`
-        )
-    );
-    const mapping = await bounded(() =>
-      popup.evaluate(() => ({
-        id: chrome.runtime.id,
-        tabId: undefined,
-        memory: window.__clippAcceptanceMemoryClipboard === true,
-        isPopup: chrome.extension.getViews({ type: "popup" }).includes(window),
-        focused: document.hasFocus(),
-        href: location.href,
-      }))
-    );
-    assert(
-      mapping.id === extensionId &&
-        mapping.isPopup === true &&
-        mapping.memory === true &&
-        mapping.focused === true,
-      "toolbar_target_mismatch"
-    );
-    receipt.surface = {
-      kind: "actual-toolbar-popup",
-      viewType: "popup",
-      trigger: "Extensions.triggerAction",
-      idMatches: true,
-      focused: true,
-      clipboardBoundaryInstalled: true,
-    };
-    const message = async (msg) => {
-      return bounded(() =>
-        popup.evaluate(
-          (value) =>
-            new Promise((done) => chrome.runtime.sendMessage(value, done)),
-          msg
-        )
+      assert(
+        mapping.id === extensionId && mapping.earlyMemory === true,
+        "acceptance_memory_startup_required"
       );
+      const request = (value) =>
+        bounded(() =>
+          page.evaluate(
+            (message) =>
+              new Promise((done) => chrome.runtime.sendMessage(message, done)),
+            value
+          )
+        );
+      return {
+        configureSelectedRelay: () =>
+          request({
+            type: "managedRelaySet",
+            configurations: [
+              {
+                key: "pairing-owned-relay",
+                name: "Pairing relay",
+                kind: "managed",
+                discoveryUrl: options.discovery,
+              },
+            ],
+          }),
+        async beginNormalLogin() {
+          await bounded(() => page.bringToFront());
+          const settings = page.getByRole("button", {
+            name: "Settings",
+            exact: true,
+          });
+          const destinations = await bounded(() => settings.count());
+          assert(destinations <= 1, "owned_settings_navigation_ambiguous");
+          if (destinations === 1)
+            await bounded(() =>
+              settings.click({ timeout: attempt.remainingMs(15000) })
+            );
+          const card = page
+            .locator(".managed-relay-card")
+            .filter({ hasText: options.discovery });
+          const disclosure = await bounded(() =>
+            card.evaluate((element) => ({
+              tag: element.tagName,
+              open: element.hasAttribute("open"),
+            }))
+          );
+          if (disclosure.tag === "DETAILS" && !disclosure.open)
+            await bounded(() =>
+              card
+                .locator("summary")
+                .click({ timeout: attempt.remainingMs(15000) })
+            );
+          await bounded(() =>
+            card
+              .getByRole("button", { name: "Log in", exact: true })
+              .click({ timeout: attempt.remainingMs(15000) })
+          );
+        },
+        readState: () =>
+          request({ type: "getRuntimeState" }).then((reply) => reply?.state),
+        readTransportStatus: () =>
+          request({ target: "offscreen", action: "getStatus" }),
+      };
     };
-    stage = "interaction";
-    operation = "toolbar_readiness_filter";
-    await bounded(() =>
-      popup
-        .getByRole("button", { name: "Pinned", exact: true })
-        .click({ timeout: attempt.remainingMs(5000) })
-    );
-    assert(
+    const openPopup = async () => {
+      const tab =
+        (ownedRelay
+          ? context.pages().find((page) => page.url() === "about:blank")
+          : context.pages()[0]) ?? (await bounded(() => context.newPage()));
+      await bounded(() => tab.bringToFront());
+      const tabSession = await bounded(() => context.newCDPSession(tab));
+      operation = "identify_owned_browser_tab";
+      const { targetInfo: pageTarget } = await bounded(() =>
+        tabSession.send("Target.getTargetInfo")
+      );
+      const pageUrl = tab.url();
+      assert(
+        pageTarget.type === "page" &&
+          typeof pageTarget.targetId === "string" &&
+          pageTarget.url === pageUrl,
+        "toolbar_target_mismatch"
+      );
+      const pageWindow = await bounded(() =>
+        session.send("Browser.getWindowForTarget", {
+          targetId: pageTarget.targetId,
+        })
+      );
+      assert(
+        Number.isSafeInteger(pageWindow.windowId) && pageWindow.windowId >= 0,
+        "toolbar_target_mismatch"
+      );
+      const { targetInfos } = await bounded(() =>
+        session.send("Target.getTargets", {
+          filter: [{ type: "tab", exclude: false }, { exclude: true }],
+        })
+      );
+      assert(
+        Array.isArray(targetInfos) && targetInfos.length <= 500,
+        "toolbar_target_mismatch"
+      );
+      const matchingTabs = [];
+      protocol.tabMapping = {
+        pageTargetId: pageTarget.targetId,
+        pageType: pageTarget.type,
+        pageUrl: pageUrl.slice(0, 4096),
+        pageWindowId: pageWindow.windowId,
+        tabCount: targetInfos.filter((item) => item.type === "tab").length,
+        candidates: [],
+      };
+      for (const item of targetInfos) {
+        if (
+          item.type !== "tab" ||
+          item.url !== pageUrl ||
+          item.browserContextId !== pageTarget.browserContextId
+        )
+          continue;
+        if (
+          pageTarget.browserContextId === undefined &&
+          browser.contexts().length !== 1
+        )
+          continue;
+        assert(
+          typeof item.targetId === "string" &&
+            item.targetId !== pageTarget.targetId,
+          "toolbar_target_mismatch"
+        );
+        const tabWindow = await bounded(() =>
+          session.send("Browser.getWindowForTarget", {
+            targetId: item.targetId,
+          })
+        );
+        if (protocol.tabMapping.candidates.length < 10)
+          protocol.tabMapping.candidates.push({
+            targetId: item.targetId.slice(0, 128),
+            windowId: tabWindow.windowId,
+            contextMatched: true,
+            urlMatched: true,
+          });
+        if (tabWindow.windowId === pageWindow.windowId) matchingTabs.push(item);
+      }
+      assert(matchingTabs.length === 1, "toolbar_target_mismatch");
+      const actionTab = matchingTabs[0];
+      receipt.actionTarget = {
+        pageTargetId: pageTarget.targetId,
+        tabTargetId: actionTab.targetId,
+        windowId: pageWindow.windowId,
+        urlMatched: true,
+        contextMatched: true,
+      };
+      operation = "trigger_actual_toolbar_action";
+      await bounded(() =>
+        session.send("Extensions.triggerAction", {
+          id: extensionId,
+          targetId: actionTab.targetId,
+        })
+      );
+      const popup = await waitFor(async () =>
+        context
+          .pages()
+          .find(
+            (page) =>
+              page.url() === `chrome-extension://${extensionId}/src/popup.html`
+          )
+      );
+      const mapping = await bounded(() =>
+        popup.evaluate(() => ({
+          id: chrome.runtime.id,
+          tabId: undefined,
+          memory: window.__clippAcceptanceMemoryClipboard === true,
+          isPopup: chrome.extension
+            .getViews({ type: "popup" })
+            .includes(window),
+          focused: document.hasFocus(),
+          href: location.href,
+        }))
+      );
+      assert(
+        mapping.id === extensionId &&
+          mapping.isPopup === true &&
+          mapping.memory === true &&
+          mapping.focused === true,
+        "toolbar_target_mismatch"
+      );
+      receipt.surface = {
+        kind: "actual-toolbar-popup",
+        viewType: "popup",
+        trigger: "Extensions.triggerAction",
+        idMatches: true,
+        focused: true,
+        clipboardBoundaryInstalled: true,
+      };
+      return popup;
+    };
+    if (preparation) {
+      stage = "account-preparation";
+      operation = "normal_user_managed_relay_login";
+      const runtime = await openManagement();
+      const status = await runtime.readTransportStatus();
+      assert(
+        status?.started === true &&
+          status.relayAcceptanceTransport === "wss" &&
+          status.acceptanceMemoryClipboard === true,
+        "pairing_forced_relay_runtime_required"
+      );
+      await bounded(() => profileLease.confirmStartupIsolation());
+      const initial = await runtime.readState();
+      assert(
+        Array.isArray(initial?.managedRelayConfigurations),
+        "owned_relay_configuration_unavailable"
+      );
+      if (initial.managedRelayConfigurations.length === 0) {
+        const configured = await runtime.configureSelectedRelay();
+        assert(configured?.ok === true, "owned_relay_configuration_failed");
+      } else
+        assert(
+          initial.managedRelayConfigurations.length === 1 &&
+            initial.managedRelayConfigurations[0].kind === "managed" &&
+            initial.managedRelayConfigurations[0].discoveryUrl ===
+              options.discovery,
+          "owned_relay_configuration_conflict"
+        );
+      console.log(
+        "Owned Chrome account preparation: complete normal Google sign-in in the visible browser window. The approved relay is configured through the normal app, and this setup command closes the owned window after Ready. This is not Pairing qualification."
+      );
+      let loginRequested = false;
+      const state = await waitFor(async () => {
+        const state = await runtime.readState();
+        const configurations =
+          state?.managedRelayConfigurations?.filter(
+            (config) =>
+              config.kind === "managed" &&
+              config.discoveryUrl === options.discovery
+          ) ?? [];
+        assert(
+          configurations.length <= 1,
+          "owned_relay_configuration_ambiguous"
+        );
+        const selected =
+          configurations.length === 1
+            ? state.managedRelayStates?.find(
+                (value) =>
+                  value.key === configurations[0].key &&
+                  value.kind === "managed"
+              )
+            : undefined;
+        if (selected?.status === "login_needed" && !loginRequested) {
+          loginRequested = true;
+          await runtime.beginNormalLogin();
+          return null;
+        }
+        const ready =
+          configurations.length === 1 &&
+          state.managedRelayStates?.find(
+            (value) =>
+              value.kind === "managed" &&
+              value.key === configurations[0].key &&
+              value.status === "ready"
+          );
+        return ready ? state : null;
+      }, setupMaximum);
+      const id = state.identity?.deviceId;
+      assert(
+        typeof id === "string" &&
+          /^[A-Za-z0-9]{20,128}$/.test(id) &&
+          (!profileLease.publicDeviceId || profileLease.publicDeviceId === id),
+        "owned_profile_identity_changed"
+      );
+      preparedObservation = { publicDeviceId: id };
+      receipt.accountPreparation = {
+        readyObserved: true,
+        prepared: false,
+        qualification: "account-preparation-only",
+        profileRecord: options["profile-record"],
+      };
+      receipt.surface = {
+        kind: "owned-normal-extension-options",
+        clipboardBoundaryInstalledBeforeStartup: true,
+      };
+    } else {
+      let popup = await openPopup();
+      const message = async (msg) => {
+        return bounded(() =>
+          popup.evaluate(
+            (value) =>
+              new Promise((done) => chrome.runtime.sendMessage(value, done)),
+            msg
+          )
+        );
+      };
+      stage = "interaction";
+      operation = "toolbar_readiness_filter";
       await bounded(() =>
         popup
           .getByRole("button", { name: "Pinned", exact: true })
-          .evaluate((el) => el.classList.contains("active"))
-      ),
-      "toolbar_input_not_observed"
-    );
-    await bounded(() =>
-      popup
-        .getByRole("button", { name: "All", exact: true })
-        .click({ timeout: attempt.remainingMs(5000) })
-    );
-    receipt.readiness = {
-      passed: true,
-      interaction: "native-popup-pinned-and-all-filter",
-    };
-    stage = "behavior";
-    operation = "capture_local_synthetic_clip";
-    const text = "clipp-toolbar-local-history-fixture";
-    const capture = await message({ type: "clipboardUpdate", text });
-    assert(capture?.ok !== false, "local_fixture_capture_failed");
-    await bounded(() =>
-      popup
-        .getByText(text, { exact: true })
-        .waitFor({ state: "visible", timeout: attempt.remainingMs(5000) })
-    );
-    operation = "pin_visible_clip";
-    await bounded(() =>
-      popup
-        .getByTitle("Pin", { exact: true })
-        .first()
-        .click({ timeout: attempt.remainingMs(5000) })
-    );
-    await waitFor(
-      async () =>
-        (await message({ type: "getRuntimeState" }))?.state?.pinnedIds
-          ?.length === 1
-    );
-    await bounded(() =>
-      popup
-        .getByRole("button", { name: "Pinned", exact: true })
-        .click({ timeout: attempt.remainingMs(5000) })
-    );
-    assert(
-      await bounded(() => popup.getByText(text, { exact: true }).isVisible()),
-      "pinned_clip_not_visible"
-    );
-    receipt.behavior = {
-      passed: true,
-      syntheticClipVisible: true,
-      pinPersisted: true,
-      pinnedFilterVisible: true,
-    };
+          .click({ timeout: attempt.remainingMs(5000) })
+      );
+      assert(
+        await bounded(() =>
+          popup
+            .getByRole("button", { name: "Pinned", exact: true })
+            .evaluate((el) => el.classList.contains("active"))
+        ),
+        "toolbar_input_not_observed"
+      );
+      await bounded(() =>
+        popup
+          .getByRole("button", { name: "All", exact: true })
+          .click({ timeout: attempt.remainingMs(5000) })
+      );
+      receipt.readiness = {
+        passed: true,
+        interaction: "native-popup-pinned-and-all-filter",
+      };
+      stage = "behavior";
+      operation = "capture_local_synthetic_clip";
+      const baseline = pairing
+        ? (await message({ type: "getRuntimeState" }))?.state
+        : undefined;
+      if (pairing)
+        assert(
+          baseline?.identity?.deviceId === profileLease.publicDeviceId &&
+            Array.isArray(baseline.clips) &&
+            Array.isArray(baseline.pinnedIds),
+          "owned_profile_identity_changed"
+        );
+      const oldIds = new Set(baseline?.clips?.map((clip) => clip.id) ?? []);
+      const text = pairing
+        ? `clipp-toolbar-local-${randomUUID()}`
+        : "clipp-toolbar-local-history-fixture";
+      const capture = await message({ type: "clipboardUpdate", text });
+      assert(capture?.ok !== false, "local_fixture_capture_failed");
+      await bounded(() =>
+        popup
+          .getByText(text, { exact: true })
+          .waitFor({ state: "visible", timeout: attempt.remainingMs(5000) })
+      );
+      let captured;
+      if (pairing)
+        captured = await waitFor(async () => {
+          const state = (await message({ type: "getRuntimeState" }))?.state;
+          return state?.clips?.find(
+            (clip) =>
+              !oldIds.has(clip.id) &&
+              clip.content === text &&
+              clip.originPeerId === baseline.identity.deviceId
+          );
+        });
+      operation = "pin_visible_clip";
+      await bounded(() =>
+        pairing
+          ? popup
+              .locator("article.history-card")
+              .filter({ hasText: text })
+              .getByTitle("Pin", { exact: true })
+              .click({ timeout: attempt.remainingMs(5000) })
+          : popup
+              .getByTitle("Pin", { exact: true })
+              .first()
+              .click({ timeout: attempt.remainingMs(5000) })
+      );
+      await waitFor(async () => {
+        const state = (await message({ type: "getRuntimeState" }))?.state;
+        return pairing
+          ? state?.pinnedIds?.includes(captured.id)
+          : state?.pinnedIds?.length === 1;
+      });
+      await bounded(() =>
+        popup
+          .getByRole("button", { name: "Pinned", exact: true })
+          .click({ timeout: attempt.remainingMs(5000) })
+      );
+      assert(
+        await bounded(() => popup.getByText(text, { exact: true }).isVisible()),
+        "pinned_clip_not_visible"
+      );
+      receipt.behavior = {
+        passed: true,
+        syntheticClipVisible: true,
+        pinPersisted: true,
+        pinnedFilterVisible: true,
+        ...(pairing
+          ? {
+              freshClip: true,
+              exactNewPin: true,
+              priorPinnedCount: baseline.pinnedIds.length,
+            }
+          : {}),
+      };
+      if (pairing) {
+        stage = "relay-pairing";
+        operation = "joint_relay_pairing";
+        const { readState, readTransportStatus } = await openManagement();
+        const focusedInput = (operation) =>
+          bounded(async () => {
+            const focus = () => popup.evaluate(() => document.hasFocus());
+            assert((await focus()) === true, "toolbar_target_mismatch");
+            const result = await operation();
+            assert((await focus()) === true, "toolbar_target_mismatch");
+            return result;
+          });
+        receipt.pairing = await bounded(
+          () =>
+            relayHooks.onReady({
+              attempt,
+              bounded,
+              readState,
+              readTransportStatus,
+              expectedDeviceId: profileLease.publicDeviceId,
+              async open() {
+                popup = await openPopup();
+              },
+              click: (name) =>
+                focusedInput(() =>
+                  popup
+                    .getByRole("button", { name, exact: true })
+                    .click({ timeout: attempt.remainingMs(5000) })
+                ),
+              async typeTarget(text) {
+                await focusedInput(() =>
+                  popup
+                    .getByLabel("Pairing text", { exact: true })
+                    .click({ timeout: attempt.remainingMs(5000) })
+                );
+                await focusedInput(() => popup.keyboard.insertText(text));
+              },
+              observeAcceptance: (peerId) =>
+                focusedInput(() =>
+                  popup
+                    .locator(`[data-pairing-target="${peerId}"]`)
+                    .getByText("Acceptance response received.", {
+                      exact: false,
+                    })
+                    .waitFor({
+                      state: "visible",
+                      timeout: attempt.remainingMs(5000),
+                    })
+                ),
+            }),
+          relayHooks.maximumMs
+        );
+      }
+    }
     operation = "verify_candidate_after_interaction";
     await verifyBase();
     assert.deepEqual(
@@ -811,6 +1266,18 @@ export async function runToolbarAcceptance(args) {
       candidate.artifacts,
       "candidate_extension_artifacts_changed"
     );
+    if (ownedRelay) {
+      assert.equal(
+        await bounded(() => realpath(loadPath)),
+        extension,
+        "pairing_registration_mapping_mismatch"
+      );
+      assert.deepEqual(
+        await bounded(() => artifacts(stagedExtension)),
+        candidate.artifacts,
+        "candidate_staged_extension_changed"
+      );
+    }
     receipt.result = "passed";
     receipt.classification = "none";
     receipt.stage = "complete";
@@ -819,10 +1286,12 @@ export async function runToolbarAcceptance(args) {
       stage,
       operation,
       protocol,
-      error: {
-        name: String(error?.name ?? "UnknownError").slice(0, 128),
-        message: String(error?.message ?? "unknown").slice(0, 4096),
-      },
+      error: ownedRelay
+        ? { name: "OwnedRelayOperationError", code: errorCode(error, stage) }
+        : {
+            name: String(error?.name ?? "UnknownError").slice(0, 128),
+            message: String(error?.message ?? "unknown").slice(0, 4096),
+          },
     };
     receipt.stage = stage;
     receipt.operation = operation;
@@ -864,7 +1333,17 @@ export async function runToolbarAcceptance(args) {
       }
     }
     try {
-      if (browser) await cleanup(() => browser.close());
+      if (ownedRelay && browserSession)
+        await cleanup(() => browserSession.send("Browser.close")).catch(
+          () => {}
+        );
+      if (browser) {
+        try {
+          await cleanup(() => browser.close());
+        } catch (error) {
+          if (!ownedRelay || !exitObserved) throw error;
+        }
+      }
       if (child?.pid && !exitObserved) {
         await cleanup(
           () =>
@@ -914,25 +1393,53 @@ export async function runToolbarAcceptance(args) {
         }
       }
       assert(!targetWritePending, "ownership_write_pending");
-      if (profile)
+      if (profile && targetOwnership)
         assert(
           targetGone(targetOwnership, cleanupDeadline, workerOwnership),
           "browser_cleanup_unobserved"
         );
-      if (profile)
+      if (profileLease) {
+        if (targetOwnership)
+          await cleanup(() =>
+            profileLease.closed({
+              observation: preparedObservation,
+              receiptPath: join(attempt.directory, "receipt.json"),
+              proofPath: join(attempt.directory, "profile-preparation.json"),
+            })
+          );
+        else await cleanup(() => profileLease.releaseUnlaunched());
+        receipt.profileRetained = true;
+        if (preparedObservation) receipt.accountPreparation.prepared = true;
+      } else if (profile)
         await cleanup(() => rm(profile, { recursive: true, force: true }));
       await cleanup(() => attempt.clearTarget());
       receipt.shutdown = child
         ? "verified-owned-browser-closed"
         : "not-launched";
     } catch {
+      if (profileLease)
+        await cleanup(() => profileLease.uncertain()).catch(() => {});
       receipt.cleanupFailure = "owned_browser_cleanup_uncertain";
       receipt.shutdown = "unknown";
       receipt.result = "failed";
       receipt.classification = "cleanup";
       process.exitCode = 1;
     }
+    if (relayHooks) {
+      try {
+        await relayHooks.afterCleanup(receipt, { deadline: cleanupDeadline });
+      } catch {
+        receipt.jointCleanup = "unconfirmed";
+        if (receipt.result === "passed") {
+          receipt.result = "failed";
+          receipt.classification = "runner";
+          receipt.failure = "joint_cleanup_unconfirmed";
+        }
+        process.exitCode = 1;
+      }
+    }
     await attempt.finish(receipt);
     console.log(JSON.stringify(receipt));
   }
+  return receipt;
 }

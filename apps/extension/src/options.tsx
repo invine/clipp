@@ -1,3 +1,4 @@
+import "./acceptanceClipboardStartup";
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { DeviceList } from "./components/DeviceList";

@@ -1,3 +1,4 @@
+import "./acceptanceClipboardStartup";
 // Content script used to observe clipboard updates. Service workers in MV3
 // cannot access `navigator.clipboard`, so we listen for `copy`/`cut` events on
 // the page and forward the clipboard text to the background script.
@@ -22,7 +23,12 @@ async function handleClipboardEvent(e: ClipboardEvent) {
   if (text) void notifyBackground(text);
 }
 
-document.addEventListener("copy", handleClipboardEvent);
-document.addEventListener("cut", handleClipboardEvent);
+if (
+  typeof __CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD__ === "undefined" ||
+  !__CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD__
+) {
+  document.addEventListener("copy", handleClipboardEvent);
+  document.addEventListener("cut", handleClipboardEvent);
+}
 
 export {};

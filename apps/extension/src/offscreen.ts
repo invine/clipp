@@ -1,3 +1,4 @@
+import { writeAcceptanceMemoryClipboard } from "./acceptanceClipboardStartup";
 import { createLibp2pMessagingTransport } from "../../../packages/core/network/engine";
 import {
   activeMemberReconnectPeers,
@@ -48,6 +49,9 @@ import { createOffscreenClipboardWriter } from "./offscreenClipboard";
 import { extensionRelayTransportAllows } from "./relayAcceptance";
 
 const acceptanceTransport = __CLIPP_RELAY_ACCEPTANCE_TRANSPORT__ ?? undefined;
+const acceptanceMemory =
+  typeof __CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD__ !== "undefined" &&
+  __CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD__;
 
 let transport: ReturnType<typeof createLibp2pMessagingTransport> | null = null;
 let pairedConnections: ReturnType<
@@ -65,7 +69,9 @@ const identitySvc = createRuntimeIdentityManager({
 });
 let started = false;
 let managedController: ManagedRelayController | null = null;
-const writeClipboardText = createOffscreenClipboardWriter();
+const writeClipboardText = acceptanceMemory
+  ? writeAcceptanceMemoryClipboard
+  : createOffscreenClipboardWriter();
 const runtimeOutboundStreamControllers = new Map<string, AbortController>();
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -444,6 +450,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         peers,
         peerConnections,
         started,
+        ...(acceptanceMemory
+          ? {
+              acceptanceMemoryClipboard:
+                window.__clippAcceptanceEarlyMemoryClipboard === true,
+            }
+          : {}),
         ...(acceptanceTransport
           ? { relayAcceptanceTransport: acceptanceTransport }
           : {}),
