@@ -6,7 +6,7 @@
     "path": ".scratch/ux-delivery-recovery"
   },
   "runArtifact": "active-run",
-  "candidateId": "chrome-toolbar-20261029-5",
+  "candidateId": "recovery-tooling-20261029-10",
   "integrationBranches": {
     "client": "codex/ux-delivery-recovery-integration"
   }

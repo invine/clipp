@@ -1535,14 +1535,24 @@ chrome.runtime.onMessage.addListener(
         .then(() =>
           sendOffscreen<{
             peers: string[];
-            peerConnections?: PeerConnectionInfo[];
-          }>({ action: "getPeers" })
+            started?: boolean;
+            acceptanceMemoryClipboard?: boolean;
+            relayAcceptanceTransport?: "wss" | "webrtc-direct";
+          }>({ action: "getStatus" })
         )
         .then((resp) => {
           const peers = Array.isArray(resp?.peers) ? resp!.peers : [];
           sendResponse({
             peerCount: peers.length,
             autoSync: clipboardSync.isAutoSync(),
+            started: resp?.started === true,
+            ...(resp?.acceptanceMemoryClipboard === true
+              ? { acceptanceMemoryClipboard: true }
+              : {}),
+            ...(resp?.relayAcceptanceTransport === "wss" ||
+            resp?.relayAcceptanceTransport === "webrtc-direct"
+              ? { relayAcceptanceTransport: resp.relayAcceptanceTransport }
+              : {}),
           });
         })
         .catch(() =>

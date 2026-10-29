@@ -2,7 +2,7 @@
 
 ## Current authority and preservation
 
-Start at [current.json](current.json), run the [README command](README.md), then open the selected numbered ticket. The auxiliary adoption branch contains committed main prerequisites and the inspected UX source; its merge and metadata still require coordinator review/serialization before promotion. The original UX checkout and its eighteen dirty files remain preserved. Only canonical issue20, issue24 and run metadata were copied with a SHA-256 guard. The pre-adoption narrative is [historical](history/run-through-20261029.txt); private snapshots and product-file mappings remain outside disposable worktrees.
+Start at [current.json](current.json), run the [README command](README.md), then open the selected numbered ticket. The configured client root selects the adopted UX source and main prerequisites. The coordinator promotes that root after verifying the merge, frozen candidate and current report. A candidate ID names the intended artifact; a missing record remains a blocker until preparation supplies its real source and fingerprints. The original UX checkout and its eighteen dirty files remain preserved. Only canonical issue20, issue24 and run metadata were copied with a SHA-256 guard. The pre-adoption narrative is [historical](history/run-through-20261029.txt); private snapshots and product-file mappings remain outside disposable worktrees.
 
 Existing claims10/11/16/24/29 retain their owner identity. New37/38 await a coordinator claim. A required missing native case remains unqualified; report consistency, a source merge and an old approval do not activate a product action.
 

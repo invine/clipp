@@ -391,3 +391,134 @@ candidate. Actual native addon loading/ABI, startup, owned-window interaction,
 Pairing, and installed Android/Chrome artifact checks remain separate runtime
 qualification. The shared diagnostic policy and runtime commands remain separate from
 preparation; this command does not replace their actual native observations.
+
+## Joint Chrome–Electron relay Accept case
+
+`--scenario relay-pairing --pairing-record /absolute/private/pairing.json`
+uses this Electron runner and the maintained Chrome toolbar runner in one bounded
+case. It consumes a frozen `electron-relay-pairing` candidate and the normal
+production main process. It does not use the direct-only protocol counterpart
+entry. The adopted product must expose Devices → Pair this device, Requests,
+Show my QR, Copy pairing text, Paste pairing text and Submit pairing text. Missing
+native controls fail the case; this command does not synthesize product actions.
+
+The private JSON record has `version: 1`, `registeredExtensionId` (the real
+registered Chrome ID), and `chromeArguments`, the existing toolbar CLI arguments
+with `--scenario toolbar-relay-pairing`, the same `--effort`, `--discovery`, and
+`--candidate-record` as Electron, plus `--registered-extension-id`. Include the
+existing absolute `--history-root`, `--output`, and `--extension-record` paths.
+Electron scalar options are unique; only `--import-history` may repeat. Companion
+cleanup confirmation uses each caller's remaining existing cleanup allowance.
+An optional `--extension-directory` is the raw registered load path; it is read
+only. The extension sidecar retains the existing candidate/browser/artifact
+fields plus `registeredExtensionId`, `stagedExtensionPath`, `rawLoadPath` and
+`realLoadPath`, `relayAcceptanceTransport: "wss"` and
+`acceptanceMemoryClipboard: true`. Stage the build in the frozen checkout and bind both actual and
+staged bytes to that sidecar. The actual CDP install acknowledgement must equal
+the registered ID, followed by the existing enabled/path inventory check.
+A path string or a successful callback HTTP response does not establish that ID.
+
+Any approved physical-path setup, byte backup or alias restoration is a separate
+operator prerequisite. This command neither replaces a registered bundle nor
+copies a Chrome profile, Device Identity, credential or login token. Before the
+bounded Pairing case, run the explicit normal account-preparation phase below
+with its own named setup history. It creates an owned profile under the canonical
+host acceptance root, configures only the approved relay when defaults are empty,
+opens the normal Log in UI and waits for the user to complete Google sign-in.
+After verified shutdown it retains the same profile, private ownership receipt
+and immutable setup proof. This is account setup, not native Pairing qualification.
+
+The Pairing manifest's Chrome arguments must include `--profile-root` and
+`--profile-record`. The allowed profile root is exactly
+`<canonical nativeAcceptanceStateRoot()>/owned-chrome-profiles`; it cannot select
+an ordinary Chrome profile. Both phases use the same private record, frozen
+source/browser/registered-ID/raw-real-path/bundle binding and normal public Device
+Identity. A missing proof, alias, active or uncertain owner, Chrome SingletonLock,
+changed binding or exclusive-lock conflict refuses reuse. The helper never reads,
+hashes or copies account/profile data. Only its own ownership and debugger-endpoint
+metadata are inspected. Uncertainty retains ownership rather than deleting data.
+
+Normal login happens before the feature attempt. The case rechecks both own
+sessions automatically, refuses login-needed states and retains its existing
+attempt/time history across profile/output choices. A Ready Electron cannot
+substitute for Chrome's own Ready session. The ordinary `toolbar-history` command
+keeps its fresh temporary profile and removal behavior.
+
+Both existing semantic attempt ledgers admit before native launch. Electron's
+native Local Clip/Pin preflight completes before Chrome takes focus; Chrome's
+actual-toolbar Local Clip/Pin preflight also remains required. The case copies
+the real public signed target through Electron's process-memory clipboard, types
+it into the actual Chrome popup, observes the matching incoming request, clicks
+Electron Accept through native input, then checks reciprocal public Membership,
+Devices and Chrome's acceptance response. Product decoding and networking verify
+the signed target. Both device connections must traverse the selected relay with
+no direct device path. The target, names and auth payloads are never written to
+the public receipt. Both immutable runtime receipts require both positive owned
+cleanup outcomes; uncertainty or one companion failure prevents either pass.
+
+This observation qualifies one relay Accept case and the two preflights. It does
+not qualify rejection, restart or clip exchange, debugger-free Chrome worker
+lifecycle, or a different application revision. Preserve the native receipt's
+actual candidate revision when adopting it into another effort.
+
+For this joint case, build Chrome with the existing maintained forced-relay mode
+inside the frozen candidate, preserving the registered ID's actual value:
+
+```sh
+CLIPP_RELAY_ACCEPTANCE_TRANSPORT=wss \
+CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD=1 \
+VITE_CLIPP_REGISTERED_EXTENSION_ID="$CLIPP_REGISTERED_EXTENSION_ID" \
+npm --workspace apps/extension run build:relay-acceptance
+```
+
+The staged artifact root is
+`apps/extension/.local/relay-acceptance/wss`, not the ordinary `dist` build.
+The sidecar must bind that root, `relayAcceptanceTransport: "wss"` and
+`acceptanceMemoryClipboard: true` in addition
+to source revision, base record/artifact, browser identity, raw/real registered
+load paths, expected ID and every bundle file hash. Before any Pairing action the
+runner reads the existing owning offscreen `getStatus` and requires its compiled
+`relayAcceptanceTransport` to be `wss` and `acceptanceMemoryClipboard` to be true;
+metadata labels alone cannot qualify an
+ordinary build. Electron uses its normal compiled main and the existing runner's
+`CLIPP_RELAY_ACCEPTANCE_TRANSPORT=wss`/isolated profile environment. Both paths use
+the existing shared connection gate to reject direct device dials, inbound
+connections and WebRTC upgrades while retaining normal managed login/session and
+signed Pairing. Actual selected-relay route observations remain required too.
+No TLS, authentication or Pairing-signature bypass is enabled.
+
+The separate memory flag defaults to false, rejects enabling in ordinary builds,
+and does not alter transport-only native clipboard acceptance. When explicitly
+enabled it installs before application startup in every relevant extension world,
+suppresses content-script copy-event capture, isolates navigator read/write in
+per-context memory, and blocks legacy `execCommand` copy/cut/paste from reaching
+the OS. Offscreen app-owned writes use the working private-memory adapter. This
+mode makes no native Clipboard Exchange claim.
+
+From the frozen checkout, normal Chrome account setup uses:
+
+```sh
+node apps/extension/scripts/verify-clipboard-io.mjs \
+  --scenario toolbar-relay-account-preparation \
+  --effort approved-effort-id \
+  --history-root /absolute/durable-native-history \
+  --output /absolute/private-account-setup-evidence \
+  --candidate-record /absolute/frozen-case.candidate.json \
+  --extension-record /absolute/private-extension-sidecar.json \
+  --extension-directory /absolute/approved-registered-load-path \
+  --registered-extension-id "$CLIPP_REGISTERED_EXTENSION_ID" \
+  --discovery https://approved-relay.example/v1/relay \
+  --profile-root /absolute/canonical-native-state/owned-chrome-profiles \
+  --profile-record /absolute/canonical-native-state/owned-chrome-profiles/pairing.json \
+  --timeout-seconds 600
+```
+
+The user enters credentials only in normal Google UI. Setup records only the
+selected status/public identity and filtered ownership metadata; OAuth URLs,
+callback code/state, cookies and credential payloads are not dumped even in
+private operation diagnostics. Put the same profile arguments into
+`pairing.json`'s Chrome arguments before running the joint Electron command.
+The Electron owning profile must already have its own normal login; preserve its
+existing `--app-name` (for the selected UX profile, `Clipp UX Pairing Relay`).
+Retained Chrome history preflights use a fresh marker and exact new captured/pinned
+Clip ID, preserving prior clips/pins rather than resetting the profile.

@@ -6,7 +6,7 @@
     "path": ".scratch/ux-implementation"
   },
   "runArtifact": "ux-active-run",
-  "candidateId": "pending-ux-adoption-frozen-candidate",
+  "candidateId": "ux-pairing-20261029-1",
   "integrationBranches": {
     "client": "codex/ux-recovery-adoption-20261029"
   }

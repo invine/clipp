@@ -68,21 +68,22 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(fixture, { recursive: true, force: true }));
 function run(extra: string[] = [], environment: Record<string, string> = {}) {
+  const defaults = [
+    ["--history-root", path.join(fixture, "history")],
+    ["--effort", "approved-effort"],
+    ["--profile", path.join(fixture, "profile")],
+    ["--output", output],
+    ["--transport", "wss"],
+  ];
+  const selected = defaults.flatMap(([name, value]) =>
+    extra.includes(name) ? [] : [name, value]
+  );
   return spawnSync(
     process.execPath,
     [
       path.join(repo, "scripts/electron-relay-acceptance.mjs"),
-      "--history-root",
-      path.join(fixture, "history"),
-      "--effort",
-      "approved-effort",
-      "--profile",
-      path.join(fixture, "profile"),
-      "--output",
-      output,
-      "--transport",
-      "wss",
-      "--preflight-only",
+      ...selected,
+      ...(extra.includes("--preflight-only") ? [] : ["--preflight-only"]),
       ...extra,
     ],
     {

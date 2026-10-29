@@ -5,7 +5,10 @@ import polyfillNode from "rollup-plugin-polyfill-node";
 import inject from "@rollup/plugin-inject";
 import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfill";
 import { resolve } from "path";
-import { extensionRelayAcceptanceTransport } from "./src/relayAcceptance";
+import {
+  extensionRelayAcceptanceTransport,
+  extensionRelayAcceptanceMemoryClipboard,
+} from "./src/relayAcceptance";
 
 export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, __dirname, "CLIPP_RELAY_ACCEPTANCE_");
@@ -14,8 +17,15 @@ export default defineConfig(({ mode }) => {
     process.env.CLIPP_RELAY_ACCEPTANCE_TRANSPORT ??
       environment.CLIPP_RELAY_ACCEPTANCE_TRANSPORT
   );
+  const acceptanceMemory = extensionRelayAcceptanceMemoryClipboard(
+    mode,
+    process.env.CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD ??
+      environment.CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD
+  );
   return {
     define: {
+      __CLIPP_RELAY_ACCEPTANCE_MEMORY_CLIPBOARD__:
+        JSON.stringify(acceptanceMemory),
       __CLIPP_RELAY_ACCEPTANCE_TRANSPORT__: JSON.stringify(
         acceptanceTransport ?? null
       ),
@@ -23,7 +33,9 @@ export default defineConfig(({ mode }) => {
     plugins: [crx({ manifest })],
     optimizeDeps: {
       esbuildOptions: {
-        define: { global: "globalThis" },
+        define: {
+          global: "globalThis",
+        },
         plugins: [
           NodeGlobalsPolyfillPlugin({
             process: true,

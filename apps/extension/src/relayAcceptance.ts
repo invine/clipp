@@ -22,3 +22,16 @@ export function extensionRelayTransportAllows(
     ? /\/(?:wss|tls\/(?:sni\/[^/]+\/)?ws)\/p2p\//.test(address)
     : address.includes("/webrtc-direct/");
 }
+
+/** Native transport acceptance remains native unless this separate test flag is explicit. */
+export function extensionRelayAcceptanceMemoryClipboard(
+  mode: string,
+  flag: string | undefined
+): boolean {
+  if (!flag || flag === "0") return false;
+  if (flag !== "1")
+    throw new Error("unsupported_acceptance_memory_clipboard_flag");
+  if (mode !== "relay-acceptance")
+    throw new Error("acceptance_memory_clipboard_requires_test_build");
+  return true;
+}

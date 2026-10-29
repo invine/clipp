@@ -4,7 +4,11 @@
 
 **Blocked by:** [05 — Replace Electron's exhaustive preparation gate](05-replace-electron-preparation-gate.md), [06 — Run trustworthy Chrome acceptance on the intended surface](06-qualify-chrome-acceptance-surface.md), [07 — Deliver the verified Android acceptance tooling](07-qualify-android-acceptance-target.md), [08 — Resume from one compact, authoritative report](08-deliver-compact-resume-report.md), [09 — Make review and ticket closure advance the work](09-streamline-review-and-closure.md).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Assignee:** `/root/review_04_spec`
+
+**Claim:** ux-delivery-recovery-20261028-10; coordinator `/root`.
 
 **Parent:** [Approved specification](../spec.md).
 
@@ -23,4 +27,22 @@
 
 ## Selected consumer and retained qualification
 
-[The Android refinement](../android-qualification-refinement.md) narrows 07 to the verified tooling output; its repaired source is integrated, reviewed and checked at `36aadacaeeece30feca0b816dc3a17293db71e37`. The selected native consumer is qualified Chrome 06 plus Electron 05. Ticket 11 retains all original Android host obligations and does not block this Chrome path. Its unresolved qualification still prevents whole-effort acceptance; resolving 10 cannot close 11 or activate an unqualified runtime. Main-first adoption, dirty-work preservation, actual relay/authentication and the rest of this checklist are unchanged.
+[The Android refinement](../android-qualification-refinement.md) narrows 07 to the verified tooling output; its repaired source is integrated, reviewed and checked at `36aadacaeeece30feca0b816dc3a17293db71e37`. The selected native consumer is qualified Chrome 06 plus Electron 05. Ticket 11 retains all original Android host obligations and does not block this Chrome path. Ticket 11 owns Android qualification and the current recovery report owns its status and evidence. The Chrome journey does not replace that qualification or claim Android Pairing; resolving 10 cannot close 11 or activate an unqualified runtime. Main-first adoption, dirty-work preservation, actual relay/authentication and the rest of this checklist are unchanged.
+
+## Answer
+
+The current recovery entry and compact report own adoption state, exact candidate
+and source bindings, applicable claims and authorization, scenario outcomes,
+remaining work and immutable evidence pointers. The maintained joint runner is
+`scripts/electron-relay-acceptance.mjs --scenario relay-pairing`, documented in
+`docs/electron-relay-acceptance.md`; its normal Chrome/Electron Accept case retains
+both owning Local Clip/Pin preflights, independent relay authentication, selected
+relay route observations and both owned cleanups. Fixtures prove adapter controls
+only. Actual native receipts retain their original candidate revision, execution
+dates, scope and failures; a different recovery revision does not relabel them.
+
+Resolution requires the ticket's adoption, actual native case, accurate result
+recording, scoped advancement, evidence applicability, applicable verification,
+review and continuation obligations to be satisfied by those records. A failed
+or not-run native case and the broader Pairing matrix remain explicitly visible;
+this Answer does not assert their success.
