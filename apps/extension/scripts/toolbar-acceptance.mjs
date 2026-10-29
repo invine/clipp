@@ -214,6 +214,18 @@ export function targetGone(
 }
 
 function errorCode(error, stage) {
+  if (
+    [
+      "acceptance_memory_startup_required",
+      "pairing_forced_relay_runtime_required",
+      "owned_relay_configuration_unavailable",
+      "owned_relay_configuration_conflict",
+      "owned_relay_configuration_ambiguous",
+      "owned_relay_editor_ambiguous",
+      "account_preparation_deadline_exhausted",
+    ].includes(error?.message)
+  )
+    return error.message;
   if (error?.message?.includes("diagnostic_")) return "diagnostic_limit";
   if (error?.message === "toolbar_target_mismatch") return "wrong_target";
   if (error?.message === "extension_inventory_not_ready")
@@ -803,6 +815,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         : {}),
     };
     const openManagement = async () => {
+      operation = "open_owned_management";
       const page = await bounded(() => context.newPage());
       await bounded(() =>
         page.goto(`chrome-extension://${extensionId}/src/options.html`)
@@ -811,14 +824,21 @@ export async function runToolbarAcceptance(args, relayHooks) {
         page.url() === `chrome-extension://${extensionId}/src/options.html`,
         "toolbar_target_mismatch"
       );
+      operation = "verify_management_early_memory";
       const mapping = await bounded(() =>
         page.evaluate(() => ({
           id: chrome.runtime.id,
           earlyMemory: window.__clippAcceptanceEarlyMemoryClipboard === true,
         }))
       );
+      if (preparation)
+        receipt.preparation = {
+          managementIdentityMatches: mapping.id === extensionId,
+          earlyMemory: mapping.earlyMemory === true,
+        };
+      assert(mapping.id === extensionId, "toolbar_target_mismatch");
       assert(
-        mapping.id === extensionId && mapping.earlyMemory === true,
+        mapping.earlyMemory === true,
         "acceptance_memory_startup_required"
       );
       const request = (value) =>
@@ -829,31 +849,88 @@ export async function runToolbarAcceptance(args, relayHooks) {
             value
           )
         );
+      const readState = () =>
+        request({ type: "getRuntimeState" }).then((reply) => reply?.state);
+      const configurationShape = (state) => {
+        const configurations = state?.managedRelayConfigurations;
+        if (!Array.isArray(configurations)) return "unavailable";
+        if (configurations.length === 0) return "empty";
+        return configurations.length === 1 &&
+          configurations[0].kind === "managed" &&
+          configurations[0].discoveryUrl === options.discovery
+          ? "approved-single"
+          : "conflict";
+      };
+      const openSettings = async () => {
+        operation = "navigate_owned_settings";
+        await bounded(() => page.bringToFront());
+        const settings = page.getByRole("button", {
+          name: "Settings",
+          exact: true,
+        });
+        const destinations = await bounded(() => settings.count());
+        assert(destinations <= 1, "owned_settings_navigation_ambiguous");
+        if (destinations === 1)
+          await bounded(() =>
+            settings.click({ timeout: attempt.remainingMs(15000) })
+          );
+        const connections = page.getByRole("button", {
+          name: "Connections",
+          exact: true,
+        });
+        const categories = await bounded(() => connections.count());
+        assert(categories <= 1, "owned_settings_navigation_ambiguous");
+        if (categories === 1) {
+          operation = "navigate_owned_connections";
+          await bounded(() =>
+            connections.click({ timeout: attempt.remainingMs(15000) })
+          );
+        }
+      };
       return {
-        configureSelectedRelay: () =>
-          request({
-            type: "managedRelaySet",
-            configurations: [
-              {
-                key: "pairing-owned-relay",
-                name: "Pairing relay",
-                kind: "managed",
-                discoveryUrl: options.discovery,
-              },
-            ],
-          }),
-        async beginNormalLogin() {
-          await bounded(() => page.bringToFront());
-          const settings = page.getByRole("button", {
-            name: "Settings",
-            exact: true,
+        configurationShape,
+        async configureSelectedRelay() {
+          await openSettings();
+          operation = "open_owned_relay_editor";
+          await bounded(() =>
+            page
+              .getByRole("button", { name: "Add relay", exact: true })
+              .click({ timeout: attempt.remainingMs(15000) })
+          );
+          const editor = page.locator(".managed-relay-editor");
+          operation = "fill_owned_relay_configuration";
+          await bounded(() =>
+            editor
+              .getByLabel("Name", { exact: true })
+              .fill("Pairing relay", { timeout: attempt.remainingMs(15000) })
+          );
+          await bounded(() =>
+            editor
+              .getByLabel("HTTPS discovery URL", { exact: true })
+              .fill(options.discovery, { timeout: attempt.remainingMs(15000) })
+          );
+          operation = "save_owned_relay_configuration";
+          receipt.preparation.configurationResult = "save-requested";
+          await bounded(() =>
+            editor
+              .getByRole("button", { name: "Save", exact: true })
+              .click({ timeout: attempt.remainingMs(15000) })
+          );
+          operation = "observe_owned_relay_configuration_save";
+          receipt.preparation.configurationResult = "not-confirmed";
+          await waitFor(async () => {
+            const shape = configurationShape(await readState());
+            receipt.preparation.configurationShape = shape;
+            assert(shape !== "conflict", "owned_relay_configuration_conflict");
+            const editors = await bounded(() => editor.count());
+            assert(editors <= 1, "owned_relay_editor_ambiguous");
+            return shape === "approved-single" && editors === 0;
           });
-          const destinations = await bounded(() => settings.count());
-          assert(destinations <= 1, "owned_settings_navigation_ambiguous");
-          if (destinations === 1)
-            await bounded(() =>
-              settings.click({ timeout: attempt.remainingMs(15000) })
-            );
+          receipt.preparation.configurationResult = "applied-observed";
+        },
+        async beginNormalLogin() {
+          await openSettings();
+          operation = "request_normal_managed_relay_login";
           const card = page
             .locator(".managed-relay-card")
             .filter({ hasText: options.discovery });
@@ -875,8 +952,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
               .click({ timeout: attempt.remainingMs(15000) })
           );
         },
-        readState: () =>
-          request({ type: "getRuntimeState" }).then((reply) => reply?.state),
+        readState,
         readTransportStatus: () => request({ type: "getStatus" }),
       };
     };
@@ -1011,24 +1087,37 @@ export async function runToolbarAcceptance(args, relayHooks) {
     };
     if (preparation) {
       stage = "account-preparation";
-      operation = "normal_user_managed_relay_login";
       const runtime = await openManagement();
+      operation = "read_owned_transport_status";
       const status = await runtime.readTransportStatus();
+      receipt.preparation.transport = {
+        started: status?.started === true,
+        transport: ["wss", "webrtc-direct"].includes(
+          status?.relayAcceptanceTransport
+        )
+          ? status.relayAcceptanceTransport
+          : "unavailable",
+        memory: status?.acceptanceMemoryClipboard === true,
+      };
       assert(
         status?.started === true &&
           status.relayAcceptanceTransport === "wss" &&
           status.acceptanceMemoryClipboard === true,
         "pairing_forced_relay_runtime_required"
       );
+      operation = "record_owned_startup_isolation";
       await bounded(() => profileLease.confirmStartupIsolation());
+      operation = "read_owned_relay_configuration";
       const initial = await runtime.readState();
+      receipt.preparation.configurationShape =
+        runtime.configurationShape(initial);
+      receipt.preparation.configurationResult = "not-requested";
       assert(
         Array.isArray(initial?.managedRelayConfigurations),
         "owned_relay_configuration_unavailable"
       );
       if (initial.managedRelayConfigurations.length === 0) {
-        const configured = await runtime.configureSelectedRelay();
-        assert(configured?.ok === true, "owned_relay_configuration_failed");
+        await runtime.configureSelectedRelay();
       } else
         assert(
           initial.managedRelayConfigurations.length === 1 &&
@@ -1041,6 +1130,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         "Owned Chrome account preparation: complete normal Google sign-in in the visible browser window. The approved relay is configured through the normal app, and this setup command closes the owned window after Ready. This is not Pairing qualification."
       );
       let loginRequested = false;
+      operation = "observe_owned_relay_ready";
       const state = await waitFor(async () => {
         const state = await runtime.readState();
         const configurations =
@@ -1064,6 +1154,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         if (selected?.status === "login_needed" && !loginRequested) {
           loginRequested = true;
           await runtime.beginNormalLogin();
+          operation = "observe_owned_relay_ready";
           return null;
         }
         const ready =
