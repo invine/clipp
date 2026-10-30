@@ -423,10 +423,27 @@ operator prerequisite. This command neither replaces a registered bundle nor
 copies a Chrome profile, Device Identity, credential or login token. Before the
 bounded Pairing case, run the explicit normal account-preparation phase below
 with its own named setup history. It creates an owned profile under the canonical
-host acceptance root, configures only the approved relay when defaults are empty,
-opens the normal Log in UI and waits for the user to complete Google sign-in.
-After verified shutdown it retains the same profile, private ownership receipt
-and immutable setup proof. This is account setup, not native Pairing qualification.
+host acceptance root. Within one setup attempt and deadline it first launches plain
+owned Chrome at `chrome://extensions/`, without a debugger or automation flags.
+The user enables Developer mode, uses **Load unpacked** with the exact printed
+approved path, checks the printed registered ID, and opens the normal extension
+options. In Settings / Connections the user adds only the approved relay if
+absent, uses **Log in**, completes Google authorization, then quits that owned
+Chrome. Do not open DevTools or use an ordinary profile. The frozen build's early
+memory boundary applies without debugger injection; this is a source guarantee,
+not a runtime observation of the human phase.
+
+Only after positive owned closure is recorded does setup relaunch the same profile
+for controlled verification. It requires the already normally installed, enabled,
+unique matching ID/path; it never silently installs or logs in under the debugger.
+It independently observes early memory isolation, actual offscreen WSS/memory,
+approved relay Ready and the public Device Identity before final verified shutdown
+and immutable preparation proof. Human readiness claims alone cannot pass. Missing
+installation or login-needed state fails as a prerequisite; uncertain closure
+retains ownership and prevents the next launch. This is account setup, not native
+Pairing qualification. CDP-loaded extensions are session installations and cannot
+substitute for normal persistent Load unpacked. Pairing reuses that same normal
+installation rather than reinstalling it.
 
 The Pairing manifest's Chrome arguments must include `--profile-root` and
 `--profile-record`. The allowed profile root is exactly
