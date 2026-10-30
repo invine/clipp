@@ -6,7 +6,7 @@
     "path": ".scratch/ux-delivery-recovery"
   },
   "runArtifact": "active-run",
-  "candidateId": "recovery-tooling-20261030-12",
+  "candidateId": "recovery-tooling-20261031-14",
   "integrationBranches": {
     "client": "codex/ux-delivery-recovery-integration"
   }
