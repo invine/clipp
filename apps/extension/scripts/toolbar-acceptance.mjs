@@ -46,7 +46,9 @@ function optionsFor(args) {
     assert(args[index].startsWith("--"), "option_flag_required");
     const name = args[index].replace(/^--/, "");
     assert(options[name] === undefined, "unique_option_value_required");
-    if (["validate-only", "freeze-extension"].includes(name))
+    if (
+      ["validate-only", "freeze-extension", "verification-only"].includes(name)
+    )
       options[name] = true;
     else {
       assert(known.has(name) || name === "scenario", "unknown_argument");
@@ -249,6 +251,13 @@ export async function runToolbarAcceptance(args, relayHooks) {
   const pairing = options.scenario === "toolbar-relay-pairing";
   const preparation = options.scenario === "toolbar-relay-account-preparation";
   const ownedRelay = pairing || preparation;
+  const verificationOnly = options["verification-only"] === true;
+  assert(
+    !verificationOnly || preparation,
+    "verification_only_preparation_required"
+  );
+  let applicationRoot = root;
+  let verifiedApplicationRoot;
   const setupMaximum = Number(options["timeout-seconds"] ?? 600) * 1000;
   assert(
     Number.isSafeInteger(setupMaximum) &&
@@ -323,6 +332,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
           await import("./owned-relay-profile.mjs")
         ).acquireOwnedRelayProfile(options, {
           preparation: true,
+          verificationOnly,
           verifyClosed: targetGone,
         })
       : undefined);
@@ -435,7 +445,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
     attempt.assertBudget();
     try {
       return execFileSync(bin, argv, {
-        cwd: root,
+        cwd: applicationRoot,
         encoding: "utf8",
         timeout: Math.min(
           attempt.remainingMs(maximum),
@@ -450,13 +460,64 @@ export async function runToolbarAcceptance(args, relayHooks) {
   }
   async function verifyBase() {
     const base = await bounded(() => json(options["candidate-record"]));
+    const checkout = base.source?.checkout;
     assert(
-      (await bounded(() => realpath(base.source.checkout))) === root,
+      typeof checkout === "string" &&
+        isAbsolute(checkout) &&
+        checkout.length <= 4096,
       "candidate_wrong_checkout"
     );
+    const physical = await bounded(() => realpath(checkout));
+    assert(
+      !verifiedApplicationRoot || physical === verifiedApplicationRoot,
+      "candidate_wrong_checkout"
+    );
+    if (verificationOnly) {
+      const stat = await bounded(() => lstat(checkout));
+      assert(
+        stat.isDirectory() && !stat.isSymbolicLink() && physical === checkout,
+        "candidate_wrong_checkout"
+      );
+      for (const evidence of [
+        options.output,
+        options["history-root"],
+        recordLocation,
+        options["profile-root"],
+        options["profile-record"],
+      ]) {
+        const rel = relative(checkout, evidence);
+        assert(
+          rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel),
+          "durable_evidence_outside_candidate_required"
+        );
+      }
+      const verifier = join(
+        checkout,
+        "scripts/prepare-acceptance-candidate.mjs"
+      );
+      const verifierStat = await bounded(() => lstat(verifier));
+      assert(
+        verifierStat.isFile() &&
+          !verifierStat.isSymbolicLink() &&
+          verifierStat.size <= 262144 &&
+          (await bounded(() => realpath(verifier))) === verifier,
+        "candidate_verifier_regular_file_required"
+      );
+      const trusted = hash(
+        await bounded(() =>
+          readFile(join(root, "scripts/prepare-acceptance-candidate.mjs"))
+        )
+      );
+      assert(
+        base.preparer === trusted &&
+          hash(await bounded(() => readFile(verifier))) === trusted,
+        "candidate_verifier_untrusted"
+      );
+      applicationRoot = checkout;
+    } else assert(physical === root, "candidate_wrong_checkout");
     const verified = JSON.parse(
       command(process.execPath, [
-        join(root, "scripts/prepare-acceptance-candidate.mjs"),
+        join(applicationRoot, "scripts/prepare-acceptance-candidate.mjs"),
         "verify",
         "--record",
         options["candidate-record"],
@@ -468,6 +529,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         verified.artifact,
       "candidate_verification_invalid"
     );
+    verifiedApplicationRoot = applicationRoot;
     return { ...base, artifact: verified.artifact };
   }
   async function waitFor(probe, maximum = 15000) {
@@ -480,9 +542,24 @@ export async function runToolbarAcceptance(args, relayHooks) {
     throw new Error("acceptance_operation_timeout");
   }
   try {
+    if (verificationOnly) {
+      receipt.verificationOnly = true;
+      receipt.tooling = { root, scripts: {} };
+      for (const file of [
+        "apps/extension/scripts/toolbar-acceptance.mjs",
+        "apps/extension/scripts/owned-relay-profile.mjs",
+        "apps/extension/scripts/verify-clipboard-io.mjs",
+        "apps/extension/scripts/clipboard-acceptance.mjs",
+        "scripts/native-acceptance-attempts.mjs",
+        "scripts/prepare-acceptance-candidate.mjs",
+      ])
+        receipt.tooling.scripts[file] = hash(
+          await bounded(() => readFile(join(root, file)))
+        );
+    }
     const base = await verifyBase();
     const stagedExtension = join(
-      root,
+      applicationRoot,
       ownedRelay
         ? "apps/extension/.local/relay-acceptance/wss"
         : "apps/extension/dist"
@@ -593,6 +670,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         );
     }
     receipt.candidate = {
+      ...(verificationOnly ? { checkout: applicationRoot } : {}),
       revision: candidate.sourceRevision,
       baseArtifact: candidate.baseArtifact,
       extensionSha256: hash(JSON.stringify(candidate.artifacts)),
@@ -704,7 +782,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         phase: "identity-observed",
       });
     }
-    if (preparation) {
+    if (preparation && !verificationOnly) {
       stage = "human-account-preparation";
       operation = "launch_human_browser";
       receipt.humanPreparation = {
@@ -1413,12 +1491,44 @@ export async function runToolbarAcceptance(args, relayHooks) {
     receipt.classification = "none";
     receipt.stage = "complete";
   } catch (error) {
+    const guardReason =
+      typeof error?.message === "string"
+        ? error.message.split("\n", 1)[0]
+        : undefined;
     privateFailure = {
       stage,
       operation,
       protocol,
       error: ownedRelay
-        ? { name: "OwnedRelayOperationError", code: errorCode(error, stage) }
+        ? {
+            name: "OwnedRelayOperationError",
+            code: errorCode(error, stage),
+            ...(verificationOnly &&
+            new Set([
+              "candidate_metadata_invalid",
+              "candidate_command_failed",
+              "candidate_wrong_checkout",
+              "bounded_regular_metadata_required",
+              "candidate_verifier_regular_file_required",
+              "candidate_verifier_untrusted",
+              "durable_evidence_outside_candidate_required",
+              "candidate_verification_invalid",
+              "candidate_record_mismatch",
+              "candidate_browser_changed",
+              "candidate_extension_artifacts_changed",
+              "candidate_staged_extension_changed",
+              "pairing_registration_mapping_mismatch",
+              "owned_profile_candidate_binding_changed",
+              "owned_profile_chrome_lock_present",
+              "owned_profile_preparation_proof_invalid",
+              "owned_relay_profile_preparation_required",
+              "owned_human_login_required",
+              "acceptance_memory_startup_required",
+              "pairing_forced_relay_runtime_required",
+            ]).has(guardReason)
+              ? { guard: guardReason }
+              : {}),
+          }
         : {
             name: String(error?.name ?? "UnknownError").slice(0, 128),
             message: String(error?.message ?? "unknown").slice(0, 4096),

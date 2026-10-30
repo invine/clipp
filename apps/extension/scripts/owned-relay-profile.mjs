@@ -75,10 +75,14 @@ function inside(parent, child) {
 
 export async function acquireOwnedRelayProfile(
   options,
-  { preparation, verifyClosed }
+  { preparation, verificationOnly = false, verifyClosed }
 ) {
   return raceAcceptanceOperation(
     async () => {
+      assert(
+        !verificationOnly || preparation,
+        "verification_only_preparation_required"
+      );
       assert(
         options["profile-root"] && options["profile-record"],
         "owned_relay_profile_preparation_required"
@@ -145,9 +149,20 @@ export async function acquireOwnedRelayProfile(
         record = await privateMetadata(recordPath);
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
-        assert(preparation, "owned_relay_profile_preparation_required");
+        assert(
+          preparation && !verificationOnly,
+          "owned_relay_profile_preparation_required"
+        );
       }
       if (record) {
+        if (verificationOnly)
+          assert(
+            ["closed-unprepared", "prepared"].includes(record.status) &&
+              record.binding &&
+              record.lastTarget &&
+              record.historyRoot === (await realpath(options["history-root"])),
+            "owned_profile_verification_continuation_required"
+          );
         assert(
           record.version === 1 &&
             record.kind === "clipp-owned-relay-profile" &&
@@ -176,7 +191,7 @@ export async function acquireOwnedRelayProfile(
         );
         if (record.lastTarget)
           assert(
-            verifyClosed(record.lastTarget, Date.now() + 2000),
+            (await verifyClosed(record.lastTarget, Date.now() + 2000)) === true,
             "owned_profile_previous_process_unconfirmed"
           );
         else
@@ -282,7 +297,8 @@ export async function acquireOwnedRelayProfile(
             assert(
               JSON.stringify(record.binding) === JSON.stringify(binding) &&
                 (!record.lastTarget ||
-                  record.startupIsolationVerified === true),
+                  record.startupIsolationVerified === true ||
+                  verificationOnly),
               "owned_profile_candidate_binding_changed"
             );
           else record.binding = binding;

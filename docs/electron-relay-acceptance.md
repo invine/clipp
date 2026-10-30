@@ -530,6 +530,30 @@ node apps/extension/scripts/verify-clipboard-io.mjs \
   --timeout-seconds 600
 ```
 
+If normal sign-in and owned closure completed but preparation failed before Ready,
+the maintained tooling may retry only verification using the same arguments plus
+`--verification-only`, a changed diagnosis and its expected observation. This uses
+the same semantic scenario and budget; it grants no new attempt or time allowance.
+It requires an existing closed-unprepared or prepared owned record, matching
+marker/nonce and exact candidate/route/browser/bundle binding, positive closure of
+the last target, and no SingletonLock. Ordinary preparation reuse and Pairing keep
+their existing proof barriers. Missing or expired login fails without starting
+human authentication, configuration changes, OAuth or extension installation.
+
+For this mode only, invoke the reviewed maintained tooling while leaving the app
+candidate frozen: its physical application checkout is read from the existing
+candidate record. Before execution, the bounded regular frozen verifier must hash
+identically to both that record's preparer and the maintained trusted preparer.
+The verifier and staged extension use the validated application root; evidence
+stays outside both checkouts. Freeze/build is forbidden. The receipt records the
+maintained tooling script hashes separately from the app revision and artifacts.
+Only current exact installation inventory, early memory/WSS runtime proof, public
+Ready/identity and positive final closure produce a preparation proof. This mode
+never qualifies Pairing itself or retroactively verifies the earlier human phase.
+Pre-admission ownership refusals keep their existing fixed codes and create no
+attempt merely for logging; post-admission verification failures retain only an
+allowlisted guard code in private diagnostics, without raw exception details.
+
 The user enters credentials only in normal Google UI. Setup records only the
 selected status/public identity and filtered ownership metadata; OAuth URLs,
 callback code/state, cookies and credential payloads are not dumped even in
