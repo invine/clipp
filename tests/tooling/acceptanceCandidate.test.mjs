@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { beginNativeAttempt } from "../../scripts/native-acceptance-attempts.mjs";
+
 const command = resolve("scripts/prepare-acceptance-candidate.mjs");
 const localGitVariables = spawnSync("git", ["rev-parse", "--local-env-vars"], {
   encoding: "utf8",
@@ -1875,3 +1877,171 @@ test("retained-profile diagnostics qualify a fresh Clip and Pin while preserving
   assert.equal(next.behavior.priorPinnedCount, 1);
   assert.equal(next.behavior.exactNewPin, true);
 });
+
+test("semantic budget renewal accepts failed history followed by a charged not-run diagnostic", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "clipp-renewal-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const options = {
+    output: join(root, "output"),
+    historyRoot: join(root, "history"),
+    registryRoot: join(root, "registry"),
+    identity: {
+      effort: "synthetic-renewal",
+      scenario: "setup",
+      environment: "synthetic",
+    },
+    scenario: "setup",
+  };
+  let previousHistory;
+  for (const [index, result] of [
+    "not-run",
+    "failed",
+    "not-run",
+    "failed",
+    "not-run",
+  ].entries()) {
+    const attempt = await beginNativeAttempt({
+      ...options,
+      change: `diagnosis-${index}`,
+      expectation: "distinguish synthetic setup",
+    });
+    await attempt.finish({
+      result,
+      stage: "synthetic",
+      shutdown: "not-launched",
+    });
+    previousHistory = attempt.history;
+  }
+  const prior = JSON.parse(readFileSync(previousHistory, "utf8"));
+  const receipts = prior.attempts.map((attempt) => {
+    const file = join(previousHistory, "..", attempt.receipt);
+    return [file, readFileSync(file, "utf8")];
+  });
+  await assert.rejects(
+    beginNativeAttempt({
+      ...options,
+      change: "without-renewal",
+      expectation: "no budget reset",
+    }),
+    /diagnostic_attempt_budget_exhausted/
+  );
+  const renewal = join(root, "renewal.json");
+  writeFileSync(
+    renewal,
+    JSON.stringify({
+      previousHistory,
+      authorizedBy: "synthetic explicit decision",
+      reason: "synthetic environment repaired",
+    })
+  );
+  const attempt = await beginNativeAttempt({
+    ...options,
+    renewal,
+    change: "environment-repaired",
+    expectation: "setup now settles",
+  });
+  assert.equal(attempt.number, 1);
+  assert.notEqual(attempt.history, previousHistory);
+  const receipt = {
+    result: "not-run",
+    stage: "synthetic",
+    shutdown: "not-launched",
+  };
+  await attempt.finish(receipt);
+  assert.equal(receipt.history.generation, 1);
+  assert.equal(receipt.history.predecessor, previousHistory);
+  const retained = JSON.parse(readFileSync(previousHistory, "utf8"));
+  const { renewedBy, ...unchanged } = retained;
+  assert.deepEqual(unchanged, prior);
+  assert.equal(renewedBy.decision.previousHistory, previousHistory);
+  for (const [file, bytes] of receipts)
+    assert.equal(readFileSync(file, "utf8"), bytes);
+  const next = JSON.parse(readFileSync(attempt.history, "utf8"));
+  assert.equal(next.attempts[0].change, "environment-repaired");
+  assert.equal(next.diagnosticStartedAt, next.attempts[0].startedAt);
+});
+
+for (const [results, allowed] of [
+  [["not-run"], false],
+  [["failed", "passed", "not-run"], false],
+  [["passed", "failed", "not-run"], true],
+  [["failed", "running", "not-run"], false],
+  [["failed", "unknown", "not-run"], false],
+]) {
+  test(`semantic budget renewal ${allowed ? "accepts" : "refuses"} history ${results.join(" then ")}`, async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "clipp-renewal-refusal-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const options = {
+      output: join(root, "output"),
+      historyRoot: join(root, "history"),
+      registryRoot: join(root, "registry"),
+      identity: {
+        effort: "synthetic-renewal",
+        scenario: "setup",
+        environment: "synthetic",
+      },
+      scenario: "setup",
+    };
+    let previousHistory;
+    for (const [index, result] of results.entries()) {
+      const attempt = await beginNativeAttempt({
+        ...options,
+        change: `diagnosis-${index}`,
+        expectation: "distinguish synthetic setup",
+      });
+      // Seed the later-pass case as non-passing first; ordinary admission already
+      // refuses extending a passed history. The durable fixture below challenges
+      // renewal even if an imported/retained history contains a later not-run.
+      await attempt.finish({
+        result: ["failed", "not-run"].includes(result) ? result : "not-run",
+        stage: "synthetic",
+        shutdown: "not-launched",
+      });
+      previousHistory = attempt.history;
+    }
+    for (const [index, result] of results.entries()) {
+      if (["failed", "not-run"].includes(result)) continue;
+      const history = JSON.parse(readFileSync(previousHistory, "utf8"));
+      const changed = history.attempts[index];
+      changed.result = result;
+      writeFileSync(previousHistory, JSON.stringify(history));
+      const file = join(previousHistory, "..", changed.receipt);
+      const receipt = JSON.parse(readFileSync(file, "utf8"));
+      receipt.result = result;
+      writeFileSync(file, JSON.stringify(receipt));
+    }
+    const before = readFileSync(previousHistory, "utf8");
+    const renewal = join(root, "renewal.json");
+    writeFileSync(
+      renewal,
+      JSON.stringify({
+        previousHistory,
+        authorizedBy: "synthetic explicit decision",
+        reason: "synthetic environment repaired",
+      })
+    );
+    const admission = beginNativeAttempt({
+      ...options,
+      renewal,
+      change: "environment-repaired",
+      expectation: "setup now settles",
+    });
+    if (allowed) {
+      const attempt = await admission;
+      assert.notEqual(attempt.history, previousHistory);
+      await attempt.finish({
+        result: "not-run",
+        stage: "synthetic",
+        shutdown: "not-launched",
+      });
+      assert.deepEqual(
+        JSON.parse(readFileSync(previousHistory, "utf8")).attempts,
+        JSON.parse(before).attempts
+      );
+    } else {
+      await assert.rejects(admission, /renewal_must_reference_failed_history/);
+      assert.equal(readFileSync(previousHistory, "utf8"), before);
+      assert.equal(existsSync(join(previousHistory, "../../budget-1")), false);
+    }
+  });
+}

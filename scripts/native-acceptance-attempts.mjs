@@ -413,7 +413,8 @@ export async function beginNativeAttempt(options) {
       );
       const prior = JSON.parse(await readFile(previous.history, "utf8"));
       assert(
-        prior.attempts.length && prior.attempts.at(-1).result === "failed",
+        prior.attempts.findLast((attempt) => attempt.result !== "not-run")
+          ?.result === "failed",
         "renewal_must_reference_failed_history"
       );
       assert(!prior.renewedBy, "renewal_already_consumed");
