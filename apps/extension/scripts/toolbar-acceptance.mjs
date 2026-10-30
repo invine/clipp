@@ -219,6 +219,7 @@ function errorCode(error, stage) {
       "acceptance_memory_startup_required",
       "pairing_forced_relay_runtime_required",
       "owned_relay_configuration_unavailable",
+      "owned_human_login_required",
       "owned_relay_configuration_conflict",
       "owned_relay_configuration_ambiguous",
       "owned_relay_editor_ambiguous",
@@ -372,7 +373,11 @@ export async function runToolbarAcceptance(args, relayHooks) {
   let privateFailure;
   let preparedObservation;
   const protocol = {
+    expectedRegisteredId: ownedRelay
+      ? options["registered-extension-id"]
+      : null,
     acknowledgedId: null,
+    installedObservedId: null,
     inventoryObservations: 0,
     lastInventories: [],
   };
@@ -384,8 +389,14 @@ export async function runToolbarAcceptance(args, relayHooks) {
     stage,
     scenario: options.scenario,
     clipboard: {
-      hostUsed: false,
-      hostChanged: false,
+      ...(preparation
+        ? {
+            sourceAssertion: { hostUsed: false, hostChanged: false },
+            observationScope: "controlled-verification-only",
+            humanRuntimeObserved: false,
+            controlledRuntimeObserved: false,
+          }
+        : { hostUsed: false, hostChanged: false }),
       boundary: ownedRelay
         ? "per-context-private-memory-before-product-startup"
         : "popup-memory-read-empty-write-rejected",
@@ -591,46 +602,155 @@ export async function runToolbarAcceptance(args, relayHooks) {
       profile = await bounded(() =>
         mkdtemp(join(attempt.directory, "profile-"))
       );
-    if (profileLease) await bounded(() => profileLease.prepareLaunch());
-    workerOwnership = runnerOwnership(attempt.remainingMs(1000));
-    targetOwnership = { ...workerOwnership, profile };
-    stage = "launch";
-    operation = "launch_owned_browser";
-    await recordOwnership({ phase: "launch-intent" });
-    child = spawn(
-      executable,
-      [
-        `--user-data-dir=${profile}`,
-        "--remote-debugging-port=0",
-        "--enable-unsafe-extension-debugging",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "about:blank",
-      ],
-      { stdio: "ignore", detached: true }
-    );
-    child.on("error", () => {});
-    child.once("exit", () => {
-      exitObserved = true;
-    });
-    assert(child.pid, "browser_launch_failed");
-    await recordOwnership({ pid: child.pid, phase: "pid-recorded" });
-    identity = processIdentity(child.pid, attempt.remainingMs(1000));
-    assert(
-      identity.birth &&
-        identity.fingerprint &&
-        identity.command.includes(executable) &&
-        identity.command.includes(`--user-data-dir=${profile}`),
-      "browser_identity_unavailable"
-    );
-    identity.executable = executable;
-    await recordOwnership({
-      pid: child.pid,
-      executable: identity.executable,
-      birth: identity.birth,
-      fingerprint: identity.fingerprint,
-      phase: "identity-observed",
-    });
+    async function verifyLaunchInputs() {
+      const current = await verifyBase();
+      assert(
+        current.artifact === base.artifact &&
+          current.source.revision === base.source.revision,
+        "candidate_record_mismatch"
+      );
+      assert(
+        (await bounded(() => realpath(loadPath))) === extension,
+        "candidate_extension_artifacts_changed"
+      );
+      assert.deepEqual(
+        await bounded(() => artifacts(extension)),
+        candidate.artifacts,
+        "candidate_extension_artifacts_changed"
+      );
+      assert.deepEqual(
+        await bounded(() => artifacts(stagedExtension)),
+        candidate.artifacts,
+        "candidate_staged_extension_changed"
+      );
+      assert.deepEqual(
+        {
+          path: await bounded(() => realpath(executable)),
+          sha256: hash(await bounded(() => readFile(executable))),
+          version: command(executable, ["--version"], 5000).trim(),
+        },
+        browserIdentity,
+        "candidate_browser_changed"
+      );
+    }
+    async function launchOwnedBrowser(human = false) {
+      if (child)
+        assert(
+          exitObserved &&
+            targetGone(
+              targetOwnership,
+              Date.now() + Math.min(2000, attempt.remainingMs(2000)),
+              workerOwnership
+            ),
+          "owned_browser_previous_closure_unconfirmed"
+        );
+      if (ownedRelay) {
+        stage = "candidate";
+        operation = human
+          ? "verify_human_launch_inputs"
+          : "verify_controlled_launch_inputs";
+        await verifyLaunchInputs();
+      }
+      child = undefined;
+      if (profileLease) await bounded(() => profileLease.prepareLaunch());
+      workerOwnership ??= runnerOwnership(attempt.remainingMs(1000));
+      exitObserved = false;
+      identity = undefined;
+      targetOwnership = {
+        ...workerOwnership,
+        profile,
+        launchPhase: human ? "human" : "controlled",
+      };
+      stage = human ? "human-account-preparation" : "launch";
+      operation = human ? "launch_human_browser" : "launch_owned_browser";
+      await recordOwnership({ phase: "launch-intent" });
+      child = spawn(
+        executable,
+        [
+          `--user-data-dir=${profile}`,
+          ...(human
+            ? []
+            : [
+                "--remote-debugging-port=0",
+                "--enable-unsafe-extension-debugging",
+              ]),
+          "--no-first-run",
+          "--no-default-browser-check",
+          human ? "chrome://extensions/" : "about:blank",
+        ],
+        { stdio: "ignore", detached: true }
+      );
+      const launched = child;
+      launched.on("error", () => {});
+      launched.once("exit", () => {
+        if (child === launched) exitObserved = true;
+      });
+      assert(child.pid, "browser_launch_failed");
+      await recordOwnership({ pid: child.pid, phase: "pid-recorded" });
+      identity = processIdentity(child.pid, attempt.remainingMs(1000));
+      assert(
+        identity.birth &&
+          identity.fingerprint &&
+          identity.command.includes(executable) &&
+          identity.command.includes(`--user-data-dir=${profile}`),
+        "browser_identity_unavailable"
+      );
+      identity.executable = executable;
+      await recordOwnership({
+        pid: child.pid,
+        executable: identity.executable,
+        birth: identity.birth,
+        fingerprint: identity.fingerprint,
+        phase: "identity-observed",
+      });
+    }
+    if (preparation) {
+      stage = "human-account-preparation";
+      operation = "launch_human_browser";
+      receipt.humanPreparation = {
+        debuggerAttached: false,
+        runtimeIsolationObserved: false,
+        clipboardBoundary: "frozen-build-only",
+        shutdown: "not-launched",
+      };
+      console.log(
+        `Owned Chrome human preparation: in chrome://extensions enable Developer mode and Load unpacked ONLY ${loadPath}; verify extension ID ${options["registered-extension-id"]}. Open its normal options, Settings / Connections, add only relay ${options.discovery} if absent, and use its normal Log in control. Complete Google authorization yourself, then Quit this owned Chrome. Do not open DevTools. Your statement of readiness is not verification; the next controlled launch independently checks public Ready. No Pairing is qualified here.`
+      );
+      await launchOwnedBrowser(true);
+      receipt.humanPreparation.shutdown = "unconfirmed";
+      operation = "wait_for_human_browser_exit";
+      await waitFor(() => exitObserved, setupMaximum);
+      assert(
+        child.exitCode === 0 && child.signalCode === null,
+        "human_browser_exit_unexpected"
+      );
+      operation = "verify_human_browser_closed";
+      await waitFor(() =>
+        targetGone(
+          targetOwnership,
+          Date.now() + Math.min(2000, attempt.remainingMs(2000)),
+          workerOwnership
+        )
+      );
+      const closureProof = join(
+        attempt.directory,
+        "human-browser-closure.json"
+      );
+      await bounded(() =>
+        writeFile(
+          closureProof,
+          JSON.stringify({
+            ...targetOwnership,
+            shutdown: "verified-owned-browser-closed",
+          }),
+          { flag: "wx", mode: 0o600 }
+        )
+      );
+      receipt.humanPreparation.shutdown = "verified-owned-browser-closed";
+      receipt.humanPreparation.closureProof = closureProof;
+      await recordOwnership({ phase: "human-closure-verified", closureProof });
+    }
+    await launchOwnedBrowser();
     const port = await waitFor(async () => {
       if (ownedRelay)
         assert(
@@ -738,28 +858,29 @@ export async function runToolbarAcceptance(args, relayHooks) {
       return result.extensions;
     };
     await inventory();
-    operation = "load_owned_unpacked_extension";
-    const acknowledgement = await bounded(() =>
-      session.send("Extensions.loadUnpacked", { path: loadPath })
-    );
-    assert(
-      typeof acknowledgement.id === "string" &&
-        acknowledgement.id.length > 0 &&
-        acknowledgement.id.length <= 128,
-      "extension_load_acknowledgement_invalid"
-    );
-    if (ownedRelay)
-      assert(
-        acknowledgement.id === options["registered-extension-id"],
-        "pairing_registration_mapping_mismatch"
+    let expectedId = options["registered-extension-id"];
+    if (!ownedRelay) {
+      operation = "load_owned_unpacked_extension";
+      const acknowledgement = await bounded(() =>
+        session.send("Extensions.loadUnpacked", { path: loadPath })
       );
-    protocol.acknowledgedId = acknowledgement.id;
+      assert(
+        typeof acknowledgement.id === "string" &&
+          acknowledgement.id.length > 0 &&
+          acknowledgement.id.length <= 128,
+        "extension_load_acknowledgement_invalid"
+      );
+      protocol.acknowledgedId = acknowledgement.id;
+      expectedId = acknowledgement.id;
+    }
     operation = "observe_loaded_extension_inventory";
     let loaded;
     try {
       loaded = await waitFor(async () => {
         const entries = await inventory();
-        const selected = entries.find((item) => item.id === acknowledgement.id);
+        const matches = entries.filter((item) => item.id === expectedId);
+        assert(matches.length <= 1, "toolbar_target_mismatch");
+        const selected = matches[0];
         if (!selected) {
           assert(
             !entries.some((item) => item.path === extension),
@@ -793,6 +914,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         extensionId === options["registered-extension-id"],
         "pairing_registration_mapping_mismatch"
       );
+    protocol.installedObservedId = extensionId;
     const worker = await waitFor(async () =>
       context
         .serviceWorkers()
@@ -861,106 +983,17 @@ export async function runToolbarAcceptance(args, relayHooks) {
           ? "approved-single"
           : "conflict";
       };
-      const openSettings = async () => {
-        operation = "navigate_owned_settings";
-        await bounded(() => page.bringToFront());
-        const settings = page.getByRole("button", {
-          name: "Settings",
-          exact: true,
-        });
-        const destinations = await bounded(() => settings.count());
-        assert(destinations <= 1, "owned_settings_navigation_ambiguous");
-        if (destinations === 1)
-          await bounded(() =>
-            settings.click({ timeout: attempt.remainingMs(15000) })
-          );
-        const connections = page.getByRole("button", {
-          name: "Connections",
-          exact: true,
-        });
-        const categories = await bounded(() => connections.count());
-        assert(categories <= 1, "owned_settings_navigation_ambiguous");
-        if (categories === 1) {
-          operation = "navigate_owned_connections";
-          await bounded(() =>
-            connections.click({ timeout: attempt.remainingMs(15000) })
-          );
-        }
-      };
       return {
         configurationShape,
-        async configureSelectedRelay() {
-          await openSettings();
-          operation = "open_owned_relay_editor";
-          await bounded(() =>
-            page
-              .getByRole("button", { name: "Add relay", exact: true })
-              .click({ timeout: attempt.remainingMs(15000) })
-          );
-          const editor = page.locator(".managed-relay-editor");
-          operation = "fill_owned_relay_configuration";
-          await bounded(() =>
-            editor
-              .getByLabel("Name", { exact: true })
-              .fill("Pairing relay", { timeout: attempt.remainingMs(15000) })
-          );
-          await bounded(() =>
-            editor
-              .getByLabel("HTTPS discovery URL", { exact: true })
-              .fill(options.discovery, { timeout: attempt.remainingMs(15000) })
-          );
-          operation = "save_owned_relay_configuration";
-          receipt.preparation.configurationResult = "save-requested";
-          await bounded(() =>
-            editor
-              .getByRole("button", { name: "Save", exact: true })
-              .click({ timeout: attempt.remainingMs(15000) })
-          );
-          operation = "observe_owned_relay_configuration_save";
-          receipt.preparation.configurationResult = "not-confirmed";
-          await waitFor(async () => {
-            const shape = configurationShape(await readState());
-            receipt.preparation.configurationShape = shape;
-            assert(shape !== "conflict", "owned_relay_configuration_conflict");
-            const editors = await bounded(() => editor.count());
-            assert(editors <= 1, "owned_relay_editor_ambiguous");
-            return shape === "approved-single" && editors === 0;
-          });
-          receipt.preparation.configurationResult = "applied-observed";
-        },
-        async beginNormalLogin() {
-          await openSettings();
-          operation = "request_normal_managed_relay_login";
-          const card = page
-            .locator(".managed-relay-card")
-            .filter({ hasText: options.discovery });
-          const disclosure = await bounded(() =>
-            card.evaluate((element) => ({
-              tag: element.tagName,
-              open: element.hasAttribute("open"),
-            }))
-          );
-          if (disclosure.tag === "DETAILS" && !disclosure.open)
-            await bounded(() =>
-              card
-                .locator("summary")
-                .click({ timeout: attempt.remainingMs(15000) })
-            );
-          await bounded(() =>
-            card
-              .getByRole("button", { name: "Log in", exact: true })
-              .click({ timeout: attempt.remainingMs(15000) })
-          );
-        },
         readState,
         readTransportStatus: () => request({ type: "getStatus" }),
       };
     };
     const openPopup = async () => {
-      const tab =
-        (ownedRelay
-          ? context.pages().find((page) => page.url() === "about:blank")
-          : context.pages()[0]) ?? (await bounded(() => context.newPage()));
+      const tab = ownedRelay
+        ? await bounded(() => context.newPage())
+        : (context.pages()[0] ?? (await bounded(() => context.newPage())));
+      if (ownedRelay) await bounded(() => tab.goto("about:blank"));
       await bounded(() => tab.bringToFront());
       const tabSession = await bounded(() => context.newCDPSession(tab));
       operation = "identify_owned_browser_tab";
@@ -1106,6 +1139,11 @@ export async function runToolbarAcceptance(args, relayHooks) {
         "pairing_forced_relay_runtime_required"
       );
       operation = "record_owned_startup_isolation";
+      Object.assign(receipt.clipboard, {
+        hostUsed: false,
+        hostChanged: false,
+        controlledRuntimeObserved: true,
+      });
       await bounded(() => profileLease.confirmStartupIsolation());
       operation = "read_owned_relay_configuration";
       const initial = await runtime.readState();
@@ -1116,20 +1154,14 @@ export async function runToolbarAcceptance(args, relayHooks) {
         Array.isArray(initial?.managedRelayConfigurations),
         "owned_relay_configuration_unavailable"
       );
-      if (initial.managedRelayConfigurations.length === 0) {
-        await runtime.configureSelectedRelay();
-      } else
-        assert(
-          initial.managedRelayConfigurations.length === 1 &&
-            initial.managedRelayConfigurations[0].kind === "managed" &&
-            initial.managedRelayConfigurations[0].discoveryUrl ===
-              options.discovery,
-          "owned_relay_configuration_conflict"
-        );
-      console.log(
-        "Owned Chrome account preparation: complete normal Google sign-in in the visible browser window. The approved relay is configured through the normal app, and this setup command closes the owned window after Ready. This is not Pairing qualification."
+      receipt.preparation.configurationResult =
+        runtime.configurationShape(initial) === "approved-single"
+          ? "applied-observed"
+          : "not-confirmed";
+      assert(
+        runtime.configurationShape(initial) === "approved-single",
+        "owned_relay_configuration_conflict"
       );
-      let loginRequested = false;
       operation = "observe_owned_relay_ready";
       const state = await waitFor(async () => {
         const state = await runtime.readState();
@@ -1151,12 +1183,10 @@ export async function runToolbarAcceptance(args, relayHooks) {
                   value.kind === "managed"
               )
             : undefined;
-        if (selected?.status === "login_needed" && !loginRequested) {
-          loginRequested = true;
-          await runtime.beginNormalLogin();
-          operation = "observe_owned_relay_ready";
-          return null;
-        }
+        assert(
+          selected?.status !== "login_needed",
+          "owned_human_login_required"
+        );
         const ready =
           configurations.length === 1 &&
           state.managedRelayStates?.find(
