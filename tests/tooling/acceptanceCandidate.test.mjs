@@ -630,7 +630,7 @@ export const _electron={async launch({args,env,executablePath,cwd}){
  const api={getState:async()=>{if(pairing)return pairing.observeElectron(clipboard);const content=clipboard.readText();if(content && !captureReadyAt)captureReadyAt=Date.now()+300;if(content && !state.clips.some(clip=>clip.content===content) && (${JSON.stringify(nativeMode)}!=='delayed-capture'||Date.now()>=captureReadyAt))state.clips.push({id:'controlled-clip',content,originPeerId:state.identity.deviceId});if(pendingPin&&Date.now()>=pinReadyAt)state.pinnedIds=[pendingPin];return state;}};
  const browser={window:{clipp:api},document:{hasFocus:()=>true}};const browserEvaluate=(fn,arg)=>vm.runInNewContext('('+String(fn)+')',browser)(arg);
  const card={getByTitle:(title)=>({boundingBox:async()=>{const expected=${JSON.stringify(nativeMode)}==='adopted-pin'?'Pin Clip':'Pin';if(typeof title==='string'?title!==expected:!title.test(expected))throw new Error('visible_pin_title_missing');return {x:100,y:1,width:10,height:10};}}),waitFor:async()=>{if(filter!=='Pinned'||!state.pinnedIds.length)throw new Error('native pin not observed');}};
- const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp')){const success=browserEvaluate(fn,arg);if(!success)throw new Error('public state observation failed');}},getByRole:(_,options)=>({count:async()=>pairing?pairing.electronCount(options.name):0,boundingBox:async()=>({x:pairing?pairing.electronPoint(options.name):(options.name==='Pinned'?20:40),y:1,width:10,height:10})}),locator:()=>({count:async()=>0,filter:()=>card,getByRole:()=>({boundingBox:async()=>({x:300,y:1,width:10,height:10})})}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
+ const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp')){const success=browserEvaluate(fn,arg);if(!success)throw new Error('public state observation failed');}},getByRole:(_,options)=>({count:async()=>pairing?pairing.electronCount(options.name):0,boundingBox:async()=>({x:pairing?pairing.electronPoint(options.name):(options.name==='Pinned'?20:40),y:1,width:10,height:10})}),locator:(scope)=>({count:async()=>0,filter:()=>card,getByRole:(_,options)=>({boundingBox:async()=>({x:pairing&&options?.name==='Show my QR'?pairing.electronPoint(options.name,scope):300,y:1,width:10,height:10})})}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
  const previousExecutable=process.execPath;const previousLoader=Module._load;
  Object.defineProperty(process.versions,'electron',{value:'43.4.0',configurable:true});process.getSystemVersion=()=>'controlled';
  Module._load=function(name,...rest){return name==='electron'?{app,clipboard}:previousLoader.call(this,name,...rest);};
@@ -982,7 +982,7 @@ if(${JSON.stringify(mode)}==='prep-configuration')chrome.managedRelayConfigurati
 const route=(peer)=>({peerId:peer,hasRelay:true,hasDirect:${JSON.stringify(mode)}==='unknown-route'?undefined:${JSON.stringify(mode)}==='direct',addrs:['/dns4/relay.example/tcp/443/wss/p2p/'+R+'/p2p-circuit/p2p/'+peer]});
 module.exports={electronTask:null,chromeTask:null,electron,chrome,E,C,R,target:'clipp:pair:public-signed-fixture',submitted:false,accepted:false,
  electronCount(name){return name==='Close QR dialog'?Number(this.electronTask==='qr'):name==='Close Pairing'?Number(modal&&this.electronTask==='pairing'):0;},
- electronPoint(name){if(name instanceof RegExp){if(!name.test(badged?'Requests active requests':'Requests'))throw new Error('requests_accessible_name_missing');name='requests-navigation';}if(badged&&name==='Requests')throw new Error('badged_requests_exact_name_missing');if(name==='requests-navigation')name='Requests';if(modal&&this.electronTask&&!({pairing:['Show my QR','Close Pairing'],qr:['Copy pairing text','Close QR dialog']})[this.electronTask].includes(name))throw new Error('electron_task_background_inert');return ({Pinned:20,All:40,Devices:200,'Pair this device':220,'Show my QR':240,'Copy pairing text':260,Requests:280,Accept:300,'Close QR dialog':320,'Close Pairing':340})[name]||10;},
+ electronPoint(name,scope){if(${JSON.stringify(mode)}==='duplicate-qr'&&name==='Show my QR'){if(scope!=='[role="dialog"][aria-modal="true"]:has(h2:text-is("Pairing"))')throw new Error('strict_mode_violation_two_show_my_qr_buttons');record('electron-dialog-scoped-qr');}if(name instanceof RegExp){if(!name.test(badged?'Requests active requests':'Requests'))throw new Error('requests_accessible_name_missing');name='requests-navigation';}if(badged&&name==='Requests')throw new Error('badged_requests_exact_name_missing');if(name==='requests-navigation')name='Requests';if(modal&&this.electronTask&&!({pairing:['Show my QR','Close Pairing'],qr:['Copy pairing text','Close QR dialog']})[this.electronTask].includes(name))throw new Error('electron_task_background_inert');return ({Pinned:20,All:40,Devices:200,'Pair this device':220,'Show my QR':240,'Copy pairing text':260,Requests:280,Accept:300,'Close QR dialog':320,'Close Pairing':340})[name]||10;},
  chromeClick(name){if(name instanceof RegExp&&name.source.startsWith('^Requests')){if(!name.test(badged?'Requests (loading)':'Requests'))throw new Error('requests_accessible_name_missing');name='requests-navigation';}if(badged&&name==='Requests')throw new Error('badged_requests_exact_name_missing');if(name==='requests-navigation')name='Requests';if(modal&&this.chromeTask&&!({pairing:['Paste pairing text','Close Pairing'],paste:['Pairing text','Submit pairing text','Back to Pairing']})[this.chromeTask].includes(name))throw new Error('chrome_task_background_inert');if(name==='Pair this device')this.chromeTask='pairing';if(name==='Paste pairing text')this.chromeTask='paste';if(name==='Back to Pairing'){this.chromeTask='pairing';record('chrome-back-preserves-'+electron.pending.length);}if(name==='Close Pairing'){this.chromeTask=null;record('chrome-close-preserves-'+electron.pending.length);}if(name==='Discard pairing input'){this.submitted=false;electron.pending=[];throw new Error('submitted_request_discarded');}},
  observeElectron(clipboard){const text=clipboard.readText();if(text.startsWith('clipp-native-local-')&&!electron.clips.some(c=>c.content===text))electron.clips.push({id:'eclip',content:text,originPeerId:E});return electron;},
  electronClick(x,clipboard){if(x===225)this.electronTask='pairing';if(x===245)this.electronTask='qr';if(x===325){this.electronTask='pairing';record('electron-close-qr');}if(x===345){this.electronTask=null;record('electron-close-pairing');}if(x===305&&modal&&(this.electronTask||this.chromeTask||!this.submitted||!electron.pending.length))throw new Error('native_accept_requires_preserved_request_and_unblocked_workspaces');if(x===105)electron.pinnedIds=['eclip'];if(x===265)clipboard.writeText(this.target);if(x===305&&${JSON.stringify(mode)}!=='no-accept'){this.accepted=true;electron.identity.membershipView.admittedPeerIds=[E,C];chrome.identity.membershipView.admittedPeerIds=[C,E];electron.devices=[{deviceId:C}];chrome.devices=[{deviceId:E}];electron.pending=[];chrome.waiting=[];}},
@@ -1314,6 +1314,23 @@ test("relay Pairing reads acceptance proof through the authorized background sta
   const result = f.runPair();
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(f.receipt().pairing?.reciprocalMembership, true);
+});
+
+test("relay Pairing scopes Show my QR to the Pairing dialog when Devices also exposes the action", (t) => {
+  const f = relayPairFixture(t, "duplicate-qr");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.receipt().pairing?.reciprocalMembership, true);
+  assert.equal(f.receipt().shutdown, "graceful");
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.pairing?.reciprocalMembership, true);
+  assert.equal(chrome.shutdown, "verified-owned-browser-closed");
+  assert.match(
+    readFileSync(join(f.root, "normal-pairing-actions"), "utf8"),
+    /electron-dialog-scoped-qr/
+  );
 });
 
 for (const mode of ["badged-requests", "adopted-modal"]) {
