@@ -9,7 +9,7 @@ import { createExtensionManagedRelayCredentials } from "../../apps/extension/src
 const endpoint = "https://relay.example/v1/relay";
 const extensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-function harness() {
+function harness(digest?: (bytes: Uint8Array) => Promise<Uint8Array>) {
   const events: string[] = [];
   const records = new Map<string, unknown>();
   const storage = {
@@ -53,11 +53,55 @@ function harness() {
     fetchToken,
     registeredExtensionId: extensionId,
     now: () => 1000,
+    digest,
   });
   return { service, events, records, identity, fetchToken, storage };
 }
 
 describe("Chrome managed relay credentials", () => {
+  it("keeps native token bytes unchanged through login, worker reload, and refresh", async () => {
+    const first = harness();
+    const firstAccess = "ory_at_native.KeEp-ByteS_01";
+    const firstRefresh = "ory_rt_native.ReFrEsH-ByteS_01";
+    first.fetchToken.mockImplementationOnce(async () => ({
+      access_token: firstAccess,
+      refresh_token: firstRefresh,
+      token_type: "bEaReR",
+      expires_in: 900,
+    }));
+
+    await first.service.interactiveLogin(endpoint);
+    expect(await first.service.accessToken(endpoint)).toBe(firstAccess);
+    expect([...first.records.values()]).toEqual([
+      { status: "ready", refreshToken: firstRefresh },
+    ]);
+
+    const secondAccess = "ory_at_native.ReFrEsHeD-ByteS_02";
+    const secondRefresh = "ory_rt_native.ReFrEsHeD-ByteS_02";
+    first.fetchToken.mockImplementationOnce(async (_url, form) => {
+      expect(form.get("refresh_token")).toBe(firstRefresh);
+      return {
+        access_token: secondAccess,
+        refresh_token: secondRefresh,
+        token_type: "BEARER",
+        expires_in: 900,
+      };
+    });
+    const restarted = createExtensionManagedRelayCredentials({
+      storage: first.storage,
+      identity: first.identity,
+      fetchToken: first.fetchToken,
+      registeredExtensionId: extensionId,
+    });
+
+    await expect(
+      restarted.accessToken(endpoint, { forceRefresh: true })
+    ).resolves.toBe(secondAccess);
+    expect([...first.records.values()]).toEqual([
+      { status: "ready", refreshToken: secondRefresh },
+    ]);
+  });
+
   it("restricts local storage before credential reads and keeps first adoption empty", async () => {
     const { service, events } = harness();
     expect(await service.accessToken(endpoint)).toBeNull();
@@ -277,28 +321,42 @@ describe("Chrome managed relay credentials", () => {
   });
 
   it("opens one browser flow for concurrent explicit login requests", async () => {
-    const { service, identity, fetchToken } = harness();
-    let complete!: (callback: string) => void;
-    let started!: () => void;
-    const launchStarted = new Promise<void>((resolve) => {
-      started = resolve;
+    let releaseDigest!: (bytes: Uint8Array) => void;
+    const pendingDigest = new Promise<Uint8Array>((resolve) => {
+      releaseDigest = resolve;
     });
+    let markHashingStarted!: () => void;
+    const hashingStarted = new Promise<void>((resolve) => {
+      markHashingStarted = resolve;
+    });
+    const { service, identity, fetchToken } = harness(() => {
+      markHashingStarted();
+      return pendingDigest;
+    });
+    let markBrowserLaunched!: () => void;
+    const browserLaunched = new Promise<void>((resolve) => {
+      markBrowserLaunched = resolve;
+    });
+    let complete!: () => void;
     const launch = jest.fn(
       (url: string) =>
         new Promise<string>((resolve) => {
-          started();
           complete = () =>
             resolve(
               `${identity.redirectUrl}?code=x&state=${new URL(url).searchParams.get("state")}`
             );
+          markBrowserLaunched();
         })
     );
     identity.launch = launch;
     const first = service.interactiveLogin(endpoint);
     const second = service.interactiveLogin(endpoint);
-    await launchStarted;
+    await hashingStarted;
+    expect(launch).not.toHaveBeenCalled();
+    releaseDigest(new Uint8Array(32));
+    await browserLaunched;
     expect(launch).toHaveBeenCalledTimes(1);
-    complete(identity.redirectUrl);
+    complete();
     await Promise.all([first, second]);
     expect(launch).toHaveBeenCalledTimes(1);
     expect(fetchToken).toHaveBeenCalledTimes(1);

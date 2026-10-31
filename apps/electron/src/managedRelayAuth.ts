@@ -1,13 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRelays.js";
-
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-  token_type: "Bearer";
-  expires_in: number;
-};
+import { parseManagedRelayTokenResponse } from "../../../packages/core/network/managedRelayTokens.js";
 
 type CredentialStorage = {
   get(key: string): Promise<string | null>;
@@ -92,24 +86,6 @@ function renewalFailureReason(error: unknown): string {
 
 function tokenEndpoint(discoveryUrl: string): string {
   return new URL("/oauth/token", discoveryUrl).href;
-}
-
-function parseTokens(value: unknown): TokenResponse {
-  if (!value || typeof value !== "object")
-    throw new Error("invalid_token_response");
-  const token = value as Record<string, unknown>;
-  if (
-    typeof token.access_token !== "string" ||
-    !token.access_token ||
-    typeof token.refresh_token !== "string" ||
-    !token.refresh_token ||
-    token.token_type !== "Bearer" ||
-    !Number.isSafeInteger(token.expires_in) ||
-    (token.expires_in as number) < 1 ||
-    (token.expires_in as number) > 900
-  )
-    throw new Error("invalid_token_response");
-  return token as TokenResponse;
 }
 
 async function postToken(
@@ -204,7 +180,7 @@ export function createElectronManagedRelayAuth(options: Options) {
 
   async function acceptTokens(url: string, raw: unknown): Promise<void> {
     url = canonicalDiscoveryUrl(url);
-    const token = parseTokens(raw);
+    const token = parseManagedRelayTokenResponse(raw);
     const generation = credentialGeneration.get(url) ?? 0;
     credentials.set(url, {
       refresh: token.refresh_token,
@@ -212,6 +188,14 @@ export function createElectronManagedRelayAuth(options: Options) {
       accessExpiresAt: now() + token.expires_in * 1_000,
     });
     loaded.add(url);
+    await saveRefresh(url, token.refresh_token, generation);
+  }
+
+  async function saveRefresh(
+    url: string,
+    refresh: string,
+    generation: number
+  ): Promise<void> {
     const write = (async () => {
       if (!canPersist()) {
         await options.storage.delete(key(url));
@@ -222,9 +206,7 @@ export function createElectronManagedRelayAuth(options: Options) {
       try {
         await options.storage.set(
           key(url),
-          options.protection
-            .encryptString(token.refresh_token)
-            .toString("base64")
+          options.protection.encryptString(refresh).toString("base64")
         );
         if ((credentialGeneration.get(url) ?? 0) === generation)
           warnings.delete(url);
@@ -241,12 +223,12 @@ export function createElectronManagedRelayAuth(options: Options) {
     url = canonicalDiscoveryUrl(url);
     await load(url);
     const credential = credentials.get(url);
-    if (!credential) return null;
-    const generation = credentialGeneration.get(url) ?? 0;
-    if (credential.access && credential.accessExpiresAt > now() + 30_000)
+    if (credential?.access && credential.accessExpiresAt > now() + 30_000)
       return credential.access;
     const existing = refreshFlights.get(url);
     if (existing) return existing;
+    if (!credential) return null;
+    const generation = credentialGeneration.get(url) ?? 0;
     const flight = (async () => {
       // A refresh is single-use. Remove the old generation before any ambiguous network outcome.
       credentials.delete(url);
@@ -256,6 +238,7 @@ export function createElectronManagedRelayAuth(options: Options) {
         warnings.set(url, "Could not erase old credential; sign in again.");
         return null;
       }
+      let responseReceived = false;
       try {
         const token = await requestTokens(
           tokenEndpoint(url),
@@ -265,15 +248,32 @@ export function createElectronManagedRelayAuth(options: Options) {
             refresh_token: credential.refresh,
           })
         );
+        responseReceived = true;
         if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
         await acceptTokens(url, token);
         return (credentialGeneration.get(url) ?? 0) === generation
           ? (credentials.get(url)?.access ?? null)
           : null;
       } catch (error) {
+        if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
+        const reason = renewalFailureReason(error);
+        if (!responseReceived && reason === "dns_lookup_failed") {
+          // DNS failed before the token POST could reach the relay. This
+          // generation is still unused; retain it for the controller's backoff.
+          // Timeouts, resets and HTTP errors remain ambiguous and are not replayed.
+          credentials.set(url, credential);
+          await saveRefresh(url, credential.refresh, generation);
+          if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
+          const storageWarning = warnings.get(url);
+          warnings.set(
+            url,
+            `Credential renewal failed (${reason}); retrying automatically.${storageWarning ? ` ${storageWarning}` : ""}`
+          );
+          throw new Error(reason);
+        }
         warnings.set(
           url,
-          `Credential renewal failed (${renewalFailureReason(error)}); sign in again.`
+          `Credential renewal failed (${reason}); sign in again.`
         );
         return null;
       }
