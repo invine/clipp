@@ -993,27 +993,6 @@ export async function runToolbarAcceptance(args, relayHooks) {
         "pairing_registration_mapping_mismatch"
       );
     protocol.installedObservedId = extensionId;
-    const worker = await waitFor(async () =>
-      context
-        .serviceWorkers()
-        .find((item) => new URL(item.url()).host === extensionId)
-    );
-    assert(
-      new URL(worker.url()).host === extensionId,
-      "toolbar_target_mismatch"
-    );
-    receipt.extension = {
-      id: extensionId,
-      pathMatches: true,
-      ...(pairing
-        ? {
-            rawLoadPath: loadPath,
-            realLoadPath: extension,
-            expectedId: options["registered-extension-id"],
-            bundleSha256: hash(JSON.stringify(candidate.artifacts)),
-          }
-        : {}),
-    };
     const openManagement = async () => {
       operation = "open_owned_management";
       const page = await bounded(() => context.newPage());
@@ -1196,9 +1175,34 @@ export async function runToolbarAcceptance(args, relayHooks) {
       };
       return popup;
     };
+    // An installed MV3 worker can be dormant after the owned browser restarts.
+    // Open only its normal isolated management surface before waiting for it.
+    const management = ownedRelay ? await openManagement() : undefined;
+    operation = "observe_extension_service_worker";
+    const worker = await waitFor(async () =>
+      context
+        .serviceWorkers()
+        .find((item) => new URL(item.url()).host === extensionId)
+    );
+    assert(
+      new URL(worker.url()).host === extensionId,
+      "toolbar_target_mismatch"
+    );
+    receipt.extension = {
+      id: extensionId,
+      pathMatches: true,
+      ...(pairing
+        ? {
+            rawLoadPath: loadPath,
+            realLoadPath: extension,
+            expectedId: options["registered-extension-id"],
+            bundleSha256: hash(JSON.stringify(candidate.artifacts)),
+          }
+        : {}),
+    };
     if (preparation) {
       stage = "account-preparation";
-      const runtime = await openManagement();
+      const runtime = management;
       operation = "read_owned_transport_status";
       const status = await runtime.readTransportStatus();
       receipt.preparation.transport = {
