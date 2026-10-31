@@ -472,7 +472,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
       !verifiedApplicationRoot || physical === verifiedApplicationRoot,
       "candidate_wrong_checkout"
     );
-    if (verificationOnly) {
+    if (verificationOnly || pairing) {
       const stat = await bounded(() => lstat(checkout));
       assert(
         stat.isDirectory() && !stat.isSymbolicLink() && physical === checkout,
@@ -542,8 +542,8 @@ export async function runToolbarAcceptance(args, relayHooks) {
     throw new Error("acceptance_operation_timeout");
   }
   try {
-    if (verificationOnly) {
-      receipt.verificationOnly = true;
+    if (verificationOnly || pairing) {
+      if (verificationOnly) receipt.verificationOnly = true;
       receipt.tooling = { root, scripts: {} };
       for (const file of [
         "apps/extension/scripts/toolbar-acceptance.mjs",
@@ -552,6 +552,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         "apps/extension/scripts/clipboard-acceptance.mjs",
         "scripts/native-acceptance-attempts.mjs",
         "scripts/prepare-acceptance-candidate.mjs",
+        ...(pairing ? ["scripts/relay-pairing-acceptance.mjs"] : []),
       ])
         receipt.tooling.scripts[file] = hash(
           await bounded(() => readFile(join(root, file)))
@@ -670,7 +671,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         );
     }
     receipt.candidate = {
-      ...(verificationOnly ? { checkout: applicationRoot } : {}),
+      ...(verificationOnly || pairing ? { checkout: applicationRoot } : {}),
       revision: candidate.sourceRevision,
       baseArtifact: candidate.baseArtifact,
       extensionSha256: hash(JSON.stringify(candidate.artifacts)),
@@ -1507,7 +1508,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         ? {
             name: "OwnedRelayOperationError",
             code: errorCode(error, stage),
-            ...(verificationOnly &&
+            ...((verificationOnly || pairing) &&
             new Set([
               "candidate_metadata_invalid",
               "candidate_command_failed",

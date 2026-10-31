@@ -657,11 +657,15 @@ export const _electron={async launch({args,env,executablePath}){
   f.args[f.args.indexOf("--scenario") + 1] = scenario;
   const prepared = f.invoke();
   assert.equal(prepared.status, 0, prepared.stderr);
-  const accept = (extra = [], candidateRecord = f.record) =>
+  const accept = (
+    extra = [],
+    candidateRecord = f.record,
+    runner = join(f.destination, "scripts/electron-relay-acceptance.mjs")
+  ) =>
     run(
       process.execPath,
       [
-        join(f.destination, "scripts/electron-relay-acceptance.mjs"),
+        runner,
         "--candidate-record",
         candidateRecord,
         "--effort",
@@ -2316,4 +2320,106 @@ test("owned account preparation wakes a dormant installed worker through its iso
   assert.equal(receipt.accountPreparation.prepared, true);
   assert.equal(receipt.preparation.earlyMemory, true);
   assert.equal(receipt.shutdown, "verified-owned-browser-closed");
+});
+
+function externalPairingFixture(t) {
+  const f = relayPairFixture(t, "dormant-worker");
+  const ready = f.prepareAccount();
+  assert.equal(ready.status, 0, ready.stdout + ready.stderr);
+  const toolingRoot = join(f.root, "pairing-tooling");
+  for (const file of [
+    "scripts/relay-pairing-acceptance.mjs",
+    "scripts/native-acceptance-attempts.mjs",
+    "scripts/prepare-acceptance-candidate.mjs",
+    "apps/extension/scripts/toolbar-acceptance.mjs",
+    "apps/extension/scripts/owned-relay-profile.mjs",
+    "apps/extension/scripts/clipboard-acceptance.mjs",
+    "apps/extension/scripts/verify-clipboard-io.mjs",
+  ]) {
+    mkdirSync(join(toolingRoot, file, ".."), { recursive: true });
+    writeFileSync(join(toolingRoot, file), readFileSync(resolve(file)));
+  }
+  symlinkSync(
+    join(f.destination, "node_modules"),
+    join(toolingRoot, "node_modules")
+  );
+  const entry = join(f.root, "compose-pairing.mjs");
+  writeFileSync(
+    entry,
+    'import fs from "node:fs";import {runRelayPairing} from ' +
+      JSON.stringify(
+        "file:" + join(toolingRoot, "scripts/relay-pairing-acceptance.mjs")
+      ) +
+      ";import {runElectronAcceptance} from " +
+      JSON.stringify(
+        "file:" + join(f.destination, "scripts/electron-relay-acceptance.mjs")
+      ) +
+      ';const args=process.argv.slice(2);const record=JSON.parse(fs.readFileSync(args[args.indexOf("--pairing-record")+1]));await runRelayPairing(args,record,runElectronAcceptance);'
+  );
+  return { f, toolingRoot, entry };
+}
+
+test("maintained Pairing composes owning runners over a separate unchanged frozen application", (t) => {
+  const { f, toolingRoot, entry } = externalPairingFixture(t);
+  const before = readFileSync(
+    join(f.destination, "apps/extension/scripts/toolbar-acceptance.mjs")
+  );
+  const result = f.accept(
+    ["--pairing-record", f.pairingRecord, "--timeout-seconds", "15"],
+    f.record,
+    entry
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(f.receipt().result, "passed");
+  assert.equal(chrome.result, "passed");
+  assert.equal(chrome.tooling.root, realpathSync(toolingRoot));
+  assert.equal(chrome.candidate.checkout, realpathSync(f.destination));
+  assert.ok(
+    readFileSync(
+      join(f.destination, "apps/extension/scripts/toolbar-acceptance.mjs")
+    ).equals(before)
+  );
+});
+
+test("external Pairing refuses an untrusted verifier before launching Chrome or exposing its source", (t) => {
+  const { f, toolingRoot, entry } = externalPairingFixture(t);
+  const verifier = join(
+    toolingRoot,
+    "scripts/prepare-acceptance-candidate.mjs"
+  );
+  writeFileSync(
+    verifier,
+    readFileSync(verifier, "utf8") +
+      "\n// SYNTHETIC_PAIRING_VERIFIER_SOURCE_CANARY\n"
+  );
+  const launches = f.launches().length;
+  const result = f.accept(
+    ["--pairing-record", f.pairingRecord, "--timeout-seconds", "15"],
+    f.record,
+    entry
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(f.launches().length, launches);
+  const receipt = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(receipt.shutdown, "not-launched");
+  const history = JSON.parse(readFileSync(receipt.history.path));
+  const failure = readFileSync(
+    join(
+      receipt.history.path,
+      "..",
+      "attempt-" + history.attempts.length,
+      "failure.private.json"
+    ),
+    "utf8"
+  );
+  assert.equal(JSON.parse(failure).error.guard, "candidate_verifier_untrusted");
+  assert.doesNotMatch(
+    result.stdout + result.stderr + failure,
+    /SYNTHETIC_PAIRING_VERIFIER_SOURCE_CANARY/
+  );
 });

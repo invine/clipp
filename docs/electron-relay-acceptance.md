@@ -563,3 +563,11 @@ The Electron owning profile must already have its own normal login; preserve its
 existing `--app-name` (for the selected UX profile, `Clipp UX Pairing Relay`).
 Retained Chrome history preflights use a fresh marker and exact new captured/pinned
 Clip ID, preserving prior clips/pins rather than resetting the profile.
+
+### Maintained Pairing orchestration with a frozen application
+
+When the application stays frozen while acceptance tooling changes, compose the maintained `runRelayPairing` export with the verified application's `runElectronAcceptance` export. The coordinator uses its maintained Chrome runner; the Electron runner keeps its own frozen application root. This is a programmatic composition, not running an export-only module as a CLI.
+
+Before importing the application runner, verify the approved candidate record with the trusted preparer and check the runner's recorded source hash. Keep the application checkout physical and canonical, all evidence outside it, the exact registered extension mapping, and the existing positively closed prepared profile binding. Do not modify frozen scripts or substitute feature callbacks. The same owning preflights, isolation, Ready, signed request, native Accept, Membership and joint cleanup gates still apply.
+
+Chrome receipts identify both the application checkout and the maintained tooling scripts, including the joint coordinator. Keep those identities separate in the execution manifest. Reusing preparation does not preserve a service worker across browser closure; the maintained runner opens the isolated normal management page before waiting for that worker.
