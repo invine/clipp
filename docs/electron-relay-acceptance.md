@@ -100,8 +100,14 @@ Before relay assertions, the runner verifies the launched PID, launch argument,
 canonical profile, owned BrowserWindow/webContents IDs, renderer PID and exact
 built renderer URL. It activates only its owned app and window, waits at most
 five seconds for native focus, and checks native and renderer focus before and
-after native mouse input toggles History **Pinned**, then **All**. The normal
-renderer must show the resulting active filter. This is a harmless filter
+after native mouse input. It first waits for a mounted History/Filters marker or
+visible legacy Pinned control; the preload bridge alone does not prove React has
+mounted. When workspace navigation is present, it selects
+**History** through its ordinary control and observes `aria-current="page"`.
+When the ordinary **Filters** toggle is collapsed, it opens it and observes
+`aria-expanded="true"` before toggling **Pinned**, then **All**. Already-open
+filters stay open; older layouts with visible filter controls retain that path.
+The normal renderer must show the resulting active filter. This is a harmless filter
 change; DOM/bridge availability alone cannot pass readiness. A readiness-only
 pass does not qualify relay transfer, provider login, native toolbar popups or
 any larger UX matrix.
@@ -566,8 +572,33 @@ Clip ID, preserving prior clips/pins rather than resetting the profile.
 
 ### Maintained Pairing orchestration with a frozen application
 
-When the application stays frozen while acceptance tooling changes, compose the maintained `runRelayPairing` export with the verified application's `runElectronAcceptance` export. The coordinator uses its maintained Chrome runner; the Electron runner keeps its own frozen application root. This is a programmatic composition, not running an export-only module as a CLI.
+When the application stays frozen while acceptance tooling changes, run the
+maintained tooling checkout's public `scripts/electron-relay-acceptance.mjs`
+command with `--scenario relay-pairing`, the unchanged explicit application
+`--candidate-record` and normal `--pairing-record`. Its maintained coordinator
+composes its maintained Electron and Chrome actors. The Electron actor selects
+the application root solely from that validated record; no application-root
+argument, private export composition or frozen-script edit is needed.
 
-Before importing the application runner, verify the approved candidate record with the trusted preparer and check the runner's recorded source hash. Keep the application checkout physical and canonical, all evidence outside it, the exact registered extension mapping, and the existing positively closed prepared profile binding. Do not modify frozen scripts or substitute feature callbacks. The same owning preflights, isolation, Ready, signed request, native Accept, Membership and joint cleanup gates still apply.
+Before creating acceptance directories or profile/history locks, the Electron
+actor reads at most 1 MiB of regular candidate metadata and requires a physical
+canonical application checkout. Planned evidence, state and profile paths must
+stay outside it. The public joint entry checks the companion's planned evidence
+and profile metadata paths before either actor can write. The application's
+regular preparer must match both the record's
+preparer hash and the maintained tooling preparer's bytes (at most 256 KiB).
+After attempt admission, only the trusted maintained preparer executes. Its
+verified checkout, revision, scenario, combined artifact and executable must
+match the application record, and the executable must remain within the physical
+runtime distribution. Required native loading, exact target/source/build checks,
+normal History/Filters interactions and owned cleanup retain their existing gates.
 
-Chrome receipts identify both the application checkout and the maintained tooling scripts, including the joint coordinator. Keep those identities separate in the execution manifest. Reusing preparation does not preserve a service worker across browser closure; the maintained runner opens the isolated normal management page before waiting for that worker.
+Electron and Chrome receipts distinguish maintained tooling roots/source/script
+hashes from the selected frozen application's checkout, revision and artifacts.
+Keep those identities separate in the execution manifest. Retain the existing
+positively closed prepared Chrome profile and its exact application source/base
+artifact binding; changing tooling does not rebind the profile or fabricate a new
+preparation proof. Reusing preparation does not preserve a service worker across
+browser closure; the maintained runner opens the isolated normal management page
+before waiting for that worker. The same isolation, Ready, signed request, native
+Accept, Membership and joint cleanup gates still apply.

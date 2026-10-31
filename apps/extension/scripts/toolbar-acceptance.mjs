@@ -1311,6 +1311,48 @@ export async function runToolbarAcceptance(args, relayHooks) {
       };
       stage = "interaction";
       operation = "toolbar_readiness_filter";
+      const filters = popup.locator('[data-session-focus="history-filters"]');
+      // Ownership/clipboard mapping precedes React mount. Wait for its known
+      // Filters control or the visible legacy Pinned control before branching.
+      await waitFor(
+        async () =>
+          (await bounded(() => filters.count())) > 0 ||
+          (await bounded(() =>
+            popup
+              .getByRole("button", { name: "Pinned", exact: true })
+              .isVisible()
+          )) === true,
+        5000
+      );
+      if (await bounded(() => filters.count())) {
+        const expanded = await bounded(() =>
+          filters.getAttribute("aria-expanded")
+        );
+        assert(
+          ["true", "false"].includes(expanded),
+          "toolbar_input_not_observed"
+        );
+        assert(
+          (await bounded(() => popup.evaluate(() => document.hasFocus()))) ===
+            true,
+          "toolbar_target_mismatch"
+        );
+        if (expanded === "false")
+          await bounded(() =>
+            filters.click({ timeout: attempt.remainingMs(5000) })
+          );
+        await waitFor(
+          async () =>
+            (await bounded(() => filters.getAttribute("aria-expanded"))) ===
+            "true",
+          5000
+        );
+        assert(
+          (await bounded(() => popup.evaluate(() => document.hasFocus()))) ===
+            true,
+          "toolbar_target_mismatch"
+        );
+      }
       await bounded(() =>
         popup
           .getByRole("button", { name: "Pinned", exact: true })

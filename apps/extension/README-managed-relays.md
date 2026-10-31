@@ -217,7 +217,14 @@ It verifies the unpacked extension path/ID, triggers its actual action on the ow
 active tab, and requires `chrome.extension.getViews({type:"popup"})`, the matching
 extension ID, exact popup URL and focus. A normal tab cannot pass. Unsupported
 protocol/native input remains a prerequisite failure, with a recovery action.
-The normal popup first demonstrates Pinned/All filter interaction, then receives a
+The normal popup waits for its mounted Filters control or visible legacy Pinned
+control before deciding whether the optional toggle exists. Popup ownership and
+clipboard mapping alone do not prove React has mounted. It then exposes its
+ordinary Filters control when collapsed,
+observes `aria-expanded="true"` with popup focus retained, and demonstrates the
+existing Pinned/All interaction. Already-open filters remain open; older layouts
+without that toggle retain their visible filter path. These interactions stay in
+the actual popup. It then receives a
 synthetic Local Clip through the maintained message boundary, searches for it,
 pins it and observes persisted public pin state and the Pinned result.
 
