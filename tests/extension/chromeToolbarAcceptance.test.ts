@@ -95,7 +95,7 @@ import fs from 'node:fs';
 let opened=false,pinned=false,search='',inventoryCalls=0,installAcked=false;
 const behavior=process.env.FIXTURE_BEHAVIOR;
 const locator={async count(){return 1;},async click(){if(behavior==='input')throw new Error('unavailable_native_input');},async evaluate(){return true;},async fill(text){search=text;},async inputValue(){return search;},async waitFor(){},async isVisible(){return true;},first(){pinned=true;return this;}};
-const popup={url:()=> 'chrome-extension://fixture/src/popup.html',locator:()=>({...locator,count:async()=>0}),getByRole:()=>locator,getByTitle:()=>locator,getByPlaceholder:()=>({...locator,async fill(){throw new Error('header_search_hidden_in_native_popup');}}),getByText:()=>locator,async evaluate(fn,arg){if(arg?.type==='getRuntimeState')return {state:{pinnedIds:pinned?['clip']:[]}};if(arg)return {ok:true};return {id:'fixture',isPopup:behavior!=='tab',memory:behavior!=='boundary',focused:true};}};
+const popup={isClosed:()=>false,url:()=> 'chrome-extension://fixture/src/popup.html',locator:()=>({...locator,count:async()=>0}),getByRole:()=>locator,getByTitle:()=>locator,getByPlaceholder:()=>({...locator,async fill(){throw new Error('header_search_hidden_in_native_popup');}}),getByText:()=>locator,async evaluate(fn,arg){if(arg?.type==='getRuntimeState')return {state:{pinnedIds:pinned?['clip']:[]}};if(arg)return {ok:true};return {id:'fixture',isPopup:behavior!=='tab',memory:behavior!=='boundary',focused:true};}};
 const tab={url:()=> 'about:blank',async bringToFront(){}};
 const session={async send(method,params){if(method==='Extensions.loadUnpacked'){installAcked=true;return {id:behavior==='delayed-wrong-id'?'other-id':'fixture'};}if(method==='Extensions.getExtensions'){inventoryCalls++;if(behavior.startsWith('delayed')&&(!installAcked||inventoryCalls<3))return {extensions:[]};if(behavior==='worker')throw new Error('acceptance_operation_timeout');if(behavior==='private')throw new Error('SYNTHETIC_PRIVATE_CANARY');return {extensions:[{id:'fixture',enabled:behavior!=='delayed-disabled',path:behavior==='delayed-wrong-path'?${JSON.stringify(path.join(repo, "apps/extension"))}:${JSON.stringify(path.join(repo, "apps/extension/dist"))}}]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'page-id',type:'page',url:'about:blank',browserContextId:'owned-context'}};
 if(method==='Target.getTargets')return {targetInfos:[{targetId:'tab-id',type:'tab',url:behavior==='tab-url-mismatch'?'https://wrong.invalid/':'about:blank',browserContextId:behavior==='tab-context-mismatch'?'different-context':'owned-context'},...(behavior==='ambiguous-tab'?[{targetId:'second-tab-id',type:'tab',url:'about:blank',browserContextId:'owned-context'}]:[])]};
@@ -664,3 +664,131 @@ test.each([
   });
   expect(result().surface).toBeUndefined();
 });
+
+test("public Chrome renewal consumes an explicit decision in the same history", () => {
+  freeze();
+  expect(invoke("input").status).toBe(1);
+  const previous = result().history;
+  const before = JSON.parse(readFileSync(previous.path, "utf8"));
+  const decision = {
+    previousHistory: previous.path,
+    authorizedBy: "synthetic explicit operator decision",
+    reason: "synthetic input repaired",
+  };
+  const decisionPath = path.join(fixture, "renewal.json");
+  const decisionBytes = JSON.stringify(decision);
+  writeFileSync(decisionPath, decisionBytes);
+  const nextOutput = path.join(fixture, "renewed");
+  const run = invoke(
+    "",
+    [
+      "--renewal",
+      decisionPath,
+      "--diagnostic-change",
+      "input-repaired",
+      "--expected-observation",
+      "normal popup input succeeds",
+    ],
+    nextOutput
+  );
+  expect(run.status).toBe(0);
+  const renewed = JSON.parse(
+    readFileSync(path.join(nextOutput, "receipt.json"), "utf8")
+  );
+  expect(renewed.history).toMatchObject({
+    key: previous.key,
+    generation: 1,
+    predecessor: previous.path,
+  });
+  const nextHistory = JSON.parse(readFileSync(renewed.history.path, "utf8"));
+  expect(nextHistory.attempts).toHaveLength(1);
+  const retained = JSON.parse(readFileSync(previous.path, "utf8"));
+  const { renewedBy, ...unchanged } = retained;
+  expect(unchanged).toEqual(before);
+  expect(renewedBy.decision).toEqual(decision);
+  expect(readFileSync(decisionPath, "utf8")).toBe(decisionBytes);
+  rmSync(path.join(fixture, "pid"), { force: true });
+  const replay = invoke(
+    "",
+    [
+      "--renewal",
+      decisionPath,
+      "--diagnostic-change",
+      "replay",
+      "--expected-observation",
+      "decision is not reused",
+    ],
+    path.join(fixture, "replayed")
+  );
+  expect(replay.status).toBe(1);
+  expect(existsSync(path.join(fixture, "pid"))).toBe(false);
+}, 15000);
+
+test.each([
+  "missing-value",
+  "relative",
+  "oversized-path",
+  "missing-file",
+  "malformed",
+  "duplicate-option",
+])("public Chrome renewal refuses %s before launch", (mode) => {
+  freeze();
+  const decisionPath = path.join(fixture, "renewal.json");
+  writeFileSync(
+    decisionPath,
+    mode === "malformed"
+      ? "{broken"
+      : JSON.stringify({ authorizedBy: "synthetic" })
+  );
+  const flags =
+    mode === "missing-value"
+      ? ["--renewal"]
+      : mode === "relative"
+        ? ["--renewal", "relative.json"]
+        : mode === "oversized-path"
+          ? ["--renewal", "/" + "x".repeat(4096)]
+          : mode === "missing-file"
+            ? ["--renewal", path.join(fixture, "absent.json")]
+            : mode === "duplicate-option"
+              ? ["--renewal", decisionPath, "--renewal", decisionPath]
+              : ["--renewal", decisionPath];
+  const run = invoke("", flags);
+  expect(run.status).toBe(1);
+  expect(existsSync(path.join(fixture, "pid"))).toBe(false);
+  if (mode === "missing-value" || mode === "duplicate-option")
+    expect(run.stderr).toContain("unique_option_value_required");
+  if (mode === "relative" || mode === "oversized-path")
+    expect(run.stderr).toContain("bounded_absolute_renewal_required");
+  if (mode === "malformed")
+    expect(run.stderr).toContain("candidate_metadata_invalid");
+});
+
+test("public Chrome renewal refuses an unapproved decision before launch", () => {
+  freeze();
+  expect(invoke("input").status).toBe(1);
+  const decisionPath = path.join(fixture, "renewal.json");
+  writeFileSync(
+    decisionPath,
+    JSON.stringify({
+      previousHistory: result().history.path,
+      authorizedBy: "",
+      reason: "synthetic input repaired",
+    })
+  );
+  rmSync(path.join(fixture, "pid"), { force: true });
+  const run = invoke(
+    "",
+    [
+      "--renewal",
+      decisionPath,
+      "--diagnostic-change",
+      "new-observation",
+      "--expected-observation",
+      "approval required",
+    ],
+    path.join(fixture, "unapproved")
+  );
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("renewal_must_reference_failed_history");
+  expect(existsSync(path.join(fixture, "pid"))).toBe(false);
+}, 15000);

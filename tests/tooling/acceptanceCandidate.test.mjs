@@ -1022,20 +1022,35 @@ if(human){
 setTimeout(()=>process.exit(0),10000);`,
     { mode: 0o755 }
   );
+  const pwCore = join(source, "packages/playwright-core");
+  mkdirSync(join(pwCore, "lib/server/chromium"), { recursive: true });
+  writeFileSync(
+    join(pwCore, "package.json"),
+    JSON.stringify({
+      name: "playwright-core",
+      version: "1.57.0",
+      exports: { "./package.json": "./package.json" },
+    })
+  );
+  for (const name of ["crBrowser.js", "crPage.js"])
+    writeFileSync(
+      join(pwCore, "lib/server/chromium", name),
+      "// Synthetic Playwright external target boundary: " + name + "\n"
+    );
   writeFileSync(
     join(driver, "process.mjs"),
-    `import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';const original=cp.spawn,ps=cp.spawnSync;let owned;cp.spawn=function(bin,args,options){const child=original.call(this,bin,args,options);if(bin.endsWith('/browser.cjs'))owned={child,command:bin+' '+args.join(' ')};return child;};cp.spawnSync=function(bin,args,options){if(bin==='ps'&&args[0]==='-ax'&&${JSON.stringify(mode)}==='human-uncertain'&&owned&&!owned.command.includes('--remote-debugging-port=0')&&owned.child.exitCode!==null)return {status:1,stdout:''};if(bin==='ps'&&args[0]==='-ax')return {status:0,stdout:owned&&owned.child.exitCode===null&&owned.child.signalCode===null?owned.child.pid+' '+owned.command:''};if(bin==='ps'&&args[0]==='-p'&&Number(args[1])===process.pid)return {status:0,stdout:'  1 Thu Oct 29 00:00:00 2026 '+process.argv.join(' ')};if(bin==='ps'&&owned&&args[0]==='-p'&&Number(args[1])===owned.child.pid)return owned.child.exitCode===null&&owned.child.signalCode===null?{status:0,stdout:'  '+process.pid+' Thu Oct 29 00:00:00 2026 '+owned.command}:{status:1,stdout:''};return ps.call(this,bin,args,options);};syncBuiltinESMExports();`
+    `import cp from 'node:child_process';import fs from 'node:fs';import path from 'node:path';import {syncBuiltinESMExports} from 'node:module';const original=cp.spawn,ps=cp.spawnSync,exec=cp.execFileSync;let owned;const initialOther={present:Object.hasOwn(process.env,'PW_CHROMIUM_ATTACH_TO_OTHER'),value:process.env.PW_CHROMIUM_ATTACH_TO_OTHER};process.once('exit',()=>{if(process.argv[1]?.endsWith('/verify-clipboard-io.mjs'))fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'other-env-exit'),JSON.stringify({initial:initialOther,final:{present:Object.hasOwn(process.env,'PW_CHROMIUM_ATTACH_TO_OTHER'),value:process.env.PW_CHROMIUM_ATTACH_TO_OTHER}})+'\\n');});cp.spawn=function(bin,args,options){const child=original.call(this,bin,args,options);if(bin.endsWith('/browser.cjs'))owned={child,command:bin+' '+args.join(' ')};return child;};cp.spawnSync=function(bin,args,options){if(bin==='ps'&&args[0]==='-ax'&&${JSON.stringify(mode)}==='human-uncertain'&&owned&&!owned.command.includes('--remote-debugging-port=0')&&owned.child.exitCode!==null)return {status:1,stdout:''};if(bin==='ps'&&args[0]==='-ax')return {status:0,stdout:owned&&owned.child.exitCode===null&&owned.child.signalCode===null?owned.child.pid+' '+owned.command:''};if(bin==='ps'&&args[0]==='-p'&&Number(args[1])===process.pid)return {status:0,stdout:'  1 Thu Oct 29 00:00:00 2026 '+process.argv.join(' ')};if(bin==='ps'&&owned&&args[0]==='-p'&&Number(args[1])===owned.child.pid&&owned.child.exitCode===null&&owned.child.signalCode===null&&fs.existsSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-identity-check'))){if(${JSON.stringify(mode)}==='foreground-gone')return {status:1,stdout:''};if(['foreground-mismatch','foreground-after-mismatch'].includes(${JSON.stringify(mode)}))return {status:0,stdout:'  '+process.pid+' Fri Oct 30 00:00:00 2026 '+owned.command};}if(bin==='ps'&&owned&&args[0]==='-p'&&Number(args[1])===owned.child.pid)return owned.child.exitCode===null&&owned.child.signalCode===null?{status:0,stdout:'  '+process.pid+' Thu Oct 29 00:00:00 2026 '+owned.command}:{status:1,stdout:''};return ps.call(this,bin,args,options);};cp.execFileSync=function(bin,args,options){if(String(bin).endsWith('/osascript')||bin==='osascript'){if(bin!=='/usr/bin/osascript'||!owned||owned.child.exitCode!==null||args.length!==2||args[0]!=='-e'||args[1]!=='tell application \"System Events\" to set frontmost of first application process whose unix id is '+owned.child.pid+' to true')throw new Error('synthetic_foreground_command_mismatch');fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-commands'),JSON.stringify({pid:owned.child.pid,argv:args})+'\\n');fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'owned-foreground'),'true');if(${JSON.stringify(mode)}==='foreground-after-mismatch')fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-identity-check'),'true');return '';}return exec.call(this,bin,args,options);};syncBuiltinESMExports();`
   );
   writeFileSync(
     join(driver, "index.js"),
     `
-import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';const require=createRequire(import.meta.url);const f=require('../pairing-driver/state.cjs');const id='a'.repeat(32);const responsivePopup=${JSON.stringify(mode)}.startsWith('popup-');let popupMounted=!${JSON.stringify(mode)}.includes('late-mount'),popupMountScheduled=false;const schedulePopupMount=()=>{if(!popupMounted&&!popupMountScheduled){popupMountScheduled=true;setImmediate(()=>{popupMounted=true;});}};let filtersExpanded=${JSON.stringify(mode)}==='popup-expanded';let open=false,typed='',focused=true,managementOpened=false,settingsOpened=false,cardOpened=false,connectionsOpened=false,relayEditorOpen=false,relayName='',relayDiscovery='';const ownProfile=()=>fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');const authUrl='https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY';const persistHistory=()=>fs.writeFileSync(path.join(ownProfile(),'synthetic-history.json'),JSON.stringify({clips:f.chrome.clips,pinnedIds:f.chrome.pinnedIds}));
+import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';const require=createRequire(import.meta.url);const f=require('../pairing-driver/state.cjs');const id='a'.repeat(32);const responsivePopup=${JSON.stringify(mode)}.startsWith('popup-');let popupMounted=!${JSON.stringify(mode)}.includes('late-mount'),popupMountScheduled=false;const schedulePopupMount=()=>{if(!popupMounted&&!popupMountScheduled){popupMountScheduled=true;setImmediate(()=>{popupMounted=true;});}};let filtersExpanded=${JSON.stringify(mode)}==='popup-expanded';let earlyStartupReady=${JSON.stringify(mode)}!=='other-popup-delayed-startup',earlyStartupScheduled=false;let open=false,typed='',focused=true,managementOpened=false,settingsOpened=false,cardOpened=false,connectionsOpened=false,relayEditorOpen=false,relayName='',relayDiscovery='';const ownProfile=()=>fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');const authUrl='https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY';const persistHistory=()=>fs.writeFileSync(path.join(ownProfile(),'synthetic-history.json'),JSON.stringify({clips:f.chrome.clips,pinnedIds:f.chrome.pinnedIds}));
 const locator=(name,scope)=>({async click(){if(responsivePopup&&!popupMounted){schedulePopupMount();await new Promise(setImmediate);}if(responsivePopup&&name==='[data-session-focus="history-filters"]'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'popup-filter-actions'),'Filters\\n');if(${JSON.stringify(mode)}!=='popup-toggle-refused')filtersExpanded=true;return;}if(responsivePopup&&(name==='Pinned'||name==='All')){if(!filtersExpanded)throw Object.assign(new Error('filter control hidden by short popup'),{name:'TimeoutError'});fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'popup-filter-actions'),name+'\\n');}if(name==='Log in'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-login-attempts'),'login\\n');throw new Error('controlled_authentication_forbidden');}f.chromeClick(name);if(${JSON.stringify(mode)}==='input')throw new Error('native input unavailable');if(name==='Paste pairing text'&&${JSON.stringify(mode)}==='focus-lost')focused=false;if(name==='Settings'){settingsOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'settings-ui\\n');}if(name==='Connections'){connectionsOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'connections-ui\\n');}if(name==='Add relay'){if(!connectionsOpened)throw new Error('settings_navigation_required');relayEditorOpen=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'add-relay-ui\\n');}if(name==='Save'&&${JSON.stringify(mode)}==='fresh-auth-save-rejected')return;if(name==='Save'){if(!relayEditorOpen||relayName!=='Pairing relay'||relayDiscovery!=='https://relay.example/v1/relay')throw new Error('approved_relay_form_required');f.chrome.managedRelayConfigurations=[{key:'ui-generated-relay',name:relayName,kind:'managed',discoveryUrl:relayDiscovery}];f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));relayEditorOpen=false;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');}if(name==='summary'){cardOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'expand-relay-ui\\n');}if(name==='Log in'&&${JSON.stringify(mode)}.startsWith('fresh-auth')){if(${JSON.stringify(mode)}==='fresh-auth'&&(!settingsOpened||!connectionsOpened||!cardOpened))throw new Error('selected_settings_card_is_closed');f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));fs.writeFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),JSON.stringify(f.chrome.managedRelayConfigurations));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'login-ui\\n');}if(name==='Submit pairing text')f.submit(typed);if(name===(${JSON.stringify(mode)}==='adopted-pin'?'Pin Clip':'Pin') || (name instanceof RegExp && name.test(${JSON.stringify(mode)}==='adopted-pin'?'Pin Clip':'Pin'))){const clip=f.chrome.clips.find(value=>(!scope||value.content===scope)&&!f.chrome.pinnedIds.includes(value.id));if(!clip)throw new Error('new_unpinned_clip_not_visible');f.chrome.pinnedIds.push(clip.id);persistHistory();}},async fill(value){if(name==='Name')relayName=value;else if(name==='HTTPS discovery URL')relayDiscovery=value;else typed=value;},async getAttribute(attribute){return name==='[data-session-focus="history-filters"]'&&attribute==='aria-expanded'?String(filtersExpanded):null;},async count(){if(name==='Pinned'&&${JSON.stringify(mode)}==='popup-zero-area-legacy-late-mount')return 1;if(responsivePopup&&!popupMounted){schedulePopupMount();return 0;}if(name==='[data-session-focus="history-filters"]')return Number(responsivePopup);if(name==='Pinned'||name==='All')return Number(!responsivePopup||filtersExpanded);if(name==='Connections')return Number(${JSON.stringify(mode)}.startsWith('fresh-auth'));if(name==='.managed-relay-editor')return Number(relayEditorOpen);if(name==='Back to Pairing')return Number(${JSON.stringify(mode)}==='adopted-modal'&&f.chromeTask==='paste');if(name==='Close Pairing')return Number(${JSON.stringify(mode)}==='adopted-modal'&&f.chromeTask==='pairing');return name==='Settings'&&${JSON.stringify(mode)}.startsWith('fresh-auth')?1:0;},async evaluate(fn){return String(fn).includes('tagName')?{tag:${JSON.stringify(mode)}==='fresh-auth'?'DETAILS':'DIV',open:cardOpened}:true;},async waitFor(){if(name?.includes('Acceptance')&&!f.accepted)throw new Error('unconfirmed acceptance');},async isVisible(){if(name==='Pinned'||name==='All')return popupMounted&&(!responsivePopup||filtersExpanded);return name?.includes("Acceptance")?f.accepted:f.chrome.clips.some(c=>c.content===name);},filter(options){return locator(name,options?.hasText||scope);},locator:(child)=>locator(child,scope),getByTitle:(title)=>locator(title,scope),first(){return this;},getByText:(text)=>locator(text),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)});
-const popup={url:()=> 'chrome-extension://'+id+'/src/popup.html',getByRole:(_,q)=>locator(q.name),getByLabel:(name)=>locator(name),getByTitle:(name)=>locator(name),keyboard:{async insertText(value){typed=value;}},locator:(name)=>locator(name),getByText:(name)=>locator(name),async evaluate(fn,arg){if(arg?.type==='managedRelaySet'&&${JSON.stringify(mode)}.startsWith('fresh-auth'))return {ok:false,error:'unsupported_legacy_configuration_command'};if(arg?.type==='managedRelaySet'){f.chrome.managedRelayConfigurations=arg.configurations;f.chrome.managedRelayStates=arg.configurations.map(config=>({...config,status:'login_needed',peerId:f.R}));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');return {ok:true};}if(arg?.target==='offscreen')return {ok:false,error:'offscreen_control_unauthorized'};if(arg?.type==='getStatus'&&${JSON.stringify(mode)}==='prep-transport')return {started:true,relayAcceptanceTransport:'webrtc-direct',acceptanceMemoryClipboard:true,secret:'SYNTHETIC_OAUTH_CODE_CANARY'};if(arg?.type==='getStatus')return {started:true,acceptanceMemoryClipboard:!(${JSON.stringify(mode)}==='no-early-memory'&&!process.argv.includes('toolbar-relay-account-preparation')),...(${JSON.stringify(mode)}==='ordinary-build'&&!process.argv.includes('toolbar-relay-account-preparation')?{}:{relayAcceptanceTransport:'wss'})};if(String(fn).includes('document.hasFocus')&&!String(fn).includes('chrome.runtime.id'))return focused;if(arg?.type==='getRuntimeState'||String(fn).includes('getRuntimeState'))return {state:structuredClone(f.chrome)};if(arg?.type==='clipboardUpdate'){if(!f.chrome.clips.some(value=>value.content===arg.text))f.chrome.clips.push({id:'cclip-'+(f.chrome.clips.length+1),content:arg.text,originPeerId:f.chrome.identity.deviceId});persistHistory();return {ok:true};}return {id,isPopup:true,memory:true,earlyMemory:${JSON.stringify(mode)}!=='prep-early-memory'&&(${JSON.stringify(mode)}!=='verification-continuation'||process.env.VERIFY_CONTINUATION==='1'),focused:true};}};
-const tab={url:()=> 'about:blank',async bringToFront(){open=false;}};
-const session={async send(method,arg){if(method==='Extensions.loadUnpacked'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-load-attempts'),'load\\n');throw new Error('controlled_installation_forbidden');}if(method==='Extensions.getExtensions'&&${JSON.stringify(mode)}==='oauth-private')throw new Error('https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY');if(method==='Extensions.getExtensions'){const file=path.join(ownProfile(),'synthetic-installed-extension.json');let installed=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):null;if(installed?.installedViaCDP){fs.unlinkSync(file);installed=null;}if(installed&&${JSON.stringify(mode)}==='wrong-id'&&!process.argv.includes('toolbar-relay-account-preparation'))installed.id='b'.repeat(32);return {extensions:installed?(${JSON.stringify(mode)}==='human-duplicate'?[installed,installed]:[installed]):[]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'page',type:'page',url:'about:blank',browserContextId:'owned'}};if(method==='Target.getTargets')return {targetInfos:[{targetId:'tab',type:'tab',url:'about:blank',browserContextId:'owned'}]};if(method==='Browser.getWindowForTarget')return {windowId:1};if(method==='Extensions.triggerAction')open=true;return {};}};
-const context={async addInitScript(){},serviceWorkers:()=>${JSON.stringify(mode)}==='dormant-worker'&&!managementOpened?[]:[{url:()=> 'chrome-extension://'+id+'/background.js'}],pages:()=>open?[tab,popup]:[tab],async newPage(){let url='';return {async goto(value){url=value;if(value==='chrome-extension://'+id+'/src/options.html')managementOpened=true;},url:()=>url,evaluate:popup.evaluate,async bringToFront(){},locator:(name)=>locator(name),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)};},async newCDPSession(){return session;}};
-export const chromium={executablePath:()=>path.resolve('packages/chrome-driver/browser.cjs'),async connectOverCDP(){if(fs.existsSync(path.join(ownProfile(),'synthetic-history.json'))){const history=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-history.json'),'utf8'));f.chrome.clips=history.clips;f.chrome.pinnedIds=history.pinnedIds;}if(fs.existsSync(path.join(ownProfile(),'synthetic-normal-login.json'))){f.chrome.managedRelayConfigurations=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),'utf8'));f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));}if(fs.existsSync(path.join(ownProfile(),'synthetic-human-not-ready')))f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(${JSON.stringify(mode)}==='near-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){while(!f.electronClosedAt)await new Promise(done=>setTimeout(done,1));await new Promise(done=>setTimeout(done,Math.max(0,f.electronClosedAt+42-Date.now())));}if(${JSON.stringify(mode)}==='slow-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){const receipt=path.join(process.env.PAIRING_FIXTURE_ROOT,'evidence/receipt.json'),deadline=Date.now()+5000;while(!fs.existsSync(receipt)&&Date.now()<deadline)await new Promise(done=>setTimeout(done,10));const published=fs.existsSync(receipt);fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'companion-close-observation.json'),JSON.stringify({electronReceiptPublished:published,electronResult:published?JSON.parse(fs.readFileSync(receipt,'utf8')).result:undefined}));if(!published)throw new Error('electron_cleanup_waited_for_companion');}if(${JSON.stringify(mode)}==='cleanup'&&!process.argv.includes('toolbar-relay-account-preparation'))throw new Error('SYNTHETIC_PRIVATE_CLEANUP_CANARY');const profile=fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');process.kill(Number(fs.readFileSync(path.join(profile,'owned.pid'),'utf8')),'SIGTERM');}};}};
+const popup={isClosed:()=>false,url:()=> 'chrome-extension://'+id+'/src/popup.html',getByRole:(_,q)=>locator(q.name),getByLabel:(name)=>locator(name),getByTitle:(name)=>locator(name),keyboard:{async insertText(value){typed=value;}},locator:(name)=>locator(name),getByText:(name)=>locator(name),async evaluate(fn,arg){if(String(fn).includes('__clippAcceptanceEarlyMemoryClipboard')&&!String(fn).includes('chrome.runtime.id')){if(!earlyStartupReady&&!earlyStartupScheduled){earlyStartupScheduled=true;setImmediate(()=>{earlyStartupReady=true;});}return earlyStartupReady&&${JSON.stringify(mode)}!=='other-popup-late-memory';}if(arg?.type==='managedRelaySet'&&${JSON.stringify(mode)}.startsWith('fresh-auth'))return {ok:false,error:'unsupported_legacy_configuration_command'};if(arg?.type==='managedRelaySet'){f.chrome.managedRelayConfigurations=arg.configurations;f.chrome.managedRelayStates=arg.configurations.map(config=>({...config,status:'login_needed',peerId:f.R}));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');return {ok:true};}if(arg?.target==='offscreen')return {ok:false,error:'offscreen_control_unauthorized'};if(arg?.type==='getStatus'&&${JSON.stringify(mode)}==='prep-transport')return {started:true,relayAcceptanceTransport:'webrtc-direct',acceptanceMemoryClipboard:true,secret:'SYNTHETIC_OAUTH_CODE_CANARY'};if(arg?.type==='getStatus')return {started:true,acceptanceMemoryClipboard:!(${JSON.stringify(mode)}==='no-early-memory'&&!process.argv.includes('toolbar-relay-account-preparation')),...(${JSON.stringify(mode)}==='ordinary-build'&&!process.argv.includes('toolbar-relay-account-preparation')?{}:{relayAcceptanceTransport:'wss'})};if(String(fn).includes('document.hasFocus')&&!String(fn).includes('chrome.runtime.id'))return focused;if(arg?.type==='getRuntimeState'||String(fn).includes('getRuntimeState'))return {state:structuredClone(f.chrome)};if(arg?.type==='clipboardUpdate'){if(!f.chrome.clips.some(value=>value.content===arg.text))f.chrome.clips.push({id:'cclip-'+(f.chrome.clips.length+1),content:arg.text,originPeerId:f.chrome.identity.deviceId});persistHistory();return {ok:true};}return {id,isPopup:${JSON.stringify(mode)}!=='other-popup-invalid',memory:true,earlyMemory:(earlyStartupReady||!String(fn).includes('getViews'))&&!(${JSON.stringify(mode)}==='other-popup-late-memory'&&String(fn).includes('getViews'))&&${JSON.stringify(mode)}!=='prep-early-memory'&&(${JSON.stringify(mode)}!=='verification-continuation'||process.env.VERIFY_CONTINUATION==='1'),focused:true};}};
+let ownedTabUrl='about:blank';const tab={url:()=> 'about:blank',async bringToFront(){open=false;}};
+const session={async send(method,arg){if(method==='Extensions.loadUnpacked'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-load-attempts'),'load\\n');throw new Error('controlled_installation_forbidden');}if(method==='Extensions.getExtensions'&&${JSON.stringify(mode)}==='oauth-private')throw new Error('https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY');if(method==='Extensions.getExtensions'){const file=path.join(ownProfile(),'synthetic-installed-extension.json');let installed=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):null;if(installed?.installedViaCDP){fs.unlinkSync(file);installed=null;}if(installed&&${JSON.stringify(mode)}==='wrong-id'&&!process.argv.includes('toolbar-relay-account-preparation'))installed.id='b'.repeat(32);return {extensions:installed?(${JSON.stringify(mode)}==='human-duplicate'?[installed,installed]:[installed]):[]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'page',type:'page',url:ownedTabUrl,browserContextId:'owned'}};if(method==='Target.getTargets'&&arg?.filter?.[0]?.type!=='tab')return {targetInfos:[{type:'page',url:authUrl,title:'SYNTHETIC_PRIVATE_TARGET_CANARY'},...(${JSON.stringify(mode)}==='popup-target-absent'?[]:[{type:${JSON.stringify(mode)}==='popup-target-other'?'other':'page',url:'chrome-extension://'+id+'/src/popup.html',title:'SYNTHETIC_PRIVATE_TARGET_CANARY'}])]};if(method==='Target.getTargets'){if(['foreground-gone','foreground-mismatch'].includes(${JSON.stringify(mode)}))fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-identity-check'),'true');return {targetInfos:[{targetId:'tab',type:'tab',url:ownedTabUrl,browserContextId:'owned'},...(${JSON.stringify(mode)}==='bootstrap-blank'?[{targetId:'bootstrap-tab',type:'tab',url:'about:blank',browserContextId:'owned'}]:[])]};}if(method==='Browser.getWindowForTarget')return {windowId:1};if(method==='Extensions.triggerAction'){if(${JSON.stringify(mode)}==='other-popup-delayed-startup'){earlyStartupReady=false;earlyStartupScheduled=false;}fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'trigger-observations'),JSON.stringify({other:process.env.PW_CHROMIUM_ATTACH_TO_OTHER})+'\\n');if(${JSON.stringify(mode)}==='foreground-required'&&!fs.existsSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'owned-foreground')))throw new Error('owned_browser_not_foreground');open=true;}return {};}};
+const context={async addInitScript(){},serviceWorkers:()=>${JSON.stringify(mode)}==='dormant-worker'&&!managementOpened?[]:[{url:()=> 'chrome-extension://'+id+'/background.js'}],pages:()=>open&&!${JSON.stringify(mode)}.startsWith('popup-target-')&&(!${JSON.stringify(mode)}.startsWith('other-popup')||Boolean(process.env.PW_CHROMIUM_ATTACH_TO_OTHER))?[tab,popup,...(['other-popup-duplicate','other-popup-closed-duplicate'].includes(${JSON.stringify(mode)})?[{...popup,isClosed:()=>${JSON.stringify(mode)}==='other-popup-closed-duplicate'}]:[])]:[tab],async newPage(){let url='';return {async goto(value){url=value;if(value.startsWith('about:blank')){ownedTabUrl=value;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'owned-tab-urls'),value+'\\n');}if(value==='chrome-extension://'+id+'/src/options.html')managementOpened=true;},url:()=>url,evaluate:popup.evaluate,async bringToFront(){},locator:(name)=>locator(name),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)};},async newCDPSession(){return session;}};
+export const chromium={executablePath:()=>path.resolve('packages/chrome-driver/browser.cjs'),async connectOverCDP(){if(fs.existsSync(path.join(ownProfile(),'synthetic-history.json'))){const history=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-history.json'),'utf8'));f.chrome.clips=history.clips;f.chrome.pinnedIds=history.pinnedIds;}if(fs.existsSync(path.join(ownProfile(),'synthetic-normal-login.json'))){f.chrome.managedRelayConfigurations=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),'utf8'));f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));}if(fs.existsSync(path.join(ownProfile(),'synthetic-human-not-ready')))f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(${JSON.stringify(mode)}==='near-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){while(!f.electronClosedAt)await new Promise(done=>setTimeout(done,1));await new Promise(done=>setTimeout(done,Math.max(0,f.electronClosedAt+42-Date.now())));}if(${JSON.stringify(mode)}==='slow-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){const receipt=path.join(process.env.PAIRING_FIXTURE_ROOT,'evidence/receipt.json'),deadline=Date.now()+5000;while(!fs.existsSync(receipt)&&Date.now()<deadline)await new Promise(done=>setTimeout(done,10));const published=fs.existsSync(receipt);fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'companion-close-observation.json'),JSON.stringify({electronReceiptPublished:published,electronResult:published?JSON.parse(fs.readFileSync(receipt,'utf8')).result:undefined}));if(!published)throw new Error('electron_cleanup_waited_for_companion');}if(['cleanup','other-popup-cleanup'].includes(${JSON.stringify(mode)})&&!process.argv.includes('toolbar-relay-account-preparation'))throw new Error('SYNTHETIC_PRIVATE_CLEANUP_CANARY');const profile=fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');process.kill(Number(fs.readFileSync(path.join(profile,'owned.pid'),'utf8')),'SIGTERM');}};}};
 `
   );
   const build = join(source, "build-runtime.cjs");
@@ -1256,18 +1271,18 @@ function relayPairFixture(t, mode = "healthy", applicationRunner) {
             .split("\n")
             .map((line) => JSON.parse(line))
         : [],
-    runPair(extra = [], prepare = true) {
+    runPair(extra = [], prepare = true, environment = {}) {
       if (prepare && !existsSync(profileRecord)) {
         const ready = prepareAccount();
         assert.equal(ready.status, 0, ready.stdout + ready.stderr);
       }
-      return f.accept([
-        "--pairing-record",
-        record,
-        "--timeout-seconds",
-        "5",
-        ...extra,
-      ]);
+      return f.accept(
+        ["--pairing-record", record, "--timeout-seconds", "5", ...extra],
+        f.record,
+        undefined,
+        undefined,
+        { environment }
+      );
     },
   };
 }
@@ -2715,4 +2730,222 @@ test("an attached zero-area legacy Pinned control does not bypass the popup moun
       .split("\n"),
     ["Filters", "Pinned", "All", "Pinned"]
   );
+});
+
+test("the owned relay toolbar tab remains unique beside the browser bootstrap blank tab", (t) => {
+  const f = relayPairFixture(t, "bootstrap-blank");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.result, "passed");
+  assert.equal(chrome.actionTarget.tabTargetId, "tab");
+  assert.equal(chrome.actionTarget.contextMatched, true);
+  assert.equal(chrome.actionTarget.urlMatched, true);
+  const urls = readFileSync(join(f.root, "owned-tab-urls"), "utf8")
+    .trim()
+    .split("\n");
+  assert.ok(urls.length > 0);
+  for (const url of urls)
+    assert.match(url, /^about:blank#clipp-toolbar-owned-[0-9a-f-]{36}$/);
+  assert.equal(new Set(urls).size, urls.length);
+});
+
+test("the owned relay toolbar action foregrounds only its freshly verified browser PID", (t) => {
+  const f = relayPairFixture(t, "foreground-required");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  const calls = readFileSync(join(f.root, "foreground-commands"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.ok(calls.length > 0);
+  for (const call of calls) {
+    assert.equal(call.pid, chrome.process.pid);
+    assert.deepEqual(call.argv, [
+      "-e",
+      'tell application "System Events" to set frontmost of first application process whose unix id is ' +
+        call.pid +
+        " to true",
+    ]);
+  }
+  assert.equal(chrome.foreground.pidBindingReverified, true);
+});
+
+test("the owned runner scopes other-target attachment and restores an absent environment", (t) => {
+  const f = relayPairFixture(t, "other-popup");
+  const result = f.runPair([], true, {
+    PW_CHROMIUM_ATTACH_TO_OTHER: undefined,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.debugger.otherTargetAttachment.enabled, true);
+  assert.equal(
+    chrome.debugger.otherTargetAttachment.unaffectedLifecycleQualified,
+    false
+  );
+  const exits = readFileSync(join(f.root, "other-env-exit"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  for (const observation of exits)
+    assert.deepEqual(observation.final, observation.initial);
+  const triggers = readFileSync(join(f.root, "trigger-observations"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.ok(triggers.length > 0);
+  assert.ok(triggers.every((value) => Boolean(value.other)));
+  assert.equal(chrome.tooling.playwright.version, "1.57.0");
+  for (const file of ["crBrowser.js", "crPage.js"]) {
+    const relative = "lib/server/chromium/" + file;
+    assert.equal(
+      chrome.tooling.playwright.files[relative],
+      createHash("sha256")
+        .update(
+          readFileSync(
+            join(f.destination, "packages/playwright-core", relative)
+          )
+        )
+        .digest("hex")
+    );
+  }
+});
+
+for (const mode of [
+  "foreground-gone",
+  "foreground-mismatch",
+  "foreground-after-mismatch",
+])
+  test(`owned foreground refuses ${mode} before the toolbar action`, (t) => {
+    const f = relayPairFixture(t, mode);
+    const result = f.runPair();
+    assert.notEqual(result.status, 0);
+    const chrome = JSON.parse(
+      readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+    );
+    assert.equal(chrome.operation, "foreground_owned_browser");
+    assert.equal(existsSync(join(f.root, "trigger-observations")), false);
+    if (mode === "foreground-after-mismatch")
+      assert.equal(
+        readFileSync(join(f.root, "foreground-commands"), "utf8")
+          .trim()
+          .split("\n").length,
+        1
+      );
+    else assert.equal(existsSync(join(f.root, "foreground-commands")), false);
+  });
+for (const initial of ["", "0", "already-enabled"])
+  test(`owned other-target scope restores prior value ${JSON.stringify(initial)}`, (t) => {
+    const f = relayPairFixture(t, "other-popup");
+    const result = f.runPair([], true, {
+      PW_CHROMIUM_ATTACH_TO_OTHER: initial,
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const observations = readFileSync(join(f.root, "other-env-exit"), "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(observations.length > 0);
+    for (const observation of observations)
+      assert.deepEqual(observation.final, observation.initial);
+    const triggers = readFileSync(join(f.root, "trigger-observations"), "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(triggers.every((value) => value.other === (initial || "1")));
+    assert.ok(
+      triggers.length >= 2,
+      "the ordinary coordinator must reopen the popup under the same scope"
+    );
+  });
+for (const mode of ["other-popup-invalid", "other-popup-cleanup"])
+  test(`owned other-target scope restores the environment after ${mode}`, (t) => {
+    const f = relayPairFixture(t, mode);
+    const result = f.runPair([], true, { PW_CHROMIUM_ATTACH_TO_OTHER: "0" });
+    assert.notEqual(result.status, 0);
+    const observations = readFileSync(join(f.root, "other-env-exit"), "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(observations.length > 0);
+    for (const observation of observations)
+      assert.deepEqual(observation.final, observation.initial);
+  });
+
+for (const type of ["absent", "other", "page"])
+  test(`popup failure reports privacy-safe exact target counts for ${type}`, (t) => {
+    const f = relayPairFixture(t, "popup-target-" + type);
+    const result = f.runPair();
+    assert.notEqual(result.status, 0);
+    const chrome = JSON.parse(
+      readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+    );
+    assert.equal(chrome.surface, undefined);
+    const diagnostic = JSON.parse(
+      readFileSync(
+        join(chrome.history.path, "..", "attempt-1/failure.private.json")
+      )
+    );
+    assert.equal(diagnostic.protocol.popupDiscovery.observed, true);
+    assert.equal(
+      diagnostic.protocol.popupDiscovery.exactPopupCount,
+      type === "absent" ? 0 : 1
+    );
+    assert.deepEqual(
+      diagnostic.protocol.popupDiscovery.exactPopupTypes,
+      type === "absent" ? {} : { [type]: 1 }
+    );
+    const text = JSON.stringify(diagnostic);
+    assert.ok(!text.includes("accounts.google.com"));
+    assert.ok(!text.includes("SYNTHETIC_"));
+  });
+
+test("an attached other popup still requires its own early memory startup proof", (t) => {
+  const f = relayPairFixture(t, "other-popup-late-memory");
+  const result = f.runPair();
+  assert.notEqual(result.status, 0);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.failure, "acceptance_memory_startup_required");
+  assert.equal(chrome.surface, undefined);
+  assert.equal(chrome.behavior, undefined);
+});
+
+test("multiple live exact popup pages refuse the toolbar surface", (t) => {
+  const f = relayPairFixture(t, "other-popup-duplicate");
+  const result = f.runPair();
+  assert.notEqual(result.status, 0);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.failure, "wrong_target");
+  assert.equal(chrome.surface, undefined);
+  assert.equal(chrome.behavior, undefined);
+});
+test("a closed exact popup page does not make its one live counterpart ambiguous", (t) => {
+  const f = relayPairFixture(t, "other-popup-closed-duplicate");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.behavior.exactNewPin, true);
+});
+
+test("the owned popup waits for delayed compiled startup memory proof", (t) => {
+  const f = relayPairFixture(t, "other-popup-delayed-startup");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.behavior.exactNewPin, true);
 });

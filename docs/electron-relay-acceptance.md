@@ -602,3 +602,17 @@ preparation proof. Reusing preparation does not preserve a service worker across
 browser closure; the maintained runner opens the isolated normal management page
 before waiting for that worker. The same isolation, Ready, signed request, native
 Accept, Membership and joint cleanup gates still apply.
+
+The maintained Chrome actor uses its owned PID/profile identity for bounded macOS
+foreground activation before the original toolbar action. Its controlled
+Playwright session enables attachment to `other` targets through popup reopening,
+restores the original environment in cleanup, and records exact installed
+`crBrowser.js` and `crPage.js` hashes. Broader target/debugger lifecycle remains
+unqualified. Exact-popup failure diagnostics contain bounded matching target type
+counts rather than unrelated URLs or contents. All actual-popup identity, view,
+early memory, focus, input and cleanup assertions still apply.
+
+Both actors accept their own explicit absolute `--renewal` decision path and
+forward it to the maintained semantic-history policy. Keep Electron and Chrome
+decisions tied to their respective prior failed histories; the joint runner does
+not manufacture approval or silently renew either budget.
