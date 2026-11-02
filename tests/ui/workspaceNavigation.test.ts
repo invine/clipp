@@ -500,6 +500,41 @@ it("Devices retains honest text status when a reported path is no longer connect
   expect(render([], false)).toContain("Connection status unknown");
 });
 
+it("Devices distinguishes this installation from trusted devices when one is offline", () => {
+  const session = createUiSession();
+  session.update({ destination: "devices" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      identity: { deviceId: "local", deviceName: "This computer" },
+      devices: [{ deviceId: "trusted", deviceName: "Work laptop" }],
+      connectionStateKnown: true,
+      peers: [],
+    })
+  );
+
+  expect(output).toContain("This device");
+  expect(output).toContain("Trusted Devices");
+  expect(output).toContain("Work laptop");
+  expect(output).toContain("Trusted · Offline");
+  expect(output).not.toContain("Last seen");
+  expect(output).toContain("Pair this device");
+
+  const emptyOutput = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      identity: { deviceId: "local", deviceName: "This computer" },
+      devices: [],
+      connectionStateKnown: true,
+      peers: [],
+    })
+  );
+  expect(emptyOutput).toContain("No Trusted Devices yet.");
+  expect(emptyOutput).toContain("0 devices");
+});
+
 it("organizes routine settings, connections, and advanced tasks by session category", () => {
   const session = createUiSession();
   session.update({ destination: "settings" });

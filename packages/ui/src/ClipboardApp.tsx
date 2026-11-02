@@ -1736,13 +1736,18 @@ export function ClipboardApp({
         )}
         {sessionState.destination === "devices" && (
           <>
-            <div className="peer-list">
+            <section
+              className="device-section"
+              aria-labelledby="this-device-heading"
+            >
               {identity && (
                 <>
-                  <div className="nav-section-label">This device</div>
-                  <div className="peer-item active">
-                    <div className="peer-avatar" style={{ minWidth: 32 }}>
-                      L
+                  <h2 className="device-section-title" id="this-device-heading">
+                    This device
+                  </h2>
+                  <div className="device-card device-card-local">
+                    <div className="device-card-icon" aria-hidden="true">
+                      <Icon name="computer" />
                     </div>
                     <div className="peer-meta">
                       <div className="peer-name-row">
@@ -1765,11 +1770,9 @@ export function ClipboardApp({
                         text={identity.deviceId}
                         max={isNarrow ? 22 : 30}
                       />
-                    </div>
-                    <div className="peer-actions">
-                      <div className="peer-indicator">
-                        <Icon name="computer" />
-                      </div>
+                      <span className="device-membership-status">
+                        This installation
+                      </span>
                     </div>
                   </div>
                   <button
@@ -1787,7 +1790,7 @@ export function ClipboardApp({
                   </button>
                 </>
               )}
-            </div>
+            </section>
           </>
         )}
         {sessionState.destination === "requests" && (
@@ -1921,20 +1924,27 @@ export function ClipboardApp({
               Pair this device
             </button>
 
-            <div>
-              <div className="nav-section-label" style={{ marginTop: 14 }}>
-                Trusted Devices
+            <section
+              className="device-section trusted-device-section"
+              aria-labelledby="trusted-devices-heading"
+            >
+              <div className="device-section-heading">
+                <h2
+                  className="device-section-title"
+                  id="trusted-devices-heading"
+                >
+                  Trusted Devices
+                </h2>
+                <span className="device-count">
+                  {devices.length} {devices.length === 1 ? "device" : "devices"}
+                </span>
               </div>
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                }}
-              >
+              <div className="device-list">
                 {devices.length === 0 && (
-                  <div className="content-subtitle">No devices yet.</div>
+                  <div className="device-empty-state">
+                    No Trusted Devices yet. Pair another device to add it to
+                    your Device Network.
+                  </div>
                 )}
                 {revocationError &&
                   revocationError.identityId === identity?.deviceId && (
@@ -1975,14 +1985,11 @@ export function ClipboardApp({
                   return (
                     <div
                       key={dev.deviceId}
-                      className="peer-item"
+                      className={`device-card device-card-trusted ${isOnline ? "is-online" : "is-offline"}`}
                       title={connectionStatus.title}
-                      style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                     >
-                      <div
-                        className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}
-                      >
-                        {(dev.displayName || dev.deviceName)?.[0] || "D"}
+                      <div className="device-card-icon" aria-hidden="true">
+                        <Icon name="device" />
                       </div>
                       <div className="peer-meta">
                         <MiddleEllipsisText
@@ -1994,14 +2001,11 @@ export function ClipboardApp({
                           text={dev.deviceId}
                           max={isNarrow ? 22 : 32}
                         />
-                        <span className="peer-sub">
-                          {connectionStatus.title}
+                        <span className="device-membership-status">
+                          Trusted · {connectionStatus.title}
                         </span>
                       </div>
                       <div className="peer-actions">
-                        <div className="peer-indicator">
-                          <Icon name="device" />
-                        </div>
                         {onRenameDevice && (
                           <button
                             className="icon-button"
@@ -2031,7 +2035,7 @@ export function ClipboardApp({
                   );
                 })}
               </div>
-            </div>
+            </section>
           </>
         )}
         {sessionState.destination === "settings" &&

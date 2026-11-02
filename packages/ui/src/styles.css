@@ -2803,6 +2803,124 @@ html[data-host-geometry="android"] .android-host {
   overflow: visible;
 }
 
+.device-section {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 52rem;
+  margin-block: 0.25rem 1.25rem;
+}
+
+.app-shell .content-pane[hidden] {
+  display: none;
+}
+
+.trusted-device-section {
+  margin-top: 1.25rem;
+}
+
+.device-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.device-section-title {
+  margin: 0;
+  color: var(--clipp-text);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.device-count {
+  color: var(--clipp-text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-list {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.device-card {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-width: 0;
+  padding: 0.875rem;
+  border: 1px solid var(--clipp-border);
+  border-radius: var(--md-radius-lg);
+  background: var(--clipp-surface);
+}
+
+.device-card-local {
+  background: var(--clipp-surface-raised);
+}
+
+.device-card-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--clipp-text-muted);
+}
+
+.device-card-icon .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.device-card .peer-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.device-membership-status {
+  color: var(--clipp-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.device-card .peer-actions {
+  flex: 0 1 auto;
+  margin-left: auto;
+  align-items: center;
+}
+
+.device-card .peer-actions > .text-button {
+  min-height: var(--clipp-target-min);
+}
+
+.device-empty-state {
+  padding: 1rem;
+  border: 1px dashed var(--clipp-border);
+  border-radius: var(--md-radius-lg);
+  color: var(--clipp-text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .device-card {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.75rem;
+  }
+
+  .device-card .peer-meta {
+    flex-basis: calc(100% - 3.25rem);
+  }
+
+  .device-card .peer-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-left: 3.125rem;
+  }
+}
+
 @media (max-width: 520px) {
   .workspace-controls .search-field {
     flex: 1 1 100%;
