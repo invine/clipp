@@ -14,6 +14,8 @@ export function ClipDetails({
   onRetry,
   onDismiss,
   onHistory,
+  onShareNow,
+  shareNowAction,
 }: {
   clip?: Clip;
   sourceName?: string;
@@ -26,6 +28,8 @@ export function ClipDetails({
   onRetry(id: string): void;
   onDismiss(id: string): void;
   onHistory(): void;
+  onShareNow?(): void;
+  shareNowAction?: SessionContext["historyActions"][string];
 }) {
   if (!clip)
     return (
@@ -66,6 +70,24 @@ export function ClipDetails({
           }
           onClick={onCopy}
         />
+        {onShareNow && (
+          <div className="send-control clip-details-share">
+            <IconButton
+              icon="send"
+              label="Share current clipboard now"
+              disabled={
+                disabled ||
+                shareNowAction?.pending ||
+                shareNowAction?.feedback?.requiresAcknowledgement
+              }
+              onClick={onShareNow}
+            />
+            <span className="control-hint">
+              Sends your current system clipboard. This Clip is not sent by this
+              action.
+            </span>
+          </div>
+        )}
         <IconButton
           icon="pin"
           label="Pin Clip"
@@ -82,6 +104,32 @@ export function ClipDetails({
           onClick={onDelete}
         />
       </div>
+      {onShareNow && shareNowAction && (
+        <div role="status">
+          {shareNowAction.pending && <p>Sharing current clipboard…</p>}
+          {shareNowAction.feedback && (
+            <>
+              <p>{shareNowAction.feedback.message}</p>
+              <button
+                type="button"
+                disabled={
+                  shareNowAction.pending ||
+                  (disabled && shareNowAction.feedback.action === "retry")
+                }
+                onClick={() =>
+                  shareNowAction.feedback?.action === "retry"
+                    ? onRetry("send:current")
+                    : onDismiss("send:current")
+                }
+              >
+                {shareNowAction.feedback.action === "retry"
+                  ? "Retry"
+                  : "Dismiss"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {Object.entries(actions)
         .filter(([id]) => id.endsWith(`:${clip.id}`))
         .map(([id, action]) => (

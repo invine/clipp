@@ -113,3 +113,113 @@ it("makes the complete source name inspectable beside the exact Peer ID", () => 
   expect(output).toContain("👩🏽‍💻".repeat(40) + " source");
   expect(output).toContain("exact-peer-id");
 });
+
+it("only presents Share Now when the runtime provides it and states what it shares", () => {
+  const clip = {
+    id: "clip",
+    type: "text" as const,
+    content: "historical Clip",
+    originPeerId: "local",
+    capturedAt: 1,
+    shareExpiresAt: 2,
+  };
+  const base = {
+    clip,
+    pinned: false,
+    disabled: false,
+    actions: {},
+    onCopy() {},
+    onPin() {},
+    onDelete() {},
+    onRetry() {},
+    onDismiss() {},
+    onHistory() {},
+  };
+  const unsupported = renderToStaticMarkup(
+    React.createElement(ClipDetails, base)
+  );
+  expect(unsupported).not.toContain("Share current clipboard now");
+
+  const supported = renderToStaticMarkup(
+    React.createElement(ClipDetails, {
+      ...base,
+      onShareNow() {},
+      shareNowAction: { pending: false, feedback: null },
+    })
+  );
+  expect(supported).toContain('aria-label="Share current clipboard now"');
+  expect(supported).toContain("Sends your current system clipboard");
+  expect(supported).toContain("This Clip is not sent by this action.");
+});
+
+it("shows current clipboard Share Now failure feedback inside details", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipDetails, {
+      clip: {
+        id: "clip",
+        type: "text",
+        content: "historical Clip",
+        originPeerId: "local",
+        capturedAt: 1,
+        shareExpiresAt: 2,
+      },
+      pinned: false,
+      disabled: false,
+      actions: {},
+      onCopy() {},
+      onPin() {},
+      onDelete() {},
+      onRetry() {},
+      onDismiss() {},
+      onHistory() {},
+      onShareNow() {},
+      shareNowAction: {
+        pending: false,
+        feedback: {
+          message:
+            "Could not read the current clipboard. Keep Clipp open and try again.",
+          action: "retry",
+        },
+      },
+    })
+  );
+  expect(output).toContain(
+    "Could not read the current clipboard. Keep Clipp open and try again."
+  );
+  expect(output).toContain("Retry");
+});
+
+it("shows a confirmed Share Now result without invoking the share callback", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipDetails, {
+      clip: {
+        id: "clip",
+        type: "text",
+        content: "historical Clip",
+        originPeerId: "local",
+        capturedAt: 1,
+        shareExpiresAt: 2,
+      },
+      pinned: false,
+      disabled: false,
+      actions: {},
+      onCopy() {},
+      onPin() {},
+      onDelete() {},
+      onRetry() {},
+      onDismiss() {},
+      onHistory() {},
+      onShareNow() {},
+      shareNowAction: {
+        pending: false,
+        feedback: {
+          message: "Shared current clipboard.",
+          action: "dismiss",
+          status: "success",
+        },
+      },
+    })
+  );
+  expect(output).toContain("Shared current clipboard.");
+  expect(output).toContain("Dismiss");
+});

@@ -727,7 +727,7 @@ try {
     });
   }
   if (process.argv.includes("--compact-history"))
-    await checkCompactHistory({ page, nav, report });
+    await checkCompactHistory({ page, nav, report, out });
   if (process.argv.includes("--matrix")) {
     await page.setViewportSize(
       host === "chrome"

@@ -1,9 +1,109 @@
 import assert from "node:assert/strict";
 
 /** Public rendered ClipboardApp actions; no native clipboard or network traffic. */
-export async function checkCompactHistory({ page, nav, report }) {
+export async function checkCompactHistory({ page, nav, report, out }) {
   await page.setViewportSize({ width: 1400, height: 900 });
   await nav.getByRole("button", { name: "History", exact: true }).click();
+  if (process.argv.includes("--details-dialog-only")) {
+    await page.setViewportSize({ width: 375, height: 700 });
+    const closeNavigation = page.getByRole("button", {
+      name: "Close navigation",
+      exact: true,
+    });
+    if (await closeNavigation.count()) await closeNavigation.click();
+    const clip = {
+      id: "dialog-fixture",
+      content: "A long unbroken value: " + "x".repeat(500),
+      type: "text",
+      originPeerId: "remote",
+      capturedAt: 1,
+      shareExpiresAt: Date.now() + 60000,
+    };
+    await page.evaluate(
+      (clip) => window.publishFixture({ clips: [clip] }),
+      clip
+    );
+    const row = page.locator('[data-clip-id="dialog-fixture"]');
+    const opener = row.getByRole("button", {
+      name: "View Clip details",
+      exact: true,
+    });
+    assert.equal(
+      await row.getByRole("button", { name: "Copy Clip", exact: true }).count(),
+      1,
+      "row Copy remains independently available"
+    );
+    assert.equal(await page.getByRole("dialog").count(), 0);
+    await opener.focus();
+    await page.keyboard.press("Enter");
+    const details = page.getByRole("dialog", {
+      name: "Clip details",
+      exact: true,
+    });
+    await details.waitFor();
+    assert.ok(await details.getAttribute("aria-modal"));
+    assert.equal(
+      await details
+        .getByRole("button", {
+          name: "Share current clipboard now",
+          exact: true,
+        })
+        .count(),
+      1,
+      "supported Share Now is presented in details"
+    );
+    assert.match(
+      await details.locator(".clip-details-share .control-hint").textContent(),
+      /This Clip is not sent by this action\./,
+      "the current clipboard scope is explicit"
+    );
+    assert.equal(
+      await details
+        .locator(".clip-details-content")
+        .evaluate((element) => element.scrollWidth > element.clientWidth),
+      false,
+      "long content wraps within the dialog"
+    );
+    assert.equal(
+      await details.locator(".clip-details-actions button").count(),
+      4,
+      "details actions are independent from the row actions"
+    );
+    const actionBounds = await details
+      .locator(".clip-details-actions")
+      .boundingBox();
+    assert.ok(
+      actionBounds && actionBounds.y + actionBounds.height <= 700,
+      "long content leaves the action row reachable in the narrow dialog"
+    );
+    await page.screenshot({ path: `${out}/clip-details-dialog-narrow.png` });
+    await page.keyboard.press("Escape");
+    await details.waitFor({ state: "detached" });
+    assert.equal(
+      await opener.evaluate((element) => document.activeElement === element),
+      true,
+      "Escape returns focus to the Clip opener"
+    );
+    assert.equal(
+      await page.locator('[data-clip-id="dialog-fixture"]').count(),
+      1
+    );
+    assert.deepEqual(
+      await page.evaluate(() =>
+        window.fixtureActions.filter((action) =>
+          ["copy", "send"].includes(action.action)
+        )
+      ),
+      [],
+      "presentation checks do not invoke copy, Share Now, or send callbacks"
+    );
+    report.cases.push({
+      label:
+        "details dialog wraps long content, presents scoped Share Now, restores opener focus on Escape, and invokes no Clip actions",
+      passed: true,
+    });
+    return;
+  }
   await page.evaluate(() => {
     window.fixtureSession.update({
       search: "",

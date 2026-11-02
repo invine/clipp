@@ -1324,7 +1324,11 @@ export function ClipboardApp({
     void session.runHistoryAction("send:current", async () => {
       try {
         await onShareNow?.();
-        return null;
+        return {
+          message: "Shared current clipboard.",
+          action: "dismiss",
+          status: "success",
+        };
       } catch (error) {
         return shareNowFailureFeedback(normalizeShareNowFailureCode(error));
       }
@@ -3188,6 +3192,8 @@ export function ClipboardApp({
               onDelete={() => handleDelete(activeTask!.entity!)}
               onRetry={(id) => void session.retryHistoryAction(id)}
               onDismiss={(id) => session.dismissHistoryAction(id)}
+              onShareNow={onShareNow ? shareNow : undefined}
+              shareNowAction={sessionState.historyActions["send:current"]}
               onHistory={() => {
                 session.back();
                 session.update({ destination: "history" });

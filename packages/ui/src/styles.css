@@ -2197,6 +2197,8 @@ html[data-host-geometry="android"] .android-host {
 }
 
 .clip-details-content {
+  max-height: min(35vh, 18rem);
+  overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--clipp-font);
