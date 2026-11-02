@@ -210,13 +210,25 @@ try {
   await page.addStyleTag({ path: join(out, "consumer.css") });
   await page.addScriptTag({ path: join(out, "consumer.js") });
   const toggle = page.locator('button[aria-controls="workspace-navigation"]');
+  const runSafeNavigationCase = [
+    "--workspace-navigation",
+    "--settings-category-focus",
+    "--navigation-target-stability",
+  ].some((flag) => process.argv.includes(flag));
   if (
+    (!process.argv.includes("--skip-initial") || runSafeNavigationCase) &&
     (await toggle.isVisible()) &&
     (await toggle.getAttribute("aria-expanded")) === "false"
   )
     await toggle.click();
   const nav = page.getByRole("navigation", { name: "Clipp destinations" });
-  await nav.waitFor({ timeout: 3000 });
+  if (!process.argv.includes("--skip-initial") || runSafeNavigationCase)
+    await nav.waitFor({ timeout: 3000 });
+  if (
+    process.argv.includes("--skip-initial") &&
+    process.argv.includes("--workspace-navigation")
+  )
+    await nav.getByRole("button", { name: "History", exact: true }).click();
   const openCompactNavigation = async () => {
     if (
       (await toggle.isVisible()) &&
@@ -238,7 +250,7 @@ try {
   };
   if (process.argv.includes("--navigation-target-stability")) {
     await checkNavigationTargetStability({ page, nav, report, host });
-  } else {
+  } else if (!process.argv.includes("--skip-initial")) {
     await openCompactNavigation();
     for (const name of ["History", "Devices", "Requests", "Settings"])
       assert.equal(
@@ -1917,6 +1929,7 @@ try {
     report.clipboardCalls = await page.evaluate(
       () => window.fixtureClipboardCalls
     );
+    report.fixtureActions = await page.evaluate(() => window.fixtureActions);
     report.geometryDisposed = await page.evaluate(
       () => !document.documentElement.dataset.hostGeometry
     );
@@ -1930,10 +1943,18 @@ try {
   );
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
 }
+if (process.argv.includes("--assert-no-actions")) {
+  assert.deepEqual(report.fixtureActions, []);
+  assert.deepEqual(report.clipboardCalls, { reads: 0, writes: 0 });
+  assert.equal(report.blockedRequests, 0);
+}
 console.log(
   JSON.stringify({
     passed: report.cases.length,
     closed: report.closed,
     errors: report.errors,
+    fixtureActions: report.fixtureActions,
+    clipboardCalls: report.clipboardCalls,
+    blockedRequests: report.blockedRequests,
   })
 );
