@@ -2376,7 +2376,7 @@ html[data-host-geometry="android"] .android-host {
     padding-inline: 0.125rem;
   }
 }
-.settings-categories button[aria-current="page"] {
+.settings-categories button[aria-current] {
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 0.25em;
@@ -2791,12 +2791,13 @@ html[data-host-geometry="android"] .android-host {
   width: min(18rem, calc(100vw - 2.5rem));
   overflow-y: auto;
   border-right: 1px solid var(--clipp-border);
-  box-shadow: var(--md-elevation-2);
+  box-shadow: none;
   transform: translateX(-105%);
   transition: transform 160ms ease;
 }
 
 .app-shell.workspace-narrow.nav-open .workspace-sidebar {
+  box-shadow: var(--md-elevation-2);
   transform: translateX(0);
 }
 
@@ -3371,5 +3372,747 @@ html[data-host-geometry="android"] .android-host {
 @media (prefers-reduced-motion: reduce) {
   .workspace-sidebar {
     transition: none;
+  }
+}
+
+/* Workspace surfaces and row hierarchy follow the approved interactive reference. */
+:root {
+  --workspace-side: #f0eff1;
+  --workspace-panel: #fff;
+  --workspace-raised: #f0eff3;
+}
+:root[data-clipp-theme="dark"] {
+  --workspace-side: #101012;
+  --workspace-panel: #151518;
+  --workspace-raised: #202024;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-clipp-theme="light"]):not([data-clipp-theme="dark"]) {
+    --workspace-side: #101012;
+    --workspace-panel: #151518;
+    --workspace-raised: #202024;
+  }
+}
+.workspace-sidebar {
+  background: var(--workspace-side);
+}
+.workspace-navigation button[aria-current="page"] {
+  background: var(--workspace-raised);
+}
+.workspace-controls .search-field {
+  background: var(--workspace-raised);
+}
+.app-shell:not(.workspace-cramped) .app-main {
+  width: 100%;
+  max-width: 1400px;
+  margin-inline: auto;
+  padding: 1.5rem 2.5rem;
+}
+.app-shell:not(.workspace-cramped) .content-pane {
+  gap: 0;
+  padding: 0 1.5rem 1.5rem;
+  border-radius: 9px;
+  background: var(--workspace-panel);
+}
+.content-filters {
+  padding: 0.5rem 0;
+}
+.segmented button {
+  position: relative;
+  border-radius: 0;
+}
+.segmented button.active {
+  background: transparent;
+}
+.segmented button.active::after {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0;
+  left: 0.5rem;
+  height: 2px;
+  background: var(--clipp-text);
+  content: "";
+}
+.history-card {
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.35fr) auto;
+  grid-template-areas: "preview metadata actions";
+  grid-template-rows: auto;
+  min-height: 4.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 7px;
+  border-bottom: 0;
+}
+.history-card:hover,
+.history-card:focus-within {
+  background: var(--workspace-raised);
+}
+.history-card .history-select {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: 0.875rem;
+  text-align: left;
+}
+.history-type-icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  color: var(--clipp-text-muted);
+}
+.history-card .history-meta {
+  align-self: center;
+  justify-content: flex-end;
+}
+.history-card .history-chip-prefix,
+.history-card .pill-source,
+.history-card .history-type {
+  display: none;
+}
+.devices-pane {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.devices-pane > .device-section:first-of-type,
+.devices-pane > .primary-button,
+.devices-pane > .trusted-device-section {
+  grid-column: 1;
+  grid-row: auto;
+}
+.device-section {
+  padding: 1.25rem 1.5rem;
+  border-radius: 9px;
+  background: var(--workspace-panel);
+}
+.settings-group {
+  padding: 1rem;
+  border: 0;
+  border-radius: 9px;
+  background: var(--workspace-panel);
+}
+@media (max-width: 800px) {
+  .app-shell:not(.workspace-cramped) .app-main {
+    padding: 1.25rem;
+  }
+  .history-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "preview actions" "metadata actions";
+  }
+  .history-card .history-meta {
+    justify-content: flex-start;
+    padding-left: 2.05rem;
+  }
+}
+@media (max-width: 520px) {
+  .app-shell:not(.workspace-cramped) .app-main {
+    padding: 1rem;
+  }
+  .app-shell:not(.workspace-cramped) .content-pane {
+    padding: 0 0.875rem 1rem;
+  }
+  .history-card {
+    padding-inline: 0.25rem;
+  }
+  .device-section {
+    padding: 1rem;
+  }
+}
+
+.app-shell:not(.workspace-cramped) .content-pane {
+  align-self: start;
+}
+.workspace-controls .search-field:focus-within input:focus-visible {
+  outline: none;
+}
+
+/* Keep search and history controls within the history surface. */
+.content-pane .workspace-controls {
+  padding: 0.75rem 0;
+}
+.content-pane .workspace-controls .search-field {
+  flex: 0 1 20rem;
+  min-width: min(100%, 13rem);
+  margin-inline-end: auto;
+}
+.setting-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 44px;
+  height: 44px;
+  padding: 12px 5px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.setting-switch::before {
+  position: absolute;
+  width: 34px;
+  height: 20px;
+  border-radius: 20px;
+  background: #55545a;
+  content: "";
+}
+.setting-switch[aria-checked="true"]::before {
+  background: #6f5abf;
+}
+.setting-switch > span {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: #fff;
+}
+.setting-switch[aria-checked="true"] > span {
+  margin-left: 17px;
+}
+.setting-switch:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+@media (max-width: 520px) {
+  .content-pane .workspace-controls .search-field {
+    flex-basis: 100%;
+  }
+}
+
+/* Match the reference's page heading, compact toolbar and settings index. */
+.app-shell:not(.workspace-cramped) .app-main {
+  grid-template-rows: auto minmax(0, 1fr);
+  padding-top: 2.25rem;
+}
+.workspace-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  margin-bottom: 1.5rem;
+}
+.workspace-page-title {
+  color: var(--clipp-text);
+  font-size: 1.625rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.027em;
+}
+.workspace-page-head p {
+  margin: 0.5rem 0 0;
+  color: var(--clipp-text-muted);
+  font-size: 0.8125rem;
+}
+.connection-status {
+  gap: 0.5rem;
+  color: var(--clipp-text-muted);
+  font-size: 0.75rem;
+}
+.connection-status svg {
+  display: none;
+}
+.connection-indicator {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--clipp-text-muted);
+}
+.connection-direct .connection-indicator {
+  background: var(--clipp-success);
+}
+.connection-relay .connection-indicator,
+.connection-attention .connection-indicator {
+  background: var(--clipp-warning);
+}
+.history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  border-bottom: 1px solid var(--clipp-border);
+}
+.content-pane .history-toolbar .content-filters {
+  order: 0;
+  flex: 1 1 auto;
+  border: 0;
+}
+.content-pane .history-toolbar .workspace-controls {
+  order: 1;
+  flex: 1 1 20rem;
+  border: 0;
+  justify-content: flex-end;
+}
+.content-pane .history-toolbar .search-field {
+  flex: 0 1 15rem;
+  min-width: min(100%, 10rem);
+  margin-inline-end: 0;
+}
+.content-pane .history-toolbar .send-control .control-hint {
+  display: none;
+}
+.settings-pane {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  align-content: start;
+  column-gap: 2.25rem;
+}
+.settings-pane .settings-categories {
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
+}
+.settings-categories button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--clipp-text-muted);
+  font: inherit;
+}
+.settings-categories button[aria-current] {
+  color: var(--clipp-text);
+  text-decoration: none;
+}
+.settings-pane [data-settings-panel] {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.settings-pane [data-settings-panel] > * {
+  grid-column: 1;
+}
+.settings-pane .settings-group {
+  margin-block: 0 1rem;
+  padding: 1.25rem;
+}
+@media (max-width: 800px) {
+  .app-shell:not(.workspace-cramped) .app-main {
+    padding-top: 1.5rem;
+  }
+  .workspace-page-title {
+    font-size: 1.35rem;
+  }
+  .workspace-page-head {
+    margin-bottom: 1rem;
+  }
+  .workspace-page-head p {
+    display: none;
+  }
+  .connection-label {
+    display: none;
+  }
+  .connection-status svg {
+    display: block;
+  }
+  .connection-indicator {
+    display: none;
+  }
+  .settings-pane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-pane .settings-categories {
+    grid-column: 1;
+    grid-row: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .settings-pane [data-settings-panel] {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+@media (max-width: 520px) {
+  .content-pane .history-toolbar .content-filters,
+  .content-pane .history-toolbar .workspace-controls {
+    flex-basis: 100%;
+  }
+  .content-pane .history-toolbar .workspace-controls {
+    justify-content: flex-start;
+  }
+  .content-pane .history-toolbar .search-field {
+    flex: 1 1 10rem;
+  }
+}
+
+/* Settings sections share one scroll surface; the index stays alongside them. */
+.settings-pane .settings-sections {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.settings-pane .settings-sections [data-settings-panel] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  scroll-margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+.settings-pane .settings-group {
+  scroll-margin-top: 1rem;
+}
+@media (max-width: 800px) {
+  .settings-pane .settings-sections {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (min-width: 801px) {
+  .settings-pane .settings-categories {
+    position: sticky;
+    top: 0;
+    align-self: start;
+  }
+}
+
+/* The compact header already names the view; keep the work surface close. */
+.app-shell:not(.workspace-cramped) .app-main {
+  gap: 0;
+}
+@media (max-width: 800px) {
+  .app-shell:not(.workspace-cramped) .app-main {
+    grid-template-rows: minmax(0, 1fr);
+    padding-top: 0.5rem;
+  }
+  .workspace-page-head {
+    display: none;
+  }
+  .content-pane .workspace-controls {
+    padding-block: 0.35rem;
+  }
+}
+
+/* Settings uses the reference's compact reading scale while retaining control targets. */
+.settings-pane {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.settings-pane .settings-categories button {
+  font-size: 0.8125rem;
+}
+.settings-pane [data-settings-panel] > h3 {
+  font-size: 1rem;
+  line-height: 1.3;
+}
+.settings-pane .settings-intro {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.settings-pane .settings-group {
+  gap: 0.4rem;
+  padding: 1rem 1.25rem;
+}
+.settings-pane .settings-group > h4 {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.settings-pane .settings-group > p {
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+.settings-pane .settings-group :is(label, input, select, button, summary) {
+  font-size: 0.8125rem;
+}
+
+/* Keep search and recovery available without a separate notice row. */
+.workspace-topbar .search-field {
+  flex: 0 1 18rem;
+  min-width: 6rem;
+  max-width: 18rem;
+  min-height: 2.5rem;
+  padding: 0 0.625rem;
+  border-radius: 6px;
+  background: var(--workspace-raised);
+}
+.workspace-topbar .search-field input {
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 0.8125rem;
+}
+.workspace-topbar .search-field .icon {
+  flex: none;
+}
+.workspace-topbar .app-notices {
+  display: inline-flex;
+  padding: 0;
+}
+.workspace-topbar .issue-summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  width: auto;
+  min-height: var(--clipp-target-min, 40px);
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--clipp-warning);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.issue-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-weight: 700;
+  line-height: 1;
+}
+.workspace-topbar .connection-status {
+  margin-inline-start: auto;
+}
+.workspace-controls:has(> .text-button) {
+  flex: 0 1 auto;
+}
+@media (max-width: 600px) {
+  .workspace-topbar {
+    gap: 0.25rem;
+  }
+  .workspace-topbar .search-field {
+    flex: 1 1 5rem;
+  }
+  .workspace-topbar:has(.search-field) .workspace-current-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .workspace-topbar .connection-status {
+    margin-inline-start: 0;
+  }
+  .workspace-topbar .issue-text {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .workspace-topbar .search-field {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+  .workspace-topbar .search-field .icon-button {
+    flex-shrink: 0;
+  }
+}
+
+.workspace-topbar .workspace-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0;
+  border: 0;
+}
+.workspace-topbar .workspace-controls .send-control {
+  flex: none;
+}
+.workspace-topbar .workspace-controls .control-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .workspace-topbar .filter-control-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .workspace-topbar .workspace-controls > .text-button {
+    min-width: var(--clipp-target-min, 40px);
+    padding-inline: 0.5rem;
+  }
+}
+@media (max-width: 600px) {
+  .workspace-topbar {
+    flex-wrap: wrap;
+  }
+  .workspace-topbar .search-field {
+    flex: 1 1 5rem;
+  }
+}
+.app-shell.workspace-narrow .workspace-topbar .workspace-controls {
+  padding: 0;
+  gap: 0.125rem;
+}
+.app-shell.workspace-narrow .workspace-topbar .app-notices {
+  padding: 0;
+}
+.workspace-topbar {
+  flex: none;
+}
+
+/* A quiet toolbar uses the same neutral surfaces as the workspace. */
+.workspace-topbar {
+  gap: 0.5rem;
+  background: var(--workspace-side);
+}
+.workspace-topbar .search-field {
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  background: var(--workspace-raised);
+  color: var(--clipp-text-muted);
+}
+.workspace-topbar .search-field:focus-within {
+  border-color: var(--clipp-focus);
+}
+.workspace-topbar .search-field input {
+  color: var(--clipp-text);
+}
+.workspace-topbar
+  :is(
+    .navigation-toggle,
+    .workspace-controls button,
+    .connection-status,
+    .issue-summary
+  ) {
+  border-radius: 6px;
+}
+.workspace-topbar
+  :is(
+    .navigation-toggle,
+    .workspace-controls button,
+    .connection-status,
+    .issue-summary
+  ):hover:not(:disabled) {
+  background: var(--workspace-raised);
+}
+.workspace-topbar :is(.navigation-toggle, .workspace-controls button) .icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+.workspace-topbar .connection-status svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+@media (max-width: 800px) {
+  .workspace-topbar {
+    gap: 0.25rem;
+  }
+}
+
+/* Header actions use the workspace foreground; issue meaning remains in its label. */
+.workspace-topbar
+  :is(
+    .navigation-toggle .icon,
+    .search-field > .icon,
+    .workspace-controls .icon,
+    .connection-status svg
+  ) {
+  color: var(--clipp-text-muted);
+}
+.workspace-topbar .issue-summary {
+  color: var(--clipp-text-muted);
+}
+.workspace-topbar
+  :is(
+    .navigation-toggle,
+    .workspace-controls button,
+    .connection-status,
+    .issue-summary
+  ):hover:not(:disabled) {
+  color: var(--clipp-text);
+}
+.workspace-topbar
+  :is(
+    .navigation-toggle,
+    .workspace-controls button,
+    .connection-status
+  ):hover:not(:disabled)
+  :is(.icon, svg) {
+  color: var(--clipp-text);
+}
+
+.issue-notice {
+  position: fixed;
+  z-index: 20;
+  inset: auto 1rem 1rem auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border: 1px solid var(--clipp-border);
+  border-radius: 7px;
+  background: var(--workspace-panel);
+  color: var(--clipp-text);
+  box-shadow: var(--md-elevation-2);
+  font-size: 0.8125rem;
+}
+.issue-notice > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.issue-notice .text-button {
+  white-space: nowrap;
+}
+
+/* The status control anchors the trailing edge; search takes the remaining room. */
+.workspace-topbar .connection-status {
+  margin-inline-start: auto;
+  flex: 0 0 auto;
+}
+.workspace-topbar .connection-status svg {
+  display: block;
+}
+.workspace-topbar .connection-indicator,
+.workspace-topbar .connection-label {
+  display: none;
+}
+.workspace-topbar .search-field {
+  flex: 1 1 10rem;
+  max-width: none;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .workspace-topbar {
+    flex-wrap: nowrap;
+  }
+  .workspace-topbar .search-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+@media (max-width: 520px) {
+  .content-filters {
+    overflow: visible;
+  }
+  .content-filters > * {
+    flex: 0 1 auto;
+  }
+}
+@media (max-width: 600px) {
+  .workspace-topbar {
+    position: relative;
+    flex-wrap: wrap;
+    padding-inline-end: 3.5rem;
+  }
+  .workspace-topbar .search-field {
+    flex: 1 1 6rem;
+  }
+  .workspace-topbar .connection-status {
+    position: absolute;
+    inset-inline-end: 0.5rem;
+    top: 0.375rem;
+  }
+}
+@media (max-width: 600px) {
+  .app-shell.workspace-narrow .workspace-topbar {
+    padding-inline-end: max(3.5rem, 48px);
   }
 }

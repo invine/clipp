@@ -1,6 +1,5 @@
 import React from "react";
 import type { projectConnectionSummary } from "../../core/runtime/connectionSummary";
-import { TaskDialog } from "./TaskDialog";
 import type { UiSession } from "./uiSession";
 
 type Summary = ReturnType<typeof projectConnectionSummary>;
@@ -16,16 +15,19 @@ export function ConnectionStatusButton({
       type="button"
       className={`connection-status connection-${summary.kind}`}
       data-session-focus="connections-summary"
-      aria-label={`Connections: ${summary.label}`}
-      title={summary.label}
-      aria-haspopup="dialog"
-      aria-expanded={session
-        .getSnapshot()
-        .tasks.some((task) => task.kind === "connections")}
-      onClick={() =>
-        session.open({ kind: "connections", origin: "connections-summary" })
-      }
+      aria-label={`Open Devices: ${summary.label}`}
+      title={`${summary.label} · Open Devices`}
+      onClick={() => {
+        session.close();
+        session.update({
+          destination: "devices",
+          showNav: false,
+          focusKey: "destination:devices",
+        });
+      }}
     >
+      <span className="connection-indicator" aria-hidden="true" />
+      <span className="connection-label">{summary.label}</span>
       <svg
         viewBox="0 0 24 24"
         width="26"
@@ -62,74 +64,5 @@ export function ConnectionStatusButton({
         )}
       </svg>
     </button>
-  );
-}
-export function ConnectionsPanel({
-  summary,
-  session,
-  autoSync,
-}: {
-  summary: Summary;
-  session: UiSession;
-  autoSync: boolean | null;
-}) {
-  const tasks = session.getSnapshot().tasks;
-  const task = tasks[tasks.length - 1];
-  const trustedDevicePhrase = (count: number) =>
-    `${count} Trusted Device${count === 1 ? "" : "s"}`;
-  const manage = (destination: "devices" | "settings") => {
-    session.close();
-    session.update({
-      destination,
-      ...(destination === "settings"
-        ? { settingsCategory: "relays" as const }
-        : {}),
-      focusKey: `destination:${destination}`,
-    });
-  };
-  return (
-    <TaskDialog
-      title="Connections"
-      pending={false}
-      originKey={task?.origin}
-      onCancel={() => session.back()}
-      onDismiss={() => session.back()}
-      cancelLabel="Close connections"
-    >
-      <p>{summary.label}.</p>
-      {summary.direct > 0 && (
-        <p>{trustedDevicePhrase(summary.direct)} connected directly.</p>
-      )}
-      {summary.relayed > 0 && (
-        <p>{trustedDevicePhrase(summary.relayed)} connected through relay.</p>
-      )}
-      {summary.unknown > 0 && (
-        <p>A Trusted Device is connected; its path is unknown.</p>
-      )}
-      <p>
-        {summary.configured
-          ? `${summary.ready} of ${summary.configured} configured relays ready.${summary.starting ? " Relay setup is in progress." : ""}`
-          : "No relay configured."}
-      </p>
-      {summary.issues.length > 0 && (
-        <p>
-          A configured relay needs attention.{" "}
-          {summary.direct + summary.relayed > 0
-            ? "Available device connections remain usable. "
-            : ""}
-          Open Connections settings for recovery.
-        </p>
-      )}
-      <p>
-        Auto Sync: {autoSync === null ? "Unknown" : autoSync ? "On" : "Off"}.
-        Connection availability does not confirm Clip delivery.
-      </p>
-      <button type="button" onClick={() => manage("devices")}>
-        Open Devices
-      </button>
-      <button type="button" onClick={() => manage("settings")}>
-        Open Connections settings
-      </button>
-    </TaskDialog>
   );
 }

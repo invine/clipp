@@ -1,6 +1,6 @@
 import { shortenPreview, previewGraphemes } from "./previewText";
 import { projectConnectionSummary } from "../../core/runtime/connectionSummary";
-import { ConnectionStatusButton, ConnectionsPanel } from "./ConnectionSummary";
+import { ConnectionStatusButton } from "./ConnectionSummary";
 import { NotificationSettings } from "./NotificationSettings";
 import type { NotificationAvailabilityControls } from "./useNotificationAvailability";
 import type { HostTaskInput } from "./hostTaskInput";
@@ -705,6 +705,22 @@ export function ClipboardApp({
   const previousIdentity = useRef<string | null>(null);
   useEffect(() => {
     if (
+      sessionState.destination !== "settings" ||
+      !sessionState.settingsCategory
+    )
+      return;
+    const category = sessionState.settingsCategory;
+    const target =
+      rootRef.current?.querySelector<HTMLElement>(
+        `[data-session-focus="settings:${category}"]`
+      ) ??
+      rootRef.current?.querySelector<HTMLElement>(
+        `[data-settings-panel="${category}"]`
+      );
+    target?.scrollIntoView({ block: "start", inline: "nearest" });
+  }, [sessionState.destination, sessionState.settingsCategory]);
+  useEffect(() => {
+    if (
       identity?.deviceId &&
       previousIdentity.current &&
       identity.deviceId !== previousIdentity.current
@@ -876,6 +892,29 @@ export function ClipboardApp({
     autoSyncRefreshError || autoSyncFeedback?.error
   );
   issues.push(...taskIssues);
+  const issueIds = JSON.stringify(issues.map((issue) => issue.id).sort());
+  const previousIssueIds = useRef<Set<string>>(new Set());
+  const [showIssueNotice, setShowIssueNotice] = useState(false);
+  const [issueNoticePaused, setIssueNoticePaused] = useState(false);
+  useEffect(() => {
+    const current = new Set<string>(JSON.parse(issueIds));
+    if ([...current].some((id) => !previousIssueIds.current.has(id)))
+      setShowIssueNotice(true);
+    if (!current.size) {
+      setShowIssueNotice(false);
+      setIssueNoticePaused(false);
+    }
+    previousIssueIds.current = current;
+  }, [issueIds]);
+  useEffect(() => {
+    if (sessionState.tasks.length) setIssueNoticePaused(false);
+  }, [sessionState.tasks.length]);
+  useEffect(() => {
+    if (!showIssueNotice || issueNoticePaused || sessionState.tasks.length)
+      return;
+    const timer = window.setTimeout(() => setShowIssueNotice(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [showIssueNotice, issueNoticePaused, sessionState.tasks.length, issueIds]);
   function issueRetry(issue: RecoveryIssue) {
     if (issue.code === "continuity")
       return onRefreshBackgroundContinuity
@@ -938,9 +977,8 @@ export function ClipboardApp({
     function handleResize() {
       const size = hostContentSize(window, document);
       setIsNarrow(size.width <= NARROW_CONTENT_WIDTH);
-      const controls = rootRef.current?.querySelectorAll<HTMLElement>(
-        ".workspace-topbar, .workspace-controls, .app-notices"
-      );
+      const controls =
+        rootRef.current?.querySelectorAll<HTMLElement>(".workspace-topbar");
       const controlsHeight = [...(controls ?? [])].reduce(
         (height, element) => height + element.getBoundingClientRect().height,
         0
@@ -950,7 +988,7 @@ export function ClipboardApp({
     handleResize();
     const observer = new ResizeObserver(handleResize);
     rootRef.current
-      ?.querySelectorAll(".workspace-topbar, .workspace-controls, .app-notices")
+      ?.querySelectorAll(".workspace-topbar")
       .forEach((element) => observer.observe(element));
     window.addEventListener("resize", handleResize);
     window.addEventListener(HOST_GEOMETRY_EVENT, handleResize);
@@ -2041,448 +2079,491 @@ export function ClipboardApp({
         {sessionState.destination === "settings" &&
           (() => {
             const category =
-              sessionState.settingsCategory === "relays" ||
-              sessionState.settingsCategory === "connections"
+              sessionState.settingsCategory === "relays"
                 ? "connections"
-                : sessionState.settingsCategory === "advanced"
-                  ? "advanced"
-                  : "general";
+                : (sessionState.settingsCategory ?? "general");
             return (
               <>
                 <nav
                   className="settings-categories"
                   aria-label="Settings categories"
                 >
-                  {(["general", "connections", "advanced"] as const).map(
-                    (item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        aria-current={category === item ? "page" : undefined}
-                        data-session-focus={`settings-category:${item}`}
-                        onClick={() =>
-                          session.update({ settingsCategory: item })
-                        }
-                      >
-                        {item[0].toUpperCase() + item.slice(1)}
-                      </button>
-                    )
-                  )}
-                </nav>
-                <section
-                  data-settings-panel="general"
-                  hidden={category !== "general"}
-                  aria-label="General settings"
-                >
-                  <h3 tabIndex={-1} data-session-focus="settings:general">
-                    General
-                  </h3>
-                  <p className="settings-intro">
-                    Choose how this device works with Clipp.
-                  </p>
-                  {appearanceSettings && (
-                    <section
-                      className="settings-group"
-                      aria-labelledby="settings-appearance-heading"
-                      tabIndex={-1}
-                      data-session-focus="settings:appearance"
-                    >
-                      <h4 id="settings-appearance-heading">Appearance</h4>
-                      <p>Choose a theme for this device.</p>
-                      <Appearance settings={appearanceSettings} />
-                    </section>
-                  )}
-                  {onSetAutoSync && (
-                    <section
-                      className="settings-group relay-settings"
-                      aria-labelledby="settings-sync-heading"
-                    >
-                      <h4 id="settings-sync-heading">Sync</h4>
-                      <p>
-                        Send and receive Clips with Trusted Devices. Disabling
-                        Auto Sync keeps local capture and Clipboard History.
-                      </p>
-                      <label className="peer-sub" htmlFor="auto-sync">
-                        Auto Sync
-                      </label>
-                      <select
-                        id="auto-sync"
-                        value={
-                          autoSyncKnown
-                            ? autoSync
-                              ? "enabled"
-                              : "disabled"
-                            : ""
-                        }
-                        disabled={
-                          !autoSyncKnown ||
-                          autoSyncLoading ||
-                          autoSyncRecoveryRequired ||
-                          sessionState.autoSync.recoveryRequired
-                        }
-                        aria-disabled={
-                          autoSyncPending ||
-                          sessionState.autoSync.pending ||
-                          undefined
-                        }
-                        aria-busy={
-                          autoSyncPending ||
-                          sessionState.autoSync.pending ||
-                          undefined
-                        }
-                        onChange={(event) => {
-                          if (
-                            autoSyncPending ||
-                            sessionState.autoSync.pending
-                          ) {
-                            event.currentTarget.value = autoSyncKnown
-                              ? autoSync
-                                ? "enabled"
-                                : "disabled"
-                              : "";
-                            return;
-                          }
-                          void session.saveAutoSync(() =>
-                            onSetAutoSync(event.target.value === "enabled")
-                          );
-                        }}
-                      >
-                        {!autoSyncKnown && <option value="">Unknown</option>}
-                        <option value="enabled">Enabled</option>
-                        <option value="disabled">
-                          Disabled — keep Clips local
-                        </option>
-                      </select>
-                      {autoSyncLoading && (
-                        <p role="status">Loading Auto Sync…</p>
-                      )}
-                      {(autoSyncPending || sessionState.autoSync.pending) && (
-                        <p role="status">Saving Auto Sync…</p>
-                      )}
-                      <PreferenceRefreshNotice
-                        subject="Auto Sync"
-                        error={autoSyncRefreshError}
-                        onRetry={
-                          onRetryAutoSync
-                            ? async () => {
-                                await onRetryAutoSync();
-                              }
-                            : undefined
-                        }
-                      />
-                      {sessionState.autoSync.feedback && (
-                        <p
-                          role={
-                            sessionState.autoSync.feedback.status === "applied"
-                              ? "status"
-                              : "alert"
-                          }
-                        >
-                          {sessionState.autoSync.feedback.status === "applied"
-                            ? "Auto Sync saved."
-                            : sessionState.autoSync.feedback.status ===
-                                "rejected"
-                              ? "Auto Sync was not saved."
-                              : sessionState.autoSync.feedback.status ===
-                                  "partial"
-                                ? "Auto Sync was applied, but current state refresh was not confirmed."
-                                : "Auto Sync Save could not be confirmed."}
-                          {sessionState.autoSync.feedback.error &&
-                            ` ${sessionState.autoSync.feedback.error}`}
-                          {sessionState.autoSync.refreshed
-                            ? " Current setting refreshed."
-                            : sessionState.autoSync.recoveryRequired
-                              ? " Refresh the current setting before trying again."
-                              : ""}
-                        </p>
-                      )}
-                      {sessionState.autoSync.recoveryRequired &&
-                        onRetryAutoSync && (
-                          <button
-                            type="button"
-                            disabled={sessionState.autoSync.pending}
-                            onClick={() =>
-                              void session.refreshAutoSync(onRetryAutoSync)
-                            }
-                          >
-                            Refresh Auto Sync
-                          </button>
-                        )}
-                      <PreferenceSaveFeedback
-                        feedback={autoSyncFeedback}
-                        subject="Auto Sync"
-                        refreshError={autoSyncRefreshError}
-                        refreshing={autoSyncRefreshing}
-                      />
-                    </section>
-                  )}
-
-                  {appearanceSettings && (
-                    <section
-                      className="settings-group"
-                      aria-labelledby="settings-history-heading"
-                      tabIndex={-1}
-                      data-session-focus="settings:clips"
-                    >
-                      <h4 id="settings-history-heading">Clipboard History</h4>
-                      <p>Manage how long unpinned Clips stay on this device.</p>
-                      <ClipSettings
-                        section="retention"
-                        settings={appearanceSettings}
-                        onRetryRetention={
-                          onRetryHistoryCleanup
-                            ? async () => {
-                                await onRetryHistoryCleanup();
-                              }
-                            : undefined
-                        }
-                      />
-                    </section>
-                  )}
-                  {!appearanceSettings && onSetLocalRetention && (
-                    <section
-                      className="settings-group relay-settings"
-                      aria-labelledby="settings-history-heading"
-                    >
-                      <h4 id="settings-history-heading">Clipboard History</h4>
-                      <p>Manage how long unpinned Clips stay on this device.</p>
-                      <label className="peer-sub" htmlFor="history-retention">
-                        Keep unpinned history
-                      </label>
-                      <select
-                        id="history-retention"
-                        value={localRetentionMs}
-                        onChange={(event) =>
-                          void updateLocalRetention(Number(event.target.value))
-                        }
-                      >
-                        {![0, 7, 30, 90, 365]
-                          .map((days) => days * 86400000)
-                          .includes(localRetentionMs) && (
-                          <option value={localRetentionMs}>
-                            Custom ({localRetentionMs} ms)
-                          </option>
-                        )}
-                        <option value={0}>
-                          Remove unpinned history immediately
-                        </option>
-                        <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
-                        <option value={30 * 24 * 60 * 60 * 1000}>
-                          30 days
-                        </option>
-                        <option value={90 * 24 * 60 * 60 * 1000}>
-                          90 days
-                        </option>
-                        <option value={365 * 24 * 60 * 60 * 1000}>
-                          1 year
-                        </option>
-                      </select>
-                    </section>
-                  )}
-                </section>
-                <section
-                  data-settings-panel="connections"
-                  hidden={category !== "connections"}
-                  aria-label="Connections settings"
-                >
-                  <h3>Connections</h3>
-                  <p className="settings-intro">
-                    Configure how Clipp reaches your Trusted Devices.
-                  </p>
-                  <section
-                    className="settings-group"
-                    aria-labelledby="settings-relays-heading"
-                    tabIndex={-1}
-                    data-session-focus="settings:relays"
-                  >
-                    <h4 id="settings-relays-heading">Managed relays</h4>
-                    {renderRelaysSection()}
-                  </section>
-                  {backgroundContinuity && onSetBackgroundContinuity && (
-                    <section
-                      className="settings-group"
-                      aria-labelledby="settings-background-heading"
-                    >
-                      <h4 id="settings-background-heading">
-                        Background continuity
-                      </h4>
-                      <BackgroundContinuityControls
-                        state={backgroundContinuity}
-                        setEnabled={onSetBackgroundContinuity}
-                        setAutoSync={(enabled) =>
-                          session.saveAutoSync(() => onSetAutoSync?.(enabled))
-                        }
-                        autoSyncPending={
-                          autoSyncPending || sessionState.autoSync.pending
-                        }
-                        autoSyncRecoveryRequired={
-                          sessionState.autoSync.recoveryRequired
-                        }
-                        refresh={onRefreshBackgroundContinuity}
-                        refreshAutoSync={
-                          onRetryAutoSync
-                            ? () => session.refreshAutoSync(onRetryAutoSync)
-                            : undefined
-                        }
-                        openNotificationSettings={
-                          onOpenBackgroundNotificationSettings
-                        }
-                        help={() =>
-                          session.open({
-                            kind: "issues",
-                            entity: "continuity",
-                            origin: "continuity-help",
-                          })
-                        }
-                      />
-                    </section>
-                  )}{" "}
-                  {notificationControls && (
-                    <NotificationSettings controls={notificationControls} />
-                  )}
-                </section>
-                <section
-                  data-settings-panel="advanced"
-                  hidden={category !== "advanced"}
-                  aria-label="Advanced settings"
-                >
-                  <h3>Advanced</h3>
-                  <p className="settings-intro">
-                    Review sharing, local data and device recovery controls.
-                  </p>
-                  {appearanceSettings && (
-                    <section
-                      className="settings-group"
-                      aria-labelledby="settings-sharing-heading"
-                    >
-                      <h4 id="settings-sharing-heading">Clip Sharing</h4>
-                      <p>Set how long new Clips remain eligible for sharing.</p>
-                      <ClipSettings
-                        section="lifetime"
-                        settings={appearanceSettings}
-                      />
-                    </section>
-                  )}
-                  <section
-                    className="settings-group relay-settings"
-                    aria-labelledby="settings-local-history-heading"
-                  >
-                    <h4 id="settings-local-history-heading">Local history</h4>
-                    <p>Remove saved Clips from this device.</p>
+                  {(
+                    [
+                      ["general", "General"],
+                      ["appearance", "Appearance"],
+                      ["clips", "Clipboard History"],
+                      ["connections", "Connections"],
+                      ["advanced", "Advanced"],
+                    ] as const
+                  ).map(([item, label]) => (
                     <button
+                      key={item}
                       type="button"
-                      className="text-button labelled-control"
-                      data-session-focus="settings-clear"
+                      aria-current={category === item ? "location" : undefined}
+                      data-session-focus={`settings-category:${item}`}
                       onClick={() => {
-                        setClearError(null);
-                        setClearReviewOpen(true);
-                        session.open({
-                          kind: "clear",
-                          origin: "settings-clear",
+                        session.update({ settingsCategory: item });
+                        const target =
+                          rootRef.current?.querySelector<HTMLElement>(
+                            `[data-session-focus="settings:${item}"]`
+                          ) ??
+                          rootRef.current?.querySelector<HTMLElement>(
+                            `[data-settings-panel="${item}"]`
+                          ) ??
+                          rootRef.current?.querySelector<HTMLElement>(
+                            '[data-settings-panel="general"]'
+                          );
+                        target?.scrollIntoView({
+                          block: "start",
+                          inline: "nearest",
                         });
                       }}
-                      disabled={
-                        historyLoading ||
-                        historyUnavailable ||
-                        Boolean(historyRefreshError)
-                      }
                     >
-                      Clear all local history
+                      {label}
                     </button>
-                  </section>
+                  ))}
+                </nav>
+                <div className="settings-sections">
                   <section
-                    className="settings-group"
-                    aria-labelledby="settings-identity-heading"
+                    data-settings-panel="general"
+                    aria-label="General settings"
                   >
-                    <h4 id="settings-identity-heading">
-                      Identity and recovery
-                    </h4>
-                    <ManualIdentityResetSettings
-                      peerId={identity?.deviceId}
-                      state={identityResetState}
-                      available={manualIdentityResetAvailable}
-                      actions={identityResetActions}
-                      onPair={
-                        identityReady ? onPairAfterIdentityReset : undefined
-                      }
-                      onCopyFormerPeerId={onCopyFormerIdentity}
-                      onAccepted={() => session.rotateIdentity()}
-                    />
-                  </section>
-                  {appearanceSettings && (
-                    <section
-                      className="settings-group relay-settings"
-                      aria-labelledby="settings-diagnostics-heading"
-                    >
-                      <h4 id="settings-diagnostics-heading">Diagnostics</h4>
-                      <label>
-                        Log level
-                        <select
-                          aria-label="Log level"
-                          value={
-                            appearanceSettings.snapshot?.state.logLevel ?? ""
-                          }
+                    <h3 tabIndex={-1} data-session-focus="settings:general">
+                      General
+                    </h3>
+                    <p className="settings-intro">
+                      Choose how this device works with Clipp.
+                    </p>
+                    {appearanceSettings && (
+                      <section
+                        className="settings-group"
+                        aria-labelledby="settings-appearance-heading"
+                        tabIndex={-1}
+                        data-session-focus="settings:appearance"
+                      >
+                        <h4 id="settings-appearance-heading">Appearance</h4>
+                        <p>Choose a theme for this device.</p>
+                        <Appearance settings={appearanceSettings} />
+                      </section>
+                    )}
+                    {onSetAutoSync && (
+                      <section
+                        className="settings-group relay-settings"
+                        aria-labelledby="settings-sync-heading"
+                      >
+                        <h4 id="settings-sync-heading">Sync</h4>
+                        <p>
+                          Send and receive Clips with Trusted Devices. Disabling
+                          Auto Sync keeps local capture and Clipboard History.
+                        </p>
+                        <label className="peer-sub" htmlFor="auto-sync">
+                          Auto Sync
+                        </label>
+                        <button
+                          id="auto-sync"
+                          type="button"
+                          className="setting-switch"
+                          role="switch"
+                          aria-checked={autoSyncKnown ? autoSync : false}
                           disabled={
-                            !appearanceSettings.snapshot ||
-                            appearanceSettings.recoveryRequired
+                            !autoSyncKnown ||
+                            autoSyncLoading ||
+                            autoSyncRecoveryRequired ||
+                            sessionState.autoSync.recoveryRequired
                           }
                           aria-disabled={
-                            appearanceSettings.pending || undefined
+                            autoSyncPending ||
+                            sessionState.autoSync.pending ||
+                            undefined
                           }
-                          aria-busy={appearanceSettings.pending || undefined}
-                          onChange={(event) => {
-                            if (appearanceSettings.pending) {
-                              event.currentTarget.value =
-                                appearanceSettings.snapshot?.state.logLevel ??
-                                "";
+                          aria-busy={
+                            autoSyncPending ||
+                            sessionState.autoSync.pending ||
+                            undefined
+                          }
+                          onClick={() => {
+                            if (
+                              autoSyncPending ||
+                              sessionState.autoSync.pending
+                            )
                               return;
-                            }
-                            void appearanceSettings.save({
-                              logLevel: event.target.value as
-                                "debug" | "info" | "warn" | "error",
-                            });
+                            void session.saveAutoSync(() =>
+                              onSetAutoSync(!autoSync)
+                            );
                           }}
                         >
-                          {!appearanceSettings.snapshot && (
-                            <option value="">Unknown</option>
-                          )}
-                          {(["debug", "info", "warn", "error"] as const).map(
-                            (level) => (
-                              <option key={level} value={level}>
-                                {level}
-                              </option>
-                            )
-                          )}
-                        </select>
-                      </label>
-                      <PreferenceRefreshNotice
-                        subject="General settings"
-                        error={appearanceSettings.refreshError}
-                        onRetry={appearanceSettings.refresh}
-                      />
-                      <PreferenceSaveFeedback
-                        subject="Log level"
-                        feedback={
-                          appearanceSettings.feedback?.fields?.includes(
-                            "logLevel"
-                          )
-                            ? appearanceSettings.feedback
-                            : null
-                        }
-                        refreshError={appearanceSettings.refreshError}
-                        refreshing={appearanceSettings.refreshing}
-                      />
-                      {appearanceSettings.recoveryRequired && (
-                        <button
-                          type="button"
-                          onClick={() => void appearanceSettings.refresh()}
-                        >
-                          Refresh General settings
+                          <span aria-hidden="true" />
                         </button>
-                      )}
+                        {!autoSyncKnown && (
+                          <p role="status">Auto Sync: Unknown</p>
+                        )}
+                        {autoSyncLoading && (
+                          <p role="status">Loading Auto Sync…</p>
+                        )}
+                        {(autoSyncPending || sessionState.autoSync.pending) && (
+                          <p role="status">Saving Auto Sync…</p>
+                        )}
+                        <PreferenceRefreshNotice
+                          subject="Auto Sync"
+                          error={autoSyncRefreshError}
+                          onRetry={
+                            onRetryAutoSync
+                              ? async () => {
+                                  await onRetryAutoSync();
+                                }
+                              : undefined
+                          }
+                        />
+                        {sessionState.autoSync.feedback && (
+                          <p
+                            role={
+                              sessionState.autoSync.feedback.status ===
+                              "applied"
+                                ? "status"
+                                : "alert"
+                            }
+                          >
+                            {sessionState.autoSync.feedback.status === "applied"
+                              ? "Auto Sync saved."
+                              : sessionState.autoSync.feedback.status ===
+                                  "rejected"
+                                ? "Auto Sync was not saved."
+                                : sessionState.autoSync.feedback.status ===
+                                    "partial"
+                                  ? "Auto Sync was applied, but current state refresh was not confirmed."
+                                  : "Auto Sync Save could not be confirmed."}
+                            {sessionState.autoSync.feedback.error &&
+                              ` ${sessionState.autoSync.feedback.error}`}
+                            {sessionState.autoSync.refreshed
+                              ? " Current setting refreshed."
+                              : sessionState.autoSync.recoveryRequired
+                                ? " Refresh the current setting before trying again."
+                                : ""}
+                          </p>
+                        )}
+                        {sessionState.autoSync.recoveryRequired &&
+                          onRetryAutoSync && (
+                            <button
+                              type="button"
+                              disabled={sessionState.autoSync.pending}
+                              onClick={() =>
+                                void session.refreshAutoSync(onRetryAutoSync)
+                              }
+                            >
+                              Refresh Auto Sync
+                            </button>
+                          )}
+                        <PreferenceSaveFeedback
+                          feedback={autoSyncFeedback}
+                          subject="Auto Sync"
+                          refreshError={autoSyncRefreshError}
+                          refreshing={autoSyncRefreshing}
+                        />
+                      </section>
+                    )}
+
+                    {appearanceSettings && (
+                      <section
+                        className="settings-group"
+                        aria-labelledby="settings-history-heading"
+                        tabIndex={-1}
+                        data-session-focus="settings:clips"
+                      >
+                        <h4 id="settings-history-heading">Clipboard History</h4>
+                        <p>
+                          Manage how long unpinned Clips stay on this device.
+                        </p>
+                        <ClipSettings
+                          section="retention"
+                          settings={appearanceSettings}
+                          onRetryRetention={
+                            onRetryHistoryCleanup
+                              ? async () => {
+                                  await onRetryHistoryCleanup();
+                                }
+                              : undefined
+                          }
+                        />
+                      </section>
+                    )}
+                    {!appearanceSettings && onSetLocalRetention && (
+                      <section
+                        className="settings-group relay-settings"
+                        aria-labelledby="settings-history-heading"
+                        tabIndex={-1}
+                        data-session-focus="settings:clips"
+                      >
+                        <h4 id="settings-history-heading">Clipboard History</h4>
+                        <p>
+                          Manage how long unpinned Clips stay on this device.
+                        </p>
+                        <label className="peer-sub" htmlFor="history-retention">
+                          Keep unpinned history
+                        </label>
+                        <select
+                          id="history-retention"
+                          value={localRetentionMs}
+                          onChange={(event) =>
+                            void updateLocalRetention(
+                              Number(event.target.value)
+                            )
+                          }
+                        >
+                          {![0, 7, 30, 90, 365]
+                            .map((days) => days * 86400000)
+                            .includes(localRetentionMs) && (
+                            <option value={localRetentionMs}>
+                              Custom ({localRetentionMs} ms)
+                            </option>
+                          )}
+                          <option value={0}>
+                            Remove unpinned history immediately
+                          </option>
+                          <option value={7 * 24 * 60 * 60 * 1000}>
+                            7 days
+                          </option>
+                          <option value={30 * 24 * 60 * 60 * 1000}>
+                            30 days
+                          </option>
+                          <option value={90 * 24 * 60 * 60 * 1000}>
+                            90 days
+                          </option>
+                          <option value={365 * 24 * 60 * 60 * 1000}>
+                            1 year
+                          </option>
+                        </select>
+                      </section>
+                    )}
+                  </section>
+                  <section
+                    data-settings-panel="connections"
+                    aria-label="Connections settings"
+                  >
+                    <h3 tabIndex={-1} data-session-focus="settings:connections">
+                      Connections
+                    </h3>
+                    <p className="settings-intro">
+                      Configure how Clipp reaches your Trusted Devices.
+                    </p>
+                    <section
+                      className="settings-group"
+                      aria-labelledby="settings-relays-heading"
+                      tabIndex={-1}
+                      data-session-focus="settings:relays"
+                    >
+                      <h4 id="settings-relays-heading">Managed relays</h4>
+                      {renderRelaysSection()}
                     </section>
-                  )}
-                </section>
+                    {backgroundContinuity && onSetBackgroundContinuity && (
+                      <section
+                        className="settings-group"
+                        aria-labelledby="settings-background-heading"
+                      >
+                        <h4 id="settings-background-heading">
+                          Background continuity
+                        </h4>
+                        <BackgroundContinuityControls
+                          state={backgroundContinuity}
+                          setEnabled={onSetBackgroundContinuity}
+                          setAutoSync={(enabled) =>
+                            session.saveAutoSync(() => onSetAutoSync?.(enabled))
+                          }
+                          autoSyncPending={
+                            autoSyncPending || sessionState.autoSync.pending
+                          }
+                          autoSyncRecoveryRequired={
+                            sessionState.autoSync.recoveryRequired
+                          }
+                          refresh={onRefreshBackgroundContinuity}
+                          refreshAutoSync={
+                            onRetryAutoSync
+                              ? () => session.refreshAutoSync(onRetryAutoSync)
+                              : undefined
+                          }
+                          openNotificationSettings={
+                            onOpenBackgroundNotificationSettings
+                          }
+                          help={() =>
+                            session.open({
+                              kind: "issues",
+                              entity: "continuity",
+                              origin: "continuity-help",
+                            })
+                          }
+                        />
+                      </section>
+                    )}{" "}
+                    {notificationControls && (
+                      <NotificationSettings controls={notificationControls} />
+                    )}
+                  </section>
+                  <section
+                    data-settings-panel="advanced"
+                    aria-label="Advanced settings"
+                  >
+                    <section
+                      className="settings-group"
+                      aria-label="Issues and recovery"
+                    >
+                      <h4>Issues and recovery</h4>
+                      <p>Review current problems and recovery actions.</p>
+                      <button
+                        type="button"
+                        className="text-button"
+                        data-session-focus="settings:issues"
+                        onClick={() =>
+                          session.open({
+                            kind: "issues",
+                            origin: "settings:issues",
+                          })
+                        }
+                      >
+                        Review issues
+                      </button>
+                    </section>
+                    <h3 tabIndex={-1} data-session-focus="settings:advanced">
+                      Advanced
+                    </h3>
+                    <p className="settings-intro">
+                      Review sharing, local data and device recovery controls.
+                    </p>
+                    {appearanceSettings && (
+                      <section
+                        className="settings-group"
+                        aria-labelledby="settings-sharing-heading"
+                      >
+                        <h4 id="settings-sharing-heading">Clip Sharing</h4>
+                        <p>
+                          Set how long new Clips remain eligible for sharing.
+                        </p>
+                        <ClipSettings
+                          section="lifetime"
+                          settings={appearanceSettings}
+                        />
+                      </section>
+                    )}
+                    <section
+                      className="settings-group relay-settings"
+                      aria-labelledby="settings-local-history-heading"
+                    >
+                      <h4 id="settings-local-history-heading">Local history</h4>
+                      <p>Remove saved Clips from this device.</p>
+                      <button
+                        type="button"
+                        className="text-button labelled-control"
+                        data-session-focus="settings-clear"
+                        onClick={() => {
+                          setClearError(null);
+                          setClearReviewOpen(true);
+                          session.open({
+                            kind: "clear",
+                            origin: "settings-clear",
+                          });
+                        }}
+                        disabled={
+                          historyLoading ||
+                          historyUnavailable ||
+                          Boolean(historyRefreshError)
+                        }
+                      >
+                        Clear all local history
+                      </button>
+                    </section>
+                    <section
+                      className="settings-group"
+                      aria-labelledby="settings-identity-heading"
+                    >
+                      <h4 id="settings-identity-heading">
+                        Identity and recovery
+                      </h4>
+                      <ManualIdentityResetSettings
+                        peerId={identity?.deviceId}
+                        state={identityResetState}
+                        available={manualIdentityResetAvailable}
+                        actions={identityResetActions}
+                        onPair={
+                          identityReady ? onPairAfterIdentityReset : undefined
+                        }
+                        onCopyFormerPeerId={onCopyFormerIdentity}
+                        onAccepted={() => session.rotateIdentity()}
+                      />
+                    </section>
+                    {appearanceSettings && (
+                      <section
+                        className="settings-group relay-settings"
+                        aria-labelledby="settings-diagnostics-heading"
+                      >
+                        <h4 id="settings-diagnostics-heading">Diagnostics</h4>
+                        <label>
+                          Log level
+                          <select
+                            aria-label="Log level"
+                            value={
+                              appearanceSettings.snapshot?.state.logLevel ?? ""
+                            }
+                            disabled={
+                              !appearanceSettings.snapshot ||
+                              appearanceSettings.recoveryRequired
+                            }
+                            aria-disabled={
+                              appearanceSettings.pending || undefined
+                            }
+                            aria-busy={appearanceSettings.pending || undefined}
+                            onChange={(event) => {
+                              if (appearanceSettings.pending) {
+                                event.currentTarget.value =
+                                  appearanceSettings.snapshot?.state.logLevel ??
+                                  "";
+                                return;
+                              }
+                              void appearanceSettings.save({
+                                logLevel: event.target.value as
+                                  "debug" | "info" | "warn" | "error",
+                              });
+                            }}
+                          >
+                            {!appearanceSettings.snapshot && (
+                              <option value="">Unknown</option>
+                            )}
+                            {(["debug", "info", "warn", "error"] as const).map(
+                              (level) => (
+                                <option key={level} value={level}>
+                                  {level}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </label>
+                        <PreferenceRefreshNotice
+                          subject="General settings"
+                          error={appearanceSettings.refreshError}
+                          onRetry={appearanceSettings.refresh}
+                        />
+                        <PreferenceSaveFeedback
+                          subject="Log level"
+                          feedback={
+                            appearanceSettings.feedback?.fields?.includes(
+                              "logLevel"
+                            )
+                              ? appearanceSettings.feedback
+                              : null
+                          }
+                          refreshError={appearanceSettings.refreshError}
+                          refreshing={appearanceSettings.refreshing}
+                        />
+                        {appearanceSettings.recoveryRequired && (
+                          <button
+                            type="button"
+                            onClick={() => void appearanceSettings.refresh()}
+                          >
+                            Refresh General settings
+                          </button>
+                        )}
+                      </section>
+                    )}
+                  </section>
+                </div>
               </>
             );
           })()}
@@ -2585,6 +2666,31 @@ export function ClipboardApp({
     <div
       ref={rootRef}
       onKeyDown={(event) => {
+        if (
+          !event.defaultPrevented &&
+          (event.metaKey || event.ctrlKey) &&
+          !event.altKey &&
+          event.key.toLowerCase() === "k" &&
+          session.getSnapshot().tasks.length === 0
+        ) {
+          event.preventDefault();
+          const current = session.getSnapshot();
+          session.update({
+            destination: "history",
+            filterMode:
+              current.destination === "history" ? current.filterMode : "all",
+            showNav: false,
+            focusKey: "history-query",
+          });
+          requestAnimationFrame(() =>
+            rootRef.current
+              ?.querySelector<HTMLInputElement>(
+                '[data-session-focus="history-query"]'
+              )
+              ?.focus()
+          );
+          return;
+        }
         if (event.key !== "Escape" || event.defaultPrevented) return;
         if (event.repeat) {
           event.preventDefault();
@@ -2718,19 +2824,13 @@ export function ClipboardApp({
               : sessionState.destination[0].toUpperCase() +
                 sessionState.destination.slice(1)}
           </h1>
-          <ConnectionStatusButton
-            summary={connectionSummary}
-            session={session}
-          />
-        </header>
-        {sessionState.destination === "history" && (
-          <div className="workspace-controls">
+          {sessionState.destination === "history" && (
             <div className="search-field">
               <Icon name="search" />
               <input
                 aria-label="Search history"
                 data-session-focus="history-query"
-                placeholder="Search history: text, URL, device…"
+                placeholder="Search"
                 value={search}
                 onChange={(e) => session.update({ search: e.target.value })}
               />
@@ -2745,60 +2845,85 @@ export function ClipboardApp({
                 </button>
               )}
             </div>
+          )}
+          {sessionState.destination === "history" && (
+            <div className="workspace-controls">
+              <button
+                type="button"
+                className="text-button"
+                aria-expanded={!filtersCollapsed}
+                data-session-focus="history-filters"
+                onClick={toggleFilters}
+              >
+                <Icon name="filters" />
+                <span className="filter-control-label">Filters</span>
+              </button>
+              {onShareNow && (
+                <div className="send-control">
+                  <IconButton
+                    icon="send"
+                    label="Share current clipboard now"
+                    hint="Share current system clipboard now"
+                    onClick={shareNow}
+                    disabled={
+                      !identityReady ||
+                      sessionState.historyActions["send:current"]?.pending
+                    }
+                    aria-describedby="send-clipboard-hint"
+                  />
+                  <span id="send-clipboard-hint" className="control-hint">
+                    Sends your current system clipboard
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          <ConnectionStatusButton
+            summary={connectionSummary}
+            session={session}
+          />
+        </header>
 
+        {showIssueNotice && issues.length > 0 && !activeTask && (
+          <div
+            className="issue-notice"
+            role="status"
+            onMouseEnter={() => setIssueNoticePaused(true)}
+            onMouseLeave={() => setIssueNoticePaused(false)}
+            onFocusCapture={() => setIssueNoticePaused(true)}
+            onBlurCapture={(event) => {
+              if (
+                !event.currentTarget.contains(
+                  event.relatedTarget as Node | null
+                )
+              )
+                setIssueNoticePaused(false);
+            }}
+          >
+            <span>
+              {issues.length === 1
+                ? "Clipp needs attention"
+                : `${issues.length} issues need attention`}
+            </span>
             <button
               type="button"
               className="text-button"
-              aria-expanded={!filtersCollapsed}
-              data-session-focus="history-filters"
-              onClick={toggleFilters}
+              data-session-focus="issues-summary"
+              onClick={() =>
+                session.open({ kind: "issues", origin: "issues-summary" })
+              }
             >
-              <Icon name="filters" />
-              Filters
+              Review
             </button>
-            {onShareNow && (
-              <div className="send-control">
-                <IconButton
-                  icon="send"
-                  label="Share current clipboard now"
-                  onClick={shareNow}
-                  disabled={
-                    !identityReady ||
-                    sessionState.historyActions["send:current"]?.pending
-                  }
-                  aria-describedby="send-clipboard-hint"
-                />
-                <span id="send-clipboard-hint" className="control-hint">
-                  Sends your current system clipboard
-                </span>
-              </div>
-            )}
+            <IconButton
+              icon="close"
+              label="Dismiss notification"
+              onClick={() => {
+                setShowIssueNotice(false);
+                setIssueNoticePaused(false);
+              }}
+            />
           </div>
-        )}
-
-        <div className="app-notices" role="status">
-          {issues.length > 0 && (
-            <>
-              <button
-                type="button"
-                className="issue-summary"
-                data-session-focus="issues-summary"
-                onClick={() =>
-                  session.open({ kind: "issues", origin: "issues-summary" })
-                }
-              >
-                {issues.length}{" "}
-                {issues.length === 1 ? "issue needs" : "issues need"} attention
-              </button>
-            </>
-          )}
-        </div>
-        {activeTask?.kind === "connections" && (
-          <ConnectionsPanel
-            summary={connectionSummary}
-            session={session}
-            autoSync={autoSyncKnown ? autoSync : null}
-          />
         )}
         {activeTask?.kind === "issues" && (
           <RecoveryIssues
@@ -2928,6 +3053,29 @@ export function ClipboardApp({
           data-session-focus="workspace"
           style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
         >
+          <div className="workspace-page-head" aria-hidden="true">
+            <div>
+              <div className="workspace-page-title">
+                {sessionState.destination === "history"
+                  ? filterMode === "pinned"
+                    ? "Pinned Clips"
+                    : filterMode === "links"
+                      ? "Links"
+                      : "Clipboard"
+                  : sessionState.destination[0].toUpperCase() +
+                    sessionState.destination.slice(1)}
+              </div>
+              <p>
+                {sessionState.destination === "history"
+                  ? "Your clipboard, across your devices."
+                  : sessionState.destination === "settings"
+                    ? "Make Clipp work the way you do."
+                    : sessionState.destination === "devices"
+                      ? "Manage the devices in your network."
+                      : "Review your device requests."}
+              </p>
+            </div>
+          </div>
           {sessionState.destination !== "history" && (
             <section
               className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : sessionState.destination === "devices" ? "devices-pane" : ""}`}
@@ -2941,99 +3089,102 @@ export function ClipboardApp({
             data-session-scroll="history"
             hidden={sessionState.destination !== "history"}
           >
-            {!filtersCollapsed && (
-              <div
-                className="content-filters"
-                role="group"
-                aria-label="History filters"
-              >
-                <div className="segmented">
-                  <button
-                    className={filterMode === "all" ? "active" : ""}
-                    aria-pressed={filterMode === "all"}
-                    onClick={() => setFilterMode("all")}
-                  >
-                    All
-                  </button>
-                  <button
-                    className={filterMode === "pinned" ? "active" : ""}
-                    aria-pressed={filterMode === "pinned"}
-                    onClick={() => setFilterMode("pinned")}
-                  >
-                    Pinned
-                  </button>
-                  <button
-                    className={filterMode === "links" ? "active" : ""}
-                    aria-pressed={filterMode === "links"}
-                    onClick={() => setFilterMode("links")}
-                  >
-                    Links
-                  </button>
-                </div>
+            <div className="history-toolbar">
+              {!filtersCollapsed && (
+                <div
+                  className="content-filters"
+                  role="group"
+                  aria-label="History filters"
+                >
+                  <div className="segmented">
+                    <button
+                      className={filterMode === "all" ? "active" : ""}
+                      aria-pressed={filterMode === "all"}
+                      onClick={() => setFilterMode("all")}
+                    >
+                      All
+                    </button>
+                    <button
+                      className={filterMode === "pinned" ? "active" : ""}
+                      aria-pressed={filterMode === "pinned"}
+                      onClick={() => setFilterMode("pinned")}
+                    >
+                      Pinned
+                    </button>
+                    <button
+                      className={filterMode === "links" ? "active" : ""}
+                      aria-pressed={filterMode === "links"}
+                      onClick={() => setFilterMode("links")}
+                    >
+                      Links
+                    </button>
+                  </div>
 
-                <div className="time-filter-wrap">
-                  <button
-                    className="text-button"
-                    onClick={() => setTimeMenuOpen((v) => !v)}
-                  >
-                    <Icon name="clock" />
-                    <span className="filter-button-label">
-                      {timeOptions.find((t) => t.value === timeFilter)?.label ||
-                        "All time"}
-                    </span>
-                    <Icon name="chevron" />
-                  </button>
-                  {timeMenuOpen && (
-                    <div className="time-menu">
-                      {timeOptions.map((t) => (
-                        <button
-                          key={t.value}
-                          className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
-                          onClick={() => {
-                            setTimeFilter(t.value);
-                            setTimeMenuOpen(false);
-                          }}
-                        >
-                          <span className="filter-menu-label">{t.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  <div className="time-filter-wrap">
+                    <button
+                      className="text-button"
+                      aria-expanded={timeMenuOpen}
+                      onClick={() => setTimeMenuOpen((v) => !v)}
+                    >
+                      <Icon name="clock" />
+                      <span className="filter-button-label">
+                        {timeOptions.find((t) => t.value === timeFilter)
+                          ?.label || "All time"}
+                      </span>
+                      <Icon name="chevron" />
+                    </button>
+                    {timeMenuOpen && (
+                      <div className="time-menu">
+                        {timeOptions.map((t) => (
+                          <button
+                            key={t.value}
+                            className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
+                            onClick={() => {
+                              setTimeFilter(t.value);
+                              setTimeMenuOpen(false);
+                            }}
+                          >
+                            <span className="filter-menu-label">{t.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-                <div className="source-filter-wrap">
-                  <button
-                    className="text-button"
-                    onClick={() => setSourceMenuOpen((v) => !v)}
-                  >
-                    <Icon name="filters" />
-                    <span className="filter-button-label">
-                      {sourceFilterLabel(sourceFilter)}
-                    </span>
-                    <Icon name="chevron" />
-                  </button>
-                  {sourceMenuOpen && (
-                    <div className="time-menu source-menu">
-                      {sources.map((src) => (
-                        <button
-                          key={src}
-                          className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
-                          onClick={() => {
-                            setSourceFilter(src);
-                            setSourceMenuOpen(false);
-                          }}
-                        >
-                          <span className="filter-menu-label">
-                            {sourceOptionLabel(src)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="source-filter-wrap">
+                    <button
+                      className="text-button"
+                      aria-expanded={sourceMenuOpen}
+                      onClick={() => setSourceMenuOpen((v) => !v)}
+                    >
+                      <Icon name="filters" />
+                      <span className="filter-button-label">
+                        {sourceFilterLabel(sourceFilter)}
+                      </span>
+                      <Icon name="chevron" />
+                    </button>
+                    {sourceMenuOpen && (
+                      <div className="time-menu source-menu">
+                        {sources.map((src) => (
+                          <button
+                            key={src}
+                            className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
+                            onClick={() => {
+                              setSourceFilter(src);
+                              setSourceMenuOpen(false);
+                            }}
+                          >
+                            <span className="filter-menu-label">
+                              {sourceOptionLabel(src)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-
+              )}
+            </div>
             {historyLoading && <p role="status">Loading History…</p>}
             {(historyUnavailable || historyRefreshError) && (
               <div className="initialization-error" role="alert">
@@ -3150,6 +3301,10 @@ export function ClipboardApp({
                             })
                       }
                     >
+                      <Icon
+                        name={clip.type === "url" ? "links" : "text"}
+                        className="history-type-icon"
+                      />
                       <span
                         id={`clip-preview:${clip.id}`}
                         className="history-text"

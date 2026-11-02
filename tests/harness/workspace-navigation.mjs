@@ -248,6 +248,17 @@ try {
     }
     await nav.getByRole("button", { name, exact: true }).click();
   };
+  const openIssues = async () => {
+    const notice = page.locator(".issue-notice");
+    if (await notice.isVisible()) {
+      await notice.getByRole("button", { name: "Review", exact: true }).click();
+    } else {
+      await chooseDestination("Settings");
+      await page
+        .getByRole("button", { name: "Review issues", exact: true })
+        .click();
+    }
+  };
   if (process.argv.includes("--navigation-target-stability")) {
     await checkNavigationTargetStability({ page, nav, report, host });
   } else if (!process.argv.includes("--skip-initial")) {
@@ -264,6 +275,119 @@ try {
       await page.getByLabel("Search history", { exact: true }).isVisible(),
       true
     );
+    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await page.keyboard.press("Control+k");
+    await page.getByLabel("Search history", { exact: true }).waitFor();
+    assert.equal(
+      await page
+        .locator(".workspace-topbar")
+        .getByLabel("Search history", { exact: true })
+        .count(),
+      1,
+      "search belongs to the workspace header"
+    );
+    await page.waitForFunction(
+      () =>
+        document.activeElement?.getAttribute("aria-label") === "Search history"
+    );
+    if (process.argv.includes("--compact-top")) {
+      await page.setViewportSize({ width: 520, height: 760 });
+      await page.waitForFunction(() =>
+        document
+          .querySelector(".app-shell")
+          ?.classList.contains("workspace-narrow")
+      );
+      const geometry = await page.evaluate(() => {
+        const header = document
+          .querySelector(".workspace-topbar")
+          .getBoundingClientRect();
+        const toolbar = document
+          .querySelector(".history-toolbar")
+          .getBoundingClientRect();
+        const title = document.querySelector(".workspace-page-head");
+        return {
+          gap: toolbar.top - header.bottom,
+          titleVisible: getComputedStyle(title).display !== "none",
+        };
+      });
+      const statusSpacing = await page.evaluate(() => {
+        const status = document
+          .querySelector(".workspace-topbar .connection-status")
+          .getBoundingClientRect();
+        const share = document
+          .querySelector(
+            '.workspace-topbar [aria-label="Share current clipboard now"]'
+          )
+          .getBoundingClientRect();
+        return {
+          statusLeft: status.left,
+          shareRight: share.right,
+          statusRight: status.right,
+          width: innerWidth,
+        };
+      });
+      assert.ok(
+        statusSpacing.shareRight <= statusSpacing.statusLeft &&
+          statusSpacing.statusRight <= statusSpacing.width,
+        "Share and connection controls do not overlap"
+      );
+      assert.equal(
+        geometry.titleVisible,
+        false,
+        "compact header should not repeat the view title"
+      );
+      assert.ok(
+        geometry.gap < 100,
+        `History toolbar is too far below the header: ${geometry.gap}px`
+      );
+      await page.setViewportSize({ width: 1100, height: 800 });
+    }
+    if (process.argv.includes("--header-visual")) {
+      await page.evaluate(() =>
+        window.publishFixture({
+          clips: [
+            {
+              id: "sample",
+              type: "text",
+              content: "A useful clip from this device",
+              originPeerId: "local",
+              capturedAt: Date.now(),
+              shareExpiresAt: Date.now() + 3600000,
+            },
+          ],
+        })
+      );
+      await page.evaluate(() => {
+        window.publishFixture({ historyRefreshError: true });
+        document.activeElement?.blur();
+      });
+      for (const theme of ["dark", "light"]) {
+        for (const width of [390, 768, 1440]) {
+          await page.setViewportSize({ width, height: 800 });
+          await page.evaluate(
+            (value) =>
+              document.documentElement.setAttribute("data-clipp-theme", value),
+            theme
+          );
+          await page.waitForTimeout(250);
+          await page.screenshot({
+            path: join(out, `header-${theme}-${width}.png`),
+          });
+        }
+      }
+      await page.evaluate(() =>
+        window.publishFixture({ historyRefreshError: false })
+      );
+      await page.setViewportSize({ width: 1100, height: 800 });
+      await page.getByLabel("Search history", { exact: true }).focus();
+    }
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Meta+k");
+    await page.waitForFunction(
+      () =>
+        document.activeElement?.getAttribute("aria-label") === "Search history"
+    );
+    await openCompactNavigation();
     await nav.getByRole("button", { name: /^Requests/ }).click();
     await page.getByRole("button", { name: "Accept", exact: true }).click();
     await page.waitForFunction(() =>
@@ -275,6 +399,56 @@ try {
     );
     report.cases.push({
       label: `${host} initial Requests navigation and actual approval callback`,
+      passed: true,
+    });
+  }
+  if (process.argv.includes("--issue-notice")) {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.waitForFunction(() =>
+      document.querySelector(".app-shell")?.classList.contains("workspace-wide")
+    );
+    await chooseDestination("History");
+    await page.evaluate(() =>
+      window.publishFixture({ historyRefreshError: true })
+    );
+    const notice = page.locator(".issue-notice");
+    await notice.getByRole("button", { name: "Review", exact: true }).waitFor();
+    await notice
+      .getByRole("button", { name: "Dismiss notification", exact: true })
+      .click();
+    await notice.waitFor({ state: "hidden" });
+    await chooseDestination("Settings");
+    await page
+      .getByRole("button", { name: "Review issues", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Issues and recovery" });
+    await dialog
+      .getByText(/History is unavailable or could not refresh/)
+      .waitFor();
+    await dialog
+      .getByRole("button", { name: "Close", exact: true })
+      .first()
+      .click();
+    await page.evaluate(() =>
+      window.publishFixture({ historyRefreshError: false })
+    );
+    await page.waitForFunction(() => !document.querySelector(".issue-notice"));
+    await page.mouse.move(2, 2);
+    await page.evaluate(() =>
+      window.publishFixture({ historyRefreshError: true })
+    );
+    await notice.waitFor({ state: "visible" });
+    await page.evaluate(() => document.activeElement?.blur());
+    await notice.waitFor({ state: "hidden", timeout: 10000 });
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Review issues", exact: true })
+        .count(),
+      1
+    );
+    report.cases.push({
+      label:
+        "Issue notice dismisses, recurs after resolution, times out and remains reviewable",
       passed: true,
     });
   }
@@ -352,11 +526,21 @@ try {
       passed: true,
     });
   }
-  if (process.argv.includes("--connection-summary"))
+  if (process.argv.includes("--connection-summary")) {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.waitForFunction(() =>
+      document.querySelector(".app-shell")?.classList.contains("workspace-wide")
+    );
     await checkConnectionSummary({ page, nav, report, out, host });
+  }
   if (exactBoundaries)
     await checkExactWorkspaceBoundaries({ page, nav, report, out });
   if (process.argv.includes("--auto-sync-recovery")) {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.waitForFunction(() =>
+      document.querySelector(".app-shell")?.classList.contains("workspace-wide")
+    );
+    await chooseDestination("History");
     const query = page.getByLabel("Search history", { exact: true });
     await query.fill("  recovery query  ");
     await nav.getByRole("button", { name: "Devices", exact: true }).click();
@@ -380,16 +564,14 @@ try {
         window.failAutoSyncReadback = value === "unconfirmed";
       }, outcome);
       const autoSync = page.getByLabel("Auto Sync", { exact: true });
-      await autoSync.selectOption("disabled");
+      await autoSync.click();
       const feedback =
         outcome === "rejected"
           ? "Auto Sync was not saved."
           : "Auto Sync Save could not be confirmed.";
       await page.getByRole("alert").filter({ hasText: feedback }).waitFor();
       await nav.getByRole("button", { name: "History", exact: true }).click();
-      await page
-        .getByRole("button", { name: /issues? needs? attention/ })
-        .click();
+      await openIssues();
       const issues = page.getByRole("dialog", {
         name: "Issues and recovery",
         exact: true,
@@ -409,7 +591,10 @@ try {
         await page.getByRole("alert").filter({ hasText: feedback }).isVisible(),
         true
       );
-      assert.equal(await query.inputValue(), "  recovery query  ");
+      assert.equal(
+        await page.evaluate(() => window.fixtureSession.getSnapshot().search),
+        "  recovery query  "
+      );
       assert.equal(await autoSync.isDisabled(), outcome === "unconfirmed");
       if (outcome === "rejected") {
         // Current refresh failure is a runtime-owned public prop; its Retry invokes the real settings port.
@@ -432,9 +617,7 @@ try {
         )
         .waitFor();
       await nav.getByRole("button", { name: "Requests", exact: true }).click();
-      await page
-        .getByRole("button", { name: /issues? needs? attention/ })
-        .click();
+      await openIssues();
       await issues
         .getByRole("button", { name: "Open Auto Sync", exact: true })
         .click();
@@ -464,8 +647,8 @@ try {
         .waitFor({ state: "detached" });
       assert.equal(await autoSync.isDisabled(), false);
       assert.equal(
-        await autoSync.inputValue(),
-        outcome === "rejected" ? "enabled" : "disabled",
+        await autoSync.getAttribute("aria-checked"),
+        outcome === "rejected" ? "true" : "false",
         "the current read, not the failed feedback, supplies the applied value"
       );
       await nav.getByRole("button", { name: "Devices", exact: true }).click();
@@ -500,6 +683,7 @@ try {
       actions.filter((value) => value.action === "auto-sync-refresh").length,
       4
     );
+    await chooseDestination("History");
     await query.fill("");
     await nav.getByRole("button", { name: "Devices", exact: true }).click();
     await page
@@ -850,9 +1034,11 @@ try {
           )
         );
         assert.ok(
-          placement[".workspace-topbar"].bottom <=
-            placement[".workspace-controls"].top + 1,
-          "branding/status stays above Search"
+          placement[".workspace-controls"].top >=
+            placement[".workspace-topbar"].top &&
+            placement[".workspace-controls"].bottom <=
+              placement[".workspace-topbar"].bottom + 1,
+          `History actions remain inside the header ${width}x${height}/${scale}%: ${JSON.stringify(placement)}`
         );
         if (scale === 100 && width <= 1100 && height >= 700)
           assert.ok(
@@ -1325,6 +1511,10 @@ try {
     });
   }
   if (process.argv.includes("--settings-recovery-route")) {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.waitForFunction(() =>
+      document.querySelector(".app-shell")?.classList.contains("workspace-wide")
+    );
     const categories = page.getByRole("navigation", {
       name: "Settings categories",
     });
@@ -1351,10 +1541,10 @@ try {
         .getByRole("button", { name: category, exact: true })
         .click();
       await page.evaluate((field) => (window.rejectSetting = field), field);
-      await page.getByLabel(label, { exact: true }).selectOption(value);
       await page
-        .getByRole("button", { name: /issues? needs? attention/ })
-        .click();
+        .getByRole("combobox", { name: label, exact: true })
+        .selectOption(value);
+      await openIssues();
       const issue = page.locator(`[data-issue-id="task:preference:${code}"]`);
       await issue
         .getByRole("button", {
@@ -1366,11 +1556,13 @@ try {
         await categories
           .getByRole("button", { name: category, exact: true })
           .getAttribute("aria-current"),
-        "page",
+        "location",
         `${field} recovery category`
       );
       assert.equal(
-        await page.getByLabel(label, { exact: true }).isVisible(),
+        await page
+          .getByRole("combobox", { name: label, exact: true })
+          .isVisible(),
         true,
         `${field} recovery control`
       );
@@ -1392,10 +1584,13 @@ try {
           .click();
       }
       await page.evaluate(() => (window.rejectSetting = null));
-      await page.getByLabel(label, { exact: true }).selectOption(value);
       await page
-        .getByRole("button", { name: /issues? needs? attention/ })
-        .waitFor({ state: "hidden" });
+        .getByRole("combobox", { name: label, exact: true })
+        .selectOption(value);
+      await page.mouse.move(2, 2);
+      await page
+        .locator(".issue-notice")
+        .waitFor({ state: "hidden", timeout: 10000 });
     }
     report.cases.push({
       label:
@@ -1404,7 +1599,10 @@ try {
     });
   }
   if (process.argv.includes("--settings-category-focus")) {
-    await page.setViewportSize({ width: 1100, height: 800 });
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.waitForFunction(() =>
+      document.querySelector(".app-shell")?.classList.contains("workspace-wide")
+    );
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
     const categories = page.getByRole("navigation", {
       name: "Settings categories",
@@ -1439,9 +1637,24 @@ try {
   }
   if (process.argv.includes("--m3-settings")) {
     await page.setViewportSize({ width: 320, height: 650 });
+    await page.waitForFunction(() =>
+      document
+        .querySelector(".app-shell")
+        ?.classList.contains("workspace-narrow")
+    );
     await chooseDestination("Settings");
     const categories = page.getByRole("navigation", {
       name: "Settings categories",
+    });
+    await categories
+      .getByRole("button", { name: "Appearance", exact: true })
+      .click();
+    await page.waitForFunction(() => {
+      const target = document.querySelector(
+        '[data-session-focus="settings:appearance"]'
+      );
+      const rect = target?.getBoundingClientRect();
+      return rect && rect.top >= 0 && rect.top < window.innerHeight;
     });
     await categories
       .getByRole("button", { name: "General", exact: true })
@@ -1456,7 +1669,7 @@ try {
       await page
         .getByLabel("Clip Sharing Lifetime", { exact: true })
         .isVisible(),
-      false
+      true
     );
     await page
       .getByLabel("Keep unpinned history", { exact: true })
@@ -1509,7 +1722,7 @@ try {
       })
     );
     const relay = page.locator("details.managed-relay-card").first();
-    assert.equal(await relay.locator("summary").isVisible(), true);
+    await relay.locator("summary").waitFor({ state: "visible" });
     assert.equal(
       await relay
         .getByRole("button", { name: "Remove", exact: true })
@@ -1545,7 +1758,7 @@ try {
       await page
         .getByLabel("Keep unpinned history", { exact: true })
         .isVisible(),
-      false
+      true
     );
     await page
       .getByLabel("Clip Sharing Lifetime", { exact: true })
@@ -1561,7 +1774,7 @@ try {
       await categories
         .getByRole("button", { name: "Advanced", exact: true })
         .getAttribute("aria-current"),
-      "page"
+      "location"
     );
     const overflow = await page.evaluate(
       () =>
@@ -1580,6 +1793,33 @@ try {
       String(7 * 86400000)
     );
     await page.screenshot({ path: join(out, "m3-general-320.png") });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    const enlarged = await page.evaluate(() => {
+      const control = document
+        .querySelector('[role="switch"][id="auto-sync"]')
+        .getBoundingClientRect();
+      return {
+        width: control.width,
+        height: control.height,
+        overflow:
+          document.documentElement.scrollWidth >
+          document.documentElement.clientWidth,
+      };
+    });
+    assert.ok(
+      enlarged.width >= 40 && enlarged.height >= 40,
+      "switch retains its target at enlarged text"
+    );
+    assert.equal(
+      enlarged.overflow,
+      false,
+      "enlarged Settings has no page-level horizontal overflow"
+    );
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "";
+    });
     report.cases.push({
       label: `${host} M3 categories, real settings writes, retained relay editor through resize and Advanced Clear`,
       passed: true,
@@ -1697,7 +1937,8 @@ try {
         () => document.documentElement.dataset.hostGeometry === "android"
       );
       const summary = page.getByRole("button", {
-        name: /issues? needs? attention/,
+        name: "Review",
+        exact: true,
       });
       await summary.scrollIntoViewIfNeeded();
       const measured = await summary.evaluate(measureNativeControl, profile);
@@ -1783,7 +2024,8 @@ try {
       }, scale);
       await nav.getByRole("button", { name: "History", exact: true }).click();
       const summary = page.getByRole("button", {
-        name: /issues? needs? attention/,
+        name: "Review",
+        exact: true,
       });
       await summary.scrollIntoViewIfNeeded();
       const shell = page.locator(".app-shell");

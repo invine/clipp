@@ -5,6 +5,7 @@ import React from "react";
  * Additional simple UI glyphs are authored here; no font or external asset is loaded.
  */
 const paths = {
+  text: <path d="M5 4h14M12 4v16M8 20h8M7 8V4M17 8V4" />,
   pin: <path d="M8 3h8l-1 7 3 4v2H6v-2l3-4-1-7Zm4 13v6" />,
   search: (
     <>

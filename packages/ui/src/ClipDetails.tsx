@@ -100,7 +100,7 @@ export function ClipDetails({
           Delete Clip
         </button>
       </div>
-      <details className="clip-details-metadata">
+      <details className="clip-details-metadata" open>
         <summary>Clip information</summary>
         <dl>
           {sourceName && (

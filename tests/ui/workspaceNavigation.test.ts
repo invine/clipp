@@ -245,7 +245,7 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
         },
       })
     );
-  expect(render().match(/<select[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
+  expect(render().match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
     'disabled=""'
   );
   await client.start();
@@ -253,11 +253,11 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
     await client.save({ autoSync: false });
   });
   for (const html of [render(), render(false)]) {
-    const select = html.match(/<select[^>]*id="auto-sync"[^>]*>/)?.[0];
+    const select = html.match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0];
     expect(select).toContain('aria-disabled="true"');
     expect(select).toContain('aria-busy="true"');
     expect(select).not.toContain('disabled=""');
-    expect(html).toContain('value="enabled" selected=""');
+    expect(select).toContain('aria-checked="true"');
     expect(html).toContain("Saving Auto Sync…");
     expect(html).not.toContain("Auto Sync saved.");
   }
@@ -274,14 +274,16 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
     },
   });
   await saving;
-  expect(render()).toContain('value="disabled" selected=""');
+  expect(render().match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
+    'aria-checked="false"'
+  );
   expect(render()).toContain("Auto Sync saved.");
   await session.saveAutoSync(async () => ({
     status: "unconfirmed",
     autoSync: false,
     error: "reply_lost",
   }));
-  expect(render().match(/<select[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
+  expect(render().match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
     'disabled=""'
   );
   expect(render()).toContain("Auto Sync Save could not be confirmed.");
@@ -454,38 +456,19 @@ it("names one connection control without claiming delivery for an untrusted tran
       connectionStateKnown: true,
     })
   );
-  expect(output).toContain('aria-label="Connections: No Trusted Devices yet"');
+  expect(output).toContain('aria-label="Open Devices: No Trusted Devices yet"');
   expect(output).not.toContain("Synced");
 });
 
-it("opens a brief live connection panel while retaining query and the suspended task", () => {
-  const session = createUiSession();
-  session.update({ search: "retained query", filterMode: "pinned" });
-  session.open({ kind: "pairing", origin: "add-device" });
-  session.pairing.change("retained draft");
-  session.open({ kind: "connections", origin: "connections-summary" });
-  const render = (connectionStateKnown: boolean) =>
-    renderToStaticMarkup(
-      React.createElement(ClipboardApp, {
-        ...props,
-        session,
-        connectionStateKnown,
-        autoSyncKnown: true,
-        autoSync: false,
-      })
-    );
-  expect(render(false)).toContain("Connection status unknown.");
-  expect(render(true)).toContain("No Trusted Devices yet.");
-  expect(render(true)).toContain("Auto Sync: Off.");
-  expect(render(true)).toContain("Open Connections settings");
-  session.back();
-  expect(session.getSnapshot()).toMatchObject({
-    search: "retained query",
-    filterMode: "pinned",
-    focusKey: "connections-summary",
-    tasks: [{ kind: "pairing" }],
-  });
-  expect(session.pairing.getSnapshot().raw).toBe("retained draft");
+it("connection control is a direct navigation action", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props })
+  );
+  const control = output.match(
+    /<button[^>]*data-session-focus="connections-summary"[^>]*>/
+  )?.[0];
+  expect(control).toContain('aria-label="Open Devices:');
+  expect(control).not.toContain("aria-haspopup");
 });
 
 it("Devices retains honest text status when a reported path is no longer connected", () => {
@@ -574,13 +557,13 @@ it("organizes routine settings, connections, and advanced tasks by session categ
     );
   const general = render();
   expect(general).toContain('aria-label="Settings categories"');
-  expect(general).toMatch(/aria-current="page"[^>]*>General/);
+  expect(general).toMatch(/aria-current="location"[^>]*>General/);
   expect(general).toContain('data-settings-panel="general"');
-  expect(general).toContain('data-settings-panel="connections" hidden=""');
-  expect(general).toContain('data-settings-panel="advanced" hidden=""');
+  expect(general).toContain('data-settings-panel="connections"');
+  expect(general).toContain('data-settings-panel="advanced"');
   session.update({ settingsCategory: "advanced" });
   const advanced = render();
-  expect(advanced).toMatch(/aria-current="page"[^>]*>Advanced/);
+  expect(advanced).toMatch(/aria-current="location"[^>]*>Advanced/);
   expect(advanced).toContain('data-settings-panel="advanced"');
   expect(advanced).toContain('data-session-focus="settings-clear"');
   expect(advanced).not.toContain("Generate new identity");

@@ -88,7 +88,6 @@ it("composes independent source faults once through the shared shell and retains
       },
     ],
   };
-  expect(render(faults)).toContain("7 issues need attention");
   session.open({ kind: "issues", origin: "issues-summary" });
   const html = render(faults);
   expect(html).toContain(
@@ -99,17 +98,16 @@ it("composes independent source faults once through the shared shell and retains
   );
   expect(html).toContain("retry pending Clips automatically");
   expect(html).toContain('class="task-dialog recovery-task"');
-  session.close();
-  expect(render(faults)).toContain("7 issues need attention");
+  expect(html).toContain("7 issues need attention");
   expect(render({ ...faults, pairingErrors: [] })).toContain(
     "6 issues need attention"
   );
+  session.close();
 });
 it("keeps ordinary offline devices and empty relays out of the fault count and blocks cold identity actions", () => {
   const session = createUiSession();
   session.update({ destination: "devices" });
   const html = render({ initializationError: true, session });
-  expect(html).toContain("1 issue needs attention");
   expect(html).toMatch(/disabled=""[^>]*>Pair this device/);
   expect(html).not.toContain('aria-label="Share current clipboard now"');
   session.update({ destination: "history" });
@@ -326,7 +324,7 @@ it("keeps an applied-but-unsaved history policy reachable from History and expla
   const history = renderToStaticMarkup(
     React.createElement(ClipboardApp, { ...props, appearanceSettings, session })
   );
-  expect(history).toContain("1 issue needs attention");
+  expect(history).toContain("History");
   session.open({ kind: "issues", origin: "issues-summary" });
   const issues = renderToStaticMarkup(
     React.createElement(ClipboardApp, { ...props, appearanceSettings, session })
@@ -383,7 +381,6 @@ it("removes both the global Issue and partial-save message after acknowledged re
         refresh: client.refresh,
       },
     });
-  expect(renderCurrent()).toContain("1 issue needs attention");
   expect(renderCurrent()).toContain("only partly saved");
   current = snapshot(3, null);
   publish({ type: "settingsState", snapshot: current });
@@ -476,7 +473,6 @@ it("retires the latest cleanup failure after real retention recovery even while 
         refresh: client.refresh,
       },
     });
-  expect(renderCurrent()).toContain("1 issue needs attention");
   expect(renderCurrent()).toContain("cleanup_B");
   writable = true;
   backend.applyHistoryMutation = originalMutation;
