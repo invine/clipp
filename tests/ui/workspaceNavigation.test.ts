@@ -570,6 +570,55 @@ it("organizes routine settings, connections, and advanced tasks by session categ
   expect(advanced).not.toContain("Generate new identity");
 });
 
+it("explains real settings groups and keeps history and sharing policies distinct", async () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const snapshot = {
+    sessionId: "settings",
+    revision: 1,
+    state: {
+      theme: "system" as const,
+      autoSync: true,
+      logLevel: "info" as const,
+      localRetentionMs: 30 * 86400000,
+      sharingLifetimeMs: 86400000,
+    },
+  };
+  const client = createSettingsClient({
+    send: async () => ({ ok: true, snapshot }),
+    subscribe: () => () => {},
+  });
+  await client.start();
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      appearanceSettings: {
+        ...client.getState(),
+        save: client.save,
+        refresh: client.refresh,
+      },
+      autoSyncKnown: true,
+      autoSync: true,
+      onSetAutoSync: async () => ({
+        status: "applied" as const,
+        autoSync: true,
+      }),
+    })
+  );
+
+  expect(output).toContain("Choose how this device works with Clipp.");
+  expect(output).toContain("Send and receive Clips with Trusted Devices.");
+  expect(output).toContain("Clipboard History");
+  expect(output).toContain("Clip Sharing Lifetime");
+  expect(output).toContain("Pins are exempt.");
+  expect(output).toContain(
+    "Expiry stops sharing; it does not delete local history."
+  );
+  expect(output).toContain("Clear all local history");
+  client.stop();
+});
+
 it("exposes compact navigation with a truthful expanded state", () => {
   const session = createUiSession();
   const render = () =>

@@ -2385,6 +2385,47 @@ html[data-host-geometry="android"] .android-host {
   display: none;
 }
 
+.settings-intro {
+  margin: -0.35rem 0 0.9rem;
+  max-width: 46rem;
+  color: var(--clipp-text-muted);
+  line-height: 1.5;
+}
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+  margin-block: 0.75rem;
+  padding: clamp(0.8rem, 2vw, 1.1rem);
+  border: 1px solid var(--clipp-border);
+  border-radius: var(--md-radius-lg, 14px);
+  background: var(--clipp-surface-raised);
+}
+.settings-group > h4 {
+  margin: 0;
+  color: var(--clipp-text);
+  font-size: 1rem;
+  font-weight: 650;
+}
+.settings-group > p {
+  margin: 0;
+  max-width: 48rem;
+  color: var(--clipp-text-muted);
+  line-height: 1.5;
+}
+.settings-group > .relay-settings,
+.settings-group > .clip-settings {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.settings-group:focus-visible {
+  outline: 2px solid var(--clipp-focus);
+  outline-offset: 2px;
+}
+
 .managed-relay-card {
   display: block;
 }

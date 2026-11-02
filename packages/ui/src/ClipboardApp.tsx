@@ -2077,14 +2077,31 @@ export function ClipboardApp({
                   <h3 tabIndex={-1} data-session-focus="settings:general">
                     General
                   </h3>
+                  <p className="settings-intro">
+                    Choose how this device works with Clipp.
+                  </p>
                   {appearanceSettings && (
-                    <div tabIndex={-1} data-session-focus="settings:appearance">
-                      <h3>Appearance</h3>
+                    <section
+                      className="settings-group"
+                      aria-labelledby="settings-appearance-heading"
+                      tabIndex={-1}
+                      data-session-focus="settings:appearance"
+                    >
+                      <h4 id="settings-appearance-heading">Appearance</h4>
+                      <p>Choose a theme for this device.</p>
                       <Appearance settings={appearanceSettings} />
-                    </div>
+                    </section>
                   )}
                   {onSetAutoSync && (
-                    <div className="relay-settings">
+                    <section
+                      className="settings-group relay-settings"
+                      aria-labelledby="settings-sync-heading"
+                    >
+                      <h4 id="settings-sync-heading">Sync</h4>
+                      <p>
+                        Send and receive Clips with Trusted Devices. Disabling
+                        Auto Sync keeps local capture and Clipboard History.
+                      </p>
                       <label className="peer-sub" htmlFor="auto-sync">
                         Auto Sync
                       </label>
@@ -2197,11 +2214,18 @@ export function ClipboardApp({
                         refreshError={autoSyncRefreshError}
                         refreshing={autoSyncRefreshing}
                       />
-                    </div>
+                    </section>
                   )}
 
                   {appearanceSettings && (
-                    <div tabIndex={-1} data-session-focus="settings:clips">
+                    <section
+                      className="settings-group"
+                      aria-labelledby="settings-history-heading"
+                      tabIndex={-1}
+                      data-session-focus="settings:clips"
+                    >
+                      <h4 id="settings-history-heading">Clipboard History</h4>
+                      <p>Manage how long unpinned Clips stay on this device.</p>
                       <ClipSettings
                         section="retention"
                         settings={appearanceSettings}
@@ -2213,10 +2237,15 @@ export function ClipboardApp({
                             : undefined
                         }
                       />
-                    </div>
+                    </section>
                   )}
                   {!appearanceSettings && onSetLocalRetention && (
-                    <div className="relay-settings">
+                    <section
+                      className="settings-group relay-settings"
+                      aria-labelledby="settings-history-heading"
+                    >
+                      <h4 id="settings-history-heading">Clipboard History</h4>
+                      <p>Manage how long unpinned Clips stay on this device.</p>
                       <label className="peer-sub" htmlFor="history-retention">
                         Keep unpinned history
                       </label>
@@ -2248,7 +2277,7 @@ export function ClipboardApp({
                           1 year
                         </option>
                       </select>
-                    </div>
+                    </section>
                   )}
                 </section>
                 <section
@@ -2257,40 +2286,56 @@ export function ClipboardApp({
                   aria-label="Connections settings"
                 >
                   <h3>Connections</h3>
-                  <div tabIndex={-1} data-session-focus="settings:relays">
-                    <h3>Relays</h3>
+                  <p className="settings-intro">
+                    Configure how Clipp reaches your Trusted Devices.
+                  </p>
+                  <section
+                    className="settings-group"
+                    aria-labelledby="settings-relays-heading"
+                    tabIndex={-1}
+                    data-session-focus="settings:relays"
+                  >
+                    <h4 id="settings-relays-heading">Managed relays</h4>
                     {renderRelaysSection()}
-                  </div>
+                  </section>
                   {backgroundContinuity && onSetBackgroundContinuity && (
-                    <BackgroundContinuityControls
-                      state={backgroundContinuity}
-                      setEnabled={onSetBackgroundContinuity}
-                      setAutoSync={(enabled) =>
-                        session.saveAutoSync(() => onSetAutoSync?.(enabled))
-                      }
-                      autoSyncPending={
-                        autoSyncPending || sessionState.autoSync.pending
-                      }
-                      autoSyncRecoveryRequired={
-                        sessionState.autoSync.recoveryRequired
-                      }
-                      refresh={onRefreshBackgroundContinuity}
-                      refreshAutoSync={
-                        onRetryAutoSync
-                          ? () => session.refreshAutoSync(onRetryAutoSync)
-                          : undefined
-                      }
-                      openNotificationSettings={
-                        onOpenBackgroundNotificationSettings
-                      }
-                      help={() =>
-                        session.open({
-                          kind: "issues",
-                          entity: "continuity",
-                          origin: "continuity-help",
-                        })
-                      }
-                    />
+                    <section
+                      className="settings-group"
+                      aria-labelledby="settings-background-heading"
+                    >
+                      <h4 id="settings-background-heading">
+                        Background continuity
+                      </h4>
+                      <BackgroundContinuityControls
+                        state={backgroundContinuity}
+                        setEnabled={onSetBackgroundContinuity}
+                        setAutoSync={(enabled) =>
+                          session.saveAutoSync(() => onSetAutoSync?.(enabled))
+                        }
+                        autoSyncPending={
+                          autoSyncPending || sessionState.autoSync.pending
+                        }
+                        autoSyncRecoveryRequired={
+                          sessionState.autoSync.recoveryRequired
+                        }
+                        refresh={onRefreshBackgroundContinuity}
+                        refreshAutoSync={
+                          onRetryAutoSync
+                            ? () => session.refreshAutoSync(onRetryAutoSync)
+                            : undefined
+                        }
+                        openNotificationSettings={
+                          onOpenBackgroundNotificationSettings
+                        }
+                        help={() =>
+                          session.open({
+                            kind: "issues",
+                            entity: "continuity",
+                            origin: "continuity-help",
+                          })
+                        }
+                      />
+                    </section>
                   )}{" "}
                   {notificationControls && (
                     <NotificationSettings controls={notificationControls} />
@@ -2302,14 +2347,28 @@ export function ClipboardApp({
                   aria-label="Advanced settings"
                 >
                   <h3>Advanced</h3>
+                  <p className="settings-intro">
+                    Review sharing, local data and device recovery controls.
+                  </p>
                   {appearanceSettings && (
-                    <ClipSettings
-                      section="lifetime"
-                      settings={appearanceSettings}
-                    />
+                    <section
+                      className="settings-group"
+                      aria-labelledby="settings-sharing-heading"
+                    >
+                      <h4 id="settings-sharing-heading">Clip Sharing</h4>
+                      <p>Set how long new Clips remain eligible for sharing.</p>
+                      <ClipSettings
+                        section="lifetime"
+                        settings={appearanceSettings}
+                      />
+                    </section>
                   )}
-                  <div className="relay-settings">
-                    <h3>Local history</h3>
+                  <section
+                    className="settings-group relay-settings"
+                    aria-labelledby="settings-local-history-heading"
+                  >
+                    <h4 id="settings-local-history-heading">Local history</h4>
+                    <p>Remove saved Clips from this device.</p>
                     <button
                       type="button"
                       className="text-button labelled-control"
@@ -2330,20 +2389,32 @@ export function ClipboardApp({
                     >
                       Clear all local history
                     </button>
-                  </div>
-                  <ManualIdentityResetSettings
-                    peerId={identity?.deviceId}
-                    state={identityResetState}
-                    available={manualIdentityResetAvailable}
-                    actions={identityResetActions}
-                    onPair={
-                      identityReady ? onPairAfterIdentityReset : undefined
-                    }
-                    onCopyFormerPeerId={onCopyFormerIdentity}
-                    onAccepted={() => session.rotateIdentity()}
-                  />
+                  </section>
+                  <section
+                    className="settings-group"
+                    aria-labelledby="settings-identity-heading"
+                  >
+                    <h4 id="settings-identity-heading">
+                      Identity and recovery
+                    </h4>
+                    <ManualIdentityResetSettings
+                      peerId={identity?.deviceId}
+                      state={identityResetState}
+                      available={manualIdentityResetAvailable}
+                      actions={identityResetActions}
+                      onPair={
+                        identityReady ? onPairAfterIdentityReset : undefined
+                      }
+                      onCopyFormerPeerId={onCopyFormerIdentity}
+                      onAccepted={() => session.rotateIdentity()}
+                    />
+                  </section>
                   {appearanceSettings && (
-                    <div className="relay-settings">
+                    <section
+                      className="settings-group relay-settings"
+                      aria-labelledby="settings-diagnostics-heading"
+                    >
+                      <h4 id="settings-diagnostics-heading">Diagnostics</h4>
                       <label>
                         Log level
                         <select
@@ -2409,7 +2480,7 @@ export function ClipboardApp({
                           Refresh General settings
                         </button>
                       )}
-                    </div>
+                    </section>
                   )}
                 </section>
               </>
