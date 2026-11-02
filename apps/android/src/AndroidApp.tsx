@@ -43,7 +43,7 @@ const initialState: AndroidAppState = {
 
 export type AndroidAppRuntime = Pick<
   ReturnType<typeof createAndroidRuntime>,
-  "client" | "start" | "stop"
+  "client" | "start" | "stop" | "identityReset"
 >;
 
 export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
@@ -191,6 +191,16 @@ export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
         onManagedRelayRetry={(key) => client.retryManagedRelay(key)}
         initializationError={recovery.initializationError}
         identityRotationRecovery={state.identityRotationRecovery}
+        identityResetState={state.identityResetState}
+        manualIdentityResetAvailable={false}
+        identityResetActions={runtime.identityReset}
+        onPairAfterIdentityReset={() =>
+          session.open({ kind: "pairing", origin: "identity-reset-complete" })
+        }
+        onCopyFormerIdentity={async (receipt) => {
+          const result = await client.copyFormerIdentityPeerId(receipt.receiptId);
+          if (result.status !== "copied") throw new Error("peer_id_copy_unconfirmed");
+        }}
         identityRotationNotice={state.identityRotationNotice}
         onDeleteClip={(id) => client.deleteClip(id)}
         onUnpair={(id) => client.unpairDevice(id)}

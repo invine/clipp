@@ -32,6 +32,10 @@ import {
 } from "@core/runtime";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import {
+  androidCircuitRelayAddresses,
+  filterAndroidDialAddresses,
+} from "./networkAddressing";
+import {
   activeMemberReconnectPeers,
   createPairedPeerConnectionManager,
 } from "@core/network/pairedConnections";
@@ -75,6 +79,7 @@ import {
   IDENTITY_KEY,
   type KVStorageBackend,
 } from "@core/trust";
+import type { IdentityResetState } from "../../../packages/core/trust/manualIdentityReset";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS, type Clip } from "@core/models/Clip";
 import type {
   Device,
@@ -138,6 +143,7 @@ export type AndroidAppState = {
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
+  identityResetState?: IdentityResetState;
   relayAddresses: string[];
   managedRelayConfigurations?: RelayConfiguration[];
   managedRelayStates?: RelayState[];
@@ -258,16 +264,34 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          return client.identityRotation.beginIdentityReset(request);
+          const result = await client.identityRotation.beginIdentityReset(request);
+          if (result.outcome !== "rejected")
+            await client.publishIdentityResetState(result.state);
+          return result;
         },
-        reconcile: client.identityRotation.reconcileIdentityReset,
+        reconcile: async () => {
+          await client.publishIdentityResetState(
+            await client.identityRotation.reconcileIdentityReset()
+          );
+          return client.identityResetState;
+        },
         resume: async (
           request: Parameters<
             typeof client.identityRotation.resumeIdentityReset
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          return client.identityRotation.resumeIdentityReset(request);
+          const result = await client.identityRotation.resumeIdentityReset(request);
+          if (result.outcome !== "rejected")
+            await client.publishIdentityResetState(result.state);
+          return result;
+        },
+        dismiss: async (request: { receiptId: string }) => {
+          if (stopped) throw new Error("identity_runtime_stopped");
+          await client.publishIdentityResetState(
+            await client.identityRotation.dismissIdentityResetReminder(request)
+          );
+          return client.identityResetState;
         },
       },
       stop: () =>
@@ -431,6 +455,11 @@ export class AndroidClient {
       },
     },
   });
+  identityResetState: IdentityResetState = { phase: "idle" };
+  private async publishIdentityResetState(state: IdentityResetState) {
+    this.identityResetState = state;
+    await this.emitState();
+  }
   private readonly identityRotationLifecycle =
     createRuntimeIdentityRotationLifecycle({
       rotation: this.identityRotation,
@@ -475,6 +504,12 @@ export class AndroidClient {
   constructor(
     private readonly rawStorage: KVStorageBackend = new LocalStorageBackend()
   ) {
+    this.identityRotation.onStatusChanged((status) => {
+      if (status.kind === "manual-reset") {
+        this.identityResetState = status.state;
+        void this.emitState();
+      }
+    });
     // The companion can report loss before networking or the focused Activity starts.
     void this.backgroundNative.on("runtimeLost", () =>
       this.settleBackgroundLifecycleEvent(() =>
@@ -526,7 +561,7 @@ export class AndroidClient {
         ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
         : undefined;
 
-    const relayAddresses: string[] = [];
+    const relayAddresses = androidCircuitRelayAddresses();
     log.info("[clipp:android:network] Creating messaging transport", {
       peerId: peerId?.toString?.() ?? String(peerId),
       relayAddresses,
@@ -539,7 +574,7 @@ export class AndroidClient {
       relayAddresses,
       enableWebRTCDirect: true,
       enableDCUtR: true,
-      enableRelayReservations: false,
+      enableRelayReservations: true,
       allowInsecureBrowserDials: true,
       signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({
         storage: this.storage,
@@ -550,9 +585,10 @@ export class AndroidClient {
         (await this.identitySvc.membershipStatus(remotePeerId)) === "revoked",
     });
     this.transport.setEligibleDialAddresses((addresses) =>
-      this.managedRelays
-        ? this.managedRelays.eligibleDialAddresses(addresses)
-        : addresses.filter((address) => !address.includes("/p2p-circuit"))
+      filterAndroidDialAddresses(
+        addresses,
+        this.managedRelays?.eligibleDialAddresses(addresses)
+      )
     );
     this.pairedConnections = createPairedPeerConnectionManager({
       transport: this.transport,
@@ -1323,6 +1359,7 @@ export class AndroidClient {
         pinnedIds: [],
         identityRotationRecovery:
           this.identityRotationRecovery || this.workFence.isFenced(),
+        identityResetState: this.identityResetState,
         relayAddresses: [],
         localRetentionMs: this.localRetentionMs,
         autoSync: this.autoSync,
@@ -1384,6 +1421,7 @@ export class AndroidClient {
       clipboardHistoryError: this.clipboardHistoryError,
       historyPolicyError: this.historyPolicyError,
       identityRotationRecovery: this.identityRotationRecovery,
+      identityResetState: this.identityResetState,
       identityRotationNotice:
         (await this.identityRotation.notice())?.reason ?? null,
       relayAddresses,
@@ -1660,7 +1698,10 @@ export class AndroidClient {
   }
 
   reconcileIdentityReset() {
-    return this.identityRotation.reconcileIdentityReset();
+    return this.identityRotation.reconcileIdentityReset().then((state) => {
+      this.identityResetState = state;
+      return state;
+    });
   }
 
   async getInitializationError() {
@@ -1679,6 +1720,22 @@ export class AndroidClient {
   copyPairingText(text: string) {
     this.workFence.assertOpen();
     return copyPayloadText(text, (value) =>
+      CapacitorClipboard.write({ string: value })
+    );
+  }
+
+  async copyFormerIdentityPeerId(receiptId: string) {
+    await this.publishIdentityResetState(
+      await this.identityRotation.reconcileIdentityReset()
+    );
+    const receipt = this.identityResetState.phase === "idle"
+      ? this.identityResetState.receipt
+      : this.identityResetState.phase === "completed"
+        ? this.identityResetState.receipt
+        : undefined;
+    if (!receipt || receipt.receiptId !== receiptId)
+      return { status: "rejected" as const };
+    return copyPayloadText(receipt.formerPeerId, (value) =>
       CapacitorClipboard.write({ string: value })
     );
   }

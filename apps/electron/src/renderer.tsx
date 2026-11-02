@@ -31,6 +31,7 @@ import type {
   RelayConfiguration,
   RelayState,
 } from "../../../packages/core/network/managedRelays.js";
+import type { IdentityResetState } from "../../../packages/core/trust/manualIdentityReset.js";
 
 type AppState = {
   clips: Clip[];
@@ -56,6 +57,7 @@ type AppState = {
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
+  identityResetState?: IdentityResetState;
 };
 
 const initialState: AppState = {
@@ -201,6 +203,16 @@ const App = () => {
         initializationError={recovery.initializationError}
         identityRotationRecovery={state.identityRotationRecovery}
         identityRotationNotice={state.identityRotationNotice}
+        identityResetState={state.identityResetState}
+        manualIdentityResetAvailable={false}
+        identityResetActions={window.clipp.identityReset}
+        onPairAfterIdentityReset={() =>
+          session.open({ kind: "pairing", origin: "identity-reset-complete" })
+        }
+        onCopyFormerIdentity={async (receipt) => {
+          const result = await window.clipp.identityReset.copyFormerPeerId(receipt.receiptId);
+          if (result.status !== "copied") throw new Error("peer_id_copy_unconfirmed");
+        }}
         onDeleteClip={(id) => window.clipp.deleteClip(id)}
         onUnpair={(id) => window.clipp.unpairDevice(id)}
         onRenameDevice={(id, name) => window.clipp.renameDevice(id, name)}

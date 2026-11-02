@@ -60,6 +60,8 @@ import {
 } from "./renameActions";
 import { useHistory } from "./useHistory";
 import { createPopupNameState } from "./popupNameState";
+import type { IdentityResetResult, IdentityResetState } from "../../../packages/core/trust/manualIdentityReset";
+import type { ManualIdentityResetActions } from "../../../packages/ui/src/ManualIdentityResetSettings";
 
 function identityRotationNoticeReason(
   value: unknown
@@ -127,6 +129,8 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
     useState(false);
   const [identityRotationNotice, setIdentityRotationNotice] =
     useState<IdentityRotationNoticeReason | null>(null);
+  const [identityResetState, setIdentityResetState] =
+    useState<IdentityResetState>();
   const [managedRelayConfigurations, setManagedRelayConfigurations] = useState<
     RelayConfiguration[]
   >([]);
@@ -141,6 +145,31 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
   const nameState = useRef(
     createPopupNameState(setIdentity, setDevices)
   ).current;
+  const identityResetRequest = (message: Record<string, unknown>) =>
+    new Promise<any>((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError || !response?.ok) {
+          reject(new Error(response?.error ?? chrome.runtime.lastError?.message ?? "identity_reset_unavailable"));
+          return;
+        }
+        if (response.state) setIdentityResetState(response.state);
+        if (response.result?.state) setIdentityResetState(response.result.state);
+        resolve(response);
+      });
+    });
+  const identityResetActions: ManualIdentityResetActions | undefined =
+    surface === "page"
+      ? {
+          begin: async (request) =>
+            (await identityResetRequest({ type: "identityResetBegin", ...request })).result as IdentityResetResult,
+          reconcile: async () =>
+            (await identityResetRequest({ type: "identityResetReconcile" })).state as IdentityResetState,
+          resume: async (request) =>
+            (await identityResetRequest({ type: "identityResetResume", ...request })).result as IdentityResetResult,
+          dismiss: async (receiptId) =>
+            (await identityResetRequest({ type: "identityResetDismiss", receiptId })).state as IdentityResetState,
+        }
+      : undefined;
 
   const consumer = useMemo(
     () =>
@@ -182,16 +211,23 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       if (msg.type === "runtimeState" && msg.state) {
         consumer.live(msg.state);
       }
+      if (msg.type === "identityResetStateChanged" && msg.state)
+        setIdentityResetState(msg.state as IdentityResetState);
     };
     chrome.runtime.onMessage.addListener(handler);
     void consumer.load();
     const peerTimer = setInterval(() => void consumer.load(), 5000);
+    if (surface === "page")
+      chrome.runtime.sendMessage({ type: "identityResetRead" }, (response) => {
+        if (!chrome.runtime.lastError && response?.ok && response.state)
+          setIdentityResetState(response.state as IdentityResetState);
+      });
     return () => {
       chrome.runtime.onMessage.removeListener(handler);
       clearInterval(peerTimer);
       consumer.cancel();
     };
-  }, [consumer]);
+  }, [consumer, surface]);
 
   useEffect(() => {
     if (surface !== "popup") return;
@@ -381,6 +417,22 @@ export const ExtensionApp = ({ surface }: { surface: "popup" | "page" }) => {
       />
       <ClipboardApp
         session={session}
+        identityResetState={identityResetState}
+        manualIdentityResetAvailable={false}
+        identityResetActions={identityResetActions}
+        onPairAfterIdentityReset={() =>
+          session.open({ kind: "pairing", origin: "identity-reset-complete" })
+        }
+        onCopyFormerIdentity={async (receipt) => {
+          const authorized = await identityResetRequest({
+            type: "identityResetCopyFormerPeerId",
+            receiptId: receipt.receiptId,
+          });
+          if (authorized.text !== receipt.formerPeerId)
+            throw new Error("identity_reset_receipt_changed");
+          const result = await copyPayloadText(authorized.text, (text) => navigator.clipboard.writeText(text));
+          if (result.status !== "copied") throw new Error("peer_id_copy_unconfirmed");
+        }}
         onInspectClip={
           surface === "popup"
             ? (id) =>

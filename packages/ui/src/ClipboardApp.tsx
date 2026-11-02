@@ -58,6 +58,8 @@ import {
   PreferenceSaveFeedback,
 } from "./PreferenceSaveFeedback";
 import { ClearHistoryReview } from "./ClearHistoryReview";
+import { ManualIdentityResetSettings, type ManualIdentityResetActions } from "./ManualIdentityResetSettings";
+import type { IdentityResetReceipt, IdentityResetState } from "../../core/trust/manualIdentityReset";
 import type {
   RelayConfiguration,
   RelayState,
@@ -403,6 +405,11 @@ export type ClipboardAppProps = {
   onManagedRelayRetry?(key: string): Promise<RelayActionResult>;
   onRetryInitialization?(): boolean | void | Promise<boolean | void>;
   onAcknowledgeIdentityRotationNotice?(): void | Promise<void>;
+  manualIdentityResetAvailable?: boolean;
+  identityResetState?: IdentityResetState;
+  identityResetActions?: ManualIdentityResetActions;
+  onPairAfterIdentityReset?(): void;
+  onCopyFormerIdentity?(receipt: IdentityResetReceipt): Promise<void>;
 };
 
 export function ClipboardApp({
@@ -487,6 +494,11 @@ export function ClipboardApp({
   onManagedRelayRetry,
   onRetryInitialization,
   onAcknowledgeIdentityRotationNotice,
+  manualIdentityResetAvailable = false,
+  identityResetState,
+  identityResetActions,
+  onPairAfterIdentityReset,
+  onCopyFormerIdentity,
 }: ClipboardAppProps) {
   const [isNarrow, setIsNarrow] = useState(false);
   const [isCramped, setIsCramped] = useState(false);
@@ -2305,6 +2317,15 @@ export function ClipboardApp({
                       Clear all local history
                     </button>
                   </div>
+                  <ManualIdentityResetSettings
+                    peerId={identity?.deviceId}
+                    state={identityResetState}
+                    available={manualIdentityResetAvailable}
+                    actions={identityResetActions}
+                    onPair={identityReady ? onPairAfterIdentityReset : undefined}
+                    onCopyFormerPeerId={onCopyFormerIdentity}
+                    onAccepted={() => session.rotateIdentity()}
+                  />
                   {appearanceSettings && (
                     <div className="relay-settings">
                       <label>

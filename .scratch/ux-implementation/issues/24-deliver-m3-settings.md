@@ -52,6 +52,8 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
+Source review confirms the shared Settings surface already composes General, Connections and Advanced in `packages/ui/src/ClipboardApp.tsx`, with the existing settings tasks/actions, relay controls, Android continuity and notification controls, retention and lifetime, theme/preferences, and Clear history. Generate new identity remains reserved for the gated Ticket 30 path. No additional source gap was identified for this ticket in the current candidate. The user directed that validation gates be skipped; this issue remains open for its required candidate/native evidence.
+
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14

@@ -233,17 +233,32 @@ async function composeElectronRuntime(
       if (stopped) throw new Error("identity_runtime_stopped");
       return identityRotation.beginIdentityReset(request);
     },
-    reconcile: identityRotation.reconcileIdentityReset,
+    reconcile: async () => {
+      const state = await identityRotation.reconcileIdentityReset();
+      startupResetState = state;
+      await emitState();
+      return state;
+    },
     resume: async (
       request: Parameters<typeof identityRotation.resumeIdentityReset>[0]
     ) => {
       if (stopped) throw new Error("identity_runtime_stopped");
       return identityRotation.resumeIdentityReset(request);
     },
+    dismiss: async (request: { receiptId: string }) => {
+      if (stopped) throw new Error("identity_runtime_stopped");
+      const state = await identityRotation.dismissIdentityResetReminder(request);
+      startupResetState = state;
+      await emitState();
+      return state;
+    },
   };
   let startupResetState = await identityRotation.reconcileIdentityReset();
   identityRotation.onStatusChanged((status) => {
-    if (status.kind === "manual-reset") startupResetState = status.state;
+    if (status.kind === "manual-reset") {
+      startupResetState = status.state;
+      void emitState();
+    }
   });
   if (startupResetState.phase !== "idle") await identityWork.acquireFence();
   let managedConfigurations = await loadManagedRelayConfigurations({
@@ -1411,6 +1426,54 @@ async function composeElectronRuntime(
 
   ipcMain.handle("clipp:get-state", async () => {
     return await getState();
+  });
+
+  ipcMain.handle("clipp:identity-reset", async (event, request: unknown) => {
+    if (
+      !mainWindow ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame ||
+      !request ||
+      typeof request !== "object" ||
+      Array.isArray(request)
+    )
+      throw new Error("identity_reset_unauthorized");
+    const value = request as Record<string, unknown>;
+    if (value.action === "reconcile") return identityReset.reconcile();
+    if (
+      value.action === "begin" &&
+      typeof value.operationId === "string" &&
+      typeof value.reviewedPeerId === "string"
+    )
+      return identityReset.begin({
+        operationId: value.operationId,
+        reviewedPeerId: value.reviewedPeerId,
+      });
+    if (
+      value.action === "resume" &&
+      typeof value.operationId === "string"
+    )
+      return identityReset.resume({ operationId: value.operationId });
+    if (
+      value.action === "dismiss" &&
+      typeof value.receiptId === "string"
+    )
+      return identityReset.dismiss({ receiptId: value.receiptId });
+    if (
+      value.action === "copyFormerPeerId" &&
+      typeof value.receiptId === "string"
+    ) {
+      await identityReset.reconcile();
+      const receipt = startupResetState?.phase === "idle"
+        ? startupResetState.receipt
+        : startupResetState?.phase === "completed"
+          ? startupResetState.receipt
+          : undefined;
+      if (!receipt || receipt.receiptId !== value.receiptId)
+        throw new Error("identity_reset_receipt_unavailable");
+      return copyPayloadText(receipt.formerPeerId, (text) => clipboard.writeText(text));
+    }
+    throw new Error("identity_reset_invalid_request");
   });
 
   handleRuntime(

@@ -192,6 +192,12 @@ const identitySvc = createRuntimeIdentityManager({
 const OFFSCREEN_URL = chrome.runtime.getURL("offscreen.html");
 const POPUP_URL = chrome.runtime.getURL("src/popup.html");
 const OPTIONS_URL = chrome.runtime.getURL("src/options.html");
+function publishIdentityResetState(state: IdentityResetState) {
+  chrome.runtime.sendMessage(
+    { type: "identityResetStateChanged", state: copyIdentityResetState(state) },
+    () => void chrome.runtime.lastError
+  );
+}
 
 const managementNavigation = installChromeManagement(chrome, {
   ready: startupResetReady,
@@ -775,8 +781,10 @@ const identityRotation = createChromeIdentityRotationCoordinator({
   shutdown: () => identityRotationShutdown(),
 });
 identityRotation.onStatusChanged((status) => {
-  if (status.kind === "manual-reset")
+  if (status.kind === "manual-reset") {
     startupResetState = copyIdentityResetState(status.state);
+    publishIdentityResetState(status.state);
+  }
 });
 async function identityRotationShutdown() {
   await stopIdentityBoundRuntimeServices([
@@ -1152,6 +1160,7 @@ chrome.runtime.onMessage.addListener(
         "managementStatus",
         "managementRetry",
         "managementDismiss",
+        "identityResetStateChanged",
       ].includes(msg?.type)
     )
       return;
@@ -1161,6 +1170,69 @@ chrome.runtime.onMessage.addListener(
         .catch(() =>
           sendResponse({ ok: false, error: "identity_runtime_suspended" })
         );
+      return true;
+    }
+    if (
+      typeof msg?.type === "string" &&
+      msg.type.startsWith("identityReset")
+    ) {
+      if (sender?.id !== chrome.runtime.id || sender.url !== OPTIONS_URL) {
+        sendResponse({ ok: false, error: "identity_reset_unauthorized" });
+        return false;
+      }
+      void (async () => {
+        if (msg.type === "identityResetRead")
+          return {
+            ok: true,
+            state: copyIdentityResetState(startupResetState ?? { phase: "idle" }),
+          };
+        if (msg.type === "identityResetReconcile") {
+          const state = await chromeRuntime.identityReset.reconcile();
+          startupResetState = copyIdentityResetState(state);
+          return { ok: true, state };
+        }
+        if (msg.type === "identityResetBegin") {
+          if (typeof msg.operationId !== "string" || typeof msg.reviewedPeerId !== "string")
+            throw new Error("identity_reset_invalid_request");
+          return {
+            ok: true,
+            result: await chromeRuntime.identityReset.begin({
+              operationId: msg.operationId,
+              reviewedPeerId: msg.reviewedPeerId,
+            }),
+          };
+        }
+        if (msg.type === "identityResetResume") {
+          if (typeof msg.operationId !== "string")
+            throw new Error("identity_reset_invalid_request");
+          return {
+            ok: true,
+            result: await chromeRuntime.identityReset.resume({ operationId: msg.operationId }),
+          };
+        }
+        if (msg.type === "identityResetDismiss") {
+          if (typeof msg.receiptId !== "string")
+            throw new Error("identity_reset_invalid_request");
+          const state = await chromeRuntime.identityReset.dismiss({ receiptId: msg.receiptId });
+          startupResetState = copyIdentityResetState(state);
+          return { ok: true, state };
+        }
+        if (msg.type === "identityResetCopyFormerPeerId") {
+          if (typeof msg.receiptId !== "string")
+            throw new Error("identity_reset_invalid_request");
+          const receipt = startupResetState?.phase === "idle"
+            ? startupResetState.receipt
+            : startupResetState?.phase === "completed"
+              ? startupResetState.receipt
+              : undefined;
+          if (!receipt || receipt.receiptId !== msg.receiptId)
+            throw new Error("identity_reset_receipt_unavailable");
+          return { ok: true, text: receipt.formerPeerId };
+        }
+        throw new Error("identity_reset_unknown_action");
+      })()
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
       return true;
     }
     const recoveryReadable = [
@@ -1306,7 +1378,16 @@ chrome.runtime.onMessage.addListener(
     if (msg.type === "getRuntimeState") {
       runtimeAdapter.publicState
         .read()
-        .then((state) => sendResponse({ state }))
+        .then((state) =>
+          sendResponse({
+            state: {
+              ...state,
+              identityResetState: copyIdentityResetState(
+                startupResetState ?? { phase: "idle" }
+              ),
+            },
+          })
+        )
         .catch((error) => sendResponse({ error: (error as Error).message }));
       return true;
     }
@@ -1813,6 +1894,10 @@ export const chromeRuntime = {
     ) => {
       if (stopped) throw new Error("identity_runtime_stopped");
       return identityRotation.resumeIdentityReset(request);
+    },
+    dismiss: async (request: { receiptId: string }) => {
+      if (stopped) throw new Error("identity_runtime_stopped");
+      return identityRotation.dismissIdentityResetReminder(request);
     },
   },
   stop: () =>

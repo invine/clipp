@@ -53,6 +53,8 @@ The [coverage ledger](../validation-coverage.md) specifies Candidate, External a
 
 ## Handoff
 
+Source implementation is integrated in the isolated `ux10-native-gates` worktree on 2026-11-02. The shared Advanced reset UI consumes live state and actions, clears identity-bound UI session work once acceptance is observed, supports status reconciliation/resume and durable reminder dismissal/copy, and routes Pair only after restart recovery reports the new identity. Electron uses main-frame-validated IPC outside the ordinary fenced action wrapper; Chrome accepts reset messages only from the canonical Options page; Android exposes reset ownership through its runtime host. All three keep initiation unavailable pending runtime qualification while still displaying recovery for an already accepted operation. No validation gates were run per the coordinator’s instruction; runtime qualification remains outstanding and this issue remains open.
+
 Coordinator records the fresh baseline/claim, accepted decision assessment, isolated worktree, integration revision, checks and Standards/Spec review under [project workflow](../../../docs/agents/workflow.md). Preserve unrelated work.
 
 ## Host delivery allocation — DRAFT 2026-10-14

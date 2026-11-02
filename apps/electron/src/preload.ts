@@ -36,6 +36,7 @@ import type {
   RelayConfiguration,
   RelayState,
 } from "../../../packages/core/network/managedRelays.js";
+import type { IdentityResetResult, IdentityResetState } from "../../../packages/core/trust/manualIdentityReset.js";
 
 type AppState = {
   clips: Clip[];
@@ -61,6 +62,7 @@ type AppState = {
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
+  identityResetState?: IdentityResetState;
 };
 
 const api = {
@@ -113,6 +115,18 @@ const api = {
   getRuntimeAuthority: () =>
     ipcRenderer.invoke("clipp:get-runtime-authority") as Promise<string>,
   getState: () => ipcRenderer.invoke("clipp:get-state") as Promise<AppState>,
+  identityReset: {
+    begin: (request: { operationId: string; reviewedPeerId: string }) =>
+      ipcRenderer.invoke("clipp:identity-reset", { action: "begin", ...request }) as Promise<IdentityResetResult>,
+    reconcile: () =>
+      ipcRenderer.invoke("clipp:identity-reset", { action: "reconcile" }) as Promise<IdentityResetState>,
+    resume: (request: { operationId: string }) =>
+      ipcRenderer.invoke("clipp:identity-reset", { action: "resume", ...request }) as Promise<IdentityResetResult>,
+    dismiss: (receiptId: string) =>
+      ipcRenderer.invoke("clipp:identity-reset", { action: "dismiss", receiptId }) as Promise<IdentityResetState>,
+    copyFormerPeerId: (receiptId: string) =>
+      ipcRenderer.invoke("clipp:identity-reset", { action: "copyFormerPeerId", receiptId }) as Promise<PayloadCopyResult>,
+  },
   getIdentity: () =>
     ipcRenderer.invoke("clipp:get-identity") as Promise<Identity | null>,
   getInitializationError: () =>

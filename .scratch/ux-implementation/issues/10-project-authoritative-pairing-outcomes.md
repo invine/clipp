@@ -30,6 +30,8 @@ Only the output scoped here must be complete to resolve this ticket. Later consu
 
 Test expired/invalid responses, rejection then acceptance, waiting expiry, failed Admission/recovery, dismissal and identity changes. Qualify complete native app-to-app Pairing with a permitted route per affected runtime; collect Chrome full-page integration separately, without delaying this core output on the later layout.
 
+For G01, run separate Android-to-isolated-Electron and Chrome-to-isolated-Electron journeys, each with fresh identities and guarded synthetic clipboard values. Android-to-Chrome is excluded as an invalid counterpart mapping for this candidate and environment because neither the Android WebView nor the extension provides the required inbound listener; see the [accepted route decision](../decisions/20261102-ticket10-pairing-counterpart-route.md). This exclusion does not pass either runtime journey or remove any other Pairing outcome requirement.
+
 Run the [common candidate gates](../spec.md#verification-and-evidence) plus affected suites/builds/native checks. Record exact revision/dirty state, environment, commands and actual outcomes. Preserve regressions through the owning interface; use rendered/native evidence for the behavior that requires it, not implementation-mirroring helper tests.
 
 ## Coverage and closure
