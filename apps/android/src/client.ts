@@ -286,10 +286,12 @@ export class AndroidClient {
             await client.publishIdentityResetState(result.state);
           return result;
         },
-        dismiss: async (request: { receiptId: string }) => {
+        dismiss: async (receiptId: string) => {
           if (stopped) throw new Error("identity_runtime_stopped");
           await client.publishIdentityResetState(
-            await client.identityRotation.dismissIdentityResetReminder(request)
+            await client.identityRotation.dismissIdentityResetReminder({
+              receiptId,
+            })
           );
           return client.identityResetState;
         },

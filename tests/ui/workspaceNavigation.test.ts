@@ -42,6 +42,10 @@ it("Requests presents a pending read without inventing an empty current list", (
   const input = { ...props, session, requestsLoading: true };
   const output = renderToStaticMarkup(React.createElement(ClipboardApp, input));
   expect(output).toContain("Loading Requests…");
+  expect(output).toContain('<h1 class="workspace-current-title">Requests</h1>');
+  expect(output).toContain('<h2 class="device-section-title"');
+  expect(output).toContain("Pending requests</h2>");
+  expect(output).not.toContain('aria-label="Search history"');
   expect(output).not.toContain("No pending requests.");
 });
 it("an active History query has a named clear route", () => {
@@ -51,6 +55,18 @@ it("an active History query has a named clear route", () => {
     React.createElement(ClipboardApp, { ...props, session })
   );
   expect(output).toContain('aria-label="Clear search"');
+  expect(output).toContain('<h1 class="workspace-current-title">Pinned</h1>');
+});
+it("keeps History controls off task destinations while retaining a screen heading", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, session })
+  );
+  expect(output).toContain('<h1 class="workspace-current-title">Settings</h1>');
+  expect(output).not.toContain('aria-label="Search history"');
+  expect(output).not.toContain("Filters</button>");
+  expect(output).not.toContain("Share current clipboard now");
 });
 it("no-match feedback names the active query and Pinned scope", () => {
   const session = createUiSession();

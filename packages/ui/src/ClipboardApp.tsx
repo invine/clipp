@@ -1797,9 +1797,9 @@ export function ClipboardApp({
           <>
             <div className="section-divider"></div>
             <div>
-              <div className="nav-section-label" style={{ marginTop: 14 }}>
+              <h2 className="device-section-title" style={{ marginTop: 14 }}>
                 Pending requests
-              </div>
+              </h2>
               <PairingStatus
                 outcomes={pairingOutcomes}
                 waiting={waiting}
@@ -2708,7 +2708,7 @@ export function ClipboardApp({
           >
             <Icon name={showNav ? "close" : "menu"} />
           </button>
-          <div className="workspace-current-title">
+          <h1 className="workspace-current-title">
             {sessionState.destination === "history"
               ? filterMode === "pinned"
                 ? "Pinned"
@@ -2717,67 +2717,64 @@ export function ClipboardApp({
                   : "History"
               : sessionState.destination[0].toUpperCase() +
                 sessionState.destination.slice(1)}
-          </div>
+          </h1>
           <ConnectionStatusButton
             summary={connectionSummary}
             session={session}
           />
         </header>
-        <div className="workspace-controls">
-          <div className="search-field">
-            <Icon name="search" />
-            <input
-              aria-label="Search history"
-              data-session-focus="history-query"
-              placeholder="Search history: text, URL, device…"
-              value={search}
-              onChange={(e) =>
-                session.update({
-                  search: e.target.value,
-                  destination: "history",
-                })
-              }
-            />
-            {search && (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Clear search"
-                onClick={() => setSearch("")}
-              >
-                <Icon name="close" />
-              </button>
+        {sessionState.destination === "history" && (
+          <div className="workspace-controls">
+            <div className="search-field">
+              <Icon name="search" />
+              <input
+                aria-label="Search history"
+                data-session-focus="history-query"
+                placeholder="Search history: text, URL, device…"
+                value={search}
+                onChange={(e) => session.update({ search: e.target.value })}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Clear search"
+                  onClick={() => setSearch("")}
+                >
+                  <Icon name="close" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="text-button"
+              aria-expanded={!filtersCollapsed}
+              data-session-focus="history-filters"
+              onClick={toggleFilters}
+            >
+              <Icon name="filters" />
+              Filters
+            </button>
+            {onShareNow && (
+              <div className="send-control">
+                <IconButton
+                  icon="send"
+                  label="Share current clipboard now"
+                  onClick={shareNow}
+                  disabled={
+                    !identityReady ||
+                    sessionState.historyActions["send:current"]?.pending
+                  }
+                  aria-describedby="send-clipboard-hint"
+                />
+                <span id="send-clipboard-hint" className="control-hint">
+                  Sends your current system clipboard
+                </span>
+              </div>
             )}
           </div>
-
-          <button
-            type="button"
-            className="text-button"
-            aria-expanded={!filtersCollapsed}
-            data-session-focus="history-filters"
-            onClick={toggleFilters}
-          >
-            <Icon name="filters" />
-            Filters
-          </button>
-          {onShareNow && (
-            <div className="send-control">
-              <IconButton
-                icon="send"
-                label="Share current clipboard now"
-                onClick={shareNow}
-                disabled={
-                  !identityReady ||
-                  sessionState.historyActions["send:current"]?.pending
-                }
-                aria-describedby="send-clipboard-hint"
-              />
-              <span id="send-clipboard-hint" className="control-hint">
-                Sends your current system clipboard
-              </span>
-            </div>
-          )}
-        </div>
+        )}
 
         <div className="app-notices" role="status">
           {issues.length > 0 && (
@@ -2933,13 +2930,9 @@ export function ClipboardApp({
         >
           {sessionState.destination !== "history" && (
             <section
-              className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : ""}`}
+              className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : sessionState.destination === "devices" ? "devices-pane" : ""}`}
               data-session-scroll={sessionState.destination}
             >
-              <h1>
-                {sessionState.destination[0].toUpperCase() +
-                  sessionState.destination.slice(1)}
-              </h1>
               {renderDestination()}
             </section>
           )}
@@ -2948,12 +2941,6 @@ export function ClipboardApp({
             data-session-scroll="history"
             hidden={sessionState.destination !== "history"}
           >
-            <header className="content-header">
-              <div className="content-title-block">
-                <div className="content-title">History</div>
-              </div>
-            </header>
-
             {!filtersCollapsed && (
               <div
                 className="content-filters"
@@ -3148,17 +3135,6 @@ export function ClipboardApp({
                     aria-labelledby={`clip-preview:${clip.id}`}
                     style={{ position: "relative" }}
                   >
-                    <div className="history-card-header">
-                      <div className="history-chip" title={`From: ${label}`}>
-                        <span className="chip-dot"></span>
-                        <span className="history-chip-prefix">From:</span>
-                        <MiddleEllipsisText
-                          className="history-chip-label"
-                          text={label}
-                        />
-                      </div>
-                    </div>
-
                     <button
                       type="button"
                       className="history-body history-select"
@@ -3183,18 +3159,22 @@ export function ClipboardApp({
                     </button>
 
                     <div className="history-meta">
-                      <div className="meta-left">
-                        <div className="meta-top-line">
-                          <span className="pill-source">
-                            <Icon name={isLocal ? "computer" : "device"} />
-                            {isLocal ? "Local" : "Remote"}
-                          </span>
-                          <span className="meta-time">{timeLabel}</span>
-                        </div>
-                        <div className="meta-bottom-line">
-                          {clip.type === "url" ? "URL" : "Text"}
-                        </div>
+                      <div className="history-chip" title={`From: ${label}`}>
+                        <span className="chip-dot"></span>
+                        <span className="history-chip-prefix">From:</span>
+                        <MiddleEllipsisText
+                          className="history-chip-label"
+                          text={label}
+                        />
                       </div>
+                      <span className="pill-source">
+                        <Icon name={isLocal ? "computer" : "device"} />
+                        {isLocal ? "Local" : "Remote"}
+                      </span>
+                      <span className="meta-time">{timeLabel}</span>
+                      <span className="history-type">
+                        {clip.type === "url" ? "URL" : "Text"}
+                      </span>
                     </div>
                     <div className="history-actions">
                       <IconButton

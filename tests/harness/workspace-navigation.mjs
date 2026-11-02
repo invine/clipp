@@ -802,12 +802,26 @@ try {
         }, scale);
         await page.waitForTimeout(50);
         await page.getByLabel("Search history", { exact: true }).fill("clip");
+        const actionsBeforeNavigation = await page.evaluate(
+          () => window.fixtureActions.length
+        );
         await chooseDestination("Devices");
         assert.equal(
-          await page.getByLabel("Search history", { exact: true }).inputValue(),
-          "clip"
+          await page.getByLabel("Search history", { exact: true }).count(),
+          0,
+          "History search is scoped to History"
+        );
+        assert.equal(
+          await page.evaluate(() => window.fixtureActions.length),
+          actionsBeforeNavigation,
+          "changing destinations invokes no History action"
         );
         await chooseDestination("History");
+        assert.equal(
+          await page.getByLabel("Search history", { exact: true }).inputValue(),
+          "clip",
+          "History search is retained when returning to History"
+        );
         await page
           .getByRole("button", { name: "Clear search", exact: true })
           .click();
@@ -1425,7 +1439,7 @@ try {
   }
   if (process.argv.includes("--m3-settings")) {
     await page.setViewportSize({ width: 320, height: 650 });
-    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await chooseDestination("Settings");
     const categories = page.getByRole("navigation", {
       name: "Settings categories",
     });

@@ -31,6 +31,37 @@ it("shows exact entire Clip content, pin state and Copy/Pin/Delete through the o
   expect(output).toContain("Unpin Clip");
   expect(output).toContain("Delete Clip");
 });
+it("leads with Clip content and actions, with technical metadata available on disclosure", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipDetails, {
+      clip: {
+        id: "clip-id",
+        type: "url",
+        content: "https://example.test/a-long-resource",
+        originPeerId: "peer-id",
+        capturedAt: 1,
+        shareExpiresAt: 2,
+      },
+      sourceName: "Laptop",
+      pinned: false,
+      disabled: false,
+      actions: {},
+      onCopy() {},
+      onPin() {},
+      onDelete() {},
+      onRetry() {},
+      onDismiss() {},
+      onHistory() {},
+    })
+  );
+  expect(output.indexOf("https://example.test/a-long-resource")).toBeLessThan(
+    output.indexOf("Clip information")
+  );
+  expect(output).toContain("Link");
+  expect(output).toContain('aria-label="Copy Clip"');
+  expect(output).toContain("peer-id");
+  expect(output).toContain("clip-id");
+});
 it("announces confirmed Copy in the active details task through the existing action owner", async () => {
   const session = createUiSession();
   await session.runHistoryAction("copy:clip", async () =>
@@ -83,7 +114,7 @@ it("uses stable named Copy/Pin icons and a separate named Delete action in detai
     })
   );
   expect(output).toContain('aria-label="Copy Clip"');
-  expect(output).toContain('aria-label="Pin Clip"');
+  expect(output).toContain('aria-label="Unpin Clip"');
   expect(output).toContain('aria-pressed="true"');
   expect(output).toContain('aria-label="Delete Clip"');
 });

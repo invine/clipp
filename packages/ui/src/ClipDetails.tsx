@@ -42,34 +42,26 @@ export function ClipDetails({
     );
   return (
     <div className="clip-details">
-      <dl>
-        {sourceName && (
-          <>
-            <dt>Source</dt>
-            <dd>{sourceName}</dd>
-          </>
-        )}
-        <dt>Source Peer ID</dt>
-        <dd>{clip.originPeerId}</dd>
-        <dt>Clip ID</dt>
-        <dd>{clip.id}</dd>
-        <dt>Captured</dt>
-        <dd>{new Date(clip.capturedAt).toLocaleString()}</dd>
-        <dt>Type</dt>
-        <dd>{clip.type}</dd>
-      </dl>
-      <pre className="clip-details-content">{clip.content}</pre>
+      <div className="clip-details-primary">
+        <p className="clip-details-type">
+          {clip.type === "url" ? "Link" : "Text Clip"}
+        </p>
+        <pre className="clip-details-content">{clip.content}</pre>
+      </div>
       <div className="task-dialog-actions clip-details-actions">
-        <IconButton
-          icon="copy"
-          label="Copy Clip"
+        <button
+          type="button"
+          className="primary-button"
+          aria-label="Copy Clip"
           disabled={
             disabled ||
             actions[`copy:${clip.id}`]?.pending ||
             actions[`copy:${clip.id}`]?.feedback?.requiresAcknowledgement
           }
           onClick={onCopy}
-        />
+        >
+          Copy Clip
+        </button>
         {onShareNow && (
           <div className="send-control clip-details-share">
             <IconButton
@@ -88,22 +80,43 @@ export function ClipDetails({
             </span>
           </div>
         )}
-        <IconButton
-          icon="pin"
-          label="Pin Clip"
-          hint={pinned ? "Unpin Clip" : "Pin Clip"}
+        <button
+          type="button"
+          className="text-button"
+          aria-label={pinned ? "Unpin Clip" : "Pin Clip"}
           aria-pressed={pinned}
           disabled={disabled || actions[`pin:${clip.id}`]?.pending}
           onClick={onPin}
-        />
-        <IconButton
-          icon="delete"
-          label="Delete Clip"
+        >
+          {pinned ? "Unpin Clip" : "Pin Clip"}
+        </button>
+        <button
+          type="button"
           className="clip-details-delete"
+          aria-label="Delete Clip"
           disabled={disabled || actions[`delete:${clip.id}`]?.pending}
           onClick={onDelete}
-        />
+        >
+          Delete Clip
+        </button>
       </div>
+      <details className="clip-details-metadata">
+        <summary>Clip information</summary>
+        <dl>
+          {sourceName && (
+            <>
+              <dt>Source</dt>
+              <dd>{sourceName}</dd>
+            </>
+          )}
+          <dt>Captured</dt>
+          <dd>{new Date(clip.capturedAt).toLocaleString()}</dd>
+          <dt>Source Peer ID</dt>
+          <dd>{clip.originPeerId}</dd>
+          <dt>Clip ID</dt>
+          <dd>{clip.id}</dd>
+        </dl>
+      </details>
       {onShareNow && shareNowAction && (
         <div role="status">
           {shareNowAction.pending && <p>Sharing current clipboard…</p>}

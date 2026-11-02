@@ -267,12 +267,14 @@ export async function checkCompactHistory({ page, nav, report, out }) {
   );
   await details.getByRole("button", { name: "Pin Clip", exact: true }).click();
   await details
-    .getByRole("button", { name: "Pin Clip", exact: true, pressed: true })
+    .getByRole("button", { name: "Unpin Clip", exact: true, pressed: true })
     .waitFor();
   await page.evaluate(() => {
     window.removeOnUnpin = true;
   });
-  await details.getByRole("button", { name: "Pin Clip", exact: true }).click();
+  await details
+    .getByRole("button", { name: "Unpin Clip", exact: true })
+    .click();
   await details
     .getByText("This Clip is no longer available.", { exact: true })
     .waitFor();
