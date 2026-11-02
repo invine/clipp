@@ -58,8 +58,14 @@ import {
   PreferenceSaveFeedback,
 } from "./PreferenceSaveFeedback";
 import { ClearHistoryReview } from "./ClearHistoryReview";
-import { ManualIdentityResetSettings, type ManualIdentityResetActions } from "./ManualIdentityResetSettings";
-import type { IdentityResetReceipt, IdentityResetState } from "../../core/trust/manualIdentityReset";
+import {
+  ManualIdentityResetSettings,
+  type ManualIdentityResetActions,
+} from "./ManualIdentityResetSettings";
+import type {
+  IdentityResetReceipt,
+  IdentityResetState,
+} from "../../core/trust/manualIdentityReset";
 import type {
   RelayConfiguration,
   RelayState,
@@ -517,7 +523,7 @@ export function ClipboardApp({
     session.update({ timeFilter });
   const setSourceFilter = (sourceFilter: string) =>
     session.update({ sourceFilter });
-  const setFilterMode = (filterMode: "all" | "pinned") =>
+  const setFilterMode = (filterMode: "all" | "pinned" | "links") =>
     session.update({ filterMode });
   const setShowNav = (value: boolean | ((current: boolean) => boolean)) =>
     session.update({
@@ -933,7 +939,7 @@ export function ClipboardApp({
       const size = hostContentSize(window, document);
       setIsNarrow(size.width <= NARROW_CONTENT_WIDTH);
       const controls = rootRef.current?.querySelectorAll<HTMLElement>(
-        ".app-bar, .workspace-controls, .workspace-navigation, .app-notices"
+        ".workspace-topbar, .workspace-controls, .app-notices"
       );
       const controlsHeight = [...(controls ?? [])].reduce(
         (height, element) => height + element.getBoundingClientRect().height,
@@ -944,9 +950,7 @@ export function ClipboardApp({
     handleResize();
     const observer = new ResizeObserver(handleResize);
     rootRef.current
-      ?.querySelectorAll(
-        ".app-bar, .workspace-controls, .workspace-navigation, .app-notices"
-      )
+      ?.querySelectorAll(".workspace-topbar, .workspace-controls, .app-notices")
       .forEach((element) => observer.observe(element));
     window.addEventListener("resize", handleResize);
     window.addEventListener(HOST_GEOMETRY_EVENT, handleResize);
@@ -1032,6 +1036,8 @@ export function ClipboardApp({
 
     if (filterMode === "pinned") {
       list = list.filter((c) => pinnedSet.has(c.id));
+    } else if (filterMode === "links") {
+      list = list.filter((clip) => clip.type === "url");
     }
 
     return list;
@@ -2322,7 +2328,9 @@ export function ClipboardApp({
                     state={identityResetState}
                     available={manualIdentityResetAvailable}
                     actions={identityResetActions}
-                    onPair={identityReady ? onPairAfterIdentityReset : undefined}
+                    onPair={
+                      identityReady ? onPairAfterIdentityReset : undefined
+                    }
                     onCopyFormerPeerId={onCopyFormerIdentity}
                     onAccepted={() => session.rotateIdentity()}
                   />
@@ -2404,28 +2412,74 @@ export function ClipboardApp({
   }
 
   function renderNavigation() {
+    const openDestination = (
+      destination: "history" | "devices" | "requests" | "settings",
+      filterMode: "all" | "pinned" | "links" = "all"
+    ) => {
+      session.close();
+      session.update({
+        destination,
+        filterMode,
+        showNav: false,
+        focusKey: isNarrow
+          ? "nav-toggle"
+          : filterMode === "all"
+            ? `destination:${destination}`
+            : `destination:${destination}:${filterMode}`,
+      });
+    };
     return (
-      <nav className="workspace-navigation" aria-label="Clipp destinations">
-        {(["history", "devices", "requests", "settings"] as const).map(
-          (destination) => (
+      <nav
+        className="workspace-navigation"
+        id="workspace-navigation"
+        aria-label="Clipp destinations"
+      >
+        {(
+          [
+            { key: "history", label: "History", icon: "clipboard" },
+            { key: "pinned", label: "Pinned", icon: "pin" },
+            { key: "links", label: "Links", icon: "links" },
+            { key: "devices", label: "Devices", icon: "computer" },
+            { key: "requests", label: "Requests", icon: "requests" },
+            { key: "settings", label: "Settings", icon: "settings" },
+          ] as const
+        ).map(({ key, label, icon }) => {
+          const active =
+            (key === "history" &&
+              sessionState.destination === "history" &&
+              filterMode === "all") ||
+            (key === "pinned" &&
+              sessionState.destination === "history" &&
+              filterMode === "pinned") ||
+            (key === "links" &&
+              sessionState.destination === "history" &&
+              filterMode === "links") ||
+            (key === "devices" && sessionState.destination === "devices") ||
+            (key === "requests" && sessionState.destination === "requests") ||
+            (key === "settings" && sessionState.destination === "settings");
+          return (
             <button
               type="button"
-              key={destination}
-              aria-current={
-                sessionState.destination === destination ? "page" : undefined
+              key={key}
+              aria-current={active ? "page" : undefined}
+              data-session-focus={
+                key === "history"
+                  ? "destination:history"
+                  : key === "pinned" || key === "links"
+                    ? `destination:history:${key}`
+                    : `destination:${key}`
               }
-              data-session-focus={`destination:${destination}`}
               onClick={() => {
-                session.close();
-                session.update({
-                  destination,
-                  showNav: false,
-                  focusKey: `destination:${destination}`,
-                });
+                if (key === "pinned" || key === "links") {
+                  openDestination("history", key);
+                } else {
+                  openDestination(key);
+                }
               }}
             >
-              {destination[0].toUpperCase() + destination.slice(1)}
-              {destination === "requests" &&
+              <Icon name={icon} />
+              <span>{label}</span>
+              {key === "requests" &&
                 (requestsLoading ? (
                   " (loading)"
                 ) : requestsUnavailable ? (
@@ -2437,8 +2491,8 @@ export function ClipboardApp({
                   </span>
                 ) : null)}
             </button>
-          )
-        )}
+          );
+        })}
       </nav>
     );
   }
@@ -2513,541 +2567,595 @@ export function ClipboardApp({
         }
       }}
       data-session-scroll="workspace"
-      className={`app-shell ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
+      className={`app-shell ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${showNav ? "nav-open" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
     >
-      <header className="app-bar">
-        <div className="app-bar-left">
+      <aside
+        className="workspace-sidebar"
+        inert={isNarrow && !showNav}
+        aria-hidden={isNarrow && !showNav}
+      >
+        <div className="workspace-brand">
           <span className="app-logo">
             <img src={clippPurpleIcon} alt="" draggable={false} />
           </span>
-          <div className="app-title-block">
-            <div className="app-title">
-              Clipp
-              <ConnectionStatusButton
-                summary={connectionSummary}
-                session={session}
-              />
-            </div>
-            <div className="app-subtitle">
-              Clipboard sharing across all your devices.
-            </div>
-          </div>
+          <span>Clipp</span>
         </div>
-
-        <div className="app-bar-right">
+        {renderNavigation()}
+        <div className="workspace-sidebar-footer">
           <button
-            className="text-button"
+            className="text-button auto-sync-link"
             type="button"
             onClick={() => {
               session.close();
               session.update({
                 destination: "settings",
                 settingsCategory: "general",
+                showNav: false,
               });
             }}
           >
-            Auto Sync: {autoSyncKnown ? (autoSync ? "On" : "Off") : "Unknown"}
+            <span>Auto Sync</span>
+            <span className="auto-sync-value">
+              {autoSyncKnown ? (autoSync ? "On" : "Off") : "Unknown"}
+            </span>
           </button>
         </div>
-      </header>
-      <div className="workspace-controls">
-        <div className="search-field">
-          <Icon name="search" />
-          <input
-            aria-label="Search history"
-            data-session-focus="history-query"
-            placeholder="Search history: text, URL, device…"
-            value={search}
-            onChange={(e) =>
-              session.update({ search: e.target.value, destination: "history" })
+      </aside>
+      {isNarrow && showNav && (
+        <button
+          type="button"
+          className="workspace-navigation-scrim"
+          aria-label="Close navigation"
+          onClick={() =>
+            session.update({ showNav: false, focusKey: "nav-toggle" })
+          }
+        />
+      )}
+      <div className="workspace-content">
+        <header className="workspace-topbar">
+          <button
+            type="button"
+            className="icon-button navigation-toggle"
+            aria-label={showNav ? "Close navigation" : "Open navigation"}
+            aria-controls="workspace-navigation"
+            aria-expanded={showNav}
+            data-session-focus="nav-toggle"
+            onClick={() =>
+              session.update({
+                showNav: !showNav,
+                focusKey: "nav-toggle",
+              })
             }
+          >
+            <Icon name={showNav ? "close" : "menu"} />
+          </button>
+          <div className="workspace-current-title">
+            {sessionState.destination === "history"
+              ? filterMode === "pinned"
+                ? "Pinned"
+                : filterMode === "links"
+                  ? "Links"
+                  : "History"
+              : sessionState.destination[0].toUpperCase() +
+                sessionState.destination.slice(1)}
+          </div>
+          <ConnectionStatusButton
+            summary={connectionSummary}
+            session={session}
           />
-          {search && (
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Clear search"
-              onClick={() => setSearch("")}
-            >
-              <Icon name="close" />
-            </button>
+        </header>
+        <div className="workspace-controls">
+          <div className="search-field">
+            <Icon name="search" />
+            <input
+              aria-label="Search history"
+              data-session-focus="history-query"
+              placeholder="Search history: text, URL, device…"
+              value={search}
+              onChange={(e) =>
+                session.update({
+                  search: e.target.value,
+                  destination: "history",
+                })
+              }
+            />
+            {search && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Clear search"
+                onClick={() => setSearch("")}
+              >
+                <Icon name="close" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="text-button"
+            aria-expanded={!filtersCollapsed}
+            data-session-focus="history-filters"
+            onClick={toggleFilters}
+          >
+            <Icon name="filters" />
+            Filters
+          </button>
+          {onShareNow && (
+            <div className="send-control">
+              <IconButton
+                icon="send"
+                label="Share current clipboard now"
+                onClick={shareNow}
+                disabled={
+                  !identityReady ||
+                  sessionState.historyActions["send:current"]?.pending
+                }
+                aria-describedby="send-clipboard-hint"
+              />
+              <span id="send-clipboard-hint" className="control-hint">
+                Sends your current system clipboard
+              </span>
+            </div>
           )}
         </div>
 
-        <button
-          type="button"
-          className="text-button"
-          aria-expanded={!filtersCollapsed}
-          data-session-focus="history-filters"
-          onClick={toggleFilters}
-        >
-          <Icon name="filters" />
-          Filters
-        </button>
-        {onShareNow && (
-          <div className="send-control">
-            <IconButton
-              icon="send"
-              label="Share current clipboard now"
-              onClick={shareNow}
-              disabled={
-                !identityReady ||
-                sessionState.historyActions["send:current"]?.pending
-              }
-              aria-describedby="send-clipboard-hint"
-            />
-            <span id="send-clipboard-hint" className="control-hint">
-              Sends your current system clipboard
-            </span>
-          </div>
+        <div className="app-notices" role="status">
+          {issues.length > 0 && (
+            <>
+              <button
+                type="button"
+                className="issue-summary"
+                data-session-focus="issues-summary"
+                onClick={() =>
+                  session.open({ kind: "issues", origin: "issues-summary" })
+                }
+              >
+                {issues.length}{" "}
+                {issues.length === 1 ? "issue needs" : "issues need"} attention
+              </button>
+            </>
+          )}
+        </div>
+        {activeTask?.kind === "connections" && (
+          <ConnectionsPanel
+            summary={connectionSummary}
+            session={session}
+            autoSync={autoSyncKnown ? autoSync : null}
+          />
         )}
-      </div>
-      {renderNavigation()}
-
-      <div className="app-notices" role="status">
-        {issues.length > 0 && (
-          <>
-            <button
-              type="button"
-              className="issue-summary"
-              data-session-focus="issues-summary"
-              onClick={() =>
-                session.open({ kind: "issues", origin: "issues-summary" })
-              }
-            >
-              {issues.length}{" "}
-              {issues.length === 1 ? "issue needs" : "issues need"} attention
-            </button>
-          </>
-        )}
-      </div>
-      {activeTask?.kind === "connections" && (
-        <ConnectionsPanel
-          summary={connectionSummary}
-          session={session}
-          autoSync={autoSyncKnown ? autoSync : null}
-        />
-      )}
-      {activeTask?.kind === "issues" && (
-        <RecoveryIssues
-          issues={issues}
-          session={session}
-          title={
-            activeTask?.entity === "continuity"
-              ? "Background help and recovery"
-              : undefined
-          }
-          details={
-            activeTask?.entity === "continuity" && backgroundContinuity ? (
-              <BackgroundContinuityHelp
-                state={backgroundContinuity}
-                exportDiagnostics={onExportBackgroundContinuityDiagnostics}
-              />
-            ) : undefined
-          }
-          retry={issueRetry}
-          dismiss={issueDismiss}
-          route={(issue) => {
-            session.close();
-            if (issue.scope === "task") {
-              if (issue.code === "device-name") beginEditLocalName();
-              if (issue.code === "alias") {
-                const device = devices.find(
-                  (device) => device.deviceId === issue.target
-                );
-                if (device) beginEditDeviceName(device);
-              }
-              if (issue.code === "pairing")
-                session.open({ kind: "pairing", origin: "pairing-paste" });
-              if (
-                issue.code === "relay-edit" ||
-                issue.code === "relay-action"
-              ) {
-                const config = managedRelayConfigurations.find(
-                  (config) => config.key === issue.target
-                );
-                if (config || issue.target === "new") {
-                  session.open({
-                    kind: "relay",
-                    entity: issue.target,
-                    origin: `relay:${issue.target}`,
-                  });
-                  session.relay.begin(config);
+        {activeTask?.kind === "issues" && (
+          <RecoveryIssues
+            issues={issues}
+            session={session}
+            title={
+              activeTask?.entity === "continuity"
+                ? "Background help and recovery"
+                : undefined
+            }
+            details={
+              activeTask?.entity === "continuity" && backgroundContinuity ? (
+                <BackgroundContinuityHelp
+                  state={backgroundContinuity}
+                  exportDiagnostics={onExportBackgroundContinuityDiagnostics}
+                />
+              ) : undefined
+            }
+            retry={issueRetry}
+            dismiss={issueDismiss}
+            route={(issue) => {
+              session.close();
+              if (issue.scope === "task") {
+                if (issue.code === "device-name") beginEditLocalName();
+                if (issue.code === "alias") {
+                  const device = devices.find(
+                    (device) => device.deviceId === issue.target
+                  );
+                  if (device) beginEditDeviceName(device);
+                }
+                if (issue.code === "pairing")
+                  session.open({ kind: "pairing", origin: "pairing-paste" });
+                if (
+                  issue.code === "relay-edit" ||
+                  issue.code === "relay-action"
+                ) {
+                  const config = managedRelayConfigurations.find(
+                    (config) => config.key === issue.target
+                  );
+                  if (config || issue.target === "new") {
+                    session.open({
+                      kind: "relay",
+                      entity: issue.target,
+                      origin: `relay:${issue.target}`,
+                    });
+                    session.relay.begin(config);
+                  }
                 }
               }
-            }
-            session.update({
-              destination:
-                issue.scope === "pairing"
-                  ? "requests"
-                  : issue.scope === "relay" ||
-                      (issue.scope === "task" &&
-                        [
-                          "relay-edit",
-                          "relay-action",
-                          "relay",
-                          "auto-sync",
-                          "clip-settings",
-                          "settings",
-                          "continuity",
-                          "notifications",
-                        ].includes(issue.code))
-                    ? "settings"
-                    : issue.scope === "task" &&
-                        ["alias", "device-name", "pairing"].includes(issue.code)
-                      ? "devices"
-                      : "history",
-              ...(issue.scope === "relay" ||
-              (issue.scope === "task" &&
-                [
-                  "relay-edit",
-                  "relay-action",
-                  "relay",
-                  "continuity",
-                  "notifications",
-                ].includes(issue.code))
-                ? { settingsCategory: "connections" as const }
-                : issue.scope === "task" &&
-                    ["auto-sync", "clip-settings", "settings"].includes(
-                      issue.code
-                    )
-                  ? {
-                      settingsCategory:
-                        issue.code === "clip-settings" &&
-                        !appearanceSettings?.snapshot?.state.retentionError &&
-                        appearanceSettings?.feedback?.fields?.includes(
-                          "sharingLifetimeMs"
-                        ) &&
-                        !appearanceSettings.feedback.fields.includes(
-                          "localRetentionMs"
-                        )
-                          ? ("advanced" as const)
-                          : issue.code === "settings" &&
-                              !appearanceSettings?.refreshError &&
-                              appearanceSettings?.feedback?.fields?.includes(
-                                "logLevel"
-                              ) &&
-                              !appearanceSettings.feedback.fields.includes(
-                                "theme"
-                              )
+              session.update({
+                destination:
+                  issue.scope === "pairing"
+                    ? "requests"
+                    : issue.scope === "relay" ||
+                        (issue.scope === "task" &&
+                          [
+                            "relay-edit",
+                            "relay-action",
+                            "relay",
+                            "auto-sync",
+                            "clip-settings",
+                            "settings",
+                            "continuity",
+                            "notifications",
+                          ].includes(issue.code))
+                      ? "settings"
+                      : issue.scope === "task" &&
+                          ["alias", "device-name", "pairing"].includes(
+                            issue.code
+                          )
+                        ? "devices"
+                        : "history",
+                ...(issue.scope === "relay" ||
+                (issue.scope === "task" &&
+                  [
+                    "relay-edit",
+                    "relay-action",
+                    "relay",
+                    "continuity",
+                    "notifications",
+                  ].includes(issue.code))
+                  ? { settingsCategory: "connections" as const }
+                  : issue.scope === "task" &&
+                      ["auto-sync", "clip-settings", "settings"].includes(
+                        issue.code
+                      )
+                    ? {
+                        settingsCategory:
+                          issue.code === "clip-settings" &&
+                          !appearanceSettings?.snapshot?.state.retentionError &&
+                          appearanceSettings?.feedback?.fields?.includes(
+                            "sharingLifetimeMs"
+                          ) &&
+                          !appearanceSettings.feedback.fields.includes(
+                            "localRetentionMs"
+                          )
                             ? ("advanced" as const)
-                            : ("general" as const),
-                    }
-                  : {}),
-              showNav: issue.scope !== "history",
-            });
-          }}
-        />
-      )}
-      {sessionState.notificationReturn && !sessionState.tasks.length && (
-        <button
-          className="text-button"
-          type="button"
-          onClick={() => session.back()}
-        >
-          Back to previous task
-        </button>
-      )}
-      <main
-        className="app-main"
-        tabIndex={-1}
-        data-session-focus="workspace"
-        style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
-      >
-        {sessionState.destination !== "history" && (
-          <section
-            className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : ""}`}
-            data-session-scroll={sessionState.destination}
-          >
-            <h1>
-              {sessionState.destination[0].toUpperCase() +
-                sessionState.destination.slice(1)}
-            </h1>
-            {renderDestination()}
-          </section>
+                            : issue.code === "settings" &&
+                                !appearanceSettings?.refreshError &&
+                                appearanceSettings?.feedback?.fields?.includes(
+                                  "logLevel"
+                                ) &&
+                                !appearanceSettings.feedback.fields.includes(
+                                  "theme"
+                                )
+                              ? ("advanced" as const)
+                              : ("general" as const),
+                      }
+                    : {}),
+                showNav: issue.scope !== "history",
+              });
+            }}
+          />
         )}
-        <section
-          className="surface content-pane"
-          data-session-scroll="history"
-          hidden={sessionState.destination !== "history"}
+        {sessionState.notificationReturn && !sessionState.tasks.length && (
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => session.back()}
+          >
+            Back to previous task
+          </button>
+        )}
+        <main
+          className="app-main"
+          tabIndex={-1}
+          data-session-focus="workspace"
+          style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
         >
-          <header className="content-header">
-            <div className="content-title-block">
-              <div className="content-title">History</div>
-            </div>
-          </header>
-
-          {!filtersCollapsed && (
-            <div
-              className="content-filters"
-              role="group"
-              aria-label="History filters"
+          {sessionState.destination !== "history" && (
+            <section
+              className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : ""}`}
+              data-session-scroll={sessionState.destination}
             >
-              <div className="segmented">
-                <button
-                  className={filterMode === "all" ? "active" : ""}
-                  aria-pressed={filterMode === "all"}
-                  onClick={() => setFilterMode("all")}
-                >
-                  All
-                </button>
-                <button
-                  className={filterMode === "pinned" ? "active" : ""}
-                  aria-pressed={filterMode === "pinned"}
-                  onClick={() => setFilterMode("pinned")}
-                >
-                  Pinned
-                </button>
-              </div>
-
-              <div className="time-filter-wrap">
-                <button
-                  className="text-button"
-                  onClick={() => setTimeMenuOpen((v) => !v)}
-                >
-                  <Icon name="clock" />
-                  <span className="filter-button-label">
-                    {timeOptions.find((t) => t.value === timeFilter)?.label ||
-                      "All time"}
-                  </span>
-                  <Icon name="chevron" />
-                </button>
-                {timeMenuOpen && (
-                  <div className="time-menu">
-                    {timeOptions.map((t) => (
-                      <button
-                        key={t.value}
-                        className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
-                        onClick={() => {
-                          setTimeFilter(t.value);
-                          setTimeMenuOpen(false);
-                        }}
-                      >
-                        <span className="filter-menu-label">{t.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="source-filter-wrap">
-                <button
-                  className="text-button"
-                  onClick={() => setSourceMenuOpen((v) => !v)}
-                >
-                  <Icon name="filters" />
-                  <span className="filter-button-label">
-                    {sourceFilterLabel(sourceFilter)}
-                  </span>
-                  <Icon name="chevron" />
-                </button>
-                {sourceMenuOpen && (
-                  <div className="time-menu source-menu">
-                    {sources.map((src) => (
-                      <button
-                        key={src}
-                        className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
-                        onClick={() => {
-                          setSourceFilter(src);
-                          setSourceMenuOpen(false);
-                        }}
-                      >
-                        <span className="filter-menu-label">
-                          {sourceOptionLabel(src)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+              <h1>
+                {sessionState.destination[0].toUpperCase() +
+                  sessionState.destination.slice(1)}
+              </h1>
+              {renderDestination()}
+            </section>
           )}
+          <section
+            className="surface content-pane"
+            data-session-scroll="history"
+            hidden={sessionState.destination !== "history"}
+          >
+            <header className="content-header">
+              <div className="content-title-block">
+                <div className="content-title">History</div>
+              </div>
+            </header>
 
-          {historyLoading && <p role="status">Loading History…</p>}
-          {(historyUnavailable || historyRefreshError) && (
-            <div className="initialization-error" role="alert">
-              <span>
-                {historyUnavailable
-                  ? "History unavailable."
-                  : "History refresh failed. Showing last known Clips."}
-              </span>
-              {onRetryHistoryRefresh && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void session.retryRecovery(
-                      "history:read:unavailable",
-                      onRetryHistoryRefresh
-                    )
-                  }
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
-          {Object.entries(sessionState.historyActions).map(
-            ([target, action]) =>
-              action.feedback && (
-                <div
-                  key={target}
-                  className="history-action-error"
-                  role="status"
-                >
-                  <span>{action.feedback.message}</span>
+            {!filtersCollapsed && (
+              <div
+                className="content-filters"
+                role="group"
+                aria-label="History filters"
+              >
+                <div className="segmented">
                   <button
-                    type="button"
-                    disabled={
-                      action.pending ||
-                      (!identityReady && action.feedback.action === "retry")
-                    }
-                    onClick={() =>
-                      action.feedback?.action === "retry"
-                        ? void session.retryHistoryAction(target)
-                        : session.dismissHistoryAction(target)
-                    }
+                    className={filterMode === "all" ? "active" : ""}
+                    aria-pressed={filterMode === "all"}
+                    onClick={() => setFilterMode("all")}
                   >
-                    {action.pending
-                      ? "Retrying…"
-                      : action.feedback.action === "retry"
-                        ? "Retry"
-                        : "Dismiss"}
+                    All
+                  </button>
+                  <button
+                    className={filterMode === "pinned" ? "active" : ""}
+                    aria-pressed={filterMode === "pinned"}
+                    onClick={() => setFilterMode("pinned")}
+                  >
+                    Pinned
+                  </button>
+                  <button
+                    className={filterMode === "links" ? "active" : ""}
+                    aria-pressed={filterMode === "links"}
+                    onClick={() => setFilterMode("links")}
+                  >
+                    Links
                   </button>
                 </div>
-              )
-          )}
-          <div className="history-grid" data-session-scroll="history-clips">
-            {!historyLoading &&
-              !historyUnavailable &&
-              filteredClips.length === 0 && (
-                <article className="history-card history-empty">
-                  <div className="history-body">
-                    <div className="history-text">
-                      {clips.length === 0
-                        ? "No history yet."
-                        : search
-                          ? `No Clips match “${search}” in ${filterMode === "pinned" ? "Pinned" : "All"}.`
-                          : filterMode === "pinned" && pinnedIds.length === 0
-                            ? "No pinned Clips."
-                            : "No Clips match these filters."}
-                    </div>
-                  </div>
-                  {clips.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        session.update({
-                          filterMode: "all",
-                          timeFilter: "all",
-                          sourceFilter: "all",
-                        })
-                      }
-                    >
-                      Reset filters
-                    </button>
-                  )}
-                </article>
-              )}
-            {filteredClips.map((clip) => {
-              const label =
-                deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
-              const timeLabel = formatTime(clip.capturedAt);
-              const isLocal = clip.originPeerId === identity?.deviceId;
-              const pinned = pinnedSet.has(clip.id);
-              return (
-                <article
-                  className={`history-card ${removingIds.has(clip.id) ? "leaving" : ""}`}
-                  key={clip.id}
-                  data-clip-id={clip.id}
-                  aria-labelledby={`clip-preview:${clip.id}`}
-                  style={{ position: "relative" }}
-                >
-                  <div className="history-card-header">
-                    <div className="history-chip" title={`From: ${label}`}>
-                      <span className="chip-dot"></span>
-                      <span className="history-chip-prefix">From:</span>
-                      <MiddleEllipsisText
-                        className="history-chip-label"
-                        text={label}
-                      />
-                    </div>
-                  </div>
 
+                <div className="time-filter-wrap">
+                  <button
+                    className="text-button"
+                    onClick={() => setTimeMenuOpen((v) => !v)}
+                  >
+                    <Icon name="clock" />
+                    <span className="filter-button-label">
+                      {timeOptions.find((t) => t.value === timeFilter)?.label ||
+                        "All time"}
+                    </span>
+                    <Icon name="chevron" />
+                  </button>
+                  {timeMenuOpen && (
+                    <div className="time-menu">
+                      {timeOptions.map((t) => (
+                        <button
+                          key={t.value}
+                          className={`time-menu-item ${timeFilter === t.value ? "active" : ""}`}
+                          onClick={() => {
+                            setTimeFilter(t.value);
+                            setTimeMenuOpen(false);
+                          }}
+                        >
+                          <span className="filter-menu-label">{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="source-filter-wrap">
+                  <button
+                    className="text-button"
+                    onClick={() => setSourceMenuOpen((v) => !v)}
+                  >
+                    <Icon name="filters" />
+                    <span className="filter-button-label">
+                      {sourceFilterLabel(sourceFilter)}
+                    </span>
+                    <Icon name="chevron" />
+                  </button>
+                  {sourceMenuOpen && (
+                    <div className="time-menu source-menu">
+                      {sources.map((src) => (
+                        <button
+                          key={src}
+                          className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
+                          onClick={() => {
+                            setSourceFilter(src);
+                            setSourceMenuOpen(false);
+                          }}
+                        >
+                          <span className="filter-menu-label">
+                            {sourceOptionLabel(src)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {historyLoading && <p role="status">Loading History…</p>}
+            {(historyUnavailable || historyRefreshError) && (
+              <div className="initialization-error" role="alert">
+                <span>
+                  {historyUnavailable
+                    ? "History unavailable."
+                    : "History refresh failed. Showing last known Clips."}
+                </span>
+                {onRetryHistoryRefresh && (
                   <button
                     type="button"
-                    className="history-body history-select"
-                    aria-label="View Clip details"
-                    data-session-focus={`details:${clip.id}`}
                     onClick={() =>
-                      onInspectClip
-                        ? onInspectClip(clip.id)
-                        : session.open({
-                            kind: "clip-details",
-                            entity: clip.id,
-                            origin: `details:${clip.id}`,
-                          })
+                      void session.retryRecovery(
+                        "history:read:unavailable",
+                        onRetryHistoryRefresh
+                      )
                     }
                   >
-                    <span
-                      id={`clip-preview:${clip.id}`}
-                      className="history-text"
-                    >
-                      {shortenPreview(clip.content, 220)}
-                    </span>
+                    Retry
                   </button>
-
-                  <div className="history-meta">
-                    <div className="meta-left">
-                      <div className="meta-top-line">
-                        <span className="pill-source">
-                          <Icon name={isLocal ? "computer" : "device"} />
-                          {isLocal ? "Local" : "Remote"}
-                        </span>
-                        <span className="meta-time">{timeLabel}</span>
-                      </div>
-                      <div className="meta-bottom-line">
-                        {clip.type === "url" ? "URL" : "Text"}
+                )}
+              </div>
+            )}
+            {Object.entries(sessionState.historyActions).map(
+              ([target, action]) =>
+                action.feedback && (
+                  <div
+                    key={target}
+                    className="history-action-error"
+                    role="status"
+                  >
+                    <span>{action.feedback.message}</span>
+                    <button
+                      type="button"
+                      disabled={
+                        action.pending ||
+                        (!identityReady && action.feedback.action === "retry")
+                      }
+                      onClick={() =>
+                        action.feedback?.action === "retry"
+                          ? void session.retryHistoryAction(target)
+                          : session.dismissHistoryAction(target)
+                      }
+                    >
+                      {action.pending
+                        ? "Retrying…"
+                        : action.feedback.action === "retry"
+                          ? "Retry"
+                          : "Dismiss"}
+                    </button>
+                  </div>
+                )
+            )}
+            <div className="history-grid" data-session-scroll="history-clips">
+              {!historyLoading &&
+                !historyUnavailable &&
+                filteredClips.length === 0 && (
+                  <article className="history-card history-empty">
+                    <div className="history-body">
+                      <div className="history-text">
+                        {clips.length === 0
+                          ? "No history yet."
+                          : search
+                            ? `No Clips match “${search}” in ${filterMode === "pinned" ? "Pinned" : filterMode === "links" ? "Links" : "All"}.`
+                            : filterMode === "pinned" && pinnedIds.length === 0
+                              ? "No pinned Clips."
+                              : filterMode === "links"
+                                ? "No links in history."
+                                : "No Clips match these filters."}
                       </div>
                     </div>
-                  </div>
-                  <div className="history-actions">
-                    <IconButton
-                      icon="pin"
-                      label="Pin Clip"
-                      data-session-focus={`pin:${clip.id}`}
-                      aria-describedby={`clip-preview:${clip.id}`}
-                      aria-pressed={pinned}
-                      hint={pinned ? "Unpin Clip" : "Pin Clip"}
-                      disabled={
-                        !identityReady ||
-                        historyLoading ||
-                        historyUnavailable ||
-                        Boolean(historyRefreshError) ||
-                        sessionState.historyActions[`pin:${clip.id}`]?.pending
+                    {clips.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          session.update({
+                            filterMode: "all",
+                            timeFilter: "all",
+                            sourceFilter: "all",
+                          })
+                        }
+                      >
+                        Reset filters
+                      </button>
+                    )}
+                  </article>
+                )}
+              {filteredClips.map((clip) => {
+                const label =
+                  deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
+                const timeLabel = formatTime(clip.capturedAt);
+                const isLocal = clip.originPeerId === identity?.deviceId;
+                const pinned = pinnedSet.has(clip.id);
+                return (
+                  <article
+                    className={`history-card ${removingIds.has(clip.id) ? "leaving" : ""}`}
+                    key={clip.id}
+                    data-clip-id={clip.id}
+                    aria-labelledby={`clip-preview:${clip.id}`}
+                    style={{ position: "relative" }}
+                  >
+                    <div className="history-card-header">
+                      <div className="history-chip" title={`From: ${label}`}>
+                        <span className="chip-dot"></span>
+                        <span className="history-chip-prefix">From:</span>
+                        <MiddleEllipsisText
+                          className="history-chip-label"
+                          text={label}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="history-body history-select"
+                      aria-label="View Clip details"
+                      data-session-focus={`details:${clip.id}`}
+                      onClick={() =>
+                        onInspectClip
+                          ? onInspectClip(clip.id)
+                          : session.open({
+                              kind: "clip-details",
+                              entity: clip.id,
+                              origin: `details:${clip.id}`,
+                            })
                       }
-                      onClick={() => setPinned(clip.id, !pinned)}
-                    />
-                    <IconButton
-                      icon="copy"
-                      label="Copy Clip"
-                      data-session-focus={`copy:${clip.id}`}
-                      aria-describedby={`clip-preview:${clip.id}`}
-                      disabled={
-                        !identityReady ||
-                        sessionState.historyActions[`copy:${clip.id}`]
-                          ?.pending ||
-                        sessionState.historyActions[`copy:${clip.id}`]?.feedback
-                          ?.requiresAcknowledgement
-                      }
-                      onClick={() => reuseClip(clip.id)}
-                    />
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      </main>
+                    >
+                      <span
+                        id={`clip-preview:${clip.id}`}
+                        className="history-text"
+                      >
+                        {shortenPreview(clip.content, 220)}
+                      </span>
+                    </button>
+
+                    <div className="history-meta">
+                      <div className="meta-left">
+                        <div className="meta-top-line">
+                          <span className="pill-source">
+                            <Icon name={isLocal ? "computer" : "device"} />
+                            {isLocal ? "Local" : "Remote"}
+                          </span>
+                          <span className="meta-time">{timeLabel}</span>
+                        </div>
+                        <div className="meta-bottom-line">
+                          {clip.type === "url" ? "URL" : "Text"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="history-actions">
+                      <IconButton
+                        icon="pin"
+                        label="Pin Clip"
+                        data-session-focus={`pin:${clip.id}`}
+                        aria-describedby={`clip-preview:${clip.id}`}
+                        aria-pressed={pinned}
+                        hint={pinned ? "Unpin Clip" : "Pin Clip"}
+                        disabled={
+                          !identityReady ||
+                          historyLoading ||
+                          historyUnavailable ||
+                          Boolean(historyRefreshError) ||
+                          sessionState.historyActions[`pin:${clip.id}`]?.pending
+                        }
+                        onClick={() => setPinned(clip.id, !pinned)}
+                      />
+                      <IconButton
+                        icon="copy"
+                        label="Copy Clip"
+                        data-session-focus={`copy:${clip.id}`}
+                        aria-describedby={`clip-preview:${clip.id}`}
+                        disabled={
+                          !identityReady ||
+                          sessionState.historyActions[`copy:${clip.id}`]
+                            ?.pending ||
+                          sessionState.historyActions[`copy:${clip.id}`]
+                            ?.feedback?.requiresAcknowledgement
+                        }
+                        onClick={() => reuseClip(clip.id)}
+                      />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </main>
+      </div>
 
       {activeTask?.kind === "clip-details" &&
         createPortal(

@@ -1103,30 +1103,33 @@ it.each(["partial", "applied", "completed"] as const)(
   }
 );
 
-it("retains the handed-off History query and scope when opening Clip details and returning", () => {
-  const session = createUiSession();
-  const result = session.acceptDestination(
-    "details-query",
-    {
-      kind: "clip-details",
-      entity: "selected",
-      context: {
-        search: "needle",
-        filterMode: "pinned",
-        timeFilter: "7d",
-        sourceFilter: "source",
+it.each(["all", "pinned", "links"] as const)(
+  "retains the handed-off %s History view when opening Clip details and returning",
+  (filterMode) => {
+    const session = createUiSession();
+    const result = session.acceptDestination(
+      "details-query",
+      {
+        kind: "clip-details",
+        entity: "selected",
+        context: {
+          search: "needle",
+          filterMode,
+          timeFilter: "7d",
+          sourceFilter: "source",
+        },
       },
-    },
-    { ready: true, clipIds: ["selected"], requestIds: [] }
-  );
-  expect(result).toBe("applied");
-  session.back();
-  expect(session.getSnapshot()).toMatchObject({
-    destination: "history",
-    search: "needle",
-    filterMode: "pinned",
-    timeFilter: "7d",
-    sourceFilter: "source",
-    tasks: [],
-  });
-});
+      { ready: true, clipIds: ["selected"], requestIds: [] }
+    );
+    expect(result).toBe("applied");
+    session.back();
+    expect(session.getSnapshot()).toMatchObject({
+      destination: "history",
+      search: "needle",
+      filterMode,
+      timeFilter: "7d",
+      sourceFilter: "source",
+      tasks: [],
+    });
+  }
+);

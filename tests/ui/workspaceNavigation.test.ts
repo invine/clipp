@@ -534,3 +534,54 @@ it("organizes routine settings, connections, and advanced tasks by session categ
   expect(advanced).toContain('data-session-focus="settings-clear"');
   expect(advanced).not.toContain("Generate new identity");
 });
+
+it("exposes compact navigation with a truthful expanded state", () => {
+  const session = createUiSession();
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, { ...props, session })
+    );
+
+  expect(render()).toContain('aria-label="Open navigation"');
+  expect(render()).toContain('aria-expanded="false"');
+  expect(render()).toContain('aria-controls="workspace-navigation"');
+
+  session.update({ showNav: true });
+  expect(render()).toContain('aria-label="Close navigation"');
+  expect(render()).toContain('aria-expanded="true"');
+});
+
+it("Links shows URL Clips from authoritative History state", () => {
+  const session = createUiSession();
+  session.update({ destination: "history", filterMode: "links" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      clips: [
+        {
+          id: "text-clip",
+          type: "text",
+          content: "A text Clip",
+          originPeerId: "local",
+          capturedAt: 2,
+          shareExpiresAt: 3,
+        },
+        {
+          id: "url-clip",
+          type: "url",
+          content: "https://example.test/article",
+          originPeerId: "remote",
+          capturedAt: 1,
+          shareExpiresAt: 4,
+        },
+      ],
+    })
+  );
+
+  expect(output).toContain("https://example.test/article");
+  expect(output).not.toContain("A text Clip");
+  expect(output).toMatch(
+    /aria-current="page"[^>]*>\s*<svg[^>]*>[\s\S]*?<\/svg><span>Links<\/span>/
+  );
+});
