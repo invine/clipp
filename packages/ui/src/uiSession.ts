@@ -38,7 +38,7 @@ export type SessionContext = {
   search: string;
   timeFilter: "all" | "24h" | "7d" | "30d";
   sourceFilter: string;
-  filterMode: "all" | "pinned";
+  filterMode: "all" | "pinned" | "links";
   showNav: boolean;
   destination: "history" | "devices" | "settings" | "requests";
   tasks: SessionTask[];

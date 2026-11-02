@@ -42,6 +42,10 @@ it("Requests presents a pending read without inventing an empty current list", (
   const input = { ...props, session, requestsLoading: true };
   const output = renderToStaticMarkup(React.createElement(ClipboardApp, input));
   expect(output).toContain("Loading Requests…");
+  expect(output).toContain('<h1 class="workspace-current-title">Requests</h1>');
+  expect(output).toContain('<h2 class="device-section-title"');
+  expect(output).toContain("Pending requests</h2>");
+  expect(output).not.toContain('aria-label="Search history"');
   expect(output).not.toContain("No pending requests.");
 });
 it("an active History query has a named clear route", () => {
@@ -51,6 +55,18 @@ it("an active History query has a named clear route", () => {
     React.createElement(ClipboardApp, { ...props, session })
   );
   expect(output).toContain('aria-label="Clear search"');
+  expect(output).toContain('<h1 class="workspace-current-title">Pinned</h1>');
+});
+it("keeps History controls off task destinations while retaining a screen heading", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, session })
+  );
+  expect(output).toContain('<h1 class="workspace-current-title">Settings</h1>');
+  expect(output).not.toContain('aria-label="Search history"');
+  expect(output).not.toContain("Filters</button>");
+  expect(output).not.toContain("Share current clipboard now");
 });
 it("no-match feedback names the active query and Pinned scope", () => {
   const session = createUiSession();
@@ -500,6 +516,41 @@ it("Devices retains honest text status when a reported path is no longer connect
   expect(render([], false)).toContain("Connection status unknown");
 });
 
+it("Devices distinguishes this installation from trusted devices when one is offline", () => {
+  const session = createUiSession();
+  session.update({ destination: "devices" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      identity: { deviceId: "local", deviceName: "This computer" },
+      devices: [{ deviceId: "trusted", deviceName: "Work laptop" }],
+      connectionStateKnown: true,
+      peers: [],
+    })
+  );
+
+  expect(output).toContain("This device");
+  expect(output).toContain("Trusted Devices");
+  expect(output).toContain("Work laptop");
+  expect(output).toContain("Trusted · Offline");
+  expect(output).not.toContain("Last seen");
+  expect(output).toContain("Pair this device");
+
+  const emptyOutput = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      identity: { deviceId: "local", deviceName: "This computer" },
+      devices: [],
+      connectionStateKnown: true,
+      peers: [],
+    })
+  );
+  expect(emptyOutput).toContain("No Trusted Devices yet.");
+  expect(emptyOutput).toContain("0 devices");
+});
+
 it("organizes routine settings, connections, and advanced tasks by session category", () => {
   const session = createUiSession();
   session.update({ destination: "settings" });
@@ -533,4 +584,104 @@ it("organizes routine settings, connections, and advanced tasks by session categ
   expect(advanced).toContain('data-settings-panel="advanced"');
   expect(advanced).toContain('data-session-focus="settings-clear"');
   expect(advanced).not.toContain("Generate new identity");
+});
+
+it("explains real settings groups and keeps history and sharing policies distinct", async () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const snapshot = {
+    sessionId: "settings",
+    revision: 1,
+    state: {
+      theme: "system" as const,
+      autoSync: true,
+      logLevel: "info" as const,
+      localRetentionMs: 30 * 86400000,
+      sharingLifetimeMs: 86400000,
+    },
+  };
+  const client = createSettingsClient({
+    send: async () => ({ ok: true, snapshot }),
+    subscribe: () => () => {},
+  });
+  await client.start();
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      appearanceSettings: {
+        ...client.getState(),
+        save: client.save,
+        refresh: client.refresh,
+      },
+      autoSyncKnown: true,
+      autoSync: true,
+      onSetAutoSync: async () => ({
+        status: "applied" as const,
+        autoSync: true,
+      }),
+    })
+  );
+
+  expect(output).toContain("Choose how this device works with Clipp.");
+  expect(output).toContain("Send and receive Clips with Trusted Devices.");
+  expect(output).toContain("Clipboard History");
+  expect(output).toContain("Clip Sharing Lifetime");
+  expect(output).toContain("Pins are exempt.");
+  expect(output).toContain(
+    "Expiry stops sharing; it does not delete local history."
+  );
+  expect(output).toContain("Clear all local history");
+  client.stop();
+});
+
+it("exposes compact navigation with a truthful expanded state", () => {
+  const session = createUiSession();
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, { ...props, session })
+    );
+
+  expect(render()).toContain('aria-label="Open navigation"');
+  expect(render()).toContain('aria-expanded="false"');
+  expect(render()).toContain('aria-controls="workspace-navigation"');
+
+  session.update({ showNav: true });
+  expect(render()).toContain('aria-label="Close navigation"');
+  expect(render()).toContain('aria-expanded="true"');
+});
+
+it("Links shows URL Clips from authoritative History state", () => {
+  const session = createUiSession();
+  session.update({ destination: "history", filterMode: "links" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      clips: [
+        {
+          id: "text-clip",
+          type: "text",
+          content: "A text Clip",
+          originPeerId: "local",
+          capturedAt: 2,
+          shareExpiresAt: 3,
+        },
+        {
+          id: "url-clip",
+          type: "url",
+          content: "https://example.test/article",
+          originPeerId: "remote",
+          capturedAt: 1,
+          shareExpiresAt: 4,
+        },
+      ],
+    })
+  );
+
+  expect(output).toContain("https://example.test/article");
+  expect(output).not.toContain("A text Clip");
+  expect(output).toMatch(
+    /aria-current="page"[^>]*>\s*<svg[^>]*>[\s\S]*?<\/svg><span>Links<\/span>/
+  );
 });

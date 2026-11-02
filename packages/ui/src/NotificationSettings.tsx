@@ -15,11 +15,12 @@ export function NotificationSettings({
   };
   return (
     <section
+      className="settings-group"
       aria-label="Pairing notifications"
       data-session-focus="settings:notifications"
       tabIndex={-1}
     >
-      <h3>Pairing notifications</h3>
+      <h4>Pairing notifications</h4>
       <p>
         App notifications: {labels[state?.app ?? "unknown"]}.
         {state?.channel !== "not-applicable" && (

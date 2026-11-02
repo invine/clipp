@@ -36,7 +36,7 @@ export function ManualIdentityResetSettings({
   const [localState, setLocalState] = useState(state);
   const clearedOperations = useRef(new Set<string>());
   useEffect(() => setLocalState(state), [state]);
-  const current = localState ?? ({ phase: "idle" } as const);
+  const current: IdentityResetState = localState ?? { phase: "idle" };
   const operationId = current.phase === "idle"
     ? current.completedOperation?.operationId
     : current.phase === "checking" || current.phase === "completed"
@@ -44,8 +44,12 @@ export function ManualIdentityResetSettings({
       : current.operationId;
   useEffect(() => {
     if (
-      ["accepted", "quiescing", "cleaning", "installing", "finalizing", "completed"].includes(current.phase) &&
-      "operationId" in current &&
+      (current.phase === "accepted" ||
+        current.phase === "quiescing" ||
+        current.phase === "cleaning" ||
+        current.phase === "installing" ||
+        current.phase === "finalizing" ||
+        current.phase === "completed") &&
       !clearedOperations.current.has(current.operationId)
     ) {
       clearedOperations.current.add(current.operationId);

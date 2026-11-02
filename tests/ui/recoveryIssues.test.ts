@@ -111,7 +111,10 @@ it("keeps ordinary offline devices and empty relays out of the fault count and b
   const html = render({ initializationError: true, session });
   expect(html).toContain("1 issue needs attention");
   expect(html).toMatch(/disabled=""[^>]*>Pair this device/);
-  expect(html).toMatch(
+  expect(html).not.toContain('aria-label="Share current clipboard now"');
+  session.update({ destination: "history" });
+  const historyHtml = render({ initializationError: true, session });
+  expect(historyHtml).toMatch(
     /disabled=""[^>]*aria-label="Share current clipboard now"|aria-label="Share current clipboard now"[^>]*disabled=""/
   );
   expect(render({})).not.toContain("issues need attention");

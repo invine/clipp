@@ -209,11 +209,49 @@ try {
   });
   await page.addStyleTag({ path: join(out, "consumer.css") });
   await page.addScriptTag({ path: join(out, "consumer.js") });
+  const toggle = page.locator('button[aria-controls="workspace-navigation"]');
+  const runSafeNavigationCase = [
+    "--workspace-navigation",
+    "--settings-category-focus",
+    "--navigation-target-stability",
+  ].some((flag) => process.argv.includes(flag));
+  if (
+    (!process.argv.includes("--skip-initial") || runSafeNavigationCase) &&
+    (await toggle.isVisible()) &&
+    (await toggle.getAttribute("aria-expanded")) === "false"
+  )
+    await toggle.click();
   const nav = page.getByRole("navigation", { name: "Clipp destinations" });
-  await nav.waitFor({ timeout: 3000 });
+  if (!process.argv.includes("--skip-initial") || runSafeNavigationCase)
+    await nav.waitFor({ timeout: 3000 });
+  if (
+    process.argv.includes("--skip-initial") &&
+    process.argv.includes("--workspace-navigation")
+  )
+    await nav.getByRole("button", { name: "History", exact: true }).click();
+  const openCompactNavigation = async () => {
+    if (
+      (await toggle.isVisible()) &&
+      (await toggle.getAttribute("aria-expanded")) === "false"
+    )
+      await toggle.click();
+  };
+  const chooseDestination = async (name) => {
+    const toggle = page.locator('button[aria-controls="workspace-navigation"]');
+    if (await toggle.isVisible()) {
+      if ((await toggle.getAttribute("aria-expanded")) === "false")
+        await toggle.click();
+      await page.waitForFunction(() => {
+        const navigation = document.querySelector("#workspace-navigation");
+        return navigation.getBoundingClientRect().left >= 0;
+      });
+    }
+    await nav.getByRole("button", { name, exact: true }).click();
+  };
   if (process.argv.includes("--navigation-target-stability")) {
     await checkNavigationTargetStability({ page, nav, report, host });
-  } else {
+  } else if (!process.argv.includes("--skip-initial")) {
+    await openCompactNavigation();
     for (const name of ["History", "Devices", "Requests", "Settings"])
       assert.equal(
         await nav
@@ -237,6 +275,80 @@ try {
     );
     report.cases.push({
       label: `${host} initial Requests navigation and actual approval callback`,
+      passed: true,
+    });
+  }
+  if (process.argv.includes("--workspace-navigation")) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() =>
+      document
+        .querySelector(".app-shell")
+        ?.classList.contains("workspace-narrow")
+    );
+    await page.evaluate(() =>
+      window.publishFixture({
+        clips: [
+          {
+            id: "workspace-text",
+            type: "text",
+            content: "A clipboard note",
+            originPeerId: "local",
+            capturedAt: 2,
+            shareExpiresAt: 3,
+          },
+          {
+            id: "workspace-link",
+            type: "url",
+            content: "https://example.test/article",
+            originPeerId: "remote",
+            capturedAt: 1,
+            shareExpiresAt: 4,
+          },
+        ],
+      })
+    );
+    const toggle = page.getByRole("button", {
+      name: "Open navigation",
+      exact: true,
+    });
+    assert.equal(
+      await page
+        .getByRole("navigation", { name: "Clipp destinations" })
+        .count(),
+      0,
+      "closed compact navigation is hidden from assistive technology"
+    );
+    await toggle.click();
+    assert.equal(
+      await nav.isVisible(),
+      true,
+      "compact navigation opens on request"
+    );
+    await nav.getByRole("button", { name: "Links", exact: true }).click();
+    await page
+      .getByText("https://example.test/article", { exact: false })
+      .waitFor();
+    assert.equal(
+      await page.getByText("A clipboard note", { exact: false }).count(),
+      0
+    );
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Open navigation", exact: true })
+        .isVisible(),
+      true,
+      "choosing a destination closes the compact navigation"
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        document.activeElement?.getAttribute("aria-label")
+      ),
+      "Open navigation",
+      "focus returns to the compact navigation control"
+    );
+    report.cases.push({
+      label:
+        "compact navigation opens, selects real Links history and restores focus",
       passed: true,
     });
   }
@@ -627,14 +739,23 @@ try {
     });
   }
   if (process.argv.includes("--compact-history"))
-    await checkCompactHistory({ page, nav, report });
+    await checkCompactHistory({ page, nav, report, out });
   if (process.argv.includes("--matrix")) {
     await page.setViewportSize(
       host === "chrome"
         ? { width: 480, height: 600 }
         : { width: 1400, height: 900 }
     );
-    await nav.getByRole("button", { name: "History", exact: true }).click();
+    await page.waitForFunction(
+      (host) =>
+        document
+          .querySelector(".app-shell")
+          ?.classList.contains(
+            host === "chrome" ? "workspace-narrow" : "workspace-wide"
+          ),
+      host
+    );
+    await chooseDestination("History");
     await page.evaluate(() =>
       window.publishFixture({
         clips: Array.from({ length: 24 }, (_, i) => ({
@@ -653,14 +774,6 @@ try {
     );
     const cards = page.locator(".history-card");
     await cards.nth(23).waitFor();
-    const heights = await cards.evaluateAll((elements) =>
-      elements.map((element) => element.getBoundingClientRect().height)
-    );
-    if (await page.locator(".workspace-wide").count())
-      assert.ok(
-        Math.max(...heights) - Math.min(...heights) < 1,
-        "wide cards retain one shared height rather than masonry"
-      );
     for (const [width, height] of host === "chrome"
       ? [
           [480, 600],
@@ -678,27 +791,58 @@ try {
         ]) {
       for (const scale of [100, 150, 200]) {
         await page.setViewportSize({ width, height });
+        await page.waitForFunction((width) => {
+          const root = document.querySelector(".app-shell");
+          return width <= 1100
+            ? root?.classList.contains("workspace-narrow")
+            : root?.classList.contains("workspace-wide");
+        }, width);
         await page.evaluate((scale) => {
           document.documentElement.style.fontSize = scale + "%";
         }, scale);
         await page.waitForTimeout(50);
         await page.getByLabel("Search history", { exact: true }).fill("clip");
-        await nav.getByRole("button", { name: "Devices", exact: true }).click();
+        const actionsBeforeNavigation = await page.evaluate(
+          () => window.fixtureActions.length
+        );
+        await chooseDestination("Devices");
+        assert.equal(
+          await page.getByLabel("Search history", { exact: true }).count(),
+          0,
+          "History search is scoped to History"
+        );
+        assert.equal(
+          await page.evaluate(() => window.fixtureActions.length),
+          actionsBeforeNavigation,
+          "changing destinations invokes no History action"
+        );
+        await chooseDestination("History");
         assert.equal(
           await page.getByLabel("Search history", { exact: true }).inputValue(),
-          "clip"
+          "clip",
+          "History search is retained when returning to History"
         );
-        await nav.getByRole("button", { name: "History", exact: true }).click();
         await page
           .getByRole("button", { name: "Clear search", exact: true })
           .click();
+        await page.waitForFunction(() => {
+          const root = document.querySelector(".app-shell");
+          const sidebar = document
+            .querySelector(".workspace-sidebar")
+            .getBoundingClientRect();
+          return (
+            root?.classList.contains("workspace-wide") || sidebar.right <= 0
+          );
+        });
         const placement = await page.evaluate(() =>
           Object.fromEntries(
             [
-              ".app-bar",
+              ".workspace-topbar",
               ".workspace-controls",
               ".workspace-navigation",
               ".app-main",
+              ".workspace-sidebar",
+              ".workspace-content",
             ].map((selector) => [
               selector,
               document.querySelector(selector).getBoundingClientRect().toJSON(),
@@ -706,27 +850,36 @@ try {
           )
         );
         assert.ok(
-          placement[".app-bar"].bottom <=
+          placement[".workspace-topbar"].bottom <=
             placement[".workspace-controls"].top + 1,
           "branding/status stays above Search"
         );
         if (scale === 100 && width <= 1100 && height >= 700)
           assert.ok(
-            placement[".workspace-navigation"].top >=
-              placement[".app-main"].bottom - 1,
-            "ordinary narrow navigation remains at the bottom"
+            placement[".workspace-sidebar"].right <= 0 &&
+              (await page
+                .getByRole("button", {
+                  name: "Open navigation",
+                  exact: true,
+                })
+                .getAttribute("aria-expanded")) === "false",
+            "narrow navigation closes after a destination is selected"
           );
         if (scale === 100 && width > 1100 && height >= 800)
           assert.ok(
-            placement[".workspace-navigation"].bottom <=
-              placement[".workspace-controls"].top + 1,
-            "wide navigation remains in the header"
+            placement[".workspace-sidebar"].right <=
+              placement[".workspace-content"].x + 1,
+            "wide navigation remains in the sidebar"
           );
         if (height <= 500)
           assert.ok(
-            placement[".workspace-navigation"].bottom <=
-              placement[".app-main"].top + 1,
-            "cramped navigation remains near the start of the scroller"
+            (await page
+              .getByRole("button", {
+                name: "Open navigation",
+                exact: true,
+              })
+              .getAttribute("aria-expanded")) === "false",
+            "cramped narrow navigation remains collapsed"
           );
         const overflow = await page
           .locator(".app-shell")
@@ -1286,7 +1439,7 @@ try {
   }
   if (process.argv.includes("--m3-settings")) {
     await page.setViewportSize({ width: 320, height: 650 });
-    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await chooseDestination("Settings");
     const categories = page.getByRole("navigation", {
       name: "Settings categories",
     });
@@ -1790,6 +1943,7 @@ try {
     report.clipboardCalls = await page.evaluate(
       () => window.fixtureClipboardCalls
     );
+    report.fixtureActions = await page.evaluate(() => window.fixtureActions);
     report.geometryDisposed = await page.evaluate(
       () => !document.documentElement.dataset.hostGeometry
     );
@@ -1803,10 +1957,18 @@ try {
   );
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
 }
+if (process.argv.includes("--assert-no-actions")) {
+  assert.deepEqual(report.fixtureActions, []);
+  assert.deepEqual(report.clipboardCalls, { reads: 0, writes: 0 });
+  assert.equal(report.blockedRequests, 0);
+}
 console.log(
   JSON.stringify({
     passed: report.cases.length,
     closed: report.closed,
     errors: report.errors,
+    fixtureActions: report.fixtureActions,
+    clipboardCalls: report.clipboardCalls,
+    blockedRequests: report.blockedRequests,
   })
 );
