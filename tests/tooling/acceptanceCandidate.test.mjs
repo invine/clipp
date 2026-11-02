@@ -19,6 +19,9 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { acquireOwnedRelayProfile } from "../../apps/extension/scripts/owned-relay-profile.mjs";
+import { beginNativeAttempt } from "../../scripts/native-acceptance-attempts.mjs";
+
 const command = resolve("scripts/prepare-acceptance-candidate.mjs");
 const localGitVariables = spawnSync("git", ["rev-parse", "--local-env-vars"], {
   encoding: "utf8",
@@ -549,7 +552,8 @@ test("preserves exact leading whitespace and embedded newlines in tracked candid
 function frozenElectronFixture(
   t,
   nativeMode = "healthy",
-  scenario = "electron-readiness"
+  scenario = "electron-readiness",
+  applicationRunner
 ) {
   const f = fixture(t, (source) => {
     for (const name of [
@@ -565,7 +569,9 @@ function frozenElectronFixture(
     ])
       writeFileSync(
         join(source, "scripts", name),
-        readFileSync(resolve("scripts", name))
+        name === "electron-relay-acceptance.mjs" && applicationRunner
+          ? applicationRunner
+          : readFileSync(resolve("scripts", name))
       );
     for (const [directory, name, body] of [
       [
@@ -607,7 +613,8 @@ import {EventEmitter} from 'node:events';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 const require=createRequire(import.meta.url);
-export const _electron={async launch({args,env,executablePath}){
+export const _electron={async launch({args,env,executablePath,cwd}){
+ if(cwd)process.chdir(cwd);
  if(${JSON.stringify(nativeMode)}.startsWith('launch-')){
    const observation=path.join(path.dirname(args[0]),'required-native.json');
    if(${JSON.stringify(nativeMode)}==='launch-malformed')writeFileSync(observation,'{malformed observation');
@@ -623,7 +630,7 @@ export const _electron={async launch({args,env,executablePath}){
  const api={getState:async()=>{if(pairing)return pairing.observeElectron(clipboard);const content=clipboard.readText();if(content && !captureReadyAt)captureReadyAt=Date.now()+300;if(content && !state.clips.some(clip=>clip.content===content) && (${JSON.stringify(nativeMode)}!=='delayed-capture'||Date.now()>=captureReadyAt))state.clips.push({id:'controlled-clip',content,originPeerId:state.identity.deviceId});if(pendingPin&&Date.now()>=pinReadyAt)state.pinnedIds=[pendingPin];return state;}};
  const browser={window:{clipp:api},document:{hasFocus:()=>true}};const browserEvaluate=(fn,arg)=>vm.runInNewContext('('+String(fn)+')',browser)(arg);
  const card={getByTitle:(title)=>({boundingBox:async()=>{const expected=${JSON.stringify(nativeMode)}==='adopted-pin'?'Pin Clip':'Pin';if(typeof title==='string'?title!==expected:!title.test(expected))throw new Error('visible_pin_title_missing');return {x:100,y:1,width:10,height:10};}}),waitFor:async()=>{if(filter!=='Pinned'||!state.pinnedIds.length)throw new Error('native pin not observed');}};
- const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp')){const success=browserEvaluate(fn,arg);if(!success)throw new Error('public state observation failed');}},getByRole:(_,options)=>({count:async()=>pairing?pairing.electronCount(options.name):0,boundingBox:async()=>({x:pairing?pairing.electronPoint(options.name):(options.name==='Pinned'?20:40),y:1,width:10,height:10})}),locator:()=>({filter:()=>card,getByRole:()=>({boundingBox:async()=>({x:300,y:1,width:10,height:10})})}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
+ const page={setDefaultTimeout(){},waitForFunction:async(fn,arg)=>{if(String(fn).includes('window.clipp')){const success=browserEvaluate(fn,arg);if(!success)throw new Error('public state observation failed');}},getByRole:(_,options)=>({count:async()=>pairing?pairing.electronCount(options.name):0,boundingBox:async()=>({x:pairing?pairing.electronPoint(options.name):(options.name==='Pinned'?20:40),y:1,width:10,height:10})}),locator:(scope)=>({count:async()=>0,filter:()=>card,getByRole:(_,options)=>({boundingBox:async()=>({x:pairing&&options?.name==='Show my QR'?pairing.electronPoint(options.name,scope):300,y:1,width:10,height:10})})}),evaluate:async(fn,arg)=>browserEvaluate(fn,arg)};
  const previousExecutable=process.execPath;const previousLoader=Module._load;
  Object.defineProperty(process.versions,'electron',{value:'43.4.0',configurable:true});process.getSystemVersion=()=>'controlled';
  Module._load=function(name,...rest){return name==='electron'?{app,clipboard}:previousLoader.call(this,name,...rest);};
@@ -654,21 +661,27 @@ export const _electron={async launch({args,env,executablePath}){
   f.args[f.args.indexOf("--scenario") + 1] = scenario;
   const prepared = f.invoke();
   assert.equal(prepared.status, 0, prepared.stderr);
-  const accept = (extra = [], candidateRecord = f.record) =>
+  const accept = (
+    extra = [],
+    candidateRecord = f.record,
+    runner = join(f.destination, "scripts/electron-relay-acceptance.mjs"),
+    profile = join(f.root, "profile"),
+    settings = {}
+  ) =>
     run(
       process.execPath,
       [
-        join(f.destination, "scripts/electron-relay-acceptance.mjs"),
+        runner,
         "--candidate-record",
         candidateRecord,
         "--effort",
         "frozen-fixture",
         "--history-root",
-        join(f.root, "history"),
+        settings.historyRoot ?? join(f.root, "history"),
         "--profile",
-        join(f.root, "profile"),
+        profile,
         "--output",
-        join(f.root, "evidence"),
+        settings.output ?? join(f.root, "evidence"),
         "--transport",
         "wss",
         ...(scenario === "electron-clipboard-history"
@@ -694,6 +707,7 @@ export const _electron={async launch({args,env,executablePath}){
                 join(f.destination, "packages/chrome-driver/process.mjs"),
             }
           : {}),
+        ...settings.environment,
       }
     );
   const receipt = () =>
@@ -763,11 +777,31 @@ test("frozen Electron preflight rejects stale application and selected native id
   }
 });
 
-test("the running source checkout must own the selected frozen candidate", (t) => {
-  const selected = frozenElectronFixture(t);
-  const other = frozenElectronFixture(t);
-  assert.notEqual(selected.accept([], other.record).status, 0);
-  assert.equal(selected.receipt().reason, "frozen_candidate_checkout_mismatch");
+test("trusted maintained Electron tooling consumes a separate verified frozen app without rebinding it", (t) => {
+  const tooling = frozenElectronFixture(t);
+  const application = frozenElectronFixture(t);
+  const before = readFileSync(application.record);
+  const built = readFileSync(join(application.destination, "build-count"));
+  const result = tooling.accept([], application.record);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    tooling.receipt().tooling.root,
+    realpathSync(tooling.destination)
+  );
+  assert.equal(
+    tooling.receipt().frozenCandidate.checkout,
+    realpathSync(application.destination)
+  );
+  assert.equal(
+    tooling.receipt().candidate.revision,
+    JSON.parse(before).source.revision
+  );
+  assert.equal(tooling.receipt().result, "passed");
+  assert.deepEqual(readFileSync(application.record), before);
+  assert.deepEqual(
+    readFileSync(join(application.destination, "build-count")),
+    built
+  );
 });
 
 test("the frozen candidate scenario must match the selected runtime observation", (t) => {
@@ -948,7 +982,7 @@ if(${JSON.stringify(mode)}==='prep-configuration')chrome.managedRelayConfigurati
 const route=(peer)=>({peerId:peer,hasRelay:true,hasDirect:${JSON.stringify(mode)}==='unknown-route'?undefined:${JSON.stringify(mode)}==='direct',addrs:['/dns4/relay.example/tcp/443/wss/p2p/'+R+'/p2p-circuit/p2p/'+peer]});
 module.exports={electronTask:null,chromeTask:null,electron,chrome,E,C,R,target:'clipp:pair:public-signed-fixture',submitted:false,accepted:false,
  electronCount(name){return name==='Close QR dialog'?Number(this.electronTask==='qr'):name==='Close Pairing'?Number(modal&&this.electronTask==='pairing'):0;},
- electronPoint(name){if(name instanceof RegExp){if(!name.test(badged?'Requests active requests':'Requests'))throw new Error('requests_accessible_name_missing');name='requests-navigation';}if(badged&&name==='Requests')throw new Error('badged_requests_exact_name_missing');if(name==='requests-navigation')name='Requests';if(modal&&this.electronTask&&!({pairing:['Show my QR','Close Pairing'],qr:['Copy pairing text','Close QR dialog']})[this.electronTask].includes(name))throw new Error('electron_task_background_inert');return ({Pinned:20,All:40,Devices:200,'Pair this device':220,'Show my QR':240,'Copy pairing text':260,Requests:280,Accept:300,'Close QR dialog':320,'Close Pairing':340})[name]||10;},
+ electronPoint(name,scope){if(${JSON.stringify(mode)}==='duplicate-qr'&&name==='Show my QR'){if(scope!=='[role="dialog"][aria-modal="true"]:has(h2:text-is("Pairing"))')throw new Error('strict_mode_violation_two_show_my_qr_buttons');record('electron-dialog-scoped-qr');}if(name instanceof RegExp){if(!name.test(badged?'Requests active requests':'Requests'))throw new Error('requests_accessible_name_missing');name='requests-navigation';}if(badged&&name==='Requests')throw new Error('badged_requests_exact_name_missing');if(name==='requests-navigation')name='Requests';if(modal&&this.electronTask&&!({pairing:['Show my QR','Close Pairing'],qr:['Copy pairing text','Close QR dialog']})[this.electronTask].includes(name))throw new Error('electron_task_background_inert');return ({Pinned:20,All:40,Devices:200,'Pair this device':220,'Show my QR':240,'Copy pairing text':260,Requests:280,Accept:300,'Close QR dialog':320,'Close Pairing':340})[name]||10;},
  chromeClick(name){if(name instanceof RegExp&&name.source.startsWith('^Requests')){if(!name.test(badged?'Requests (loading)':'Requests'))throw new Error('requests_accessible_name_missing');name='requests-navigation';}if(badged&&name==='Requests')throw new Error('badged_requests_exact_name_missing');if(name==='requests-navigation')name='Requests';if(modal&&this.chromeTask&&!({pairing:['Paste pairing text','Close Pairing'],paste:['Pairing text','Submit pairing text','Back to Pairing']})[this.chromeTask].includes(name))throw new Error('chrome_task_background_inert');if(name==='Pair this device')this.chromeTask='pairing';if(name==='Paste pairing text')this.chromeTask='paste';if(name==='Back to Pairing'){this.chromeTask='pairing';record('chrome-back-preserves-'+electron.pending.length);}if(name==='Close Pairing'){this.chromeTask=null;record('chrome-close-preserves-'+electron.pending.length);}if(name==='Discard pairing input'){this.submitted=false;electron.pending=[];throw new Error('submitted_request_discarded');}},
  observeElectron(clipboard){const text=clipboard.readText();if(text.startsWith('clipp-native-local-')&&!electron.clips.some(c=>c.content===text))electron.clips.push({id:'eclip',content:text,originPeerId:E});return electron;},
  electronClick(x,clipboard){if(x===225)this.electronTask='pairing';if(x===245)this.electronTask='qr';if(x===325){this.electronTask='pairing';record('electron-close-qr');}if(x===345){this.electronTask=null;record('electron-close-pairing');}if(x===305&&modal&&(this.electronTask||this.chromeTask||!this.submitted||!electron.pending.length))throw new Error('native_accept_requires_preserved_request_and_unblocked_workspaces');if(x===105)electron.pinnedIds=['eclip'];if(x===265)clipboard.writeText(this.target);if(x===305&&${JSON.stringify(mode)}!=='no-accept'){this.accepted=true;electron.identity.membershipView.admittedPeerIds=[E,C];chrome.identity.membershipView.admittedPeerIds=[C,E];electron.devices=[{deviceId:C}];chrome.devices=[{deviceId:E}];electron.pending=[];chrome.waiting=[];}},
@@ -988,20 +1022,35 @@ if(human){
 setTimeout(()=>process.exit(0),10000);`,
     { mode: 0o755 }
   );
+  const pwCore = join(source, "packages/playwright-core");
+  mkdirSync(join(pwCore, "lib/server/chromium"), { recursive: true });
+  writeFileSync(
+    join(pwCore, "package.json"),
+    JSON.stringify({
+      name: "playwright-core",
+      version: "1.57.0",
+      exports: { "./package.json": "./package.json" },
+    })
+  );
+  for (const name of ["crBrowser.js", "crPage.js"])
+    writeFileSync(
+      join(pwCore, "lib/server/chromium", name),
+      "// Synthetic Playwright external target boundary: " + name + "\n"
+    );
   writeFileSync(
     join(driver, "process.mjs"),
-    `import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';const original=cp.spawn,ps=cp.spawnSync;let owned;cp.spawn=function(bin,args,options){const child=original.call(this,bin,args,options);if(bin.endsWith('/browser.cjs'))owned={child,command:bin+' '+args.join(' ')};return child;};cp.spawnSync=function(bin,args,options){if(bin==='ps'&&args[0]==='-ax'&&${JSON.stringify(mode)}==='human-uncertain'&&owned&&!owned.command.includes('--remote-debugging-port=0')&&owned.child.exitCode!==null)return {status:1,stdout:''};if(bin==='ps'&&args[0]==='-ax')return {status:0,stdout:owned&&owned.child.exitCode===null&&owned.child.signalCode===null?owned.child.pid+' '+owned.command:''};if(bin==='ps'&&args[0]==='-p'&&Number(args[1])===process.pid)return {status:0,stdout:'  1 Thu Oct 29 00:00:00 2026 '+process.argv.join(' ')};if(bin==='ps'&&owned&&args[0]==='-p'&&Number(args[1])===owned.child.pid)return owned.child.exitCode===null&&owned.child.signalCode===null?{status:0,stdout:'  '+process.pid+' Thu Oct 29 00:00:00 2026 '+owned.command}:{status:1,stdout:''};return ps.call(this,bin,args,options);};syncBuiltinESMExports();`
+    `import cp from 'node:child_process';import fs from 'node:fs';import path from 'node:path';import {syncBuiltinESMExports} from 'node:module';const original=cp.spawn,ps=cp.spawnSync,exec=cp.execFileSync;let owned;const initialOther={present:Object.hasOwn(process.env,'PW_CHROMIUM_ATTACH_TO_OTHER'),value:process.env.PW_CHROMIUM_ATTACH_TO_OTHER};process.once('exit',()=>{if(process.argv[1]?.endsWith('/verify-clipboard-io.mjs'))fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'other-env-exit'),JSON.stringify({initial:initialOther,final:{present:Object.hasOwn(process.env,'PW_CHROMIUM_ATTACH_TO_OTHER'),value:process.env.PW_CHROMIUM_ATTACH_TO_OTHER}})+'\\n');});cp.spawn=function(bin,args,options){const child=original.call(this,bin,args,options);if(bin.endsWith('/browser.cjs'))owned={child,command:bin+' '+args.join(' ')};return child;};cp.spawnSync=function(bin,args,options){if(bin==='ps'&&args[0]==='-ax'&&${JSON.stringify(mode)}==='human-uncertain'&&owned&&!owned.command.includes('--remote-debugging-port=0')&&owned.child.exitCode!==null)return {status:1,stdout:''};if(bin==='ps'&&args[0]==='-ax')return {status:0,stdout:owned&&owned.child.exitCode===null&&owned.child.signalCode===null?owned.child.pid+' '+owned.command:''};if(bin==='ps'&&args[0]==='-p'&&Number(args[1])===process.pid)return {status:0,stdout:'  1 Thu Oct 29 00:00:00 2026 '+process.argv.join(' ')};if(bin==='ps'&&owned&&args[0]==='-p'&&Number(args[1])===owned.child.pid&&owned.child.exitCode===null&&owned.child.signalCode===null&&fs.existsSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-identity-check'))){if(${JSON.stringify(mode)}==='foreground-gone')return {status:1,stdout:''};if(['foreground-mismatch','foreground-after-mismatch'].includes(${JSON.stringify(mode)}))return {status:0,stdout:'  '+process.pid+' Fri Oct 30 00:00:00 2026 '+owned.command};}if(bin==='ps'&&owned&&args[0]==='-p'&&Number(args[1])===owned.child.pid)return owned.child.exitCode===null&&owned.child.signalCode===null?{status:0,stdout:'  '+process.pid+' Thu Oct 29 00:00:00 2026 '+owned.command}:{status:1,stdout:''};return ps.call(this,bin,args,options);};cp.execFileSync=function(bin,args,options){if(String(bin).endsWith('/osascript')||bin==='osascript'){if(bin!=='/usr/bin/osascript'||!owned||owned.child.exitCode!==null||args.length!==2||args[0]!=='-e'||args[1]!=='tell application \"System Events\" to set frontmost of first application process whose unix id is '+owned.child.pid+' to true')throw new Error('synthetic_foreground_command_mismatch');fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-commands'),JSON.stringify({pid:owned.child.pid,argv:args})+'\\n');fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'owned-foreground'),'true');if(${JSON.stringify(mode)}==='foreground-after-mismatch')fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-identity-check'),'true');return '';}return exec.call(this,bin,args,options);};syncBuiltinESMExports();`
   );
   writeFileSync(
     join(driver, "index.js"),
     `
-import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';const require=createRequire(import.meta.url);const f=require('../pairing-driver/state.cjs');const id='a'.repeat(32);let open=false,typed='',focused=true,settingsOpened=false,cardOpened=false,connectionsOpened=false,relayEditorOpen=false,relayName='',relayDiscovery='';const ownProfile=()=>fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');const authUrl='https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY';const persistHistory=()=>fs.writeFileSync(path.join(ownProfile(),'synthetic-history.json'),JSON.stringify({clips:f.chrome.clips,pinnedIds:f.chrome.pinnedIds}));
-const locator=(name,scope)=>({async click(){if(name==='Log in'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-login-attempts'),'login\\n');throw new Error('controlled_authentication_forbidden');}f.chromeClick(name);if(${JSON.stringify(mode)}==='input')throw new Error('native input unavailable');if(name==='Paste pairing text'&&${JSON.stringify(mode)}==='focus-lost')focused=false;if(name==='Settings'){settingsOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'settings-ui\\n');}if(name==='Connections'){connectionsOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'connections-ui\\n');}if(name==='Add relay'){if(!connectionsOpened)throw new Error('settings_navigation_required');relayEditorOpen=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'add-relay-ui\\n');}if(name==='Save'&&${JSON.stringify(mode)}==='fresh-auth-save-rejected')return;if(name==='Save'){if(!relayEditorOpen||relayName!=='Pairing relay'||relayDiscovery!=='https://relay.example/v1/relay')throw new Error('approved_relay_form_required');f.chrome.managedRelayConfigurations=[{key:'ui-generated-relay',name:relayName,kind:'managed',discoveryUrl:relayDiscovery}];f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));relayEditorOpen=false;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');}if(name==='summary'){cardOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'expand-relay-ui\\n');}if(name==='Log in'&&${JSON.stringify(mode)}.startsWith('fresh-auth')){if(${JSON.stringify(mode)}==='fresh-auth'&&(!settingsOpened||!connectionsOpened||!cardOpened))throw new Error('selected_settings_card_is_closed');f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));fs.writeFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),JSON.stringify(f.chrome.managedRelayConfigurations));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'login-ui\\n');}if(name==='Submit pairing text')f.submit(typed);if(name===(${JSON.stringify(mode)}==='adopted-pin'?'Pin Clip':'Pin') || (name instanceof RegExp && name.test(${JSON.stringify(mode)}==='adopted-pin'?'Pin Clip':'Pin'))){const clip=f.chrome.clips.find(value=>(!scope||value.content===scope)&&!f.chrome.pinnedIds.includes(value.id));if(!clip)throw new Error('new_unpinned_clip_not_visible');f.chrome.pinnedIds.push(clip.id);persistHistory();}},async fill(value){if(name==='Name')relayName=value;else if(name==='HTTPS discovery URL')relayDiscovery=value;else typed=value;},async count(){if(name==='Connections')return Number(${JSON.stringify(mode)}.startsWith('fresh-auth'));if(name==='.managed-relay-editor')return Number(relayEditorOpen);if(name==='Back to Pairing')return Number(${JSON.stringify(mode)}==='adopted-modal'&&f.chromeTask==='paste');if(name==='Close Pairing')return Number(${JSON.stringify(mode)}==='adopted-modal'&&f.chromeTask==='pairing');return name==='Settings'&&${JSON.stringify(mode)}.startsWith('fresh-auth')?1:0;},async evaluate(fn){return String(fn).includes('tagName')?{tag:${JSON.stringify(mode)}==='fresh-auth'?'DETAILS':'DIV',open:cardOpened}:true;},async waitFor(){if(name?.includes('Acceptance')&&!f.accepted)throw new Error('unconfirmed acceptance');},async isVisible(){return name?.includes("Acceptance")?f.accepted:f.chrome.clips.some(c=>c.content===name);},filter(options){return locator(name,options?.hasText||scope);},locator:(child)=>locator(child,scope),getByTitle:(title)=>locator(title,scope),first(){return this;},getByText:(text)=>locator(text),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)});
-const popup={url:()=> 'chrome-extension://'+id+'/src/popup.html',getByRole:(_,q)=>locator(q.name),getByLabel:(name)=>locator(name),getByTitle:(name)=>locator(name),keyboard:{async insertText(value){typed=value;}},locator:(name)=>locator(name),getByText:(name)=>locator(name),async evaluate(fn,arg){if(arg?.type==='managedRelaySet'&&${JSON.stringify(mode)}.startsWith('fresh-auth'))return {ok:false,error:'unsupported_legacy_configuration_command'};if(arg?.type==='managedRelaySet'){f.chrome.managedRelayConfigurations=arg.configurations;f.chrome.managedRelayStates=arg.configurations.map(config=>({...config,status:'login_needed',peerId:f.R}));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');return {ok:true};}if(arg?.target==='offscreen')return {ok:false,error:'offscreen_control_unauthorized'};if(arg?.type==='getStatus'&&${JSON.stringify(mode)}==='prep-transport')return {started:true,relayAcceptanceTransport:'webrtc-direct',acceptanceMemoryClipboard:true,secret:'SYNTHETIC_OAUTH_CODE_CANARY'};if(arg?.type==='getStatus')return {started:true,acceptanceMemoryClipboard:!(${JSON.stringify(mode)}==='no-early-memory'&&!process.argv.includes('toolbar-relay-account-preparation')),...(${JSON.stringify(mode)}==='ordinary-build'&&!process.argv.includes('toolbar-relay-account-preparation')?{}:{relayAcceptanceTransport:'wss'})};if(String(fn).includes('document.hasFocus')&&!String(fn).includes('chrome.runtime.id'))return focused;if(arg?.type==='getRuntimeState'||String(fn).includes('getRuntimeState'))return {state:structuredClone(f.chrome)};if(arg?.type==='clipboardUpdate'){if(!f.chrome.clips.some(value=>value.content===arg.text))f.chrome.clips.push({id:'cclip-'+(f.chrome.clips.length+1),content:arg.text,originPeerId:f.chrome.identity.deviceId});persistHistory();return {ok:true};}return {id,isPopup:true,memory:true,earlyMemory:${JSON.stringify(mode)}!=='prep-early-memory',focused:true};}};
-const tab={url:()=> 'about:blank',async bringToFront(){open=false;}};
-const session={async send(method,arg){if(method==='Extensions.loadUnpacked'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-load-attempts'),'load\\n');throw new Error('controlled_installation_forbidden');}if(method==='Extensions.getExtensions'&&${JSON.stringify(mode)}==='oauth-private')throw new Error('https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY');if(method==='Extensions.getExtensions'){const file=path.join(ownProfile(),'synthetic-installed-extension.json');let installed=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):null;if(installed?.installedViaCDP){fs.unlinkSync(file);installed=null;}if(installed&&${JSON.stringify(mode)}==='wrong-id'&&!process.argv.includes('toolbar-relay-account-preparation'))installed.id='b'.repeat(32);return {extensions:installed?(${JSON.stringify(mode)}==='human-duplicate'?[installed,installed]:[installed]):[]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'page',type:'page',url:'about:blank',browserContextId:'owned'}};if(method==='Target.getTargets')return {targetInfos:[{targetId:'tab',type:'tab',url:'about:blank',browserContextId:'owned'}]};if(method==='Browser.getWindowForTarget')return {windowId:1};if(method==='Extensions.triggerAction')open=true;return {};}};
-const context={async addInitScript(){},serviceWorkers:()=>[{url:()=> 'chrome-extension://'+id+'/background.js'}],pages:()=>open?[tab,popup]:[tab],async newPage(){let url='';return {async goto(value){url=value;},url:()=>url,evaluate:popup.evaluate,async bringToFront(){},locator:(name)=>locator(name),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)};},async newCDPSession(){return session;}};
-export const chromium={executablePath:()=>path.resolve('packages/chrome-driver/browser.cjs'),async connectOverCDP(){if(fs.existsSync(path.join(ownProfile(),'synthetic-history.json'))){const history=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-history.json'),'utf8'));f.chrome.clips=history.clips;f.chrome.pinnedIds=history.pinnedIds;}if(fs.existsSync(path.join(ownProfile(),'synthetic-normal-login.json'))){f.chrome.managedRelayConfigurations=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),'utf8'));f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));}if(fs.existsSync(path.join(ownProfile(),'synthetic-human-not-ready')))f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(${JSON.stringify(mode)}==='near-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){while(!f.electronClosedAt)await new Promise(done=>setTimeout(done,1));await new Promise(done=>setTimeout(done,Math.max(0,f.electronClosedAt+42-Date.now())));}if(${JSON.stringify(mode)}==='slow-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){const receipt=path.join(process.env.PAIRING_FIXTURE_ROOT,'evidence/receipt.json'),deadline=Date.now()+5000;while(!fs.existsSync(receipt)&&Date.now()<deadline)await new Promise(done=>setTimeout(done,10));const published=fs.existsSync(receipt);fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'companion-close-observation.json'),JSON.stringify({electronReceiptPublished:published,electronResult:published?JSON.parse(fs.readFileSync(receipt,'utf8')).result:undefined}));if(!published)throw new Error('electron_cleanup_waited_for_companion');}if(${JSON.stringify(mode)}==='cleanup'&&!process.argv.includes('toolbar-relay-account-preparation'))throw new Error('SYNTHETIC_PRIVATE_CLEANUP_CANARY');const profile=fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');process.kill(Number(fs.readFileSync(path.join(profile,'owned.pid'),'utf8')),'SIGTERM');}};}};
+import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';const require=createRequire(import.meta.url);const f=require('../pairing-driver/state.cjs');const id='a'.repeat(32);const responsivePopup=${JSON.stringify(mode)}.startsWith('popup-');let popupMounted=!${JSON.stringify(mode)}.includes('late-mount'),popupMountScheduled=false;const schedulePopupMount=()=>{if(!popupMounted&&!popupMountScheduled){popupMountScheduled=true;setImmediate(()=>{popupMounted=true;});}};let filtersExpanded=${JSON.stringify(mode)}==='popup-expanded';let earlyStartupReady=${JSON.stringify(mode)}!=='other-popup-delayed-startup',earlyStartupScheduled=false;let open=false,typed='',focused=true,managementOpened=false,settingsOpened=false,cardOpened=false,connectionsOpened=false,relayEditorOpen=false,relayName='',relayDiscovery='';const ownProfile=()=>fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');const authUrl='https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY';const persistHistory=()=>fs.writeFileSync(path.join(ownProfile(),'synthetic-history.json'),JSON.stringify({clips:f.chrome.clips,pinnedIds:f.chrome.pinnedIds}));
+const locator=(name,scope)=>({async click(){if(responsivePopup&&!popupMounted){schedulePopupMount();await new Promise(setImmediate);}if(responsivePopup&&name==='[data-session-focus="history-filters"]'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'popup-filter-actions'),'Filters\\n');if(${JSON.stringify(mode)}!=='popup-toggle-refused')filtersExpanded=true;return;}if(responsivePopup&&(name==='Pinned'||name==='All')){if(!filtersExpanded)throw Object.assign(new Error('filter control hidden by short popup'),{name:'TimeoutError'});fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'popup-filter-actions'),name+'\\n');}if(name==='Log in'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-login-attempts'),'login\\n');throw new Error('controlled_authentication_forbidden');}f.chromeClick(name);if(${JSON.stringify(mode)}==='input')throw new Error('native input unavailable');if(name==='Paste pairing text'&&${JSON.stringify(mode)}==='focus-lost')focused=false;if(name==='Settings'){settingsOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'settings-ui\\n');}if(name==='Connections'){connectionsOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'connections-ui\\n');}if(name==='Add relay'){if(!connectionsOpened)throw new Error('settings_navigation_required');relayEditorOpen=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'add-relay-ui\\n');}if(name==='Save'&&${JSON.stringify(mode)}==='fresh-auth-save-rejected')return;if(name==='Save'){if(!relayEditorOpen||relayName!=='Pairing relay'||relayDiscovery!=='https://relay.example/v1/relay')throw new Error('approved_relay_form_required');f.chrome.managedRelayConfigurations=[{key:'ui-generated-relay',name:relayName,kind:'managed',discoveryUrl:relayDiscovery}];f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));relayEditorOpen=false;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');}if(name==='summary'){cardOpened=true;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'expand-relay-ui\\n');}if(name==='Log in'&&${JSON.stringify(mode)}.startsWith('fresh-auth')){if(${JSON.stringify(mode)}==='fresh-auth'&&(!settingsOpened||!connectionsOpened||!cardOpened))throw new Error('selected_settings_card_is_closed');f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));fs.writeFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),JSON.stringify(f.chrome.managedRelayConfigurations));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'login-ui\\n');}if(name==='Submit pairing text')f.submit(typed);if(name===(${JSON.stringify(mode)}==='adopted-pin'?'Pin Clip':'Pin') || (name instanceof RegExp && name.test(${JSON.stringify(mode)}==='adopted-pin'?'Pin Clip':'Pin'))){const clip=f.chrome.clips.find(value=>(!scope||value.content===scope)&&!f.chrome.pinnedIds.includes(value.id));if(!clip)throw new Error('new_unpinned_clip_not_visible');f.chrome.pinnedIds.push(clip.id);persistHistory();}},async fill(value){if(name==='Name')relayName=value;else if(name==='HTTPS discovery URL')relayDiscovery=value;else typed=value;},async getAttribute(attribute){return name==='[data-session-focus="history-filters"]'&&attribute==='aria-expanded'?String(filtersExpanded):null;},async count(){if(name==='Pinned'&&${JSON.stringify(mode)}==='popup-zero-area-legacy-late-mount')return 1;if(responsivePopup&&!popupMounted){schedulePopupMount();return 0;}if(name==='[data-session-focus="history-filters"]')return Number(responsivePopup);if(name==='Pinned'||name==='All')return Number(!responsivePopup||filtersExpanded);if(name==='Connections')return Number(${JSON.stringify(mode)}.startsWith('fresh-auth'));if(name==='.managed-relay-editor')return Number(relayEditorOpen);if(name==='Back to Pairing')return Number(${JSON.stringify(mode)}==='adopted-modal'&&f.chromeTask==='paste');if(name==='Close Pairing')return Number(${JSON.stringify(mode)}==='adopted-modal'&&f.chromeTask==='pairing');return name==='Settings'&&${JSON.stringify(mode)}.startsWith('fresh-auth')?1:0;},async evaluate(fn){return String(fn).includes('tagName')?{tag:${JSON.stringify(mode)}==='fresh-auth'?'DETAILS':'DIV',open:cardOpened}:true;},async waitFor(){if(name?.includes('Acceptance')&&!f.accepted)throw new Error('unconfirmed acceptance');},async isVisible(){if(name==='Pinned'||name==='All')return popupMounted&&(!responsivePopup||filtersExpanded);return name?.includes("Acceptance")?f.accepted:f.chrome.clips.some(c=>c.content===name);},filter(options){return locator(name,options?.hasText||scope);},locator:(child)=>locator(child,scope),getByTitle:(title)=>locator(title,scope),first(){return this;},getByText:(text)=>locator(text),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)});
+const popup={isClosed:()=>false,url:()=> 'chrome-extension://'+id+'/src/popup.html',getByRole:(_,q)=>locator(q.name),getByLabel:(name)=>locator(name),getByTitle:(name)=>locator(name),keyboard:{async insertText(value){typed=value;}},locator:(name)=>locator(name),getByText:(name)=>locator(name),async evaluate(fn,arg){if(String(fn).includes('__clippAcceptanceEarlyMemoryClipboard')&&!String(fn).includes('chrome.runtime.id')){if(!earlyStartupReady&&!earlyStartupScheduled){earlyStartupScheduled=true;setImmediate(()=>{earlyStartupReady=true;});}return earlyStartupReady&&${JSON.stringify(mode)}!=='other-popup-late-memory';}if(arg?.type==='managedRelaySet'&&${JSON.stringify(mode)}.startsWith('fresh-auth'))return {ok:false,error:'unsupported_legacy_configuration_command'};if(arg?.type==='managedRelaySet'){f.chrome.managedRelayConfigurations=arg.configurations;f.chrome.managedRelayStates=arg.configurations.map(config=>({...config,status:'login_needed',peerId:f.R}));fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'normal-setup-actions'),'configure-approved-relay\\n');return {ok:true};}if(arg?.target==='offscreen')return {ok:false,error:'offscreen_control_unauthorized'};if(arg?.type==='getStatus'&&${JSON.stringify(mode)}==='prep-transport')return {started:true,relayAcceptanceTransport:'webrtc-direct',acceptanceMemoryClipboard:true,secret:'SYNTHETIC_OAUTH_CODE_CANARY'};if(arg?.type==='getStatus')return {started:true,acceptanceMemoryClipboard:!(${JSON.stringify(mode)}==='no-early-memory'&&!process.argv.includes('toolbar-relay-account-preparation')),...(${JSON.stringify(mode)}==='ordinary-build'&&!process.argv.includes('toolbar-relay-account-preparation')?{}:{relayAcceptanceTransport:'wss'})};if(String(fn).includes('document.hasFocus')&&!String(fn).includes('chrome.runtime.id'))return focused;if(arg?.type==='getRuntimeState'||String(fn).includes('getRuntimeState'))return {state:structuredClone(f.chrome)};if(arg?.type==='clipboardUpdate'){if(!f.chrome.clips.some(value=>value.content===arg.text))f.chrome.clips.push({id:'cclip-'+(f.chrome.clips.length+1),content:arg.text,originPeerId:f.chrome.identity.deviceId});persistHistory();return {ok:true};}return {id,isPopup:${JSON.stringify(mode)}!=='other-popup-invalid',memory:true,earlyMemory:(earlyStartupReady||!String(fn).includes('getViews'))&&!(${JSON.stringify(mode)}==='other-popup-late-memory'&&String(fn).includes('getViews'))&&${JSON.stringify(mode)}!=='prep-early-memory'&&(${JSON.stringify(mode)}!=='verification-continuation'||process.env.VERIFY_CONTINUATION==='1'),focused:true};}};
+let ownedTabUrl='about:blank';const tab={url:()=> 'about:blank',async bringToFront(){open=false;}};
+const session={async send(method,arg){if(method==='Extensions.loadUnpacked'){fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'controlled-load-attempts'),'load\\n');throw new Error('controlled_installation_forbidden');}if(method==='Extensions.getExtensions'&&${JSON.stringify(mode)}==='oauth-private')throw new Error('https://accounts.google.com/o/oauth2/auth?code=SYNTHETIC_OAUTH_CODE_CANARY&state=SYNTHETIC_OAUTH_STATE_CANARY');if(method==='Extensions.getExtensions'){const file=path.join(ownProfile(),'synthetic-installed-extension.json');let installed=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):null;if(installed?.installedViaCDP){fs.unlinkSync(file);installed=null;}if(installed&&${JSON.stringify(mode)}==='wrong-id'&&!process.argv.includes('toolbar-relay-account-preparation'))installed.id='b'.repeat(32);return {extensions:installed?(${JSON.stringify(mode)}==='human-duplicate'?[installed,installed]:[installed]):[]};}if(method==='Target.getTargetInfo')return {targetInfo:{targetId:'page',type:'page',url:ownedTabUrl,browserContextId:'owned'}};if(method==='Target.getTargets'&&arg?.filter?.[0]?.type!=='tab')return {targetInfos:[{type:'page',url:authUrl,title:'SYNTHETIC_PRIVATE_TARGET_CANARY'},...(${JSON.stringify(mode)}==='popup-target-absent'?[]:[{type:${JSON.stringify(mode)}==='popup-target-other'?'other':'page',url:'chrome-extension://'+id+'/src/popup.html',title:'SYNTHETIC_PRIVATE_TARGET_CANARY'}])]};if(method==='Target.getTargets'){if(['foreground-gone','foreground-mismatch'].includes(${JSON.stringify(mode)}))fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'foreground-identity-check'),'true');return {targetInfos:[{targetId:'tab',type:'tab',url:ownedTabUrl,browserContextId:'owned'},...(${JSON.stringify(mode)}==='bootstrap-blank'?[{targetId:'bootstrap-tab',type:'tab',url:'about:blank',browserContextId:'owned'}]:[])]};}if(method==='Browser.getWindowForTarget')return {windowId:1};if(method==='Extensions.triggerAction'){if(${JSON.stringify(mode)}==='other-popup-delayed-startup'){earlyStartupReady=false;earlyStartupScheduled=false;}fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'trigger-observations'),JSON.stringify({other:process.env.PW_CHROMIUM_ATTACH_TO_OTHER})+'\\n');if(${JSON.stringify(mode)}==='foreground-required'&&!fs.existsSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'owned-foreground')))throw new Error('owned_browser_not_foreground');open=true;}return {};}};
+const context={async addInitScript(){},serviceWorkers:()=>${JSON.stringify(mode)}==='dormant-worker'&&!managementOpened?[]:[{url:()=> 'chrome-extension://'+id+'/background.js'}],pages:()=>open&&!${JSON.stringify(mode)}.startsWith('popup-target-')&&(!${JSON.stringify(mode)}.startsWith('other-popup')||Boolean(process.env.PW_CHROMIUM_ATTACH_TO_OTHER))?[tab,popup,...(['other-popup-duplicate','other-popup-closed-duplicate'].includes(${JSON.stringify(mode)})?[{...popup,isClosed:()=>${JSON.stringify(mode)}==='other-popup-closed-duplicate'}]:[])]:[tab],async newPage(){let url='';return {async goto(value){url=value;if(value.startsWith('about:blank')){ownedTabUrl=value;fs.appendFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'owned-tab-urls'),value+'\\n');}if(value==='chrome-extension://'+id+'/src/options.html')managementOpened=true;},url:()=>url,evaluate:popup.evaluate,async bringToFront(){},locator:(name)=>locator(name),getByRole:(_,q)=>locator(q.name),getByLabel:(label)=>locator(label)};},async newCDPSession(){return session;}};
+export const chromium={executablePath:()=>path.resolve('packages/chrome-driver/browser.cjs'),async connectOverCDP(){if(fs.existsSync(path.join(ownProfile(),'synthetic-history.json'))){const history=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-history.json'),'utf8'));f.chrome.clips=history.clips;f.chrome.pinnedIds=history.pinnedIds;}if(fs.existsSync(path.join(ownProfile(),'synthetic-normal-login.json'))){f.chrome.managedRelayConfigurations=JSON.parse(fs.readFileSync(path.join(ownProfile(),'synthetic-normal-login.json'),'utf8'));f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'ready',peerId:f.R}));}if(fs.existsSync(path.join(ownProfile(),'synthetic-human-not-ready')))f.chrome.managedRelayStates=f.chrome.managedRelayConfigurations.map(config=>({...config,status:'login_needed',peerId:f.R}));return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(${JSON.stringify(mode)}==='near-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){while(!f.electronClosedAt)await new Promise(done=>setTimeout(done,1));await new Promise(done=>setTimeout(done,Math.max(0,f.electronClosedAt+42-Date.now())));}if(${JSON.stringify(mode)}==='slow-cleanup'&&!process.argv.includes('toolbar-relay-account-preparation')){const receipt=path.join(process.env.PAIRING_FIXTURE_ROOT,'evidence/receipt.json'),deadline=Date.now()+5000;while(!fs.existsSync(receipt)&&Date.now()<deadline)await new Promise(done=>setTimeout(done,10));const published=fs.existsSync(receipt);fs.writeFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'companion-close-observation.json'),JSON.stringify({electronReceiptPublished:published,electronResult:published?JSON.parse(fs.readFileSync(receipt,'utf8')).result:undefined}));if(!published)throw new Error('electron_cleanup_waited_for_companion');}if(['cleanup','other-popup-cleanup'].includes(${JSON.stringify(mode)})&&!process.argv.includes('toolbar-relay-account-preparation'))throw new Error('SYNTHETIC_PRIVATE_CLEANUP_CANARY');const profile=fs.readFileSync(path.join(process.env.PAIRING_FIXTURE_ROOT,'chrome-profile'),'utf8');process.kill(Number(fs.readFileSync(path.join(profile,'owned.pid'),'utf8')),'SIGTERM');}};}};
 `
   );
   const build = join(source, "build-runtime.cjs");
@@ -1011,8 +1060,13 @@ export const chromium={executablePath:()=>path.resolve('packages/chrome-driver/b
       `;fs.mkdirSync('../../apps/extension/.local/relay-acceptance/wss/src',{recursive:true});fs.writeFileSync('../../apps/extension/.local/relay-acceptance/wss/manifest.json','{"version":"1"}');fs.writeFileSync('../../apps/extension/.local/relay-acceptance/wss/src/popup.html','fixture popup');`
   );
 }
-function relayPairFixture(t, mode = "healthy") {
-  const f = frozenElectronFixture(t, mode, "electron-relay-pairing");
+function relayPairFixture(t, mode = "healthy", applicationRunner) {
+  const f = frozenElectronFixture(
+    t,
+    mode,
+    "electron-relay-pairing",
+    applicationRunner
+  );
   const verified = f.invoke(["verify", "--record", f.record]);
   assert.equal(verified.status, 0, verified.stderr);
   const base = JSON.parse(verified.stdout);
@@ -1092,11 +1146,16 @@ function relayPairFixture(t, mode = "healthy") {
     profileRecord
   );
   writeFileSync(record, JSON.stringify(manifest));
-  const prepareAccount = ({ expectFailureAt } = {}) => {
+  const prepareAccount = ({
+    expectFailureAt,
+    extra = [],
+    toolingRoot = f.destination,
+    environment = {},
+  } = {}) => {
     const result = run(
       process.execPath,
       [
-        join(f.destination, "apps/extension/scripts/verify-clipboard-io.mjs"),
+        join(toolingRoot, "apps/extension/scripts/verify-clipboard-io.mjs"),
         ...JSON.parse(readFileSync(record)).chromeArguments.flatMap((value) =>
           value === "toolbar-relay-pairing"
             ? ["toolbar-relay-account-preparation"]
@@ -1106,12 +1165,14 @@ function relayPairFixture(t, mode = "healthy") {
         ),
         "--timeout-seconds",
         "15",
+        ...extra,
       ],
       f.destination,
       {
         CLIPP_ACCEPTANCE_STATE_ROOT: join(realpathSync(f.root), "state"),
         PAIRING_FIXTURE_ROOT: f.root,
         PAIRING_FIXTURE_OPERATION: "account-preparation",
+        ...environment,
         NODE_OPTIONS:
           "--import=" +
           join(f.destination, "packages/chrome-driver/process.mjs"),
@@ -1210,18 +1271,18 @@ function relayPairFixture(t, mode = "healthy") {
             .split("\n")
             .map((line) => JSON.parse(line))
         : [],
-    runPair(extra = [], prepare = true) {
+    runPair(extra = [], prepare = true, environment = {}) {
       if (prepare && !existsSync(profileRecord)) {
         const ready = prepareAccount();
         assert.equal(ready.status, 0, ready.stdout + ready.stderr);
       }
-      return f.accept([
-        "--pairing-record",
-        record,
-        "--timeout-seconds",
-        "5",
-        ...extra,
-      ]);
+      return f.accept(
+        ["--pairing-record", record, "--timeout-seconds", "5", ...extra],
+        f.record,
+        undefined,
+        undefined,
+        { environment }
+      );
     },
   };
 }
@@ -1253,6 +1314,23 @@ test("relay Pairing reads acceptance proof through the authorized background sta
   const result = f.runPair();
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(f.receipt().pairing?.reciprocalMembership, true);
+});
+
+test("relay Pairing scopes Show my QR to the Pairing dialog when Devices also exposes the action", (t) => {
+  const f = relayPairFixture(t, "duplicate-qr");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.receipt().pairing?.reciprocalMembership, true);
+  assert.equal(f.receipt().shutdown, "graceful");
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.pairing?.reciprocalMembership, true);
+  assert.equal(chrome.shutdown, "verified-owned-browser-closed");
+  assert.match(
+    readFileSync(join(f.root, "normal-pairing-actions"), "utf8"),
+    /electron-dialog-scoped-qr/
+  );
 });
 
 for (const mode of ["badged-requests", "adopted-modal"]) {
@@ -1874,4 +1952,1017 @@ test("retained-profile diagnostics qualify a fresh Clip and Pin while preserving
   assert.equal(next.behavior?.passed, true);
   assert.equal(next.behavior.priorPinnedCount, 1);
   assert.equal(next.behavior.exactNewPin, true);
+});
+
+test("semantic budget renewal accepts failed history followed by a charged not-run diagnostic", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "clipp-renewal-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const options = {
+    output: join(root, "output"),
+    historyRoot: join(root, "history"),
+    registryRoot: join(root, "registry"),
+    identity: {
+      effort: "synthetic-renewal",
+      scenario: "setup",
+      environment: "synthetic",
+    },
+    scenario: "setup",
+  };
+  let previousHistory;
+  for (const [index, result] of [
+    "not-run",
+    "failed",
+    "not-run",
+    "failed",
+    "not-run",
+  ].entries()) {
+    const attempt = await beginNativeAttempt({
+      ...options,
+      change: `diagnosis-${index}`,
+      expectation: "distinguish synthetic setup",
+    });
+    await attempt.finish({
+      result,
+      stage: "synthetic",
+      shutdown: "not-launched",
+    });
+    previousHistory = attempt.history;
+  }
+  const prior = JSON.parse(readFileSync(previousHistory, "utf8"));
+  const receipts = prior.attempts.map((attempt) => {
+    const file = join(previousHistory, "..", attempt.receipt);
+    return [file, readFileSync(file, "utf8")];
+  });
+  await assert.rejects(
+    beginNativeAttempt({
+      ...options,
+      change: "without-renewal",
+      expectation: "no budget reset",
+    }),
+    /diagnostic_attempt_budget_exhausted/
+  );
+  const renewal = join(root, "renewal.json");
+  writeFileSync(
+    renewal,
+    JSON.stringify({
+      previousHistory,
+      authorizedBy: "synthetic explicit decision",
+      reason: "synthetic environment repaired",
+    })
+  );
+  const attempt = await beginNativeAttempt({
+    ...options,
+    renewal,
+    change: "environment-repaired",
+    expectation: "setup now settles",
+  });
+  assert.equal(attempt.number, 1);
+  assert.notEqual(attempt.history, previousHistory);
+  const receipt = {
+    result: "not-run",
+    stage: "synthetic",
+    shutdown: "not-launched",
+  };
+  await attempt.finish(receipt);
+  assert.equal(receipt.history.generation, 1);
+  assert.equal(receipt.history.predecessor, previousHistory);
+  const retained = JSON.parse(readFileSync(previousHistory, "utf8"));
+  const { renewedBy, ...unchanged } = retained;
+  assert.deepEqual(unchanged, prior);
+  assert.equal(renewedBy.decision.previousHistory, previousHistory);
+  for (const [file, bytes] of receipts)
+    assert.equal(readFileSync(file, "utf8"), bytes);
+  const next = JSON.parse(readFileSync(attempt.history, "utf8"));
+  assert.equal(next.attempts[0].change, "environment-repaired");
+  assert.equal(next.diagnosticStartedAt, next.attempts[0].startedAt);
+});
+
+for (const [results, allowed] of [
+  [["not-run"], false],
+  [["failed", "passed", "not-run"], false],
+  [["passed", "failed", "not-run"], true],
+  [["failed", "running", "not-run"], false],
+  [["failed", "unknown", "not-run"], false],
+]) {
+  test(`semantic budget renewal ${allowed ? "accepts" : "refuses"} history ${results.join(" then ")}`, async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "clipp-renewal-refusal-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const options = {
+      output: join(root, "output"),
+      historyRoot: join(root, "history"),
+      registryRoot: join(root, "registry"),
+      identity: {
+        effort: "synthetic-renewal",
+        scenario: "setup",
+        environment: "synthetic",
+      },
+      scenario: "setup",
+    };
+    let previousHistory;
+    for (const [index, result] of results.entries()) {
+      const attempt = await beginNativeAttempt({
+        ...options,
+        change: `diagnosis-${index}`,
+        expectation: "distinguish synthetic setup",
+      });
+      // Seed the later-pass case as non-passing first; ordinary admission already
+      // refuses extending a passed history. The durable fixture below challenges
+      // renewal even if an imported/retained history contains a later not-run.
+      await attempt.finish({
+        result: ["failed", "not-run"].includes(result) ? result : "not-run",
+        stage: "synthetic",
+        shutdown: "not-launched",
+      });
+      previousHistory = attempt.history;
+    }
+    for (const [index, result] of results.entries()) {
+      if (["failed", "not-run"].includes(result)) continue;
+      const history = JSON.parse(readFileSync(previousHistory, "utf8"));
+      const changed = history.attempts[index];
+      changed.result = result;
+      writeFileSync(previousHistory, JSON.stringify(history));
+      const file = join(previousHistory, "..", changed.receipt);
+      const receipt = JSON.parse(readFileSync(file, "utf8"));
+      receipt.result = result;
+      writeFileSync(file, JSON.stringify(receipt));
+    }
+    const before = readFileSync(previousHistory, "utf8");
+    const renewal = join(root, "renewal.json");
+    writeFileSync(
+      renewal,
+      JSON.stringify({
+        previousHistory,
+        authorizedBy: "synthetic explicit decision",
+        reason: "synthetic environment repaired",
+      })
+    );
+    const admission = beginNativeAttempt({
+      ...options,
+      renewal,
+      change: "environment-repaired",
+      expectation: "setup now settles",
+    });
+    if (allowed) {
+      const attempt = await admission;
+      assert.notEqual(attempt.history, previousHistory);
+      await attempt.finish({
+        result: "not-run",
+        stage: "synthetic",
+        shutdown: "not-launched",
+      });
+      assert.deepEqual(
+        JSON.parse(readFileSync(previousHistory, "utf8")).attempts,
+        JSON.parse(before).attempts
+      );
+    } else {
+      await assert.rejects(admission, /renewal_must_reference_failed_history/);
+      assert.equal(readFileSync(previousHistory, "utf8"), before);
+      assert.equal(existsSync(join(previousHistory, "../../budget-1")), false);
+    }
+  });
+}
+
+test("verification-only profile binding continues positive closed unprepared ownership without inventing isolation", async (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clipp-verification-")));
+  const previousState = process.env.CLIPP_ACCEPTANCE_STATE_ROOT;
+  process.env.CLIPP_ACCEPTANCE_STATE_ROOT = root;
+  t.after(() => {
+    if (previousState === undefined)
+      delete process.env.CLIPP_ACCEPTANCE_STATE_ROOT;
+    else process.env.CLIPP_ACCEPTANCE_STATE_ROOT = previousState;
+    rmSync(root, { recursive: true, force: true });
+  });
+  mkdirSync(join(root, "history"));
+  const options = {
+    "profile-root": join(root, "owned-chrome-profiles"),
+    "profile-record": join(root, "owned-chrome-profiles/profile.json"),
+    "history-root": join(root, "history"),
+    "registered-extension-id": "a".repeat(32),
+    discovery: "https://relay.example/v1/relay",
+  };
+  const binding = {
+    sourceRevision: "a".repeat(40),
+    bundleSha256: "b".repeat(64),
+  };
+  const first = await acquireOwnedRelayProfile(options, {
+    preparation: true,
+    verifyClosed: () => true,
+  });
+  await first.bind(binding);
+  await first.recordTarget({
+    profile: first.profile,
+    pid: 123,
+    runnerPid: 456,
+  });
+  await first.closed({});
+  const ordinary = await acquireOwnedRelayProfile(options, {
+    preparation: true,
+    verifyClosed: () => true,
+  });
+  await assert.rejects(
+    ordinary.bind(binding),
+    /owned_profile_candidate_binding_changed/
+  );
+  await ordinary.releaseUnlaunched();
+  await assert.rejects(
+    acquireOwnedRelayProfile(options, {
+      preparation: false,
+      verifyClosed: () => true,
+    }),
+    /owned_profile_preparation_proof_invalid/
+  );
+  const continuation = await acquireOwnedRelayProfile(options, {
+    preparation: true,
+    verificationOnly: true,
+    verifyClosed: () => true,
+  });
+  await continuation.bind(binding);
+  assert.notEqual(
+    JSON.parse(readFileSync(options["profile-record"]))
+      .startupIsolationVerified,
+    true
+  );
+  await assert.rejects(
+    continuation.bind({ ...binding, bundleSha256: "c".repeat(64) }),
+    /owned_profile_candidate_binding_changed/
+  );
+  await continuation.releaseUnlaunched();
+  await assert.rejects(
+    acquireOwnedRelayProfile(options, {
+      preparation: true,
+      verificationOnly: true,
+      verifyClosed: () => false,
+    }),
+    /owned_profile_previous_process_unconfirmed/
+  );
+  symlinkSync("closed-host-123", join(first.profile, "SingletonLock"));
+  await assert.rejects(
+    acquireOwnedRelayProfile(options, {
+      preparation: true,
+      verificationOnly: true,
+      verifyClosed: () => true,
+    }),
+    /owned_profile_chrome_lock_present/
+  );
+  rmSync(join(first.profile, "SingletonLock"));
+  await assert.rejects(
+    acquireOwnedRelayProfile(options, {
+      preparation: false,
+      verificationOnly: true,
+      verifyClosed: () => true,
+    }),
+    /verification_only_preparation_required/
+  );
+  await assert.rejects(
+    acquireOwnedRelayProfile(
+      {
+        ...options,
+        "profile-record": join(options["profile-root"], "missing.json"),
+      },
+      { preparation: true, verificationOnly: true, verifyClosed: () => true }
+    ),
+    /owned_relay_profile_preparation_required/
+  );
+});
+
+test("verification-only preparation checks a frozen external app using its retained closed profile without human or OAuth actions", (t) => {
+  const f = relayPairFixture(t, "verification-continuation");
+  const first = f.prepareAccount({
+    expectFailureAt: "verify_management_early_memory",
+  });
+  assert.notEqual(first.status, 0);
+  const prior = JSON.parse(readFileSync(f.profileRecord));
+  assert.equal(prior.status, "closed-unprepared");
+  assert.notEqual(prior.startupIsolationVerified, true);
+  const toolingRoot = join(f.root, "maintained-tooling");
+  for (const file of [
+    "apps/extension/scripts/toolbar-acceptance.mjs",
+    "apps/extension/scripts/owned-relay-profile.mjs",
+    "apps/extension/scripts/clipboard-acceptance.mjs",
+    "apps/extension/scripts/verify-clipboard-io.mjs",
+    "scripts/native-acceptance-attempts.mjs",
+    "scripts/prepare-acceptance-candidate.mjs",
+  ]) {
+    mkdirSync(join(toolingRoot, file, ".."), { recursive: true });
+    writeFileSync(join(toolingRoot, file), readFileSync(resolve(file)));
+  }
+  symlinkSync(
+    join(f.destination, "node_modules"),
+    join(toolingRoot, "node_modules")
+  );
+  const before = f.launches().length;
+  const verifier = join(
+    toolingRoot,
+    "scripts/prepare-acceptance-candidate.mjs"
+  );
+  const trusted = readFileSync(verifier);
+  writeFileSync(
+    verifier,
+    Buffer.concat([
+      trusted,
+      Buffer.from("\n// SYNTHETIC_VERIFIER_SOURCE_CANARY\n"),
+    ])
+  );
+  const refused = f.prepareAccount({
+    toolingRoot,
+    expectFailureAt: "verify_frozen_candidate",
+    extra: [
+      "--verification-only",
+      "--diagnostic-change",
+      "untrusted-verifier",
+      "--expected-observation",
+      "refuse before external verifier execution",
+    ],
+    environment: { VERIFY_CONTINUATION: "1" },
+  });
+  assert.notEqual(refused.status, 0);
+  const refusedReceipt = JSON.parse(
+    readFileSync(join(f.root, "account-evidence/receipt.json"))
+  );
+  const failure = readFileSync(
+    join(
+      refusedReceipt.history.path,
+      "..",
+      `attempt-${JSON.parse(readFileSync(refusedReceipt.history.path)).attempts.length}`,
+      "failure.private.json"
+    ),
+    "utf8"
+  );
+  assert.equal(JSON.parse(failure).error.guard, "candidate_verifier_untrusted");
+  assert.doesNotMatch(
+    refused.stdout + refused.stderr + failure,
+    /SYNTHETIC_VERIFIER_SOURCE_CANARY/
+  );
+  assert.equal(f.launches().length, before);
+  assert.notEqual(
+    JSON.parse(readFileSync(f.profileRecord)).startupIsolationVerified,
+    true
+  );
+  writeFileSync(verifier, trusted);
+  writeFileSync(join(prior.profile, "synthetic-human-not-ready"), "true");
+  const notReady = f.prepareAccount({
+    toolingRoot,
+    expectFailureAt: "observe_owned_relay_ready",
+    extra: [
+      "--verification-only",
+      "--diagnostic-change",
+      "credentials-not-ready",
+      "--expected-observation",
+      "refuse login_needed without OAuth",
+    ],
+    environment: { VERIFY_CONTINUATION: "1" },
+  });
+  assert.notEqual(notReady.status, 0);
+  assert.equal(
+    JSON.parse(readFileSync(join(f.root, "account-evidence/receipt.json")))
+      .failure,
+    "owned_human_login_required"
+  );
+  assert.equal(existsSync(join(f.root, "controlled-login-attempts")), false);
+  rmSync(join(prior.profile, "synthetic-human-not-ready"));
+  const beforeSuccess = f.launches().length;
+  const result = f.prepareAccount({
+    toolingRoot,
+    extra: [
+      "--verification-only",
+      "--diagnostic-change",
+      "verify-completed-human-login",
+      "--expected-observation",
+      "public Ready without another human login",
+    ],
+    environment: { VERIFY_CONTINUATION: "1" },
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.launches().length, beforeSuccess + 1);
+  assert.ok(f.launches().at(-1).argv.includes("--remote-debugging-port=0"));
+  assert.equal(f.launches().at(-1).profile, prior.profile);
+  assert.doesNotMatch(
+    result.stdout + result.stderr,
+    /human preparation:|Complete Google authorization/
+  );
+  assert.equal(existsSync(join(f.root, "controlled-load-attempts")), false);
+  assert.equal(existsSync(join(f.root, "controlled-login-attempts")), false);
+  const receipt = JSON.parse(
+    readFileSync(join(f.root, "account-evidence/receipt.json"))
+  );
+  assert.equal(receipt.accountPreparation.prepared, true);
+  assert.equal(receipt.humanPreparation, undefined);
+  assert.equal(receipt.tooling.root, realpathSync(toolingRoot));
+  assert.equal(
+    receipt.tooling.scripts["apps/extension/scripts/toolbar-acceptance.mjs"],
+    createHash("sha256")
+      .update(
+        readFileSync(resolve("apps/extension/scripts/toolbar-acceptance.mjs"))
+      )
+      .digest("hex")
+  );
+  assert.notEqual(
+    receipt.tooling.scripts["apps/extension/scripts/toolbar-acceptance.mjs"],
+    createHash("sha256")
+      .update(
+        readFileSync(
+          join(f.destination, "apps/extension/scripts/toolbar-acceptance.mjs")
+        )
+      )
+      .digest("hex")
+  );
+  assert.equal(receipt.candidate.checkout, realpathSync(f.destination));
+  const after = JSON.parse(readFileSync(f.profileRecord));
+  assert.equal(after.nonce, prior.nonce);
+  assert.deepEqual(after.binding, prior.binding);
+  assert.equal(after.startupIsolationVerified, true);
+  assert.equal(after.status, "prepared");
+});
+
+test("owned account preparation wakes a dormant installed worker through its isolated management page", (t) => {
+  const f = relayPairFixture(t, "dormant-worker");
+  const result = f.prepareAccount();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const receipt = JSON.parse(
+    readFileSync(join(f.root, "account-evidence/receipt.json"))
+  );
+  assert.equal(receipt.accountPreparation.prepared, true);
+  assert.equal(receipt.preparation.earlyMemory, true);
+  assert.equal(receipt.shutdown, "verified-owned-browser-closed");
+});
+
+function externalPairingFixture(t) {
+  // A frozen application's historical acceptance actor is an input, not the
+  // maintained actor. Importing it would fail this public CLI journey.
+  const frozenActor =
+    'throw new Error("frozen_application_actor_must_not_execute");\n';
+  const f = relayPairFixture(t, "dormant-worker", frozenActor);
+  const ready = f.prepareAccount();
+  assert.equal(ready.status, 0, ready.stdout + ready.stderr);
+  const toolingRoot = join(f.root, "pairing-tooling");
+  for (const file of [
+    "scripts/electron-relay-acceptance.mjs",
+    "scripts/source-identity.mjs",
+    "scripts/relay-pairing-acceptance.mjs",
+    "scripts/native-acceptance-attempts.mjs",
+    "scripts/prepare-acceptance-candidate.mjs",
+    "apps/extension/scripts/toolbar-acceptance.mjs",
+    "apps/extension/scripts/owned-relay-profile.mjs",
+    "apps/extension/scripts/clipboard-acceptance.mjs",
+    "apps/extension/scripts/verify-clipboard-io.mjs",
+  ]) {
+    mkdirSync(join(toolingRoot, file, ".."), { recursive: true });
+    writeFileSync(join(toolingRoot, file), readFileSync(resolve(file)));
+  }
+  symlinkSync(
+    join(f.destination, "node_modules"),
+    join(toolingRoot, "node_modules")
+  );
+  writeFileSync(join(toolingRoot, "package.json"), '{"type":"module"}');
+  writeFileSync(join(toolingRoot, ".gitignore"), "node_modules\n");
+  for (const args of [
+    ["init", "-q"],
+    ["add", "."],
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-qm",
+      "maintained-tooling",
+    ],
+  ]) {
+    const result = run("git", args, toolingRoot);
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const entry = join(toolingRoot, "scripts/electron-relay-acceptance.mjs");
+  return { f, toolingRoot, entry };
+}
+
+test("the maintained public Pairing CLI runs both actors over a separate unchanged frozen application", (t) => {
+  const { f, toolingRoot, entry } = externalPairingFixture(t);
+  const before = readFileSync(
+    join(f.destination, "apps/extension/scripts/toolbar-acceptance.mjs")
+  );
+  const binding = JSON.parse(readFileSync(f.profileRecord)).binding;
+  const applicationRecord = readFileSync(f.record);
+  const oldActor = readFileSync(
+    join(f.destination, "scripts/electron-relay-acceptance.mjs")
+  );
+  const result = f.accept(
+    ["--pairing-record", f.pairingRecord, "--timeout-seconds", "15"],
+    f.record,
+    entry
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(f.receipt().tooling.root, realpathSync(toolingRoot));
+  assert.equal(
+    f.receipt().frozenCandidate.checkout,
+    realpathSync(f.destination)
+  );
+  assert.equal(
+    f.receipt().tooling.scripts["scripts/electron-relay-acceptance.mjs"],
+    createHash("sha256").update(readFileSync(entry)).digest("hex")
+  );
+  assert.notEqual(
+    f.receipt().tooling.scripts["scripts/electron-relay-acceptance.mjs"],
+    createHash("sha256").update(oldActor).digest("hex")
+  );
+  assert.deepEqual(JSON.parse(readFileSync(f.profileRecord)).binding, binding);
+  assert.deepEqual(readFileSync(f.record), applicationRecord);
+  assert.deepEqual(
+    readFileSync(join(f.destination, "scripts/electron-relay-acceptance.mjs")),
+    oldActor
+  );
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(f.receipt().result, "passed");
+  assert.equal(chrome.result, "passed");
+  assert.equal(chrome.tooling.root, realpathSync(toolingRoot));
+  assert.equal(chrome.candidate.checkout, realpathSync(f.destination));
+  assert.ok(
+    readFileSync(
+      join(f.destination, "apps/extension/scripts/toolbar-acceptance.mjs")
+    ).equals(before)
+  );
+});
+
+test("external Pairing refuses an untrusted verifier before launching Chrome or exposing its source", (t) => {
+  const { f, toolingRoot, entry } = externalPairingFixture(t);
+  const verifier = join(
+    toolingRoot,
+    "scripts/prepare-acceptance-candidate.mjs"
+  );
+  writeFileSync(
+    verifier,
+    readFileSync(verifier, "utf8") +
+      "\n// SYNTHETIC_PAIRING_VERIFIER_SOURCE_CANARY\n"
+  );
+  const launches = f.launches().length;
+  const result = f.accept(
+    ["--pairing-record", f.pairingRecord, "--timeout-seconds", "15"],
+    f.record,
+    entry
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(f.launches().length, launches);
+  assert.equal(f.receipt().reason, "frozen_candidate_verifier_untrusted");
+  assert.equal(f.receipt().shutdown, "not-launched");
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.result, "failed");
+  assert.equal(chrome.shutdown, "not-launched");
+  assert.doesNotMatch(
+    result.stdout + result.stderr,
+    /SYNTHETIC_PAIRING_VERIFIER_SOURCE_CANARY/
+  );
+});
+
+test("external Electron verifier substitutions refuse before application code or native launch", (t) => {
+  const tooling = frozenElectronFixture(t);
+  const application = frozenElectronFixture(t);
+  const canary = join(application.root, "untrusted-verifier-executed");
+  const verifier = join(
+    application.destination,
+    "scripts/prepare-acceptance-candidate.mjs"
+  );
+  writeFileSync(
+    verifier,
+    readFileSync(verifier, "utf8") +
+      "\nimport {writeFileSync as leak} from 'node:fs';leak(" +
+      JSON.stringify(canary) +
+      ",'executed');\n"
+  );
+  const result = tooling.accept([], application.record);
+  assert.notEqual(result.status, 0);
+  assert.equal(tooling.receipt().reason, "frozen_candidate_verifier_untrusted");
+  assert.equal(tooling.receipt().shutdown, "not-launched");
+  assert.equal(existsSync(canary), false);
+});
+
+test("external Electron candidates require the maintained preparer hash as their trust anchor", (t) => {
+  const tooling = frozenElectronFixture(t);
+  const application = frozenElectronFixture(t);
+  const record = JSON.parse(readFileSync(application.record));
+  record.preparer = "f".repeat(64);
+  writeFileSync(application.record, JSON.stringify(record));
+  assert.notEqual(tooling.accept([], application.record).status, 0);
+  assert.equal(tooling.receipt().reason, "frozen_candidate_verifier_untrusted");
+  assert.equal(tooling.receipt().shutdown, "not-launched");
+});
+
+test("candidate records for external Electron apps are bounded regular files", (t) => {
+  const f = frozenElectronFixture(t);
+  const link = join(f.root, "record-alias.json");
+  symlinkSync(f.record, link);
+  const result = f.accept([], link);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /bounded_candidate_record_required/);
+  assert.equal(existsSync(join(f.root, "evidence")), false);
+  const large = join(f.root, "oversized-record.json");
+  writeFileSync(large, " ".repeat(1024 * 1024 + 1));
+  assert.match(f.accept([], large).stderr, /bounded_candidate_record_required/);
+  assert.equal(existsSync(join(f.root, "evidence")), false);
+});
+
+test("external Electron app roots must be physical and cannot contain acceptance state", (t) => {
+  const f = frozenElectronFixture(t);
+  const original = JSON.parse(readFileSync(f.record));
+  const alias = join(f.root, "app-alias");
+  symlinkSync(f.destination, alias);
+  writeFileSync(
+    f.record,
+    JSON.stringify({
+      ...original,
+      source: { ...original.source, checkout: alias },
+    })
+  );
+  const result = f.accept();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /frozen_candidate_checkout_mismatch/);
+  assert.equal(existsSync(join(f.root, "evidence")), false);
+  writeFileSync(f.record, JSON.stringify(original));
+});
+
+test("external Electron acceptance state cannot be placed inside its frozen application", (t) => {
+  const f = frozenElectronFixture(t);
+  const record = readFileSync(f.record);
+  for (const kind of ["output", "historyRoot", "state", "profile"]) {
+    const inside = join(f.destination, "forbidden-" + kind);
+    const settings =
+      kind === "state"
+        ? { environment: { CLIPP_ACCEPTANCE_STATE_ROOT: inside } }
+        : kind === "profile"
+          ? {}
+          : { [kind]: inside };
+    const result = f.accept(
+      [],
+      f.record,
+      undefined,
+      kind === "profile" ? inside : undefined,
+      settings
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /durable_evidence_outside_candidate_required/);
+    assert.equal(existsSync(inside), false);
+    assert.equal(existsSync(join(f.root, "evidence")), false);
+  }
+  assert.deepEqual(readFileSync(f.record), record);
+});
+
+test("bounded Electron metadata reads tolerate partial filesystem reads without trusting a prefix", (t) => {
+  const f = frozenElectronFixture(t);
+  const hook = join(f.root, "partial-reads.mjs");
+  writeFileSync(
+    hook,
+    `import fs from 'node:fs/promises';import {writeFileSync} from 'node:fs';import {syncBuiltinESMExports} from 'node:module';let count=0;process.on('exit',()=>writeFileSync(${JSON.stringify(join(f.root, "partial-read-count"))},String(count)));const open=fs.open;fs.open=async(...args)=>{const handle=await open(...args);const read=handle.read.bind(handle);handle.read=(buffer,offset,length,position)=>{count++;return read(buffer,offset,Math.min(length,17),position);};return handle;};syncBuiltinESMExports();`
+  );
+  const result = f.accept([], f.record, undefined, undefined, {
+    environment: { NODE_OPTIONS: "--import=" + hook },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.receipt().result, "passed");
+  assert.ok(
+    Number(readFileSync(join(f.root, "partial-read-count"), "utf8")) > 1
+  );
+});
+
+test("premature EOF cannot turn a bounded candidate prefix into trusted metadata", (t) => {
+  const f = frozenElectronFixture(t);
+  const hook = join(f.root, "premature-eof.mjs");
+  writeFileSync(
+    hook,
+    `import fs from 'node:fs/promises';import {syncBuiltinESMExports} from 'node:module';const open=fs.open;fs.open=async(...args)=>{const handle=await open(...args);const read=handle.read.bind(handle);let calls=0;handle.read=async(buffer,offset,length,position)=>calls++ ? {bytesRead:0,buffer}:read(buffer,offset,Math.min(length,17),position);return handle;};syncBuiltinESMExports();`
+  );
+  const result = f.accept([], f.record, undefined, undefined, {
+    environment: { NODE_OPTIONS: "--import=" + hook },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /bounded_candidate_record_required/);
+  assert.equal(existsSync(join(f.root, "evidence")), false);
+});
+
+test("actual toolbar preflight exposes collapsed Filters before its original Pinned and All controls", (t) => {
+  const f = relayPairFixture(t, "popup-collapsed");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.result, "passed");
+  assert.equal(chrome.surface.kind, "actual-toolbar-popup");
+  assert.equal(chrome.readiness.passed, true);
+  assert.equal(chrome.behavior.exactNewPin, true);
+  assert.deepEqual(
+    readFileSync(join(f.root, "popup-filter-actions"), "utf8")
+      .trim()
+      .split("\n"),
+    ["Filters", "Pinned", "All", "Pinned"]
+  );
+});
+
+test("actual toolbar preflight leaves already-expanded Filters open", (t) => {
+  const f = relayPairFixture(t, "popup-expanded");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.readiness.passed, true);
+  assert.equal(chrome.behavior.exactNewPin, true);
+  assert.deepEqual(
+    readFileSync(join(f.root, "popup-filter-actions"), "utf8")
+      .trim()
+      .split("\n"),
+    ["Pinned", "All", "Pinned"]
+  );
+});
+
+test("actual toolbar preflight refuses an ineffective Filters toggle before Pinned or Pairing", (t) => {
+  const f = relayPairFixture(t, "popup-toggle-refused");
+  const result = f.runPair();
+  assert.notEqual(result.status, 0);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.result, "failed");
+  assert.equal(chrome.stage, "interaction");
+  assert.equal(chrome.operation, "toolbar_readiness_filter");
+  assert.equal(chrome.readiness, undefined);
+  assert.equal(chrome.pairing, undefined);
+  assert.deepEqual(
+    readFileSync(join(f.root, "popup-filter-actions"), "utf8")
+      .trim()
+      .split("\n"),
+    ["Filters"]
+  );
+});
+
+test("actual toolbar preflight waits for late-mounted Filters instead of selecting the legacy path", (t) => {
+  const f = relayPairFixture(t, "popup-collapsed-late-mount");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.readiness.passed, true);
+  assert.deepEqual(
+    readFileSync(join(f.root, "popup-filter-actions"), "utf8")
+      .trim()
+      .split("\n"),
+    ["Filters", "Pinned", "All", "Pinned"]
+  );
+});
+
+test("the joint public CLI rejects Chrome evidence paths inside the frozen app before either actor writes", (t) => {
+  const { f, entry } = externalPairingFixture(t);
+  const preparedProfile = readFileSync(f.profileRecord);
+  const descriptor = JSON.parse(readFileSync(f.pairingRecord));
+  const inside = join(f.destination, ".local/forbidden-companion-evidence");
+  descriptor.chromeArguments[
+    descriptor.chromeArguments.indexOf("--output") + 1
+  ] = inside;
+  writeFileSync(f.pairingRecord, JSON.stringify(descriptor));
+  const result = f.accept(
+    ["--pairing-record", f.pairingRecord, "--timeout-seconds", "15"],
+    f.record,
+    entry
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(inside), false);
+  assert.equal(existsSync(join(f.root, "evidence")), false);
+  assert.match(result.stderr, /durable_evidence_outside_candidate_required/);
+  assert.deepEqual(readFileSync(f.profileRecord), preparedProfile);
+});
+
+test("an attached zero-area legacy Pinned control does not bypass the popup mounted-controls wait", (t) => {
+  const f = relayPairFixture(t, "popup-zero-area-legacy-late-mount");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.readiness.passed, true);
+  assert.deepEqual(
+    readFileSync(join(f.root, "popup-filter-actions"), "utf8")
+      .trim()
+      .split("\n"),
+    ["Filters", "Pinned", "All", "Pinned"]
+  );
+});
+
+test("the owned relay toolbar tab remains unique beside the browser bootstrap blank tab", (t) => {
+  const f = relayPairFixture(t, "bootstrap-blank");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.result, "passed");
+  assert.equal(chrome.actionTarget.tabTargetId, "tab");
+  assert.equal(chrome.actionTarget.contextMatched, true);
+  assert.equal(chrome.actionTarget.urlMatched, true);
+  const urls = readFileSync(join(f.root, "owned-tab-urls"), "utf8")
+    .trim()
+    .split("\n");
+  assert.ok(urls.length > 0);
+  for (const url of urls)
+    assert.match(url, /^about:blank#clipp-toolbar-owned-[0-9a-f-]{36}$/);
+  assert.equal(new Set(urls).size, urls.length);
+});
+
+test("the owned relay toolbar action foregrounds only its freshly verified browser PID", (t) => {
+  const f = relayPairFixture(t, "foreground-required");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  const calls = readFileSync(join(f.root, "foreground-commands"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.ok(calls.length > 0);
+  for (const call of calls) {
+    assert.equal(call.pid, chrome.process.pid);
+    assert.deepEqual(call.argv, [
+      "-e",
+      'tell application "System Events" to set frontmost of first application process whose unix id is ' +
+        call.pid +
+        " to true",
+    ]);
+  }
+  assert.equal(chrome.foreground.pidBindingReverified, true);
+});
+
+test("the owned runner scopes other-target attachment and restores an absent environment", (t) => {
+  const f = relayPairFixture(t, "other-popup");
+  const result = f.runPair([], true, {
+    PW_CHROMIUM_ATTACH_TO_OTHER: undefined,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.debugger.otherTargetAttachment.enabled, true);
+  assert.equal(
+    chrome.debugger.otherTargetAttachment.unaffectedLifecycleQualified,
+    false
+  );
+  const exits = readFileSync(join(f.root, "other-env-exit"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  for (const observation of exits)
+    assert.deepEqual(observation.final, observation.initial);
+  const triggers = readFileSync(join(f.root, "trigger-observations"), "utf8")
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.ok(triggers.length > 0);
+  assert.ok(triggers.every((value) => Boolean(value.other)));
+  assert.equal(chrome.tooling.playwright.version, "1.57.0");
+  for (const file of ["crBrowser.js", "crPage.js"]) {
+    const relative = "lib/server/chromium/" + file;
+    assert.equal(
+      chrome.tooling.playwright.files[relative],
+      createHash("sha256")
+        .update(
+          readFileSync(
+            join(f.destination, "packages/playwright-core", relative)
+          )
+        )
+        .digest("hex")
+    );
+  }
+});
+
+for (const mode of [
+  "foreground-gone",
+  "foreground-mismatch",
+  "foreground-after-mismatch",
+])
+  test(`owned foreground refuses ${mode} before the toolbar action`, (t) => {
+    const f = relayPairFixture(t, mode);
+    const result = f.runPair();
+    assert.notEqual(result.status, 0);
+    const chrome = JSON.parse(
+      readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+    );
+    assert.equal(chrome.operation, "foreground_owned_browser");
+    assert.equal(existsSync(join(f.root, "trigger-observations")), false);
+    if (mode === "foreground-after-mismatch")
+      assert.equal(
+        readFileSync(join(f.root, "foreground-commands"), "utf8")
+          .trim()
+          .split("\n").length,
+        1
+      );
+    else assert.equal(existsSync(join(f.root, "foreground-commands")), false);
+  });
+for (const initial of ["", "0", "already-enabled"])
+  test(`owned other-target scope restores prior value ${JSON.stringify(initial)}`, (t) => {
+    const f = relayPairFixture(t, "other-popup");
+    const result = f.runPair([], true, {
+      PW_CHROMIUM_ATTACH_TO_OTHER: initial,
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const observations = readFileSync(join(f.root, "other-env-exit"), "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(observations.length > 0);
+    for (const observation of observations)
+      assert.deepEqual(observation.final, observation.initial);
+    const triggers = readFileSync(join(f.root, "trigger-observations"), "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(triggers.every((value) => value.other === (initial || "1")));
+    assert.ok(
+      triggers.length >= 2,
+      "the ordinary coordinator must reopen the popup under the same scope"
+    );
+  });
+for (const mode of ["other-popup-invalid", "other-popup-cleanup"])
+  test(`owned other-target scope restores the environment after ${mode}`, (t) => {
+    const f = relayPairFixture(t, mode);
+    const result = f.runPair([], true, { PW_CHROMIUM_ATTACH_TO_OTHER: "0" });
+    assert.notEqual(result.status, 0);
+    const observations = readFileSync(join(f.root, "other-env-exit"), "utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.ok(observations.length > 0);
+    for (const observation of observations)
+      assert.deepEqual(observation.final, observation.initial);
+  });
+
+for (const type of ["absent", "other", "page"])
+  test(`popup failure reports privacy-safe exact target counts for ${type}`, (t) => {
+    const f = relayPairFixture(t, "popup-target-" + type);
+    const result = f.runPair();
+    assert.notEqual(result.status, 0);
+    const chrome = JSON.parse(
+      readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+    );
+    assert.equal(chrome.surface, undefined);
+    const diagnostic = JSON.parse(
+      readFileSync(
+        join(chrome.history.path, "..", "attempt-1/failure.private.json")
+      )
+    );
+    assert.equal(diagnostic.protocol.popupDiscovery.observed, true);
+    assert.equal(
+      diagnostic.protocol.popupDiscovery.exactPopupCount,
+      type === "absent" ? 0 : 1
+    );
+    assert.deepEqual(
+      diagnostic.protocol.popupDiscovery.exactPopupTypes,
+      type === "absent" ? {} : { [type]: 1 }
+    );
+    const text = JSON.stringify(diagnostic);
+    assert.ok(!text.includes("accounts.google.com"));
+    assert.ok(!text.includes("SYNTHETIC_"));
+  });
+
+test("an attached other popup still requires its own early memory startup proof", (t) => {
+  const f = relayPairFixture(t, "other-popup-late-memory");
+  const result = f.runPair();
+  assert.notEqual(result.status, 0);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.failure, "acceptance_memory_startup_required");
+  assert.equal(chrome.surface, undefined);
+  assert.equal(chrome.behavior, undefined);
+});
+
+test("multiple live exact popup pages refuse the toolbar surface", (t) => {
+  const f = relayPairFixture(t, "other-popup-duplicate");
+  const result = f.runPair();
+  assert.notEqual(result.status, 0);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.failure, "wrong_target");
+  assert.equal(chrome.surface, undefined);
+  assert.equal(chrome.behavior, undefined);
+});
+test("a closed exact popup page does not make its one live counterpart ambiguous", (t) => {
+  const f = relayPairFixture(t, "other-popup-closed-duplicate");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.behavior.exactNewPin, true);
+});
+
+test("the owned popup waits for delayed compiled startup memory proof", (t) => {
+  const f = relayPairFixture(t, "other-popup-delayed-startup");
+  const result = f.runPair();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const chrome = JSON.parse(
+    readFileSync(join(f.root, "chrome-evidence/receipt.json"))
+  );
+  assert.equal(chrome.behavior.exactNewPin, true);
 });

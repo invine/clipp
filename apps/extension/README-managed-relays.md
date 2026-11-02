@@ -217,7 +217,14 @@ It verifies the unpacked extension path/ID, triggers its actual action on the ow
 active tab, and requires `chrome.extension.getViews({type:"popup"})`, the matching
 extension ID, exact popup URL and focus. A normal tab cannot pass. Unsupported
 protocol/native input remains a prerequisite failure, with a recovery action.
-The normal popup first demonstrates Pinned/All filter interaction, then receives a
+The normal popup waits for its mounted Filters control or visible legacy Pinned
+control before deciding whether the optional toggle exists. Popup ownership and
+clipboard mapping alone do not prove React has mounted. It then exposes its
+ordinary Filters control when collapsed,
+observes `aria-expanded="true"` with popup focus retained, and demonstrates the
+existing Pinned/All interaction. Already-open filters remain open; older layouts
+without that toggle retain their visible filter path. These interactions stay in
+the actual popup. It then receives a
 synthetic Local Clip through the maintained message boundary, searches for it,
 pins it and observes persisted public pin state and the Pinned result.
 
@@ -230,6 +237,17 @@ that disclosed memory fixture, not system clipboard integration. Debugger/CDP
 attachment is recorded and can alter worker/popup lifetime; this run establishes
 no unaffected-worker-lifecycle, account, transfer or complete UX matrix claim.
 
+Owned relay popup actions use a fresh `about:blank#clipp-toolbar-owned-…` tab
+and reverify the current PID, executable, birth/fingerprint and owned profile
+before and after a bounded macOS PID foreground operation. The controlled owned
+session scopes Playwright's internal `PW_CHROMIUM_ATTACH_TO_OTHER` opt-in through
+popup reopening and restores the previous environment value during cleanup.
+Receipts pin the installed `playwright-core` version and `crBrowser.js`/`crPage.js`
+bytes. This attaches all `other` targets in that controlled browser session;
+unaffected target/debugger lifecycle remains unqualified. A failed exact-popup
+lookup records only bounded target counts/types for the expected popup URL,
+without recording other URLs, titles or page contents.
+
 The shared policy permits one initial attempt and at most four changed diagnostic
 attempts. The twenty-minute diagnostic clock starts after the initial failure;
 ordinary initial setup is excluded. Every operation receives its remaining limit;
@@ -239,6 +257,12 @@ cleanup has one separate ten-second allowance. Retries require both
 key history; renaming output, profile or candidate does not reset failures. The
 per-user registry (or one owning `CLIPP_ACCEPTANCE_STATE_ROOT`) anchors the durable
 history location across checkouts. Keep it fixed across continuations.
+
+An explicit `--renewal /absolute/decision.json` forwards the bounded regular
+decision file unchanged to the shared policy. The decision names the failed
+history, human authorizer and reason. The policy records a new generation under
+the same semantic history and consumes the decision; the runner creates no grant.
+Missing, malformed, unapproved and replayed decisions refuse before launch.
 
 Receipts record readiness, selected behavior, actual surface, candidate and
 clipboard/debugger limits separately. Cleanup closes only the owned browser,

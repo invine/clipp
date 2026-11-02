@@ -1,5 +1,9 @@
 import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRelays";
+import {
+  parseManagedRelayTokenResponse,
+  type ManagedRelayTokenResponse,
+} from "../../../packages/core/network/managedRelayTokens";
 import { MANAGED_RELAY_CREDENTIAL_PREFIX } from "./managedRelayConstants";
 
 export { MANAGED_RELAY_CREDENTIAL_PREFIX } from "./managedRelayConstants";
@@ -21,12 +25,7 @@ export type BrowserIdentity = {
   open(url: string): Promise<void>;
 };
 
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-};
+type TokenResponse = ManagedRelayTokenResponse;
 
 type CredentialOptions = {
   workFence?: IdentityBoundWorkFence;
@@ -58,21 +57,12 @@ function authorizeEndpoint(discoveryUrl: string): string {
   return new URL("/oauth/authorize", discoveryUrl).href;
 }
 
-function requireToken(value: TokenResponse): TokenResponse {
-  if (
-    !value ||
-    typeof value.access_token !== "string" ||
-    !value.access_token ||
-    typeof value.refresh_token !== "string" ||
-    !value.refresh_token ||
-    value.token_type !== "Bearer" ||
-    !Number.isInteger(value.expires_in) ||
-    value.expires_in <= 0 ||
-    value.expires_in > 900
-  ) {
+function requireToken(value: unknown): TokenResponse {
+  try {
+    return parseManagedRelayTokenResponse(value);
+  } catch {
     throw new Error("invalid_relay_token_response");
   }
-  return value;
 }
 
 function loadedCredential(value: unknown): StoredCredential | null {

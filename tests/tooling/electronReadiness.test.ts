@@ -139,14 +139,44 @@ function workingRuntime(mode = "") {
     path.join(repo, "node_modules/playwright/index.js"),
     `
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 const mode = ${JSON.stringify(mode)};
 export const _electron = { async launch({args,env}) {
+ const responsive = mode.startsWith('responsive-');
+ let mounted=!mode.includes('late-mount'),mountScheduled=false;
+ const scheduleMount=()=>{if(!mounted&&!mountScheduled){mountScheduled=true;setImmediate(()=>{mounted=true;});}};
+ let destination = mode.includes('navigation') ? 'settings' : 'history';
+ let expanded = mode.includes('expanded');
+ let filter = 'All';
+ const events = [];
+ const labels = ['History','Filters','Pinned','All'];
+ const visible = (label) => mounted && (['History','Filters'].includes(label) || (destination==='history' && expanded));
+ const button = (label) => ({textContent:label,getClientRects:()=>visible(label)?[{}]:[],classList:{contains:(name)=>name==='active' && label===filter},getAttribute:(name)=>name==='aria-current' ? (destination==='history'?'page':null) : name==='aria-expanded' ? String(expanded) : null});
+ const locator = (label) => ({
+   count:async()=>{scheduleMount();return responsive && visible(label) ? 1 : 0;},
+   getAttribute:async(name)=>button(label).getAttribute(name),
+   boundingBox:async()=>{if(responsive&&!mounted){scheduleMount();await new Promise(setImmediate);}if(responsive && !visible(label)) throw Object.assign(new Error('control hidden by normal responsive UI'),{name:'TimeoutError'});return {x:10,y:10+20*labels.indexOf(label),width:10,height:10};}
+ });
+ const nativeInput = (event) => {
+   if(!responsive || event.type!=='mouseUp')return;
+   const label=labels[(event.y-15)/20];
+   if(!label || !visible(label))throw new Error('native_input_target_unavailable');
+   events.push(label);
+   if(label==='History')destination='history';else if(label==='Filters'){if(!mode.includes('no-expand'))expanded=!expanded;}else filter=label;
+   fs.writeFileSync(path.join(path.dirname(args[0]),'interaction-events.json'),JSON.stringify(events));
+ };
  const child = new EventEmitter(); child.pid = process.pid; child.exitCode = null; child.signalCode = null;
- const win = { id: 1, isDestroyed:()=>false, isVisible:()=>true, isMinimized:()=>false, isFocused:()=>true, show(){}, focus(){}, restore(){}, webContents:{ focus(){}, id: 2, getOSProcessId:()=>7, getURL:()=>pathToFileURL(path.resolve('apps/electron/dist/renderer/index.html')).href, sendInputEvent(){} } };
+ const win = { id: 1, isDestroyed:()=>false, isVisible:()=>true, isMinimized:()=>false, isFocused:()=>true, show(){}, focus(){}, restore(){}, webContents:{ focus(){}, id: 2, getOSProcessId:()=>7, getURL:()=>pathToFileURL(path.resolve('apps/electron/dist/renderer/index.html')).href, sendInputEvent:nativeInput } };
  const app = { getPath:()=>mode==='wrong-profile'?'/wrong-profile':env.CLIPP_RELAY_ACCEPTANCE_PROFILE, focus(){}, getAppPath:()=>path.dirname(args[0]) };
- const page = { url:()=>win.webContents.getURL(), setDefaultTimeout(){}, waitForFunction:async()=> { if(mode.startsWith('failed-interaction')) throw Object.assign(new Error('private canary'), {name:'TimeoutError'}); }, getByRole:()=>({boundingBox:async()=>({x:1,y:1,width:10,height:10})}), evaluate:async()=>true };
+ const page = { url:()=>win.webContents.getURL(), setDefaultTimeout(){}, waitForFunction:async(fn,arg)=> {
+   if(mode.startsWith('failed-interaction')) throw Object.assign(new Error('private canary'), {name:'TimeoutError'});
+   if(!responsive)return;
+   globalThis.window={clipp:{getState(){}}};
+   globalThis.document={querySelector:(selector)=>!mounted?null:selector.includes('destination:history')?button('History'):selector.includes('history-filters')?button('Filters'):null,querySelectorAll:()=>labels.filter(visible).map(button),hasFocus:()=>true};
+   const observe=Function('return ('+fn.toString()+')')();if(!observe(arg)){scheduleMount();await new Promise(setImmediate);if(!observe(arg))throw Object.assign(new Error('public control state did not change'),{name:'TimeoutError'});}
+ }, locator:(selector)=>locator(selector.includes('destination:history')?'History':'Filters'), getByRole:(_role,{name})=>responsive?locator(name):({boundingBox:async()=>({x:1,y:1,width:10,height:10})}), evaluate:async()=>true };
  return { process:()=>child, firstWindow:async()=>page, browserWindow:async()=>({evaluate:async(fn,arg)=>fn(win,arg)}), evaluate:async(fn,arg)=>{
    const previous = process.argv; process.argv = [process.execPath,args[0]];
    process.getSystemVersion = ()=>'fixture';
@@ -1067,3 +1097,85 @@ test("interruption before child identity persistence retains launch uncertainty 
       .split("\n")
   ).toHaveLength(2);
 }, 15000);
+
+test("native readiness opens History and collapsed Filters through owned ordinary controls", () => {
+  workingRuntime("responsive-navigation-collapsed");
+  const result = run();
+  expect({
+    status: result.status,
+    reason: receipt().reason,
+    errorClass: receipt().errorClass,
+  }).toEqual({ status: 0, reason: undefined, errorClass: undefined });
+  expect(receipt()).toMatchObject({
+    result: "passed",
+    readiness: {
+      ownedWindowFocused: true,
+      interaction: "native-history-filter-pinned-and-all",
+      passed: true,
+    },
+    shutdown: "graceful",
+  });
+  expect(
+    JSON.parse(
+      readFileSync(
+        path.join(output, "attempt-1/interaction-events.json"),
+        "utf8"
+      )
+    )
+  ).toEqual(["History", "Filters", "Pinned", "All"]);
+});
+
+test("native readiness preserves already-open History filters", () => {
+  workingRuntime("responsive-history-expanded");
+  expect(run().status).toBe(0);
+  expect(receipt()).toMatchObject({
+    result: "passed",
+    readiness: { ownedWindowFocused: true, passed: true },
+  });
+  expect(
+    JSON.parse(
+      readFileSync(
+        path.join(output, "attempt-1/interaction-events.json"),
+        "utf8"
+      )
+    )
+  ).toEqual(["Pinned", "All"]);
+});
+
+test("native readiness cannot pass when the ordinary Filters control does not expand", () => {
+  workingRuntime("responsive-history-no-expand");
+  expect(run().status).toBe(1);
+  expect(receipt()).toMatchObject({
+    result: "failed",
+    classification: "runner",
+    stage: "interaction",
+    reason: "readiness_interaction_failed",
+    shutdown: "graceful",
+  });
+  expect(
+    JSON.parse(
+      readFileSync(
+        path.join(output, "attempt-1/interaction-events.json"),
+        "utf8"
+      )
+    )
+  ).toEqual(["Filters"]);
+});
+
+test("native readiness waits for late-mounted History controls before detecting the legacy layout", () => {
+  workingRuntime("responsive-navigation-collapsed-late-mount");
+  const result = run();
+  expect({ status: result.status, reason: receipt().reason }).toEqual({
+    status: 0,
+    reason: undefined,
+  });
+  expect(receipt().readiness.passed).toBe(true);
+  expect(
+    JSON.parse(
+      readFileSync(
+        path.join(output, "attempt-1/interaction-events.json"),
+        "utf8"
+      )
+    )
+  ).toEqual(["History", "Filters", "Pinned", "All"]);
+});

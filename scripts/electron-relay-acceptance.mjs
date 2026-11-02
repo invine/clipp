@@ -175,6 +175,102 @@ export async function runElectronAcceptance(args, relayHooks) {
     Number.isSafeInteger(timeout) && timeout >= 1_000 && timeout <= 600_000,
     "bounded_timeout_required"
   );
+  const toolingRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    ".."
+  );
+  let root = toolingRoot;
+  let dist = path.join(root, "apps/electron/dist");
+  let attempt;
+  let candidateRecord;
+  let candidateRoot;
+  const stateRoot = nativeAcceptanceStateRoot();
+  const descriptorDeadline = Date.now() + commandTimeout;
+  // Invalid metadata/paths must not create artifacts or profile/history locks
+  // inside the selected immutable application. Verification remains charged.
+  if (values["candidate-record"]) {
+    const bytes = await boundedRegular(
+      values["candidate-record"],
+      1024 * 1024,
+      "bounded_candidate_record_required"
+    );
+    try {
+      candidateRecord = JSON.parse(bytes);
+    } catch {
+      throw new Error("frozen_candidate_record_invalid");
+    }
+    assert(
+      candidateRecord?.version === 1 &&
+        candidateRecord.runtime === "electron" &&
+        /^[a-f0-9]{40}$/.test(candidateRecord.source?.revision ?? "") &&
+        candidateRecord.artifacts &&
+        candidateRecord.runtimeArtifacts &&
+        candidateRecord.scenario?.id &&
+        /^[a-f0-9]{64}$/.test(candidateRecord.preparer ?? ""),
+      "frozen_candidate_record_invalid"
+    );
+    const checkout = candidateRecord.source.checkout;
+    assert(
+      typeof checkout === "string" &&
+        path.isAbsolute(checkout) &&
+        checkout.length <= 4096,
+      "frozen_candidate_checkout_mismatch"
+    );
+    const physical = await command(() => realpath(checkout));
+    const metadata = await command(() => lstat(checkout));
+    assert(
+      metadata.isDirectory() &&
+        !metadata.isSymbolicLink() &&
+        physical === checkout,
+      "frozen_candidate_checkout_mismatch"
+    );
+    const plannedPaths = [
+      values.output,
+      values["history-root"],
+      stateRoot,
+      values.profile,
+      values["candidate-record"],
+    ];
+    if (selectedScenario === "relay-pairing" && pairingRecord) {
+      const chromeArguments = pairingRecord.chromeArguments;
+      assert(
+        Array.isArray(chromeArguments) &&
+          chromeArguments.length <= 64 &&
+          chromeArguments.length % 2 === 0 &&
+          chromeArguments.every(
+            (value) => typeof value === "string" && value.length <= 4096
+          ),
+        "pairing_chrome_chromeArgumentsrequired"
+      );
+      const pathOptions = new Set([
+        "--output",
+        "--history-root",
+        "--profile-root",
+        "--profile-record",
+        "--extension-record",
+      ]);
+      for (let index = 0; index < chromeArguments.length; index += 2) {
+        if (pathOptions.has(chromeArguments[index])) {
+          assert(
+            path.isAbsolute(chromeArguments[index + 1]),
+            "pairing_chrome_chromeArgumentsrequired"
+          );
+          plannedPaths.push(chromeArguments[index + 1]);
+        }
+      }
+    }
+    for (const planned of plannedPaths) {
+      const location = await intendedPhysicalPath(planned);
+      const relative = path.relative(physical, location);
+      assert(
+        relative === ".." ||
+          relative.startsWith(`..${path.sep}`) ||
+          path.isAbsolute(relative),
+        "durable_evidence_outside_candidate_required"
+      );
+    }
+    candidateRoot = physical;
+  }
   if (selectedScenario === "relay-pairing") {
     assert(pairingRecord, "pairing_record_required");
     assert(values.transport === "wss", "pairing_wss_required");
@@ -184,8 +280,6 @@ export async function runElectronAcceptance(args, relayHooks) {
       return runRelayPairing(args, pairingRecord, runElectronAcceptance);
     }
   }
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const dist = path.join(root, "apps/electron/dist");
   // Evidence must survive disposal of a linked checkout. Primary repositories
   // may keep their established ignored local artifacts directory.
   await mkdir(values.output, { recursive: true, mode: 0o700 });
@@ -256,7 +350,6 @@ export async function runElectronAcceptance(args, relayHooks) {
     });
   }
   await mkdir(values.output, { recursive: true, mode: 0o700 });
-  const stateRoot = nativeAcceptanceStateRoot();
   await mkdir(stateRoot, { recursive: true, mode: 0o700 });
   const canonicalState = await realpath(stateRoot);
   assert(
@@ -266,7 +359,6 @@ export async function runElectronAcceptance(args, relayHooks) {
     "acceptance_state_outside_checkout_required"
   );
   const registryRoot = path.join(canonicalState, "history-registry");
-  let attempt;
   try {
     attempt = await beginNativeAttempt({
       output: values.output,
@@ -450,7 +542,10 @@ export async function runElectronAcceptance(args, relayHooks) {
   }
 
   async function command(operation, maximum = commandTimeout) {
-    const remaining = attempt.remainingMs(maximum);
+    const remaining = attempt
+      ? attempt.remainingMs(maximum)
+      : Math.min(maximum, descriptorDeadline - Date.now());
+    assert(remaining > 0, "owned_command_deadline_exhausted");
     let timer;
     try {
       const result = await Promise.race([
@@ -462,7 +557,7 @@ export async function runElectronAcceptance(args, relayHooks) {
           );
         }),
       ]);
-      attempt.assertBudget();
+      attempt?.assertBudget();
       return result;
     } finally {
       clearTimeout(timer);
@@ -475,10 +570,129 @@ export async function runElectronAcceptance(args, relayHooks) {
     }
     return target;
   }
+  async function boundedRegular(file, maximum, reason) {
+    const metadata = await command(() => lstat(file));
+    assert(
+      metadata.isFile() &&
+        !metadata.isSymbolicLink() &&
+        metadata.size <= maximum,
+      reason
+    );
+    const handle = await command(() => open(file, "r"));
+    try {
+      const current = await command(() => handle.stat());
+      assert(
+        current.isFile() &&
+          current.ino === metadata.ino &&
+          current.dev === metadata.dev &&
+          current.size <= maximum,
+        reason
+      );
+      const bytes = Buffer.alloc(maximum + 1);
+      let length = 0;
+      for (;;) {
+        const result = await command(() =>
+          handle.read(bytes, length, bytes.length - length, length)
+        );
+        length += result.bytesRead;
+        assert(length <= maximum, reason);
+        if (result.bytesRead === 0) break;
+      }
+      const after = await command(() => handle.stat());
+      assert(
+        length === current.size &&
+          after.size === current.size &&
+          after.ino === current.ino &&
+          after.dev === current.dev,
+        reason
+      );
+      return bytes.subarray(0, length);
+    } finally {
+      await handle.close();
+    }
+  }
+  async function intendedPhysicalPath(target) {
+    let prefix = path.resolve(target);
+    for (let depth = 0; depth < 128; depth++) {
+      try {
+        await command(() => lstat(prefix));
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        prefix = path.dirname(prefix);
+        continue;
+      }
+      return path.resolve(
+        await command(() => realpath(prefix)),
+        path.relative(prefix, target)
+      );
+    }
+    throw new Error("candidate_path_unavailable");
+  }
   try {
     log = await command(() =>
       open(path.join(evidenceDirectory, "runtime.log"), "a", 0o600)
     );
+    if (values["candidate-record"]) {
+      const physical = candidateRoot;
+      const trustedPath = path.join(
+        toolingRoot,
+        "scripts/prepare-acceptance-candidate.mjs"
+      );
+      const applicationVerifier = path.join(
+        physical,
+        "scripts/prepare-acceptance-candidate.mjs"
+      );
+      for (const verifier of [trustedPath, applicationVerifier])
+        assert(
+          (await command(() => realpath(verifier))) === verifier,
+          "frozen_candidate_verifier_regular_file_required"
+        );
+      const trusted = await boundedRegular(
+        trustedPath,
+        262144,
+        "frozen_candidate_verifier_regular_file_required"
+      );
+      const application = await boundedRegular(
+        applicationVerifier,
+        262144,
+        "frozen_candidate_verifier_regular_file_required"
+      );
+      const trustedHash = createHash("sha256").update(trusted).digest("hex");
+      assert(
+        candidateRecord.preparer === trustedHash &&
+          createHash("sha256").update(application).digest("hex") ===
+            trustedHash,
+        "frozen_candidate_verifier_untrusted"
+      );
+      root = physical;
+      dist = path.join(root, "apps/electron/dist");
+      receipt.tooling = {
+        root: toolingRoot,
+        candidate: await sourceIdentity(toolingRoot, {
+          remainingMs: (maximum) =>
+            attempt.remainingMs(Math.min(commandTimeout, maximum)),
+        }),
+        scripts: {},
+      };
+      for (const name of [
+        "electron-relay-acceptance.mjs",
+        "native-acceptance-attempts.mjs",
+        "source-identity.mjs",
+        "prepare-acceptance-candidate.mjs",
+        ...(selectedScenario === "relay-pairing"
+          ? ["relay-pairing-acceptance.mjs"]
+          : []),
+      ])
+        receipt.tooling.scripts[`scripts/${name}`] = createHash("sha256")
+          .update(
+            await boundedRegular(
+              path.join(toolingRoot, "scripts", name),
+              262144,
+              "bounded_tooling_source_required"
+            )
+          )
+          .digest("hex");
+    }
     receipt.candidate = await sourceIdentity(root, {
       remainingMs: (maximum) =>
         attempt.remainingMs(Math.min(commandTimeout, maximum)),
@@ -490,9 +704,7 @@ export async function runElectronAcceptance(args, relayHooks) {
         "successor_candidate_binding_mismatch"
       );
     if (values["candidate-record"]) {
-      const record = JSON.parse(
-        await command(() => readFile(values["candidate-record"], "utf8"))
-      );
+      const record = candidateRecord;
       assert(
         (await command(() => realpath(record.source.checkout))) ===
           (await command(() => realpath(root))),
@@ -511,7 +723,7 @@ export async function runElectronAcceptance(args, relayHooks) {
       const verification = spawnSync(
         process.execPath,
         [
-          path.join(root, "scripts/prepare-acceptance-candidate.mjs"),
+          path.join(toolingRoot, "scripts/prepare-acceptance-candidate.mjs"),
           "verify",
           "--record",
           values["candidate-record"],
@@ -530,7 +742,70 @@ export async function runElectronAcceptance(args, relayHooks) {
         `frozen_candidate_invalid: ${verification.stderr ?? ""}`
       );
       frozenCandidate = JSON.parse(verification.stdout.trim());
+      const expectedArtifact = createHash("sha256")
+        .update(
+          JSON.stringify({
+            application: record.artifacts,
+            runtime: record.runtimeArtifacts,
+          })
+        )
+        .digest("hex");
+      assert(
+        frozenCandidate.verified === true &&
+          frozenCandidate.checkout === root &&
+          frozenCandidate.revision === record.source.revision &&
+          frozenCandidate.runtime === "electron" &&
+          frozenCandidate.scenario === record.scenario.id &&
+          frozenCandidate.artifact === expectedArtifact &&
+          frozenCandidate.runtimeVersion === record.runtimeVersion,
+        "frozen_candidate_verification_invalid"
+      );
+      const runtimePath = record.runtimeArtifacts?.electron?.path;
+      assert(
+        typeof runtimePath === "string" &&
+          !path.isAbsolute(runtimePath) &&
+          runtimePath.length <= 4096,
+        "frozen_candidate_verification_invalid"
+      );
+      const runtimeRoot = path.resolve(root, runtimePath);
+      const runtimeDist = path.join(runtimeRoot, "dist");
+      const within = (base, target) => {
+        const relative = path.relative(base, target);
+        return (
+          !path.isAbsolute(relative) &&
+          relative !== ".." &&
+          !relative.startsWith(`..${path.sep}`)
+        );
+      };
+      assert(
+        within(root, runtimeRoot) &&
+          (await command(() => realpath(runtimeRoot))) === runtimeRoot &&
+          (await command(() => realpath(runtimeDist))) === runtimeDist,
+        "frozen_candidate_verification_invalid"
+      );
+      const markerPath = path.join(runtimeRoot, "path.txt");
+      const executableName = (
+        await boundedRegular(
+          markerPath,
+          4096,
+          "frozen_candidate_verification_invalid"
+        )
+      )
+        .toString("utf8")
+        .trim();
+      const expectedExecutable = path.resolve(runtimeDist, executableName);
+      assert(
+        executableName &&
+          within(root, expectedExecutable) &&
+          within(runtimeDist, expectedExecutable) &&
+          expectedExecutable !== runtimeDist &&
+          frozenCandidate.executable === expectedExecutable &&
+          (await command(() => realpath(expectedExecutable))) ===
+            expectedExecutable,
+        "frozen_candidate_verification_invalid"
+      );
       receipt.frozenCandidate = {
+        checkout: root,
         record: values["candidate-record"],
         revision: frozenCandidate.revision,
         artifact: frozenCandidate.artifact,
@@ -890,6 +1165,67 @@ export async function runElectronAcceptance(args, relayHooks) {
       );
       await checkFocus();
     };
+    // The preload bridge can be ready before React mounts its History shell.
+    // Distinguish that transient absence from a mounted legacy layout.
+    await page.waitForFunction(
+      () =>
+        document.querySelector(
+          '[data-session-focus="history-filters"], [data-session-scroll="history"]'
+        ) ||
+        [...document.querySelectorAll("button")].some(
+          (button) =>
+            button.textContent?.trim() === "Pinned" &&
+            button.getClientRects().length > 0
+        ),
+      null,
+      { timeout: attempt.remainingMs(10_000) }
+    );
+    // The persisted workspace may open on another destination. Use its public
+    // navigation before looking for History controls; legacy layouts need no step.
+    const historyNavigation = page.locator(
+      '[data-session-focus="destination:history"]'
+    );
+    if (await command(() => historyNavigation.count())) {
+      if (
+        (await command(() =>
+          historyNavigation.getAttribute("aria-current")
+        )) !== "page"
+      )
+        await nativeClick(historyNavigation);
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-session-focus="destination:history"]')
+            ?.getAttribute("aria-current") === "page",
+        null,
+        { timeout: attempt.remainingMs(10_000) }
+      );
+      await checkFocus();
+    }
+    // Short native windows collapse Filters. Opening the ordinary toggle keeps
+    // the same native-input and ownership proof used by the Pinned/All checks.
+    const filtersToggle = page.locator(
+      '[data-session-focus="history-filters"]'
+    );
+    if (await command(() => filtersToggle.count())) {
+      const expanded = await command(() =>
+        filtersToggle.getAttribute("aria-expanded")
+      );
+      assert(
+        ["true", "false"].includes(expanded),
+        "history_filters_state_unavailable"
+      );
+      if (expanded === "false") await nativeClick(filtersToggle);
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-session-focus="history-filters"]')
+            ?.getAttribute("aria-expanded") === "true",
+        null,
+        { timeout: attempt.remainingMs(10_000) }
+      );
+      await checkFocus();
+    }
     for (const label of ["Pinned", "All"]) {
       await nativeClick(page.getByRole("button", { name: label, exact: true }));
       await page.waitForFunction(
@@ -1227,6 +1563,13 @@ export async function runElectronAcceptance(args, relayHooks) {
       "required_native_abi_mismatch",
       "required_native_module_load_failed",
       "required_native_wrong_candidate",
+      "bounded_candidate_record_required",
+      "frozen_candidate_record_invalid",
+      "frozen_candidate_verifier_regular_file_required",
+      "frozen_candidate_verifier_untrusted",
+      "frozen_candidate_verification_invalid",
+      "durable_evidence_outside_candidate_required",
+      "candidate_path_unavailable",
       "frozen_candidate_checkout_mismatch",
       "frozen_candidate_source_mismatch",
       "frozen_candidate_scenario_mismatch",

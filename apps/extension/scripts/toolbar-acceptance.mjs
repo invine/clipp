@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import {
   mkdir,
+  open,
   mkdtemp,
   readFile,
   writeFile,
@@ -15,6 +16,8 @@ import {
 import { hostname, platform, arch } from "node:os";
 import { resolve, join, relative, isAbsolute, sep, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { constants } from "node:fs";
 import { chromium } from "@playwright/test";
 import {
   beginNativeAttempt,
@@ -39,6 +42,7 @@ const known = new Set([
   "timeout-seconds",
   "diagnostic-change",
   "expected-observation",
+  "renewal",
 ]);
 function optionsFor(args) {
   const options = {};
@@ -46,7 +50,9 @@ function optionsFor(args) {
     assert(args[index].startsWith("--"), "option_flag_required");
     const name = args[index].replace(/^--/, "");
     assert(options[name] === undefined, "unique_option_value_required");
-    if (["validate-only", "freeze-extension"].includes(name))
+    if (
+      ["validate-only", "freeze-extension", "verification-only"].includes(name)
+    )
       options[name] = true;
     else {
       assert(known.has(name) || name === "scenario", "unknown_argument");
@@ -87,6 +93,13 @@ function optionsFor(args) {
       Boolean(options["expected-observation"]),
     "complete_diagnosis_required"
   );
+  if (options.renewal !== undefined)
+    assert(
+      isAbsolute(options.renewal) &&
+        options.renewal.length <= 4096 &&
+        options.renewal.trim(),
+      "bounded_absolute_renewal_required"
+    );
   return options;
 }
 async function json(file) {
@@ -224,6 +237,8 @@ function errorCode(error, stage) {
       "owned_relay_configuration_ambiguous",
       "owned_relay_editor_ambiguous",
       "account_preparation_deadline_exhausted",
+      "owned_browser_foreground_identity_uncertain",
+      "owned_browser_foreground_unavailable",
     ].includes(error?.message)
   )
     return error.message;
@@ -249,6 +264,13 @@ export async function runToolbarAcceptance(args, relayHooks) {
   const pairing = options.scenario === "toolbar-relay-pairing";
   const preparation = options.scenario === "toolbar-relay-account-preparation";
   const ownedRelay = pairing || preparation;
+  const verificationOnly = options["verification-only"] === true;
+  assert(
+    !verificationOnly || preparation,
+    "verification_only_preparation_required"
+  );
+  let applicationRoot = root;
+  let verifiedApplicationRoot;
   const setupMaximum = Number(options["timeout-seconds"] ?? 600) * 1000;
   assert(
     Number.isSafeInteger(setupMaximum) &&
@@ -316,6 +338,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
       isAbsolute(recordRelative),
     "durable_extension_record_outside_checkout_required"
   );
+  if (options.renewal) await setup(() => json(options.renewal));
   const profileLease =
     relayHooks?.profileLease ??
     (preparation
@@ -323,6 +346,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
           await import("./owned-relay-profile.mjs")
         ).acquireOwnedRelayProfile(options, {
           preparation: true,
+          verificationOnly,
           verifyClosed: targetGone,
         })
       : undefined);
@@ -351,6 +375,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         : "chrome-toolbar-history",
       change: options["diagnostic-change"],
       expectation: options["expected-observation"],
+      renewal: options.renewal,
       deferDiagnosticClockUntilFailure: true,
       verifyTarget: targetGone,
     });
@@ -369,6 +394,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
     candidate,
     targetOwnership,
     workerOwnership;
+  let previousOtherEnvironment;
   let targetWritePending = false;
   let privateFailure;
   let preparedObservation;
@@ -435,7 +461,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
     attempt.assertBudget();
     try {
       return execFileSync(bin, argv, {
-        cwd: root,
+        cwd: applicationRoot,
         encoding: "utf8",
         timeout: Math.min(
           attempt.remainingMs(maximum),
@@ -450,13 +476,64 @@ export async function runToolbarAcceptance(args, relayHooks) {
   }
   async function verifyBase() {
     const base = await bounded(() => json(options["candidate-record"]));
+    const checkout = base.source?.checkout;
     assert(
-      (await bounded(() => realpath(base.source.checkout))) === root,
+      typeof checkout === "string" &&
+        isAbsolute(checkout) &&
+        checkout.length <= 4096,
       "candidate_wrong_checkout"
     );
+    const physical = await bounded(() => realpath(checkout));
+    assert(
+      !verifiedApplicationRoot || physical === verifiedApplicationRoot,
+      "candidate_wrong_checkout"
+    );
+    if (verificationOnly || pairing) {
+      const stat = await bounded(() => lstat(checkout));
+      assert(
+        stat.isDirectory() && !stat.isSymbolicLink() && physical === checkout,
+        "candidate_wrong_checkout"
+      );
+      for (const evidence of [
+        options.output,
+        options["history-root"],
+        recordLocation,
+        options["profile-root"],
+        options["profile-record"],
+      ]) {
+        const rel = relative(checkout, evidence);
+        assert(
+          rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel),
+          "durable_evidence_outside_candidate_required"
+        );
+      }
+      const verifier = join(
+        checkout,
+        "scripts/prepare-acceptance-candidate.mjs"
+      );
+      const verifierStat = await bounded(() => lstat(verifier));
+      assert(
+        verifierStat.isFile() &&
+          !verifierStat.isSymbolicLink() &&
+          verifierStat.size <= 262144 &&
+          (await bounded(() => realpath(verifier))) === verifier,
+        "candidate_verifier_regular_file_required"
+      );
+      const trusted = hash(
+        await bounded(() =>
+          readFile(join(root, "scripts/prepare-acceptance-candidate.mjs"))
+        )
+      );
+      assert(
+        base.preparer === trusted &&
+          hash(await bounded(() => readFile(verifier))) === trusted,
+        "candidate_verifier_untrusted"
+      );
+      applicationRoot = checkout;
+    } else assert(physical === root, "candidate_wrong_checkout");
     const verified = JSON.parse(
       command(process.execPath, [
-        join(root, "scripts/prepare-acceptance-candidate.mjs"),
+        join(applicationRoot, "scripts/prepare-acceptance-candidate.mjs"),
         "verify",
         "--record",
         options["candidate-record"],
@@ -468,7 +545,66 @@ export async function runToolbarAcceptance(args, relayHooks) {
         verified.artifact,
       "candidate_verification_invalid"
     );
+    verifiedApplicationRoot = applicationRoot;
     return { ...base, artifact: verified.artifact };
+  }
+  async function playwrightProvenance() {
+    const bytes = async (file, maximum) =>
+      bounded(async () => {
+        const handle = await open(
+          file,
+          constants.O_RDONLY | constants.O_NOFOLLOW
+        );
+        try {
+          const stat = await handle.stat();
+          assert(
+            stat.isFile() && stat.size <= maximum,
+            "bounded_playwright_file_required"
+          );
+          const buffer = Buffer.alloc(maximum + 1);
+          let length = 0;
+          while (length < buffer.length) {
+            const { bytesRead } = await handle.read(
+              buffer,
+              length,
+              buffer.length - length,
+              null
+            );
+            if (!bytesRead) break;
+            length += bytesRead;
+          }
+          const final = await handle.stat();
+          assert(
+            length === stat.size &&
+              final.size === length &&
+              final.ino === stat.ino &&
+              final.dev === stat.dev,
+            "playwright_file_changed"
+          );
+          return buffer.subarray(0, length);
+        } finally {
+          await handle.close();
+        }
+      });
+    const packageFile = createRequire(import.meta.url).resolve(
+      "playwright-core/package.json"
+    );
+    const metadata = JSON.parse(
+      (await bytes(packageFile, 65536)).toString("utf8")
+    );
+    assert(
+      typeof metadata.version === "string" && metadata.version.length <= 64,
+      "playwright_version_required"
+    );
+    const files = {};
+    for (const relative of [
+      "lib/server/chromium/crBrowser.js",
+      "lib/server/chromium/crPage.js",
+    ])
+      files[relative] = hash(
+        await bytes(join(dirname(packageFile), relative), 262144)
+      );
+    return { version: metadata.version, root: dirname(packageFile), files };
   }
   async function waitFor(probe, maximum = 15000) {
     const deadline = Date.now() + attempt.remainingMs(maximum);
@@ -480,9 +616,26 @@ export async function runToolbarAcceptance(args, relayHooks) {
     throw new Error("acceptance_operation_timeout");
   }
   try {
+    if (ownedRelay) {
+      if (verificationOnly) receipt.verificationOnly = true;
+      receipt.tooling = { root, scripts: {} };
+      for (const file of [
+        "apps/extension/scripts/toolbar-acceptance.mjs",
+        "apps/extension/scripts/owned-relay-profile.mjs",
+        "apps/extension/scripts/verify-clipboard-io.mjs",
+        "apps/extension/scripts/clipboard-acceptance.mjs",
+        "scripts/native-acceptance-attempts.mjs",
+        "scripts/prepare-acceptance-candidate.mjs",
+        ...(pairing ? ["scripts/relay-pairing-acceptance.mjs"] : []),
+      ])
+        receipt.tooling.scripts[file] = hash(
+          await bounded(() => readFile(join(root, file)))
+        );
+    }
+    if (ownedRelay) receipt.tooling.playwright = await playwrightProvenance();
     const base = await verifyBase();
     const stagedExtension = join(
-      root,
+      applicationRoot,
       ownedRelay
         ? "apps/extension/.local/relay-acceptance/wss"
         : "apps/extension/dist"
@@ -593,6 +746,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         );
     }
     receipt.candidate = {
+      ...(verificationOnly || pairing ? { checkout: applicationRoot } : {}),
       revision: candidate.sourceRevision,
       baseArtifact: candidate.baseArtifact,
       extensionSha256: hash(JSON.stringify(candidate.artifacts)),
@@ -603,6 +757,11 @@ export async function runToolbarAcceptance(args, relayHooks) {
         mkdtemp(join(attempt.directory, "profile-"))
       );
     async function verifyLaunchInputs() {
+      assert.deepEqual(
+        await playwrightProvenance(),
+        receipt.tooling.playwright,
+        "playwright_tooling_changed"
+      );
       const current = await verifyBase();
       assert(
         current.artifact === base.artifact &&
@@ -704,7 +863,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         phase: "identity-observed",
       });
     }
-    if (preparation) {
+    if (preparation && !verificationOnly) {
       stage = "human-account-preparation";
       operation = "launch_human_browser";
       receipt.humanPreparation = {
@@ -778,6 +937,20 @@ export async function runToolbarAcceptance(args, relayHooks) {
           current.fingerprint === identity.fingerprint,
         "owned_profile_launcher_exited"
       );
+    }
+    if (ownedRelay) {
+      const key = "PW_CHROMIUM_ATTACH_TO_OTHER";
+      previousOtherEnvironment = {
+        present: Object.hasOwn(process.env, key),
+        value: process.env[key],
+      };
+      process.env[key] = process.env[key] || "1";
+      receipt.debugger.otherTargetAttachment = {
+        enabled: true,
+        scope: "owned-controlled-browser-session",
+        allOtherTargets: true,
+        unaffectedLifecycleQualified: false,
+      };
     }
     browser = await bounded(() =>
       chromium.connectOverCDP(`http://127.0.0.1:${port[0]}`, {
@@ -915,27 +1088,6 @@ export async function runToolbarAcceptance(args, relayHooks) {
         "pairing_registration_mapping_mismatch"
       );
     protocol.installedObservedId = extensionId;
-    const worker = await waitFor(async () =>
-      context
-        .serviceWorkers()
-        .find((item) => new URL(item.url()).host === extensionId)
-    );
-    assert(
-      new URL(worker.url()).host === extensionId,
-      "toolbar_target_mismatch"
-    );
-    receipt.extension = {
-      id: extensionId,
-      pathMatches: true,
-      ...(pairing
-        ? {
-            rawLoadPath: loadPath,
-            realLoadPath: extension,
-            expectedId: options["registered-extension-id"],
-            bundleSha256: hash(JSON.stringify(candidate.artifacts)),
-          }
-        : {}),
-    };
     const openManagement = async () => {
       operation = "open_owned_management";
       const page = await bounded(() => context.newPage());
@@ -989,11 +1141,59 @@ export async function runToolbarAcceptance(args, relayHooks) {
         readTransportStatus: () => request({ type: "getStatus" }),
       };
     };
+    const foregroundOwnedBrowser = () => {
+      const verify = () => {
+        const current = processIdentity(child.pid, attempt.remainingMs(1000));
+        assert(
+          Number.isSafeInteger(child.pid) &&
+            child.pid > 1 &&
+            !exitObserved &&
+            child.exitCode === null &&
+            child.signalCode === null &&
+            identity?.executable &&
+            identity.birth &&
+            identity.fingerprint &&
+            current.birth === identity.birth &&
+            current.fingerprint === identity.fingerprint &&
+            current.command?.startsWith(`${identity.executable} `) &&
+            current.command.includes(`--user-data-dir=${profile}`) &&
+            targetOwnership.pid === child.pid &&
+            targetOwnership.profile === profile &&
+            targetOwnership.executable === identity.executable &&
+            targetOwnership.birth === identity.birth,
+          "owned_browser_foreground_identity_uncertain"
+        );
+      };
+      verify();
+      try {
+        command(
+          "/usr/bin/osascript",
+          [
+            "-e",
+            'tell application "System Events" to set frontmost of first application process whose unix id is ' +
+              child.pid +
+              " to true",
+          ],
+          5000
+        );
+      } catch (error) {
+        if (error?.message?.includes("diagnostic_")) throw error;
+        throw new Error("owned_browser_foreground_unavailable");
+      }
+      verify();
+      receipt.foreground = {
+        method: "macOS-explicit-owned-pid",
+        pidBindingReverified: true,
+      };
+    };
     const openPopup = async () => {
       const tab = ownedRelay
         ? await bounded(() => context.newPage())
         : (context.pages()[0] ?? (await bounded(() => context.newPage())));
-      if (ownedRelay) await bounded(() => tab.goto("about:blank"));
+      if (ownedRelay)
+        await bounded(() =>
+          tab.goto(`about:blank#clipp-toolbar-owned-${randomUUID()}`)
+        );
       await bounded(() => tab.bringToFront());
       const tabSession = await bounded(() => context.newCDPSession(tab));
       operation = "identify_owned_browser_tab";
@@ -1074,6 +1274,10 @@ export async function runToolbarAcceptance(args, relayHooks) {
         urlMatched: true,
         contextMatched: true,
       };
+      if (ownedRelay) {
+        operation = "foreground_owned_browser";
+        foregroundOwnedBrowser();
+      }
       operation = "trigger_actual_toolbar_action";
       await bounded(() =>
         session.send("Extensions.triggerAction", {
@@ -1081,19 +1285,85 @@ export async function runToolbarAcceptance(args, relayHooks) {
           targetId: actionTab.targetId,
         })
       );
-      const popup = await waitFor(async () =>
-        context
-          .pages()
-          .find(
-            (page) =>
-              page.url() === `chrome-extension://${extensionId}/src/popup.html`
-          )
-      );
+      const expectedPopup = `chrome-extension://${extensionId}/src/popup.html`;
+      let popup;
+      operation = "discover_actual_toolbar_popup";
+      try {
+        popup = await waitFor(async () => {
+          const matches = context
+            .pages()
+            .filter((page) => page.url() === expectedPopup && !page.isClosed());
+          assert(matches.length <= 1, "toolbar_target_mismatch");
+          return matches[0];
+        });
+      } catch (error) {
+        protocol.popupDiscovery = { observed: false };
+        try {
+          const { targetInfos } = await bounded(
+            () =>
+              session.send("Target.getTargets", {
+                filter: [{ exclude: false }],
+              }),
+            1500
+          );
+          assert(
+            Array.isArray(targetInfos) && targetInfos.length <= 500,
+            "bounded_popup_inventory_required"
+          );
+          const types = {};
+          let count = 0;
+          for (const target of targetInfos) {
+            if (target.url !== expectedPopup) continue;
+            count++;
+            const type = [
+              "page",
+              "other",
+              "tab",
+              "iframe",
+              "background_page",
+              "service_worker",
+              "worker",
+              "webview",
+              "browser",
+            ].includes(target.type)
+              ? target.type
+              : "unknown";
+            types[type] = (types[type] ?? 0) + 1;
+          }
+          protocol.popupDiscovery = {
+            observed: true,
+            totalTargetCount: targetInfos.length,
+            exactPopupCount: count,
+            exactPopupTypes: types,
+          };
+        } catch {
+          /* Preserve the original failure if bounded observation is unavailable. */
+        }
+        throw error;
+      }
+      if (ownedRelay) {
+        operation = "observe_owned_popup_startup";
+        try {
+          await waitFor(
+            async () =>
+              (await popup.evaluate(
+                () => window.__clippAcceptanceEarlyMemoryClipboard === true
+              )) === true,
+            5000
+          );
+        } catch (error) {
+          if (error?.message === "acceptance_operation_timeout")
+            throw new Error("acceptance_memory_startup_required");
+          throw error;
+        }
+      }
+      operation = "verify_actual_toolbar_popup";
       const mapping = await bounded(() =>
         popup.evaluate(() => ({
           id: chrome.runtime.id,
           tabId: undefined,
           memory: window.__clippAcceptanceMemoryClipboard === true,
+          earlyMemory: window.__clippAcceptanceEarlyMemoryClipboard === true,
           isPopup: chrome.extension
             .getViews({ type: "popup" })
             .includes(window),
@@ -1105,6 +1375,7 @@ export async function runToolbarAcceptance(args, relayHooks) {
         mapping.id === extensionId &&
           mapping.isPopup === true &&
           mapping.memory === true &&
+          (!ownedRelay || mapping.earlyMemory === true) &&
           mapping.focused === true,
         "toolbar_target_mismatch"
       );
@@ -1118,9 +1389,34 @@ export async function runToolbarAcceptance(args, relayHooks) {
       };
       return popup;
     };
+    // An installed MV3 worker can be dormant after the owned browser restarts.
+    // Open only its normal isolated management surface before waiting for it.
+    const management = ownedRelay ? await openManagement() : undefined;
+    operation = "observe_extension_service_worker";
+    const worker = await waitFor(async () =>
+      context
+        .serviceWorkers()
+        .find((item) => new URL(item.url()).host === extensionId)
+    );
+    assert(
+      new URL(worker.url()).host === extensionId,
+      "toolbar_target_mismatch"
+    );
+    receipt.extension = {
+      id: extensionId,
+      pathMatches: true,
+      ...(pairing
+        ? {
+            rawLoadPath: loadPath,
+            realLoadPath: extension,
+            expectedId: options["registered-extension-id"],
+            bundleSha256: hash(JSON.stringify(candidate.artifacts)),
+          }
+        : {}),
+    };
     if (preparation) {
       stage = "account-preparation";
-      const runtime = await openManagement();
+      const runtime = management;
       operation = "read_owned_transport_status";
       const status = await runtime.readTransportStatus();
       receipt.preparation.transport = {
@@ -1228,6 +1524,48 @@ export async function runToolbarAcceptance(args, relayHooks) {
       };
       stage = "interaction";
       operation = "toolbar_readiness_filter";
+      const filters = popup.locator('[data-session-focus="history-filters"]');
+      // Ownership/clipboard mapping precedes React mount. Wait for its known
+      // Filters control or the visible legacy Pinned control before branching.
+      await waitFor(
+        async () =>
+          (await bounded(() => filters.count())) > 0 ||
+          (await bounded(() =>
+            popup
+              .getByRole("button", { name: "Pinned", exact: true })
+              .isVisible()
+          )) === true,
+        5000
+      );
+      if (await bounded(() => filters.count())) {
+        const expanded = await bounded(() =>
+          filters.getAttribute("aria-expanded")
+        );
+        assert(
+          ["true", "false"].includes(expanded),
+          "toolbar_input_not_observed"
+        );
+        assert(
+          (await bounded(() => popup.evaluate(() => document.hasFocus()))) ===
+            true,
+          "toolbar_target_mismatch"
+        );
+        if (expanded === "false")
+          await bounded(() =>
+            filters.click({ timeout: attempt.remainingMs(5000) })
+          );
+        await waitFor(
+          async () =>
+            (await bounded(() => filters.getAttribute("aria-expanded"))) ===
+            "true",
+          5000
+        );
+        assert(
+          (await bounded(() => popup.evaluate(() => document.hasFocus()))) ===
+            true,
+          "toolbar_target_mismatch"
+        );
+      }
       await bounded(() =>
         popup
           .getByRole("button", { name: "Pinned", exact: true })
@@ -1390,6 +1728,12 @@ export async function runToolbarAcceptance(args, relayHooks) {
         );
       }
     }
+    if (ownedRelay)
+      assert.deepEqual(
+        await playwrightProvenance(),
+        receipt.tooling.playwright,
+        "playwright_tooling_changed"
+      );
     operation = "verify_candidate_after_interaction";
     await verifyBase();
     assert.deepEqual(
@@ -1413,12 +1757,44 @@ export async function runToolbarAcceptance(args, relayHooks) {
     receipt.classification = "none";
     receipt.stage = "complete";
   } catch (error) {
+    const guardReason =
+      typeof error?.message === "string"
+        ? error.message.split("\n", 1)[0]
+        : undefined;
     privateFailure = {
       stage,
       operation,
       protocol,
       error: ownedRelay
-        ? { name: "OwnedRelayOperationError", code: errorCode(error, stage) }
+        ? {
+            name: "OwnedRelayOperationError",
+            code: errorCode(error, stage),
+            ...((verificationOnly || pairing) &&
+            new Set([
+              "candidate_metadata_invalid",
+              "candidate_command_failed",
+              "candidate_wrong_checkout",
+              "bounded_regular_metadata_required",
+              "candidate_verifier_regular_file_required",
+              "candidate_verifier_untrusted",
+              "durable_evidence_outside_candidate_required",
+              "candidate_verification_invalid",
+              "candidate_record_mismatch",
+              "candidate_browser_changed",
+              "candidate_extension_artifacts_changed",
+              "candidate_staged_extension_changed",
+              "pairing_registration_mapping_mismatch",
+              "owned_profile_candidate_binding_changed",
+              "owned_profile_chrome_lock_present",
+              "owned_profile_preparation_proof_invalid",
+              "owned_relay_profile_preparation_required",
+              "owned_human_login_required",
+              "acceptance_memory_startup_required",
+              "pairing_forced_relay_runtime_required",
+            ]).has(guardReason)
+              ? { guard: guardReason }
+              : {}),
+          }
         : {
             name: String(error?.name ?? "UnknownError").slice(0, 128),
             message: String(error?.message ?? "unknown").slice(0, 4096),
@@ -1441,136 +1817,145 @@ export async function runToolbarAcceptance(args, relayHooks) {
       "preserve receipt; record changed hypothesis and distinguishing observation before retry";
     process.exitCode = 1;
   } finally {
-    const cleanupDeadline = Date.now() + 10000;
-    const cleanup = async (task) => {
-      return raceAcceptanceOperation(
-        task,
-        Math.max(1, cleanupDeadline - Date.now()),
-        "owned_browser_cleanup"
-      );
-    };
-    if (privateFailure) {
-      try {
-        await cleanup(() =>
-          writeFile(
-            join(attempt.directory, "failure.private.json"),
-            JSON.stringify(privateFailure, null, 2) + "\n",
-            { flag: "wx", mode: 0o600 }
-          )
-        );
-        receipt.privateDiagnostics = "failure.private.json";
-      } catch {
-        receipt.privateDiagnostics = "unavailable";
-      }
-    }
     try {
-      if (ownedRelay && browserSession)
-        await cleanup(() => browserSession.send("Browser.close")).catch(
-          () => {}
+      const cleanupDeadline = Date.now() + 10000;
+      const cleanup = async (task) => {
+        return raceAcceptanceOperation(
+          task,
+          Math.max(1, cleanupDeadline - Date.now()),
+          "owned_browser_cleanup"
         );
-      if (browser) {
+      };
+      if (privateFailure) {
         try {
-          await cleanup(() => browser.close());
-        } catch (error) {
-          if (!ownedRelay || !exitObserved) throw error;
+          await cleanup(() =>
+            writeFile(
+              join(attempt.directory, "failure.private.json"),
+              JSON.stringify(privateFailure, null, 2) + "\n",
+              { flag: "wx", mode: 0o600 }
+            )
+          );
+          receipt.privateDiagnostics = "failure.private.json";
+        } catch {
+          receipt.privateDiagnostics = "unavailable";
         }
       }
-      if (child?.pid && !exitObserved) {
-        await cleanup(
-          () =>
-            new Promise((done) => {
-              const poll = setInterval(() => {
-                if (exitObserved) {
-                  clearInterval(poll);
-                  done();
-                }
-              }, 25);
-              setTimeout(() => {
-                clearInterval(poll);
-                done();
-              }, 500);
-            })
-        );
-        if (!exitObserved) {
-          assert(Date.now() < cleanupDeadline, "browser_cleanup_timeout");
-          const current = processIdentity(
-            child.pid,
-            Math.max(1, Math.min(1000, cleanupDeadline - Date.now()))
+      try {
+        if (ownedRelay && browserSession)
+          await cleanup(() => browserSession.send("Browser.close")).catch(
+            () => {}
           );
-          assert(
-            identity?.fingerprint &&
-              identity?.birth &&
-              identity?.executable &&
-              current.fingerprint &&
-              current.birth &&
-              current.command &&
-              current.birth === identity.birth &&
-              current.fingerprint === identity.fingerprint &&
-              current.command.includes(identity.executable) &&
-              current.command.includes(`--user-data-dir=${profile}`),
-            "browser_cleanup_identity_uncertain"
-          );
-          child.kill("SIGTERM");
+        if (browser) {
+          try {
+            await cleanup(() => browser.close());
+          } catch (error) {
+            if (!ownedRelay || !exitObserved) throw error;
+          }
+        }
+        if (child?.pid && !exitObserved) {
           await cleanup(
             () =>
-              new Promise((done, reject) => {
-                child.once("exit", done);
-                setTimeout(
-                  () => reject(new Error("browser_cleanup_timeout")),
-                  2000
-                );
+              new Promise((done) => {
+                const poll = setInterval(() => {
+                  if (exitObserved) {
+                    clearInterval(poll);
+                    done();
+                  }
+                }, 25);
+                setTimeout(() => {
+                  clearInterval(poll);
+                  done();
+                }, 500);
               })
           );
+          if (!exitObserved) {
+            assert(Date.now() < cleanupDeadline, "browser_cleanup_timeout");
+            const current = processIdentity(
+              child.pid,
+              Math.max(1, Math.min(1000, cleanupDeadline - Date.now()))
+            );
+            assert(
+              identity?.fingerprint &&
+                identity?.birth &&
+                identity?.executable &&
+                current.fingerprint &&
+                current.birth &&
+                current.command &&
+                current.birth === identity.birth &&
+                current.fingerprint === identity.fingerprint &&
+                current.command.includes(identity.executable) &&
+                current.command.includes(`--user-data-dir=${profile}`),
+              "browser_cleanup_identity_uncertain"
+            );
+            child.kill("SIGTERM");
+            await cleanup(
+              () =>
+                new Promise((done, reject) => {
+                  child.once("exit", done);
+                  setTimeout(
+                    () => reject(new Error("browser_cleanup_timeout")),
+                    2000
+                  );
+                })
+            );
+          }
         }
-      }
-      assert(!targetWritePending, "ownership_write_pending");
-      if (profile && targetOwnership)
-        assert(
-          targetGone(targetOwnership, cleanupDeadline, workerOwnership),
-          "browser_cleanup_unobserved"
-        );
-      if (profileLease) {
-        if (targetOwnership)
-          await cleanup(() =>
-            profileLease.closed({
-              observation: preparedObservation,
-              receiptPath: join(attempt.directory, "receipt.json"),
-              proofPath: join(attempt.directory, "profile-preparation.json"),
-            })
+        assert(!targetWritePending, "ownership_write_pending");
+        if (profile && targetOwnership)
+          assert(
+            targetGone(targetOwnership, cleanupDeadline, workerOwnership),
+            "browser_cleanup_unobserved"
           );
-        else await cleanup(() => profileLease.releaseUnlaunched());
-        receipt.profileRetained = true;
-        if (preparedObservation) receipt.accountPreparation.prepared = true;
-      } else if (profile)
-        await cleanup(() => rm(profile, { recursive: true, force: true }));
-      await cleanup(() => attempt.clearTarget());
-      receipt.shutdown = child
-        ? "verified-owned-browser-closed"
-        : "not-launched";
-    } catch {
-      if (profileLease)
-        await cleanup(() => profileLease.uncertain()).catch(() => {});
-      receipt.cleanupFailure = "owned_browser_cleanup_uncertain";
-      receipt.shutdown = "unknown";
-      receipt.result = "failed";
-      receipt.classification = "cleanup";
-      process.exitCode = 1;
-    }
-    if (relayHooks) {
-      try {
-        await relayHooks.afterCleanup(receipt, { deadline: cleanupDeadline });
+        if (profileLease) {
+          if (targetOwnership)
+            await cleanup(() =>
+              profileLease.closed({
+                observation: preparedObservation,
+                receiptPath: join(attempt.directory, "receipt.json"),
+                proofPath: join(attempt.directory, "profile-preparation.json"),
+              })
+            );
+          else await cleanup(() => profileLease.releaseUnlaunched());
+          receipt.profileRetained = true;
+          if (preparedObservation) receipt.accountPreparation.prepared = true;
+        } else if (profile)
+          await cleanup(() => rm(profile, { recursive: true, force: true }));
+        await cleanup(() => attempt.clearTarget());
+        receipt.shutdown = child
+          ? "verified-owned-browser-closed"
+          : "not-launched";
       } catch {
-        receipt.jointCleanup = "unconfirmed";
-        if (receipt.result === "passed") {
-          receipt.result = "failed";
-          receipt.classification = "runner";
-          receipt.failure = "joint_cleanup_unconfirmed";
-        }
+        if (profileLease)
+          await cleanup(() => profileLease.uncertain()).catch(() => {});
+        receipt.cleanupFailure = "owned_browser_cleanup_uncertain";
+        receipt.shutdown = "unknown";
+        receipt.result = "failed";
+        receipt.classification = "cleanup";
         process.exitCode = 1;
       }
+      if (relayHooks) {
+        try {
+          await relayHooks.afterCleanup(receipt, { deadline: cleanupDeadline });
+        } catch {
+          receipt.jointCleanup = "unconfirmed";
+          if (receipt.result === "passed") {
+            receipt.result = "failed";
+            receipt.classification = "runner";
+            receipt.failure = "joint_cleanup_unconfirmed";
+          }
+          process.exitCode = 1;
+        }
+      }
+      await attempt.finish(receipt);
+      console.log(JSON.stringify(receipt));
+    } finally {
+      if (previousOtherEnvironment) {
+        if (previousOtherEnvironment.present)
+          process.env.PW_CHROMIUM_ATTACH_TO_OTHER =
+            previousOtherEnvironment.value;
+        else delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+      }
     }
-    await attempt.finish(receipt);
-    console.log(JSON.stringify(receipt));
   }
   return receipt;
 }

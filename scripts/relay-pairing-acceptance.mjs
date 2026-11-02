@@ -290,7 +290,12 @@ async function performPairing({ electron, chrome }, bounded, until, discovery) {
   );
   await bounded(() => electron.click("Devices"));
   await bounded(() => electron.click("Pair this device"));
-  await bounded(() => electron.click("Show my QR"));
+  await bounded(() =>
+    electron.click(
+      "Show my QR",
+      '[role="dialog"][aria-modal="true"]:has(h2:text-is("Pairing"))'
+    )
+  );
   await bounded(() => electron.click("Copy pairing text"));
   // The normal UI decoder and networking adapter validate this public signed
   // target before a request can arrive. Keep it in memory and out of receipts.

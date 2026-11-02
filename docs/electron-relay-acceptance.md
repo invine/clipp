@@ -100,8 +100,14 @@ Before relay assertions, the runner verifies the launched PID, launch argument,
 canonical profile, owned BrowserWindow/webContents IDs, renderer PID and exact
 built renderer URL. It activates only its owned app and window, waits at most
 five seconds for native focus, and checks native and renderer focus before and
-after native mouse input toggles History **Pinned**, then **All**. The normal
-renderer must show the resulting active filter. This is a harmless filter
+after native mouse input. It first waits for a mounted History/Filters marker or
+visible legacy Pinned control; the preload bridge alone does not prove React has
+mounted. When workspace navigation is present, it selects
+**History** through its ordinary control and observes `aria-current="page"`.
+When the ordinary **Filters** toggle is collapsed, it opens it and observes
+`aria-expanded="true"` before toggling **Pinned**, then **All**. Already-open
+filters stay open; older layouts with visible filter controls retain that path.
+The normal renderer must show the resulting active filter. This is a harmless filter
 change; DOM/bridge availability alone cannot pass readiness. A readiness-only
 pass does not qualify relay transfer, provider login, native toolbar popups or
 any larger UX matrix.
@@ -530,6 +536,30 @@ node apps/extension/scripts/verify-clipboard-io.mjs \
   --timeout-seconds 600
 ```
 
+If normal sign-in and owned closure completed but preparation failed before Ready,
+the maintained tooling may retry only verification using the same arguments plus
+`--verification-only`, a changed diagnosis and its expected observation. This uses
+the same semantic scenario and budget; it grants no new attempt or time allowance.
+It requires an existing closed-unprepared or prepared owned record, matching
+marker/nonce and exact candidate/route/browser/bundle binding, positive closure of
+the last target, and no SingletonLock. Ordinary preparation reuse and Pairing keep
+their existing proof barriers. Missing or expired login fails without starting
+human authentication, configuration changes, OAuth or extension installation.
+
+For this mode only, invoke the reviewed maintained tooling while leaving the app
+candidate frozen: its physical application checkout is read from the existing
+candidate record. Before execution, the bounded regular frozen verifier must hash
+identically to both that record's preparer and the maintained trusted preparer.
+The verifier and staged extension use the validated application root; evidence
+stays outside both checkouts. Freeze/build is forbidden. The receipt records the
+maintained tooling script hashes separately from the app revision and artifacts.
+Only current exact installation inventory, early memory/WSS runtime proof, public
+Ready/identity and positive final closure produce a preparation proof. This mode
+never qualifies Pairing itself or retroactively verifies the earlier human phase.
+Pre-admission ownership refusals keep their existing fixed codes and create no
+attempt merely for logging; post-admission verification failures retain only an
+allowlisted guard code in private diagnostics, without raw exception details.
+
 The user enters credentials only in normal Google UI. Setup records only the
 selected status/public identity and filtered ownership metadata; OAuth URLs,
 callback code/state, cookies and credential payloads are not dumped even in
@@ -539,3 +569,50 @@ The Electron owning profile must already have its own normal login; preserve its
 existing `--app-name` (for the selected UX profile, `Clipp UX Pairing Relay`).
 Retained Chrome history preflights use a fresh marker and exact new captured/pinned
 Clip ID, preserving prior clips/pins rather than resetting the profile.
+
+### Maintained Pairing orchestration with a frozen application
+
+When the application stays frozen while acceptance tooling changes, run the
+maintained tooling checkout's public `scripts/electron-relay-acceptance.mjs`
+command with `--scenario relay-pairing`, the unchanged explicit application
+`--candidate-record` and normal `--pairing-record`. Its maintained coordinator
+composes its maintained Electron and Chrome actors. The Electron actor selects
+the application root solely from that validated record; no application-root
+argument, private export composition or frozen-script edit is needed.
+
+Before creating acceptance directories or profile/history locks, the Electron
+actor reads at most 1 MiB of regular candidate metadata and requires a physical
+canonical application checkout. Planned evidence, state and profile paths must
+stay outside it. The public joint entry checks the companion's planned evidence
+and profile metadata paths before either actor can write. The application's
+regular preparer must match both the record's
+preparer hash and the maintained tooling preparer's bytes (at most 256 KiB).
+After attempt admission, only the trusted maintained preparer executes. Its
+verified checkout, revision, scenario, combined artifact and executable must
+match the application record, and the executable must remain within the physical
+runtime distribution. Required native loading, exact target/source/build checks,
+normal History/Filters interactions and owned cleanup retain their existing gates.
+
+Electron and Chrome receipts distinguish maintained tooling roots/source/script
+hashes from the selected frozen application's checkout, revision and artifacts.
+Keep those identities separate in the execution manifest. Retain the existing
+positively closed prepared Chrome profile and its exact application source/base
+artifact binding; changing tooling does not rebind the profile or fabricate a new
+preparation proof. Reusing preparation does not preserve a service worker across
+browser closure; the maintained runner opens the isolated normal management page
+before waiting for that worker. The same isolation, Ready, signed request, native
+Accept, Membership and joint cleanup gates still apply.
+
+The maintained Chrome actor uses its owned PID/profile identity for bounded macOS
+foreground activation before the original toolbar action. Its controlled
+Playwright session enables attachment to `other` targets through popup reopening,
+restores the original environment in cleanup, and records exact installed
+`crBrowser.js` and `crPage.js` hashes. Broader target/debugger lifecycle remains
+unqualified. Exact-popup failure diagnostics contain bounded matching target type
+counts rather than unrelated URLs or contents. All actual-popup identity, view,
+early memory, focus, input and cleanup assertions still apply.
+
+Both actors accept their own explicit absolute `--renewal` decision path and
+forward it to the maintained semantic-history policy. Keep Electron and Chrome
+decisions tied to their respective prior failed histories; the joint runner does
+not manufacture approval or silently renew either budget.
