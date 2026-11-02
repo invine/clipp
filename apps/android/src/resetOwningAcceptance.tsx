@@ -71,6 +71,7 @@ function mount(manifest: ResetOwningManifest, output: HTMLOutputElement) {
   });
   const runtime: AndroidAppRuntime = {
     client: owner.client,
+    identityReset: owner.identityReset,
     start: () => {
       try {
         const promise = owner.start();

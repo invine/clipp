@@ -264,7 +264,8 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          const result = await client.identityRotation.beginIdentityReset(request);
+          const result =
+            await client.identityRotation.beginIdentityReset(request);
           if (result.outcome !== "rejected")
             await client.publishIdentityResetState(result.state);
           return result;
@@ -281,15 +282,18 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          const result = await client.identityRotation.resumeIdentityReset(request);
+          const result =
+            await client.identityRotation.resumeIdentityReset(request);
           if (result.outcome !== "rejected")
             await client.publishIdentityResetState(result.state);
           return result;
         },
-        dismiss: async (request: { receiptId: string }) => {
+        dismiss: async (receiptId: string) => {
           if (stopped) throw new Error("identity_runtime_stopped");
           await client.publishIdentityResetState(
-            await client.identityRotation.dismissIdentityResetReminder(request)
+            await client.identityRotation.dismissIdentityResetReminder({
+              receiptId,
+            })
           );
           return client.identityResetState;
         },
@@ -1728,11 +1732,12 @@ export class AndroidClient {
     await this.publishIdentityResetState(
       await this.identityRotation.reconcileIdentityReset()
     );
-    const receipt = this.identityResetState.phase === "idle"
-      ? this.identityResetState.receipt
-      : this.identityResetState.phase === "completed"
+    const receipt =
+      this.identityResetState.phase === "idle"
         ? this.identityResetState.receipt
-        : undefined;
+        : this.identityResetState.phase === "completed"
+          ? this.identityResetState.receipt
+          : undefined;
     if (!receipt || receipt.receiptId !== receiptId)
       return { status: "rejected" as const };
     return copyPayloadText(receipt.formerPeerId, (value) =>
