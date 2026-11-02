@@ -11,5 +11,10 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src/main.ts", "src/preload.ts", "src/types.d.ts"]
+  "include": [
+    "src/main.ts",
+    "src/preload.ts",
+    "src/resetOwningAcceptance.ts",
+    "src/types.d.ts"
+  ]
 }

@@ -19,7 +19,7 @@ export type Identity = {
   deviceName: string;
 };
 
-export type PendingRequest = Device;
+export type PendingRequest = Device & { requestVersion: string };
 export type PairingWaiting = { targetPeerId: string; expiresAtUnixMs: number };
 export type PairingError = {
   targetPeerId: string;
@@ -49,6 +49,7 @@ export type { PairingCode } from "../../core/pairing/qrCode";
 
 export type PeerState = {
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
 };
@@ -67,4 +68,24 @@ export type BackgroundContinuityDiagnosticStatus = {
   observedBackgroundFailureCount: number;
   supportState: "unqualified" | "limited";
   batteryOptimizationGuidance: boolean;
+};
+
+export type {
+  PairingOutcome,
+  PairingOutcomeSnapshot,
+} from "../../core/pairing/runtimeCoordinator";
+
+/** Applied Android continuity authority; connection labels do not imply Auto Sync. */
+export type BackgroundContinuityState = BackgroundContinuityDiagnosticStatus & {
+  available: boolean;
+  backgroundEnabled: boolean;
+  service: "running" | "stopped";
+  connection:
+    "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
+  connectedTrustedDeviceCount: number;
+  notificationAvailability: "available" | "blocked" | "unknown";
+  autoSync: boolean | null;
+  controlPending: boolean;
+  controlStateKnown: boolean;
+  controlError: string | null;
 };

@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-07T23:52:37.539165+00:00",
+  "clientDate": "2026-10-08",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "branch": "codex/agent-workflow-integration",
+  "status": "M apps/electron/src/managedRelayAuth.ts\n M tests/electron/managedRelayAuth.test.ts\n?? .scratch/ux-study/",
+  "inventorySourceCount": 145,
+  "inventorySourceChanges": [],
+  "builds": [
+    {
+      "command": "npm --workspace apps/android run build",
+      "result": "passed"
+    },
+    {
+      "command": "npm --workspace apps/android run cap:sync",
+      "result": "passed"
+    },
+    {
+      "command": "JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew -I ../scripts/native-acceptance.init.gradle -PclippAcceptance :app:assembleAcceptance",
+      "cwd": "apps/android/android",
+      "result": "BUILD SUCCESSFUL; 116 tasks"
+    }
+  ],
+  "apkSha256": "dff40f20163c81bc240ae2276fdad28149637a29d5faaa7e9e38256e29bf9c2a",
+  "apkRelativePath": "apps/android/android/app/build/outputs/apk/acceptance/app-acceptance.apk",
+  "productionEdits": false,
+  "commitCreated": false
+}

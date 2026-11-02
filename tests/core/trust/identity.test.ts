@@ -176,8 +176,25 @@ describe("Device Identity initialization", () => {
     await manager.recordRemoteDeviceName(remotePeerId, "\u0001", 3n);
     expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
     expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({ deviceName: "Phone", nameRevision: "3" });
-    await manager.recordRemoteDeviceName(remotePeerId, "Large revision", 9_007_199_254_740_993n);
+    await manager.recordRemoteDeviceName(
+      remotePeerId,
+      "Large revision",
+      9_007_199_254_740_993n
+    );
     expect(await manager.displayDeviceLabel(remotePeerId)).toBe("My pocket");
+    expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({
+      deviceName: "Large revision",
+      nameRevision: "9007199254740993",
+    });
+    await expect(
+      manager.setLocalDeviceAlias(remotePeerId, "")
+    ).resolves.toEqual({
+      deviceId: remotePeerId,
+      deviceName: "Large revision",
+      displayName: "Large revision",
+      localAlias: undefined,
+    });
+    expect(stored?.localDeviceAliases?.[remotePeerId]).toBeUndefined();
     expect(stored?.remoteDeviceNames?.[remotePeerId]).toEqual({
       deviceName: "Large revision",
       nameRevision: "9007199254740993",
@@ -211,6 +228,46 @@ describe("Device Identity initialization", () => {
     await manager.revoke(remotePeerId);
     await expect(manager.trustedDevices()).resolves.toEqual([]);
     await expect(manager.setLocalDeviceAlias(remotePeerId, "Former phone")).resolves.toBeNull();
+  });
+
+  it("rejects a Device Name Save addressed to a former identity", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    const current = await manager.get();
+
+    await expect(manager.rename("Former edit", "former-device-id")).rejects.toThrow("device_unavailable");
+    expect((await manager.get()).deviceName).toBe("Desktop");
+    await expect(manager.rename("Current edit", current.deviceId)).resolves.toBeUndefined();
+    expect((await manager.get()).deviceName).toBe("Current edit");
+  });
+
+  it("normalizes names and aliases at their 64-character boundary without changing unrelated fields", async () => {
+    let stored: DeviceIdentity | undefined;
+    const manager = createManager({
+      get: async () => stored,
+      upsert: async (identity) => { stored = structuredClone(identity); },
+    }, "Desktop");
+    const current = await manager.get();
+    await manager.admit(remotePeerId);
+    await manager.recordRemoteDeviceName(remotePeerId, "Phone", 1n);
+
+    await expect(manager.rename(`  ${"N".repeat(64)}  `, current.deviceId)).resolves.toBeUndefined();
+    expect((await manager.get()).deviceName).toBe("N".repeat(64));
+    await expect(manager.rename("N".repeat(65), current.deviceId)).rejects.toThrow("invalid_device_name");
+    expect((await manager.get()).deviceName).toBe("N".repeat(64));
+
+    await expect(manager.setLocalDeviceAlias(remotePeerId, `  ${"A".repeat(64)}  `)).resolves.toMatchObject({
+      localAlias: "A".repeat(64),
+      deviceName: "Phone",
+    });
+    await expect(manager.setLocalDeviceAlias(remotePeerId, "A".repeat(65))).rejects.toThrow("invalid_device_alias");
+    expect((await manager.trustedDevices())[0]).toMatchObject({
+      localAlias: "A".repeat(64),
+      deviceName: "Phone",
+    });
   });
 
   it("waits for an in-flight presentation mutation before listing Trusted Devices", async () => {

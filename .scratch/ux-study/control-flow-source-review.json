@@ -1,0 +1,41 @@
+{
+  "at": "2026-10-09T13:23:23.051888+00:00",
+  "evidenceClass": "read-only public source review",
+  "repositories": [
+    {
+      "root": "/Users/invine/src/js/clipp",
+      "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33"
+    },
+    {
+      "root": "/Users/invine/src/go/clipp-relay",
+      "head": "3a79830c1fdc4b5bd76276380339a5a020f75302"
+    }
+  ],
+  "sourceHashes": {
+    "/Users/invine/src/js/clipp/docs/adr/0004-use-peer-id-as-membership-identity.md": "9b54c87ef955b3e26430813bc29e2dd8ae2bbad519a982e6fa18876e10108777",
+    "/Users/invine/src/js/clipp/packages/core/trust/identityRotation.ts": "38ca1943b3eb382ed9657f3b84823c3e10f8c245ce310d70fb94cc7b74c68825",
+    "/Users/invine/src/js/clipp/packages/core/membership/reconciliation.ts": "5b8d4d1f683bd3d07b7d5897e6bdc2848657f5c6bb3c62a2fd2a30e3dbedbc47",
+    "/Users/invine/src/js/clipp/packages/core/runtime/identityInitialization.ts": "70cfeda838cebc30eb72dbf4afe891b405e17963ab56d1a24f86ba45f301e7cb",
+    "/Users/invine/src/js/clipp/packages/core/network/managedRelays.ts": "bae85ba395e6c286915064c22bc363da110cffd7c9602e61ccc3e2013b59e3e9",
+    "/Users/invine/src/js/clipp/apps/extension/src/background.ts": "a383e9e66cd5e85c89acd59c126f3e215bb495cdf5f946b2cefb8a937eaf3a9b",
+    "/Users/invine/src/js/clipp/apps/extension/src/popup.tsx": "e6c08251de8588c6b0e3822df312061cd28fd0026ad6f3653d3076db8ce54cb4",
+    "/Users/invine/src/js/clipp/apps/extension/src/options.tsx": "9925e627cf14027aa3a69c4c47b392e17cb07b185e6d75444413f5546242e6ac",
+    "/Users/invine/src/js/clipp/apps/extension/src/components/ClipHistoryList.tsx": "7c9a66c8e826cf00ef8b22ec05e8159fbd4a5a592eb685681c44db1c1e69a778",
+    "/Users/invine/src/js/clipp/apps/extension/src/managedRelayUi.ts": "72dd9bb3be2678132c35fbf8e29feca0c575db472da7733f2751e371d3e392d5",
+    "/Users/invine/src/js/clipp/.scratch/device-network-sync-v1/issues/08-enforce-local-history-policy.md": "d4e89de2bc6b7d43da27e62f6807b9d8856851968229787853904ca1aa27e411",
+    "/Users/invine/src/js/clipp/packages/core/clipboard/captureCoordinator.ts": "d34be54aa1e6024f961127c1e7268a4fd9e16cee3751547b99e345bc6e6f8f8c",
+    "/Users/invine/src/js/clipp/packages/ui/src/ClipboardApp.tsx": "ef84dd1c443a4638d0eb737df977736067654c5cfad82e1b65e33ef10a195c44",
+    "/Users/invine/src/js/clipp/packages/core/history/store.ts": "d1457143a87af22a6781eb6eb90560f1968ebe6c73a30975c356f64f035f4264",
+    "/Users/invine/src/js/clipp/packages/ui/src/ManagedRelaySettings.tsx": "e24c1e9b658b762e0229cd492df21c621c6bc698c29fd7d15abdf98ce9827dac",
+    "/Users/invine/src/js/clipp/apps/extension/src/managedRelayCredentials.ts": "a8024167a09fb0069c66ea6c42d4cde7ad85f9fe05f8de39aeb2d053399e4578",
+    "/Users/invine/src/go/clipp-relay/.scratch/managed-relay-service/issues/10-define-clipp-runtime-integration.md": "a5361c35c4902dcc156a53c275bb1fddfbd0a9bc8b8c9a9efeacd921759eeded",
+    "/Users/invine/src/js/clipp/apps/extension/src/managedRelayConfiguration.ts": "4fe3d6ee397997cf7b0ede1780d7a54b04fd15a8514cc930e078ae10176eb9f4",
+    "/Users/invine/src/js/clipp/docs/adr/0005-use-stateless-signed-trust-requests.md": "725d085eb66d67cb9e2c3c7696acfd207e2ab2e96ddcd800d8fc977a5cd4bcb2"
+  },
+  "missingReferences": [],
+  "runtimeActions": false,
+  "privateRuntimeStateAccessed": false,
+  "decisionStatus": "Q6-Q11 approved without exceptions",
+  "approvalRecordedAt": "2026-10-09T13:53:25.349822+00:00",
+  "approvalEvidence": "User replied “agree” to the six remaining control-flow recommendations in this chat."
+}

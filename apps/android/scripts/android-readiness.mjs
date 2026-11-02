@@ -88,8 +88,9 @@ const nativeCases = {
     "ciphertextFileIsExcludedFromCloudBackupAndDeviceTransfer",
   ],
   BackgroundContinuityLifecycleTest: [
-    "serviceStartupPublishesPrivacySafeStatusAndNotificationActions",
-    "pauseResumeAndStopRemainUserControlledBoundaries",
+    "serviceStartupPublishesPrivacySafeStatusAndOnlyAppliedAutoSyncAction",
+    "notificationTapsWaitForAppliedStateAndOldActionsCannotUndoResume",
+    "unknownAutoSyncOffersOnlyStopUntilAnAppliedUpdateArrives",
     "serviceHoldsPartialWakeLockUntilUserStops",
     "heartbeatLossStopsTheEmptyServiceAndRecordsAnObservedFailure",
     "removingTheApplicationTaskStopsBackgroundContinuity",

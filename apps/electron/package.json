@@ -10,6 +10,8 @@
     "build": "npm run build:main && npm run build:renderer",
     "build:main": "node esbuild.preload.mjs && node esbuild.main.mjs",
     "build:renderer": "vite build",
+    "build:reset-owning-acceptance": "node scripts/build-reset-owning-acceptance.mjs --build-reset-owning-entry",
+    "build:pairing-owning-acceptance": "node scripts/build-pairing-owning-acceptance.mjs --build-pairing-owning-entry",
     "typecheck:main": "tsc -p tsconfig.main.json --noEmit"
   },
   "dependencies": {

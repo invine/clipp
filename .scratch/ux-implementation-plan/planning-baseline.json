@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-10T10:28:01.497320+00:00",
+  "purpose": "Chart a separate implementation-planning map from the completed UX handoff; no implementation or runtime validation",
+  "repositoryRole": "client",
+  "root": "/Users/invine/src/js/clipp",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "branch": "codex/agent-workflow-integration",
+  "studyInventorySourceCount": 145,
+  "changedSinceStudyInventory": [],
+  "studyInputHashes": {
+    "handoff.md": "2adad1f334ce55ab75552f568384a8d284c241536491bd4e598957b4d8016f62",
+    "handoff-findings.md": "a67c55145a6bd1d8b1f44099ab10e72881540569930b6f19f6e0a9a52f373141",
+    "layout-state-contract.md": "b9b28d37c9caa924dc6019a190613beddc14e11c32a6ee210d01b95d7ac6e8c2",
+    "control-flow-contract.md": "1741dfae38130c5ecb10e95a9c62ae400e0d918e7791bdac7dd7112d9eec838c",
+    "remaining-native-coverage.md": "8a5d66a4924219d681d63300b4bc4e4d0c8fadb1f216dfbf3f0f536dc09e15d8",
+    "map.md": "d4d31e46d4b3603699ebd93188ec0341ef72ff03762425d91eea2f51d1cbe729"
+  },
+  "preexistingTrackedChanges": {
+    "apps/electron/src/managedRelayAuth.ts": "e5b6da3d4b3fdd95e1b1b3080fc4ff320c3a4832e860f497e29c99ec3904a6a5",
+    "tests/electron/managedRelayAuth.test.ts": "9d830c4afd5363c7b4c0511561c7d90b729bc35e9059e6ac181ee5b34ada9111"
+  },
+  "preexistingUntrackedStudy": ".scratch/ux-study/",
+  "planningDecisionsResolved": 0,
+  "runtimeActions": false,
+  "testsRun": false,
+  "productionEdits": false,
+  "executionAuthorized": false
+}

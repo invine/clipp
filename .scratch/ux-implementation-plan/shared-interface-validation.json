@@ -1,0 +1,87 @@
+{
+  "at": "2026-10-10T11:32:44.207726+00:00",
+  "purpose": "Validate approved shared interfaces, user-selected overwrite behavior, resolution and frontier; not application or native acceptance",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "headMatchesPlanningBaseline": true,
+  "filesChecked": 11,
+  "localLinksChecked": 124,
+  "anchorsChecked": 12,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "studyInputsChanged": [],
+  "preexistingTrackedChangesModified": [],
+  "tickets": [
+    {
+      "id": "01",
+      "title": "Choose the correctness-first migration sequence",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "none"
+    },
+    {
+      "id": "02",
+      "title": "Define shared state, actions and task boundaries",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "01"
+    },
+    {
+      "id": "03",
+      "title": "Scope correctness and recovery delivery",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "04",
+      "title": "Plan native host integration and interaction repairs",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "05",
+      "title": "Plan compact workspace and routine control delivery",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "03, 04"
+    },
+    {
+      "id": "06",
+      "title": "Design the durable manual identity-reset boundary",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "07",
+      "title": "Finalize validation gates and the implementation backlog",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "05, 06"
+    }
+  ],
+  "resolvedPlanningTickets": 2,
+  "proposalStatus": "Approved with explicit Save overwriting edited fields without conflict review",
+  "proposalSha256": "57fa635a0f068cd8ad4da417808caa794f08c454a2ab31964e853d85d62d8c65",
+  "runtimeActions": false,
+  "productionEdits": false,
+  "applicationTestsRun": false,
+  "implementationOrReleaseQualified": false,
+  "questionRound": "Answered: adopt interfaces; reuse idle/new tab when occupied; Save overwrites latest value",
+  "independentAudits": "Two read-only source/contract audits; actionable clarifications incorporated, no remaining reported blocker",
+  "sourceClarification": "Payload Copy keeps ordinary clipboard capture policy; no new suppression guarantee",
+  "resolvedDecision": "Define shared state, actions and task boundaries",
+  "frontier": [
+    "Scope correctness and recovery delivery",
+    "Plan native host integration and interaction repairs",
+    "Design the durable manual identity-reset boundary"
+  ],
+  "userDecisions": {
+    "sharedInterfaces": "Adopt the proposed interfaces (Recommended)",
+    "chromeReuse": "Reuse idle; new tab if occupied (Recommended)",
+    "concurrentEdits": "Save overwrites latest value"
+  },
+  "closureReview": "Updated all ordinary edit/result/draft/verification rules to user-selected overwrite policy; retained unrelated-field preservation, stale-target checks and separate incoming-request version guard"
+}

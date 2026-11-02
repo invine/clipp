@@ -1,6 +1,11 @@
+import "../promiseCompat.js";
+import "../abortSignalCompat.js";
 import { noise } from "@chainsafe/libp2p-noise";
 import { mplex } from "@libp2p/mplex";
-import { circuitRelayServer, type CircuitRelayService } from "@libp2p/circuit-relay-v2";
+import {
+  circuitRelayServer,
+  type CircuitRelayService,
+} from "@libp2p/circuit-relay-v2";
 import { enable as enableLibp2pDebug } from "@libp2p/logger";
 import { identify, type Identify } from "@libp2p/identify";
 import { webSockets } from "@libp2p/websockets";
@@ -13,27 +18,25 @@ import { defaultLogger } from "@libp2p/logger";
 import { FaultTolerance } from "@libp2p/interface";
 import { privateKeyFromProtobuf, privateKeyFromRaw } from "@libp2p/crypto/keys";
 import { ping, type Ping } from "@libp2p/ping";
-import { consumeOrMatchSignedPeerRecord, decodeSignedPeerRecordBytes } from "../peerRecords.js";
+import {
+  consumeOrMatchSignedPeerRecord,
+  decodeSignedPeerRecordBytes,
+} from "../peerRecords.js";
 import { CLIPP_RENDEZVOUS_PROTOCOL } from "../rendezvousProtocol.js";
 
-// Node 20 may not yet have Promise.withResolvers; provide a polyfill so libp2p deps can run.
-if (typeof (Promise as any).withResolvers !== "function") {
-  (Promise as any).withResolvers = function withResolversPolyfill<T>() {
-    let resolve!: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: any) => void;
-    const promise = new Promise<T>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve, reject };
-  };
-}
-
-type RelayServices = { identify: Identify; circuitRelay: CircuitRelayService; ping: Ping };
+type RelayServices = {
+  identify: Identify;
+  circuitRelay: CircuitRelayService;
+  ping: Ping;
+};
 type RelayNode = Libp2p<RelayServices>;
 type Connection = Parameters<Parameters<RelayNode["handle"]>[1]>[1];
 type RendezvousTopic = string;
-type RendezvousRecord = { peer: string; signedPeerRecord: number[]; lastSeen: number };
+type RendezvousRecord = {
+  peer: string;
+  signedPeerRecord: number[];
+  lastSeen: number;
+};
 
 export interface WebsocketRelayOptions {
   listen?: Array<string | Multiaddr>;
@@ -56,7 +59,9 @@ export interface StartedRelay {
  * Start a libp2p circuit-relay server reachable over WebSocket and WebRTC Direct listeners.
  * Returns the started node along with a stop helper that cleans up timers and listeners.
  */
-export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): Promise<StartedRelay> {
+export async function startWebsocketRelay(
+  options: WebsocketRelayOptions = {}
+): Promise<StartedRelay> {
   const debugNamespaces =
     options.debugNamespaces ??
     process.env.LIBP2P_DEBUG ??
@@ -74,10 +79,14 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
   const announceAddrs = toMultiaddrs(options.announce);
   const statusIntervalMs = coerceNumber(options.statusIntervalMs, 15_000);
   const maxReservations = coerceNumber(options.maxReservations, 500);
-  const reservationTtl = coerceNumber(options.reservationTtlMs, 2 * 60 * 60 * 1000);
+  const reservationTtl = coerceNumber(
+    options.reservationTtlMs,
+    2 * 60 * 60 * 1000
+  );
   const privateKey = loadPrivateKeyFromEnv();
   const needsWebRTCTransport =
-    containsWebRTCDirectAddr(listenInput) || containsWebRTCDirectAddr(options.announce);
+    containsWebRTCDirectAddr(listenInput) ||
+    containsWebRTCDirectAddr(options.announce);
   const enableWebRTC =
     typeof options.enableWebRTC === "boolean"
       ? options.enableWebRTC
@@ -116,7 +125,10 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
     (node as any).components?.connectionManager?.upgrader,
   ]);
   const removeNodeListeners = instrumentNode(node);
-  const removeRelayInstrumentation = instrumentRelayService(node.services.circuitRelay, statusIntervalMs);
+  const removeRelayInstrumentation = instrumentRelayService(
+    node.services.circuitRelay,
+    statusIntervalMs
+  );
   const stopRendezvous = registerRendezvous(node);
 
   const info = {
@@ -154,16 +166,20 @@ export async function startWebsocketRelay(options: WebsocketRelayOptions = {}): 
  */
 export async function startWebsocketRelayFromEnv(): Promise<StartedRelay> {
   const envListen =
-    process.env.RELAY_LISTEN ||
-    process.env.RELAY_WS_LISTEN ||
-    "";
+    process.env.RELAY_LISTEN || process.env.RELAY_WS_LISTEN || "";
   const listen = splitAndClean(envListen);
   const announce = splitAndClean(process.env.RELAY_ANNOUNCE || "");
   const port = coerceNumber(process.env.RELAY_PORT, 47_891);
   const host = process.env.RELAY_HOST || "0.0.0.0";
-  const statusIntervalMs = coerceNumber(process.env.RELAY_STATUS_INTERVAL_MS, 15_000);
+  const statusIntervalMs = coerceNumber(
+    process.env.RELAY_STATUS_INTERVAL_MS,
+    15_000
+  );
   const maxReservations = coerceNumber(process.env.RELAY_MAX_RESERVATIONS, 500);
-  const reservationTtlMs = coerceNumber(process.env.RELAY_RESERVATION_TTL_MS, 2 * 60 * 60 * 1000);
+  const reservationTtlMs = coerceNumber(
+    process.env.RELAY_RESERVATION_TTL_MS,
+    2 * 60 * 60 * 1000
+  );
 
   log("Starting relay from environment", {
     host,
@@ -221,7 +237,10 @@ function toMultiaddrs(values?: Array<string | Multiaddr>): Multiaddr[] {
     try {
       addrs.push(multiaddr(value));
     } catch (err) {
-      log("Invalid multiaddr skipped", { value, error: (err as Error)?.message });
+      log("Invalid multiaddr skipped", {
+        value,
+        error: (err as Error)?.message,
+      });
     }
   }
   return addrs;
@@ -243,7 +262,9 @@ function formatConnection(conn?: Connection) {
     addr: conn.remoteAddr?.toString?.(),
     direction: (conn as any).stat?.direction,
     opened: (conn as any).timeline?.open,
-    streams: Array.isArray((conn as any).streams) ? (conn as any).streams.length : undefined,
+    streams: Array.isArray((conn as any).streams)
+      ? (conn as any).streams.length
+      : undefined,
   };
 }
 
@@ -312,13 +333,15 @@ function describeRelayRequest(arg: any) {
     limit: describeLimit(request?.limit),
     peer: describePeerIdBytes(peerInfo?.id),
     peerAddrs: Array.isArray(peerInfo?.addrs)
-      ? peerInfo.addrs.map((a: any) => {
-          try {
-            return multiaddr(a).toString();
-          } catch {
-            return undefined;
-          }
-        }).filter(Boolean)
+      ? peerInfo.addrs
+          .map((a: any) => {
+            try {
+              return multiaddr(a).toString();
+            } catch {
+              return undefined;
+            }
+          })
+          .filter(Boolean)
       : undefined,
     reservationExpire: request?.reservation?.expire,
     from: formatConnection(connection),
@@ -362,12 +385,19 @@ function instrumentNode(node: RelayNode) {
   return () => listeners.forEach((unbind) => unbind());
 }
 
-function bindListener(node: RelayNode, event: string, handler: (evt: any) => void) {
+function bindListener(
+  node: RelayNode,
+  event: string,
+  handler: (evt: any) => void
+) {
   node.addEventListener(event as any, handler as any);
   return () => node.removeEventListener(event as any, handler as any);
 }
 
-function instrumentRelayService(relay: CircuitRelayService | undefined, statusIntervalMs: number) {
+function instrumentRelayService(
+  relay: CircuitRelayService | undefined,
+  statusIntervalMs: number
+) {
   if (!relay) {
     log("Circuit relay service missing; instrumentation skipped");
     return;
@@ -404,9 +434,12 @@ function instrumentRelayService(relay: CircuitRelayService | undefined, statusIn
     });
   }
 
-  const interval = setInterval(() => {
-    logReservations(relayAny);
-  }, Math.max(1_000, statusIntervalMs));
+  const interval = setInterval(
+    () => {
+      logReservations(relayAny);
+    },
+    Math.max(1_000, statusIntervalMs)
+  );
 
   return () => {
     clearInterval(interval);
@@ -446,11 +479,17 @@ function logReservations(relay: any) {
     snapshot.push({
       peer: peer?.toString?.(),
       addr: data?.addr?.toString?.(),
-      expiresInMs: data?.expiry instanceof Date ? data.expiry.getTime() - Date.now() : undefined,
+      expiresInMs:
+        data?.expiry instanceof Date
+          ? data.expiry.getTime() - Date.now()
+          : undefined,
       limit: describeLimit(data?.limit),
     });
   }
-  log("reservations:snapshot", { count: snapshot.length, reservations: snapshot });
+  log("reservations:snapshot", {
+    count: snapshot.length,
+    reservations: snapshot,
+  });
 }
 
 function coerceNumber(value: unknown, fallback: number) {
@@ -493,7 +532,9 @@ function loadPrivateKeyFromEnv(): PrivateKey | undefined {
       return privateKeyFromRaw(bytes);
     }
   } catch (err) {
-    log("Failed to parse RELAY_PRIVATE_KEY", { error: (err as Error)?.message });
+    log("Failed to parse RELAY_PRIVATE_KEY", {
+      error: (err as Error)?.message,
+    });
     return undefined;
   }
 }
@@ -520,7 +561,10 @@ function registerRendezvous(node: RelayNode) {
     const bucket = topics.get(topic);
     if (!bucket) return;
     for (const [peer, record] of bucket.entries()) {
-      if (typeof record.lastSeen === "number" && now - record.lastSeen > recordTtlMs) {
+      if (
+        typeof record.lastSeen === "number" &&
+        now - record.lastSeen > recordTtlMs
+      ) {
         bucket.delete(peer);
       }
     }
@@ -529,128 +573,186 @@ function registerRendezvous(node: RelayNode) {
     }
   }
 
-  node.handle(CLIPP_RENDEZVOUS_PROTOCOL, async (data: any, providedConnection?: Connection) => {
-    const stream = data?.stream ?? data;
-    const connection = providedConnection ?? data?.connection ?? (stream as any)?.connection;
+  node.handle(
+    CLIPP_RENDEZVOUS_PROTOCOL,
+    async (data: any, providedConnection?: Connection) => {
+      const stream = data?.stream ?? data;
+      const connection =
+        providedConnection ?? data?.connection ?? (stream as any)?.connection;
 
-    log("Rendezvous handler invoked", {
-      stream: describeStream(stream),
-      connection: connection ? formatConnection(connection) : undefined,
-    });
-
-    if (!stream) {
-      log("Rendezvous handler received falsy stream", {
-        stream,
+      log("Rendezvous handler invoked", {
+        stream: describeStream(stream),
         connection: connection ? formatConnection(connection) : undefined,
-        dataKeys: data ? Object.keys(data) : undefined,
       });
-      return;
-    }
 
-    const asyncIter =
-      typeof (stream as any)?.[Symbol.asyncIterator] === "function"
-        ? (stream as any)[Symbol.asyncIterator]()
-        : (stream as any)?.source;
-    const iterable = asyncIter as AsyncIterable<any> | undefined;
-    if (!iterable || typeof (iterable as any)[Symbol.asyncIterator] !== "function") {
-      log("Rendezvous handler missing async iterator on stream", {
-        hasSource: Boolean((stream as any)?.source),
-        ctor: (stream as any)?.constructor?.name,
-        keys: Object.keys(stream as any || {}),
-        dataKeys: data ? Object.keys(data) : undefined,
-      });
-      try {
-        await writeResponse(stream, encoder, { ok: false, error: "no_iterator" }, "no-iterator");
-      } catch {}
-      return;
-    }
-
-    for await (const chunk of iterable) {
-      try {
-        const buf =
-          chunk instanceof Uint8Array
-            ? chunk
-            : typeof (chunk as any)?.subarray === "function"
-            ? (chunk as any).subarray()
-            : null;
-        if (!buf) {
-          log("Rendezvous handler received non-buffer chunk", {
-            type: typeof chunk,
-            ctor: (chunk as any)?.constructor?.name,
-            value: chunk,
-          });
-          await stream.sink([encoder.encode(JSON.stringify({ ok: false, error: "invalid_chunk" }))]);
-          continue;
-        }
-        const msg = JSON.parse(decoder.decode(buf));
-        const remotePeer = connection?.remotePeer?.toString?.();
-        log("Rendezvous chunk received", {
-          length: buf.length,
-          peer: remotePeer,
+      if (!stream) {
+        log("Rendezvous handler received falsy stream", {
+          stream,
+          connection: connection ? formatConnection(connection) : undefined,
+          dataKeys: data ? Object.keys(data) : undefined,
         });
-        const topic: string = msg.topic === "clipp" ? msg.topic : "";
-        prune(topic);
-        if (msg.action === "register") {
-          const signedPeerRecord = decodeSignedPeerRecordBytes(msg.signedPeerRecord);
-          if (!remotePeer || !topic || !signedPeerRecord) {
-            await writeResponse(stream, encoder, { ok: false, error: "invalid_registration" }, "register-invalid");
-            continue;
-          }
-          // peerStore verifies the envelope signature and its subject.  An
-          // authenticated connection may register only its own record.
-          const verified = await consumeOrMatchSignedPeerRecord(
-            (node as any).peerStore,
-            peerIdFromString(remotePeer),
-            signedPeerRecord,
-          );
-          if (verified !== true) {
-            await writeResponse(stream, encoder, { ok: false, error: "invalid_peer_record" }, "register-invalid-record");
-            continue;
-          }
-          const record: RendezvousRecord = {
-            peer: remotePeer,
-            signedPeerRecord: Array.from(signedPeerRecord),
-            lastSeen: Date.now(),
-          };
-          touch(topic, record);
-          log("Rendezvous register", { topic, peer: record.peer });
-          await writeResponse(stream, encoder, { ok: true, peer: record.peer }, "register-ok");
-        } else if (msg.action === "lookup") {
-          const peerId = typeof msg.peerId === "string" ? msg.peerId : "";
-          if (!topic || !peerId) {
-            await writeResponse(stream, encoder, { ok: false, error: "invalid_lookup" }, "lookup-invalid");
-            continue;
-          }
-          const bucket = topics.get(topic);
-          const record = bucket?.get(peerId);
-          log("Rendezvous lookup", { topic, peerId, found: Boolean(record) });
-          await writeResponse(stream, encoder, { ok: true, ...(record ? { record } : {}) }, "lookup-ok");
-        } else if (msg.action === "unregister") {
-          if (!remotePeer || !topic) {
-            await writeResponse(stream, encoder, { ok: false, error: "invalid_unregister" }, "unregister-invalid");
-            continue;
-          }
-          topics.get(topic)?.delete(remotePeer);
-          await writeResponse(stream, encoder, { ok: true }, "unregister-ok");
-        } else {
-          await writeResponse(stream, encoder, { ok: false, error: "unknown_action" }, "unknown-action");
-        }
-      } catch (err: any) {
-        log("Rendezvous handler error", {
-          error: err?.message || err,
-          stack: err?.stack,
+        return;
+      }
+
+      const asyncIter =
+        typeof (stream as any)?.[Symbol.asyncIterator] === "function"
+          ? (stream as any)[Symbol.asyncIterator]()
+          : (stream as any)?.source;
+      const iterable = asyncIter as AsyncIterable<any> | undefined;
+      if (
+        !iterable ||
+        typeof (iterable as any)[Symbol.asyncIterator] !== "function"
+      ) {
+        log("Rendezvous handler missing async iterator on stream", {
+          hasSource: Boolean((stream as any)?.source),
+          ctor: (stream as any)?.constructor?.name,
+          keys: Object.keys((stream as any) || {}),
+          dataKeys: data ? Object.keys(data) : undefined,
         });
         try {
-          await writeResponse(stream, encoder, { ok: false, error: "handler_error" }, "handler-error");
+          await writeResponse(
+            stream,
+            encoder,
+            { ok: false, error: "no_iterator" },
+            "no-iterator"
+          );
         } catch {}
+        return;
       }
-    }
 
-    log("Rendezvous handler completed for stream", {
-      stream: describeStream(stream),
-      connection: connection ? formatConnection(connection) : undefined,
-    });
-  });
+      for await (const chunk of iterable) {
+        try {
+          const buf =
+            chunk instanceof Uint8Array
+              ? chunk
+              : typeof (chunk as any)?.subarray === "function"
+                ? (chunk as any).subarray()
+                : null;
+          if (!buf) {
+            log("Rendezvous handler received non-buffer chunk", {
+              type: typeof chunk,
+              ctor: (chunk as any)?.constructor?.name,
+              value: chunk,
+            });
+            await stream.sink([
+              encoder.encode(
+                JSON.stringify({ ok: false, error: "invalid_chunk" })
+              ),
+            ]);
+            continue;
+          }
+          const msg = JSON.parse(decoder.decode(buf));
+          const remotePeer = connection?.remotePeer?.toString?.();
+          log("Rendezvous chunk received", {
+            length: buf.length,
+            peer: remotePeer,
+          });
+          const topic: string = msg.topic === "clipp" ? msg.topic : "";
+          prune(topic);
+          if (msg.action === "register") {
+            const signedPeerRecord = decodeSignedPeerRecordBytes(
+              msg.signedPeerRecord
+            );
+            if (!remotePeer || !topic || !signedPeerRecord) {
+              await writeResponse(
+                stream,
+                encoder,
+                { ok: false, error: "invalid_registration" },
+                "register-invalid"
+              );
+              continue;
+            }
+            // peerStore verifies the envelope signature and its subject.  An
+            // authenticated connection may register only its own record.
+            const verified = await consumeOrMatchSignedPeerRecord(
+              (node as any).peerStore,
+              peerIdFromString(remotePeer),
+              signedPeerRecord
+            );
+            if (verified !== true) {
+              await writeResponse(
+                stream,
+                encoder,
+                { ok: false, error: "invalid_peer_record" },
+                "register-invalid-record"
+              );
+              continue;
+            }
+            const record: RendezvousRecord = {
+              peer: remotePeer,
+              signedPeerRecord: Array.from(signedPeerRecord),
+              lastSeen: Date.now(),
+            };
+            touch(topic, record);
+            log("Rendezvous register", { topic, peer: record.peer });
+            await writeResponse(
+              stream,
+              encoder,
+              { ok: true, peer: record.peer },
+              "register-ok"
+            );
+          } else if (msg.action === "lookup") {
+            const peerId = typeof msg.peerId === "string" ? msg.peerId : "";
+            if (!topic || !peerId) {
+              await writeResponse(
+                stream,
+                encoder,
+                { ok: false, error: "invalid_lookup" },
+                "lookup-invalid"
+              );
+              continue;
+            }
+            const bucket = topics.get(topic);
+            const record = bucket?.get(peerId);
+            log("Rendezvous lookup", { topic, peerId, found: Boolean(record) });
+            await writeResponse(
+              stream,
+              encoder,
+              { ok: true, ...(record ? { record } : {}) },
+              "lookup-ok"
+            );
+          } else if (msg.action === "unregister") {
+            if (!remotePeer || !topic) {
+              await writeResponse(
+                stream,
+                encoder,
+                { ok: false, error: "invalid_unregister" },
+                "unregister-invalid"
+              );
+              continue;
+            }
+            topics.get(topic)?.delete(remotePeer);
+            await writeResponse(stream, encoder, { ok: true }, "unregister-ok");
+          } else {
+            await writeResponse(
+              stream,
+              encoder,
+              { ok: false, error: "unknown_action" },
+              "unknown-action"
+            );
+          }
+        } catch (err: any) {
+          log("Rendezvous handler error", {
+            error: err?.message || err,
+            stack: err?.stack,
+          });
+          try {
+            await writeResponse(
+              stream,
+              encoder,
+              { ok: false, error: "handler_error" },
+              "handler-error"
+            );
+          } catch {}
+        }
+      }
+
+      log("Rendezvous handler completed for stream", {
+        stream: describeStream(stream),
+        connection: connection ? formatConnection(connection) : undefined,
+      });
+    }
+  );
 
   return () => {
     try {
@@ -691,22 +793,31 @@ function describeStream(stream: any) {
           hasWrite: typeof inner.write === "function",
           hasSend: typeof inner.send === "function",
           hasSource: Boolean((inner as any)?.source),
-          hasIterable: typeof (inner as any)[Symbol.asyncIterator] === "function",
+          hasIterable:
+            typeof (inner as any)[Symbol.asyncIterator] === "function",
         }
       : undefined,
   };
 }
 
-async function writeResponse(stream: any, encoder: TextEncoder, payload: any, label: string) {
+async function writeResponse(
+  stream: any,
+  encoder: TextEncoder,
+  payload: any,
+  label: string
+) {
   const data = encoder.encode(JSON.stringify(payload));
   const sinkTarget =
     stream && typeof stream.sink === "function"
       ? stream
       : stream?.stream && typeof stream.stream.sink === "function"
-      ? stream.stream
-      : undefined;
+        ? stream.stream
+        : undefined;
   if (sinkTarget) {
-    log(`Rendezvous response via sink (${label})`, { stream: describeStream(stream), bytes: data.byteLength });
+    log(`Rendezvous response via sink (${label})`, {
+      stream: describeStream(stream),
+      bytes: data.byteLength,
+    });
     await sinkTarget.sink([data]);
     return;
   }
@@ -714,10 +825,13 @@ async function writeResponse(stream: any, encoder: TextEncoder, payload: any, la
     stream && typeof stream.write === "function"
       ? stream
       : stream?.stream && typeof stream.stream.write === "function"
-      ? stream.stream
-      : undefined;
+        ? stream.stream
+        : undefined;
   if (writeTarget) {
-    log(`Rendezvous response via write (${label})`, { stream: describeStream(stream), bytes: data.byteLength });
+    log(`Rendezvous response via write (${label})`, {
+      stream: describeStream(stream),
+      bytes: data.byteLength,
+    });
     await writeTarget.write(data);
     if (typeof writeTarget.closeWrite === "function") {
       await writeTarget.closeWrite();
@@ -730,10 +844,13 @@ async function writeResponse(stream: any, encoder: TextEncoder, payload: any, la
     stream && typeof stream.send === "function"
       ? stream
       : stream?.stream && typeof stream.stream.send === "function"
-      ? stream.stream
-      : undefined;
+        ? stream.stream
+        : undefined;
   if (sendTarget) {
-    log(`Rendezvous response via send (${label})`, { stream: describeStream(stream), bytes: data.byteLength });
+    log(`Rendezvous response via send (${label})`, {
+      stream: describeStream(stream),
+      bytes: data.byteLength,
+    });
     sendTarget.send(data);
     if (typeof sendTarget.closeWrite === "function") {
       await sendTarget.closeWrite();
@@ -742,7 +859,10 @@ async function writeResponse(stream: any, encoder: TextEncoder, payload: any, la
     }
     return;
   }
-  log("Rendezvous response failed: stream not writable", { stream: describeStream(stream), label });
+  log("Rendezvous response failed: stream not writable", {
+    stream: describeStream(stream),
+    label,
+  });
 }
 
 function extractPeerIdFromAddrs(addrs?: string[]) {

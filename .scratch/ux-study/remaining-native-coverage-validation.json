@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-10T09:32:55.903807+00:00",
+  "purpose": "Record user-approved residual coverage and validate documents; no runtime launched",
+  "userDecision": "Carry explicit gaps into implementation validation (Recommended)",
+  "findingCount": 51,
+  "runtimeCounts": {
+    "E": 17,
+    "C": 16,
+    "A": 18
+  },
+  "changedFilesValidated": [
+    "remaining-native-coverage.md",
+    "sign-in-free-journeys.md",
+    "live-journey-observations.md",
+    "issues/14-observe-live-pairing-and-account-journeys.md",
+    "issues/08-prioritize-ux-study-handoff.md",
+    "map.md",
+    "handoff.md",
+    "handoff-findings.md"
+  ],
+  "localLinksChecked": 257,
+  "anchorsChecked": 112,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "ticketStatus": "live journeys resolved; residual coverage accepted as unverified; final handoff open and unblocked",
+  "frontier": [
+    "Prioritize the UX findings and handoff"
+  ]
+}

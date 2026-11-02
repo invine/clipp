@@ -684,23 +684,31 @@ export class ManagedRelayController {
     const entry = this.entries.get(key);
     if (entry && this.now() >= entry.authRetry.retryAt) await this.renew(entry);
   }
-  async requestLogin(key: string): Promise<void> {
+  async requestLogin(key: string): Promise<RelayState> {
     const entry = this.entries.get(key);
-    if (!entry || entry.config.kind !== "managed") return;
+    if (!entry) throw new Error("relay_not_found");
+    if (entry.config.kind !== "managed")
+      throw new Error("relay_login_not_supported");
     await this.adapter.interactiveLogin(entry.config.discoveryUrl);
+    if (this.entries.get(key) !== entry) throw new Error("relay_not_found");
     if (entry.connection) {
       entry.authRetry.retryAt = 0;
       await this.renew(entry);
     } else await this.retry(key);
+    if (this.entries.get(key) !== entry) throw new Error("relay_not_found");
+    return { ...entry.state };
   }
   async manageAccount(key: string): Promise<void> {
     const entry = this.entries.get(key);
-    if (entry?.config.kind === "managed")
-      await this.adapter.openAccount(entry.config.discoveryUrl);
+    if (!entry) throw new Error("relay_not_found");
+    if (entry.config.kind !== "managed")
+      throw new Error("relay_account_not_supported");
+    await this.adapter.openAccount(entry.config.discoveryUrl);
   }
   async retry(key: string): Promise<void> {
     const entry = this.entries.get(key);
-    if (!entry || entry.state.status === "ready") return;
+    if (!entry) throw new Error("relay_not_found");
+    if (entry.state.status === "ready") return;
     if (
       entry.connection &&
       entry.config.kind === "managed" &&

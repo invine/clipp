@@ -1,0 +1,76 @@
+{
+  "at": "2026-10-10T10:59:59.590403+00:00",
+  "purpose": "Validate approved migration milestone, ticket resolution, next frontier and unchanged study evidence; not application or native acceptance",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "headMatchesPlanningBaseline": true,
+  "filesChecked": 10,
+  "localLinksChecked": 93,
+  "anchorsChecked": 10,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "studyInputsChanged": [],
+  "preexistingTrackedChangesModified": [],
+  "tickets": [
+    {
+      "id": "01",
+      "title": "Choose the correctness-first migration sequence",
+      "status": "resolved",
+      "assignee": "Codex (current session)",
+      "blockedBy": "none"
+    },
+    {
+      "id": "02",
+      "title": "Define shared state, actions and task boundaries",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "01"
+    },
+    {
+      "id": "03",
+      "title": "Scope correctness and recovery delivery",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "04",
+      "title": "Plan native host integration and interaction repairs",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "05",
+      "title": "Plan compact workspace and routine control delivery",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "03, 04"
+    },
+    {
+      "id": "06",
+      "title": "Design the durable manual identity-reset boundary",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "02"
+    },
+    {
+      "id": "07",
+      "title": "Finalize validation gates and the implementation backlog",
+      "status": "open",
+      "assignee": "none",
+      "blockedBy": "05, 06"
+    }
+  ],
+  "resolvedPlanningTickets": 1,
+  "frontier": [
+    "Define shared state, actions and task boundaries"
+  ],
+  "milestoneScope": "Approved focused state/action milestone; Chrome preference integrity first",
+  "userDecision": "Focused state/action milestone (Recommended)",
+  "alreadyApproved": "Small, independently verifiable steps",
+  "runtimeActions": false,
+  "productionEdits": false,
+  "applicationTestsRun": false,
+  "implementationOrReleaseQualified": false
+}

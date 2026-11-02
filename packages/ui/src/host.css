@@ -1,0 +1,15 @@
+/* Imported explicitly by each document host, never by the component entry. */
+html,
+body {
+  margin: 0;
+  font-family: var(--clipp-font);
+  background: var(--clipp-surface);
+  color: var(--clipp-text);
+}
+html {
+  height: 100%;
+}
+body,
+#root {
+  min-width: 0;
+}

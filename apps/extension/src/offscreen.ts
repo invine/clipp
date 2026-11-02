@@ -59,7 +59,13 @@ let pairedConnections: ReturnType<
 > | null = null;
 const runtimeRegisteredProtocols = new Set<string>();
 const runtimeRegisteredStreamProtocols = new Set<string>();
-const storage = new RuntimeMessageStorageBackend();
+let runtimeGeneration: string | undefined;
+const storage = new RuntimeMessageStorageBackend(
+  undefined,
+  undefined,
+  undefined,
+  () => runtimeGeneration
+);
 const identityRepo = createKVIdentityRepository({ storage, key: IDENTITY_KEY });
 const identitySvc = createRuntimeIdentityManager({
   repo: identityRepo,
@@ -162,6 +168,7 @@ async function initMessaging(
     chrome.runtime
       .sendMessage({
         source: "offscreen",
+        runtimeGeneration,
         action: "selfPeerUpdate",
         multiaddrs,
       })
@@ -173,6 +180,7 @@ async function initMessaging(
     chrome.runtime
       .sendMessage({
         source: "offscreen",
+        runtimeGeneration,
         action: "peers",
         peers,
         peerConnections,
@@ -200,11 +208,13 @@ async function initMessaging(
       });
       managedController = createExtensionManagedRelayController({
         host,
+        runtimeGeneration: () => runtimeGeneration,
         acceptanceTransport,
         onStateChange: (states) => {
           void chrome.runtime
             .sendMessage({
               source: "offscreen",
+              runtimeGeneration,
               action: "managedRelayStates",
               states,
             })
@@ -264,8 +274,26 @@ const BACKGROUND_URL = chrome.runtime.getURL("service-worker-loader.js");
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target !== "offscreen") return;
+  if (!authorizedBackgroundControl(sender, chrome.runtime.id, BACKGROUND_URL)) {
+    sendResponse({ ok: false, error: "offscreen_control_unauthorized" });
+    return false;
+  }
+  if (msg.action !== "shutdown") {
+    if (
+      typeof msg.runtimeGeneration !== "string" ||
+      (runtimeGeneration !== undefined &&
+        runtimeGeneration !== msg.runtimeGeneration)
+    ) {
+      sendResponse({ ok: false, error: "identity_runtime_retired" });
+      return false;
+    }
+    runtimeGeneration = msg.runtimeGeneration;
+  }
   const managedControl = isManagedRelayControlAction(msg.action)
-    ? parseManagedRelayControlMessage(msg)
+    ? parseManagedRelayControlMessage(
+        msg,
+        msg.runtimeGeneration === undefined ? undefined : runtimeGeneration
+      )
     : null;
   if (
     isManagedRelayControlAction(msg.action) &&
@@ -399,6 +427,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.runtime
           .sendMessage({
             source: "offscreen",
+            runtimeGeneration,
             action: "runtimeProtocol",
             protocol: msg.protocol,
             from,
@@ -426,6 +455,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           send: async (message) =>
             (await chrome.runtime.sendMessage({
               source: "offscreen",
+              runtimeGeneration,
               ...message,
             })) as ExtensionStreamResponse,
         })

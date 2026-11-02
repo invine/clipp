@@ -1,4 +1,8 @@
-import { DEFAULT_CLIP_SHARING_LIFETIME_MS, isCanonicalPeerId, type Clip } from "../models/Clip";
+import {
+  DEFAULT_CLIP_SHARING_LIFETIME_MS,
+  isCanonicalPeerId,
+  type Clip,
+} from "../models/Clip";
 import type { ClipHistoryStore, HistoryAcceptance } from "../history/store";
 import { HistoryPolicyError } from "../history/types";
 import { normalizeClipboardContent } from "./normalize";
@@ -13,6 +17,8 @@ export type ClipCaptureOptions = {
   event?: {
     clipId: string;
     capturedAt: number;
+    /** Frozen before native ingress is first captured; absent on legacy prepared events. */
+    sharingLifetimeMs?: number;
   };
 };
 
@@ -36,7 +42,11 @@ export type IdentityRotationCaptureCleanup = {
   rollback(): Promise<void>;
 };
 
-type PendingCapture = { clip: Clip; bytes: number; options?: ClipCaptureOptions };
+type PendingCapture = {
+  clip: Clip;
+  bytes: number;
+  options?: ClipCaptureOptions;
+};
 
 export type ClipCaptureCoordinator = {
   baseline(value: string): Promise<void>;
@@ -45,9 +55,13 @@ export type ClipCaptureCoordinator = {
   reuse(
     value: string,
     write: (value: string) => Promise<void>,
-    readBack?: () => Promise<string>,
+    readBack?: () => Promise<string>
   ): Promise<Clip | null>;
-  writeRemote(clip: Clip, write: (value: string) => Promise<void>, readBack?: () => Promise<string>): Promise<void>;
+  writeRemote(
+    clip: Clip,
+    write: (value: string) => Promise<void>,
+    readBack?: () => Promise<string>
+  ): Promise<void>;
   baselineValue(): string | undefined;
   pending(): readonly Clip[];
   discardPending(): Promise<void>;
@@ -56,7 +70,9 @@ export type ClipCaptureCoordinator = {
   prepareIdentityRotationCleanup(): Promise<IdentityRotationCaptureCleanup>;
   start(): void;
   stop(): Promise<void>;
-  onRecovered(cb: (clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>): void;
+  onRecovered(
+    cb: (clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>
+  ): void;
 };
 
 export function createClipCaptureCoordinator(options: {
@@ -65,10 +81,15 @@ export function createClipCaptureCoordinator(options: {
   now?: () => number;
   makeId?: () => string;
   sharingLifetimeMs?: () => number;
+  /** A fresh owner after manual reset must not reattribute the former clipboard. */
+  baselineFirstObservation?: () => boolean;
   onStored?: (clip: Clip) => void | Promise<void>;
   pendingMaxClips?: number;
   pendingMaxBytes?: number;
-  onDiagnostic?: (diagnostic: ClipCaptureDiagnostic, details?: ClipCaptureDiagnosticDetails) => void;
+  onDiagnostic?: (
+    diagnostic: ClipCaptureDiagnostic,
+    details?: ClipCaptureDiagnosticDetails
+  ) => void;
 }): ClipCaptureCoordinator {
   let baseline: string | undefined;
   const pending: PendingCapture[] = [];
@@ -78,31 +99,53 @@ export function createClipCaptureCoordinator(options: {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let running = false;
   let retryDelayMs = 1_000;
-  const recoveredListeners: Array<(clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>> = [];
+  const recoveredListeners: Array<
+    (clip: Clip, options?: ClipCaptureOptions) => void | Promise<void>
+  > = [];
   const serialize = createSerializedExecutor();
   let schedulePendingRetry = (): void => {};
-  const store = async (clip: Clip, captureOptions?: ClipCaptureOptions): Promise<HistoryAcceptance | null> => {
+  const store = async (
+    clip: Clip,
+    captureOptions?: ClipCaptureOptions
+  ): Promise<HistoryAcceptance | null> => {
     try {
       return await options.history.accept(clip, {
         liveHandled: true,
         shareNowPending: captureOptions?.shareNow === true,
       });
     } catch (error) {
-      if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
-        options.onDiagnostic?.("clip_too_large", { pendingCount: pending.length });
+      if (
+        error instanceof HistoryPolicyError &&
+        error.code === "clip_capacity"
+      ) {
+        options.onDiagnostic?.("clip_too_large", {
+          pendingCount: pending.length,
+        });
         return null;
       }
       const bytes = new TextEncoder().encode(JSON.stringify(clip)).byteLength;
       if (bytes > pendingMaxBytes || pendingMaxClips <= 0) {
-        const details = { clipId: clip.id, encodedBytes: bytes, pendingCount: pending.length };
+        const details = {
+          clipId: clip.id,
+          encodedBytes: bytes,
+          pendingCount: pending.length,
+        };
         log.warn("Pending clipboard capture dropped", details);
         options.onDiagnostic?.("pending_capture_too_large", details);
         return null;
       }
-      while (pending.length > 0 && (pending.length >= pendingMaxClips || pendingBytes + bytes > pendingMaxBytes)) {
+      while (
+        pending.length > 0 &&
+        (pending.length >= pendingMaxClips ||
+          pendingBytes + bytes > pendingMaxBytes)
+      ) {
         const discarded = pending.shift()!;
         pendingBytes -= discarded.bytes;
-        const details = { clipId: discarded.clip.id, encodedBytes: discarded.bytes, pendingCount: pending.length };
+        const details = {
+          clipId: discarded.clip.id,
+          encodedBytes: discarded.bytes,
+          pendingCount: pending.length,
+        };
         log.warn("Pending clipboard capture evicted", details);
         options.onDiagnostic?.("pending_capture_dropped", details);
       }
@@ -115,7 +158,8 @@ export function createClipCaptureCoordinator(options: {
   };
   const retryPendingUnserialized = async (): Promise<void> => {
     const hadPendingCaptures = pending.length > 0;
-    let newestRecovered: { clip: Clip; options?: ClipCaptureOptions } | undefined;
+    let newestRecovered:
+      { clip: Clip; options?: ClipCaptureOptions } | undefined;
     const capacityRejected: ClipCaptureDiagnosticDetails[] = [];
     for (let index = 0; index < pending.length;) {
       const capture = pending[index];
@@ -126,11 +170,17 @@ export function createClipCaptureCoordinator(options: {
         });
         pending.splice(index, 1);
         pendingBytes -= capture.bytes;
-        if (accepted.kind === "newly-stored" || accepted.kind === "exact-duplicate") {
+        if (
+          accepted.kind === "newly-stored" ||
+          accepted.kind === "exact-duplicate"
+        ) {
           newestRecovered = { clip: capture.clip, options: capture.options };
         }
       } catch (error) {
-        if (error instanceof HistoryPolicyError && error.code === "clip_capacity") {
+        if (
+          error instanceof HistoryPolicyError &&
+          error.code === "clip_capacity"
+        ) {
           pending.splice(index, 1);
           pendingBytes -= capture.bytes;
           const details = {
@@ -138,7 +188,10 @@ export function createClipCaptureCoordinator(options: {
             encodedBytes: capture.bytes,
             pendingCount: pending.length,
           };
-          log.warn("Pending clipboard capture exceeds history capacity", details);
+          log.warn(
+            "Pending clipboard capture exceeds history capacity",
+            details
+          );
           capacityRejected.push(details);
           continue;
         }
@@ -156,10 +209,14 @@ export function createClipCaptureCoordinator(options: {
     }
     if (pending.length === 0) {
       retryDelayMs = 1_000;
-      if (hadPendingCaptures) options.onDiagnostic?.("pending_capture_storage_recovered");
+      if (hadPendingCaptures)
+        options.onDiagnostic?.("pending_capture_storage_recovered");
     }
     for (const details of capacityRejected) {
-      options.onDiagnostic?.("clip_too_large", { ...details, pendingCount: pending.length });
+      options.onDiagnostic?.("clip_too_large", {
+        ...details,
+        pendingCount: pending.length,
+      });
     }
     schedulePendingRetry();
   };
@@ -172,12 +229,19 @@ export function createClipCaptureCoordinator(options: {
       void serialize(retryPendingUnserialized);
     }, delayMs);
   };
-  const captureUnserialized = async (value: string, captureOptions?: ClipCaptureOptions): Promise<Clip | null> => {
+  const captureUnserialized = async (
+    value: string,
+    captureOptions?: ClipCaptureOptions
+  ): Promise<Clip | null> => {
     if (value.length === 0) return null;
     const immutable = {
       originPeerId: await options.originPeerId(),
-      capturedAt: captureOptions?.event?.capturedAt ?? (options.now ?? Date.now)(),
-      sharingLifetimeMs: options.sharingLifetimeMs?.() ?? DEFAULT_CLIP_SHARING_LIFETIME_MS,
+      capturedAt:
+        captureOptions?.event?.capturedAt ?? (options.now ?? Date.now)(),
+      sharingLifetimeMs: captureOptions?.event
+        ? (captureOptions.event.sharingLifetimeMs ??
+          DEFAULT_CLIP_SHARING_LIFETIME_MS)
+        : (options.sharingLifetimeMs?.() ?? DEFAULT_CLIP_SHARING_LIFETIME_MS),
     };
     if (!isCanonicalPeerId(immutable.originPeerId)) {
       options.onDiagnostic?.("invalid_capture");
@@ -187,7 +251,9 @@ export function createClipCaptureCoordinator(options: {
     for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
       const clip = normalizeClipboardContent(value, immutable.originPeerId, {
         now: () => immutable.capturedAt,
-        makeId: captureOptions?.event ? () => captureOptions.event!.clipId : options.makeId,
+        makeId: captureOptions?.event
+          ? () => captureOptions.event!.clipId
+          : options.makeId,
         sharingLifetimeMs: immutable.sharingLifetimeMs,
       });
       if (!clip) {
@@ -208,7 +274,8 @@ export function createClipCaptureCoordinator(options: {
       // A prepared explicit event already in durable history is recovery, not
       // a newly captured event. Its owner completes the queued action without
       // publishing it through the local Clip path again.
-      if (captureOptions?.event && accepted.kind === "exact-duplicate") return null;
+      if (captureOptions?.event && accepted.kind === "exact-duplicate")
+        return null;
     }
     options.onDiagnostic?.("clip_id_collision_exhausted");
     return null;
@@ -219,67 +286,91 @@ export function createClipCaptureCoordinator(options: {
     pendingBytes = 0;
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = undefined;
-    if (hadPendingCaptures) options.onDiagnostic?.("pending_capture_storage_recovered");
+    if (hadPendingCaptures)
+      options.onDiagnostic?.("pending_capture_storage_recovered");
   };
   const writeAndRebaselineUnserialized = async (
     value: string,
     write: (value: string) => Promise<void>,
-    readBack?: () => Promise<string>,
+    readBack?: () => Promise<string>
   ): Promise<void> => {
     await write(value);
     if (!readBack) {
       baseline = value;
       return;
     }
-    try { baseline = await readBack(); } catch { baseline = undefined; }
+    try {
+      baseline = await readBack();
+    } catch {
+      baseline = undefined;
+    }
   };
 
   return {
-    baseline: async (value) => { await serialize(async () => { baseline = value; }); },
-    observe: async (value) => serialize(async () => {
-      if (value === baseline) return null;
-      baseline = value;
-      await retryPendingUnserialized();
-      return value.length === 0 ? null : captureUnserialized(value);
-    }),
-    capture: async (value, captureOptions) => serialize(async () => {
-      baseline = value;
-      await retryPendingUnserialized();
-      const result = await captureUnserialized(value, captureOptions);
-      return result;
-    }),
-    reuse: async (value, write, readBack) => serialize(async () => {
-      await writeAndRebaselineUnserialized(value, write, readBack);
-      await retryPendingUnserialized();
-      return captureUnserialized(value);
-    }),
-    writeRemote: async (clip, write, readBack) => serialize(async () => {
-      await writeAndRebaselineUnserialized(clip.content, write, readBack);
-    }),
+    baseline: async (value) => {
+      await serialize(async () => {
+        baseline = value;
+      });
+    },
+    observe: async (value) =>
+      serialize(async () => {
+        if (baseline === undefined && options.baselineFirstObservation?.()) {
+          baseline = value;
+          return null;
+        }
+        if (value === baseline) return null;
+        baseline = value;
+        await retryPendingUnserialized();
+        return value.length === 0 ? null : captureUnserialized(value);
+      }),
+    capture: async (value, captureOptions) =>
+      serialize(async () => {
+        baseline = value;
+        await retryPendingUnserialized();
+        const result = await captureUnserialized(value, captureOptions);
+        return result;
+      }),
+    reuse: async (value, write, readBack) =>
+      serialize(async () => {
+        await writeAndRebaselineUnserialized(value, write, readBack);
+        await retryPendingUnserialized();
+        return captureUnserialized(value);
+      }),
+    writeRemote: async (clip, write, readBack) =>
+      serialize(async () => {
+        await writeAndRebaselineUnserialized(clip.content, write, readBack);
+      }),
     baselineValue: () => baseline,
     pending: () => pending.map((capture) => capture.clip),
-    discardPending: async () => serialize(async () => discardPendingUnserialized()),
-    clearHistory: async (clearDurable) => serialize(async () => {
-      await clearDurable();
-      discardPendingUnserialized();
-    }),
+    discardPending: async () =>
+      serialize(async () => discardPendingUnserialized()),
+    clearHistory: async (clearDurable) =>
+      serialize(async () => {
+        await clearDurable();
+        discardPendingUnserialized();
+      }),
     retryPending: async () => serialize(retryPendingUnserialized),
-    prepareIdentityRotationCleanup: () => serialize(async () => {
-      const checkpoint = pending.splice(0, pending.length);
-      pendingBytes = 0;
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = undefined;
-      let restored = false;
-      return {
-        rollback: () => serialize(async () => {
-          if (restored) return;
-          restored = true;
-          pending.unshift(...checkpoint);
-          pendingBytes += checkpoint.reduce((total, capture) => total + capture.bytes, 0);
-          schedulePendingRetry();
-        }),
-      };
-    }),
+    prepareIdentityRotationCleanup: () =>
+      serialize(async () => {
+        const checkpoint = pending.splice(0, pending.length);
+        pendingBytes = 0;
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = undefined;
+        let restored = false;
+        return {
+          rollback: () =>
+            serialize(async () => {
+              if (restored) return;
+              restored = true;
+              pending.unshift(...checkpoint);
+              pendingBytes += checkpoint.reduce(
+                (total, capture) => total + capture.bytes,
+                0
+              );
+              schedulePendingRetry();
+            }),
+        };
+      }),
     start: () => {
       running = true;
       schedulePendingRetry();

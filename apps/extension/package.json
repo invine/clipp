@@ -11,7 +11,8 @@
     "test:pairing-response": "node ./scripts/verify-pairing-response.mjs",
     "test:offscreen-storage": "npm run build && node ./scripts/verify-offscreen-storage.mjs",
     "test:managed-relays": "npm run build && node ./scripts/verify-managed-relay-mv3.mjs",
-    "test:relay-acceptance": "node ./scripts/verify-relay-acceptance.mjs"
+    "test:relay-acceptance": "node ./scripts/verify-relay-acceptance.mjs",
+    "build:reset-owning-acceptance": "node ./scripts/build-reset-owning-acceptance.mjs --build-reset-owning-entry"
   },
   "devDependencies": {
     "esbuild": "^0.27.1",

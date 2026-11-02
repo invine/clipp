@@ -12,6 +12,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.net.Uri;
+import android.widget.Toast;
+import java.util.UUID;
+import java.util.Objects;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -36,10 +40,16 @@ public final class BackgroundContinuityService extends Service {
     public static final String ACTION_RUNTIME_LOST = "com.clipp.app.background.RUNTIME_LOST";
     public static final String ACTION_TASK_REMOVED = "com.clipp.app.background.TASK_REMOVED";
     public static final String ACTION_NOTIFICATION_ACTION = "com.clipp.app.background.NOTIFICATION_ACTION";
+    public static final String ACTION_SERVICE_STOPPED = "com.clipp.app.background.SERVICE_STOPPED";
+    public static final String ACTION_SERVICE_UPDATED = "com.clipp.app.background.SERVICE_UPDATED";
+    public static final String EXTRA_UPDATE_ID = "updateId";
     public static final String ACTION_SERVICE_STARTED = "com.clipp.app.background.SERVICE_STARTED";
     public static final String EXTRA_CONNECTION_STATE = "connectionState";
     public static final String EXTRA_CONNECTED_DEVICE_COUNT = "connectedTrustedDeviceCount";
     public static final String EXTRA_ACTION = "action";
+    static final String EXTRA_IDENTITY_RUNTIME_GENERATION = "identityRuntimeGeneration";
+    public static final String EXTRA_AUTO_SYNC = "autoSync";
+    public static final String EXTRA_ACTION_TOKEN = "actionToken";
     static final String EXTRA_HEARTBEAT_TIMEOUT_MS = "heartbeatTimeoutMs";
     static final String EXTRA_HEARTBEAT_CHECK_MS = "heartbeatCheckMs";
 
@@ -54,11 +64,33 @@ public final class BackgroundContinuityService extends Service {
     private static final long DEFAULT_HEARTBEAT_CHECK_MS = 5_000L;
     private static final String WAKE_LOCK_TAG = "com.clipp.app:BackgroundContinuity";
 
+    private static volatile boolean running;
+    private static volatile boolean enabledPersistenceKnown = true;
+
+    static boolean enabledPersistenceKnown() { return enabledPersistenceKnown; }
+
+    static synchronized boolean persistEnabled(Context context, boolean enabled) {
+        SharedPreferences prefs = preferences(context);
+        boolean priorEnabled = prefs.getBoolean(ENABLED, false);
+        boolean priorStopped = prefs.getBoolean(USER_STOPPED, false);
+        boolean saved = prefs.edit().putBoolean(ENABLED, enabled).putBoolean(USER_STOPPED, !enabled).commit();
+        if (saved) { enabledPersistenceKnown = true; return true; }
+        // commit can update the in-memory map even when the durable write fails.
+        enabledPersistenceKnown = prefs.edit().putBoolean(ENABLED, priorEnabled).putBoolean(USER_STOPPED, priorStopped).commit();
+        return false;
+    }
+
+    static boolean isRunning() { return running; }
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastHeartbeatElapsedMs;
     private long heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS;
     private long heartbeatCheckMs = DEFAULT_HEARTBEAT_CHECK_MS;
     private boolean heartbeatHealthy;
+    private Boolean appliedAutoSync;
+    private static volatile String actionToken = UUID.randomUUID().toString();
+
+    static String currentActionToken() { return running ? actionToken : null; }
     private BackgroundContinuityConnectionState connectionState = BackgroundContinuityConnectionState.WAITING;
     private int connectedTrustedDeviceCount = 0;
     private BackgroundContinuityDiagnostics diagnostics;
@@ -73,6 +105,7 @@ public final class BackgroundContinuityService extends Service {
                 diagnostics.recordConnectionTransition(BackgroundContinuityConnectionState.DISCONNECTED, 0);
                 diagnostics.recordObservedFailure(BackgroundContinuityDiagnostics.FailureReason.HEARTBEAT_EXPIRED);
                 diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_RUNTIME_LOST);
+                running = false;
                 preferences(BackgroundContinuityService.this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
                 notifyRuntimeLost();
                 postReconnectNotification(BackgroundContinuityService.this);
@@ -88,6 +121,7 @@ public final class BackgroundContinuityService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        actionToken = UUID.randomUUID().toString();
         diagnostics = new BackgroundContinuityDiagnostics(this);
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (powerManager != null) {
@@ -98,78 +132,109 @@ public final class BackgroundContinuityService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? null : intent.getAction();
-        if (ACTION_STOP.equals(action)) {
-            diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_STOP);
-            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_BY_USER);
-            preferences(this).edit()
-                .putBoolean(ENABLED, false)
-                .putBoolean(USER_STOPPED, true)
-                .putBoolean(SERVICE_ACTIVE, false)
-                .apply();
-            notifyAction("stop");
-            releaseWakeLock();
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-        boolean starting = ACTION_START.equals(action);
-        if (starting && !preferences(this).getBoolean(ENABLED, false)) {
-            stopSelf(startId);
-            return START_NOT_STICKY;
-        }
-        if (!starting && !preferences(this).getBoolean(SERVICE_ACTIVE, false)) {
-            releaseWakeLock();
-            stopSelf(startId);
-            return START_NOT_STICKY;
-        }
-        if (starting) {
-            if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                heartbeatTimeoutMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS));
-                heartbeatCheckMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_CHECK_MS, DEFAULT_HEARTBEAT_CHECK_MS));
+        synchronized (NativeIdentityResetFence.LOCK) {
+            if (intent != null && intent.hasExtra(EXTRA_IDENTITY_RUNTIME_GENERATION) &&
+                !NativeIdentityResetFence.generation().equals(intent.getStringExtra(EXTRA_IDENTITY_RUNTIME_GENERATION))) {
+                if (!running) stopSelf(startId);
+                return START_NOT_STICKY;
             }
-            preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
-            diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.RUNNING);
-            diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.AWAITING);
-            diagnostics.recordEnvironmentSnapshot();
-            heartbeatHealthy = false;
-        }
-        if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
-            connectionState = ACTION_PAUSE.equals(action)
-                ? BackgroundContinuityConnectionState.PAUSED
-                : BackgroundContinuityConnectionState.WAITING;
-            diagnostics.recordLifecycleTransition(
-                ACTION_PAUSE.equals(action)
-                    ? BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_PAUSE
-                    : BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_RESUME
-            );
-            notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
-        }
-        if (ACTION_UPDATE.equals(action)) {
-            connectionState = BackgroundContinuityConnectionState.fromWire(
-                intent.getStringExtra(EXTRA_CONNECTION_STATE)
-            );
-            connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
-        }
-        if (starting || ACTION_HEARTBEAT.equals(action)) {
-            lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
-            if (ACTION_HEARTBEAT.equals(action) && !heartbeatHealthy) {
-                heartbeatHealthy = true;
-                diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.HEALTHY);
+            if (NativeIdentityResetFence.forContext(this).isBlocked()) {
+                running = false;
+                handler.removeCallbacks(heartbeatWatchdog);
+                releaseWakeLock();
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf(startId);
+                return START_NOT_STICKY;
             }
+            String action = intent == null ? null : intent.getAction();
+            boolean notificationAction = ACTION_STOP.equals(action) || ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action);
+            if (notificationAction && intent.hasExtra(EXTRA_ACTION_TOKEN)
+                && !actionToken.equals(intent.getStringExtra(EXTRA_ACTION_TOKEN))) return START_NOT_STICKY;
+            if (ACTION_STOP.equals(action)) {
+                diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_STOP);
+                diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_BY_USER);
+                boolean saved = persistEnabled(this, false);
+                if (!saved) {
+                    Toast.makeText(this, "Background Stop could not be saved. Reopen Clipp to check the current state.", Toast.LENGTH_LONG).show();
+                    return START_NOT_STICKY;
+                }
+                preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
+                running = false;
+                notifyAction("stop");
+                releaseWakeLock();
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            boolean starting = ACTION_START.equals(action);
+            if (starting && !preferences(this).getBoolean(ENABLED, false)) {
+                stopSelf(startId);
+                return START_NOT_STICKY;
+            }
+            if (!starting && (!running || !preferences(this).getBoolean(ENABLED, false))) {
+                releaseWakeLock();
+                stopSelf(startId);
+                return START_NOT_STICKY;
+            }
+            if (starting) {
+                if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    heartbeatTimeoutMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_TIMEOUT_MS, DEFAULT_HEARTBEAT_TIMEOUT_MS));
+                    heartbeatCheckMs = Math.max(10L, intent.getLongExtra(EXTRA_HEARTBEAT_CHECK_MS, DEFAULT_HEARTBEAT_CHECK_MS));
+                }
+                preferences(this).edit().putBoolean(SERVICE_ACTIVE, true).apply();
+                diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.RUNNING);
+                diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.AWAITING);
+                diagnostics.recordEnvironmentSnapshot();
+                heartbeatHealthy = false;
+            }
+            if (starting || ACTION_UPDATE.equals(action)) {
+                Boolean nextAutoSync = intent.hasExtra(EXTRA_AUTO_SYNC) ? intent.getBooleanExtra(EXTRA_AUTO_SYNC, false) : null;
+                if (starting || !Objects.equals(appliedAutoSync, nextAutoSync)) actionToken = UUID.randomUUID().toString();
+                appliedAutoSync = nextAutoSync;
+                if (starting) connectionState = Boolean.FALSE.equals(appliedAutoSync)
+                    ? BackgroundContinuityConnectionState.PAUSED : BackgroundContinuityConnectionState.WAITING;
+            }
+            if (ACTION_PAUSE.equals(action) || ACTION_RESUME.equals(action)) {
+                if (appliedAutoSync == null || !intent.hasExtra(EXTRA_ACTION_TOKEN)
+                    || appliedAutoSync == ACTION_RESUME.equals(action)) return START_NOT_STICKY;
+                diagnostics.recordLifecycleTransition(
+                    ACTION_PAUSE.equals(action)
+                        ? BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_PAUSE
+                        : BackgroundContinuityDiagnostics.LifecycleTransition.NOTIFICATION_RESUME
+                );
+                // The JS settings owner must persist and publish before presentation changes.
+                notifyAction(ACTION_PAUSE.equals(action) ? "pause" : "resume");
+            }
+            if (ACTION_UPDATE.equals(action)) {
+                connectionState = BackgroundContinuityConnectionState.fromWire(
+                    intent.getStringExtra(EXTRA_CONNECTION_STATE)
+                );
+                connectedTrustedDeviceCount = Math.max(0, intent.getIntExtra(EXTRA_CONNECTED_DEVICE_COUNT, 0));
+            }
+            if (starting || ACTION_HEARTBEAT.equals(action)) {
+                lastHeartbeatElapsedMs = SystemClock.elapsedRealtime();
+                if (ACTION_HEARTBEAT.equals(action) && !heartbeatHealthy) {
+                    heartbeatHealthy = true;
+                    diagnostics.recordHeartbeatTransition(BackgroundContinuityDiagnostics.HeartbeatTransition.HEALTHY);
+                }
+            }
+            diagnostics.recordConnectionTransition(connectionState, connectedTrustedDeviceCount);
+            createNotificationChannel(this);
+            startForegroundSafely();
+            acquireWakeLock();
+            running = true;
+            if (starting) notifyServiceStarted();
+            if (ACTION_UPDATE.equals(action)) sendBroadcast(new Intent(ACTION_SERVICE_UPDATED).setPackage(getPackageName())
+                .putExtra(EXTRA_UPDATE_ID, intent.getStringExtra(EXTRA_UPDATE_ID)));
+            handler.removeCallbacks(heartbeatWatchdog);
+            handler.postDelayed(heartbeatWatchdog, heartbeatCheckMs);
+            return START_NOT_STICKY;
         }
-        diagnostics.recordConnectionTransition(connectionState, connectedTrustedDeviceCount);
-        createNotificationChannel(this);
-        startForegroundSafely();
-        acquireWakeLock();
-        if (starting) notifyServiceStarted();
-        handler.removeCallbacks(heartbeatWatchdog);
-        handler.postDelayed(heartbeatWatchdog, heartbeatCheckMs);
-        return START_NOT_STICKY;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        running = false;
         diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.TASK_REMOVED);
         diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.STOPPED_TASK_REMOVED);
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
@@ -183,12 +248,14 @@ public final class BackgroundContinuityService extends Service {
 
     @Override
     public void onDestroy() {
+        running = false;
         preferences(this).edit().putBoolean(SERVICE_ACTIVE, false).apply();
         handler.removeCallbacks(heartbeatWatchdog);
         releaseWakeLock();
         if (diagnostics != null) {
             diagnostics.recordServiceTransition(BackgroundContinuityDiagnostics.ServiceTransition.DESTROYED);
         }
+        sendBroadcast(new Intent(ACTION_SERVICE_STOPPED).setPackage(getPackageName()));
         super.onDestroy();
     }
 
@@ -198,7 +265,7 @@ public final class BackgroundContinuityService extends Service {
     }
 
     private void startForegroundSafely() {
-        Notification notification = buildOngoingNotification(this, connectionState, connectedTrustedDeviceCount);
+        Notification notification = buildOngoingNotification(this, connectionState, connectedTrustedDeviceCount, appliedAutoSync, actionToken);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(ONGOING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING);
         } else {
@@ -232,20 +299,23 @@ public final class BackgroundContinuityService extends Service {
     private static Notification buildOngoingNotification(
         Context context,
         BackgroundContinuityConnectionState state,
-        int connectedCount
+        int connectedCount,
+        Boolean autoSync,
+        String token
     ) {
-        return new NotificationCompat.Builder(context, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Clipp background continuity")
             .setContentText(notificationText(state, connectedCount))
             .setContentIntent(openAppIntent(context))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, "Pause", serviceIntent(context, ACTION_PAUSE, 11))
-            .addAction(0, "Resume", serviceIntent(context, ACTION_RESUME, 12))
-            .addAction(0, "Stop", serviceIntent(context, ACTION_STOP, 13))
-            .build();
+            .setCategory(NotificationCompat.CATEGORY_SERVICE);
+        if (autoSync != null) {
+            builder.addAction(0, autoSync ? "Pause Auto Sync" : "Resume Auto Sync",
+                serviceIntent(context, autoSync ? ACTION_PAUSE : ACTION_RESUME, autoSync ? 11 : 12, token));
+        }
+        return builder.addAction(0, "Stop background mode", serviceIntent(context, ACTION_STOP, 13, token)).build();
     }
 
     private static String notificationText(BackgroundContinuityConnectionState state, int connectedCount) {
@@ -265,6 +335,7 @@ public final class BackgroundContinuityService extends Service {
     }
 
     static void postReconnectNotification(Context context) {
+        if (NativeIdentityResetFence.forContext(context).isBlocked()) return;
         boolean available = notificationsAvailable(context);
         new BackgroundContinuityDiagnostics(context).recordNotificationAvailability(available);
         if (!available) return;
@@ -311,8 +382,10 @@ public final class BackgroundContinuityService extends Service {
         return PendingIntent.getActivity(context, 10, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
-    private static PendingIntent serviceIntent(Context context, String action, int requestCode) {
-        Intent intent = new Intent(context, BackgroundContinuityService.class).setAction(action);
+    private static PendingIntent serviceIntent(Context context, String action, int requestCode, String token) {
+        Intent intent = new Intent(context, BackgroundContinuityService.class).setAction(action)
+            .setData(Uri.parse("clipp://background-action/" + token + "/" + requestCode))
+            .putExtra(EXTRA_ACTION_TOKEN, token);
         return PendingIntent.getService(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
@@ -328,6 +401,7 @@ public final class BackgroundContinuityService extends Service {
     private void notifyAction(String action) {
         Intent event = new Intent(ACTION_NOTIFICATION_ACTION).setPackage(getPackageName());
         event.putExtra(EXTRA_ACTION, action);
+        event.putExtra(EXTRA_ACTION_TOKEN, actionToken);
         sendBroadcast(event);
     }
 }

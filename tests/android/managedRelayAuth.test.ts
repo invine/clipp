@@ -8,6 +8,9 @@ import {
   AndroidManagedRelayAuth,
   ANDROID_RELAY_REDIRECT,
 } from "../../apps/android/src/managedRelayAuth";
+import { performRelayAction } from "../../packages/core/network/relayActions";
+import { createUiSession } from "../../packages/ui/src/uiSession";
+import { createIdentityBoundWorkFence } from "../../packages/core/runtime/identityInitialization";
 
 const endpoint = "https://relay.example/v1/relay";
 
@@ -360,5 +363,79 @@ describe("Android managed relay authorization", () => {
     await erase;
     await expect(login).rejects.toThrow("login_cancelled");
     expect(native.saved.size).toBe(0);
+  });
+  it("discards a delayed credential refresh from the fenced former runtime", async () => {
+    const native = bridge();
+    native.saved.set(endpoint, "synthetic-prior-refresh");
+    let finish!: (response: Response) => void;
+    const fetcher = jest.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const fence = createIdentityBoundWorkFence();
+    const auth = new AndroidManagedRelayAuth(native, fetcher, Date.now, fence);
+    const refreshing = auth.accessToken(endpoint, new AbortController().signal);
+    while (fetcher.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const held = await fence.acquireFence();
+    finish(tokens());
+    expect(await refreshing).toBeNull();
+    expect(native.writeCredential).not.toHaveBeenCalled();
+    await held.release();
+    expect(
+      await auth.accessToken(endpoint, new AbortController().signal)
+    ).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("settles denial through the owning action when the WebView reports an opaque callback path", async () => {
+    const native = bridge();
+    const fetcher = jest.fn(async (_input: RequestInfo | URL) => tokens());
+    const auth = new AndroidManagedRelayAuth(native, fetcher);
+    const session = createUiSession();
+    const action = session.relayAction("relay", () =>
+      performRelayAction(
+        "authenticated",
+        () => auth.login(endpoint),
+        async () => {}
+      )
+    );
+    while (native.openBrowser.mock.calls.length === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    const platformUrl = globalThis.URL;
+    const state = new platformUrl(
+      native.openBrowser.mock.calls[0][0]
+    ).searchParams.get("state")!;
+    const callback = `${ANDROID_RELAY_REDIRECT}?error=access_denied&state=${state}`;
+    // Controlled platform replay of c813's actual WebView fields for these
+    // unchanged URI bytes: host="", pathname="//oauth/callback".
+    class RecordedWebViewUrl extends platformUrl {
+      get host() {
+        return this.protocol === "clipp-relay:" ? "" : super.host;
+      }
+      get pathname() {
+        return this.protocol === "clipp-relay:"
+          ? `//${super.host}${super.pathname}`
+          : super.pathname;
+      }
+    }
+    globalThis.URL = RecordedWebViewUrl;
+    try {
+      expect(session.getSnapshot().relayActions.relay.pending).toBe(true);
+      expect(await auth.acceptCallback(callback)).toBe(true);
+      await action;
+      expect(session.getSnapshot().relayActions.relay).toEqual({
+        pending: false,
+        result: { status: "rejected", error: "authorization_denied" },
+      });
+      expect(await auth.acceptCallback(callback)).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(native.writeCredential).not.toHaveBeenCalled();
+    } finally {
+      globalThis.URL = platformUrl;
+      await auth.erase(endpoint);
+      await action;
+    }
   });
 });

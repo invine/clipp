@@ -1,16 +1,31 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clipboard Share – Options</title>
-  <link rel="stylesheet" href="./styles/tailwind-built.css" />
-</head>
-<body>
-  <!-- React mounts here -->
-  <div id="root"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      html,
+      body {
+        background: var(--clipp-surface, #faf9fc);
+        color: var(--clipp-text, #211d2b);
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: var(--clipp-surface, #14141b);
+          color: var(--clipp-text, #f2f1f7);
+        }
+      }
+    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clipboard Share – Options</title>
+    <link rel="stylesheet" href="./styles/tailwind-built.css" />
+  </head>
+  <body>
+    <!-- React mounts here -->
+    <div id="root"></div>
 
-  <!-- Vite compiles options.ts and injects Tailwind styles automatically -->
-  <script type="module" src="./options.tsx"></script>
-</body>
+    <!-- Vite compiles options.ts and injects Tailwind styles automatically -->
+    <script type="module" src="./options.tsx"></script>
+  </body>
 </html>

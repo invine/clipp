@@ -1,0 +1,235 @@
+jest.mock("@capacitor/core", () => ({
+  Capacitor: { getPlatform: () => "android" },
+  registerPlugin: () => ({}),
+}));
+jest.mock(
+  "@multiformats/multiaddr",
+  () => ({ multiaddr: (value: string) => ({ toString: () => value }) }),
+  { virtual: true }
+);
+import {
+  bindAndroidHostTaskInput,
+  type AndroidTaskInputSource,
+} from "../../apps/android/src/hostTaskInputNative";
+import {
+  createHostTaskInput,
+  type NativeBackEvent,
+} from "../../packages/ui/src/hostTaskInput";
+import { createUiSession } from "../../packages/ui/src/uiSession";
+
+it("the native bridge acknowledges one task level and root separately, rejecting repeats and late callbacks after disposal", async () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.open({ kind: "paste", origin: "paste-choice" });
+  session.pairing.change("retained draft");
+  let event!: (event: NativeBackEvent & { owner: string }) => void;
+  const acknowledgments: boolean[] = [];
+  const source: AndroidTaskInputSource = {
+    addListener: async (_name, callback) => {
+      event = callback;
+      return { remove: async () => {} };
+    },
+    setReady: async () => {},
+    completeBack: async ({ handled }) => {
+      acknowledgments.push(handled);
+    },
+  };
+  const dispose = bindAndroidHostTaskInput(
+    createHostTaskInput(session),
+    source,
+    "document"
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+  event({ owner: "document", sequence: 1, imeVisible: false });
+  await Promise.resolve();
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "pairing",
+  ]);
+  event({ owner: "document", sequence: 1, imeVisible: false });
+  event({ owner: "old-document", sequence: 9, imeVisible: false });
+  await Promise.resolve();
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "pairing",
+  ]);
+  event({ owner: "document", sequence: 2, imeVisible: false });
+  await Promise.resolve();
+  event({ owner: "document", sequence: 3, imeVisible: false });
+  await Promise.resolve();
+  expect(acknowledgments).toEqual([true, true, true, false]);
+  session.open({ kind: "paste", origin: "paste-choice" });
+  dispose();
+  event({ owner: "document", sequence: 4, imeVisible: false });
+  await Promise.resolve();
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "paste",
+  ]);
+  expect(session.pairing.getSnapshot().raw).toBe("retained draft");
+});
+
+it("a root Back cannot leave after a task opens before the bridge acknowledges it", async () => {
+  const session = createUiSession();
+  let event!: (event: NativeBackEvent & { owner: string }) => void;
+  const acknowledgments: boolean[] = [];
+  const dispose = bindAndroidHostTaskInput(
+    createHostTaskInput(session),
+    {
+      addListener: async (_name, callback) => {
+        event = callback;
+        return { remove: async () => {} };
+      },
+      setReady: async () => {},
+      completeBack: async ({ handled }) => {
+        acknowledgments.push(handled);
+      },
+    },
+    "document"
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+  event({ owner: "document", sequence: 1, imeVisible: false });
+  session.open({ kind: "pairing", origin: "add-device" });
+  await Promise.resolve();
+  expect(acknowledgments).toEqual([true]);
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "pairing",
+  ]);
+  dispose();
+});
+
+it("disposal before native listener readiness removes the late subscription without activating input", async () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  let registered!: (handle: { remove(): Promise<void> }) => void;
+  let event!: (event: NativeBackEvent & { owner: string }) => void;
+  const readiness: boolean[] = [];
+  let removed = false;
+  const dispose = bindAndroidHostTaskInput(
+    createHostTaskInput(session),
+    {
+      addListener: (_name, callback) => {
+        event = callback;
+        return new Promise((resolve) => {
+          registered = resolve;
+        });
+      },
+      setReady: async ({ ready }) => {
+        readiness.push(ready);
+      },
+      completeBack: async () => {
+        throw new Error("stale_ack");
+      },
+    },
+    "document"
+  );
+  dispose();
+  registered({
+    async remove() {
+      removed = true;
+    },
+  });
+  event({ owner: "document", sequence: 1, imeVisible: false });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect({ readiness, removed }).toEqual({ readiness: [false], removed: true });
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "pairing",
+  ]);
+});
+
+it("delayed or failed listener registration leaves the live task intact and cannot acknowledge root exit", async () => {
+  const session = createUiSession();
+  session.open({ kind: "pairing", origin: "add-device" });
+  session.open({ kind: "paste", origin: "paste-choice" });
+  session.pairing.change("retained during native startup");
+  let event!: (event: NativeBackEvent & { owner: string }) => void;
+  let failRegistration!: (error: Error) => void;
+  const readiness: boolean[] = [];
+  const acknowledged: boolean[] = [];
+  const dispose = bindAndroidHostTaskInput(
+    createHostTaskInput(session),
+    {
+      addListener: (_name, callback) => {
+        event = callback;
+        return new Promise((_, reject) => {
+          failRegistration = reject;
+        });
+      },
+      setReady: async ({ ready }) => {
+        readiness.push(ready);
+      },
+      completeBack: async ({ handled }) => {
+        acknowledged.push(handled);
+      },
+    },
+    "document"
+  );
+  event({ owner: "document", sequence: 1, imeVisible: false });
+  await Promise.resolve();
+  failRegistration(new Error("native_listener_unavailable"));
+  await Promise.resolve();
+  await Promise.resolve();
+  event({ owner: "document", sequence: 2, imeVisible: false });
+  await Promise.resolve();
+  expect({ readiness, acknowledged }).toEqual({
+    readiness: [],
+    acknowledged: [true, true],
+  });
+  expect(session.getSnapshot().tasks.map((task) => task.kind)).toEqual([
+    "pairing",
+    "paste",
+  ]);
+  expect(session.pairing.getSnapshot().raw).toBe(
+    "retained during native startup"
+  );
+  dispose();
+});
+
+it("binds a secure default document owner and acknowledges actual session Back without crypto.randomUUID", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis.crypto,
+    "randomUUID"
+  );
+  Object.defineProperty(globalThis.crypto, "randomUUID", {
+    value: undefined,
+    configurable: true,
+  });
+  try {
+    const session = createUiSession();
+    session.open({ kind: "pairing", origin: "pairing-start" });
+    let deliver!: (event: NativeBackEvent & { owner: string }) => void;
+    let owner = "";
+    const acknowledgments: boolean[] = [];
+    const source: AndroidTaskInputSource = {
+      addListener: async (_name, callback) => {
+        deliver = callback;
+        return { remove: async () => {} };
+      },
+      setReady: async (value) => {
+        if (value.ready) owner = value.owner;
+      },
+      completeBack: async (value) => {
+        acknowledgments.push(value.handled);
+      },
+    };
+    const dispose = bindAndroidHostTaskInput(
+      createHostTaskInput(session),
+      source
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(owner).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    deliver({ owner, sequence: 1, imeVisible: false });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.getSnapshot().tasks).toEqual([]);
+    expect(acknowledgments).toEqual([true]);
+    dispose();
+  } finally {
+    if (descriptor)
+      Object.defineProperty(globalThis.crypto, "randomUUID", descriptor);
+    else Reflect.deleteProperty(globalThis.crypto, "randomUUID");
+  }
+});

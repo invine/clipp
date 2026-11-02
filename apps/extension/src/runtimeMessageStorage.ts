@@ -1,3 +1,4 @@
+import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import type { KVStorageBackend } from "../../../packages/core/trust";
 import { MANAGED_RELAY_CREDENTIAL_PREFIX } from "./managedRelayConstants";
 
@@ -21,6 +22,7 @@ type OffscreenStorageHandlerOptions = {
   storage: KVStorageBackend;
   extensionId: string;
   offscreenUrl: string;
+  workFence?: IdentityBoundWorkFence;
 };
 
 export class RuntimeMessageStorageBackend implements KVStorageBackend {
@@ -28,7 +30,9 @@ export class RuntimeMessageStorageBackend implements KVStorageBackend {
     private readonly sendMessage: SendRuntimeMessage = defaultSendRuntimeMessage,
     private readonly getLastError: () =>
       string | undefined = defaultRuntimeMessageError,
-    private readonly timeoutMs: number = 10_000
+    private readonly timeoutMs: number = 10_000,
+    private readonly runtimeGeneration: () => string | undefined = () =>
+      undefined
   ) {}
 
   async get<Value = unknown>(key: string): Promise<Value | undefined> {
@@ -66,21 +70,27 @@ export class RuntimeMessageStorageBackend implements KVStorageBackend {
         this.timeoutMs
       );
       try {
-        this.sendMessage(request, (response) => {
-          clearTimeout(timeout);
-          const lastError = this.getLastError();
-          if (lastError) {
-            reject(new Error(lastError));
-            return;
+        this.sendMessage(
+          {
+            ...(request as object),
+            runtimeGeneration: this.runtimeGeneration(),
+          },
+          (response) => {
+            clearTimeout(timeout);
+            const lastError = this.getLastError();
+            if (lastError) {
+              reject(new Error(lastError));
+              return;
+            }
+            if (!response?.ok) {
+              reject(
+                new Error(response?.error ?? "storage_proxy_invalid_response")
+              );
+              return;
+            }
+            resolve(response.value as Value | undefined);
           }
-          if (!response?.ok) {
-            reject(
-              new Error(response?.error ?? "storage_proxy_invalid_response")
-            );
-            return;
-          }
-          resolve(response.value as Value | undefined);
-        });
+        );
       } catch (error) {
         clearTimeout(timeout);
         reject(error);
@@ -105,6 +115,17 @@ export async function handleOffscreenStorageRequest(
     return { ok: false, error: "storage_proxy_unauthorized" };
   }
   try {
+    if (options.workFence) {
+      if (typeof request.runtimeGeneration !== "string")
+        throw new Error("identity_runtime_retired");
+      options.workFence.assertOpen(request.runtimeGeneration);
+      return await options.workFence.run(() =>
+        handleOffscreenStorageRequest(request, sender, {
+          ...options,
+          workFence: undefined,
+        })
+      );
+    }
     if (request.operation === "get") {
       return { ok: true, value: await options.storage.get(request.key) };
     }
@@ -125,12 +146,14 @@ type OffscreenStorageRequest =
       action: typeof STORAGE_ACTION;
       operation: "get" | "remove";
       key: string;
+      runtimeGeneration?: string;
     }
   | {
       target: typeof STORAGE_TARGET;
       action: typeof STORAGE_ACTION;
       operation: "set";
       key: string;
+      runtimeGeneration?: string;
       value: unknown;
     };
 

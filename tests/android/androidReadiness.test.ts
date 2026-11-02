@@ -915,7 +915,7 @@ test("a focused Android pass retains its limited scope and admits an ordinary sa
     );
     expect(matrix.behavior).toMatchObject({
       suite: "matrix",
-      requiredTests: 27,
+      requiredTests: 28,
       passed: true,
     });
     expect(matrix.history.generation).toBe(1);
@@ -955,7 +955,7 @@ test("the connected npm entrypoint runs the installed selected-serial matrix wit
     expect(
       JSON.parse(readFileSync(join(run.output, "receipt.json"), "utf8"))
         .behavior
-    ).toMatchObject({ suite: "matrix", requiredTests: 27, passed: true });
+    ).toMatchObject({ suite: "matrix", requiredTests: 28, passed: true });
     expect(
       readFileSync(run.argsFile, "utf8")
         .trim()

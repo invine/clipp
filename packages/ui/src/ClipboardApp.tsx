@@ -1,9 +1,76 @@
+import { shortenPreview, previewGraphemes } from "./previewText";
+import { projectConnectionSummary } from "../../core/runtime/connectionSummary";
+import { ConnectionStatusButton, ConnectionsPanel } from "./ConnectionSummary";
+import { NotificationSettings } from "./NotificationSettings";
+import type { NotificationAvailabilityControls } from "./useNotificationAvailability";
+import type { HostTaskInput } from "./hostTaskInput";
+import {
+  pairingScanErrorMessage,
+  type PairingScanError,
+  type PairingScanOptions,
+  type PairingScanResult,
+  type PairingCameraPermission,
+  type CameraPermissionState,
+} from "./pairingScan";
+import { ClipDetails } from "./ClipDetails";
+import {
+  BackgroundContinuityControls,
+  BackgroundContinuityHelp,
+} from "./BackgroundContinuityControls";
+import type { BackgroundContinuityState } from "./types";
+import { ClipSettings } from "./ClipSettings";
+import { findSessionFocus } from "./sessionFocus";
+import { NARROW_CONTENT_WIDTH } from "./workspaceLayout";
+import { Appearance, type AppearanceSettings } from "./Appearance";
+import { PairingStatus } from "./PairingStatus";
+import type { PairingOutcome, PairingOutcomeSnapshot } from "./types";
+import { useTaskRecoveryIssues } from "./useTaskRecoveryIssues";
+import {
+  composeRecoveryIssues,
+  type RecoveryIssue,
+  type PopupCaptureState,
+} from "../../core/runtime/recoveryIssues";
+import { RecoveryIssues } from "./RecoveryIssues";
+import { Icon, IconButton } from "./controls";
+import { HOST_GEOMETRY_EVENT, hostContentSize } from "./hostGeometry";
+import { TaskDialog } from "./TaskDialog";
+import type { AutoSyncActionResult } from "../../core/runtime/autoSyncAction";
+import { createUiSession, type UiSession } from "./uiSession";
+import type {
+  RelayMutation,
+  RelayMutationResult,
+} from "../../core/network/relayMutations";
+import type { RelayActionResult } from "../../core/network/relayActions";
+import { PairingCodeContent } from "./PairingCodeContent";
+import { usePairingCodeTask } from "./usePairingCodeTask";
+import type { PayloadCopyResult } from "../../core/clipboard/payloadCopy";
+import {
+  pairingSubmissionMessage,
+  pairingApprovalMessage,
+} from "./pairingFeedback";
+import type {
+  PairingSubmissionResult,
+  PairingApprovalResult,
+} from "../../core/pairing/results";
 import { ManagedRelaySettings } from "./ManagedRelaySettings";
+import {
+  PreferenceRefreshNotice,
+  PreferenceSaveFeedback,
+} from "./PreferenceSaveFeedback";
+import { ClearHistoryReview } from "./ClearHistoryReview";
+import { ManualIdentityResetSettings, type ManualIdentityResetActions } from "./ManualIdentityResetSettings";
+import type { IdentityResetReceipt, IdentityResetState } from "../../core/trust/manualIdentityReset";
 import type {
   RelayConfiguration,
   RelayState,
 } from "../../core/network/managedRelays.js";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   Clip,
@@ -17,20 +84,16 @@ import {
   PeerConnectionInfo,
   PendingRequest,
   RelayConnectionInfo,
-  type BackgroundContinuityDiagnosticStatus,
 } from "./types";
-import {
-  identityRotationNoticeMessage,
-  type IdentityRotationNoticeReason,
-} from "./identityRotationNotice";
+import { type IdentityRotationNoticeReason } from "./identityRotationNotice";
 import {
   normalizeShareNowFailureCode,
   reuseClipFeedback,
   shareNowFailureFeedback,
-  type ClipboardActionFeedback,
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
+import { nameSaveErrorMessage, saveNonEmptyAlias } from "./nameEditSession";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -58,37 +121,12 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleString();
 }
 
-function truncate(text: string, max = 220): string {
-  if (!text) return "";
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
-function truncateMiddle(text: string, max = 28): string {
-  if (!text) return "";
-  if (text.length <= max) return text;
-  const available = Math.max(max - 3, 1);
-  const lead = Math.ceil(available / 2);
-  const tail = Math.floor(available / 2);
-  return `${text.slice(0, lead)}...${text.slice(text.length - tail)}`;
-}
-
-function clipboardHistoryErrorMessage(error: ClipboardHistoryError): string {
-  if (error === "clip_too_large") {
-    return "A clipboard value was too large to save in Clipboard History.";
-  }
-  if (error === "pending_capture_too_large") {
-    return "A pending clipboard item was too large to keep for a later storage retry.";
-  }
-  if (error === "pending_capture_dropped") {
-    return "Clipboard History storage is unavailable. One or more pending Clips could not be saved.";
-  }
-  return "Clipboard History storage is unavailable. Clipp will retry pending Clips automatically.";
-}
-
 function connectionStatusFor(
   connection: PeerConnectionInfo | undefined,
-  online: boolean
+  online: boolean,
+  known: boolean
 ) {
+  if (!known) return { kind: "unknown", title: "Connection status unknown" };
   if (!online) {
     return {
       kind: "offline",
@@ -98,26 +136,24 @@ function connectionStatusFor(
   if (!connection) {
     return {
       kind: "unknown",
-      title: "Online; connection path unknown",
+      title: "Connected · path unknown",
     };
   }
   if (connection.hasDirect) {
     return {
       kind: "direct",
-      title: connection.hasRelay
-        ? "Direct connection active; relay is also available"
-        : "Direct peer connection",
+      title: "Connected · direct",
     };
   }
   if (connection.hasRelay) {
     return {
       kind: "relay",
-      title: "Relayed peer connection",
+      title: "Connected · relay",
     };
   }
   return {
     kind: "unknown",
-    title: "Online; connection path unknown",
+    title: "Connected · path unknown",
   };
 }
 
@@ -134,7 +170,7 @@ function relayDisplayName(address: string, index: number): string {
 
   const p2pIndex = parts.findIndex((part) => part === "p2p");
   const peerId = p2pIndex >= 0 ? parts[p2pIndex + 1] : "";
-  if (peerId) return `Relay ${truncateMiddle(peerId, 12)}`;
+  if (peerId) return `Relay ${shortenPreview(peerId, 12, "middle")}`;
 
   return `Relay ${index + 1}`;
 }
@@ -225,14 +261,20 @@ function MiddleEllipsisText({
       }
 
       // Find the longest middle-ellipsized string that fits the current pixel width.
-      const maxChars = Math.max(1, Math.min(max ?? text.length, text.length));
+      const maxChars = Math.max(
+        1,
+        Math.min(
+          max ?? previewGraphemes(text).length,
+          previewGraphemes(text).length
+        )
+      );
       let low = 1;
       let high = maxChars;
-      let best = truncateMiddle(text, low);
+      let best = shortenPreview(text, low, "middle");
 
       while (low <= high) {
         const mid = Math.floor((low + high) / 2);
-        const candidate = truncateMiddle(text, mid);
+        const candidate = shortenPreview(text, mid, "middle");
         measure.textContent = candidate;
         if (measure.scrollWidth <= containerWidth + 0.5) {
           best = candidate;
@@ -278,60 +320,96 @@ export type ClipboardAppProps = {
   pending: PendingRequest[];
   waiting?: PairingWaiting[];
   pairingErrors?: PairingError[];
+  pairingOutcomes?: PairingOutcome[];
+  pairingState?: PairingOutcomeSnapshot;
+  requestsLoading?: boolean;
+  requestsUnavailable?: boolean;
+  onRetryRequests?(): boolean | void | Promise<boolean | void>;
+  onDismissPairingOutcome?(targetPeerId: string): Promise<boolean>;
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  historyLoading?: boolean;
+  historyUnavailable?: boolean;
+  historyRefreshError?: string | null;
+  onRetryHistoryRefresh?(): boolean | Promise<boolean>;
+  onInspectClip?(id: string): void;
   localRetentionMs?: number;
+  appearanceSettings?: AppearanceSettings;
   autoSync?: boolean;
+  autoSyncKnown?: boolean;
+  autoSyncLoading?: boolean;
+  autoSyncRefreshing?: boolean;
+  autoSyncPending?: boolean;
+  autoSyncRecoveryRequired?: boolean;
+  autoSyncRefreshError?: string | null;
+  autoSyncFeedback?: {
+    status: "applied" | "partial" | "rejected" | "unconfirmed";
+    error?: string;
+  } | null;
+  popupCapture?: PopupCaptureState;
+  onRetryPopupCapture?(): Promise<boolean>;
   clipboardHistoryError?: ClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   relayAddresses?: string[];
   managedRelayConfigurations?: RelayConfiguration[];
   managedRelayStates?: RelayState[];
   initializationError?: boolean;
+  runtimeError?: string | null;
+  onRetryRuntime?(): boolean | void | Promise<boolean | void>;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
-  backgroundContinuity?: BackgroundContinuityDiagnosticStatus & {
-    available: boolean;
-    backgroundEnabled: boolean;
-    service: "running" | "stopped";
-    connection:
-      "connected" | "waiting" | "reconnecting" | "paused" | "disconnected";
-    connectedTrustedDeviceCount: number;
-    notificationAvailability: "available" | "blocked" | "unknown";
-  };
+  backgroundContinuity?: BackgroundContinuityState;
   onDeleteClip(id: string): void | Promise<void>;
   onUnpair(id: string): void | Promise<void>;
-  onAccept(dev: PendingRequest): void | Promise<void>;
-  onReject(dev: PendingRequest): void | Promise<void>;
-  onPairText(txt: string): void | Promise<void>;
-  onScanPairingCode?(): Promise<string | null> | string | null;
+  onAccept(dev: PendingRequest): Promise<PairingApprovalResult>;
+  onReject(dev: PendingRequest): Promise<PairingApprovalResult>;
+  onPairText(txt: string): Promise<PairingSubmissionResult>;
+  pairingDiagnostics?: React.ReactNode;
+  onScanPairingCode?(options: PairingScanOptions): Promise<PairingScanResult>;
+  scanCameraPermission?: PairingCameraPermission;
   onRequestPairingCode(): Promise<PairingCode | null>;
+  onCopyPairingText(text: string): Promise<PayloadCopyResult>;
   onReuseClip(id: string): ReuseClipOutcome | Promise<ReuseClipOutcome>;
-  onShareNow(): void | Promise<void>;
+  pairingImport?: React.ReactNode;
+  taskInput?: HostTaskInput;
+  onShareNow?(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
   onDismissClipboardHistoryError?(): void | Promise<void>;
   onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
-  onSetAutoSync?(enabled: boolean): void | Promise<void>;
-  onSetBackgroundContinuity?(enabled: boolean): void | Promise<void>;
+  onSetAutoSync?(enabled: boolean): void | Promise<void | AutoSyncActionResult>;
+  onRetryAutoSync?(): boolean | void | Promise<boolean | void>;
+  onSetBackgroundContinuity?(enabled: boolean): Promise<void>;
+  onRefreshBackgroundContinuity?(): Promise<unknown>;
+  onOpenBackgroundNotificationSettings?(): Promise<void>;
+  notificationControls?: NotificationAvailabilityControls;
   onExportBackgroundContinuityDiagnostics?(): void | Promise<void>;
-  onRenameIdentity?(name: string): Promise<Identity | null>;
+  onRenameIdentity?(
+    name: string,
+    expectedDeviceId: string
+  ): Promise<Identity | null>;
   onRenameDevice?(id: string, name: string): Promise<Device | null>;
   onSetRelayAddresses?(
     addrs: string[]
   ): Promise<string[] | void> | string[] | void;
-  onSetManagedRelays?(
-    configurations: RelayConfiguration[]
-  ): Promise<void> | void;
-  onManagedRelayLogin?(key: string): Promise<void> | void;
-  onManagedRelayAccount?(key: string): Promise<void> | void;
-  onManagedRelayRetry?(key: string): Promise<void> | void;
-  onRetryInitialization?(): void | Promise<void>;
+  session?: UiSession;
+  onRefreshManagedRelays?(): Promise<RelayConfiguration[]>;
+  onMutateManagedRelay?(mutation: RelayMutation): Promise<RelayMutationResult>;
+  onManagedRelayLogin?(key: string): Promise<RelayActionResult>;
+  onManagedRelayAccount?(key: string): Promise<RelayActionResult>;
+  onManagedRelayRetry?(key: string): Promise<RelayActionResult>;
+  onRetryInitialization?(): boolean | void | Promise<boolean | void>;
   onAcknowledgeIdentityRotationNotice?(): void | Promise<void>;
+  manualIdentityResetAvailable?: boolean;
+  identityResetState?: IdentityResetState;
+  identityResetActions?: ManualIdentityResetActions;
+  onPairAfterIdentityReset?(): void;
+  onCopyFormerIdentity?(receipt: IdentityResetReceipt): Promise<void>;
 };
 
 export function ClipboardApp({
@@ -340,19 +418,42 @@ export function ClipboardApp({
   pending,
   waiting = [],
   pairingErrors = [],
+  pairingOutcomes = [],
+  requestsLoading = false,
+  requestsUnavailable = false,
+  onRetryRequests,
+  onDismissPairingOutcome,
   peers,
+  connectionStateKnown = false,
   peerConnections = [],
   relayConnections = [],
   identity,
   pinnedIds,
+  historyLoading = false,
+  historyUnavailable: sourceHistoryUnavailable = false,
+  historyRefreshError = null,
+  onRetryHistoryRefresh,
+  onInspectClip,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
+  appearanceSettings,
   autoSync = true,
+  autoSyncKnown = true,
+  autoSyncLoading = false,
+  autoSyncRefreshing = false,
+  autoSyncPending = false,
+  autoSyncRecoveryRequired = false,
+  autoSyncRefreshError = null,
+  autoSyncFeedback = null,
+  popupCapture,
+  onRetryPopupCapture,
   clipboardHistoryError = null,
   historyPolicyError = null,
   relayAddresses = [],
   managedRelayConfigurations = [],
   managedRelayStates = [],
   initializationError = false,
+  runtimeError = null,
+  onRetryRuntime,
   identityRotationRecovery = false,
   identityRotationNotice = null,
   backgroundContinuity,
@@ -361,55 +462,185 @@ export function ClipboardApp({
   onAccept,
   onReject,
   onPairText,
+  pairingDiagnostics,
+  pairingImport,
   onScanPairingCode,
+  scanCameraPermission,
   onRequestPairingCode,
+  onCopyPairingText,
   onReuseClip,
   onShareNow,
+  taskInput,
   onSetPinned,
   onClearAll,
   onDismissClipboardHistoryError,
   onRetryHistoryCleanup,
   onSetLocalRetention,
   onSetAutoSync,
+  onRetryAutoSync,
   onSetBackgroundContinuity,
+  onRefreshBackgroundContinuity,
+  onOpenBackgroundNotificationSettings,
+  notificationControls,
   onExportBackgroundContinuityDiagnostics,
   onRenameIdentity,
   onRenameDevice,
   onSetRelayAddresses,
-  onSetManagedRelays,
+  session: providedSession,
+  onRefreshManagedRelays,
+  onMutateManagedRelay,
   onManagedRelayLogin,
   onManagedRelayAccount,
   onManagedRelayRetry,
   onRetryInitialization,
   onAcknowledgeIdentityRotationNotice,
+  manualIdentityResetAvailable = false,
+  identityResetState,
+  identityResetActions,
+  onPairAfterIdentityReset,
+  onCopyFormerIdentity,
 }: ClipboardAppProps) {
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isNarrow, setIsNarrow] = useState(false);
+  const [isCramped, setIsCramped] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
-  const [search, setSearch] = useState("");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [filterMode, setFilterMode] = useState<"all" | "pinned">("all");
-  const [pairText, setPairText] = useState("");
+  const [session] = useState(() => providedSession ?? createUiSession());
+  const sessionState = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot
+  );
+  const activeTask = sessionState.tasks[sessionState.tasks.length - 1];
+  const { search, timeFilter, sourceFilter, filterMode, showNav } =
+    sessionState;
+  const setSearch = (search: string) => session.update({ search });
+  const setTimeFilter = (timeFilter: TimeFilter) =>
+    session.update({ timeFilter });
+  const setSourceFilter = (sourceFilter: string) =>
+    session.update({ sourceFilter });
+  const setFilterMode = (filterMode: "all" | "pinned") =>
+    session.update({ filterMode });
+  const setShowNav = (value: boolean | ((current: boolean) => boolean)) =>
+    session.update({
+      showNav:
+        typeof value === "function"
+          ? value(session.getSnapshot().showNav)
+          : value,
+    });
+  const pairingTask = session.pairing;
+  const pair = useSyncExternalStore(
+    pairingTask.subscribe,
+    pairingTask.getSnapshot,
+    pairingTask.getSnapshot
+  );
+  const approvalBusy = useRef(new Set<string>());
+  const [approvalsPending, setApprovalsPending] = useState<string[]>([]);
+  const [approvalFeedback, setApprovalFeedback] = useState<
+    Record<string, string>
+  >({});
+  async function decideRequest(request: PendingRequest, accepted: boolean) {
+    if (
+      !identityReady ||
+      requestsLoading ||
+      requestsUnavailable ||
+      approvalBusy.current.has(request.deviceId)
+    )
+      return;
+    approvalBusy.current.add(request.deviceId);
+    setApprovalsPending([...approvalBusy.current]);
+    const identityId = identity?.deviceId;
+    let result: PairingApprovalResult;
+    try {
+      result = await (accepted ? onAccept(request) : onReject(request));
+    } catch {
+      result = { ok: false, error: "outcome_unconfirmed", admitted: null };
+    }
+    if (!result || typeof result.ok !== "boolean")
+      result = { ok: false, error: "outcome_unconfirmed", admitted: null };
+    if (currentIdentity.current === identityId)
+      setApprovalFeedback((previous) => ({
+        ...previous,
+        [request.deviceId]: pairingApprovalMessage(result, accepted),
+      }));
+    approvalBusy.current.delete(request.deviceId);
+    setApprovalsPending([...approvalBusy.current]);
+  }
   const [isScanningPairing, setIsScanningPairing] = useState(false);
-  const [qrImage, setQrImage] = useState<string | null>(null);
-  const [qrText, setQrText] = useState<string | null>(null);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrLoading, setQrLoading] = useState(false);
-  const [qrError, setQrError] = useState<string | null>(null);
-  const [showNav, setShowNav] = useState(false);
+  const [scanError, setScanError] = useState<PairingScanError | null>(null);
+  const [cameraPermission, setCameraPermission] =
+    useState<CameraPermissionState>("unknown");
+  useEffect(() => {
+    if (scanError !== "camera_permission_denied" || !scanCameraPermission)
+      return;
+    let live = true,
+      revision = 0;
+    const read = () => {
+      const current = ++revision;
+      void scanCameraPermission
+        .read()
+        .catch(() => "unknown" as const)
+        .then((state) => {
+          if (live && revision === current) setCameraPermission(state);
+        });
+    };
+    read();
+    const unsubscribe = scanCameraPermission.subscribeReturn(read);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [scanError, scanCameraPermission]);
+  const activeScan = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      const capture = activeScan.current;
+      activeScan.current = null;
+      capture?.abort();
+    },
+    []
+  );
+  useEffect(() => () => activeScan.current?.abort(), [identity?.deviceId]);
+  const { task: qrTask, state: qrState } = usePairingCodeTask(
+    identity ? `${identity.deviceId}:${identity.deviceName}` : null,
+    session.qr
+  );
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [userToggledFilters, setUserToggledFilters] = useState(false);
-  const [editingLocalName, setEditingLocalName] = useState(false);
-  const [localNameDraft, setLocalNameDraft] = useState("");
-  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
-  const [deviceNameDraft, setDeviceNameDraft] = useState("");
+  const localNameSession = session.name;
+  const localNameEdit = useSyncExternalStore(
+    localNameSession.subscribe,
+    localNameSession.getSnapshot,
+    localNameSession.getSnapshot
+  );
+  const aliasSession = session.alias;
+  const aliasEdit = useSyncExternalStore(
+    aliasSession.subscribe,
+    aliasSession.getSnapshot,
+    aliasSession.getSnapshot
+  );
+  const revocations = useRef(new Map<string, symbol>());
+  const [revokingIds, setRevokingIds] = useState<string[]>([]);
+  const revocationOwnerAlive = useRef(true);
+  const currentIdentity = useRef(identity?.deviceId);
+  currentIdentity.current = identity?.deviceId;
+  useEffect(() => {
+    revocationOwnerAlive.current = true;
+    return () => {
+      revocationOwnerAlive.current = false;
+      for (const id of revocations.current.keys())
+        session.setActivity(`revoke:${id}`, false);
+      revocations.current.clear();
+    };
+  }, [session]);
   const [revocationError, setRevocationError] = useState<{
     deviceId: string;
+    identityId: string | undefined;
   } | null>(null);
+  const [deviceCopyFeedback, setDeviceCopyFeedback] = useState<string | null>(
+    null
+  );
   const [relaysOpen, setRelaysOpen] = useState(true);
   const [addingRelay, setAddingRelay] = useState(false);
   const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(
@@ -418,23 +649,269 @@ export function ClipboardApp({
   const [relayDraft, setRelayDraft] = useState("");
   const [relaySaving, setRelaySaving] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [retryHistoryOperation, setRetryHistoryOperation] = useState<
-    (() => void) | null
-  >(null);
-  const peerCount = peers.length;
-  const navHidden = isNarrow;
-
+  const [clearReviewOpen, setClearReviewOpen] = useState(false);
+  const [clearPending, setClearPending] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+  const [clearNeedsRefresh, setClearNeedsRefresh] = useState(false);
+  const [clearRefreshPending, setClearRefreshPending] = useState(false);
   useEffect(() => {
-    if (!openMenuId) return;
-    function handleDocClick(e: MouseEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest(".history-menu")) return;
-      setOpenMenuId(null);
+    const menu = Boolean(timeMenuOpen || sourceMenuOpen);
+    const drawer = showNav && sessionState.tasks.length === 0;
+    const guardedClear = clearPending && clearReviewOpen;
+    if (!taskInput || (!menu && !drawer && !guardedClear)) return;
+    if (guardedClear) return taskInput.registerOverlay({});
+    return taskInput.registerOverlay({
+      dismiss: () => {
+        if (menu) {
+          setTimeMenuOpen(false);
+          setSourceMenuOpen(false);
+        } else dismissNav();
+      },
+    });
+  }, [
+    taskInput,
+    timeMenuOpen,
+    sourceMenuOpen,
+    showNav,
+    sessionState.tasks.length,
+    clearPending,
+    clearReviewOpen,
+  ]);
+  useEffect(() => {
+    session.setActivity(
+      "management-actions",
+      clearPending ||
+        clearRefreshPending ||
+        approvalsPending.length > 0 ||
+        isScanningPairing ||
+        Boolean(appearanceSettings?.pending)
+    );
+    return () => session.setActivity("management-actions", false);
+  }, [
+    session,
+    clearPending,
+    clearRefreshPending,
+    approvalsPending,
+    isScanningPairing,
+    appearanceSettings?.pending,
+  ]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const previousIdentity = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      identity?.deviceId &&
+      previousIdentity.current &&
+      identity.deviceId !== previousIdentity.current
+    ) {
+      session.rotateIdentity();
+      setApprovalFeedback({});
     }
-    document.addEventListener("mousedown", handleDocClick);
-    return () => document.removeEventListener("mousedown", handleDocClick);
-  }, [openMenuId]);
+    if (identity?.deviceId) previousIdentity.current = identity.deviceId;
+  }, [identity?.deviceId, session]);
+  useEffect(() => {
+    const context = session.getSnapshot();
+    const root = rootRef.current;
+    if (!root) return;
+    for (const element of [
+      root,
+      ...root.querySelectorAll<HTMLElement>("[data-session-scroll]"),
+    ]) {
+      const key = element.dataset.sessionScroll;
+      if (key && element.getClientRects().length)
+        element.scrollTop =
+          context.scroll[
+            element === root ? `${key}:${context.destination}` : key
+          ] ??
+          context.scroll[key] ??
+          0;
+    }
+    if (context.destination === "history" && context.historyAnchor) {
+      const clip = [
+        ...root.querySelectorAll<HTMLElement>("[data-clip-id]"),
+      ].find(
+        (element) => element.dataset.clipId === context.historyAnchor?.clipId
+      );
+      const scroller = isCramped
+        ? root
+        : root.querySelector<HTMLElement>('[data-session-scroll="history"]');
+      if (clip && scroller)
+        scroller.scrollTop +=
+          clip.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top -
+          context.historyAnchor.offset;
+    }
+    if (context.tasks.length) return;
+    const focus = findSessionFocus(root, context.focusKey, {
+      visible: true,
+      enabled: true,
+    });
+    (
+      focus ?? root.querySelector<HTMLElement>("[data-session-focus=workspace]")
+    )?.focus({ preventScroll: true });
+    if (focus?.dataset.sessionFocus?.match(/^(copy|pin|more):/))
+      focus.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [
+    session,
+    isNarrow,
+    isCramped,
+    showNav,
+    sessionState.destination,
+    sessionState.navigationVersion,
+    sessionState.tasks.length,
+  ]);
+  useEffect(() => {
+    if (sessionState.tasks.length || document.activeElement !== document.body)
+      return;
+    const focus = findSessionFocus(rootRef.current, sessionState.focusKey, {
+      visible: false,
+      enabled: true,
+    });
+    focus?.focus({ preventScroll: true });
+  }, [
+    sessionState.historyActions,
+    sessionState.focusKey,
+    sessionState.tasks.length,
+  ]);
+  const historyUnavailable =
+    sourceHistoryUnavailable ||
+    (clips.length === 0 && (initializationError || Boolean(runtimeError)));
+  const identityReady =
+    Boolean(identity) &&
+    !initializationError &&
+    !identityRotationRecovery &&
+    !runtimeError;
+  const issues = composeRecoveryIssues({
+    initializationError,
+    runtimeError,
+    identityRotationRecovery,
+    identityRotationNotice,
+    historyUnavailable: sourceHistoryUnavailable,
+    historyRefreshError,
+    popupCapture,
+    clipboardHistoryError,
+    historyPolicyError,
+    pairingErrors,
+    managedRelayStates,
+  });
+  for (const [target, action] of Object.entries(sessionState.historyActions)) {
+    if (action.feedback && action.feedback.status !== "success")
+      issues.push({
+        id: `history:${target}:action_failed`,
+        scope: "history",
+        code: "action_failed",
+        target,
+        recovering: action.feedback.action === "retry",
+        diagnostics: action.feedback.message,
+      });
+  }
+  const clipPreferenceError =
+    appearanceSettings?.snapshot?.state.retentionError ||
+    (appearanceSettings?.feedback?.fields?.some(
+      (field) => field === "localRetentionMs" || field === "sharingLifetimeMs"
+    )
+      ? appearanceSettings.feedback.error
+      : null);
+  if (clipPreferenceError)
+    issues.push({
+      id: "task:preference:clip-settings",
+      scope: "task",
+      target: "preference",
+      code: "clip-settings",
+      recovering: true,
+      message:
+        "Clip settings need recovery. Check the currently applied values in Settings. Any completed cleanup remains in effect.",
+      diagnostics: clipPreferenceError,
+    });
+  if (
+    notificationControls?.state?.displayError ||
+    notificationControls?.state?.app === "blocked" ||
+    notificationControls?.state?.channel === "blocked" ||
+    notificationControls?.error
+  )
+    issues.push({
+      id: "task:notifications:availability",
+      scope: "task",
+      target: "notifications",
+      code: "notifications",
+      recovering: true,
+      message:
+        "Pairing notifications need attention. Open notification settings; pending Requests remain available in Clipp.",
+    });
+  if (backgroundContinuity?.controlError)
+    issues.push({
+      id: "task:continuity:control",
+      scope: "task",
+      target: "continuity",
+      code: "continuity",
+      recovering: true,
+      message: backgroundContinuity.controlError,
+    });
+  const generalPreferenceError =
+    appearanceSettings?.refreshError ||
+    (appearanceSettings?.feedback?.fields?.some(
+      (field) => field === "theme" || field === "logLevel"
+    ) && appearanceSettings.feedback.status !== "applied"
+      ? appearanceSettings.feedback.error ||
+        "Settings Save could not be confirmed."
+      : null);
+  if (generalPreferenceError)
+    issues.push({
+      id: "task:preference:settings",
+      scope: "task",
+      target: "preference",
+      code: "settings",
+      recovering: true,
+      message:
+        "Settings need attention. Check the applied values before saving again.",
+      diagnostics: generalPreferenceError,
+    });
+  const taskIssues = useTaskRecoveryIssues(
+    session,
+    autoSyncRefreshError || autoSyncFeedback?.error
+  );
+  issues.push(...taskIssues);
+  function issueRetry(issue: RecoveryIssue) {
+    if (issue.code === "continuity")
+      return onRefreshBackgroundContinuity
+        ? async () => {
+            await onRefreshBackgroundContinuity();
+          }
+        : undefined;
+    if (issue.id === "clipboard:focus:observation") return onRetryPopupCapture;
+    if (issue.code === "settings") return appearanceSettings?.refresh;
+    if (issue.code === "clip-settings")
+      return appearanceSettings?.snapshot?.state.retentionError
+        ? onRetryHistoryCleanup
+        : appearanceSettings?.refresh;
+    if (issue.code === "initialization_failed") return onRetryInitialization;
+    if (issue.scope === "runtime" && issue.code === "unavailable")
+      return onRetryRuntime;
+    if (issue.id === "history:read:unavailable") return onRetryHistoryRefresh;
+    if (issue.code === "history_cleanup_failed") return onRetryHistoryCleanup;
+    if (
+      identityReady &&
+      issue.code === "action_failed" &&
+      sessionState.historyActions[issue.target!]?.feedback?.action === "retry"
+    )
+      return () => session.retryHistoryAction(issue.target!);
+    return undefined;
+  }
+  function issueDismiss(issue: RecoveryIssue) {
+    if (issue.scope === "clipboard" && issue.target === "capture")
+      return onDismissClipboardHistoryError;
+    if (issue.code === "action_failed")
+      return () => session.dismissHistoryAction(issue.target!);
+    if (issue.scope === "runtime") return onAcknowledgeIdentityRotationNotice;
+    return undefined;
+  }
+  const connectionSummary = projectConnectionSummary({
+    devices,
+    peers,
+    peerConnections,
+    connectionStateKnown,
+    managedRelayConfigurations,
+    managedRelayStates,
+  });
 
   useEffect(() => {
     function handleDocClick(e: MouseEvent) {
@@ -453,25 +930,47 @@ export function ClipboardApp({
 
   useEffect(() => {
     function handleResize() {
-      const narrow = window.innerWidth < 1100;
-      setIsNarrow(narrow);
-      if (!narrow) setShowNav(false);
+      const size = hostContentSize(window, document);
+      setIsNarrow(size.width <= NARROW_CONTENT_WIDTH);
+      const controls = rootRef.current?.querySelectorAll<HTMLElement>(
+        ".app-bar, .workspace-controls, .workspace-navigation, .app-notices"
+      );
+      const controlsHeight = [...(controls ?? [])].reduce(
+        (height, element) => height + element.getBoundingClientRect().height,
+        0
+      );
+      setIsCramped(size.height <= Math.max(500, controlsHeight + 160));
     }
     handleResize();
+    const observer = new ResizeObserver(handleResize);
+    rootRef.current
+      ?.querySelectorAll(
+        ".app-bar, .workspace-controls, .workspace-navigation, .app-notices"
+      )
+      .forEach((element) => observer.observe(element));
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener(HOST_GEOMETRY_EVENT, handleResize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, handleResize);
+    };
   }, []);
 
   useEffect(() => {
     function handleHeight() {
-      const shouldCollapse = window.innerHeight < 760;
+      const shouldCollapse = hostContentSize(window, document).height < 760;
       if (!userToggledFilters) {
         setFiltersCollapsed(shouldCollapse);
       }
     }
     handleHeight();
     window.addEventListener("resize", handleHeight);
-    return () => window.removeEventListener("resize", handleHeight);
+    window.addEventListener(HOST_GEOMETRY_EVENT, handleHeight);
+    return () => {
+      window.removeEventListener("resize", handleHeight);
+      window.removeEventListener(HOST_GEOMETRY_EVENT, handleHeight);
+    };
   }, [userToggledFilters]);
 
   const deviceNameMap = useMemo(() => {
@@ -548,81 +1047,131 @@ export function ClipboardApp({
   ]);
 
   function setPinned(id: string, pinned: boolean) {
-    setOpenMenuId(null);
-    void Promise.resolve()
-      .then(() => onSetPinned(id, pinned))
-      .then(() => {
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
-      })
-      .catch(() => {
-        setHistoryError(
-          "Could not confirm this Clip's pin state. Retry to apply it again."
-        );
-        setRetryHistoryOperation(() => () => setPinned(id, pinned));
-      });
+    void session.runHistoryAction(`pin:${id}`, async () => {
+      try {
+        await onSetPinned(id, pinned);
+        return null;
+      } catch {
+        return {
+          message:
+            "Could not confirm this Clip's pin state. Retry to apply it again.",
+          action: "retry",
+        };
+      }
+    });
   }
 
   function handleDelete(id: string) {
-    setRemovingIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
+    void session.runHistoryAction(`delete:${id}`, async () => {
+      setRemovingIds((previous) => new Set(previous).add(id));
+      try {
+        await onDeleteClip(id);
+        return null;
+      } catch {
+        return {
+          message: "Could not delete this Clip. It is still in your history.",
+          action: "retry",
+        };
+      } finally {
+        setRemovingIds((previous) => {
+          const next = new Set(previous);
+          next.delete(id);
+          return next;
+        });
+      }
     });
-    setTimeout(() => {
-      Promise.resolve(onDeleteClip(id))
-        .then(() => {
-          setHistoryError(null);
-          setRetryHistoryOperation(null);
-        })
-        .catch(() => {
-          setHistoryError(
-            "Could not delete this Clip. It is still in your history."
-          );
-          setRetryHistoryOperation(() => () => handleDelete(id));
-        })
-        .finally(() =>
-          setRemovingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-          })
-        );
-    }, 180);
   }
 
   function clearAllHistory() {
-    setRemovingIds(new Set(clips.map((c) => c.id)));
-    Promise.resolve(onClearAll())
+    if (
+      clearPending ||
+      clearRefreshPending ||
+      clearNeedsRefresh ||
+      historyLoading ||
+      historyUnavailable ||
+      historyRefreshError
+    )
+      return;
+    setClearPending(true);
+    setClearError(null);
+    void Promise.resolve()
+      .then(() => onClearAll())
       .then(() => {
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
+        setClearNeedsRefresh(false);
+        setClearReviewOpen(false);
+        session.complete("clear");
       })
       .catch(() => {
-        setHistoryError(
-          "Could not clear history. Your Clips are still available."
+        setClearNeedsRefresh(true);
+        setClearError(
+          "Clear could not be confirmed. History may have changed. Refresh History before trying again."
         );
-        setRetryHistoryOperation(() => clearAllHistory);
       })
-      .finally(() => setRemovingIds(new Set()));
+      .finally(() => setClearPending(false));
+  }
+
+  function refreshClearHistory() {
+    if (!onRetryHistoryRefresh || clearRefreshPending || clearPending) return;
+    setClearRefreshPending(true);
+    void Promise.resolve()
+      .then(() => onRetryHistoryRefresh())
+      .then((confirmed) => {
+        if (confirmed) {
+          setClearNeedsRefresh(false);
+          setClearError(null);
+        } else {
+          setClearNeedsRefresh(true);
+        }
+      })
+      .catch(() => setClearNeedsRefresh(true))
+      .finally(() => setClearRefreshPending(false));
   }
 
   function toggleFilters() {
-    setFiltersCollapsed((v) => !v);
+    if (session.getSnapshot().destination !== "history") {
+      session.update({ destination: "history", focusKey: "history-filters" });
+      setFiltersCollapsed(false);
+    } else setFiltersCollapsed((v) => !v);
     setUserToggledFilters(true);
   }
 
   function beginEditLocalName() {
-    if (!identity) return;
-    setLocalNameDraft(identity.deviceName || "");
-    setEditingLocalName(true);
+    if (!identityReady || !identity) return;
+    session.open({
+      kind: "device-name",
+      entity: identity.deviceId,
+      origin: "rename-local",
+    });
+    localNameSession.begin(identity.deviceId, identity.deviceName || "");
   }
 
   useEffect(() => {
-    if (!editingLocalName && identity) {
-      setLocalNameDraft(identity.deviceName || "");
-    }
-  }, [identity, editingLocalName]);
+    const targetId = localNameSession.getSnapshot().targetId;
+    if (!targetId) return;
+    if (identity?.deviceId !== targetId)
+      localNameSession.removeTarget(targetId);
+    else
+      localNameSession.authoritativeValue(targetId, identity.deviceName || "");
+  }, [identity, localNameSession]);
+
+  useEffect(() => {
+    const targetId = aliasSession.getSnapshot().targetId;
+    if (!targetId) return;
+    const device = devices.find((candidate) => candidate.deviceId === targetId);
+    if (!device) {
+      aliasSession.removeTarget(targetId);
+      session.update({
+        taskNotice:
+          "This device was removed. Its alias edit cannot be saved. Return to the device list.",
+      });
+      session.complete("alias", targetId);
+    } else
+      aliasSession.authoritativeValue(
+        targetId,
+        device.localAlias || device.deviceName || ""
+      );
+    aliasSession.retainTargets(devices.map((device) => device.deviceId));
+  }, [devices, aliasSession, session]);
 
   useEffect(() => {
     if (
@@ -640,97 +1189,140 @@ export function ClipboardApp({
   }, [relayAddresses, addingRelay, editingRelayIndex]);
 
   function saveLocalName() {
-    const trimmed = localNameDraft.trim();
-    if (!identity) return;
-    if (!trimmed) {
-      setEditingLocalName(false);
-      return;
-    }
-    const rename = onRenameIdentity
-      ? onRenameIdentity(trimmed)
-      : Promise.resolve(null);
-    rename
-      .catch(() => {})
-      .finally(() => {
-        setEditingLocalName(false);
+    const submittedTarget = localNameSession.getSnapshot().targetId;
+    void localNameSession
+      .save(async (targetId, raw) => {
+        if (!identity || identity.deviceId !== targetId || !onRenameIdentity) {
+          throw new Error("device_unavailable");
+        }
+        return onRenameIdentity(raw, targetId);
+      })
+      .then(() => {
+        if (!localNameSession.getSnapshot().targetId)
+          session.complete("device-name", submittedTarget ?? undefined);
       });
   }
 
   function beginEditDeviceName(device: Device) {
-    setDeviceNameDraft(device.displayName || device.deviceName || "");
-    setEditingDeviceId(device.deviceId);
+    setDeviceCopyFeedback(null);
+    session.open({
+      kind: "alias",
+      entity: device.deviceId,
+      origin: `rename:${device.deviceId}`,
+    });
+    aliasSession.begin(
+      device.deviceId,
+      device.localAlias || device.deviceName || ""
+    );
   }
 
-  function cancelEditDeviceName() {
-    setEditingDeviceId(null);
-    setDeviceNameDraft("");
+  function saveDeviceName() {
+    if (!identityReady) return;
+    const submittedTarget = aliasSession.getSnapshot().targetId;
+    void saveNonEmptyAlias(aliasSession, async (targetId, raw) => {
+      if (
+        !onRenameDevice ||
+        !devices.some((candidate) => candidate.deviceId === targetId)
+      ) {
+        throw new Error("device_unavailable");
+      }
+      return onRenameDevice(targetId, raw);
+    }).then(() => {
+      if (!aliasSession.getSnapshot().targetId)
+        session.complete("alias", submittedTarget ?? undefined);
+    });
   }
 
-  function saveDeviceName(device: Device) {
-    const trimmed = deviceNameDraft.trim();
-    if (!trimmed || trimmed === (device.displayName || device.deviceName)) {
-      cancelEditDeviceName();
-      return;
-    }
-    const rename = onRenameDevice
-      ? onRenameDevice(device.deviceId, trimmed)
-      : Promise.resolve(null);
-    rename
-      .catch(() => {})
-      .finally(() => {
-        cancelEditDeviceName();
+  function useReportedDeviceName() {
+    if (!identityReady) return;
+    const submittedTarget = aliasSession.getSnapshot().targetId;
+    void aliasSession
+      .save(async (targetId) => {
+        if (
+          !onRenameDevice ||
+          !devices.some((candidate) => candidate.deviceId === targetId)
+        ) {
+          throw new Error("device_unavailable");
+        }
+        // An empty value is the existing runtime contract for deleting only
+        // this installation's Local Device Alias.
+        return onRenameDevice(targetId, "");
+      })
+      .then(() => {
+        if (!aliasSession.getSnapshot().targetId)
+          session.complete("alias", submittedTarget ?? undefined);
       });
   }
 
+  async function copyDeviceValue(label: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setDeviceCopyFeedback(`${label} copied.`);
+    } catch {
+      setDeviceCopyFeedback(
+        `Could not copy ${label.toLowerCase()}. Select and copy it manually.`
+      );
+    }
+  }
+
   async function revokeDevice(device: Device): Promise<void> {
+    if (!identityReady || revocations.current.has(device.deviceId)) return;
     const confirmed = globalThis.confirm(
       `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`
     );
     if (!confirmed) return;
+    const id = device.deviceId,
+      token = Symbol(id),
+      expectedIdentity = identity?.deviceId;
+    revocations.current.set(id, token);
+    session.setActivity(`revoke:${id}`, true);
+    setRevokingIds([...revocations.current.keys()]);
+    const ownsFeedback = () =>
+      revocationOwnerAlive.current &&
+      revocations.current.get(id) === token &&
+      currentIdentity.current === expectedIdentity;
     try {
-      await onUnpair(device.deviceId);
-      setRevocationError(null);
+      await onUnpair(id);
+      if (ownsFeedback()) setRevocationError(null);
     } catch {
-      setRevocationError({ deviceId: device.deviceId });
+      if (ownsFeedback())
+        setRevocationError({ deviceId: id, identityId: expectedIdentity });
+    } finally {
+      if (revocations.current.get(id) === token) {
+        revocations.current.delete(id);
+        session.setActivity(`revoke:${id}`, false);
+        if (revocationOwnerAlive.current)
+          setRevokingIds([...revocations.current.keys()]);
+      }
     }
   }
 
   function reuseClip(id: string) {
-    void Promise.resolve()
-      .then(() => onReuseClip(id))
-      .then((outcome) => {
-        applyHistoryFeedback(reuseClipFeedback(outcome));
-      })
-      .catch(() => {
-        applyHistoryFeedback(reuseClipFeedback("write-failed"), () =>
-          reuseClip(id)
+    if (!identityReady) return;
+    void session.runHistoryAction(`copy:${id}`, async () => {
+      try {
+        const outcome = await onReuseClip(id);
+        return reuseClipFeedback(
+          outcome === "complete" || outcome === "copied-without-clip"
+            ? outcome
+            : "unconfirmed"
         );
-      });
+      } catch {
+        return reuseClipFeedback("unconfirmed");
+      }
+    });
   }
 
   function shareNow() {
-    void Promise.resolve()
-      .then(() => onShareNow())
-      .then(() => {
-        setHistoryError(null);
-        setRetryHistoryOperation(null);
-      })
-      .catch((error) => {
-        applyHistoryFeedback(
-          shareNowFailureFeedback(normalizeShareNowFailureCode(error)),
-          shareNow
-        );
-      });
-  }
-
-  function applyHistoryFeedback(
-    feedback: ClipboardActionFeedback | null,
-    retry?: () => void
-  ) {
-    setHistoryError(feedback?.message ?? null);
-    setRetryHistoryOperation(
-      feedback?.action === "retry" && retry ? () => retry : null
-    );
+    if (!identityReady) return;
+    void session.runHistoryAction("send:current", async () => {
+      try {
+        await onShareNow?.();
+        return null;
+      } catch (error) {
+        return shareNowFailureFeedback(normalizeShareNowFailureCode(error));
+      }
+    });
   }
 
   function beginAddRelay() {
@@ -799,15 +1391,17 @@ export function ClipboardApp({
 
   async function updateLocalRetention(retentionMs: number) {
     if (!onSetLocalRetention) return;
-    try {
-      await onSetLocalRetention(retentionMs);
-      setHistoryError(null);
-    } catch {
-      setHistoryError("Could not save the history retention setting.");
-      setRetryHistoryOperation(
-        () => () => void updateLocalRetention(retentionMs)
-      );
-    }
+    await session.runHistoryAction("retention:local", async () => {
+      try {
+        await onSetLocalRetention(retentionMs);
+        return null;
+      } catch {
+        return {
+          message: "Could not save the history retention setting.",
+          action: "retry",
+        };
+      }
+    });
   }
 
   function sourceOptionLabel(src: string): string {
@@ -824,59 +1418,73 @@ export function ClipboardApp({
     return `Source: ${deviceNameMap.get(src) || src}`;
   }
 
-  async function handleShowQr() {
+  function handleShowQr() {
+    if (!identityReady) return;
+    session.open({ kind: "pairing", origin: "pairing-qr" });
+    session.open({ kind: "qr", origin: "pairing-qr" });
     setShowNav(false);
-    setQrImage(null);
-    setQrText(null);
-    setQrError(null);
-    setQrLoading(true);
-    setQrOpen(true);
-    try {
-      const code = await onRequestPairingCode();
-      if (!code) {
-        setQrError("Unable to create a pairing QR code.");
-        return;
-      }
-      setQrImage(code.image);
-      setQrText(code.text);
-    } catch (err) {
-      console.warn("Failed to create pairing QR", err);
-      setQrError("Unable to create a pairing QR code.");
-    } finally {
-      setQrLoading(false);
-    }
+    void qrTask.generate(onRequestPairingCode);
   }
 
   function closeQr() {
-    setQrOpen(false);
-    setQrImage(null);
-    setQrText(null);
-    setQrError(null);
-    setQrLoading(false);
+    qrTask.close();
+    session.complete("qr");
+    if (isNarrow) setShowNav(true);
+  }
+  function dismissNav() {
+    session.close();
+    setShowNav(false);
   }
 
-  function submitPairText() {
-    const trimmed = pairText.trim();
-    setPairText("");
-    if (!trimmed) {
-      return;
-    }
-    void Promise.resolve(onPairText(trimmed));
+  async function submitPairText() {
+    if (!identityReady) return;
+    await pairingTask.submit(onPairText);
   }
 
   async function scanPairingCode() {
-    if (!onScanPairingCode || isScanningPairing) return;
+    if (
+      !identityReady ||
+      !onScanPairingCode ||
+      activeScan.current ||
+      pair.pending
+    )
+      return;
+    const task =
+      session.getSnapshot().tasks[session.getSnapshot().tasks.length - 1];
+    if (task?.kind !== "pairing") return;
+    const identityId = currentIdentity.current;
+    const capture = new AbortController();
+    activeScan.current = capture;
+    const unsubscribe = session.subscribe(() => {
+      const tasks = session.getSnapshot().tasks;
+      if (tasks[tasks.length - 1] !== task) capture.abort();
+    });
+    setScanError(null);
+    setCameraPermission("unknown");
     setIsScanningPairing(true);
     try {
-      const scanned = await onScanPairingCode();
-      const trimmed = scanned?.trim();
-      if (trimmed) {
-        await onPairText(trimmed);
+      const scanned = await onScanPairingCode({ signal: capture.signal });
+      if (capture.signal.aborted || currentIdentity.current !== identityId)
+        return;
+      if (scanned.status === "cancelled") return;
+      if (scanned.status === "failed") {
+        setScanError(scanned.error);
+        return;
       }
-    } catch (err) {
-      console.warn("Pairing QR scan failed", err);
+      const trimmed = scanned.text.trim();
+      if (trimmed) {
+        pairingTask.change(trimmed);
+        await pairingTask.submit(onPairText);
+      }
+    } catch {
+      if (!capture.signal.aborted && currentIdentity.current === identityId)
+        setScanError("camera_unavailable");
     } finally {
-      setIsScanningPairing(false);
+      unsubscribe();
+      if (activeScan.current === capture) {
+        activeScan.current = null;
+        setIsScanningPairing(false);
+      }
     }
   }
 
@@ -894,13 +1502,12 @@ export function ClipboardApp({
     return (
       <div className="relay-card relay-card-editing">
         <div className="peer-avatar relay-avatar unknown">
-          <span className="icon" style={{ fontSize: 16 }}>
-            add_link
-          </span>
+          <Icon name="network" />
         </div>
         <div className="peer-meta">
           <input
             className="relay-address-input"
+            aria-label="New relay address"
             value={relayDraft}
             onChange={(e) => setRelayDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -916,26 +1523,23 @@ export function ClipboardApp({
         </div>
         <div className="peer-actions">
           <button
-            className="icon-button"
+            className="text-button"
             title="Add relay"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => void saveNewRelay()}
             disabled={relaySaving}
           >
-            <span className="icon" style={{ fontSize: 16 }}>
-              check
-            </span>
+            Add relay
           </button>
           <button
             className="icon-button"
+            aria-label="Cancel"
             title="Cancel"
             onMouseDown={(e) => e.preventDefault()}
             onClick={cancelRelayEdit}
             disabled={relaySaving}
           >
-            <span className="icon" style={{ fontSize: 16 }}>
-              close
-            </span>
+            <Icon name="close" />
           </button>
         </div>
       </div>
@@ -954,15 +1558,14 @@ export function ClipboardApp({
         title={`${address}\n${status.title}`}
       >
         <div className={`peer-avatar relay-avatar ${status.kind}`}>
-          <span className="icon" style={{ fontSize: 16 }}>
-            hub
-          </span>
+          <Icon name="network" />
         </div>
         <div className="peer-meta">
           {editingThisRelay ? (
             <>
               <input
                 className="relay-address-input"
+                aria-label="Relay address"
                 value={relayDraft}
                 onChange={(e) => setRelayDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -998,49 +1601,43 @@ export function ClipboardApp({
           {editingThisRelay ? (
             <>
               <button
-                className="icon-button"
+                className="text-button"
                 title="Save relay address"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => void saveRelayRename(index)}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  check
-                </span>
+                Save
               </button>
               <button
                 className="icon-button"
+                aria-label="Cancel"
                 title="Cancel"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={cancelRelayEdit}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  close
-                </span>
+                <Icon name="close" />
               </button>
             </>
           ) : (
             <>
               <button
                 className="icon-button"
+                aria-label="Rename relay"
                 title="Rename relay"
                 onClick={() => beginRenameRelay(index, address)}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  edit
-                </span>
+                <Icon name="edit" />
               </button>
               <button
-                className="icon-button"
+                className="text-button"
                 title="Remove relay"
                 onClick={() => void removeRelay(index)}
                 disabled={relaySaving}
               >
-                <span className="icon" style={{ fontSize: 16 }}>
-                  delete
-                </span>
+                Remove relay
               </button>
             </>
           )}
@@ -1050,12 +1647,15 @@ export function ClipboardApp({
   }
 
   function renderRelaysSection() {
-    if (onSetManagedRelays)
+    if (onMutateManagedRelay)
       return (
         <ManagedRelaySettings
           configurations={managedRelayConfigurations}
           states={managedRelayStates}
-          onSetConfigurations={onSetManagedRelays}
+          session={session}
+          taskPresentation
+          onMutate={onMutateManagedRelay}
+          onRefresh={onRefreshManagedRelays}
           onLogin={onManagedRelayLogin}
           onManageAccount={onManagedRelayAccount}
           onRetry={onManagedRelayRetry}
@@ -1073,21 +1673,20 @@ export function ClipboardApp({
               onClick={() => setRelaysOpen((open) => !open)}
               aria-expanded={relaysOpen}
             >
-              <span className="icon" style={{ fontSize: 16 }}>
-                {relaysOpen ? "expand_less" : "expand_more"}
-              </span>
+              <Icon
+                name="chevron"
+                style={{ transform: relaysOpen ? "rotate(180deg)" : undefined }}
+              />
               <span className="relay-accordion-title">Relays</span>
               <span className="relay-summary-text">{relaySummaryLabel()}</span>
             </button>
             <button
-              className="icon-button"
+              className="text-button"
               title="Add relay"
               onClick={beginAddRelay}
               disabled={relaySaving}
             >
-              <span className="icon" style={{ fontSize: 16 }}>
-                add
-              </span>
+              Add relay
             </button>
           </div>
           {relaysOpen && (
@@ -1111,119 +1710,143 @@ export function ClipboardApp({
     );
   }
 
-  function renderNavContent(isDrawer = false) {
+  function renderDestination() {
     return (
       <>
-        <div className="nav-header">
-          <div className="nav-title">Peers</div>
-          {isDrawer ? (
-            <button className="icon-button" onClick={() => setShowNav(false)}>
-              <span className="icon">close</span>
+        {sessionState.taskNotice && (
+          <p role="alert">
+            {sessionState.taskNotice}
+            <button
+              type="button"
+              onClick={() => session.update({ taskNotice: null })}
+            >
+              Dismiss
             </button>
-          ) : (
-            <div className="nav-chip">{peerCount} online</div>
-          )}
-        </div>
-
-        <div className="peer-list">
-          {identity && (
-            <>
-              <div className="peer-item active">
-                <div className="peer-avatar" style={{ minWidth: 32 }}>
-                  L
-                </div>
-                <div className="peer-meta">
-                  <div className="peer-name-row">
-                    {editingLocalName ? (
-                      <input
-                        className="peer-name-input"
-                        value={localNameDraft}
-                        onChange={(e) => setLocalNameDraft(e.target.value)}
-                        onBlur={saveLocalName}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveLocalName();
-                          if (e.key === "Escape") setEditingLocalName(false);
-                        }}
-                        autoFocus
-                      />
-                    ) : (
+          </p>
+        )}
+        {sessionState.destination === "devices" && (
+          <>
+            <div className="peer-list">
+              {identity && (
+                <>
+                  <div className="nav-section-label">This device</div>
+                  <div className="peer-item active">
+                    <div className="peer-avatar" style={{ minWidth: 32 }}>
+                      L
+                    </div>
+                    <div className="peer-meta">
+                      <div className="peer-name-row">
+                        <MiddleEllipsisText
+                          className="peer-name"
+                          text={identity.deviceName || "Local device"}
+                        />
+                        <button
+                          className="icon-button"
+                          data-session-focus="rename-local"
+                          aria-label="Rename this device"
+                          disabled={!identityReady}
+                          onClick={beginEditLocalName}
+                        >
+                          <Icon name="edit" />
+                        </button>
+                      </div>
                       <MiddleEllipsisText
-                        className="peer-name"
-                        text={identity.deviceName || "Local device"}
+                        className="peer-sub"
+                        text={identity.deviceId}
+                        max={isNarrow ? 22 : 30}
                       />
-                    )}
-                    <button
-                      className="icon-button"
-                      style={{ width: 18, height: 18 }}
-                      title="Rename this device"
-                      onClick={
-                        editingLocalName ? saveLocalName : beginEditLocalName
-                      }
-                    >
-                      <span
-                        className="icon"
-                        style={{ fontSize: 12, lineHeight: 1 }}
-                      >
-                        {editingLocalName ? "check" : "edit"}
-                      </span>
-                    </button>
+                    </div>
+                    <div className="peer-actions">
+                      <div className="peer-indicator">
+                        <Icon name="computer" />
+                      </div>
+                    </div>
                   </div>
-                  <MiddleEllipsisText
-                    className="peer-sub"
-                    text={identity.deviceId}
-                    max={isNarrow ? 22 : 30}
-                  />
-                </div>
-                <div className="peer-actions">
-                  <div className="peer-indicator">
-                    <span className="icon" style={{ fontSize: 14 }}>
-                      laptop_mac
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                className="text-button"
-                style={{ marginTop: 4, marginLeft: 6, alignSelf: "flex-start" }}
-                onClick={handleShowQr}
-              >
-                <span className="icon">qr_code</span>Show my QR
-              </button>
-            </>
-          )}
-        </div>
-
-        {(pending.length > 0 ||
-          waiting.length > 0 ||
-          pairingErrors.length > 0) && (
+                  <button
+                    className="text-button"
+                    style={{
+                      marginTop: 4,
+                      marginLeft: 6,
+                      alignSelf: "flex-start",
+                    }}
+                    data-session-focus="pairing-qr"
+                    onClick={handleShowQr}
+                  >
+                    <Icon name="qr" />
+                    Show my QR
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+        {sessionState.destination === "requests" && (
           <>
             <div className="section-divider"></div>
             <div>
               <div className="nav-section-label" style={{ marginTop: 14 }}>
                 Pending requests
               </div>
-              {waiting.map((entry) => (
-                <div key={entry.targetPeerId} className="pending-card">
-                  <div className="peer-meta">
-                    <span className="peer-name">Waiting for approval</span>
-                    <span className="peer-sub">{entry.targetPeerId}</span>
-                  </div>
-                </div>
+              <PairingStatus
+                outcomes={pairingOutcomes}
+                waiting={waiting}
+                errors={pairingErrors}
+                devices={devices}
+                onDismiss={onDismissPairingOutcome}
+              />
+              {Object.entries(approvalFeedback).map(([id, message]) => (
+                <p key={id} role="status" style={{ overflowWrap: "anywhere" }}>
+                  {message}
+                </p>
               ))}
-              {pairingErrors.map((entry) => (
-                <div key={entry.targetPeerId} className="pending-card">
-                  <div className="peer-meta">
-                    <span className="peer-name">
-                      Pairing storage error; retrying
-                    </span>
-                    <span className="peer-sub">{entry.targetPeerId}</span>
-                  </div>
-                </div>
-              ))}
+              {requestsLoading && <p role="status">Loading Requests…</p>}
+              {!requestsLoading && (requestsUnavailable || !identityReady) && (
+                <>
+                  <p role="alert">
+                    {requestsUnavailable
+                      ? "Requests are unavailable. Retry to refresh the current list."
+                      : "Requests are unavailable until this installation is ready."}
+                  </p>
+                  {(onRetryRequests ||
+                    onRetryInitialization ||
+                    onRetryRuntime) && (
+                    <button
+                      type="button"
+                      disabled={
+                        sessionState.recoveryAttempts["requests:read"]?.pending
+                      }
+                      onClick={() =>
+                        void session.retryRecovery(
+                          "requests:read",
+                          (onRetryRequests ||
+                            onRetryInitialization ||
+                            onRetryRuntime)!
+                        )
+                      }
+                    >
+                      Retry Requests
+                    </button>
+                  )}
+                  {sessionState.recoveryAttempts["requests:read"]?.error && (
+                    <p role="status">
+                      Requests refresh could not be confirmed. Retry again.
+                    </p>
+                  )}
+                </>
+              )}
+              {!requestsLoading &&
+                !requestsUnavailable &&
+                identityReady &&
+                pending.length === 0 && <p>No pending requests.</p>}
               <div className="pending-list">
                 {pending.map((req) => {
                   return (
-                    <div key={req.deviceId} className="pending-card">
+                    <div
+                      key={req.deviceId}
+                      className="pending-card"
+                      tabIndex={-1}
+                      data-session-focus={`request:${req.deviceId}`}
+                    >
                       <div className="pending-card-header">
                         <div className="peer-avatar">
                           {req.deviceName?.[0] || "D"}
@@ -1241,13 +1864,25 @@ export function ClipboardApp({
                       <div className="pending-actions">
                         <button
                           className="primary-button compact-button"
-                          onClick={() => onAccept(req)}
+                          disabled={
+                            !identityReady ||
+                            requestsLoading ||
+                            requestsUnavailable ||
+                            approvalsPending.includes(req.deviceId)
+                          }
+                          onClick={() => void decideRequest(req, true)}
                         >
                           Accept
                         </button>
                         <button
                           className="text-button"
-                          onClick={() => onReject(req)}
+                          disabled={
+                            !identityReady ||
+                            requestsLoading ||
+                            requestsUnavailable ||
+                            approvalsPending.includes(req.deviceId)
+                          }
+                          onClick={() => void decideRequest(req, false)}
                         >
                           Reject
                         </button>
@@ -1262,346 +1897,636 @@ export function ClipboardApp({
 
         <div className="section-divider"></div>
 
-        <div>
-          <div className="nav-section-label">Pairing</div>
-          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-            <input
-              className="search-field"
-              style={{ flex: 1, minWidth: 0, borderRadius: 12 }}
-              placeholder="Paste pairing text (base64)…"
-              value={pairText}
-              onChange={(e) => setPairText(e.target.value)}
-            />
-            <button className="primary-button" onClick={submitPairText}>
-              Add
-            </button>
-          </div>
-          {onScanPairingCode && (
+        {sessionState.destination === "devices" && (
+          <>
             <button
-              className="text-button"
-              style={{ marginTop: 8, alignSelf: "flex-start" }}
-              onClick={scanPairingCode}
-              disabled={isScanningPairing}
+              type="button"
+              className="primary-button"
+              disabled={!identityReady}
+              data-session-focus="pairing-start"
+              onClick={() =>
+                session.open({ kind: "pairing", origin: "pairing-start" })
+              }
             >
-              <span className="icon">qr_code_scanner</span>
-              {isScanningPairing ? "Scanning" : "Scan QR"}
+              Pair this device
             </button>
-          )}
-        </div>
 
-        <div>
-          <div className="nav-section-label" style={{ marginTop: 14 }}>
-            Connected devices
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              maxHeight: 200,
-              overflow: "auto",
-            }}
-          >
-            {devices.length === 0 && (
-              <div className="content-subtitle">No devices yet.</div>
-            )}
-            {revocationError && (
-              <div className="content-subtitle" role="alert">
-                Could not revoke this device. It remains trusted.
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    const device = devices.find(
-                      (candidate) =>
-                        candidate.deviceId === revocationError.deviceId
-                    );
-                    if (device) void revokeDevice(device);
-                  }}
-                >
-                  Retry
-                </button>
+            <div>
+              <div className="nav-section-label" style={{ marginTop: 14 }}>
+                Trusted Devices
               </div>
-            )}
-            {devices.map((dev) => {
-              const editingThisDevice = editingDeviceId === dev.deviceId;
-              const connectionInfo = peerConnectionMap.get(dev.deviceId);
-              const isOnline =
-                connectedPeerSet.has(dev.deviceId) || Boolean(connectionInfo);
-              const connectionStatus = connectionStatusFor(
-                connectionInfo,
-                isOnline
-              );
-              return (
-                <div
-                  key={dev.deviceId}
-                  className="peer-item"
-                  title={connectionStatus.title}
-                  style={{ border: "1px solid rgba(255,255,255,0.06)" }}
-                >
-                  <div
-                    className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}
-                  >
-                    {(dev.displayName || dev.deviceName)?.[0] || "D"}
-                  </div>
-                  <div className="peer-meta">
-                    {editingThisDevice ? (
-                      <input
-                        className="peer-name-input"
-                        value={deviceNameDraft}
-                        onChange={(e) => setDeviceNameDraft(e.target.value)}
-                        onBlur={() => saveDeviceName(dev)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveDeviceName(dev);
-                          if (e.key === "Escape") cancelEditDeviceName();
-                        }}
-                        autoFocus
-                      />
-                    ) : (
-                      <MiddleEllipsisText
-                        className="peer-name"
-                        text={dev.displayName || dev.deviceName}
-                      />
-                    )}
-                    <MiddleEllipsisText
-                      className="peer-sub"
-                      text={dev.deviceId}
-                      max={isNarrow ? 22 : 32}
-                    />
-                  </div>
-                  <div className="peer-actions">
-                    <div className="peer-indicator">
-                      <span className="icon" style={{ fontSize: 14 }}>
-                        smartphone
-                      </span>
-                    </div>
-                    {onRenameDevice && (
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                {devices.length === 0 && (
+                  <div className="content-subtitle">No devices yet.</div>
+                )}
+                {revocationError &&
+                  revocationError.identityId === identity?.deviceId && (
+                    <div className="content-subtitle" role="alert">
+                      Device revocation could not be confirmed. Check the
+                      current device list.
                       <button
-                        className="icon-button"
-                        title={
-                          editingThisDevice
-                            ? "Save device name"
-                            : "Rename this device"
+                        className="text-button"
+                        disabled={
+                          !identityReady ||
+                          revokingIds.includes(revocationError.deviceId) ||
+                          !devices.some(
+                            (device) =>
+                              device.deviceId === revocationError.deviceId
+                          )
                         }
-                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
-                          if (editingThisDevice) {
-                            saveDeviceName(dev);
-                          } else {
-                            beginEditDeviceName(dev);
-                          }
+                          const device = devices.find(
+                            (candidate) =>
+                              candidate.deviceId === revocationError.deviceId
+                          );
+                          if (device) void revokeDevice(device);
                         }}
                       >
-                        <span className="icon" style={{ fontSize: 16 }}>
-                          {editingThisDevice ? "check" : "edit"}
-                        </span>
+                        Retry
                       </button>
-                    )}
-                    <button
-                      className="icon-button"
-                      title="Revoke this device"
-                      onClick={() => void revokeDevice(dev)}
+                    </div>
+                  )}
+                {devices.map((dev) => {
+                  const connectionInfo = peerConnectionMap.get(dev.deviceId);
+                  const isOnline =
+                    connectionStateKnown && connectedPeerSet.has(dev.deviceId);
+                  const connectionStatus = connectionStatusFor(
+                    connectionInfo,
+                    isOnline,
+                    connectionStateKnown
+                  );
+                  return (
+                    <div
+                      key={dev.deviceId}
+                      className="peer-item"
+                      title={connectionStatus.title}
+                      style={{ border: "1px solid rgba(255,255,255,0.06)" }}
                     >
-                      <span className="icon" style={{ fontSize: 16 }}>
-                        link_off
-                      </span>
+                      <div
+                        className={`peer-avatar ${isOnline ? "online" : "offline"} ${connectionStatus.kind}`}
+                      >
+                        {(dev.displayName || dev.deviceName)?.[0] || "D"}
+                      </div>
+                      <div className="peer-meta">
+                        <MiddleEllipsisText
+                          className="peer-name"
+                          text={dev.displayName || dev.deviceName}
+                        />
+                        <MiddleEllipsisText
+                          className="peer-sub"
+                          text={dev.deviceId}
+                          max={isNarrow ? 22 : 32}
+                        />
+                        <span className="peer-sub">
+                          {connectionStatus.title}
+                        </span>
+                      </div>
+                      <div className="peer-actions">
+                        <div className="peer-indicator">
+                          <Icon name="device" />
+                        </div>
+                        {onRenameDevice && (
+                          <button
+                            className="icon-button"
+                            data-session-focus={`rename:${dev.deviceId}`}
+                            aria-label="Edit Local Device Alias"
+                            disabled={!identityReady}
+                            onClick={() => beginEditDeviceName(dev)}
+                          >
+                            <Icon name="edit" />
+                          </button>
+                        )}
+                        <button
+                          className="text-button"
+                          title="Revoke this device"
+                          disabled={
+                            !identityReady || revokingIds.includes(dev.deviceId)
+                          }
+                          onClick={() => void revokeDevice(dev)}
+                        >
+                          Revoke device
+                        </button>
+                        {revokingIds.includes(dev.deviceId) && (
+                          <span role="status">Revoking this device…</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+        {sessionState.destination === "settings" &&
+          (() => {
+            const category =
+              sessionState.settingsCategory === "relays" ||
+              sessionState.settingsCategory === "connections"
+                ? "connections"
+                : sessionState.settingsCategory === "advanced"
+                  ? "advanced"
+                  : "general";
+            return (
+              <>
+                <nav
+                  className="settings-categories"
+                  aria-label="Settings categories"
+                >
+                  {(["general", "connections", "advanced"] as const).map(
+                    (item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        aria-current={category === item ? "page" : undefined}
+                        data-session-focus={`settings-category:${item}`}
+                        onClick={() =>
+                          session.update({ settingsCategory: item })
+                        }
+                      >
+                        {item[0].toUpperCase() + item.slice(1)}
+                      </button>
+                    )
+                  )}
+                </nav>
+                <section
+                  data-settings-panel="general"
+                  hidden={category !== "general"}
+                  aria-label="General settings"
+                >
+                  <h3 tabIndex={-1} data-session-focus="settings:general">
+                    General
+                  </h3>
+                  {appearanceSettings && (
+                    <div tabIndex={-1} data-session-focus="settings:appearance">
+                      <h3>Appearance</h3>
+                      <Appearance settings={appearanceSettings} />
+                    </div>
+                  )}
+                  {onSetAutoSync && (
+                    <div className="relay-settings">
+                      <label className="peer-sub" htmlFor="auto-sync">
+                        Auto Sync
+                      </label>
+                      <select
+                        id="auto-sync"
+                        value={
+                          autoSyncKnown
+                            ? autoSync
+                              ? "enabled"
+                              : "disabled"
+                            : ""
+                        }
+                        disabled={
+                          !autoSyncKnown ||
+                          autoSyncLoading ||
+                          autoSyncRecoveryRequired ||
+                          sessionState.autoSync.recoveryRequired
+                        }
+                        aria-disabled={
+                          autoSyncPending ||
+                          sessionState.autoSync.pending ||
+                          undefined
+                        }
+                        aria-busy={
+                          autoSyncPending ||
+                          sessionState.autoSync.pending ||
+                          undefined
+                        }
+                        onChange={(event) => {
+                          if (
+                            autoSyncPending ||
+                            sessionState.autoSync.pending
+                          ) {
+                            event.currentTarget.value = autoSyncKnown
+                              ? autoSync
+                                ? "enabled"
+                                : "disabled"
+                              : "";
+                            return;
+                          }
+                          void session.saveAutoSync(() =>
+                            onSetAutoSync(event.target.value === "enabled")
+                          );
+                        }}
+                      >
+                        {!autoSyncKnown && <option value="">Unknown</option>}
+                        <option value="enabled">Enabled</option>
+                        <option value="disabled">
+                          Disabled — keep Clips local
+                        </option>
+                      </select>
+                      {autoSyncLoading && (
+                        <p role="status">Loading Auto Sync…</p>
+                      )}
+                      {(autoSyncPending || sessionState.autoSync.pending) && (
+                        <p role="status">Saving Auto Sync…</p>
+                      )}
+                      <PreferenceRefreshNotice
+                        subject="Auto Sync"
+                        error={autoSyncRefreshError}
+                        onRetry={
+                          onRetryAutoSync
+                            ? async () => {
+                                await onRetryAutoSync();
+                              }
+                            : undefined
+                        }
+                      />
+                      {sessionState.autoSync.feedback && (
+                        <p
+                          role={
+                            sessionState.autoSync.feedback.status === "applied"
+                              ? "status"
+                              : "alert"
+                          }
+                        >
+                          {sessionState.autoSync.feedback.status === "applied"
+                            ? "Auto Sync saved."
+                            : sessionState.autoSync.feedback.status ===
+                                "rejected"
+                              ? "Auto Sync was not saved."
+                              : sessionState.autoSync.feedback.status ===
+                                  "partial"
+                                ? "Auto Sync was applied, but current state refresh was not confirmed."
+                                : "Auto Sync Save could not be confirmed."}
+                          {sessionState.autoSync.feedback.error &&
+                            ` ${sessionState.autoSync.feedback.error}`}
+                          {sessionState.autoSync.refreshed
+                            ? " Current setting refreshed."
+                            : sessionState.autoSync.recoveryRequired
+                              ? " Refresh the current setting before trying again."
+                              : ""}
+                        </p>
+                      )}
+                      {sessionState.autoSync.recoveryRequired &&
+                        onRetryAutoSync && (
+                          <button
+                            type="button"
+                            disabled={sessionState.autoSync.pending}
+                            onClick={() =>
+                              void session.refreshAutoSync(onRetryAutoSync)
+                            }
+                          >
+                            Refresh Auto Sync
+                          </button>
+                        )}
+                      <PreferenceSaveFeedback
+                        feedback={autoSyncFeedback}
+                        subject="Auto Sync"
+                        refreshError={autoSyncRefreshError}
+                        refreshing={autoSyncRefreshing}
+                      />
+                    </div>
+                  )}
+
+                  {appearanceSettings && (
+                    <div tabIndex={-1} data-session-focus="settings:clips">
+                      <ClipSettings
+                        section="retention"
+                        settings={appearanceSettings}
+                        onRetryRetention={
+                          onRetryHistoryCleanup
+                            ? async () => {
+                                await onRetryHistoryCleanup();
+                              }
+                            : undefined
+                        }
+                      />
+                    </div>
+                  )}
+                  {!appearanceSettings && onSetLocalRetention && (
+                    <div className="relay-settings">
+                      <label className="peer-sub" htmlFor="history-retention">
+                        Keep unpinned history
+                      </label>
+                      <select
+                        id="history-retention"
+                        value={localRetentionMs}
+                        onChange={(event) =>
+                          void updateLocalRetention(Number(event.target.value))
+                        }
+                      >
+                        {![0, 7, 30, 90, 365]
+                          .map((days) => days * 86400000)
+                          .includes(localRetentionMs) && (
+                          <option value={localRetentionMs}>
+                            Custom ({localRetentionMs} ms)
+                          </option>
+                        )}
+                        <option value={0}>
+                          Remove unpinned history immediately
+                        </option>
+                        <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
+                        <option value={30 * 24 * 60 * 60 * 1000}>
+                          30 days
+                        </option>
+                        <option value={90 * 24 * 60 * 60 * 1000}>
+                          90 days
+                        </option>
+                        <option value={365 * 24 * 60 * 60 * 1000}>
+                          1 year
+                        </option>
+                      </select>
+                    </div>
+                  )}
+                </section>
+                <section
+                  data-settings-panel="connections"
+                  hidden={category !== "connections"}
+                  aria-label="Connections settings"
+                >
+                  <h3>Connections</h3>
+                  <div tabIndex={-1} data-session-focus="settings:relays">
+                    <h3>Relays</h3>
+                    {renderRelaysSection()}
+                  </div>
+                  {backgroundContinuity && onSetBackgroundContinuity && (
+                    <BackgroundContinuityControls
+                      state={backgroundContinuity}
+                      setEnabled={onSetBackgroundContinuity}
+                      setAutoSync={(enabled) =>
+                        session.saveAutoSync(() => onSetAutoSync?.(enabled))
+                      }
+                      autoSyncPending={
+                        autoSyncPending || sessionState.autoSync.pending
+                      }
+                      autoSyncRecoveryRequired={
+                        sessionState.autoSync.recoveryRequired
+                      }
+                      refresh={onRefreshBackgroundContinuity}
+                      refreshAutoSync={
+                        onRetryAutoSync
+                          ? () => session.refreshAutoSync(onRetryAutoSync)
+                          : undefined
+                      }
+                      openNotificationSettings={
+                        onOpenBackgroundNotificationSettings
+                      }
+                      help={() =>
+                        session.open({
+                          kind: "issues",
+                          entity: "continuity",
+                          origin: "continuity-help",
+                        })
+                      }
+                    />
+                  )}{" "}
+                  {notificationControls && (
+                    <NotificationSettings controls={notificationControls} />
+                  )}
+                </section>
+                <section
+                  data-settings-panel="advanced"
+                  hidden={category !== "advanced"}
+                  aria-label="Advanced settings"
+                >
+                  <h3>Advanced</h3>
+                  {appearanceSettings && (
+                    <ClipSettings
+                      section="lifetime"
+                      settings={appearanceSettings}
+                    />
+                  )}
+                  <div className="relay-settings">
+                    <h3>Local history</h3>
+                    <button
+                      type="button"
+                      className="text-button labelled-control"
+                      data-session-focus="settings-clear"
+                      onClick={() => {
+                        setClearError(null);
+                        setClearReviewOpen(true);
+                        session.open({
+                          kind: "clear",
+                          origin: "settings-clear",
+                        });
+                      }}
+                      disabled={
+                        historyLoading ||
+                        historyUnavailable ||
+                        Boolean(historyRefreshError)
+                      }
+                    >
+                      Clear all local history
                     </button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {renderRelaysSection()}
-
-        {onSetLocalRetention && (
-          <div className="relay-settings">
-            <label className="peer-sub" htmlFor="history-retention">
-              Keep unpinned history
-            </label>
-            <select
-              id="history-retention"
-              value={localRetentionMs}
-              onChange={(event) =>
-                void updateLocalRetention(Number(event.target.value))
-              }
-            >
-              <option value={7 * 24 * 60 * 60 * 1000}>7 days</option>
-              <option value={30 * 24 * 60 * 60 * 1000}>30 days</option>
-              <option value={90 * 24 * 60 * 60 * 1000}>90 days</option>
-              <option value={365 * 24 * 60 * 60 * 1000}>1 year</option>
-            </select>
-          </div>
-        )}
-
-        {onSetAutoSync && (
-          <div className="relay-settings">
-            <label className="peer-sub" htmlFor="auto-sync">
-              Auto Sync
-            </label>
-            <select
-              id="auto-sync"
-              value={autoSync ? "enabled" : "disabled"}
-              onChange={(event) =>
-                void onSetAutoSync(event.target.value === "enabled")
-              }
-            >
-              <option value="enabled">Enabled</option>
-              <option value="disabled">Disabled — keep Clips local</option>
-            </select>
-          </div>
-        )}
-
-        {backgroundContinuity && onSetBackgroundContinuity && (
-          <div className="relay-settings">
-            <label className="peer-sub" htmlFor="background-continuity">
-              Experimental background continuity
-            </label>
-            <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-              Best effort on Android 12+. While enabled, Clipp shows a visible
-              notification and holds a partial CPU wake lock while it tries to
-              retain the current app runtime after screen-off. This can increase
-              battery use. It does not read your clipboard without an active,
-              focused Clipp window.
-            </p>
-            <p className="peer-sub" style={{ margin: "4px 0 8px" }}>
-              Android may interrupt the Activity-owned WebView and network
-              during Doze, OEM process management, process pressure, task
-              removal, Task Manager stop, force-stop, or reboot. Reopen Clipp
-              after an explicit stop or reconnect alert.
-            </p>
-            <select
-              id="background-continuity"
-              disabled={!backgroundContinuity.available}
-              value={
-                backgroundContinuity.backgroundEnabled ? "enabled" : "disabled"
-              }
-              onChange={(event) => {
-                const enabled = event.target.value === "enabled";
-                if (
-                  enabled &&
-                  !window.confirm(
-                    "Keep Clipp connected in the background? This experimental mode shows an ongoing notification and holds a partial CPU wake lock, which can increase battery and network use. It still works only while Android keeps Clipp's current app runtime alive. Clipboard capture requires a focused Clipp window."
-                  )
-                )
-                  return;
-                void onSetBackgroundContinuity(enabled);
-              }}
-            >
-              <option value="disabled">Disabled</option>
-              <option value="enabled">
-                Experimental best-effort background continuity
-              </option>
-            </select>
-            {!backgroundContinuity.available && (
-              <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                Available experimentally on Android 12 and later.
-              </p>
-            )}
-            {backgroundContinuity.available &&
-              backgroundContinuity.notificationAvailability === "blocked" && (
-                <p
-                  className="peer-sub"
-                  role="status"
-                  style={{ margin: "6px 0 0" }}
-                >
-                  Notifications are blocked. Background mode remains available,
-                  but ordinary reconnect alerts may not appear.
-                </p>
-              )}
-            {backgroundContinuity.available &&
-              backgroundContinuity.backgroundEnabled && (
-                <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                  {backgroundContinuity.service === "running"
-                    ? backgroundContinuity.connection === "connected"
-                      ? `Connected to ${backgroundContinuity.connectedTrustedDeviceCount} Trusted Device${backgroundContinuity.connectedTrustedDeviceCount === 1 ? "" : "s"}.`
-                      : `Background mode is ${backgroundContinuity.connection}.`
-                    : "Background mode is stopped. Start it from this visible control when you are ready."}
-                </p>
-              )}
-            {backgroundContinuity.available &&
-              backgroundContinuity.backgroundEnabled &&
-              backgroundContinuity.service === "stopped" && (
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => void onSetBackgroundContinuity(true)}
-                >
-                  Start background mode
-                </button>
-              )}
-            {backgroundContinuity.available &&
-              backgroundContinuity.supportState === "limited" && (
-                <p
-                  className="peer-sub"
-                  role="status"
-                  style={{ margin: "6px 0 0" }}
-                >
-                  This configuration is limited: Clipp observed{" "}
-                  {backgroundContinuity.observedBackgroundFailureCount}{" "}
-                  background runtime interruptions. Background connectivity is
-                  not reliable on this configuration.
-                </p>
-              )}
-            {backgroundContinuity.available &&
-              backgroundContinuity.batteryOptimizationGuidance && (
-                <p className="peer-sub" style={{ margin: "6px 0 0" }}>
-                  Troubleshooting: check Android Settings → Apps → Clipp →
-                  Battery and allow background use, then collect another
-                  diagnostic run. Clipp does not request a battery exemption
-                  during onboarding.
-                </p>
-              )}
-            {backgroundContinuity.available &&
-              onExportBackgroundContinuityDiagnostics && (
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => {
-                    void Promise.resolve(
-                      onExportBackgroundContinuityDiagnostics()
-                    ).catch(() => {
-                      window.alert(
-                        "Clipp could not export background diagnostics."
-                      );
-                    });
-                  }}
-                >
-                  Export privacy-safe diagnostics
-                </button>
-              )}
-          </div>
-        )}
+                  <ManualIdentityResetSettings
+                    peerId={identity?.deviceId}
+                    state={identityResetState}
+                    available={manualIdentityResetAvailable}
+                    actions={identityResetActions}
+                    onPair={identityReady ? onPairAfterIdentityReset : undefined}
+                    onCopyFormerPeerId={onCopyFormerIdentity}
+                    onAccepted={() => session.rotateIdentity()}
+                  />
+                  {appearanceSettings && (
+                    <div className="relay-settings">
+                      <label>
+                        Log level
+                        <select
+                          aria-label="Log level"
+                          value={
+                            appearanceSettings.snapshot?.state.logLevel ?? ""
+                          }
+                          disabled={
+                            !appearanceSettings.snapshot ||
+                            appearanceSettings.recoveryRequired
+                          }
+                          aria-disabled={
+                            appearanceSettings.pending || undefined
+                          }
+                          aria-busy={appearanceSettings.pending || undefined}
+                          onChange={(event) => {
+                            if (appearanceSettings.pending) {
+                              event.currentTarget.value =
+                                appearanceSettings.snapshot?.state.logLevel ??
+                                "";
+                              return;
+                            }
+                            void appearanceSettings.save({
+                              logLevel: event.target.value as
+                                "debug" | "info" | "warn" | "error",
+                            });
+                          }}
+                        >
+                          {!appearanceSettings.snapshot && (
+                            <option value="">Unknown</option>
+                          )}
+                          {(["debug", "info", "warn", "error"] as const).map(
+                            (level) => (
+                              <option key={level} value={level}>
+                                {level}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </label>
+                      <PreferenceRefreshNotice
+                        subject="General settings"
+                        error={appearanceSettings.refreshError}
+                        onRetry={appearanceSettings.refresh}
+                      />
+                      <PreferenceSaveFeedback
+                        subject="Log level"
+                        feedback={
+                          appearanceSettings.feedback?.fields?.includes(
+                            "logLevel"
+                          )
+                            ? appearanceSettings.feedback
+                            : null
+                        }
+                        refreshError={appearanceSettings.refreshError}
+                        refreshing={appearanceSettings.refreshing}
+                      />
+                      {appearanceSettings.recoveryRequired && (
+                        <button
+                          type="button"
+                          onClick={() => void appearanceSettings.refresh()}
+                        >
+                          Refresh General settings
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              </>
+            );
+          })()}
       </>
     );
   }
 
+  function renderNavigation() {
+    return (
+      <nav className="workspace-navigation" aria-label="Clipp destinations">
+        {(["history", "devices", "requests", "settings"] as const).map(
+          (destination) => (
+            <button
+              type="button"
+              key={destination}
+              aria-current={
+                sessionState.destination === destination ? "page" : undefined
+              }
+              data-session-focus={`destination:${destination}`}
+              onClick={() => {
+                session.close();
+                session.update({
+                  destination,
+                  showNav: false,
+                  focusKey: `destination:${destination}`,
+                });
+              }}
+            >
+              {destination[0].toUpperCase() + destination.slice(1)}
+              {destination === "requests" &&
+                (requestsLoading ? (
+                  " (loading)"
+                ) : requestsUnavailable ? (
+                  " (unavailable)"
+                ) : pending.length + waiting.length > 0 ? (
+                  <span aria-label="active requests">
+                    {" "}
+                    ({pending.length + waiting.length})
+                  </span>
+                ) : null)}
+            </button>
+          )
+        )}
+      </nav>
+    );
+  }
+
+  const detailsClip =
+    activeTask?.kind === "clip-details"
+      ? clips.find((clip) => clip.id === activeTask.entity)
+      : undefined;
+
   return (
     <div
-      className={
-        initializationError
-          ? "app-shell app-shell-with-initialization-error"
-          : "app-shell"
-      }
+      ref={rootRef}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+        if (timeMenuOpen || sourceMenuOpen) {
+          event.preventDefault();
+          setTimeMenuOpen(false);
+          setSourceMenuOpen(false);
+          return;
+        }
+        if (
+          session.getSnapshot().tasks.length ||
+          session.getSnapshot().notificationReturn
+        ) {
+          event.preventDefault();
+          session.back();
+        } else if (showNav) {
+          event.preventDefault();
+          dismissNav();
+        }
+      }}
+      onFocusCapture={(event) => {
+        const key = (event.target as HTMLElement).dataset.sessionFocus;
+        if (key) session.update({ focusKey: key });
+      }}
+      onScrollCapture={(event) => {
+        const target = event.target as HTMLElement;
+        const key = target.dataset.sessionScroll;
+        if (key) {
+          const context = session.getSnapshot();
+          let historyAnchor = context.historyAnchor;
+          if (
+            context.destination === "history" &&
+            !context.tasks.length &&
+            (key === "workspace" || key === "history")
+          ) {
+            const top = target.getBoundingClientRect().top;
+            const clip = [
+              ...(rootRef.current?.querySelectorAll<HTMLElement>(
+                "[data-clip-id]"
+              ) ?? []),
+            ].find((element) => element.getBoundingClientRect().bottom > top);
+            if (clip)
+              historyAnchor = {
+                clipId: clip.dataset.clipId!,
+                offset: clip.getBoundingClientRect().top - top,
+              };
+          }
+          session.update({
+            scroll: {
+              ...context.scroll,
+              [target === rootRef.current
+                ? `${key}:${context.destination}`
+                : key]: target.scrollTop,
+            },
+            historyAnchor,
+          });
+        }
+      }}
+      data-session-scroll="workspace"
+      className={`app-shell ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
     >
       <header className="app-bar">
         <div className="app-bar-left">
-          <div
-            className="app-logo"
-            onClick={() => {
-              if (isNarrow) setShowNav(true);
-            }}
-          >
-            <img src={clippPurpleIcon} alt="Clipp" draggable={false} />
-          </div>
+          <span className="app-logo">
+            <img src={clippPurpleIcon} alt="" draggable={false} />
+          </span>
           <div className="app-title-block">
             <div className="app-title">
               Clipp
-              <span className="chip-status">
-                <span className="dot"></span>
-                {peerCount ? "Synced" : "Offline"}
-              </span>
+              <ConnectionStatusButton
+                summary={connectionSummary}
+                session={session}
+              />
             </div>
             <div className="app-subtitle">
               Clipboard sharing across all your devices.
@@ -1610,175 +2535,282 @@ export function ClipboardApp({
         </div>
 
         <div className="app-bar-right">
-          <div className="search-field">
-            <span className="icon">search</span>
-            <input
-              placeholder="Search history: text, URL, device…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <button className="icon-button" title="Toggle theme">
-            <span className="icon">dark_mode</span>
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => {
+              session.close();
+              session.update({
+                destination: "settings",
+                settingsCategory: "general",
+              });
+            }}
+          >
+            Auto Sync: {autoSyncKnown ? (autoSync ? "On" : "Off") : "Unknown"}
           </button>
         </div>
       </header>
-
-      {initializationError && (
-        <div className="initialization-error" role="alert">
-          <span>
-            Device identity could not be initialized. Clipboard capture and
-            networking are paused.
-          </span>
-          {onRetryInitialization && (
-            <button type="button" onClick={() => void onRetryInitialization()}>
-              Retry
-            </button>
-          )}
-        </div>
-      )}
-
-      {identityRotationRecovery && (
-        <div className="initialization-error" role="alert">
-          <span>
-            Identity rotation is recovering. Clipboard History and local capture
-            remain available; networking will stay disabled and retry
-            automatically.
-          </span>
-        </div>
-      )}
-
-      {identityRotationNotice && !identityRotationRecovery && (
-        <div className="initialization-error" role="status">
-          <span>{identityRotationNoticeMessage(identityRotationNotice)}</span>
-          {onAcknowledgeIdentityRotationNotice && (
+      <div className="workspace-controls">
+        <div className="search-field">
+          <Icon name="search" />
+          <input
+            aria-label="Search history"
+            data-session-focus="history-query"
+            placeholder="Search history: text, URL, device…"
+            value={search}
+            onChange={(e) =>
+              session.update({ search: e.target.value, destination: "history" })
+            }
+          />
+          {search && (
             <button
               type="button"
-              onClick={() => void onAcknowledgeIdentityRotationNotice()}
+              className="icon-button"
+              aria-label="Clear search"
+              onClick={() => setSearch("")}
             >
-              Dismiss
+              <Icon name="close" />
             </button>
           )}
         </div>
-      )}
 
-      {historyError && (
-        <div className="initialization-error" role="alert">
-          <span>{historyError}</span>
-          {retryHistoryOperation && (
-            <button
-              type="button"
-              onClick={() => {
-                const retry = retryHistoryOperation;
-                setHistoryError(null);
-                setRetryHistoryOperation(null);
-                retry();
-              }}
-            >
-              Retry
-            </button>
-          )}
-          {!retryHistoryOperation && (
-            <button type="button" onClick={() => setHistoryError(null)}>
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
-
-      {clipboardHistoryError && (
-        <div className="initialization-error" role="alert">
-          <span>{clipboardHistoryErrorMessage(clipboardHistoryError)}</span>
-          {clipboardHistoryError !== "pending_capture_failed" &&
-            onDismissClipboardHistoryError && (
-              <button
-                type="button"
-                onClick={() => void onDismissClipboardHistoryError()}
-              >
-                Dismiss
-              </button>
-            )}
-        </div>
-      )}
-
-      {historyPolicyError && (
-        <div className="initialization-error" role="alert">
-          <span>
-            Clipboard History cleanup could not finish. Existing Clips remain
-            available.
-          </span>
-          {onRetryHistoryCleanup && (
-            <button type="button" onClick={() => void onRetryHistoryCleanup()}>
-              Retry
-            </button>
-          )}
-        </div>
-      )}
-
-      <main className="app-main">
-        <aside
-          className="surface nav-pane"
-          style={{ display: navHidden ? "none" : undefined }}
+        <button
+          type="button"
+          className="text-button"
+          aria-expanded={!filtersCollapsed}
+          data-session-focus="history-filters"
+          onClick={toggleFilters}
         >
-          {renderNavContent(false)}
-        </aside>
+          <Icon name="filters" />
+          Filters
+        </button>
+        {onShareNow && (
+          <div className="send-control">
+            <IconButton
+              icon="send"
+              label="Share current clipboard now"
+              onClick={shareNow}
+              disabled={
+                !identityReady ||
+                sessionState.historyActions["send:current"]?.pending
+              }
+              aria-describedby="send-clipboard-hint"
+            />
+            <span id="send-clipboard-hint" className="control-hint">
+              Sends your current system clipboard
+            </span>
+          </div>
+        )}
+      </div>
+      {renderNavigation()}
 
-        <section className="surface content-pane">
+      <div className="app-notices" role="status">
+        {issues.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="issue-summary"
+              data-session-focus="issues-summary"
+              onClick={() =>
+                session.open({ kind: "issues", origin: "issues-summary" })
+              }
+            >
+              {issues.length}{" "}
+              {issues.length === 1 ? "issue needs" : "issues need"} attention
+            </button>
+          </>
+        )}
+      </div>
+      {activeTask?.kind === "connections" && (
+        <ConnectionsPanel
+          summary={connectionSummary}
+          session={session}
+          autoSync={autoSyncKnown ? autoSync : null}
+        />
+      )}
+      {activeTask?.kind === "issues" && (
+        <RecoveryIssues
+          issues={issues}
+          session={session}
+          title={
+            activeTask?.entity === "continuity"
+              ? "Background help and recovery"
+              : undefined
+          }
+          details={
+            activeTask?.entity === "continuity" && backgroundContinuity ? (
+              <BackgroundContinuityHelp
+                state={backgroundContinuity}
+                exportDiagnostics={onExportBackgroundContinuityDiagnostics}
+              />
+            ) : undefined
+          }
+          retry={issueRetry}
+          dismiss={issueDismiss}
+          route={(issue) => {
+            session.close();
+            if (issue.scope === "task") {
+              if (issue.code === "device-name") beginEditLocalName();
+              if (issue.code === "alias") {
+                const device = devices.find(
+                  (device) => device.deviceId === issue.target
+                );
+                if (device) beginEditDeviceName(device);
+              }
+              if (issue.code === "pairing")
+                session.open({ kind: "pairing", origin: "pairing-paste" });
+              if (
+                issue.code === "relay-edit" ||
+                issue.code === "relay-action"
+              ) {
+                const config = managedRelayConfigurations.find(
+                  (config) => config.key === issue.target
+                );
+                if (config || issue.target === "new") {
+                  session.open({
+                    kind: "relay",
+                    entity: issue.target,
+                    origin: `relay:${issue.target}`,
+                  });
+                  session.relay.begin(config);
+                }
+              }
+            }
+            session.update({
+              destination:
+                issue.scope === "pairing"
+                  ? "requests"
+                  : issue.scope === "relay" ||
+                      (issue.scope === "task" &&
+                        [
+                          "relay-edit",
+                          "relay-action",
+                          "relay",
+                          "auto-sync",
+                          "clip-settings",
+                          "settings",
+                          "continuity",
+                          "notifications",
+                        ].includes(issue.code))
+                    ? "settings"
+                    : issue.scope === "task" &&
+                        ["alias", "device-name", "pairing"].includes(issue.code)
+                      ? "devices"
+                      : "history",
+              ...(issue.scope === "relay" ||
+              (issue.scope === "task" &&
+                [
+                  "relay-edit",
+                  "relay-action",
+                  "relay",
+                  "continuity",
+                  "notifications",
+                ].includes(issue.code))
+                ? { settingsCategory: "connections" as const }
+                : issue.scope === "task" &&
+                    ["auto-sync", "clip-settings", "settings"].includes(
+                      issue.code
+                    )
+                  ? {
+                      settingsCategory:
+                        issue.code === "clip-settings" &&
+                        !appearanceSettings?.snapshot?.state.retentionError &&
+                        appearanceSettings?.feedback?.fields?.includes(
+                          "sharingLifetimeMs"
+                        ) &&
+                        !appearanceSettings.feedback.fields.includes(
+                          "localRetentionMs"
+                        )
+                          ? ("advanced" as const)
+                          : issue.code === "settings" &&
+                              !appearanceSettings?.refreshError &&
+                              appearanceSettings?.feedback?.fields?.includes(
+                                "logLevel"
+                              ) &&
+                              !appearanceSettings.feedback.fields.includes(
+                                "theme"
+                              )
+                            ? ("advanced" as const)
+                            : ("general" as const),
+                    }
+                  : {}),
+              showNav: issue.scope !== "history",
+            });
+          }}
+        />
+      )}
+      {sessionState.notificationReturn && !sessionState.tasks.length && (
+        <button
+          className="text-button"
+          type="button"
+          onClick={() => session.back()}
+        >
+          Back to previous task
+        </button>
+      )}
+      <main
+        className="app-main"
+        tabIndex={-1}
+        data-session-focus="workspace"
+        style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
+      >
+        {sessionState.destination !== "history" && (
+          <section
+            className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : ""}`}
+            data-session-scroll={sessionState.destination}
+          >
+            <h1>
+              {sessionState.destination[0].toUpperCase() +
+                sessionState.destination.slice(1)}
+            </h1>
+            {renderDestination()}
+          </section>
+        )}
+        <section
+          className="surface content-pane"
+          data-session-scroll="history"
+          hidden={sessionState.destination !== "history"}
+        >
           <header className="content-header">
             <div className="content-title-block">
               <div className="content-title">History</div>
             </div>
+          </header>
 
-            <div className="content-header-actions">
-              <button className="text-button" onClick={shareNow}>
-                <span className="icon">send</span>
-                Share Now
-              </button>
+          {!filtersCollapsed && (
+            <div
+              className="content-filters"
+              role="group"
+              aria-label="History filters"
+            >
               <div className="segmented">
                 <button
                   className={filterMode === "all" ? "active" : ""}
+                  aria-pressed={filterMode === "all"}
                   onClick={() => setFilterMode("all")}
                 >
                   All
                 </button>
                 <button
                   className={filterMode === "pinned" ? "active" : ""}
+                  aria-pressed={filterMode === "pinned"}
                   onClick={() => setFilterMode("pinned")}
                 >
                   Pinned
                 </button>
               </div>
 
-              <div className="content-filter-toggle">
-                <button className="text-button" onClick={toggleFilters}>
-                  <span className="icon">
-                    {filtersCollapsed ? "unfold_more" : "unfold_less"}
-                  </span>
-                  {filtersCollapsed ? "More" : "Less"}
-                </button>
-              </div>
-            </div>
-          </header>
-
-          {!filtersCollapsed && (
-            <div className="content-filters">
               <div className="time-filter-wrap">
                 <button
                   className="text-button"
                   onClick={() => setTimeMenuOpen((v) => !v)}
                 >
-                  <span className="icon">schedule</span>
+                  <Icon name="clock" />
                   <span className="filter-button-label">
                     {timeOptions.find((t) => t.value === timeFilter)?.label ||
                       "All time"}
                   </span>
-                  <span
-                    className="icon"
-                    style={{ fontSize: 16, marginLeft: 4 }}
-                  >
-                    expand_more
-                  </span>
+                  <Icon name="chevron" />
                 </button>
                 {timeMenuOpen && (
                   <div className="time-menu">
@@ -1803,16 +2835,11 @@ export function ClipboardApp({
                   className="text-button"
                   onClick={() => setSourceMenuOpen((v) => !v)}
                 >
-                  <span className="icon">filter_alt</span>
+                  <Icon name="filters" />
                   <span className="filter-button-label">
                     {sourceFilterLabel(sourceFilter)}
                   </span>
-                  <span
-                    className="icon"
-                    style={{ fontSize: 16, marginLeft: 4 }}
-                  >
-                    expand_more
-                  </span>
+                  <Icon name="chevron" />
                 </button>
                 {sourceMenuOpen && (
                   <div className="time-menu source-menu">
@@ -1833,38 +2860,106 @@ export function ClipboardApp({
                   </div>
                 )}
               </div>
-
-              <button className="text-button" onClick={clearAllHistory}>
-                <span className="icon">delete_sweep</span>
-                Clear
-              </button>
             </div>
           )}
 
-          <div className="history-grid">
-            {filteredClips.length === 0 && (
-              <article
-                className="history-card"
-                style={{ minHeight: 120, maxHeight: 120 }}
-              >
-                <div className="history-body">
-                  <div className="history-text">
-                    No clips yet. Copy something!
-                  </div>
+          {historyLoading && <p role="status">Loading History…</p>}
+          {(historyUnavailable || historyRefreshError) && (
+            <div className="initialization-error" role="alert">
+              <span>
+                {historyUnavailable
+                  ? "History unavailable."
+                  : "History refresh failed. Showing last known Clips."}
+              </span>
+              {onRetryHistoryRefresh && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void session.retryRecovery(
+                      "history:read:unavailable",
+                      onRetryHistoryRefresh
+                    )
+                  }
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+          {Object.entries(sessionState.historyActions).map(
+            ([target, action]) =>
+              action.feedback && (
+                <div
+                  key={target}
+                  className="history-action-error"
+                  role="status"
+                >
+                  <span>{action.feedback.message}</span>
+                  <button
+                    type="button"
+                    disabled={
+                      action.pending ||
+                      (!identityReady && action.feedback.action === "retry")
+                    }
+                    onClick={() =>
+                      action.feedback?.action === "retry"
+                        ? void session.retryHistoryAction(target)
+                        : session.dismissHistoryAction(target)
+                    }
+                  >
+                    {action.pending
+                      ? "Retrying…"
+                      : action.feedback.action === "retry"
+                        ? "Retry"
+                        : "Dismiss"}
+                  </button>
                 </div>
-              </article>
-            )}
+              )
+          )}
+          <div className="history-grid" data-session-scroll="history-clips">
+            {!historyLoading &&
+              !historyUnavailable &&
+              filteredClips.length === 0 && (
+                <article className="history-card history-empty">
+                  <div className="history-body">
+                    <div className="history-text">
+                      {clips.length === 0
+                        ? "No history yet."
+                        : search
+                          ? `No Clips match “${search}” in ${filterMode === "pinned" ? "Pinned" : "All"}.`
+                          : filterMode === "pinned" && pinnedIds.length === 0
+                            ? "No pinned Clips."
+                            : "No Clips match these filters."}
+                    </div>
+                  </div>
+                  {clips.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        session.update({
+                          filterMode: "all",
+                          timeFilter: "all",
+                          sourceFilter: "all",
+                        })
+                      }
+                    >
+                      Reset filters
+                    </button>
+                  )}
+                </article>
+              )}
             {filteredClips.map((clip) => {
               const label =
                 deviceNameMap.get(clip.originPeerId) || clip.originPeerId;
               const timeLabel = formatTime(clip.capturedAt);
               const isLocal = clip.originPeerId === identity?.deviceId;
               const pinned = pinnedSet.has(clip.id);
-              const pinIconName = pinned ? "keep" : "push_pin";
               return (
                 <article
                   className={`history-card ${removingIds.has(clip.id) ? "leaving" : ""}`}
                   key={clip.id}
+                  data-clip-id={clip.id}
+                  aria-labelledby={`clip-preview:${clip.id}`}
                   style={{ position: "relative" }}
                 >
                   <div className="history-card-header">
@@ -1876,65 +2971,36 @@ export function ClipboardApp({
                         text={label}
                       />
                     </div>
-                    <div className="history-actions">
-                      <button
-                        className="icon-button"
-                        title={pinned ? "Unpin" : "Pin"}
-                        onClick={() => setPinned(clip.id, !pinned)}
-                        style={{
-                          transform: pinned ? "rotate(18deg)" : "none",
-                        }}
-                      >
-                        <span
-                          className={`icon pin-icon ${pinned ? "filled" : "outlined"}`}
-                        >
-                          {pinIconName}
-                        </span>
-                      </button>
-                      <div className="history-menu">
-                        <button
-                          className="icon-button"
-                          title="More"
-                          onClick={() =>
-                            setOpenMenuId(
-                              openMenuId === clip.id ? null : clip.id
-                            )
-                          }
-                        >
-                          <span className="icon">more_vert</span>
-                        </button>
-                        {openMenuId === clip.id && (
-                          <div className="history-menu-dropdown">
-                            <button
-                              className="text-button"
-                              style={{
-                                width: "100%",
-                                justifyContent: "flex-start",
-                              }}
-                              onClick={() => {
-                                setOpenMenuId(null);
-                                handleDelete(clip.id);
-                              }}
-                            >
-                              <span className="icon">delete</span>Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
 
-                  <div className="history-body">
-                    <div className="history-text">{truncate(clip.content)}</div>
-                  </div>
+                  <button
+                    type="button"
+                    className="history-body history-select"
+                    aria-label="View Clip details"
+                    data-session-focus={`details:${clip.id}`}
+                    onClick={() =>
+                      onInspectClip
+                        ? onInspectClip(clip.id)
+                        : session.open({
+                            kind: "clip-details",
+                            entity: clip.id,
+                            origin: `details:${clip.id}`,
+                          })
+                    }
+                  >
+                    <span
+                      id={`clip-preview:${clip.id}`}
+                      className="history-text"
+                    >
+                      {shortenPreview(clip.content, 220)}
+                    </span>
+                  </button>
 
                   <div className="history-meta">
                     <div className="meta-left">
                       <div className="meta-top-line">
                         <span className="pill-source">
-                          <span className="icon" style={{ fontSize: 12 }}>
-                            {isLocal ? "computer" : "devices"}
-                          </span>
+                          <Icon name={isLocal ? "computer" : "device"} />
                           {isLocal ? "Local" : "Remote"}
                         </span>
                         <span className="meta-time">{timeLabel}</span>
@@ -1943,17 +3009,38 @@ export function ClipboardApp({
                         {clip.type === "url" ? "URL" : "Text"}
                       </div>
                     </div>
-                    <div className="meta-actions">
-                      <button
-                        className="mini-button"
-                        onClick={() => reuseClip(clip.id)}
-                      >
-                        <span className="icon" style={{ fontSize: 14 }}>
-                          content_copy
-                        </span>
-                        Copy
-                      </button>
-                    </div>
+                  </div>
+                  <div className="history-actions">
+                    <IconButton
+                      icon="pin"
+                      label="Pin Clip"
+                      data-session-focus={`pin:${clip.id}`}
+                      aria-describedby={`clip-preview:${clip.id}`}
+                      aria-pressed={pinned}
+                      hint={pinned ? "Unpin Clip" : "Pin Clip"}
+                      disabled={
+                        !identityReady ||
+                        historyLoading ||
+                        historyUnavailable ||
+                        Boolean(historyRefreshError) ||
+                        sessionState.historyActions[`pin:${clip.id}`]?.pending
+                      }
+                      onClick={() => setPinned(clip.id, !pinned)}
+                    />
+                    <IconButton
+                      icon="copy"
+                      label="Copy Clip"
+                      data-session-focus={`copy:${clip.id}`}
+                      aria-describedby={`clip-preview:${clip.id}`}
+                      disabled={
+                        !identityReady ||
+                        sessionState.historyActions[`copy:${clip.id}`]
+                          ?.pending ||
+                        sessionState.historyActions[`copy:${clip.id}`]?.feedback
+                          ?.requiresAcknowledgement
+                      }
+                      onClick={() => reuseClip(clip.id)}
+                    />
                   </div>
                 </article>
               );
@@ -1962,71 +3049,313 @@ export function ClipboardApp({
         </section>
       </main>
 
-      {showNav && isNarrow && (
-        <div className="nav-overlay" onClick={() => setShowNav(false)}>
-          <div
-            className="nav-drawer nav-drawer-open"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <aside className="surface nav-pane drawer-pane">
-              {renderNavContent(true)}
-            </aside>
-          </div>
-        </div>
-      )}
-
-      {qrOpen &&
+      {activeTask?.kind === "clip-details" &&
         createPortal(
-          <div className="qr-modal-backdrop" role="presentation">
-            <div
-              className="qr-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="qr-modal-title"
+          <TaskDialog
+            title="Clip details"
+            focusVersion={sessionState.navigationVersion}
+            pending={false}
+            originKey={activeTask?.origin}
+            returnLabel="Back to History"
+            onDismiss={() => session.back()}
+            cancelLabel="Close details"
+            onCancel={() => session.back()}
+          >
+            <ClipDetails
+              clip={detailsClip}
+              sourceName={deviceNameMap.get(detailsClip?.originPeerId ?? "")}
+              pinned={pinnedSet.has(activeTask?.entity ?? "")}
+              disabled={
+                !identityReady ||
+                historyLoading ||
+                historyUnavailable ||
+                Boolean(historyRefreshError)
+              }
+              actions={sessionState.historyActions}
+              onCopy={() => reuseClip(activeTask!.entity!)}
+              onPin={() => {
+                const id = activeTask!.entity!;
+                setPinned(id, !pinnedSet.has(id));
+              }}
+              onDelete={() => handleDelete(activeTask!.entity!)}
+              onRetry={(id) => void session.retryHistoryAction(id)}
+              onDismiss={(id) => session.dismissHistoryAction(id)}
+              onHistory={() => {
+                session.back();
+                session.update({ destination: "history" });
+              }}
+            />
+          </TaskDialog>,
+          document.body
+        )}
+      {activeTask?.kind === "pairing" &&
+        createPortal(
+          <TaskDialog
+            title="Pairing"
+            focusVersion={sessionState.navigationVersion}
+            initialFocusKey={activeTask?.initialFocusKey}
+            pending={pair.pending || sessionState.pairingImport.pending}
+            originKey={activeTask?.origin}
+            returnLabel="Close Pairing"
+            onDismiss={() => session.close()}
+            cancelLabel="Discard pairing input"
+            onCancel={() => session.discard()}
+          >
+            <p>
+              Choose how to pair. Closing this view retains unsaved text for
+              this session; submitted requests continue.
+            </p>
+            <button
+              type="button"
+              data-session-focus="pairing-paste"
+              onClick={() =>
+                session.open({ kind: "paste", origin: "pairing-paste" })
+              }
             >
-              <div className="qr-modal-header">
-                <div id="qr-modal-title" className="qr-modal-title">
-                  Pair this device
-                </div>
-                <button
-                  className="icon-button"
-                  onClick={closeQr}
-                  aria-label="Close QR dialog"
-                >
-                  <span className="icon">close</span>
-                </button>
-              </div>
-              {qrLoading && (
-                <div className="qr-modal-status">Creating QR code...</div>
-              )}
-              {!qrLoading && qrError && (
-                <div className="qr-modal-error">{qrError}</div>
-              )}
-              {!qrLoading && !qrError && qrImage && (
-                <div className="qr-code-frame">
-                  <img
-                    src={qrImage}
-                    alt="Pairing QR"
-                    className="qr-modal-image"
+              Paste pairing text
+            </button>
+            <button
+              type="button"
+              data-session-focus="pairing-qr"
+              disabled={!identityReady}
+              onClick={handleShowQr}
+            >
+              Show my QR
+            </button>
+            {onScanPairingCode && (
+              <button
+                type="button"
+                data-session-focus="pairing-scan"
+                disabled={!identityReady || isScanningPairing || pair.pending}
+                onClick={scanPairingCode}
+              >
+                {isScanningPairing ? "Scanning…" : "Scan QR"}
+              </button>
+            )}
+            {scanError && (
+              <p role="alert">
+                {scanError === "camera_permission_denied" &&
+                cameraPermission === "granted"
+                  ? "Camera permission is now allowed. Choose Scan QR to try again, or paste pairing text."
+                  : scanError === "camera_permission_denied" &&
+                      scanCameraPermission &&
+                      cameraPermission === "unknown"
+                    ? "Camera permission could not be confirmed. Check Camera in Android Settings, then choose Scan QR to try again, or paste pairing text."
+                    : pairingScanErrorMessage(scanError)}
+              </p>
+            )}
+            {pairingImport}
+            {pair.result && (
+              <p role="status">{pairingSubmissionMessage(pair.result)}</p>
+            )}
+            {pairingDiagnostics && (
+              <details className="pairing-diagnostics">
+                <summary>Pairing diagnostics</summary>
+                {pairingDiagnostics}
+              </details>
+            )}
+          </TaskDialog>,
+          document.body
+        )}
+      {activeTask?.kind === "paste" &&
+        createPortal(
+          <TaskDialog
+            title="Paste pairing text"
+            focusVersion={sessionState.navigationVersion}
+            pending={pair.pending}
+            initialFocusKey="pairing-text"
+            originKey="pairing-paste"
+            returnLabel="Back to Pairing"
+            onDismiss={() => session.back()}
+            cancelLabel="Discard pairing input"
+            onCancel={() => session.discard()}
+          >
+            <label>
+              Pairing text
+              <textarea
+                aria-label="Pairing text"
+                data-session-focus="pairing-text"
+                value={pair.raw}
+                onChange={(event) => pairingTask.change(event.target.value)}
+              />
+            </label>
+            {pair.result && (
+              <p role="status">{pairingSubmissionMessage(pair.result)}</p>
+            )}
+            {pair.pending && <p role="status">Submitting pairing text…</p>}
+            <button
+              type="button"
+              disabled={!identityReady || pair.pending || isScanningPairing}
+              onClick={() => void submitPairText()}
+            >
+              Submit pairing text
+            </button>
+          </TaskDialog>,
+          document.body
+        )}
+
+      {(activeTask?.kind === "device-name" || activeTask?.kind === "alias") &&
+        createPortal(
+          (() => {
+            const alias = activeTask?.kind === "alias";
+            const owner = alias ? aliasSession : localNameSession;
+            const edit = alias ? aliasEdit : localNameEdit;
+            const target = devices.find(
+              (device) => device.deviceId === edit.targetId
+            );
+            const title = alias ? "Local Device Alias" : "Device Name";
+            const close = () => {
+              owner.dismiss();
+              session.back();
+            };
+            return (
+              <TaskDialog
+                title={title}
+                pending={edit.pending}
+                initialFocusKey={
+                  activeTask?.initialFocusKey ??
+                  (alias ? `alias:${edit.targetId}` : "device-name")
+                }
+                originKey={activeTask?.origin}
+                returnLabel={alias ? "Close alias editor" : "Close name editor"}
+                cancelLabel={alias ? "Cancel alias edit" : "Cancel name edit"}
+                onDismiss={close}
+                onCancel={() => {
+                  owner.cancel();
+                  session.back();
+                }}
+              >
+                {alias && (
+                  <div className="peer-full-value">
+                    <div>
+                      <span>
+                        Device Name: {target?.deviceName || "Unknown"}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!target?.deviceName}
+                        onClick={() =>
+                          void copyDeviceValue(
+                            "Device Name",
+                            target?.deviceName || ""
+                          )
+                        }
+                      >
+                        Copy Device Name
+                      </button>
+                    </div>
+                    <div>
+                      <span>Peer ID: {edit.targetId}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void copyDeviceValue("Peer ID", edit.targetId || "")
+                        }
+                      >
+                        Copy Peer ID
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {alias && deviceCopyFeedback && (
+                  <p role="status">{deviceCopyFeedback}</p>
+                )}
+                <label>
+                  {title}
+                  <input
+                    aria-label={title}
+                    data-session-focus={
+                      activeTask?.initialFocusKey ??
+                      (alias ? `alias:${edit.targetId}` : "device-name")
+                    }
+                    value={edit.raw}
+                    onChange={(event) => owner.change(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        if (!edit.pending)
+                          (alias ? saveDeviceName : saveLocalName)();
+                      }
+                    }}
                   />
-                </div>
-              )}
-              {!qrLoading && !qrError && !qrImage && qrText && (
-                <div className="qr-modal-status">
-                  This pairing target is too large for a QR code. Copy the
-                  pairing text and paste it on your other device.
-                </div>
-              )}
-              {!qrLoading && !qrError && qrText && (
+                </label>
+                {edit.error && (
+                  <p role="alert">{nameSaveErrorMessage(edit.error, alias)}</p>
+                )}
+                {edit.pending && <p role="status">Saving {title}…</p>}
                 <button
-                  className="primary-button qr-modal-copy"
-                  onClick={() => navigator.clipboard.writeText(qrText)}
+                  type="button"
+                  disabled={edit.pending || !identityReady}
+                  onClick={alias ? saveDeviceName : saveLocalName}
                 >
-                  Copy pairing text
+                  Save {title}
                 </button>
-              )}
-            </div>
-          </div>,
+                {alias && (
+                  <button
+                    type="button"
+                    disabled={edit.pending || !identityReady || !target}
+                    onClick={useReportedDeviceName}
+                  >
+                    Use device name
+                  </button>
+                )}
+              </TaskDialog>
+            );
+          })(),
+          document.body
+        )}
+
+      {qrState.open &&
+        activeTask?.kind === "qr" &&
+        createPortal(
+          <TaskDialog
+            title="Pair this device"
+            focusVersion={sessionState.navigationVersion}
+            pending={false}
+            cancelLabel="Close QR dialog"
+            onCancel={closeQr}
+            onDismiss={closeQr}
+            originKey="pairing-qr"
+            className="qr-modal"
+          >
+            <PairingCodeContent
+              state={qrState}
+              onRetry={() => {
+                void qrTask.generate(onRequestPairingCode);
+              }}
+              onCopy={() => {
+                void qrTask.copy(onCopyPairingText);
+              }}
+            />
+          </TaskDialog>,
+          document.body
+        )}
+
+      {clearReviewOpen &&
+        activeTask?.kind === "clear" &&
+        createPortal(
+          <ClearHistoryReview
+            totalCount={clips.length}
+            pinnedCount={clips.filter((clip) => pinnedSet.has(clip.id)).length}
+            filteredOutCount={Math.max(0, clips.length - filteredClips.length)}
+            pending={clearPending}
+            error={clearError}
+            historyReady={
+              !clearNeedsRefresh &&
+              !historyLoading &&
+              !historyUnavailable &&
+              !historyRefreshError
+            }
+            refreshPending={clearRefreshPending}
+            onRefresh={refreshClearHistory}
+            onCancel={() => {
+              if (clearPending) return;
+              setClearReviewOpen(false);
+              session.complete("clear");
+              setClearError(null);
+            }}
+            onConfirm={clearAllHistory}
+          />,
           document.body
         )}
     </div>

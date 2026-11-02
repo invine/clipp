@@ -2,19 +2,33 @@ import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRel
 
 export const MANAGED_RELAY_PORT = "managed-relay-access-v1";
 
-export type AccessRequest = { action: "accessToken"; discoveryUrl: string };
+export type AccessRequest = {
+  action: "accessToken";
+  discoveryUrl: string;
+  runtimeGeneration?: string;
+};
 export type AccessReply =
   { accessToken: string | null; warning?: string } | { error: string };
 
 export function parseAccessRequest(value: unknown): AccessRequest | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const request = value as Record<string, unknown>;
-  if (Object.keys(request).length !== 2 || request.action !== "accessToken")
+  if (
+    Object.keys(request).some(
+      (key) => !["action", "discoveryUrl", "runtimeGeneration"].includes(key)
+    ) ||
+    request.action !== "accessToken" ||
+    (request.runtimeGeneration !== undefined &&
+      typeof request.runtimeGeneration !== "string")
+  )
     return null;
   try {
     return {
       action: "accessToken",
       discoveryUrl: canonicalDiscoveryUrl(request.discoveryUrl as string),
+      ...(typeof request.runtimeGeneration === "string"
+        ? { runtimeGeneration: request.runtimeGeneration }
+        : {}),
     };
   } catch {
     return null;

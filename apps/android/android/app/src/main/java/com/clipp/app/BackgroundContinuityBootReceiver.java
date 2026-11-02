@@ -9,6 +9,7 @@ public final class BackgroundContinuityBootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
+        if (NativeIdentityResetFence.forContext(context).isBlocked()) return;
         BackgroundContinuityDiagnostics diagnostics = new BackgroundContinuityDiagnostics(context);
         diagnostics.recordLifecycleTransition(BackgroundContinuityDiagnostics.LifecycleTransition.BOOT_COMPLETED);
         diagnostics.recordEnvironmentSnapshot();

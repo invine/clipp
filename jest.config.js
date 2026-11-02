@@ -30,7 +30,10 @@ export default {
   ],
   transform: {
     ...tsJestTransformCfg,
-    "^.+\\.tsx?$": ["ts-jest", { useESM: true }],
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      { useESM: true, tsconfig: { jsx: "react-jsx" } },
+    ],
   },
   moduleNameMapper: {
     "^@core/(.*)$": "<rootDir>/packages/core/$1",

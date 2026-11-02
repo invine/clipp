@@ -113,9 +113,13 @@ public final class BackgroundContinuityManifestTest {
             assertNotEquals(selection.getString("id"), share.getString("id"));
 
             String actionId = selection.getString("id");
-            assertTrue(first.prepare(actionId, "00000000-0000-4000-8000-000000000901", 123L));
+            assertTrue(first.prepare(actionId, "00000000-0000-4000-8000-000000000901", 123L, 5001L));
             JSONArray restarted = new JSONArray(new ExplicitTextIngressStore(preferences).actionsJson());
             assertEquals("00000000-0000-4000-8000-000000000901", restarted.getJSONObject(0).getJSONObject("event").getString("clipId"));
+            assertEquals(5001L, restarted.getJSONObject(0).getJSONObject("event").getLong("sharingLifetimeMs"));
+            assertFalse(first.prepare(actionId, "00000000-0000-4000-8000-000000000901", 123L, 0L));
+            assertFalse(first.prepare(actionId, "00000000-0000-4000-8000-000000000901", 123L, 7003L));
+            assertEquals(5001L, new JSONArray(first.actionsJson()).getJSONObject(0).getJSONObject("event").getLong("sharingLifetimeMs"));
             assertTrue(new ExplicitTextIngressStore(preferences).complete(actionId));
             assertEquals(1, new JSONArray(first.actionsJson()).length());
         } finally {

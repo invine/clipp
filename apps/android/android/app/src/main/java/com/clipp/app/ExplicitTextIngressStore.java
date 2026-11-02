@@ -15,19 +15,22 @@ final class ExplicitTextIngressStore {
     static final String ACTION_EXPLICIT_TEXT_QUEUED = "com.clipp.app.EXPLICIT_TEXT_QUEUED";
     private static final String ACTIONS = "actions";
     private static final int MAX_TEXT_BYTES = 255 * 1024;
-    private static final Object ACTION_QUEUE_LOCK = new Object();
+    private static final Object ACTION_QUEUE_LOCK = NativeIdentityResetFence.LOCK;
 
     enum EnqueueResult {
         QUEUED,
         INVALID,
+        UNAVAILABLE,
         PERSISTENCE_FAILED
     }
 
+    private NativeIdentityResetFence resetFence;
     private final DurableStringStore persistence;
     private final BackgroundContinuityDiagnostics diagnostics;
 
     ExplicitTextIngressStore(Context context) {
         this(ClipContinuityPreferences.open(context), new BackgroundContinuityDiagnostics(context));
+        resetFence = NativeIdentityResetFence.forContext(context);
     }
 
     ExplicitTextIngressStore(SharedPreferences preferences) {
@@ -68,6 +71,7 @@ final class ExplicitTextIngressStore {
 
         synchronized (ACTION_QUEUE_LOCK) {
             try {
+                if (resetFence != null && resetFence.isBlocked()) return EnqueueResult.UNAVAILABLE;
                 JSONArray actions = readActions();
                 JSONObject action = new JSONObject();
                 action.put("id", UUID.randomUUID().toString());
@@ -87,20 +91,31 @@ final class ExplicitTextIngressStore {
 
     String actionsJson() {
         synchronized (ACTION_QUEUE_LOCK) {
+            if (resetFence != null) resetFence.requireOpen();
             return readActions().toString();
         }
     }
 
     boolean prepare(String actionId, String clipId, long capturedAt) {
+        return prepare(actionId, clipId, capturedAt, null);
+    }
+
+    boolean prepare(String actionId, String clipId, long capturedAt, Long sharingLifetimeMs) {
+        if (sharingLifetimeMs != null && (sharingLifetimeMs <= 0 || sharingLifetimeMs > 2592000000L)) return false;
         synchronized (ACTION_QUEUE_LOCK) {
+            if (resetFence != null && resetFence.isBlocked()) return false;
             JSONArray actions = readActions();
             try {
                 for (int index = 0; index < actions.length(); index += 1) {
                     JSONObject action = actions.getJSONObject(index);
                     if (!actionId.equals(action.optString("id"))) continue;
+                    JSONObject existing = action.optJSONObject("event");
+                    if (existing != null && (!clipId.equals(existing.optString("clipId")) || capturedAt != existing.optLong("capturedAt") ||
+                        (existing.has("sharingLifetimeMs") && (sharingLifetimeMs == null || existing.getLong("sharingLifetimeMs") != sharingLifetimeMs)))) return false;
                     JSONObject event = new JSONObject();
                     event.put("clipId", clipId);
                     event.put("capturedAt", capturedAt);
+                    if (sharingLifetimeMs != null) event.put("sharingLifetimeMs", sharingLifetimeMs);
                     action.put("event", event);
                     return persistence.putString(ACTIONS, actions.toString());
                 }
@@ -113,6 +128,7 @@ final class ExplicitTextIngressStore {
 
     boolean complete(String actionId) {
         synchronized (ACTION_QUEUE_LOCK) {
+            if (resetFence != null && resetFence.isBlocked()) return false;
             JSONArray actions = readActions();
             JSONArray remaining = new JSONArray();
             boolean found = false;

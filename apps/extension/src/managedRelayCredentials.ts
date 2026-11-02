@@ -1,3 +1,4 @@
+import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRelays";
 import {
   parseManagedRelayTokenResponse,
@@ -27,6 +28,7 @@ export type BrowserIdentity = {
 type TokenResponse = ManagedRelayTokenResponse;
 
 type CredentialOptions = {
+  workFence?: IdentityBoundWorkFence;
   storage: CredentialStorage;
   identity: BrowserIdentity;
   fetchToken(url: string, form: URLSearchParams): Promise<TokenResponse>;
@@ -80,6 +82,10 @@ function loadedCredential(value: unknown): StoredCredential | null {
 export function createExtensionManagedRelayCredentials(
   options: CredentialOptions
 ) {
+  const storage =
+    options.workFence?.protect(options.storage) ?? options.storage;
+  const assertCurrent = (generation?: string) =>
+    options.workFence?.assertOpen(generation);
   const now = options.now ?? Date.now;
   const randomBytes =
     options.randomBytes ??
@@ -90,7 +96,7 @@ export function createExtensionManagedRelayCredentials(
       new Uint8Array(
         await crypto.subtle.digest("SHA-256", bytes as BufferSource)
       ));
-  const restricted = options.storage.restrict();
+  const restricted = storage.restrict();
   const access = new Map<string, { token: string; expiresAt: number }>();
   const renewable = new Map<string, StoredCredential>();
   const flights = new Map<string, Promise<string | null>>();
@@ -147,17 +153,18 @@ export function createExtensionManagedRelayCredentials(
     await restricted;
     const cached = renewable.get(discoveryUrl);
     if (cached) return cached;
-    const stored = await options.storage.read(key(discoveryUrl));
+    const stored = await storage.read(key(discoveryUrl));
     const parsed = loadedCredential(stored);
-    if (stored != null && !parsed)
-      await options.storage.remove(key(discoveryUrl));
+    if (stored != null && !parsed) await storage.remove(key(discoveryUrl));
     return parsed;
   }
 
   async function save(
     discoveryUrl: string,
-    token: TokenResponse
+    token: TokenResponse,
+    runtimeGeneration?: string
   ): Promise<string> {
+    assertCurrent(runtimeGeneration);
     const value: StoredCredential = {
       status: "ready",
       refreshToken: token.refresh_token,
@@ -168,22 +175,29 @@ export function createExtensionManagedRelayCredentials(
       expiresAt: now() + token.expires_in * 1000,
     });
     try {
-      await options.storage.write(key(discoveryUrl), value);
+      await storage.write(key(discoveryUrl), value);
       warnings.delete(discoveryUrl);
     } catch {
       warnings.add(discoveryUrl);
     }
+    assertCurrent(runtimeGeneration);
     return token.access_token;
   }
 
-  async function refresh(discoveryUrl: string): Promise<string | null> {
+  async function refresh(
+    discoveryUrl: string,
+    runtimeGeneration?: string
+  ): Promise<string | null> {
     return withEndpointLock(discoveryUrl, async () => {
+      assertCurrent(runtimeGeneration);
       const credential = await read(discoveryUrl);
+      assertCurrent(runtimeGeneration);
       if (!credential || credential.status !== "ready") return null;
       // Durable marker makes a service-worker crash or uncertain HTTP response fail closed.
-      await options.storage.write(key(discoveryUrl), {
+      await storage.write(key(discoveryUrl), {
         status: "refreshing",
       } satisfies StoredCredential);
+      assertCurrent(runtimeGeneration);
       renewable.set(discoveryUrl, { status: "refreshing" });
       const form = new URLSearchParams({
         grant_type: "refresh_token",
@@ -195,7 +209,8 @@ export function createExtensionManagedRelayCredentials(
           discoveryUrl,
           requireToken(
             await options.fetchToken(tokenEndpoint(discoveryUrl), form)
-          )
+          ),
+          runtimeGeneration
         );
       } catch {
         return null;
@@ -224,23 +239,35 @@ export function createExtensionManagedRelayCredentials(
     },
     async accessToken(
       discoveryUrl: string,
-      options?: { forceRefresh?: boolean }
+      requestOptions?: { forceRefresh?: boolean }
     ): Promise<string | null> {
+      const runtimeGeneration = options.workFence?.generation();
+      assertCurrent(runtimeGeneration);
       const url = canonicalDiscoveryUrl(discoveryUrl);
       if (erasing.has(url)) return null;
       const cached = access.get(url);
-      if (!options?.forceRefresh && cached && cached.expiresAt - now() > 15_000)
+      if (
+        !requestOptions?.forceRefresh &&
+        cached &&
+        cached.expiresAt - now() > 15_000
+      )
         return cached.token;
-      const token = await singleFlight(url, () => refresh(url));
+      const token = await singleFlight(url, () =>
+        refresh(url, runtimeGeneration)
+      );
+      assertCurrent(runtimeGeneration);
       return erasing.has(url) ? null : token;
     },
     async interactiveLogin(discoveryUrl: string): Promise<void> {
+      const runtimeGeneration = options.workFence?.generation();
+      assertCurrent(runtimeGeneration);
       const url = canonicalDiscoveryUrl(discoveryUrl);
       const pending = loginFlights.get(url);
       if (pending) return pending;
       const login = (async () => {
         const redirect = requireRegisteredRedirect();
         await restricted;
+        assertCurrent(runtimeGeneration);
         const generation = nextGeneration(url);
         const state = encodeBase64Url(randomBytes(32));
         const verifier = encodeBase64Url(randomBytes(32));
@@ -256,7 +283,9 @@ export function createExtensionManagedRelayCredentials(
           code_challenge: challenge,
           state,
         }).toString();
+        assertCurrent(runtimeGeneration);
         const result = await options.identity.launch(authorization.href);
+        assertCurrent(runtimeGeneration);
         if (!result) throw new Error("relay_login_cancelled");
         let callback: URL;
         try {
@@ -307,11 +336,13 @@ export function createExtensionManagedRelayCredentials(
           throw new Error("invalid_relay_callback");
         }
         await withEndpointLock(url, async () => {
+          assertCurrent(runtimeGeneration);
           if (generations.get(url) !== generation)
             throw new Error("relay_login_superseded");
-          await options.storage.write(key(url), {
+          await storage.write(key(url), {
             status: "refreshing",
           } satisfies StoredCredential);
+          assertCurrent(runtimeGeneration);
           renewable.set(url, { status: "refreshing" });
           const form = new URLSearchParams({
             grant_type: "authorization_code",
@@ -322,7 +353,8 @@ export function createExtensionManagedRelayCredentials(
           });
           await save(
             url,
-            requireToken(await options.fetchToken(tokenEndpoint(url), form))
+            requireToken(await options.fetchToken(tokenEndpoint(url), form)),
+            runtimeGeneration
           );
           erasing.delete(url);
         });
@@ -341,7 +373,7 @@ export function createExtensionManagedRelayCredentials(
       await withEndpointLock(url, async () => {
         renewable.delete(url);
         warnings.delete(url);
-        await options.storage.remove(key(url));
+        await storage.remove(key(url));
       });
     },
     async openAccount(discoveryUrl: string): Promise<void> {

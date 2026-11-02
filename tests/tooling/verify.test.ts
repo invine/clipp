@@ -33,6 +33,7 @@ beforeEach(() => {
   }
   symlinkSync(process.execPath, path.join(fixture, "bin/node"));
   symlinkSync("/bin/sh", path.join(fixture, "bin/sh"));
+  symlinkSync("/usr/bin/env", path.join(fixture, "bin/env"));
   writeFileSync(
     path.join(fixture, "bin/npm"),
     `#!${process.execPath}

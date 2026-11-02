@@ -6,6 +6,7 @@
   "description": "Decentralized clipboard sharing across devices using libp2p.",
   "permissions": [
     "storage",
+    "tabs",
     "clipboardRead",
     "clipboardWrite",
     "notifications",

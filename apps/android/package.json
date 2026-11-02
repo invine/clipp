@@ -22,7 +22,9 @@
     "test:native:instrumentation:matrix": "node scripts/android-readiness.mjs --serial \"$CLIPP_TEST_SERIAL\" --candidate-apk \"$CLIPP_ANDROID_CANDIDATE_APK\" --output \"$CLIPP_ANDROID_EVIDENCE_DIR\" --suite matrix",
     "test:native:instrumentation:connected": "node scripts/android-readiness.mjs --serial \"$CLIPP_TEST_SERIAL\" --candidate-apk \"$CLIPP_ANDROID_CANDIDATE_APK\" --output \"$CLIPP_ANDROID_EVIDENCE_DIR\" --suite matrix",
     "build:native:release": "cd android && ./gradlew :app:assembleRelease",
-    "test:native:instrumentation:focused": "node scripts/android-readiness.mjs --serial \"$CLIPP_TEST_SERIAL\" --candidate-apk \"$CLIPP_ANDROID_CANDIDATE_APK\" --output \"$CLIPP_ANDROID_EVIDENCE_DIR\" --suite focused"
+    "test:native:instrumentation:focused": "node scripts/android-readiness.mjs --serial \"$CLIPP_TEST_SERIAL\" --candidate-apk \"$CLIPP_ANDROID_CANDIDATE_APK\" --output \"$CLIPP_ANDROID_EVIDENCE_DIR\" --suite focused",
+    "test:native:source": "node scripts/test-host-task-input-source.mjs",
+    "build:reset-owning-acceptance": "node scripts/build-reset-owning-acceptance.mjs"
   },
   "dependencies": {
     "@capacitor/clipboard": "^7.0.2",

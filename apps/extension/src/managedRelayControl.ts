@@ -27,10 +27,16 @@ export function isManagedRelayControlAction(action: unknown): boolean {
 }
 
 export function parseManagedRelayControlMessage(
-  value: unknown
+  value: unknown,
+  expectedRuntimeGeneration?: string
 ): ManagedRelayControlMessage | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
+  let raw = value as Record<string, unknown>;
+  if (expectedRuntimeGeneration !== undefined) {
+    if (raw.runtimeGeneration !== expectedRuntimeGeneration) return null;
+    raw = { ...raw };
+    delete raw.runtimeGeneration;
+  }
   if (raw.target !== "offscreen") return null;
   const keys = Object.keys(raw);
   const only = (allowed: string[]) =>

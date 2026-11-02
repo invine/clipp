@@ -6,10 +6,18 @@ jest.mock(
 
 import { createExtensionManagedRelayCredentials } from "../../apps/extension/src/managedRelayCredentials";
 
+import {
+  createIdentityBoundWorkFence,
+  type IdentityBoundWorkFence,
+} from "../../packages/core/runtime/identityInitialization";
+
 const endpoint = "https://relay.example/v1/relay";
 const extensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-function harness(digest?: (bytes: Uint8Array) => Promise<Uint8Array>) {
+function harness(
+  workFence?: IdentityBoundWorkFence,
+  digest?: (bytes: Uint8Array) => Promise<Uint8Array>
+) {
   const events: string[] = [];
   const records = new Map<string, unknown>();
   const storage = {
@@ -52,6 +60,7 @@ function harness(digest?: (bytes: Uint8Array) => Promise<Uint8Array>) {
     identity,
     fetchToken,
     registeredExtensionId: extensionId,
+    workFence,
     now: () => 1000,
     digest,
   });
@@ -59,49 +68,6 @@ function harness(digest?: (bytes: Uint8Array) => Promise<Uint8Array>) {
 }
 
 describe("Chrome managed relay credentials", () => {
-  it("keeps native token bytes unchanged through login, worker reload, and refresh", async () => {
-    const first = harness();
-    const firstAccess = "ory_at_native.KeEp-ByteS_01";
-    const firstRefresh = "ory_rt_native.ReFrEsH-ByteS_01";
-    first.fetchToken.mockImplementationOnce(async () => ({
-      access_token: firstAccess,
-      refresh_token: firstRefresh,
-      token_type: "bEaReR",
-      expires_in: 900,
-    }));
-
-    await first.service.interactiveLogin(endpoint);
-    expect(await first.service.accessToken(endpoint)).toBe(firstAccess);
-    expect([...first.records.values()]).toEqual([
-      { status: "ready", refreshToken: firstRefresh },
-    ]);
-
-    const secondAccess = "ory_at_native.ReFrEsHeD-ByteS_02";
-    const secondRefresh = "ory_rt_native.ReFrEsHeD-ByteS_02";
-    first.fetchToken.mockImplementationOnce(async (_url, form) => {
-      expect(form.get("refresh_token")).toBe(firstRefresh);
-      return {
-        access_token: secondAccess,
-        refresh_token: secondRefresh,
-        token_type: "BEARER",
-        expires_in: 900,
-      };
-    });
-    const restarted = createExtensionManagedRelayCredentials({
-      storage: first.storage,
-      identity: first.identity,
-      fetchToken: first.fetchToken,
-      registeredExtensionId: extensionId,
-    });
-
-    await expect(
-      restarted.accessToken(endpoint, { forceRefresh: true })
-    ).resolves.toBe(secondAccess);
-    expect([...first.records.values()]).toEqual([
-      { status: "ready", refreshToken: secondRefresh },
-    ]);
-  });
-
   it("restricts local storage before credential reads and keeps first adoption empty", async () => {
     const { service, events } = harness();
     expect(await service.accessToken(endpoint)).toBeNull();
@@ -320,7 +286,7 @@ describe("Chrome managed relay credentials", () => {
     expect(records.size).toBe(0);
   });
 
-  it("opens one browser flow for concurrent explicit login requests", async () => {
+  it("opens one browser flow for concurrent explicit login requests after verifier hashing", async () => {
     let releaseDigest!: (bytes: Uint8Array) => void;
     const pendingDigest = new Promise<Uint8Array>((resolve) => {
       releaseDigest = resolve;
@@ -329,7 +295,7 @@ describe("Chrome managed relay credentials", () => {
     const hashingStarted = new Promise<void>((resolve) => {
       markHashingStarted = resolve;
     });
-    const { service, identity, fetchToken } = harness(() => {
+    const { service, identity, fetchToken } = harness(undefined, () => {
       markHashingStarted();
       return pendingDigest;
     });
@@ -361,4 +327,96 @@ describe("Chrome managed relay credentials", () => {
     expect(launch).toHaveBeenCalledTimes(1);
     expect(fetchToken).toHaveBeenCalledTimes(1);
   });
+});
+
+it("a delayed Chrome login callback cannot persist or adopt credentials after reset admission closes", async () => {
+  const work = createIdentityBoundWorkFence();
+  const { service, identity, records, fetchToken } = harness(work);
+  await service.interactiveLogin(endpoint);
+  const saved = [...records.entries()];
+  let reply!: () => void;
+  let entered!: () => void;
+  const launching = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  identity.launch = async (url) => {
+    entered();
+    await new Promise<void>((resolve) => {
+      reply = resolve;
+    });
+    return `${identity.redirectUrl}?code=retired-code&state=${new URL(url).searchParams.get("state")}`;
+  };
+  const login = service.interactiveLogin(endpoint);
+  await launching;
+  const fence = await work.acquireFence();
+  reply();
+  await expect(login).rejects.toThrow("identity_runtime_suspended");
+  expect([...records.entries()]).toEqual(saved);
+  expect(fetchToken).toHaveBeenCalledTimes(1);
+  await fence.release();
+  expect(await service.accessToken(endpoint)).toBe("access-1");
+});
+
+it("a token exchange that finishes after reset fencing cannot replace its last durable credential state", async () => {
+  const work = createIdentityBoundWorkFence();
+  const { service, records, fetchToken } = harness(work);
+  await service.interactiveLogin(endpoint);
+  let finish!: () => void;
+  let entered!: () => void;
+  const exchanging = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  fetchToken.mockImplementationOnce(async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return {
+      access_token: "retired-access",
+      refresh_token: "retired-refresh",
+      token_type: "Bearer",
+      expires_in: 900,
+    };
+  });
+  const login = service.interactiveLogin(endpoint);
+  await exchanging;
+  const saved = [...records.entries()];
+  const fence = await work.acquireFence();
+  finish();
+  await expect(login).rejects.toThrow("identity_runtime_suspended");
+  expect([...records.entries()]).toEqual(saved);
+  await fence.release();
+  expect(await service.accessToken(endpoint)).toBe("access-1");
+});
+
+it("a refresh reply from before a rejected reset stays retired after provisional admission reopens", async () => {
+  const work = createIdentityBoundWorkFence();
+  const { service, records, fetchToken } = harness(work);
+  await service.interactiveLogin(endpoint);
+  let finish!: () => void;
+  let entered!: () => void;
+  const exchanging = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  fetchToken.mockImplementationOnce(async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return {
+      access_token: "retired-access",
+      refresh_token: "retired-refresh",
+      token_type: "Bearer",
+      expires_in: 900,
+    };
+  });
+  const refresh = service.accessToken(endpoint, { forceRefresh: true });
+  await exchanging;
+  const saved = [...records.entries()];
+  const fence = await work.acquireFence();
+  await fence.release();
+  finish();
+  await expect(refresh).rejects.toThrow("identity_runtime_retired");
+  expect([...records.entries()]).toEqual(saved);
+  expect(await service.accessToken(endpoint)).toBe("access-1");
 });

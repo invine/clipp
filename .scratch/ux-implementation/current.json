@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runId": "ux-implementation-20261010",
+  "canonical": {
+    "role": "client",
+    "path": ".scratch/ux-implementation"
+  },
+  "runArtifact": "ux-active-run",
+  "candidateId": "ux-pairing-20261030-3",
+  "integrationBranches": {
+    "client": "codex/ux-recovery-adoption-20261029"
+  }
+}

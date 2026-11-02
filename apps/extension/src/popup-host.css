@@ -1,0 +1,40 @@
+html {
+  /* Chrome first measures a tiny action viewport. Request an intrinsic size;
+     viewport clamps here prevent the native popup from ever growing. */
+  width: 480px;
+  height: 600px;
+  overflow: hidden;
+}
+/* Clamp only once a viewport can contain a whole pointer target. Chrome's
+   initial 25px measurement must retain the independent intrinsic request. */
+@media (min-width: 40px) {
+  html {
+    width: min(480px, 100vw);
+  }
+}
+@media (min-height: 40px) {
+  html {
+    height: min(600px, 100dvh);
+  }
+}
+body {
+  /* Chrome may cap the request to the available display area. */
+  width: 100vw;
+  height: 100dvh;
+}
+#root {
+  height: 100%;
+}
+body,
+#root {
+  overflow: hidden;
+}
+
+.popup-host {
+  display: flex;
+  flex-direction: column;
+}
+.popup-host > .app-shell {
+  flex: 1;
+  min-height: 0;
+}

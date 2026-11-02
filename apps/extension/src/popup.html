@@ -2,24 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      html,
+      body {
+        background: var(--clipp-surface, #faf9fc);
+        color: var(--clipp-text, #211d2b);
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: var(--clipp-surface, #14141b);
+          color: var(--clipp-text, #f2f1f7);
+        }
+      }
+    </style>
     <link rel="icon" type="image/png" href="/public/icon-32.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Clipboard Sharing Extension</title>
     <link rel="stylesheet" href="./styles/tailwind-built.css" />
-    <style>
-      /* Force popup dimensions so Chrome renders at the desired size */
-      html,
-      body {
-        width: 480px;
-        height: 800px;
-        min-height: 800px;
-      }
-      #root {
-        width: 100%;
-        height: 100%;
-        min-height: 100%;
-      }
-    </style>
   </head>
   <body>
     <div id="root"></div>

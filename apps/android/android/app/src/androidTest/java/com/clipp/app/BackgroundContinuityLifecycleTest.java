@@ -44,6 +44,7 @@ public final class BackgroundContinuityLifecycleTest {
     private SharedPreferences servicePreferences;
     private NotificationManager notifications;
     private BackgroundContinuityDiagnostics diagnostics;
+    private final java.util.List<BroadcastReceiver> pendingReceivers = new java.util.ArrayList<>();
 
     @Before
     public void setUp() {
@@ -63,6 +64,8 @@ public final class BackgroundContinuityLifecycleTest {
     @After
     public void tearDown() {
         if (context == null) return;
+        for (BroadcastReceiver receiver : pendingReceivers) context.unregisterReceiver(receiver);
+        pendingReceivers.clear();
         context.stopService(new Intent(context, BackgroundContinuityService.class));
         servicePreferences.edit().clear().commit();
         context.getSharedPreferences(ClipContinuityPreferences.NAME, Context.MODE_PRIVATE).edit().clear().commit();
@@ -71,53 +74,61 @@ public final class BackgroundContinuityLifecycleTest {
     }
 
     @Test
-    public void serviceStartupPublishesPrivacySafeStatusAndNotificationActions() throws Exception {
-        CountDownLatch started = registerOneShot(BackgroundContinuityService.ACTION_SERVICE_STARTED);
-        servicePreferences.edit().putBoolean(BackgroundContinuityService.ENABLED, true).commit();
-
-        ContextCompat.startForegroundService(
-            context,
-            new Intent(context, BackgroundContinuityService.class)
-                .setAction(BackgroundContinuityService.ACTION_START)
-        );
-
-        assertTrue(started.await(2, TimeUnit.SECONDS));
-        assertTrue(servicePreferences.getBoolean(BackgroundContinuityService.SERVICE_ACTIVE, false));
-        StatusBarNotification ongoing = notification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID);
-        assertNotNull(ongoing);
-        Notification value = ongoing.getNotification();
+    public void serviceStartupPublishesPrivacySafeStatusAndOnlyAppliedAutoSyncAction() throws Exception {
+        startWithAutoSync(true);
+        Notification value = waitForNotification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID).getNotification();
         assertEquals("Clipp background continuity", value.extras.getString(Notification.EXTRA_TITLE));
         assertEquals("Waiting for trusted devices", value.extras.getString(Notification.EXTRA_TEXT));
-        assertEquals(
-            Arrays.asList("Pause", "Resume", "Stop"),
-            Arrays.asList(
-                value.actions[0].title.toString(),
-                value.actions[1].title.toString(),
-                value.actions[2].title.toString()
-            )
-        );
+        assertEquals(Arrays.asList("Pause Auto Sync", "Stop background mode"), actionTitles(value));
     }
 
     @Test
-    public void pauseResumeAndStopRemainUserControlledBoundaries() throws Exception {
-        servicePreferences.edit()
-            .putBoolean(BackgroundContinuityService.ENABLED, true)
-            .putBoolean(BackgroundContinuityService.SERVICE_ACTIVE, true)
-            .commit();
-
+    public void notificationTapsWaitForAppliedStateAndOldActionsCannotUndoResume() throws Exception {
+        startWithAutoSync(true);
+        Notification initial = waitForNotification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID).getNotification();
         CountDownLatch paused = registerAction("pause");
-        context.startService(new Intent(context, BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_PAUSE));
+        initial.actions[0].actionIntent.send();
         assertTrue(paused.await(2, TimeUnit.SECONDS));
+        // A tap alone (or rejected preference write) cannot claim Paused.
+        Notification unacknowledged = notification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID).getNotification();
+        assertEquals(Arrays.asList("Pause Auto Sync", "Stop background mode"), actionTitles(unacknowledged));
+        assertEquals("Waiting for trusted devices", unacknowledged.extras.getString(Notification.EXTRA_TEXT));
 
+        updateAutoSync(false, "paused");
+        Notification applied = waitForAction("Resume Auto Sync");
         CountDownLatch resumed = registerAction("resume");
-        context.startService(new Intent(context, BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_RESUME));
+        applied.actions[0].actionIntent.send();
         assertTrue(resumed.await(2, TimeUnit.SECONDS));
+        updateAutoSync(true, "disconnected");
+        Notification current = waitForAction("Pause Auto Sync");
+        CountDownLatch stalePause = registerAction("pause");
+        initial.actions[0].actionIntent.send();
+        assertFalse(stalePause.await(250, TimeUnit.MILLISECONDS));
+        assertEquals("Disconnected", current.extras.getString(Notification.EXTRA_TEXT));
 
         CountDownLatch stopped = registerAction("stop");
-        context.startService(new Intent(context, BackgroundContinuityService.class).setAction(BackgroundContinuityService.ACTION_STOP));
+        current.actions[1].actionIntent.send();
         assertTrue(stopped.await(2, TimeUnit.SECONDS));
         assertFalse(servicePreferences.getBoolean(BackgroundContinuityService.ENABLED, true));
         assertTrue(servicePreferences.getBoolean(BackgroundContinuityService.USER_STOPPED, false));
+        assertTrue(waitForNotificationRemoval(BackgroundContinuityService.ONGOING_NOTIFICATION_ID));
+    }
+
+    @Test
+    public void unknownAutoSyncOffersOnlyStopUntilAnAppliedUpdateArrives() throws Exception {
+        startWithAutoSync(true);
+        context.startService(new Intent(context, BackgroundContinuityService.class)
+            .setAction(BackgroundContinuityService.ACTION_UPDATE)
+            .putExtra(BackgroundContinuityService.EXTRA_CONNECTION_STATE, "disconnected"));
+        long deadline = System.currentTimeMillis() + 2_000L;
+        Notification value;
+        do {
+            Thread.sleep(25L);
+            value = notification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID).getNotification();
+        } while (value.actions.length != 1 && System.currentTimeMillis() < deadline);
+        assertEquals(Arrays.asList("Stop background mode"), actionTitles(value));
+        updateAutoSync(false, "disconnected");
+        assertEquals(Arrays.asList("Resume Auto Sync", "Stop background mode"), actionTitles(waitForAction("Resume Auto Sync")));
     }
 
     @Test
@@ -236,13 +247,47 @@ public final class BackgroundContinuityLifecycleTest {
         assertTrue(exported.contains("pending_application_presence"));
     }
 
+    private void startWithAutoSync(boolean autoSync) throws Exception {
+        CountDownLatch started = registerOneShot(BackgroundContinuityService.ACTION_SERVICE_STARTED);
+        servicePreferences.edit().putBoolean(BackgroundContinuityService.ENABLED, true).commit();
+        ContextCompat.startForegroundService(context, new Intent(context, BackgroundContinuityService.class)
+            .setAction(BackgroundContinuityService.ACTION_START)
+            .putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync));
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+    }
+
+    private void updateAutoSync(boolean autoSync, String connection) {
+        context.startService(new Intent(context, BackgroundContinuityService.class)
+            .setAction(BackgroundContinuityService.ACTION_UPDATE)
+            .putExtra(BackgroundContinuityService.EXTRA_AUTO_SYNC, autoSync)
+            .putExtra(BackgroundContinuityService.EXTRA_CONNECTION_STATE, connection));
+    }
+
+    private java.util.List<String> actionTitles(Notification value) {
+        java.util.List<String> titles = new java.util.ArrayList<>();
+        for (Notification.Action action : value.actions) titles.add(action.title.toString());
+        return titles;
+    }
+
+    private Notification waitForAction(String expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 2_000L;
+        Notification value;
+        do {
+            Thread.sleep(25L);
+            value = notification(BackgroundContinuityService.ONGOING_NOTIFICATION_ID).getNotification();
+        } while (!actionTitles(value).contains(expected) && System.currentTimeMillis() < deadline);
+        assertTrue(actionTitles(value).contains(expected));
+        return value;
+    }
+
     private CountDownLatch registerOneShot(String action) {
         CountDownLatch latch = new CountDownLatch(1);
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent intent) {
-                latch.countDown();
                 context.unregisterReceiver(this);
+                pendingReceivers.remove(this);
+                latch.countDown();
             }
         };
         ContextCompat.registerReceiver(
@@ -251,6 +296,7 @@ public final class BackgroundContinuityLifecycleTest {
             new IntentFilter(action),
             ContextCompat.RECEIVER_NOT_EXPORTED
         );
+        pendingReceivers.add(receiver);
         return latch;
     }
 
@@ -260,8 +306,9 @@ public final class BackgroundContinuityLifecycleTest {
             @Override
             public void onReceive(Context ignored, Intent intent) {
                 if (!expected.equals(intent.getStringExtra(BackgroundContinuityService.EXTRA_ACTION))) return;
-                latch.countDown();
                 context.unregisterReceiver(this);
+                pendingReceivers.remove(this);
+                latch.countDown();
             }
         };
         ContextCompat.registerReceiver(
@@ -270,6 +317,7 @@ public final class BackgroundContinuityLifecycleTest {
             new IntentFilter(BackgroundContinuityService.ACTION_NOTIFICATION_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED
         );
+        pendingReceivers.add(receiver);
         return latch;
     }
 

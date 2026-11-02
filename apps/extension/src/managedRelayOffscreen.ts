@@ -22,7 +22,8 @@ type ManagedRelayHost = Pick<
 >;
 
 function shortAccessToken(
-  discoveryUrl: string
+  discoveryUrl: string,
+  runtimeGeneration?: string
 ): Promise<{ accessToken: string | null; warning?: string }> {
   return new Promise((resolve, reject) => {
     const port = chrome.runtime.connect({ name: MANAGED_RELAY_PORT });
@@ -44,20 +45,28 @@ function shortAccessToken(
       clearTimeout(timeout);
       reject(new Error("relay_access_disconnected"));
     });
-    port.postMessage({ action: "accessToken", discoveryUrl });
+    port.postMessage({
+      action: "accessToken",
+      discoveryUrl,
+      ...(runtimeGeneration ? { runtimeGeneration } : {}),
+    });
   });
 }
 
 export function createExtensionManagedRelayController(options: {
   host: ManagedRelayHost;
   acceptanceTransport?: ExtensionRelayAcceptanceTransport;
+  runtimeGeneration?: () => string | undefined;
   onStateChange(states: RelayState[]): void;
 }) {
   const warnings = new Map<string, string>();
   let controller: ManagedRelayController;
   const adapter: ManagedRelayAdapter = {
     async accessToken(discoveryUrl) {
-      const reply = await shortAccessToken(discoveryUrl);
+      const reply = await shortAccessToken(
+        discoveryUrl,
+        options.runtimeGeneration?.()
+      );
       if (reply.warning) warnings.set(discoveryUrl, reply.warning);
       else warnings.delete(discoveryUrl);
       return reply.accessToken;

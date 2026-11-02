@@ -1,0 +1,616 @@
+{
+  "recordedAtUtc": "2026-10-07T13:58:02.595Z",
+  "purpose": "Source-only flow/control inventory; hashes identify inspected source scopes, not runtime execution or a claim of reading every file.",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "branch": "codex/agent-workflow-integration",
+  "node": "v24.16.0",
+  "sourceScopes": [
+    "packages/ui",
+    "packages/core/runtime",
+    "packages/core/trust",
+    "packages/core/pairing",
+    "packages/core/history",
+    "packages/core/clipboard",
+    "packages/core/models",
+    "packages/core/network/managedRelays.ts",
+    "apps/electron/src",
+    "apps/extension/src",
+    "apps/extension/manifest.json",
+    "apps/extension/vite.config.ts",
+    "apps/android/src",
+    "apps/android/android/app/src/main/java/com/clipp/app",
+    "apps/android/android/app/src/main/AndroidManifest.xml",
+    "apps/android/android/app/src/main/res/values/strings.xml",
+    "GLOSSARY.md",
+    "docs/adr/0004-use-peer-id-as-membership-identity.md",
+    "docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md",
+    ".scratch/runtime-capabilities/spec.md",
+    ".scratch/device-network-sync-v1/spec.md",
+    ".scratch/clip-history/spec.md",
+    ".scratch/extension-clipboard-io"
+  ],
+  "trackedDiffSha256": "00feb38ed3957a083c49dd5d6f01487590708c397982d305c763dce800715f27",
+  "sourceStatus": "M apps/electron/src/managedRelayAuth.ts",
+  "files": [
+    {
+      "path": ".scratch/clip-history/spec.md",
+      "sha256": "d90cc11e54076a5f65af3089c651d1320bf31897c5208d88c26129be88cd7dc0"
+    },
+    {
+      "path": ".scratch/device-network-sync-v1/spec.md",
+      "sha256": "e921d55505e2a0489bfe6257168edfa2db42f2a060cc7a96b41c6dc207400ca8"
+    },
+    {
+      "path": ".scratch/extension-clipboard-io/issues/01-repair-extension-system-clipboard-io.md",
+      "sha256": "8f97c225169741a8675255a68f102b91488702bad1d6c20b1a2078a8f80d8ace"
+    },
+    {
+      "path": ".scratch/extension-clipboard-io/issues/02-prevent-restart-recapture.md",
+      "sha256": "4e31d5509088577ea72826bf3ca653d38b34ae402a5d7d619c038044680d0aa1"
+    },
+    {
+      "path": ".scratch/extension-clipboard-io/issues/03-align-content-script-capture-capability.md",
+      "sha256": "34d84f30933b3c60152abcf980c69274545578aea9e3b3865c5b1c390e8101a5"
+    },
+    {
+      "path": ".scratch/extension-clipboard-io/spec.md",
+      "sha256": "0eb15278679d8d43680650d4cfb230107b020198b7dba58aa39c495d10282643"
+    },
+    {
+      "path": ".scratch/runtime-capabilities/spec.md",
+      "sha256": "3f52d72dd855d1b05d190a0b43361b62bd6bd3909d3bc2346a35ffe75e8e50ef"
+    },
+    {
+      "path": "GLOSSARY.md",
+      "sha256": "8bcaed543a3c509069ee4c5d99ca7403404bea86337cf40f44fa0ec86d1493f6"
+    },
+    {
+      "path": "apps/android/android/app/src/main/AndroidManifest.xml",
+      "sha256": "bcf9941b5fb6eef529cea10ab60d0b9d165e0e5834536c100678dc49217b8b2e"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/BackgroundContinuityBootReceiver.java",
+      "sha256": "7ab65cdd971d81eb16b426ad9928f1f728cd5e9d06886c7807b210e92d51f307"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/BackgroundContinuityConnectionState.java",
+      "sha256": "00177c5fcb2d9709ed7ff3bb28316f64d7f4d874cc3cd513d4681e1114732e12"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/BackgroundContinuityDiagnostics.java",
+      "sha256": "86900ae0db54ac5197391a739c27f060ff9ce128b3994f59f9d232f2b85fedf9"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/BackgroundContinuityPlugin.java",
+      "sha256": "a77ffd04c33700591b2a4d97bc9840608d7e2607c3a6c62df4b906ddc66831d9"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/BackgroundContinuityService.java",
+      "sha256": "ab323f6fef66bd2b36c89311fbcc51f21d248e1ed389a2185c92545132f5b390"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/DurableStringStore.java",
+      "sha256": "3e7352990383a6923ec439bcd7946f992d3f25d9b618bf2ab4f69a125780877a"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/ExplicitTextIngressActivity.java",
+      "sha256": "f6ad9e5bfb133e9b2d38ee4c32b898fca34fad075d33b22edba19cc237473f61"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/ExplicitTextIngressStore.java",
+      "sha256": "f86a88a80c3a612c4a2d362e49fe865c4a3c0eca631f237e71ea1819fa066f55"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/MainActivity.java",
+      "sha256": "18a7795d0d3fa458407d182738d55a2b90607a46fe73c899befd8358b7fa6da7"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/ManagedRelayCredentialStore.java",
+      "sha256": "39b395b115661ceaea96a4685553e8592970e1821ffb40db3dd4b20ab0f9a5ee"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/ManagedRelayPlugin.java",
+      "sha256": "4e25fffefa0f965852a7db657304fa02c49b8759569447dca6d847b1e8b28af1"
+    },
+    {
+      "path": "apps/android/android/app/src/main/java/com/clipp/app/PendingClipboardApplicationStore.java",
+      "sha256": "c467bc61e18ec1773bd489594a4cfe42f7b480d8ffa2c64ea0ea2dc2192404d1"
+    },
+    {
+      "path": "apps/android/android/app/src/main/res/values/strings.xml",
+      "sha256": "22dc9ea315e7856f416c0a1c55e5f13dd0f81281ee5fb64999365fa78aba107a"
+    },
+    {
+      "path": "apps/android/src/backgroundContinuity.ts",
+      "sha256": "dfea49b0eb29e80dfe3c71a8f02ae30b660ce85215d26f9c029d96883d3d9fe8"
+    },
+    {
+      "path": "apps/android/src/backgroundContinuityNative.ts",
+      "sha256": "3032dd04987a12103773cf6c4072232b72a5716448a4a6ed8c6db30cb55ffeea"
+    },
+    {
+      "path": "apps/android/src/client.ts",
+      "sha256": "de3e028baf1befbddbd069e681fb593ca85c9f4b67df0992ea48bbda63b4dc70"
+    },
+    {
+      "path": "apps/android/src/main.tsx",
+      "sha256": "a3e59a3e82d59f2a31a138bf53df09e69bf20691e5304cd8b74a791472745db3"
+    },
+    {
+      "path": "apps/android/src/managedRelayAuth.ts",
+      "sha256": "c675660c5a26c53d73aa0c4c35420e9b803bba4e0b3bb702bec2c1f5924e374c"
+    },
+    {
+      "path": "apps/android/src/managedRelayNative.ts",
+      "sha256": "b217fb8267beb13724026fe66a79fef8e5dfa7b7cb10044e6c62d0f9da74be19"
+    },
+    {
+      "path": "apps/android/src/managedRelayRuntime.ts",
+      "sha256": "803119a97d6b7ea4d6d7ee2355ec7ec82d43f537ffa68094bbe66f07625b1972"
+    },
+    {
+      "path": "apps/android/src/qrCameraScanner.ts",
+      "sha256": "4559296ee907b6674d1050b0ee1c0abc8d08ad0a01ff52fbcbc8c723264b243f"
+    },
+    {
+      "path": "apps/android/src/storage.ts",
+      "sha256": "50bfdd8a7ed3078fefdcda68acc1fb35cffca0cad27135dfe046c5e7f44d1755"
+    },
+    {
+      "path": "apps/electron/src/libp2pGlobals.ts",
+      "sha256": "990edb15d178fe91ee1809c5a9b3223f462a6003e3e93bedc2bd0f286a5f7de9"
+    },
+    {
+      "path": "apps/electron/src/main.ts",
+      "sha256": "6d48bcc3c1aa3a364f2c3c3f728895e84797ae8b7de8535fbeb66d6a784307ef"
+    },
+    {
+      "path": "apps/electron/src/managedRelayAdapter.ts",
+      "sha256": "831e8b4146078b85e5bb558735c316e4c5aeb736b39bc62bc721cd55961f34f5"
+    },
+    {
+      "path": "apps/electron/src/managedRelayAuth.ts",
+      "sha256": "e5b6da3d4b3fdd95e1b1b3080fc4ff320c3a4832e860f497e29c99ec3904a6a5"
+    },
+    {
+      "path": "apps/electron/src/preload.ts",
+      "sha256": "7945131470b555b711077c6a31bb8e596ac48d12abce353ef9a33fecf187c55a"
+    },
+    {
+      "path": "apps/electron/src/relayAcceptance.ts",
+      "sha256": "3e74d333d41ac04e8fc825eacce967b91c32ad48fb85a65699f499d120ddad45"
+    },
+    {
+      "path": "apps/electron/src/renderer.tsx",
+      "sha256": "f7398d4b09cfeb27ab7a14d473f6c0ed9f85057b15dbfc90cb1ba17458ecf5d0"
+    },
+    {
+      "path": "apps/electron/src/storage.ts",
+      "sha256": "001fd4ca313408afefb61062bb0077faf62489c8c9a66e00cd4b4b3a6040659d"
+    },
+    {
+      "path": "apps/electron/src/types.d.ts",
+      "sha256": "54ee06c94f2223802678affea375c15aa3c8de1846a1514c55a099dfa4d8be32"
+    },
+    {
+      "path": "apps/extension/manifest.json",
+      "sha256": "772f5e97af2b98123b6b2b28a11d55f80f44db8f30993900496afbe3800dd950"
+    },
+    {
+      "path": "apps/extension/src/background.ts",
+      "sha256": "a383e9e66cd5e85c89acd59c126f3e215bb495cdf5f946b2cefb8a937eaf3a9b"
+    },
+    {
+      "path": "apps/extension/src/chromeStorage.ts",
+      "sha256": "dbdf586cfdcb830a6c73e0eb4c2369d43549d637769e4bfa70fde37eb59b37a8"
+    },
+    {
+      "path": "apps/extension/src/clipboardBridge.ts",
+      "sha256": "753d03fad6fff48f336adf8afad2f87e95df1257cebcdaeab9bf7ad1b1c94da4"
+    },
+    {
+      "path": "apps/extension/src/components/ClipHistoryList.tsx",
+      "sha256": "7c9a66c8e826cf00ef8b22ec05e8159fbd4a5a592eb685681c44db1c1e69a778"
+    },
+    {
+      "path": "apps/extension/src/components/ClipPreview.tsx",
+      "sha256": "4c1e55ba7c3a87658909c6d441a55a39d024444647a504d570b097ee21a50e4a"
+    },
+    {
+      "path": "apps/extension/src/components/DeviceList.tsx",
+      "sha256": "dabb80eb659f2a4568bf8c056d95a0f2dca1f87b3089e3efb9fa6e6631a1f997"
+    },
+    {
+      "path": "apps/extension/src/components/QRScanner.tsx",
+      "sha256": "d7c0dc013fb11f34313c01e7a86c12ed4cf41dc78778f96f8b1edf46e79a879d"
+    },
+    {
+      "path": "apps/extension/src/components/ShareButton.tsx",
+      "sha256": "0e39a4ba5b9c05023539892766e7290378515ef3d731e23548adde4cbd452f2d"
+    },
+    {
+      "path": "apps/extension/src/components/StatusBar.tsx",
+      "sha256": "8142f7830220b40f6faf0bd2be4278dba104bb33fea7165d71c1ab7387c7bc65"
+    },
+    {
+      "path": "apps/extension/src/components/TrustPrompt.tsx",
+      "sha256": "2ba185f2045acb8ff988d0bfb7b7ee46f168b3824052452291a6e60ffc5d512a"
+    },
+    {
+      "path": "apps/extension/src/content.ts",
+      "sha256": "83d468547d661660d59e1a5f4aae98cca8fb5a54b05260308720d38a2d09d5c2"
+    },
+    {
+      "path": "apps/extension/src/identityKeyMaterial.ts",
+      "sha256": "86d471bb67cb1a7fc669672dcf4a7ac7b2d88042213f6950879ca4be3405faec"
+    },
+    {
+      "path": "apps/extension/src/managedRelayBridge.ts",
+      "sha256": "e75bca05b42eea88afab61bae2bd97b195ced65be1fcb6cd2ddfc277ff92b5a5"
+    },
+    {
+      "path": "apps/extension/src/managedRelayChrome.ts",
+      "sha256": "190a803c9f469d1e6746bc7f13eb14cad5809aea2ec4ec0c0248405d6b9a59b9"
+    },
+    {
+      "path": "apps/extension/src/managedRelayCleanup.ts",
+      "sha256": "a3f8d4fd9b29699e493f90bf908c950321c6e54ee53befc11d609950d89d4f1b"
+    },
+    {
+      "path": "apps/extension/src/managedRelayConfiguration.ts",
+      "sha256": "4fe3d6ee397997cf7b0ede1780d7a54b04fd15a8514cc930e078ae10176eb9f4"
+    },
+    {
+      "path": "apps/extension/src/managedRelayConstants.ts",
+      "sha256": "964c609d1937611b456581d739af5ec6e6c50fd03d1648549652e860a49e2843"
+    },
+    {
+      "path": "apps/extension/src/managedRelayControl.ts",
+      "sha256": "83cbc5856fe530c5c7bf8e54c0ed60d560ae9a2c394c2d10d228e644f7a2fd43"
+    },
+    {
+      "path": "apps/extension/src/managedRelayCredentials.ts",
+      "sha256": "a8024167a09fb0069c66ea6c42d4cde7ad85f9fe05f8de39aeb2d053399e4578"
+    },
+    {
+      "path": "apps/extension/src/managedRelayOffscreen.ts",
+      "sha256": "ae0d71b4dccfef6130241f4ab7e2dc979b5ff5a1cf7630c235404275c98f4888"
+    },
+    {
+      "path": "apps/extension/src/managedRelayTokenHttp.ts",
+      "sha256": "0fc4496ce6b011aaf5a8633001f9e7aaaf853f75895a15cceb049e020d73a616"
+    },
+    {
+      "path": "apps/extension/src/managedRelayUi.ts",
+      "sha256": "72dd9bb3be2678132c35fbf8e29feca0c575db472da7733f2751e371d3e392d5"
+    },
+    {
+      "path": "apps/extension/src/networkBridge.ts",
+      "sha256": "b921b34b2b46265b7fba9140d8416015f5b4f07955037abba9a85668154f463f"
+    },
+    {
+      "path": "apps/extension/src/offscreen.ts",
+      "sha256": "887823e85c5c7ce6eacd4f24b2b87553f7d4a0cc5823ce2b343f3210b1997730"
+    },
+    {
+      "path": "apps/extension/src/offscreenClipboard.ts",
+      "sha256": "85e65a631fe27a3bb0c6e4afa6dfef3176b1cd6042345b4c699943d38f07d2b6"
+    },
+    {
+      "path": "apps/extension/src/options.html",
+      "sha256": "72d6752ebefcaff7e40b11eea0544f98c5a4c27b11002e52810ba77877fc4195"
+    },
+    {
+      "path": "apps/extension/src/options.tsx",
+      "sha256": "9925e627cf14027aa3a69c4c47b392e17cb07b185e6d75444413f5546242e6ac"
+    },
+    {
+      "path": "apps/extension/src/pairingSignature.ts",
+      "sha256": "5f9f06e3ee30425faf6eaccd8435ef9c8516ba3180e9b01062c1d877c65d7257"
+    },
+    {
+      "path": "apps/extension/src/popup.html",
+      "sha256": "28391e9b53b54c9350da44a1f735f2493e05aed789769d67971f9592aeb8ee2d"
+    },
+    {
+      "path": "apps/extension/src/popup.tsx",
+      "sha256": "e6c08251de8588c6b0e3822df312061cd28fd0026ad6f3653d3076db8ce54cb4"
+    },
+    {
+      "path": "apps/extension/src/popupClipboardActions.ts",
+      "sha256": "5ff53916242a493317a41f8c3e310cbd7580879887b87eff733fb8869a31ec98"
+    },
+    {
+      "path": "apps/extension/src/relayAcceptance.ts",
+      "sha256": "ffee58864bbda0039e0d1764a23ef07c4cc25cc33d7b05745a42270be9512cea"
+    },
+    {
+      "path": "apps/extension/src/runtimeMessageStorage.ts",
+      "sha256": "7a231220268438d6772d1009c7c59271c6ef721e0b6ba35eb0128e644a6df1e7"
+    },
+    {
+      "path": "apps/extension/src/streamBridge.ts",
+      "sha256": "6d30c96336a2f5a037dd52a8738ae14a5e74e263cb3443bdfc8bd7e78aa3be94"
+    },
+    {
+      "path": "apps/extension/src/styles/tailwind-built.css",
+      "sha256": "9aa0a5c26cbeb0f78d7e2b144d2e5bed599568b87ad9f4cee06447e5490cd287"
+    },
+    {
+      "path": "apps/extension/src/styles/tailwind.css",
+      "sha256": "a8a1be5a04ce93b38ff2e69070be3b37d35e7049558a9fe839ec06f19c3b94ce"
+    },
+    {
+      "path": "apps/extension/src/vite-env.d.ts",
+      "sha256": "e0fdfcbddc6eaaa187f87959d00704a10fca62a2857fa5f820659a7e30af1719"
+    },
+    {
+      "path": "apps/extension/vite.config.ts",
+      "sha256": "e8257490f6ca55c2c9e2e2b66b86d7c0e068e300cc381522bcf5a8dc46623c0d"
+    },
+    {
+      "path": "docs/adr/0004-use-peer-id-as-membership-identity.md",
+      "sha256": "9b54c87ef955b3e26430813bc29e2dd8ae2bbad519a982e6fa18876e10108777"
+    },
+    {
+      "path": "docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md",
+      "sha256": "628d5a0ca777c31dc44f13d0420ccc5cef95186f35eb104432a166cea40cd3cc"
+    },
+    {
+      "path": "packages/core/clipboard/README.md",
+      "sha256": "66e8566e5609d2c27c53525105c0efb4e49101488a6fd95991994ef1d054f221"
+    },
+    {
+      "path": "packages/core/clipboard/__tests__/echo.test.ts",
+      "sha256": "42a4d06d7d20df44d421594171e05768321c3608e276fa436f8e110f30419f03"
+    },
+    {
+      "path": "packages/core/clipboard/__tests__/watcher.test.ts",
+      "sha256": "859418154cf20c511377a54c978a104d3e9a74540c45a1164c0bf037f2202dd1"
+    },
+    {
+      "path": "packages/core/clipboard/captureCoordinator.ts",
+      "sha256": "d34be54aa1e6024f961127c1e7268a4fd9e16cee3751547b99e345bc6e6f8f8c"
+    },
+    {
+      "path": "packages/core/clipboard/explicitActions.ts",
+      "sha256": "b1c8344b91e758f95adc41f429597e66bdf5ecc4954f58b68a5d43024a15a754"
+    },
+    {
+      "path": "packages/core/clipboard/normalize.ts",
+      "sha256": "b9b10078263bfbfb612ed9d3f47f9fa1256e7bbdc3e779600c7ad205e6b5058f"
+    },
+    {
+      "path": "packages/core/clipboard/platform/android.ts",
+      "sha256": "ff7dd9ccb46cffe9474fd8893edf510485523e9090a13aac117513c00985ef89"
+    },
+    {
+      "path": "packages/core/clipboard/platform/chrome.ts",
+      "sha256": "d93ab827cc3373200c81530fb4576b0acc7968009889c42d28fa8d59b92ec0c2"
+    },
+    {
+      "path": "packages/core/clipboard/serial.ts",
+      "sha256": "6cd8aa66c9e947b3e89011ae4d7de863d13c7fc63ff607b8de54d5ea9647e1e0"
+    },
+    {
+      "path": "packages/core/clipboard/service.ts",
+      "sha256": "a2699056344d0e666004363236b23473d71b99e74aa740efb285f97a21b6a0de"
+    },
+    {
+      "path": "packages/core/clipboard/types.ts",
+      "sha256": "c01f8b0de4b5907b8c90d5d92de47c8f002029fe3f88ef486c086bd4dc04ae9e"
+    },
+    {
+      "path": "packages/core/history/__tests__/store.test.ts",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "packages/core/history/filters.ts",
+      "sha256": "9d02d23f2808f4927bfb7f675b0fa53503c128a00aa46b4ed7a8ac3e51c92d07"
+    },
+    {
+      "path": "packages/core/history/index.ts",
+      "sha256": "51e21b38176637a6259b8f15ae75215af3c978180cdeb1997f6f39597c536d7d"
+    },
+    {
+      "path": "packages/core/history/indexeddb.ts",
+      "sha256": "9139accb535dcfb9f155aa47a0605644a00120aad71644d918a440a0a172f647"
+    },
+    {
+      "path": "packages/core/history/prune.ts",
+      "sha256": "4220d9b686b5eca0b244a49010eb648938db73f17e9b696d5a2ced85978d1a20"
+    },
+    {
+      "path": "packages/core/history/store.ts",
+      "sha256": "d1457143a87af22a6781eb6eb90560f1968ebe6c73a30975c356f64f035f4264"
+    },
+    {
+      "path": "packages/core/history/types.ts",
+      "sha256": "7381e9a5a2120203da0cab67df841d9621e90da2b3c62bcd2782a534508e5702"
+    },
+    {
+      "path": "packages/core/models/Clip.ts",
+      "sha256": "6021374b75277615918086cfadeddbea62d8baedbe92317369942c0e289a4b63"
+    },
+    {
+      "path": "packages/core/models/HistoryItem.ts",
+      "sha256": "33bbc6110fa3c0e2b34e2ccc2cb4ec0904b3b7e1f615f866363fb2f19c2f2c51"
+    },
+    {
+      "path": "packages/core/models/__tests__/models.test.ts",
+      "sha256": "16c0a194066090b155273a6d52fbd53f27fbc97153f0373b8639b81aec834747"
+    },
+    {
+      "path": "packages/core/models/enums.ts",
+      "sha256": "0b5e3f9fd8c1917e7de45d3661649e39573db8911b2e4b152ddd62b809df01db"
+    },
+    {
+      "path": "packages/core/models/index.ts",
+      "sha256": "4a4581e7c5a31ffc135853e18b1796bb903958d17617f7fde8a21f41fd5605e5"
+    },
+    {
+      "path": "packages/core/network/managedRelays.ts",
+      "sha256": "bae85ba395e6c286915064c22bc363da110cffd7c9602e61ccc3e2013b59e3e9"
+    },
+    {
+      "path": "packages/core/pairing/__tests__/pairing.test.ts",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "packages/core/pairing/diagnostics.ts",
+      "sha256": "24a52f5df0084d006a638ff4b52d3d94d49ee951206faa26af7cb4aa610bfaff"
+    },
+    {
+      "path": "packages/core/pairing/membership.ts",
+      "sha256": "19041b7807876b5adef7ac7e6cadcbf054c134546a72e16845c5ead0e5634c95"
+    },
+    {
+      "path": "packages/core/pairing/pending.ts",
+      "sha256": "98f761441121d12ee3d75677f3741460320b1ecad64a51a8378937717832c44b"
+    },
+    {
+      "path": "packages/core/pairing/presentation.ts",
+      "sha256": "1b2b0d5b93283feb8972c2d62b51ac7896ea0f9209f2ac3215b53a3465dbdd2f"
+    },
+    {
+      "path": "packages/core/pairing/protocol.ts",
+      "sha256": "f3008b4a6d0cd11d0c3648610e313ffa07dd155e6e08d6ae6a4c9dda42e210b3"
+    },
+    {
+      "path": "packages/core/pairing/qrCode.ts",
+      "sha256": "f3e6d08c27721aa84268d2b48109debef8e45db6e18a1fec0c957ee47968d972"
+    },
+    {
+      "path": "packages/core/pairing/qrTransport.ts",
+      "sha256": "145a667a84f8a927a0c30a0b420ac3f552bd26a85e13a313a49ecd8667612c9f"
+    },
+    {
+      "path": "packages/core/pairing/runtimeCoordinator.ts",
+      "sha256": "fcd17b63cf8c0655fef16307904732ea1ee1254f5e17cea781b8118cc66bd3e5"
+    },
+    {
+      "path": "packages/core/pairing/session.ts",
+      "sha256": "c31e417c9f6e6ff7f3f5e57b76c4104098c73f9acab4e51723a2ee1bbe3830b4"
+    },
+    {
+      "path": "packages/core/pairing/target.ts",
+      "sha256": "effc6acdebb326bbe8df277206e9e0ed6088d83c5a3e68d611260a2e8dc41deb"
+    },
+    {
+      "path": "packages/core/pairing/v2.ts",
+      "sha256": "f9d177f863fcf3e84877b3e9d7b6add3b663eff5eb869a3222bf4432d767aa09"
+    },
+    {
+      "path": "packages/core/runtime/adapters.ts",
+      "sha256": "b12009a865e7d6f05965170607a9a829ed914ff15dfbcb30e503b2de33f61ee7"
+    },
+    {
+      "path": "packages/core/runtime/autoSyncPreference.ts",
+      "sha256": "bc8bceb24de02cb098b0f12813d5f552b68a1ca02237d6413a79aed72d2e8927"
+    },
+    {
+      "path": "packages/core/runtime/capabilities.ts",
+      "sha256": "c0b9568fd1e25914af99d4f4020d875fcc54f22e2c18e41581dae99524145d11"
+    },
+    {
+      "path": "packages/core/runtime/clipboard.ts",
+      "sha256": "ccd9badfa53b995a69ee912b6c684465292754d5c3d657ec26f1e83fe3eaa09e"
+    },
+    {
+      "path": "packages/core/runtime/clock.ts",
+      "sha256": "8aebd80bc18bc73b44de2abba77b9b3f405f818e83e35b1931a0299d8c77ba42"
+    },
+    {
+      "path": "packages/core/runtime/contract.ts",
+      "sha256": "b45a4cf3605be038f97a5b4ee6c0809b31f287f04d10971ca13df91f849830bb"
+    },
+    {
+      "path": "packages/core/runtime/identityInitialization.ts",
+      "sha256": "70cfeda838cebc30eb72dbf4afe891b405e17963ab56d1a24f86ba45f301e7cb"
+    },
+    {
+      "path": "packages/core/runtime/index.ts",
+      "sha256": "ad534ed2e7a0e04a869b5c3232ce35f982b222b215942b726627537c80815711"
+    },
+    {
+      "path": "packages/core/runtime/network.ts",
+      "sha256": "c5fcf1c99911d4e40d6f46e22534f834fb1d03b0bb9450b3356d2011c743c498"
+    },
+    {
+      "path": "packages/core/runtime/notifications.ts",
+      "sha256": "7794cf2b3522afbd0135837f069d3ba0201f71c043685bc587fc5b31fee27ca2"
+    },
+    {
+      "path": "packages/core/runtime/orchestrator.ts",
+      "sha256": "1b7c7f15091e712d27777cefefe76bf8f373374ae8c595e34f1a34d80636fda1"
+    },
+    {
+      "path": "packages/core/runtime/persistence.ts",
+      "sha256": "24a1185a8258c6f547b0cd8a27ea91866e834caf7792c82784486c15a489504d"
+    },
+    {
+      "path": "packages/core/runtime/platformAdapters.ts",
+      "sha256": "218f6edfb84389581be30a9bda7bce27b6da9c24c5433a3e7d099a6ccb5dfb15"
+    },
+    {
+      "path": "packages/core/runtime/testing.ts",
+      "sha256": "67ce7863d66866e501bd1e999d318450d342fb7a25148d09a18edacd2fdebc2a"
+    },
+    {
+      "path": "packages/core/trust/events.ts",
+      "sha256": "6ef49107a8873f6687dd1921bfba69364fd3e92ec1046c2b42638137d0f50528"
+    },
+    {
+      "path": "packages/core/trust/identity.ts",
+      "sha256": "d307cd8e260aafadd58016d9b9fa81956bc33c381a23b62d50fd98555569a710"
+    },
+    {
+      "path": "packages/core/trust/identityRotation.ts",
+      "sha256": "38ca1943b3eb382ed9657f3b84823c3e10f8c245ce310d70fb94cc7b74c68825"
+    },
+    {
+      "path": "packages/core/trust/index.ts",
+      "sha256": "872e439ca4bf776bcb55f87747afd0d0f6117d1fe87310f1d0495875f42e47e4"
+    },
+    {
+      "path": "packages/core/trust/storage.ts",
+      "sha256": "f71a07c74d919c8d33492fe87573f89322a03d192fc59352ebd9514c4c46bf04"
+    },
+    {
+      "path": "packages/ui/package.json",
+      "sha256": "b9666729887e98ec02ea385134a8f2d91d17e2d5eea50d9625b87e88986af179"
+    },
+    {
+      "path": "packages/ui/src/ClipboardApp.tsx",
+      "sha256": "ef84dd1c443a4638d0eb737df977736067654c5cfad82e1b65e33ef10a195c44"
+    },
+    {
+      "path": "packages/ui/src/ManagedRelaySettings.tsx",
+      "sha256": "e24c1e9b658b762e0229cd492df21c621c6bc698c29fd7d15abdf98ce9827dac"
+    },
+    {
+      "path": "packages/ui/src/clipboardActionFeedback.ts",
+      "sha256": "c15e6766fe0732c9be4cc090e1f3bf1337245d0984e55ec20b4cb48d1d29b3de"
+    },
+    {
+      "path": "packages/ui/src/identityRotationNotice.ts",
+      "sha256": "2e630e56739ace824621eb414eaa480d6e75edcb89a3d3b8303e4296eb204497"
+    },
+    {
+      "path": "packages/ui/src/index.ts",
+      "sha256": "7fe2a37ec369d47e039d14a54c13258b80f0cf062ee2e79dd0be7a68e259f326"
+    },
+    {
+      "path": "packages/ui/src/managedRelayAction.ts",
+      "sha256": "9b8b0b5be0a15da0e547ce1af341a5b07920a5b11e33d3b9e7c32c24cbbb93c3"
+    },
+    {
+      "path": "packages/ui/src/styles.css",
+      "sha256": "04e55834d061b9e6efe8e5a1192355c3dd1dbd08ba14c2d6c7ed65a04d3f3d84"
+    },
+    {
+      "path": "packages/ui/src/types.ts",
+      "sha256": "4aa675b4b54ef22e76cf82da0f57d0059860c45fd1ec9eff8a9c3a9c42b77f1e"
+    }
+  ]
+}

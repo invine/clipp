@@ -1,14 +1,28 @@
+import { v4 as uuidv4 } from "uuid";
+import { createAndroidClipboardService as composeAndroidClipboard } from "./clipboardFactory";
+import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference";
+import {
+  createSettingsHandler,
+  normalizeSharingLifetime,
+  type SettingsSnapshot,
+} from "../../../packages/core/runtime/settingsAuthority";
+import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction";
+import {
+  createRelayMutationOwner,
+  type RelayMutation,
+} from "../../../packages/core/network/relayMutations";
+import { performRelayAction } from "../../../packages/core/network/relayActions";
+import { copyPayloadText } from "../../../packages/core/clipboard/payloadCopy";
 import { privateKeyFromProtobuf } from "@libp2p/crypto/keys";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode";
 import {
   createAndroidRuntimeAdapter,
-  createAutoSyncPreference,
   createRuntimeIdentityManager,
-  createRuntimeIdentityRotationCoordinator,
   createRuntimeIdentityRotationLifecycle,
-  createRuntimeClipboardService,
   createRuntimeNetworkProxy,
   createRuntimeNotificationSelection,
+  createRuntimeApprovalEntries,
+  createRuntimeNotificationStatus,
   createRuntimeOrchestrator,
   RUNTIME_CAPABILITIES,
   startIdentityBoundRuntimeServices,
@@ -18,6 +32,10 @@ import {
 } from "@core/runtime";
 import { createLibp2pMessagingTransport } from "@core/network/engine";
 import {
+  androidCircuitRelayAddresses,
+  filterAndroidDialAddresses,
+} from "./networkAddressing";
+import {
   activeMemberReconnectPeers,
   createPairedPeerConnectionManager,
 } from "@core/network/pairedConnections";
@@ -25,7 +43,6 @@ import { createKVSignedPeerRecordPersistence } from "@core/network/peerRecords";
 import {
   ManagedRelayController,
   loadManagedRelayConfigurations,
-  normalizeRelayConfigurations,
   saveManagedRelayConfigurations,
   type RelayConfiguration,
   type RelayState,
@@ -37,6 +54,7 @@ import {
   startHistoryRetentionCleanup,
   type HistoryRetentionCleanup,
 } from "@core/history/store";
+import { createHistoryStateReader } from "@core/history/state";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
@@ -51,20 +69,18 @@ import {
   createMembershipPeerRecordBridge,
   createMembershipReconciler,
 } from "@core/membership/reconciliation";
-import {
-  createKVPendingTrustRequestStore,
-  createPendingTrustRequestCoordinator,
-} from "@core/pairing/pending";
+import { createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingRuntimeSessions } from "@core/pairing/runtimeCoordinator";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
   createKVIdentityRepository,
   toPublicDeviceIdentity,
-  createIdentityRotationCommitter,
   IDENTITY_KEY,
+  type KVStorageBackend,
 } from "@core/trust";
-import type { Clip } from "@core/models/Clip";
+import type { IdentityResetState } from "../../../packages/core/trust/manualIdentityReset";
+import { DEFAULT_CLIP_SHARING_LIFETIME_MS, type Clip } from "@core/models/Clip";
 import type {
   Device,
   HistoryPolicyError,
@@ -72,6 +88,7 @@ import type {
   IdentityRotationNoticeReason,
   PairingCode,
   PairingError,
+  PairingOutcomeSnapshot,
   PeerConnectionInfo,
   PendingRequest,
   RelayConnectionInfo,
@@ -83,6 +100,12 @@ import {
   peerIdFromPrivateKeyBase64,
 } from "@core/network/peerId";
 import { LocalStorageBackend } from "./storage";
+import { createAndroidIdentityRotationOwner } from "./identityResetStorage";
+import {
+  createAndroidIdentityResetRuntime,
+  createAndroidPendingTrustRequestStore,
+} from "./identityResetRuntime";
+import { Capacitor } from "@capacitor/core";
 import { Clipboard as CapacitorClipboard } from "@capacitor/clipboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import {
@@ -105,17 +128,22 @@ export type AndroidAppState = {
   pending: PendingRequest[];
   waiting?: Array<{ targetPeerId: string; expiresAtUnixMs: number }>;
   pairingErrors?: PairingError[];
+  pairingState?: PairingOutcomeSnapshot;
   peers: string[];
+  connectionStateKnown?: boolean;
   peerConnections?: PeerConnectionInfo[];
   relayConnections?: RelayConnectionInfo[];
   identity: Identity | null;
   pinnedIds: string[];
+  historyUnavailable?: boolean;
+  historyRefreshError?: boolean;
   localRetentionMs?: number;
   autoSync?: boolean;
   clipboardHistoryError?: RuntimeClipboardHistoryError | null;
   historyPolicyError?: HistoryPolicyError | null;
   identityRotationRecovery?: boolean;
   identityRotationNotice?: IdentityRotationNoticeReason | null;
+  identityResetState?: IdentityResetState;
   relayAddresses: string[];
   managedRelayConfigurations?: RelayConfiguration[];
   managedRelayStates?: RelayState[];
@@ -214,25 +242,198 @@ function logPairing(
 }
 
 export class AndroidClient {
-  private readonly storage = new LocalStorageBackend();
-  private readonly relaySecrets = createAndroidRelaySecretBridge();
-  private readonly relayAuth = new AndroidManagedRelayAuth(this.relaySecrets);
+  /** The constructing host owns reset controls; App receives only the client. */
+  static createRuntime() {
+    const client = new AndroidClient();
+    let stopped: Promise<void> | undefined;
+    let starting: Promise<void> | undefined;
+    return {
+      client,
+      start: () => {
+        if (stopped) throw new Error("identity_runtime_suspended");
+        client.workFence.assertOpen();
+        return (starting ??= client.start().finally(() => {
+          starting = undefined;
+        }));
+      },
+      publicState: () => client.getState(),
+      identityReset: {
+        begin: async (
+          request: Parameters<
+            typeof client.identityRotation.beginIdentityReset
+          >[0]
+        ) => {
+          if (stopped) throw new Error("identity_runtime_stopped");
+          const result = await client.identityRotation.beginIdentityReset(request);
+          if (result.outcome !== "rejected")
+            await client.publishIdentityResetState(result.state);
+          return result;
+        },
+        reconcile: async () => {
+          await client.publishIdentityResetState(
+            await client.identityRotation.reconcileIdentityReset()
+          );
+          return client.identityResetState;
+        },
+        resume: async (
+          request: Parameters<
+            typeof client.identityRotation.resumeIdentityReset
+          >[0]
+        ) => {
+          if (stopped) throw new Error("identity_runtime_stopped");
+          const result = await client.identityRotation.resumeIdentityReset(request);
+          if (result.outcome !== "rejected")
+            await client.publishIdentityResetState(result.state);
+          return result;
+        },
+        dismiss: async (request: { receiptId: string }) => {
+          if (stopped) throw new Error("identity_runtime_stopped");
+          await client.publishIdentityResetState(
+            await client.identityRotation.dismissIdentityResetReminder(request)
+          );
+          return client.identityResetState;
+        },
+      },
+      stop: () =>
+        (stopped ??= (async () => {
+          await client.workFence.acquireFence();
+          try {
+            await client.identityRotation.reconcileIdentityReset();
+          } finally {
+            await client.workFence.acquireFence();
+            await client.stopIdentityBoundServices();
+            await client.workFence.quiesce();
+            await client.stop();
+          }
+        })()),
+    };
+  }
+
+  private readonly identityResetRuntime = createAndroidIdentityResetRuntime({
+    suspend: async () => {
+      await this.stopIdentityBoundServices(true);
+      if (Capacitor.getPlatform() === "android")
+        await this.backgroundContinuity.suspendForIdentityReset();
+    },
+  });
+  private readonly workFence = this.identityResetRuntime.workFence;
+  private readonly storage = this.workFence.protect(this.rawStorage);
+  private identityStartupInspected = false;
+  private assertIdentityWorkReady(): void {
+    this.workFence.assertOpen();
+    if (!this.identityStartupInspected)
+      throw new Error("identity_runtime_not_initialized");
+  }
+  private sharingLifetimeMs = DEFAULT_CLIP_SHARING_LIFETIME_MS;
+  private readonly settingsListeners = new Set<
+    (snapshot: SettingsSnapshot) => void
+  >();
+  private readonly settingsHandler = createSettingsHandler({
+    storage: this.storage,
+    retention: {
+      read: () => this.retentionPreference.read(),
+      set: (value) => this.retentionPreference.set(value),
+    },
+    applyAutoSync: (enabled) => {
+      this.autoSync = enabled;
+      this.clipboardSync.setAutoSync(enabled);
+    },
+    applyLogLevel: () => {},
+    applySharingLifetime: (value) => {
+      this.sharingLifetimeMs = value;
+    },
+    publish: async (snapshot) => {
+      for (const listener of this.settingsListeners) listener(snapshot);
+    },
+  });
+  async getSettings() {
+    return { ok: true as const, snapshot: await this.settingsHandler.read() };
+  }
+  setSharingLifetime(value: unknown) {
+    this.workFence.assertOpen();
+    return this.settingsHandler.write({ sharingLifetimeMs: value });
+  }
+  async setSettings(patch: unknown) {
+    this.workFence.assertOpen();
+    const result = await this.settingsHandler.write(patch);
+    try {
+      await this.backgroundContinuity.reflectAutoSync(this.autoSync);
+    } catch {
+      this.backgroundContinuity.markControlStateUnknown();
+    }
+    await this.emitState();
+    return result;
+  }
+  setTheme(theme: unknown) {
+    this.workFence.assertOpen();
+    return this.settingsHandler.write({ theme });
+  }
+  onSettingsUpdate(listener: (snapshot: SettingsSnapshot) => void) {
+    this.settingsListeners.add(listener);
+    return () => {
+      this.settingsListeners.delete(listener);
+    };
+  }
+  private readonly relaySecrets = this.workFence.protect(
+    createAndroidRelaySecretBridge()
+  );
+  private readonly relayAuth = new AndroidManagedRelayAuth(
+    this.relaySecrets,
+    fetch,
+    Date.now,
+    this.workFence
+  );
   private managedRelays: ManagedRelayController | null = null;
   private managedRelayConfigurations: RelayConfiguration[] = [];
   private removeRelayCallback: (() => void) | null = null;
-  private readonly autoSyncPreference = createAutoSyncPreference({
+  private readonly rawHistoryBackend = createHistoryBackend();
+  private readonly historyBackend = this.workFence.protect(
+    this.rawHistoryBackend
+  );
+  private readonly history = this.workFence.protect(
+    new MemoryHistoryStore(this.historyBackend)
+  );
+  private readonly retentionPreference = createLocalRetentionPreference({
     storage: this.storage,
+    history: this.history,
+    publish: async (state) => {
+      this.localRetentionMs = state.value;
+      this.historyPolicyError = state.cleanupError
+        ? "history_cleanup_failed"
+        : null;
+      // A background control may be reading authoritative settings while this
+      // retention operation owns their write queue. Its state projection waits
+      // for that control, so retain the notification without awaiting it here.
+      // The ordered settings reply/feed still acknowledge the applied policy.
+      void this.emitState().catch((error) => {
+        log.warn("Retention state could not be published", error);
+      });
+    },
   });
-  private readonly historyBackend = createHistoryBackend();
-  private readonly history = new MemoryHistoryStore(this.historyBackend);
+  private readonly historyState = createHistoryStateReader(this.history);
   private readonly identityRepo = createKVIdentityRepository({
     storage: this.storage,
     key: IDENTITY_KEY,
   });
-  private readonly identityRotation = createRuntimeIdentityRotationCoordinator({
-    repository: this.identityRepo,
-    storage: this.storage,
-    capabilities: RUNTIME_CAPABILITIES.android,
+  private readonly identityRotation = createAndroidIdentityRotationOwner({
+    repository: createKVIdentityRepository({
+      storage: this.rawStorage,
+      key: IDENTITY_KEY,
+    }),
+    storage: this.rawStorage,
+    history: this.rawHistoryBackend,
+    ...(this.rawStorage instanceof LocalStorageBackend &&
+    this.rawHistoryBackend instanceof IndexedDBHistoryBackend &&
+    Capacitor.getPlatform() === "android"
+      ? {
+          reset: {
+            storage: this.rawStorage,
+            persistentHistory: this.rawHistoryBackend,
+            lifecycle: this.identityResetRuntime.lifecycle,
+            verifyNativeCleanup: this.identityResetRuntime.verifyNativeCleanup,
+          },
+        }
+      : {}),
     shutdown: () => this.stopIdentityBoundServices(),
     runtimeCleanup: {
       prepare: async () => {
@@ -253,17 +454,26 @@ export class AndroidClient {
         }
       },
     },
-    committer: createIdentityRotationCommitter({
-      repository: this.identityRepo,
-      storage: this.storage,
-      history: this.historyBackend,
-    }),
   });
+  identityResetState: IdentityResetState = { phase: "idle" };
+  private async publishIdentityResetState(state: IdentityResetState) {
+    this.identityResetState = state;
+    await this.emitState();
+  }
   private readonly identityRotationLifecycle =
     createRuntimeIdentityRotationLifecycle({
       rotation: this.identityRotation,
+      workFence: this.workFence,
       loadIdentity: () => this.identitySvc.get(),
-      restart: () => window.location.reload(),
+      restart: () => {
+        if (Capacitor.getPlatform() === "android") {
+          void this.identityResetRuntime
+            .restartRuntime()
+            .catch(() =>
+              log.warn("Android runtime restart could not be completed")
+            );
+        } else window.location.reload();
+      },
       startLocalRecovery: () => {
         this.clipboardSync.startLocalOnly();
         this.started = true;
@@ -275,6 +485,7 @@ export class AndroidClient {
     });
   private readonly identitySvc = createRuntimeIdentityManager({
     repo: this.identityRepo,
+    workFence: this.workFence,
     capabilities: RUNTIME_CAPABILITIES.android,
   });
   private transport: ReturnType<typeof createLibp2pMessagingTransport> | null =
@@ -290,20 +501,46 @@ export class AndroidClient {
     typeof createMembershipReconciler
   > | null = null;
 
-  constructor() {
+  constructor(
+    private readonly rawStorage: KVStorageBackend = new LocalStorageBackend()
+  ) {
+    this.identityRotation.onStatusChanged((status) => {
+      if (status.kind === "manual-reset") {
+        this.identityResetState = status.state;
+        void this.emitState();
+      }
+    });
+    // The companion can report loss before networking or the focused Activity starts.
+    void this.backgroundNative.on("runtimeLost", () =>
+      this.settleBackgroundLifecycleEvent(() =>
+        this.backgroundContinuity.reportRuntimeLost()
+      )
+    );
+    void this.backgroundNative.on("taskRemoved", () =>
+      this.settleBackgroundLifecycleEvent(() =>
+        this.backgroundContinuity.handleTaskRemoved()
+      )
+    );
     // messaging is initialised lazily in `start()`
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
       (event) => {
         const id = event.notification.extra?.runtimeNotificationId;
-        if (typeof id === "string") {
-          this.notificationSelection.emit(id);
+        if (typeof id === "string" && !this.workFence.isFenced()) {
+          this.notificationSelection.emit(
+            id,
+            typeof event.notification.extra?.runtimeNotificationInstance ===
+              "string"
+              ? event.notification.extra.runtimeNotificationInstance
+              : undefined
+          );
         }
       }
     );
   }
 
   private async ensureMessaging(): Promise<void> {
+    this.workFence.assertOpen();
     if (this.transport && this.liveClipGossip) {
       if (!this.pairedConnections) {
         this.pairedConnections = createPairedPeerConnectionManager({
@@ -314,6 +551,7 @@ export class AndroidClient {
       return;
     }
     const identity = await this.identitySvc.get();
+    this.workFence.assertOpen();
     const peerId =
       identity.privateKey && typeof identity.privateKey === "string"
         ? await peerIdFromPrivateKeyBase64(identity.privateKey)
@@ -323,19 +561,20 @@ export class AndroidClient {
         ? await privateKeyFromProtobuf(base64ToBytes(identity.privateKey))
         : undefined;
 
-    const relayAddresses: string[] = [];
+    const relayAddresses = androidCircuitRelayAddresses();
     log.info("[clipp:android:network] Creating messaging transport", {
       peerId: peerId?.toString?.() ?? String(peerId),
       relayAddresses,
       circuitRelays: relayAddresses,
     });
+    this.workFence.assertOpen();
     this.transport = createLibp2pMessagingTransport({
       peerId,
       privateKey,
       relayAddresses,
       enableWebRTCDirect: true,
       enableDCUtR: true,
-      enableRelayReservations: false,
+      enableRelayReservations: true,
       allowInsecureBrowserDials: true,
       signedPeerRecordPersistence: createKVSignedPeerRecordPersistence({
         storage: this.storage,
@@ -346,9 +585,10 @@ export class AndroidClient {
         (await this.identitySvc.membershipStatus(remotePeerId)) === "revoked",
     });
     this.transport.setEligibleDialAddresses((addresses) =>
-      this.managedRelays
-        ? this.managedRelays.eligibleDialAddresses(addresses)
-        : addresses.filter((address) => !address.includes("/p2p-circuit"))
+      filterAndroidDialAddresses(
+        addresses,
+        this.managedRelays?.eligibleDialAddresses(addresses)
+      )
     );
     this.pairedConnections = createPairedPeerConnectionManager({
       transport: this.transport,
@@ -384,17 +624,16 @@ export class AndroidClient {
     this.transport.onPeerDisconnected(() => void this.emitState());
     this.transport.onRelayConnectionChanged?.(() => void this.emitState());
     this.transport.onSelfPeerUpdate((multiaddrs) => {
+      if (this.workFence.isFenced()) return;
       void this.identitySvc
         .updateMultiaddrs(multiaddrs)
         .then(() => this.emitState());
     });
   }
   private createAndroidClipboardService() {
-    return createRuntimeClipboardService({
-      capabilities: RUNTIME_CAPABILITIES.android,
+    return composeAndroidClipboard({
       history: this.history,
-      pollIntervalMs: 1500,
-      initiallyPollingEnabled: false,
+      appliedSharingLifetime: () => this.sharingLifetimeMs,
       getSenderId: async () => {
         const id = await this.identitySvc.get();
         return id.deviceId;
@@ -407,7 +646,7 @@ export class AndroidClient {
         }
       },
       writeText: async (text: string) => {
-        await writeClipboardText(text);
+        await this.workFence.run(() => writeClipboardText(text));
       },
       onHistoryErrorChanged: (error) => {
         this.clipboardHistoryError = error;
@@ -432,7 +671,7 @@ export class AndroidClient {
       this.backgroundContinuity.recordLiveClipboardApplication(clip, result),
   });
 
-  private pendingRequests: Array<{ deviceId: string; deviceName: string }> = [];
+  private pendingRequests: PendingRequest[] = [];
   private localRetentionMs = RETENTION_MS;
   private autoSync = true;
   private clipboardHistoryError: RuntimeClipboardHistoryError | null = null;
@@ -445,123 +684,201 @@ export class AndroidClient {
   private pairingAttemptSeq = 0;
   private runtimeShutdownHandler: (() => void | Promise<void>) | null = null;
   private historyRetentionCleanup: HistoryRetentionCleanup | null = null;
-  private pendingRetentionMs: number | null = null;
   private readonly notificationSelection = createRuntimeNotificationSelection();
+  private readonly approvalEntries = createRuntimeApprovalEntries();
+  async getApprovalEntries() {
+    return this.workFence.isFenced() ? [] : this.approvalEntries.read();
+  }
+  async acknowledgeApprovalEntry(id: string) {
+    this.approvalEntries.acknowledge(id);
+  }
+  onApprovalEntriesChanged(listener: () => void) {
+    return this.approvalEntries.onChanged(listener);
+  }
   private readonly backgroundNative = createAndroidBackgroundNative();
+  private readonly notificationStatus = createRuntimeNotificationStatus({
+    inspect: async () => {
+      if (Capacitor.getPlatform() !== "android")
+        return {
+          app:
+            typeof Notification === "undefined"
+              ? "unsupported"
+              : Notification.permission === "granted"
+                ? "available"
+                : Notification.permission === "denied"
+                  ? "blocked"
+                  : "unknown",
+          channel: "not-applicable",
+        };
+      // Loads the plugin's existing default channel before inspecting it. Never prompts.
+      await LocalNotifications.checkPermissions();
+      return (
+        (await this.backgroundNative.pairingNotificationAvailability?.()) ?? {
+          app: "unknown",
+          channel: "unknown",
+        }
+      );
+    },
+    openSettings: async () => {
+      if (!this.backgroundNative.openPairingNotificationSettings)
+        throw new Error("notification_settings_unavailable");
+      await this.backgroundNative.openPairingNotificationSettings();
+    },
+    requestPermission: async () => {
+      await LocalNotifications.requestPermissions();
+    },
+  });
+  getNotificationAvailability() {
+    return this.notificationStatus.refresh();
+  }
+  openNotificationSettings() {
+    return this.notificationStatus.openSettings();
+  }
+  requestNotificationPermission() {
+    return this.notificationStatus.requestPermission();
+  }
+  onNotificationAvailabilityChanged(listener: () => void) {
+    return this.notificationStatus.onChanged(listener);
+  }
   private androidApiLevel: number | undefined;
   private backgroundEventsBound = false;
   private readonly backgroundContinuity =
-    createAndroidBackgroundContinuityCoordinator({
-      androidApiLevel: () => this.androidApiLevel,
-      notificationAvailability: () =>
-        this.backgroundNative.notificationAvailability(),
-      readEnabled: async () =>
-        (await this.storage.get<boolean>("backgroundContinuityEnabled")) ===
-        true,
-      writeEnabled: async (enabled) => {
-        await this.storage.set("backgroundContinuityEnabled", enabled);
-        await this.backgroundNative.setEnabled(enabled);
+    createAndroidBackgroundContinuityCoordinator(
+      {
+        androidApiLevel: () => this.androidApiLevel,
+        notificationAvailability: () =>
+          this.backgroundNative.notificationAvailability(),
+        readEnabled: () => this.backgroundNative.enabled(),
+        readServiceState: () => this.backgroundNative.serviceState(),
+        readAutoSync: async () => {
+          await this.settingsHandler.read();
+          return this.autoSync;
+        },
+        writeEnabled: (enabled) => this.backgroundNative.setEnabled(enabled),
+        setClipboardCaptureEligible: async (eligible) => {
+          this.clipboard.setPollingEnabled?.(eligible);
+        },
+        resetClipboardBaseline: async () => {
+          await this.clipboard.resetObservationBaseline?.();
+        },
+        setAutoSync: async (enabled) => {
+          return await this.setAutoSyncPreference(enabled);
+        },
+        startService: (autoSync) => this.backgroundNative.start(autoSync),
+        stopService: () => this.backgroundNative.stop(),
+        sendHeartbeat: () => this.backgroundNative.heartbeat(),
+        updateService: (state, connectedTrustedDeviceCount, autoSync) =>
+          this.backgroundNative.update(
+            state,
+            connectedTrustedDeviceCount,
+            autoSync
+          ),
+        showReconnectNotification: () =>
+          this.backgroundNative.showReconnectNotification(),
+        readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
+        listExplicitTextActions: () =>
+          this.backgroundNative.explicitTextActions(),
+        prepareExplicitTextAction: (actionId, event) =>
+          this.backgroundNative.prepareExplicitTextAction(actionId, event),
+        completeExplicitTextAction: (actionId) =>
+          this.backgroundNative.completeExplicitTextAction(actionId),
+        readAcceptedExplicitTextAction: async (action) => {
+          const [item, identity] = await Promise.all([
+            this.history.getById(action.event.clipId),
+            this.identitySvc.get(),
+          ]);
+          const clip = item?.clip;
+          return clip &&
+            clip.originPeerId === identity.deviceId &&
+            clip.content === action.text &&
+            clip.capturedAt === action.event.capturedAt &&
+            (action.event.sharingLifetimeMs === undefined ||
+              clip.shareExpiresAt - clip.capturedAt ===
+                action.event.sharingLifetimeMs)
+            ? clip
+            : null;
+        },
+        captureExplicitText: (action) =>
+          this.clipboard.processLocalText(action.text, {
+            shareNow: true,
+            event: action.event,
+          }),
+        showExplicitTextFeedback: (state) =>
+          this.backgroundNative.showExplicitTextFeedback(state),
+        readPendingClipboardApplication: () =>
+          this.backgroundNative.pendingClipboardApplication(),
+        writePendingClipboardApplication: (clipId) =>
+          this.backgroundNative.setPendingClipboardApplication(clipId),
+        clearPendingClipboardApplication: () =>
+          this.backgroundNative.clearPendingClipboardApplication(),
+        removeClip: (clipId) => this.history.remove(clipId),
+        clearHistory: () =>
+          this.clipboard.clearHistory(() => this.history.clearAll()),
+        readRetainedLiveClip: async (clipId) => {
+          const item = await this.history.getById(clipId);
+          return item
+            ? { clip: item.clip, liveHandled: item.liveHandled }
+            : null;
+        },
+        retryRemoteClipboardApplication: async (clip, isEligible) =>
+          await this.clipboard.writeRemoteClip(clip, isEligible),
       },
-      setClipboardCaptureEligible: async (eligible) => {
-        this.clipboard.setPollingEnabled?.(eligible);
-      },
-      resetClipboardBaseline: async () => {
-        await this.clipboard.resetObservationBaseline?.();
-      },
-      setAutoSync: async (enabled) => {
-        await this.setAutoSyncPreference(enabled);
-      },
-      startService: () => this.backgroundNative.start(),
-      stopService: () => this.backgroundNative.stop(),
-      sendHeartbeat: () => this.backgroundNative.heartbeat(),
-      updateService: (state, connectedTrustedDeviceCount) =>
-        this.backgroundNative.update(state, connectedTrustedDeviceCount),
-      showReconnectNotification: () =>
-        this.backgroundNative.showReconnectNotification(),
-      readDiagnosticStatus: () => this.backgroundNative.diagnosticStatus(),
-      listExplicitTextActions: () =>
-        this.backgroundNative.explicitTextActions(),
-      prepareExplicitTextAction: (actionId, event) =>
-        this.backgroundNative.prepareExplicitTextAction(actionId, event),
-      completeExplicitTextAction: (actionId) =>
-        this.backgroundNative.completeExplicitTextAction(actionId),
-      readAcceptedExplicitTextAction: async (action) => {
-        const [item, identity] = await Promise.all([
-          this.history.getById(action.event.clipId),
-          this.identitySvc.get(),
-        ]);
-        const clip = item?.clip;
-        return clip &&
-          clip.originPeerId === identity.deviceId &&
-          clip.content === action.text &&
-          clip.capturedAt === action.event.capturedAt
-          ? clip
-          : null;
-      },
-      captureExplicitText: (action) =>
-        this.clipboard.processLocalText(action.text, {
-          shareNow: true,
-          event: action.event,
-        }),
-      showExplicitTextFeedback: (state) =>
-        this.backgroundNative.showExplicitTextFeedback(state),
-      readPendingClipboardApplication: () =>
-        this.backgroundNative.pendingClipboardApplication(),
-      writePendingClipboardApplication: (clipId) =>
-        this.backgroundNative.setPendingClipboardApplication(clipId),
-      clearPendingClipboardApplication: () =>
-        this.backgroundNative.clearPendingClipboardApplication(),
-      removeClip: (clipId) => this.history.remove(clipId),
-      clearHistory: () =>
-        this.clipboard.clearHistory(() => this.history.clearAll()),
-      readRetainedLiveClip: async (clipId) => {
-        const item = await this.history.getById(clipId);
-        return item ? { clip: item.clip, liveHandled: item.liveHandled } : null;
-      },
-      retryRemoteClipboardApplication: async (clip, isEligible) =>
-        await this.clipboard.writeRemoteClip(clip, isEligible),
-    });
+      {
+        sharingLifetimeMs: () => this.sharingLifetimeMs,
+        workFence: this.workFence,
+      }
+    );
   private readonly runtimeAdapter = createAndroidRuntimeAdapter({
     storage: this.storage,
     identityKey: IDENTITY_KEY,
     applicationStateKey: "runtimeApplicationState",
     initialApplicationState: () => ({}) as Record<string, unknown>,
     clipboard: {
-      readText: readClipboardText,
-      writeText: writeClipboardText,
+      readText: () => this.workFence.run(readClipboardText),
+      writeText: (text) => this.workFence.run(() => writeClipboardText(text)),
     },
     notifications: {
       show: async (message) => {
         try {
-          let permission = await LocalNotifications.checkPermissions();
-          if (
-            permission.display === "prompt" ||
-            permission.display === "prompt-with-rationale"
-          ) {
-            permission = await LocalNotifications.requestPermissions();
-          }
+          const permission = await LocalNotifications.checkPermissions();
+          await this.notificationStatus.refresh();
           if (permission.display !== "granted") return;
-          await LocalNotifications.schedule({
-            notifications: [
-              {
-                id: nativeNotificationId(message.id),
-                title: message.title,
-                body: message.body,
-                extra: { runtimeNotificationId: message.id },
-              },
-            ],
-          });
+          this.workFence.assertOpen();
+          await this.workFence.run(() =>
+            LocalNotifications.schedule({
+              notifications: [
+                {
+                  id: nativeNotificationId(message.id),
+                  title: message.title,
+                  body: message.body,
+                  channelId: "default",
+                  extra: {
+                    runtimeNotificationId: message.id,
+                    runtimeNotificationInstance: message.instance,
+                  },
+                },
+              ],
+            })
+          );
+          this.notificationStatus.shown();
         } catch (err) {
-          if (typeof Notification === "undefined") {
+          this.notificationStatus.failed(err);
+          if (
+            Capacitor.getPlatform() === "android" ||
+            typeof Notification === "undefined"
+          ) {
             log.warn("Failed to show pairing request notification", err);
             return;
           }
+          this.workFence.assertOpen();
           const notification = new Notification(message.title, {
             body: message.body,
             tag: message.id,
           });
-          notification.onclick = () =>
-            this.notificationSelection.emit(message.id);
+          notification.onclick = () => {
+            if (!this.workFence.isFenced())
+              this.notificationSelection.emit(message.id, message.instance);
+          };
         }
       },
       async dismiss(id) {
@@ -570,6 +887,7 @@ export class AndroidClient {
         });
       },
       onSelect: this.notificationSelection.onSelect,
+      clearSelections: this.notificationSelection.clear,
     },
     lifecycle: {
       onShutdown: (handler) => {
@@ -579,7 +897,11 @@ export class AndroidClient {
             this.runtimeShutdownHandler = null;
         };
       },
-      openApprovalView: () => window.focus(),
+      openApprovalView: (selection) => {
+        if (this.workFence.isFenced()) return;
+        this.approvalEntries.select(selection ?? { id: uuidv4() });
+        window.focus();
+      },
     },
     network: createRuntimeNetworkProxy(() => this.transport),
     clock: systemRuntimeClock,
@@ -596,17 +918,19 @@ export class AndroidClient {
   private readonly pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () =>
       deviceIdToPeerId((await this.identitySvc.get()).deviceId),
-    store: createKVPendingTrustRequestStore({
-      storage: this.storage,
-      key: "pairingPendingRequests",
-    }),
+    store: createAndroidPendingTrustRequestStore(
+      this.rawStorage,
+      this.workFence
+    ),
     notifications: this.runtimeAdapter.notifications,
     lifecycle: this.runtimeAdapter.lifecycle,
     clock: systemRuntimeClock,
     verify: verifyPairingTrustRequestSignature,
     membership: this.identitySvc,
     sendResponse: async (peerId, frame) =>
-      this.transport!.send(PAIRING_PROTOCOL, peerId, frame),
+      this.workFence.run(() =>
+        this.transport!.send(PAIRING_PROTOCOL, peerId, frame)
+      ),
     responseIdentity: async () => {
       const identity = await this.identitySvc.get();
       return {
@@ -636,6 +960,7 @@ export class AndroidClient {
       this.pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,
         deviceName: request.deviceName,
+        requestVersion: request.requestVersion,
       }));
       await this.emitState();
     },
@@ -651,7 +976,9 @@ export class AndroidClient {
       };
     },
     send: (targetPeerId, frame) =>
-      this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame),
+      this.workFence.run(() =>
+        this.transport!.send(PAIRING_PROTOCOL, targetPeerId, frame)
+      ),
     sign: async (bytes) => {
       const identity = await this.identitySvc.get();
       if (!identity.privateKey) throw new Error("identity_unavailable");
@@ -733,8 +1060,8 @@ export class AndroidClient {
     if (this.eventsBound) return;
     this.eventsBound = true;
 
-    this.history.onNew(async () => {
-      await this.emitState();
+    this.history.onChanged(() => {
+      void this.emitState();
     });
   }
 
@@ -745,42 +1072,79 @@ export class AndroidClient {
     });
   }
 
+  private async settleBackgroundLifecycleEvent(
+    operation: () => Promise<unknown>
+  ): Promise<void> {
+    if (this.workFence.isFenced()) return;
+    try {
+      await this.workFence.run(operation);
+    } catch {
+      this.backgroundContinuity.markControlStateUnknown();
+    }
+    try {
+      await this.emitState();
+    } catch (error) {
+      log.warn("Background lifecycle state could not be published", error);
+    }
+  }
+
   private bindBackgroundContinuityEvents(): void {
     if (this.backgroundEventsBound) return;
     this.backgroundEventsBound = true;
 
-    const updateActivity = () =>
-      void this.setBackgroundActivityState().then(() => this.emitState());
+    const updateActivity = () => {
+      if (this.workFence.isFenced()) return;
+      void this.workFence.run(() =>
+        this.setBackgroundActivityState()
+          .then(() => this.emitState())
+          .catch(() => this.emitState())
+      );
+    };
     window.addEventListener("focus", updateActivity);
     window.addEventListener("blur", updateActivity);
     document.addEventListener("visibilitychange", updateActivity);
 
     void this.backgroundNative.on("activityState", (event) => {
+      if (this.workFence.isFenced()) return;
       const resumed = event.resumed === true;
       const windowFocused = event.windowFocused === true;
-      void this.backgroundContinuity
-        .setActivityState({ resumed, windowFocused })
-        .then(() => this.emitState());
-    });
-    void this.backgroundNative.on("runtimeLost", () => {
-      void this.backgroundContinuity
-        .reportRuntimeLost()
-        .then(() => this.emitState());
-    });
-    void this.backgroundNative.on("taskRemoved", () => {
-      void this.backgroundContinuity
-        .handleTaskRemoved()
-        .then(() => this.emitState());
+      void this.workFence.run(() =>
+        this.backgroundContinuity
+          .setActivityState({ resumed, windowFocused })
+          .then(async () => {
+            if (resumed) await this.refreshBackgroundContinuity();
+            else await this.emitState();
+          })
+          .catch(() => this.emitState())
+      );
     });
     void this.backgroundNative.on("action", (event) => {
+      if (this.workFence.isFenced()) return;
       const action = event.action;
       if (action !== "pause" && action !== "resume" && action !== "stop")
         return;
-      void this.backgroundContinuity
-        .handleNotificationAction(action as AndroidBackgroundNotificationAction)
-        .then(() => this.emitState());
+      void this.workFence.run(() =>
+        this.backgroundContinuity
+          .handleNotificationAction(
+            action as AndroidBackgroundNotificationAction,
+            () =>
+              this.backgroundNative.isActionCurrent(event.actionToken, action)
+          )
+          .then(
+            () => this.emitState(),
+            async () => {
+              await this.emitState();
+              if (this.workFence.isFenced()) return;
+              await this.backgroundNative.showControlFeedback(
+                this.backgroundContinuity.snapshot().controlError ??
+                  "The action could not be confirmed."
+              );
+            }
+          )
+      );
     });
     void this.backgroundNative.on("explicitText", () => {
+      if (this.workFence.isFenced()) return;
       void this.backgroundContinuity.handleExplicitTextActionsAvailable();
     });
   }
@@ -814,15 +1178,25 @@ export class AndroidClient {
   }
 
   private async emitState() {
-    const state = await this.getState();
-    await this.runtimeAdapter.publicState.publish(state);
+    await this.runtime.publishState();
   }
 
   private async startServices() {
     if (this.started) return;
+    this.sharingLifetimeMs = normalizeSharingLifetime(
+      await this.storage.get<unknown>("sharingLifetimeMs")
+    );
     await startIdentityBoundRuntimeServices({
-      initializeIdentity: () => this.identityRotationLifecycle.initialize(),
+      workFence: this.workFence,
+      onServicesStarted: () => this.identityRotationLifecycle.servicesStarted(),
+      initializeIdentity: async () => {
+        const initialized = await this.identityRotationLifecycle.initialize();
+        if (initialized.localServicesEnabled !== false)
+          this.identityStartupInspected = true;
+        return initialized;
+      },
       startLocalServices: async () => {
+        await this.identityResetRuntime.openRuntime();
         this.bindEvents();
         this.bindBackgroundContinuityEvents();
         this.androidApiLevel = await this.backgroundNative.apiLevel();
@@ -832,47 +1206,34 @@ export class AndroidClient {
         } else if (backgroundState.backgroundEnabled) {
           await this.backgroundContinuity.setEnabledFromUser(true);
         }
-        this.autoSync = await this.autoSyncPreference.load();
+        await this.settingsHandler.read();
         this.managedRelayConfigurations = await loadManagedRelayConfigurations(
           this.relayConfigurationStore()
         );
         if (!this.removeRelayCallback) {
           this.removeRelayCallback = await this.relaySecrets.onCallback(
             (url) => {
-              void this.relayAuth.acceptCallback(url).then((accepted) => {
-                if (accepted) void this.emitState();
-              });
+              if (this.workFence.isFenced()) return;
+              void this.relayAuth
+                .acceptCallback(url)
+                .then((accepted) => {
+                  if (accepted) void this.emitState();
+                })
+                .catch(() => undefined);
             }
           );
         }
         this.clipboardSync.setAutoSync(this.autoSync);
         await this.backgroundContinuity.reflectAutoSync(this.autoSync);
-        const storedRetentionMs =
-          (await this.storage.get<number>("localRetentionMs")) ?? RETENTION_MS;
-        const applyStoredRetention = async (): Promise<void> => {
-          this.localRetentionMs =
-            await this.history.setRetention(storedRetentionMs);
-          this.pendingRetentionMs = null;
-          if (this.localRetentionMs !== storedRetentionMs) {
-            await this.storage.set("localRetentionMs", this.localRetentionMs);
-          }
-        };
-        try {
-          await applyStoredRetention();
-        } catch (error) {
-          this.pendingRetentionMs = storedRetentionMs;
-          this.historyPolicyError = "history_cleanup_failed";
-          log.warn(
-            "Initial local history cleanup failed; runtime will retry",
-            error
-          );
-        }
         this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
             pruneExpired: async () => {
-              if (this.pendingRetentionMs !== null)
-                await applyStoredRetention();
-              else await this.history.pruneExpired();
+              const maintenance = await this.retentionPreference.maintain();
+              if (maintenance.recovered) {
+                const snapshot = await this.settingsHandler.read();
+                for (const listener of this.settingsListeners)
+                  listener(snapshot);
+              }
             },
           },
           undefined,
@@ -887,6 +1248,9 @@ export class AndroidClient {
         await this.pairingPending.start();
         this.clipboardSync.start();
         await this.setBackgroundActivityState();
+        // A retained resume can drain before capture starts and consume the
+        // resume transition. Retry durable ingress now that capture is ready.
+        await this.backgroundContinuity.handleExplicitTextActionsAvailable();
         this.backgroundContinuity.startRuntimeHeartbeat();
       },
       startNetworkServices: async () => {
@@ -894,6 +1258,7 @@ export class AndroidClient {
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
           this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+            if (this.workFence.isFenced()) return;
             void this.pairingSessions
               .receive(from, frame, (peerId, requestFrame) =>
                 this.pairingPending.receive(peerId, requestFrame)
@@ -903,8 +1268,10 @@ export class AndroidClient {
               );
           });
         }
-        await this.transport!.start();
+        await this.workFence.run(() => this.transport!.start());
+        this.workFence.assertOpen();
         await this.startManagedRelays();
+        this.workFence.assertOpen();
         this.pairedConnections?.start();
         this.historyReconciliation?.start();
       },
@@ -919,12 +1286,17 @@ export class AndroidClient {
     await this.stopIdentityBoundServices();
   }
 
-  private async stopIdentityBoundServices() {
+  private async stopIdentityBoundServices(strict = false) {
+    this.approvalEntries.clear();
+    this.notificationSelection.clear();
     this.removeRelayCallback?.();
     this.removeRelayCallback = null;
-    await this.managedRelays
-      ?.stop()
-      .catch((error) => log.warn("Managed relay cleanup timed out", error));
+    const relayStop = this.managedRelays?.stop();
+    if (strict) await relayStop;
+    else
+      await relayStop?.catch((error) =>
+        log.warn("Managed relay cleanup timed out", error)
+      );
     this.backgroundContinuity.stopRuntimeHeartbeat();
     this.historyRetentionCleanup?.stop();
     this.historyRetentionCleanup = null;
@@ -947,6 +1319,7 @@ export class AndroidClient {
   }
 
   start() {
+    this.workFence.assertOpen();
     return this.runtime.start();
   }
 
@@ -964,8 +1337,37 @@ export class AndroidClient {
     };
   }
 
+  async getRuntimeAuthority(): Promise<string> {
+    return this.pairingSessions.snapshot().sessionId;
+  }
+
+  async dismissPairingOutcome(
+    targetPeerId: string,
+    expected: { sessionId: string; revision: number }
+  ): Promise<boolean> {
+    return this.pairingSessions.dismissOutcome(targetPeerId, expected);
+  }
+
   async getState(): Promise<AndroidAppState> {
-    const clips = await this.history.exportAll();
+    if (!this.identityStartupInspected || this.workFence.isFenced())
+      return {
+        clips: [],
+        devices: [],
+        pending: [],
+        peers: [],
+        identity: null,
+        pinnedIds: [],
+        identityRotationRecovery:
+          this.identityRotationRecovery || this.workFence.isFenced(),
+        identityResetState: this.identityResetState,
+        relayAddresses: [],
+        localRetentionMs: this.localRetentionMs,
+        autoSync: this.autoSync,
+        backgroundContinuity: this.backgroundContinuity.snapshot(),
+      };
+    const generation = this.workFence.generation();
+    const pairingState = this.pairingSessions.snapshot();
+    const historyProjection = await this.historyState.read();
     const devices = await this.identitySvc.trustedDevices();
     const identity = this.identityRotationRecovery
       ? null
@@ -996,22 +1398,30 @@ export class AndroidClient {
       }
     );
 
-    return {
-      clips,
+    const state: AndroidAppState = {
+      clips: historyProjection.clips,
       devices,
       pending: this.pendingRequests,
-      waiting: this.pairingSessions.waiting(),
-      pairingErrors: this.pairingSessions.errors(),
+      waiting: pairingState.waiting,
+      pairingErrors: pairingState.errors,
+      pairingState,
       peers,
+      connectionStateKnown:
+        Boolean(this.transport) &&
+        !this.identityRotationRecovery &&
+        !this.workFence.isFenced(),
       peerConnections,
       relayConnections,
       identity,
-      pinnedIds: await this.history.pinnedIds(),
+      pinnedIds: historyProjection.pinnedIds,
+      historyUnavailable: historyProjection.historyUnavailable,
+      historyRefreshError: historyProjection.historyRefreshError,
       localRetentionMs: this.localRetentionMs,
       autoSync: this.clipboardSync.isAutoSync(),
       clipboardHistoryError: this.clipboardHistoryError,
       historyPolicyError: this.historyPolicyError,
       identityRotationRecovery: this.identityRotationRecovery,
+      identityResetState: this.identityResetState,
       identityRotationNotice:
         (await this.identityRotation.notice())?.reason ?? null,
       relayAddresses,
@@ -1022,14 +1432,18 @@ export class AndroidClient {
       },
       backgroundContinuity: this.backgroundContinuity.snapshot(),
     };
+    this.workFence.assertOpen(generation);
+    return state;
   }
 
   async deleteClip(id: string) {
+    this.assertIdentityWorkReady();
     await this.backgroundContinuity.removeClip(id);
     await this.emitState();
   }
 
   async reuseClip(id: string) {
+    this.assertIdentityWorkReady();
     const outcome = await reuseRetainedClip(id, {
       history: this.history,
       clipboard: this.clipboard,
@@ -1039,42 +1453,80 @@ export class AndroidClient {
   }
 
   async clearHistory() {
-    await this.backgroundContinuity.clearHistory();
-    await this.emitState();
+    this.assertIdentityWorkReady();
+    try {
+      await this.backgroundContinuity.clearHistory();
+    } finally {
+      await this.emitState();
+    }
   }
 
   async unpairDevice(id: string) {
+    this.assertIdentityWorkReady();
     await this.identitySvc.revoke(id);
     await this.emitState();
   }
 
   async renameDevice(id: string, name: string): Promise<Device | null> {
+    this.assertIdentityWorkReady();
     const device = await this.identitySvc.setLocalDeviceAlias(id, name);
     await this.emitState();
     return device;
   }
 
-  async renameIdentity(name: string): Promise<Identity | null> {
-    const trimmed = name.trim();
-    if (!trimmed) return this.getIdentity();
-
-    await this.identitySvc.rename(trimmed);
+  async renameIdentity(
+    name: string,
+    expectedDeviceId: string
+  ): Promise<Identity | null> {
+    this.assertIdentityWorkReady();
+    await this.identitySvc.rename(name, expectedDeviceId);
     const identity = await this.getIdentity();
     await this.emitState();
     return identity;
   }
 
   async acceptRequest(dev: PendingRequest) {
-    await this.pairingPending.decide(dev.deviceId, "accepted");
-    await this.emitState();
+    this.assertIdentityWorkReady();
+    const result = await this.pairingPending.decide(
+      dev.deviceId,
+      "accepted",
+      dev.requestVersion
+    );
+    try {
+      await this.emitState();
+    } catch {
+      if (result.ok)
+        return {
+          ok: false as const,
+          error: "cleanup_failed" as const,
+          admitted: result.admitted,
+        };
+    }
+    return result;
   }
 
   async rejectRequest(dev: PendingRequest) {
-    await this.pairingPending.decide(dev.deviceId, "rejected");
-    await this.emitState();
+    this.assertIdentityWorkReady();
+    const result = await this.pairingPending.decide(
+      dev.deviceId,
+      "rejected",
+      dev.requestVersion
+    );
+    try {
+      await this.emitState();
+    } catch {
+      if (result.ok)
+        return {
+          ok: false as const,
+          error: "cleanup_failed" as const,
+          admitted: result.admitted,
+        };
+    }
+    return result;
   }
 
   async setPinned(id: string, pinned: boolean) {
+    this.assertIdentityWorkReady();
     const pinnedIds = await this.history.setPinned(id, pinned);
     await this.emitState();
     return pinnedIds;
@@ -1085,75 +1537,154 @@ export class AndroidClient {
   }
 
   async retryHistoryCleanup() {
+    this.assertIdentityWorkReady();
     await this.historyRetentionCleanup?.retry();
   }
 
   async acknowledgeIdentityRotationNotice() {
+    this.assertIdentityWorkReady();
     await this.identityRotation.acknowledgeNotice();
     await this.emitState();
   }
 
   async setLocalRetention(retentionMs: number) {
-    this.localRetentionMs = await this.history.setRetention(retentionMs);
-    this.pendingRetentionMs = null;
-    await this.storage.set("localRetentionMs", this.localRetentionMs);
-    await this.emitState();
-    return this.localRetentionMs;
+    this.workFence.assertOpen();
+    return this.settingsHandler.write({ localRetentionMs: retentionMs });
   }
 
-  async setManagedRelays(configurations: RelayConfiguration[]): Promise<void> {
-    const ordered = configurations.map((config) =>
-      config.kind === "explicit"
-        ? { ...config, addresses: androidRelayAddressOrder(config.addresses) }
-        : config
-    );
-    const normalized = normalizeRelayConfigurations(ordered);
-    await this.managedRelays?.setConfigurations(normalized);
-    try {
+  private relayMutationOwner = createRelayMutationOwner({
+    read: () => this.managedRelayConfigurations,
+    load: async () =>
+      (await this.relayConfigurationStore().readNewModel()) ?? [],
+    erase: (url) => this.relayAuth.erase(url),
+    write: async (next) => {
       await saveManagedRelayConfigurations(
         this.relayConfigurationStore(),
-        normalized
+        next
       );
-    } catch (error) {
-      await this.managedRelays?.setConfigurations(
-        this.managedRelayConfigurations
+    },
+    accept: (next) => {
+      this.managedRelayConfigurations = next;
+    },
+    apply: async (next) => {
+      const ordered = next.map((config) =>
+        config.kind === "explicit"
+          ? { ...config, addresses: androidRelayAddressOrder(config.addresses) }
+          : config
       );
-      throw error;
-    }
-    this.managedRelayConfigurations = normalized;
-    await this.emitState();
+      if (!this.managedRelays)
+        throw new Error("managed_relay_host_unavailable");
+      await this.managedRelays.setConfigurations(ordered);
+    },
+    reconcile: () => this.emitState(),
+  });
+  async refreshManagedRelays() {
+    return this.relayMutationOwner.refresh();
   }
-
-  async loginManagedRelay(key: string): Promise<void> {
-    await this.managedRelays?.requestLogin(key);
-    await this.emitState();
+  async mutateManagedRelay(mutation: RelayMutation) {
+    this.workFence.assertOpen();
+    return this.relayMutationOwner.mutate(mutation);
   }
-
-  async openManagedRelayAccount(key: string): Promise<void> {
-    await this.managedRelays?.manageAccount(key);
+  async loginManagedRelay(key: string) {
+    this.workFence.assertOpen();
+    return performRelayAction(
+      "authenticated",
+      async () => {
+        if (!this.managedRelays)
+          throw new Error("managed_relay_host_unavailable");
+        return this.managedRelays.requestLogin(key);
+      },
+      () => this.emitState()
+    );
   }
-
-  async retryManagedRelay(key: string): Promise<void> {
-    await this.managedRelays?.retry(key);
-    await this.emitState();
+  async openManagedRelayAccount(key: string) {
+    this.workFence.assertOpen();
+    return performRelayAction(
+      "portal-opened",
+      async () => {
+        if (!this.managedRelays)
+          throw new Error("managed_relay_host_unavailable");
+        await this.managedRelays.manageAccount(key);
+      },
+      () => this.emitState()
+    );
+  }
+  async retryManagedRelay(key: string) {
+    this.workFence.assertOpen();
+    return performRelayAction(
+      "retry-requested",
+      async () => {
+        if (!this.managedRelays)
+          throw new Error("managed_relay_host_unavailable");
+        await this.managedRelays.retry(key);
+      },
+      () => this.emitState()
+    );
   }
 
   private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
-    this.autoSync = await this.autoSyncPreference.set(enabled);
-    this.clipboardSync.setAutoSync(this.autoSync);
-    return this.autoSync;
+    const result = await this.settingsHandler.write({ autoSync: enabled });
+    if (result.status !== "applied") throw new Error(result.error);
+    return result.snapshot.state.autoSync;
   }
 
   async setAutoSync(enabled: boolean) {
-    await this.backgroundContinuity.setAutoSync(enabled);
-    await this.emitState();
-    return this.autoSync;
+    return this.workFence.run(() =>
+      performAutoSyncAction(enabled, {
+        set: async (value) => {
+          await this.backgroundContinuity.setAutoSync(value);
+          return this.autoSync;
+        },
+        recover: async () => {
+          const settings = await this.settingsHandler.read();
+          await this.backgroundContinuity.reflectAutoSync(
+            settings.state.autoSync
+          );
+        },
+        current: () => this.autoSync,
+        reconcile: () => this.emitState(),
+      })
+    );
+  }
+  async refreshAutoSync() {
+    return this.workFence.run(async () => {
+      const settings = await this.settingsHandler.read();
+      await this.backgroundContinuity.reflectAutoSync(settings.state.autoSync);
+      await this.emitState();
+      return true;
+    });
   }
 
   async setBackgroundContinuity(enabled: boolean) {
-    const state = await this.backgroundContinuity.setEnabledFromUser(enabled);
-    await this.emitState();
-    return state;
+    return this.workFence.run(async () => {
+      const results = await Promise.allSettled([
+        this.backgroundContinuity.setEnabledFromUser(enabled),
+        this.emitState(),
+      ]);
+      await this.emitState();
+      for (const result of results)
+        if (result.status === "rejected") throw result.reason;
+      return this.backgroundContinuity.snapshot();
+    });
+  }
+
+  async refreshBackgroundContinuity() {
+    return this.workFence.run(async () => {
+      try {
+        this.androidApiLevel = await this.backgroundNative.apiLevel();
+        await this.backgroundContinuity.initialize();
+        return true;
+      } catch (error) {
+        this.backgroundContinuity.markControlStateUnknown();
+        throw error;
+      } finally {
+        await this.emitState();
+      }
+    });
+  }
+
+  async openBackgroundNotificationSettings() {
+    await this.backgroundNative.openNotificationSettings();
   }
 
   async exportBackgroundContinuityDiagnostics(): Promise<void> {
@@ -1161,8 +1692,16 @@ export class AndroidClient {
   }
 
   async getIdentity(): Promise<Identity | null> {
+    if (!this.identityStartupInspected) return null;
     const id = await this.identitySvc.get();
     return toPublicDeviceIdentity(id);
+  }
+
+  reconcileIdentityReset() {
+    return this.identityRotation.reconcileIdentityReset().then((state) => {
+      this.identityResetState = state;
+      return state;
+    });
   }
 
   async getInitializationError() {
@@ -1170,15 +1709,43 @@ export class AndroidClient {
   }
 
   async retryIdentityInitialization(): Promise<AndroidAppState> {
+    this.workFence.assertOpen();
+    const reset = await this.identityRotation.reconcileIdentityReset();
+    if (reset.phase !== "idle") return this.getState();
     await this.identitySvc.retryInitialization();
     await this.runtime.start();
     return this.getState();
   }
 
+  copyPairingText(text: string) {
+    this.workFence.assertOpen();
+    return copyPayloadText(text, (value) =>
+      CapacitorClipboard.write({ string: value })
+    );
+  }
+
+  async copyFormerIdentityPeerId(receiptId: string) {
+    await this.publishIdentityResetState(
+      await this.identityRotation.reconcileIdentityReset()
+    );
+    const receipt = this.identityResetState.phase === "idle"
+      ? this.identityResetState.receipt
+      : this.identityResetState.phase === "completed"
+        ? this.identityResetState.receipt
+        : undefined;
+    if (!receipt || receipt.receiptId !== receiptId)
+      return { status: "rejected" as const };
+    return copyPayloadText(receipt.formerPeerId, (value) =>
+      CapacitorClipboard.write({ string: value })
+    );
+  }
+
   async getPairingCode(): Promise<PairingCode | null> {
+    this.assertIdentityWorkReady();
+    const generation = this.workFence.generation();
     const id = await this.identitySvc.get();
     await this.ensureMessaging();
-    await this.transport!.start();
+    await this.workFence.run(() => this.transport!.start());
     if (!this.transport!.getSignedPeerRecord)
       throw new Error("signed_peer_record_unavailable");
     const signedPeerRecord = await this.transport!.getSignedPeerRecord();
@@ -1187,10 +1754,13 @@ export class AndroidClient {
       signedPeerRecord,
       deviceNameHint: id.deviceName,
     });
-    return createPairingCode(text);
+    const code = await createPairingCode(text);
+    this.workFence.assertOpen(generation);
+    return code;
   }
 
   async pairFromText(txt: string): Promise<PairingResult> {
+    this.assertIdentityWorkReady();
     const diagnostics = this.createPairingDiagnostics(
       typeof txt === "string" ? txt.length : 0
     );
@@ -1219,13 +1789,14 @@ export class AndroidClient {
       const target = decodePairingTarget(txt);
       if (!target) return fail("invalid");
       await this.ensureMessaging();
-      await this.transport!.start();
+      await this.workFence.run(() => this.transport!.start());
       const localIdentity = await this.identitySvc.get();
       if (!localIdentity.privateKey) return fail("invalid");
       await importPairingTargetAndRequest({
         text: txt,
-        network: this.transport!,
-        request: this.pairingSessions.request,
+        network: this.workFence.protect(this.transport!),
+        request: (...args) =>
+          this.workFence.run(() => this.pairingSessions.request(...args)),
       });
       return {
         ok: true,
@@ -1245,12 +1816,17 @@ export class AndroidClient {
   }
 
   async shareCurrentClipboard() {
-    const text = await readClipboardText();
+    this.assertIdentityWorkReady();
+    const text = await this.workFence.run(readClipboardText);
     await this.clipboard.processLocalText(text, { shareNow: true });
     await this.emitState();
   }
 }
 
+export function createAndroidRuntime() {
+  return AndroidClient.createRuntime();
+}
+
 export function createAndroidClient() {
-  return new AndroidClient();
+  return createAndroidRuntime().client;
 }

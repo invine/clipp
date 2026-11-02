@@ -1,6 +1,8 @@
 /**
  * libp2p node initialization/config for clipboard network.
  */
+import "./promiseCompat.js";
+import "./abortSignalCompat.js";
 import { createLibp2p } from "libp2p";
 import { circuitRelayTransport } from "@libp2p/circuit-relay-v2";
 import { webSockets } from "@libp2p/websockets";
@@ -66,6 +68,10 @@ export async function createClipboardNode(
     dcutrRetries?: number;
     enableTcp?: boolean;
     enableWebSocketListener?: boolean;
+    /** Native direct listeners may be confined to loopback; browser behavior is unchanged. */
+    nativeListenInterface?: "127.0.0.1";
+    /** Native LAN discovery remains enabled unless explicitly disabled. */
+    enableMdns?: boolean;
     enableRelayReservations?: boolean;
     allowInsecureBrowserDials?: boolean;
     /** Isolated acceptance: allow relay servers and plain circuits only. */
@@ -85,6 +91,12 @@ export async function createClipboardNode(
   const enableWebRTCDirect = options.enableWebRTCDirect !== false;
   const isBrowserDocument = isBrowserDocumentRuntime();
   const enableTcp = options.enableTcp === true && !isBrowserDocument;
+  if (
+    options.nativeListenInterface !== undefined &&
+    options.nativeListenInterface !== "127.0.0.1"
+  )
+    throw new Error("invalid_native_listen_interface");
+  const listenInterface = options.nativeListenInterface ?? "0.0.0.0";
   const enableRelayReservations =
     options.enableRelayReservations ?? !isBrowserDocument;
   const discovery: any[] = [];
@@ -97,7 +109,7 @@ export async function createClipboardNode(
     isBrowserDocument ||
     options.enableWebSocketListener === false
       ? []
-      : [multiaddr("/ip4/0.0.0.0/tcp/0/ws")];
+      : [multiaddr(`/ip4/${listenInterface}/tcp/0/ws`)];
 
   if (enableTcp) {
     try {
@@ -105,7 +117,7 @@ export async function createClipboardNode(
       if (typeof tcp === "function") {
         transports.unshift(withTransportFilters(tcp()));
         if (!options.relayOnly)
-          listenAddrs.push(multiaddr("/ip4/0.0.0.0/tcp/0"));
+          listenAddrs.push(multiaddr(`/ip4/${listenInterface}/tcp/0`));
       } else {
         console.warn("TCP transport missing or invalid; skipping");
       }
@@ -142,7 +154,9 @@ export async function createClipboardNode(
           withTransportFilters((wrtcDirectTransportFactory as any)())
         );
         if (!isBrowserDocument && !options.relayOnly) {
-          listenAddrs.push(multiaddr("/ip4/0.0.0.0/udp/0/webrtc-direct"));
+          listenAddrs.push(
+            multiaddr(`/ip4/${listenInterface}/udp/0/webrtc-direct`)
+          );
         }
       } else if (enableWebRTCDirect) {
         console.warn("WebRTC Direct transport missing or invalid; skipping");
@@ -212,7 +226,11 @@ export async function createClipboardNode(
   }
   // mdns relies on Node's dgram module which is not available in browser
   // environments like the extension background service worker.
-  if (!isBrowserDocument && !options.relayOnly) {
+  if (
+    !isBrowserDocument &&
+    !options.relayOnly &&
+    options.enableMdns !== false
+  ) {
     discovery.push(mdns());
   }
 
