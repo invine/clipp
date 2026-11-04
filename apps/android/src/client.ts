@@ -58,8 +58,7 @@ import { createHistoryStateReader } from "@core/history/state";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
-import { createHistoryReconciliation } from "@core/sync/historyReconciliation";
-import { createLiveClipGossip } from "@core/sync/liveClipGossip";
+import { createClipExchangeRuntime } from "@core/sync/clipExchangeRuntime";
 import { reuseRetainedClip } from "@core/clipboard/explicitActions";
 import {
   PAIRING_PROTOCOL,
@@ -342,7 +341,7 @@ export class AndroidClient {
     },
     applyAutoSync: (enabled) => {
       this.autoSync = enabled;
-      this.clipboardSync.setAutoSync(enabled);
+      this.clipExchange.setAutoSync(enabled);
     },
     applyLogLevel: () => {},
     applySharingLifetime: (value) => {
@@ -481,7 +480,7 @@ export class AndroidClient {
         } else window.location.reload();
       },
       startLocalRecovery: () => {
-        this.clipboardSync.startLocalOnly();
+        this.clipExchange.startLocalCapture();
         this.started = true;
       },
       publishState: () => this.emitState(),
@@ -498,10 +497,6 @@ export class AndroidClient {
     null;
   private pairedConnections: ReturnType<
     typeof createPairedPeerConnectionManager
-  > | null = null;
-  private liveClipGossip: ReturnType<typeof createLiveClipGossip> | null = null;
-  private historyReconciliation: ReturnType<
-    typeof createHistoryReconciliation
   > | null = null;
   private membershipReconciler: ReturnType<
     typeof createMembershipReconciler
@@ -547,7 +542,7 @@ export class AndroidClient {
 
   private async ensureMessaging(): Promise<void> {
     this.workFence.assertOpen();
-    if (this.transport && this.liveClipGossip) {
+    if (this.transport) {
       if (!this.pairedConnections) {
         this.pairedConnections = createPairedPeerConnectionManager({
           transport: this.transport,
@@ -600,20 +595,6 @@ export class AndroidClient {
       transport: this.transport,
       getPairedPeers: activeMemberReconnectPeers(this.identitySvc),
     });
-    this.liveClipGossip = createLiveClipGossip({
-      transport: this.transport,
-      membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
-    });
-    this.historyReconciliation = createHistoryReconciliation({
-      transport: this.transport,
-      history: this.history,
-      getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
-      membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
-      onMembershipChanged: (listener) =>
-        this.identitySvc.onMembershipChanged(listener),
-      autoSync: this.autoSync,
-    });
-    this.clipboardSync.bindLiveGossip(this.liveClipGossip);
     this.membershipReconciler = createMembershipReconciler({
       transport: this.transport,
       identity: this.identitySvc,
@@ -671,10 +652,16 @@ export class AndroidClient {
       const id = await this.identitySvc.get();
       return id.deviceId;
     },
-    onAutoSyncChanged: (enabled) =>
-      this.historyReconciliation?.setAutoSync(enabled),
     onLiveClipboardApplication: (clip, result) =>
       this.backgroundContinuity.recordLiveClipboardApplication(clip, result),
+  });
+  private readonly clipExchange = createClipExchangeRuntime({
+    clipboardSync: this.clipboardSync,
+    history: this.history,
+    getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
+    membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
+    onMembershipChanged: (listener) =>
+      this.identitySvc.onMembershipChanged(listener),
   });
 
   private pendingRequests: PendingRequest[] = [];
@@ -1226,7 +1213,7 @@ export class AndroidClient {
             }
           );
         }
-        this.clipboardSync.setAutoSync(this.autoSync);
+        this.clipExchange.setAutoSync(this.autoSync);
         await this.backgroundContinuity.reflectAutoSync(this.autoSync);
         this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
@@ -1249,7 +1236,7 @@ export class AndroidClient {
         if (this.identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
         this.pairingSessions.start();
         await this.pairingPending.start();
-        this.clipboardSync.start();
+        this.clipExchange.startLocalCapture();
         await this.setBackgroundActivityState();
         // A retained resume can drain before capture starts and consume the
         // resume transition. Retry durable ingress now that capture is ready.
@@ -1275,8 +1262,8 @@ export class AndroidClient {
         this.workFence.assertOpen();
         await this.startManagedRelays();
         this.workFence.assertOpen();
+        await this.clipExchange.activateReadyTransport(this.transport!);
         this.pairedConnections?.start();
-        this.historyReconciliation?.start();
       },
       onNetworkingFailure: (error) => {
         log.warn("Messaging transport failed to start", error);
@@ -1308,13 +1295,12 @@ export class AndroidClient {
       await stopIdentityBoundRuntimeServices([
         () => this.pairingSessions.stop(),
         () => this.pairingPending.stop(),
-        () => this.clipboardSync.stop(),
-        () => this.historyReconciliation?.stop(),
+        () => this.clipExchange.stop(),
         () => this.pairedConnections?.stop(),
         () => this.transport?.stop(),
       ]);
     } finally {
-      this.historyReconciliation = null;
+      this.transport = null;
       this.managedRelays = null;
       this.membershipReconciler = null;
       this.started = false;

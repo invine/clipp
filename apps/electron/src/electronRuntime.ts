@@ -100,10 +100,9 @@ import {
 } from "../../../packages/core/network/pairedConnections.js";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
-import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation.js";
+import { createClipExchangeRuntime } from "../../../packages/core/sync/clipExchangeRuntime.js";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions.js";
 import * as log from "../../../packages/core/logger.js";
-import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip.js";
 import {
   deviceIdToPeerIdObject,
   peerIdFromPrivateKeyBase64,
@@ -494,19 +493,6 @@ async function composeElectronRuntime(
     transport,
     getPairedPeers: activeMemberReconnectPeers(identitySvc),
   });
-  let liveClipGossip = createLiveClipGossip({
-    transport,
-    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-  });
-  let historyReconciliation = createHistoryReconciliation({
-    transport,
-    history,
-    getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
-    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-    onMembershipChanged: (listener) =>
-      identitySvc.onMembershipChanged(listener),
-    autoSync,
-  });
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
@@ -643,7 +629,6 @@ async function composeElectronRuntime(
   const clipboardSync = createClipboardSyncManager({
     clipboard: clipboardSvc,
     history,
-    liveGossip: liveClipGossip,
     isActiveMember: async (peerId) =>
       (await identitySvc.membershipStatus(peerId)) === "active",
     getLocalDeviceId: async () => {
@@ -651,9 +636,16 @@ async function composeElectronRuntime(
       return id.deviceId;
     },
     autoSync,
-    onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
-  applyLiveAutoSync = (enabled) => clipboardSync.setAutoSync(enabled);
+  const clipExchange = createClipExchangeRuntime({
+    clipboardSync,
+    history,
+    getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
+    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+    onMembershipChanged: (listener) =>
+      identitySvc.onMembershipChanged(listener),
+  });
+  applyLiveAutoSync = (enabled) => clipExchange.setAutoSync(enabled);
   prepareIdentityRotationCleanup = () =>
     clipboardSync.prepareIdentityRotationCleanup();
 
@@ -846,7 +838,7 @@ async function composeElectronRuntime(
     bindTransportHandlers(transport);
     await pairingPending?.start();
     identityWork.assertOpen(generation);
-    clipboardSync.start();
+    clipExchange.startLocalCapture();
   }
 
   async function startNetworkServices() {
@@ -854,9 +846,9 @@ async function composeElectronRuntime(
     identityWork.assertOpen(generation);
     await ensureMessagingStarted();
     identityWork.assertOpen(generation);
+    await clipExchange.activateReadyTransport(transport);
     membershipReconciler.start();
     pairedConnections.start();
-    historyReconciliation.start();
   }
 
   async function restartMessaging() {
@@ -869,7 +861,7 @@ async function composeElectronRuntime(
     });
     managedHost = null;
     try {
-      const historyStopped = historyReconciliation.stop();
+      const historyStopped = clipExchange.retireTransport();
       const reconnectsStopped = pairedConnections.stop();
       await transport.stop();
       await Promise.allSettled([historyStopped, reconnectsStopped]);
@@ -895,26 +887,12 @@ async function composeElectronRuntime(
       transport,
       getPairedPeers: activeMemberReconnectPeers(identitySvc),
     });
-    liveClipGossip = createLiveClipGossip({
-      transport,
-      membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-    });
-    historyReconciliation = createHistoryReconciliation({
-      transport,
-      history,
-      getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
-      membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-      onMembershipChanged: (listener) =>
-        identitySvc.onMembershipChanged(listener),
-      autoSync,
-    });
     bindTransportHandlers(transport);
     runtimeNetwork.bindCurrent();
-    clipboardSync.bindLiveGossip(liveClipGossip);
     await ensureMessagingStarted();
     identityWork.assertOpen(generation);
+    await clipExchange.activateReadyTransport(transport);
     pairedConnections.start();
-    historyReconciliation.start();
     await emitState();
   }
 
@@ -1217,8 +1195,7 @@ async function composeElectronRuntime(
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     await pairingSessions.stop();
-    await clipboardSync.stop();
-    await historyReconciliation.stop();
+    await clipExchange.stop();
     pairedConnections.stop();
     await managedController
       .stop()
@@ -1263,8 +1240,7 @@ async function composeElectronRuntime(
     await stopIdentityBoundRuntimeServices([
       () => pairingSessions.stop(),
       () => pairingPending?.stop(),
-      () => clipboardSync.stop(),
-      () => historyReconciliation.stop(),
+      () => clipExchange.stop(),
       () => pairedConnections.stop(),
       () => runtimeNetwork.stop(),
     ]);
@@ -1274,7 +1250,7 @@ async function composeElectronRuntime(
     if (identityWork.isFenced()) await clipboardSvc.discardPending?.();
   };
   publishIdentityRecovery = emitState;
-  startLocalIdentityRecovery = () => clipboardSync.startLocalOnly();
+  startLocalIdentityRecovery = () => clipExchange.startLocalCapture();
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,

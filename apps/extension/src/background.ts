@@ -62,11 +62,10 @@ import {
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
-import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
+import { createClipExchangeRuntime } from "../../../packages/core/sync/clipExchangeRuntime";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions";
 import { createExtensionClipboardBridge } from "./clipboardBridge";
 import { isAuthorizedPopupShareNowSender } from "./popupClipboardActions";
-import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import {
@@ -511,14 +510,21 @@ const clipboardSync = createClipboardSyncManager({
     const id = await identitySvc.get();
     return id.deviceId;
   },
-  onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
+});
+const clipExchange = createClipExchangeRuntime({
+  clipboardSync,
+  history,
+  getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
+  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+  onMembershipChanged: (listener) =>
+    identitySvc.onMembershipChanged(listener),
 });
 const settingsHandler = createSettingsHandler({
   storage,
   retention: retentionPreference,
   applyAutoSync: (enabled) => {
     autoSync = enabled;
-    clipboardSync.setAutoSync(enabled);
+    clipExchange.setAutoSync(enabled);
   },
   applyLogLevel: (level) => log.setLogLevel(level),
   applySharingLifetime: (value) => {
@@ -701,19 +707,6 @@ const extensionNetwork: StreamingMessagingTransport = {
   getPeerConnectionInfo: () => [...runtimePeerConnections],
   ...createExtensionReachabilityBridge((message) => sendOffscreen(message)),
 };
-const liveClipGossip = createLiveClipGossip({
-  transport: extensionNetwork,
-  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-});
-clipboardSync.bindLiveGossip(liveClipGossip);
-const historyReconciliation = createHistoryReconciliation({
-  transport: extensionNetwork,
-  history,
-  getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
-  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-  onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
-  autoSync,
-});
 const notificationSelection = createRuntimeNotificationSelection();
 const notificationStatus = createRuntimeNotificationStatus({
   inspect: async () => ({
@@ -798,8 +791,7 @@ async function identityRotationShutdown() {
       await stopIdentityBoundRuntimeServices([
         () => pairingSessions.stop(),
         () => pairingPending.stop(),
-        () => clipboardSync.stop(),
-        () => historyReconciliation.stop(),
+        () => clipExchange.stop(),
         () => extensionNetwork.stop(),
       ]);
     },
@@ -1008,7 +1000,7 @@ identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
   workFence: identityWork,
   loadIdentity: () => identitySvc.get(),
   restart: () => chrome.runtime.reload(),
-  startLocalRecovery: () => clipboardSync.startLocalOnly(),
+  startLocalRecovery: () => clipExchange.startLocalCapture(),
   publishState: () => sharedRuntime.publishState(),
   onRecoveryChanged: (recovering) => {
     identityRotationRecovery = recovering;
@@ -1047,7 +1039,7 @@ const sharedRuntime = createRuntimeOrchestrator({
         identityWork.assertOpen(generation);
         await autoSyncReady;
         identityWork.assertOpen(generation);
-        clipboardSync.setAutoSync(autoSync);
+        clipExchange.setAutoSync(autoSync);
         await historyPolicyReady;
         identityWork.assertOpen(generation);
         historyRetentionCleanup ??= startHistoryRetentionCleanup(
@@ -1072,7 +1064,7 @@ const sharedRuntime = createRuntimeOrchestrator({
         );
         if (identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
         pairingSessions.start();
-        clipboardSync.start();
+        clipExchange.startLocalCapture();
       },
       startNetworkServices: async () => {
         const generation = identityWork.generation();
@@ -1082,8 +1074,8 @@ const sharedRuntime = createRuntimeOrchestrator({
         identityWork.assertOpen(generation);
         await extensionNetwork.start();
         identityWork.assertOpen(generation);
+        await clipExchange.activateReadyTransport(extensionNetwork);
         membershipReconciler.start();
-        historyReconciliation.start();
         await pairingPending.start();
         identityWork.assertOpen(generation);
       },
@@ -1101,8 +1093,7 @@ const sharedRuntime = createRuntimeOrchestrator({
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = undefined;
     await pairingSessions.stop();
-    await clipboardSync.stop();
-    await historyReconciliation.stop();
+    await clipExchange.stop();
   },
 });
 
