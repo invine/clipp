@@ -10,6 +10,7 @@ import type {
   UiRuntimeSnapshot,
 } from "../../../packages/ui/src/runtimeAdapter";
 import { bindNotificationRequests } from "../../../packages/ui/src/notificationRequests";
+import { createNotificationActionLifecycle } from "../../../packages/ui/src/notificationActionLifecycle";
 import type { UiSession } from "../../../packages/ui/src/uiSession";
 import { bindElectronHostTaskInput } from "./hostTaskInput";
 
@@ -44,7 +45,6 @@ export function createElectronUiRuntimeAdapter(
   let notificationPending = false;
   let notificationError = false;
   let notificationGeneration = 0;
-  let notificationActing = false;
   let started = false;
   let unsubscribeUpdate: (() => void) | undefined;
   let unsubscribeLog: (() => void) | undefined;
@@ -99,23 +99,17 @@ export function createElectronUiRuntimeAdapter(
       }
     }
   };
-  const performNotificationAction = async (action: () => Promise<unknown>) => {
-    if (notificationActing) return;
-    notificationActing = true;
-    notificationPending = true;
-    notificationError = false;
-    publish();
-    try {
-      await action();
-      await refreshNotifications();
-    } catch {
-      if (started) notificationError = true;
-    } finally {
-      notificationActing = false;
-      notificationPending = false;
-      if (started) publish();
-    }
-  };
+  const performNotificationAction = createNotificationActionLifecycle({
+    isCurrent: () => started,
+    setPending: (pending) => {
+      notificationPending = pending;
+    },
+    setError: (error) => {
+      notificationError = error;
+    },
+    publish,
+    refresh: refreshNotifications,
+  });
 
   const actions: UiRuntimeActions = {
     onRetryRequests: () => recoveryOwner.load(),

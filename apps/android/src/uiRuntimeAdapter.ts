@@ -2,6 +2,7 @@ import { createRuntimeUiRecovery } from "../../../packages/core/runtime/uiRecove
 import type { RuntimeUiRecoveryState } from "../../../packages/core/runtime/uiRecovery";
 import { createSettingsClient } from "../../../packages/core/runtime/settingsClient";
 import { bindNotificationRequests } from "../../../packages/ui/src/notificationRequests";
+import { createNotificationActionLifecycle } from "../../../packages/ui/src/notificationActionLifecycle";
 import { createUiRuntimeStore } from "../../../packages/ui/src/runtimeAdapter";
 import type { ClipboardAppProps } from "../../../packages/ui/src/ClipboardApp";
 import type { UiSession } from "../../../packages/ui/src/uiSession";
@@ -176,7 +177,6 @@ export function createAndroidUiRuntimeAdapter(
   let notificationPending = false;
   let notificationError = false;
   let notificationGeneration = 0;
-  let notificationActing = false;
   let removeNotificationEvents: (() => void) | undefined;
   let availabilityUnsubscribe: (() => void) | undefined;
   let requestBinding: ReturnType<typeof bindNotificationRequests> | undefined;
@@ -365,25 +365,17 @@ export function createAndroidUiRuntimeAdapter(
     }
   }
 
-  async function runNotificationAction(action: () => Promise<unknown>) {
-    if (notificationActing) return;
-    notificationActing = true;
-    notificationPending = true;
-    notificationError = false;
-    publish();
-    try {
-      await action();
-      await refreshNotificationAvailability();
-    } catch {
-      if (active) notificationError = true;
-    } finally {
-      notificationActing = false;
-      if (active) {
-        notificationPending = false;
-        publish();
-      }
-    }
-  }
+  const runNotificationAction = createNotificationActionLifecycle({
+    isCurrent: () => active,
+    setPending: (pending) => {
+      if (active) notificationPending = pending;
+    },
+    setError: (error) => {
+      notificationError = error;
+    },
+    publish,
+    refresh: refreshNotificationAvailability,
+  });
 
   function onAvailabilityChange() {
     void refreshNotificationAvailability();

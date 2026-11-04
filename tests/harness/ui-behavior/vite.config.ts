@@ -24,6 +24,7 @@ export default defineConfig({
           "history-mutations.html",
           "device-management.html",
           "relay-management.html",
+          "relay-address.html",
           "settings-recovery.html",
           "notification-journeys.html",
           "background-continuity.html",

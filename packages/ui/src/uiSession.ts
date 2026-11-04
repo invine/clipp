@@ -14,6 +14,7 @@ import {
 } from "./uiSessionReducer";
 import { createRelayEditSession } from "./relayEditSession";
 import type { RelayActionResult } from "../../core/network/relayActions";
+import { createRelayAddressBehavior } from "./relayAddressBehavior";
 export type { SessionTask } from "./uiSessionReducer";
 
 export type SessionContext = UiSessionNavigationState & {
@@ -40,6 +41,7 @@ export function createUiSession() {
   const name = createNameEditSession(),
     alias = createNameEditSession(),
     relay = createRelayEditSession(),
+    relayAddresses = createRelayAddressBehavior(),
     pairing = createPairingSubmission(),
     qr = createPairingCodeTask();
   let state: SessionContext = {
@@ -86,7 +88,7 @@ export function createUiSession() {
     return true;
   };
   // Destination registration must observe editor work even while its task is suspended.
-  for (const owner of [name, alias, relay, pairing, qr])
+  for (const owner of [name, alias, relay, relayAddresses, pairing, qr])
     owner.subscribe(() => update({}));
   function dismissTask(task?: SessionTask) {
     if (task?.kind === "device-name") name.dismiss();
@@ -254,6 +256,7 @@ export function createUiSession() {
     name,
     alias,
     relay,
+    relayAddresses,
     pairing,
     qr,
     async importPairing(

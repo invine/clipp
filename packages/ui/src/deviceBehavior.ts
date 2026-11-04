@@ -160,7 +160,7 @@ export function useDeviceBehavior({
     });
   }
 
-  function useReportedDeviceName() {
+  function restoreReportedDeviceName() {
     if (!identityReady) return;
     const submittedTarget = session.alias.getSnapshot().targetId;
     void session.alias
@@ -276,7 +276,7 @@ export function useDeviceBehavior({
     saveLocalName,
     beginEditDeviceName,
     saveDeviceName,
-    useReportedDeviceName,
+    restoreReportedDeviceName,
     copyDeviceValue,
     revokeDevice,
   };

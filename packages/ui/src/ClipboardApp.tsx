@@ -6,12 +6,11 @@ import type { NotificationAvailabilityControls } from "./useNotificationAvailabi
 import type { HostTaskInput } from "./hostTaskInput";
 import {
   pairingScanErrorMessage,
-  type PairingScanError,
   type PairingScanOptions,
   type PairingScanResult,
   type PairingCameraPermission,
-  type CameraPermissionState,
 } from "./pairingScan";
+import { usePairingScanBehavior } from "./pairingScanBehavior";
 import { ClipDetails } from "./ClipDetails";
 import {
   BackgroundContinuityControls,
@@ -73,6 +72,7 @@ import type {
 } from "../../core/network/managedRelays.js";
 import React, {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -579,44 +579,20 @@ export function ClipboardApp({
     pairingTask.getSnapshot,
     pairingTask.getSnapshot
   );
-  const [isScanningPairing, setIsScanningPairing] = useState(false);
-  const [scanError, setScanError] = useState<PairingScanError | null>(null);
-  const [cameraPermission, setCameraPermission] =
-    useState<CameraPermissionState>("unknown");
-  useEffect(() => {
-    if (scanError !== "camera_permission_denied" || !scanCameraPermission)
-      return;
-    let live = true,
-      revision = 0;
-    const read = () => {
-      const current = ++revision;
-      void scanCameraPermission
-        .read()
-        .catch(() => "unknown" as const)
-        .then((state) => {
-          if (live && revision === current) setCameraPermission(state);
-        });
-    };
-    read();
-    const unsubscribe = scanCameraPermission.subscribeReturn(read);
-    return () => {
-      live = false;
-      unsubscribe();
-    };
-  }, [scanError, scanCameraPermission]);
-  const activeScan = useRef<{
-    controller: AbortController;
-    unsubscribe: () => void;
-  } | null>(null);
-  useEffect(() => {
-    setIsScanningPairing(false);
-    return () => {
-      const active = activeScan.current;
-      activeScan.current = null;
-      active?.controller.abort();
-      active?.unsubscribe();
-    };
-  }, [identity?.deviceId, runtimeOwner]);
+  const pairingScan = usePairingScanBehavior({
+    session,
+    identityId: identity?.deviceId,
+    runtimeOwner: runtimeOwner ?? session,
+    ready: identityReady,
+    scan: onScanPairingCode,
+    submit: onPairText,
+    permission: scanCameraPermission,
+  });
+  const {
+    isScanning: isScanningPairing,
+    error: scanError,
+    cameraPermission,
+  } = pairingScan;
   const { task: qrTask, state: qrState } = usePairingCodeTask(
     identity ? `${identity.deviceId}:${identity.deviceName}` : null,
     session.qr
@@ -652,13 +628,22 @@ export function ClipboardApp({
   const { confirmingIds, revokingIds, revocationError, deviceCopyFeedback } =
     deviceBehavior;
   const [relaysOpen, setRelaysOpen] = useState(true);
-  const [addingRelay, setAddingRelay] = useState(false);
-  const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(
-    null
+  const relayAddressBehavior = session.relayAddresses;
+  useLayoutEffect(() => {
+    relayAddressBehavior.bind(runtimeOwner ?? session, onSetRelayAddresses);
+  }, [relayAddressBehavior, runtimeOwner, session, onSetRelayAddresses]);
+  const relayEditor = useSyncExternalStore(
+    relayAddressBehavior.subscribe,
+    relayAddressBehavior.getSnapshot,
+    relayAddressBehavior.getSnapshot
   );
-  const [relayDraft, setRelayDraft] = useState("");
-  const [relaySaving, setRelaySaving] = useState(false);
-  const [relayError, setRelayError] = useState<string | null>(null);
+  const {
+    adding: addingRelay,
+    editingIndex: editingRelayIndex,
+    draft: relayDraft,
+    saving: relaySaving,
+    error: relayError,
+  } = relayEditor;
   const [clearReviewOpen, setClearReviewOpen] = useState(false);
   const clearAction = sessionState.historyActions.clear;
   const clearRefreshAction = sessionState.historyActions["clear:refresh"];
@@ -1198,13 +1183,7 @@ export function ClipboardApp({
       editingRelayIndex !== null &&
       editingRelayIndex >= relayAddresses.length
     ) {
-      setEditingRelayIndex(null);
-      setRelayDraft("");
-      setRelayError(null);
-    }
-    if (!addingRelay && editingRelayIndex === null) {
-      setRelayDraft("");
-      setRelayError(null);
+      relayAddressBehavior.cancel();
     }
   }, [relayAddresses, addingRelay, editingRelayIndex]);
 
@@ -1242,66 +1221,42 @@ export function ClipboardApp({
 
   function beginAddRelay() {
     setRelaysOpen(true);
-    setAddingRelay(true);
-    setEditingRelayIndex(null);
-    setRelayDraft("");
-    setRelayError(null);
+    relayAddressBehavior.beginAdd();
   }
 
   function beginRenameRelay(index: number, address: string) {
     setRelaysOpen(true);
-    setAddingRelay(false);
-    setEditingRelayIndex(index);
-    setRelayDraft(address);
-    setRelayError(null);
+    relayAddressBehavior.beginEdit(index, address);
   }
 
   function cancelRelayEdit() {
-    setAddingRelay(false);
-    setEditingRelayIndex(null);
-    setRelayDraft("");
-    setRelayError(null);
-  }
-
-  async function updateRelayAddresses(next: string[]) {
-    if (!onSetRelayAddresses || relaySaving) return;
-    setRelaySaving(true);
-    setRelayError(null);
-    try {
-      await onSetRelayAddresses(next);
-      cancelRelayEdit();
-    } catch (err) {
-      console.warn("Failed to save relay addresses", err);
-      setRelayError("Failed to save relay changes.");
-    } finally {
-      setRelaySaving(false);
-    }
+    relayAddressBehavior.cancel();
   }
 
   async function saveNewRelay() {
     const entries = parseRelayInput(relayDraft);
     if (entries.length === 0) {
-      setRelayError("Enter a relay address.");
+      relayAddressBehavior.failValidation("Enter a relay address.");
       return;
     }
-    await updateRelayAddresses([...relayAddresses, ...entries]);
+    await relayAddressBehavior.save([...relayAddresses, ...entries]);
   }
 
   async function saveRelayRename(index: number) {
     const entries = parseRelayInput(relayDraft);
     if (entries.length !== 1) {
-      setRelayError("Enter one relay address.");
+      relayAddressBehavior.failValidation("Enter one relay address.");
       return;
     }
     const next = relayAddresses.map((address, i) =>
       i === index ? entries[0] : address
     );
-    await updateRelayAddresses(next);
+    await relayAddressBehavior.save(next);
   }
 
   async function removeRelay(index: number) {
     const next = relayAddresses.filter((_, i) => i !== index);
-    await updateRelayAddresses(next);
+    await relayAddressBehavior.save(next);
   }
 
   async function updateLocalRetention(retentionMs: number) {
@@ -1356,63 +1311,7 @@ export function ClipboardApp({
     await pairingTask.submit(onPairText);
   }
 
-  async function scanPairingCode() {
-    if (
-      !identityReady ||
-      !onScanPairingCode ||
-      activeScan.current ||
-      pair.pending
-    )
-      return;
-    const task =
-      session.getSnapshot().tasks[session.getSnapshot().tasks.length - 1];
-    if (task?.kind !== "pairing") return;
-    const identityId = currentIdentity.current;
-    const capture = new AbortController();
-    const active: {
-      controller: AbortController;
-      unsubscribe: () => void;
-    } = { controller: capture, unsubscribe: () => {} };
-    activeScan.current = active;
-    active.unsubscribe = session.subscribe(() => {
-      const tasks = session.getSnapshot().tasks;
-      if (tasks[tasks.length - 1] !== task) {
-        capture.abort();
-        active.unsubscribe();
-        if (activeScan.current === active) {
-          activeScan.current = null;
-          setIsScanningPairing(false);
-        }
-      }
-    });
-    setScanError(null);
-    setCameraPermission("unknown");
-    setIsScanningPairing(true);
-    try {
-      const scanned = await onScanPairingCode({ signal: capture.signal });
-      if (capture.signal.aborted || currentIdentity.current !== identityId)
-        return;
-      if (scanned.status === "cancelled") return;
-      if (scanned.status === "failed") {
-        setScanError(scanned.error);
-        return;
-      }
-      const trimmed = scanned.text.trim();
-      if (trimmed) {
-        pairingTask.change(trimmed);
-        await pairingTask.submit(onPairText);
-      }
-    } catch {
-      if (!capture.signal.aborted && currentIdentity.current === identityId)
-        setScanError("camera_unavailable");
-    } finally {
-      active.unsubscribe();
-      if (activeScan.current === active) {
-        activeScan.current = null;
-        setIsScanningPairing(false);
-      }
-    }
-  }
+  const scanPairingCode = pairingScan.start;
 
   function relaySummaryLabel() {
     if (relayAddresses.length === 0) return "No relays";
@@ -1435,7 +1334,7 @@ export function ClipboardApp({
             className="relay-address-input"
             aria-label="New relay address"
             value={relayDraft}
-            onChange={(e) => setRelayDraft(e.target.value)}
+            onChange={(e) => relayAddressBehavior.change(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void saveNewRelay();
               if (e.key === "Escape") cancelRelayEdit();
@@ -1493,7 +1392,7 @@ export function ClipboardApp({
                 className="relay-address-input"
                 aria-label="Relay address"
                 value={relayDraft}
-                onChange={(e) => setRelayDraft(e.target.value)}
+                onChange={(e) => relayAddressBehavior.change(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void saveRelayRename(index);
                   if (e.key === "Escape") cancelRelayEdit();
@@ -3554,7 +3453,7 @@ export function ClipboardApp({
                   <button
                     type="button"
                     disabled={edit.pending || !identityReady || !target}
-                    onClick={deviceBehavior.useReportedDeviceName}
+                    onClick={deviceBehavior.restoreReportedDeviceName}
                   >
                     Use device name
                   </button>

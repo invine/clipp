@@ -162,3 +162,47 @@ it("translates shared UI actions through the production Electron bridge", async 
   expect(fixture.bridge.setAutoSync).toHaveBeenCalledWith(false);
   await adapter.stop?.();
 });
+
+it("guards duplicate notification actions and settles pending/error through the public controls", async () => {
+  const fixture = electronBridge();
+  let resolveAction!: () => void;
+  const openNotificationSettings = jest.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        resolveAction = resolve;
+      })
+  );
+  Object.assign(fixture.bridge, { openNotificationSettings });
+  const adapter = createElectronUiRuntimeAdapter(
+    fixture.bridge,
+    createUiSession()
+  );
+  await adapter.start?.();
+  const controls = adapter.getSnapshot().notificationControls!;
+  const first = controls.openSettings!();
+  const duplicate = controls.openSettings!();
+  expect(adapter.getSnapshot().notificationControls?.pending).toBe(true);
+  expect(openNotificationSettings).toHaveBeenCalledTimes(1);
+  resolveAction();
+  await Promise.all([first, duplicate]);
+  expect(adapter.getSnapshot().notificationControls?.pending).toBe(false);
+  expect(adapter.getSnapshot().notificationControls?.error).toBe(false);
+  await adapter.stop?.();
+
+  const failed = electronBridge();
+  Object.assign(failed.bridge, {
+    openNotificationSettings: jest.fn(async () => {
+      throw new Error("denied");
+    }),
+  });
+  const failedAdapter = createElectronUiRuntimeAdapter(
+    failed.bridge,
+    createUiSession()
+  );
+  await failedAdapter.start?.();
+  const failedControls = failedAdapter.getSnapshot().notificationControls!;
+  await failedControls.openSettings!();
+  expect(failedAdapter.getSnapshot().notificationControls?.pending).toBe(false);
+  expect(failedAdapter.getSnapshot().notificationControls?.error).toBe(true);
+  await failedAdapter.stop?.();
+});

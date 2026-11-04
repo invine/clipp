@@ -152,6 +152,27 @@ test("leaving the scan task retires capture so a late scan cannot submit", async
   ).toBeVisible();
 });
 
+test("replacing the runtime owner retires capture and ignores a late scan result", async ({
+  page,
+}) => {
+  await page.goto("/pairing-code.html");
+  await page.getByRole("button", { name: "Pair this device" }).click();
+  await page
+    .getByLabel("Pairing", { exact: true })
+    .getByRole("button", { name: "Scan QR" })
+    .click();
+  const diagnostics = page.locator(".ui-scenario-controls");
+  await diagnostics.locator(":scope > summary").click();
+  const late = diagnostics.getByTestId("late-scan-controls");
+  await late.locator("summary").click();
+  await late.getByRole("button", { name: "Replace runtime adapter" }).click();
+  await late
+    .getByRole("button", { name: "Resolve late scan after task close" })
+    .click();
+  await expect(late.getByTestId("late-scan-aborted")).toHaveText("true");
+  await expect(late.getByTestId("late-pairing-effects")).toHaveText("[]");
+});
+
 test("changing Device Identity retires late QR generation and scan results", async ({
   page,
 }) => {
