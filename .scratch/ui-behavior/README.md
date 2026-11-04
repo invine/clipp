@@ -3,7 +3,7 @@
 Owning repository: client (Clipp).
 Canonical feature directory: client:.scratch/ui-behavior/ on codex/ui-behavior-integration.
 Triage: ready-for-agent.
-Execution: implementation authorized by the user on 2026-11-04 via the request to implement tickets in this directory.
+Execution: implementation authorized by the user on 2026-11-04; all 16 tickets are integrated, reviewed and resolved at `5f427df85a35e29aa56cdeea8d156499cea83ace`.
 
 The [specification](spec.md) remains unchanged. The user approved the following 16-ticket breakdown for publication. Each ticket contains acceptance criteria and explicit blocking edges.
 
@@ -26,8 +26,8 @@ The [specification](spec.md) remains unchanged. The user approved the following 
 | 15     | [Remove migration compatibility and complete ownership](issues/15-remove-migration-compatibility.md)     | 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14 |
 | 16     | [Complete scenario coverage and verify the application](issues/16-scenario-coverage-and-verification.md) | 15                                                 |
 
-Ticket 01 is the only dependency-ready starting point. The frontier is derived from each ticket's Status and Blocked by fields as work completes; the execution stop still applies.
+All 16 tickets are resolved. The previous execution stop was superseded by the user's explicit authorization recorded above.
 
 The initial three-ticket breakdown is [archived with its comments and released claims](history/initial-breakdown/README.md). Those historical records are not current tasks. No existing partial implementation is marked accepted or complete.
 
-[Decisions](decisions.md) retain the approved scope, test seam and execution limit. Mutable run records and preserved partial work remain outside the tracker. A ready-for-agent label describes readiness; implementation requires a new user instruction.
+[Decisions](decisions.md) retain the approved scope, test seam and execution limit. Mutable run records and preserved partial work remain outside the tracker. The ready-for-agent triage label described readiness before the authorization recorded above; implementation is now complete and reviewed.

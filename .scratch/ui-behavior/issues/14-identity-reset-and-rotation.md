@@ -1,6 +1,6 @@
 # 14: Handle identity-reset presentation and Identity Rotation
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02, 03, 08
 Execution: authorized by D6 in ../decisions.md.
 
@@ -28,3 +28,5 @@ Implementation, when requested, follows the repository workflow and required che
 ## Comments
 
 Published from the user-approved 16-ticket breakdown after the instruction “Publish tickets.” Earlier partial work is preserved, unintegrated and unaccepted; reconcile it against this ticket before considering any reuse.
+
+Resolved by coordinator after integration, review and verification at `5f427df85a35e29aa56cdeea8d156499cea83ace`. Ticket integration commit: `1ec7a865fecfacb0495903b6f30581b250376278`. Evidence: `../../../.local/ui-behavior/run.json`.

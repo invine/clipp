@@ -1,6 +1,6 @@
 # 09: Handle device naming and revocation
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 08
 Execution: authorized by D6 in ../decisions.md.
 
@@ -27,3 +27,5 @@ Implementation, when requested, follows the repository workflow and required che
 ## Comments
 
 Published from the user-approved 16-ticket breakdown after the instruction “Publish tickets.” Earlier partial work is preserved, unintegrated and unaccepted; reconcile it against this ticket before considering any reuse.
+
+Resolved by coordinator after integration, review and verification at `5f427df85a35e29aa56cdeea8d156499cea83ace`. Ticket integration commit: `81ae9543ef04b923236a43b07610a8aed6fbe0b2`. Evidence: `../../../.local/ui-behavior/run.json`.
