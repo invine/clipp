@@ -63,6 +63,7 @@ import {
   createRuntimeApprovalEntries,
   createRuntimeIdentityManager,
   createIdentityBoundWorkFence,
+  retireIdentityRuntime,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeOrchestrator,
@@ -198,13 +199,16 @@ async function composeElectronRuntime(
     identityKey: IDENTITY_KEY,
     lifecycle: {
       acquireFence: identityWork.acquireFence,
-      async quiesce() {
-        await stopIdentityBoundServicesForRotation();
-        await identityWork.quiesce();
-        await stopIdentityBoundServicesForRotation();
-        electronNotifications.closeAll();
-        approvalEntries.clear();
-      },
+      quiesce: () =>
+        retireIdentityRuntime({
+          stop: () => stopIdentityBoundServicesForRotation(),
+          drain: () => identityWork.quiesce(),
+          finalStop: async () => {
+            await stopIdentityBoundServicesForRotation();
+            electronNotifications.closeAll();
+            approvalEntries.clear();
+          },
+        }),
     },
     shutdown: () => stopIdentityBoundServicesForRotation(),
     runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },

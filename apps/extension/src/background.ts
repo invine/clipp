@@ -40,6 +40,7 @@ import {
   ChromeStorageBackend,
   createChromeIdentityRotationCoordinator,
 } from "./chromeStorage";
+import { createChromeIdentityResetLifecycle } from "./identityResetRuntime";
 import { createSettingsHandler } from "./settingsHandler";
 import { handleOffscreenStorageRequest } from "./runtimeMessageStorage";
 import {
@@ -746,14 +747,19 @@ const identityRotation = createChromeIdentityRotationCoordinator({
   history: historyBackend,
   ...(historyBackend instanceof IndexedDBHistoryBackend
     ? {
-        lifecycle: {
-          async acquireFence() {
+        lifecycle: createChromeIdentityResetLifecycle({
+          workFence: identityWork,
+          retireOffscreenOwnership: () => {
             offscreenOwned = false;
-            return identityWork.acquireFence();
           },
-          async quiesce() {
-            await identityRotationShutdown();
-            await identityWork.quiesce();
+          stopRuntime: () => identityRotationShutdown(),
+          waitForOffscreenStartup: async () => {
+            await Promise.allSettled(
+              [offscreenCreateFlight, offscreenInitFlight].filter(Boolean)
+            );
+          },
+          finalizeOffscreen: () => stopOffscreenDocument(),
+          clearHostState: async () => {
             await clipboard.discardPending?.();
             notificationSelection.clear();
             const notifications = chrome.notifications?.getAll
@@ -763,12 +769,8 @@ const identityRotation = createChromeIdentityRotationCoordinator({
               : {};
             for (const id of Object.keys(notifications))
               await chrome.notifications?.clear?.(id);
-            await Promise.allSettled(
-              [offscreenCreateFlight, offscreenInitFlight].filter(Boolean)
-            );
-            await stopOffscreenDocument();
           },
-        },
+        }),
       }
     : {}),
   identityKey: IDENTITY_KEY,
@@ -1163,10 +1165,7 @@ chrome.runtime.onMessage.addListener(
         );
       return true;
     }
-    if (
-      typeof msg?.type === "string" &&
-      msg.type.startsWith("identityReset")
-    ) {
+    if (typeof msg?.type === "string" && msg.type.startsWith("identityReset")) {
       if (sender?.id !== chrome.runtime.id || sender.url !== OPTIONS_URL) {
         sendResponse({ ok: false, error: "identity_reset_unauthorized" });
         return false;
@@ -1175,7 +1174,9 @@ chrome.runtime.onMessage.addListener(
         if (msg.type === "identityResetRead")
           return {
             ok: true,
-            state: copyIdentityResetState(startupResetState ?? { phase: "idle" }),
+            state: copyIdentityResetState(
+              startupResetState ?? { phase: "idle" }
+            ),
           };
         if (msg.type === "identityResetReconcile") {
           const state = await chromeRuntime.identityReset.reconcile();
@@ -1183,7 +1184,10 @@ chrome.runtime.onMessage.addListener(
           return { ok: true, state };
         }
         if (msg.type === "identityResetBegin") {
-          if (typeof msg.operationId !== "string" || typeof msg.reviewedPeerId !== "string")
+          if (
+            typeof msg.operationId !== "string" ||
+            typeof msg.reviewedPeerId !== "string"
+          )
             throw new Error("identity_reset_invalid_request");
           return {
             ok: true,
@@ -1198,24 +1202,29 @@ chrome.runtime.onMessage.addListener(
             throw new Error("identity_reset_invalid_request");
           return {
             ok: true,
-            result: await chromeRuntime.identityReset.resume({ operationId: msg.operationId }),
+            result: await chromeRuntime.identityReset.resume({
+              operationId: msg.operationId,
+            }),
           };
         }
         if (msg.type === "identityResetDismiss") {
           if (typeof msg.receiptId !== "string")
             throw new Error("identity_reset_invalid_request");
-          const state = await chromeRuntime.identityReset.dismiss({ receiptId: msg.receiptId });
+          const state = await chromeRuntime.identityReset.dismiss({
+            receiptId: msg.receiptId,
+          });
           startupResetState = copyIdentityResetState(state);
           return { ok: true, state };
         }
         if (msg.type === "identityResetCopyFormerPeerId") {
           if (typeof msg.receiptId !== "string")
             throw new Error("identity_reset_invalid_request");
-          const receipt = startupResetState?.phase === "idle"
-            ? startupResetState.receipt
-            : startupResetState?.phase === "completed"
+          const receipt =
+            startupResetState?.phase === "idle"
               ? startupResetState.receipt
-              : undefined;
+              : startupResetState?.phase === "completed"
+                ? startupResetState.receipt
+                : undefined;
           if (!receipt || receipt.receiptId !== msg.receiptId)
             throw new Error("identity_reset_receipt_unavailable");
           return { ok: true, text: receipt.formerPeerId };
@@ -1223,7 +1232,9 @@ chrome.runtime.onMessage.addListener(
         throw new Error("identity_reset_unknown_action");
       })()
         .then(sendResponse)
-        .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
       return true;
     }
     const recoveryReadable = [

@@ -117,6 +117,34 @@ test("failed native acknowledgement and continuity suspension keep the cached An
   expect(native.releaseFence).not.toHaveBeenCalled();
 });
 
+test("Android retries final suspension after a failed first stop before native cleanup", async () => {
+  const effects: string[] = [];
+  let suspendAttempts = 0;
+  const runtime = createAndroidIdentityResetRuntime({
+    native: {
+      acquireFence: async () => {},
+      releaseFence: async () => {},
+      clearNativeQueues: async () => {
+        effects.push("native-cleared");
+      },
+      verifyNativeQueues: async () => {},
+      openRuntime: async () => {},
+      restartRuntime: async () => {},
+    },
+    suspend: async () => {
+      suspendAttempts += 1;
+      effects.push(`suspend-${suspendAttempts}`);
+      if (suspendAttempts === 1) throw new Error("stop_ack_lost");
+    },
+  });
+
+  await runtime.lifecycle.acquireFence();
+  await expect(runtime.lifecycle.quiesce()).resolves.toBeUndefined();
+
+  expect(effects).toEqual(["suspend-1", "suspend-2", "native-cleared"]);
+  expect(runtime.workFence.isFenced()).toBe(true);
+});
+
 test("conclusive nonacceptance releases native admission before ordinary Android work resumes", async () => {
   const effects: string[] = [];
   const runtime = createAndroidIdentityResetRuntime({

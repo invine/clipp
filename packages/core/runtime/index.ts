@@ -3,6 +3,7 @@ export * from "./autoSyncPreference";
 export * from "./capabilities";
 export * from "./contract";
 export * from "./identityInitialization";
+export * from "./identityRetirement";
 export * from "./orchestrator";
 export * from "./testing";
 export * from "../pairing/pending";
