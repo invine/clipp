@@ -319,6 +319,62 @@ it("a new Copy clears earlier success while pending and does not start a duplica
   finish(null);
   await pending;
 });
+it("retiring the runtime owner clears pending History feedback and ignores late results", async () => {
+  const session = createUiSession();
+  let finish!: (value: { message: string; action: "retry" }) => void;
+  const pending = session.runHistoryAction(
+    "send:current",
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  expect(session.getSnapshot().historyActions["send:current"]?.pending).toBe(
+    true
+  );
+
+  session.retireHistoryActions();
+  expect(session.getSnapshot().historyActions).toEqual({});
+  finish({ message: "stale failure", action: "retry" });
+  await pending;
+
+  expect(session.getSnapshot().historyActions).toEqual({});
+  await session.retryHistoryAction("send:current");
+  expect(session.getSnapshot().historyActions).toEqual({});
+});
+
+it("keeps an uncertain History action blocked until explicit reconciliation", async () => {
+  const session = createUiSession();
+  let complete!: (feedback: {
+    message: string;
+    action: "dismiss";
+    requiresAcknowledgement: true;
+  }) => void;
+  const pending = session.runHistoryAction(
+    "clear",
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+
+  expect(session.getSnapshot().historyActions.clear?.pending).toBe(true);
+  expect(session.reconcileHistoryAction("clear")).toBe(false);
+  complete({
+    message:
+      "Clear could not be confirmed; refresh History before another attempt.",
+    action: "dismiss",
+    requiresAcknowledgement: true,
+  });
+  await pending;
+
+  expect(
+    session.getSnapshot().historyActions.clear?.feedback
+      ?.requiresAcknowledgement
+  ).toBe(true);
+  expect(session.reconcileHistoryAction("clear")).toBe(true);
+  expect(session.getSnapshot().historyActions.clear).toBeUndefined();
+});
 it("publishes destination availability as suspended editor work starts and is discarded", () => {
   const session = createUiSession();
   const availability: boolean[] = [];
@@ -1103,30 +1159,33 @@ it.each(["partial", "applied", "completed"] as const)(
   }
 );
 
-it("retains the handed-off History query and scope when opening Clip details and returning", () => {
-  const session = createUiSession();
-  const result = session.acceptDestination(
-    "details-query",
-    {
-      kind: "clip-details",
-      entity: "selected",
-      context: {
-        search: "needle",
-        filterMode: "pinned",
-        timeFilter: "7d",
-        sourceFilter: "source",
+it.each(["all", "pinned", "links"] as const)(
+  "retains the handed-off %s History view when opening Clip details and returning",
+  (filterMode) => {
+    const session = createUiSession();
+    const result = session.acceptDestination(
+      "details-query",
+      {
+        kind: "clip-details",
+        entity: "selected",
+        context: {
+          search: "needle",
+          filterMode,
+          timeFilter: "7d",
+          sourceFilter: "source",
+        },
       },
-    },
-    { ready: true, clipIds: ["selected"], requestIds: [] }
-  );
-  expect(result).toBe("applied");
-  session.back();
-  expect(session.getSnapshot()).toMatchObject({
-    destination: "history",
-    search: "needle",
-    filterMode: "pinned",
-    timeFilter: "7d",
-    sourceFilter: "source",
-    tasks: [],
-  });
-});
+      { ready: true, clipIds: ["selected"], requestIds: [] }
+    );
+    expect(result).toBe("applied");
+    session.back();
+    expect(session.getSnapshot()).toMatchObject({
+      destination: "history",
+      search: "needle",
+      filterMode,
+      timeFilter: "7d",
+      sourceFilter: "source",
+      tasks: [],
+    });
+  }
+);

@@ -108,7 +108,8 @@ function fixture() {
   const make = (name: string) => new ElementPort(name, owner);
   const body = make("BODY"),
     dialog = make("DIV"),
-    outside = make("BUTTON");
+    outside = make("BUTTON"),
+    scenarioControls = make("ASIDE");
   const close = make("BUTTON"),
     details = make("DETAILS"),
     summary = make("SUMMARY"),
@@ -119,9 +120,10 @@ function fixture() {
   laterSummary.tabIndex = -1;
   close.returnControl = true;
   dialog.task = true;
+  scenarioControls.dataset.taskScenarioControls = "";
   details.append(summary, hiddenChild, laterSummary);
   dialog.append(close, details, pairing, cancel);
-  body.append(dialog, outside);
+  body.append(dialog, outside, scenarioControls);
   outside.focus();
   const doc = {
     body,
@@ -166,6 +168,7 @@ function fixture() {
     owner,
     dialog,
     outside,
+    scenarioControls,
     close,
     details,
     summary,
@@ -184,6 +187,16 @@ function fixture() {
     },
   };
 }
+
+it("keeps marked scripted scenario controls available while task focus is active", () => {
+  const f = fixture();
+  try {
+    expect(f.outside.inert).toBe(true);
+    expect(f.scenarioControls.inert).toBe(false);
+  } finally {
+    f.restore();
+  }
+});
 
 it.each([false, true])(
   "does not intercept Tab from a focused Technical details summary (observer delivered=%s)",

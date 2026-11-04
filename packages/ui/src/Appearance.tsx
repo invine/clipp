@@ -1,12 +1,21 @@
 import React from "react";
 import type { ThemePreference } from "../../core/runtime/themePreference";
-import type { useRuntimeSettings } from "./useRuntimeSettings";
+import type { SettingsClientState } from "../../core/runtime/settingsClient";
+import type { RuntimeSettings } from "../../core/runtime/settingsAuthority";
 import {
   PreferenceRefreshNotice,
   PreferenceSaveFeedback,
 } from "./PreferenceSaveFeedback";
-export type AppearanceSettings = ReturnType<typeof useRuntimeSettings>;
-export function Appearance({ settings }: { settings: AppearanceSettings }) {
+export type AppearanceSettings = SettingsClientState;
+export function Appearance({
+  settings,
+  onSave,
+  onRefresh,
+}: {
+  settings: AppearanceSettings;
+  onSave?(patch: Partial<RuntimeSettings>): void | Promise<void>;
+  onRefresh?(): void | Promise<void>;
+}) {
   return (
     <div className="appearance-settings">
       <label>
@@ -14,7 +23,7 @@ export function Appearance({ settings }: { settings: AppearanceSettings }) {
         <select
           aria-label="Appearance"
           value={settings.snapshot?.state.theme ?? ""}
-          disabled={!settings.snapshot || settings.recoveryRequired}
+          disabled={!settings.snapshot || settings.recoveryRequired || !onSave}
           aria-disabled={settings.pending || undefined}
           aria-busy={settings.pending || undefined}
           onChange={(event) => {
@@ -22,7 +31,7 @@ export function Appearance({ settings }: { settings: AppearanceSettings }) {
               event.currentTarget.value = settings.snapshot?.state.theme ?? "";
               return;
             }
-            void settings.save({
+            void onSave?.({
               theme: event.target.value as ThemePreference,
             });
           }}
@@ -40,13 +49,13 @@ export function Appearance({ settings }: { settings: AppearanceSettings }) {
       <PreferenceRefreshNotice
         subject="Appearance"
         error={settings.refreshError}
-        onRetry={settings.refresh}
+        onRetry={onRefresh}
       />
       {settings.recoveryRequired && (
         <button
           type="button"
-          disabled={settings.refreshing}
-          onClick={() => void settings.refresh()}
+          disabled={settings.refreshing || !onRefresh}
+          onClick={() => void onRefresh?.()}
         >
           Refresh appearance
         </button>

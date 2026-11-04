@@ -274,6 +274,9 @@ export function ManagedRelaySettings({
                 {state ? statusText[state.status] : "Connecting"}
                 {state?.reason ? `: ${state.reason}` : ""}
               </div>
+              {state?.warning && (
+                <div className="relay-error">{state.warning}</div>
+              )}
             </summary>
             <div className="peer-meta">
               <div className="relay-address">
@@ -281,9 +284,6 @@ export function ManagedRelaySettings({
                   ? config.discoveryUrl
                   : `${config.peerId} · ${config.addresses.length} address(es)`}
               </div>
-              {state?.warning && (
-                <div className="relay-error">{state.warning}</div>
-              )}
             </div>
             {context.relayActions[config.key]?.pending && (
               <p role="status">Relay action pending…</p>

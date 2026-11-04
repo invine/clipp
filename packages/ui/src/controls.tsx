@@ -5,6 +5,7 @@ import React from "react";
  * Additional simple UI glyphs are authored here; no font or external asset is loaded.
  */
 const paths = {
+  text: <path d="M5 4h14M12 4v16M8 20h8M7 8V4M17 8V4" />,
   pin: <path d="M8 3h8l-1 7 3 4v2H6v-2l3-4-1-7Zm4 13v6" />,
   search: (
     <>
@@ -71,6 +72,29 @@ const paths = {
     </>
   ),
   moon: <path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  clipboard: (
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4.5V3h6v1.5M9 10h6M9 14h6" />
+    </>
+  ),
+  links: (
+    <>
+      <path d="m10 13 4-4M8.5 15.5l-1 1a4 4 0 0 1-5.5-5.8l4-4a4 4 0 0 1 5.7 0M15.5 8.5l1-1a4 4 0 0 1 5.5 5.8l-4 4a4 4 0 0 1-5.7 0" />
+    </>
+  ),
+  requests: (
+    <>
+      <path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M12 2.8 14 3l.8 2.2 1.7.9 2.2-.6 1.5 1.5-.6 2.2.9 1.7 2.2.8v2l-2.2.8-.9 1.7.6 2.2-1.5 1.5-2.2-.6-1.7.9-.8 2.2h-2l-.8-2.2-1.7-.9-2.2.6-1.5-1.5.6-2.2-.9-1.7-2.2-.8v-2l2.2-.8.9-1.7-.6-2.2 1.5-1.5 2.2.6 1.7-.9.8-2.2Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
 } satisfies Record<string, React.ReactNode>;
 
 export type IconName = keyof typeof paths;

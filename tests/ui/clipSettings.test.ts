@@ -39,13 +39,23 @@ it.each([
     const render = () => {
       const settings = {
         ...client.getState(),
-        save: client.save,
-        refresh: client.refresh,
       };
       return renderToStaticMarkup(
         label === "Appearance"
-          ? React.createElement(Appearance, { settings })
-          : React.createElement(ClipSettings, { settings })
+          ? React.createElement(Appearance, {
+              settings,
+              onSave: async (next) => {
+                await client.save(next);
+              },
+              onRefresh: () => client.refresh(),
+            })
+          : React.createElement(ClipSettings, {
+              settings,
+              onSave: async (next) => {
+                await client.save(next);
+              },
+              onRefresh: () => client.refresh(),
+            })
       );
     };
     await client.start();
@@ -111,8 +121,6 @@ it("represents applied nonpreset values and immediate zero semantics without rep
     React.createElement(ClipSettings, {
       settings: {
         ...client.getState(),
-        save: client.save,
-        refresh: client.refresh,
       },
     })
   );
@@ -135,8 +143,6 @@ it("does not present a guessed applied preference while the runtime is unavailab
     React.createElement(ClipSettings, {
       settings: {
         ...client.getState(),
-        save: client.save,
-        refresh: client.refresh,
       },
     })
   );

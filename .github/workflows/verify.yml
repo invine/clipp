@@ -11,11 +11,15 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
+      - run: timeout 180s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'
       - run: npm ci
       - run: npm run verify

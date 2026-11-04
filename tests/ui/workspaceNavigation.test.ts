@@ -42,6 +42,10 @@ it("Requests presents a pending read without inventing an empty current list", (
   const input = { ...props, session, requestsLoading: true };
   const output = renderToStaticMarkup(React.createElement(ClipboardApp, input));
   expect(output).toContain("Loading Requests…");
+  expect(output).toContain('<h1 class="workspace-current-title">Requests</h1>');
+  expect(output).toContain('<h2 class="device-section-title"');
+  expect(output).toContain("Pending requests</h2>");
+  expect(output).not.toContain('aria-label="Search history"');
   expect(output).not.toContain("No pending requests.");
 });
 it("an active History query has a named clear route", () => {
@@ -51,6 +55,18 @@ it("an active History query has a named clear route", () => {
     React.createElement(ClipboardApp, { ...props, session })
   );
   expect(output).toContain('aria-label="Clear search"');
+  expect(output).toContain('<h1 class="workspace-current-title">Pinned</h1>');
+});
+it("keeps History controls off task destinations while retaining a screen heading", () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props, session })
+  );
+  expect(output).toContain('<h1 class="workspace-current-title">Settings</h1>');
+  expect(output).not.toContain('aria-label="Search history"');
+  expect(output).not.toContain("Filters</button>");
+  expect(output).not.toContain("Share current clipboard now");
 });
 it("no-match feedback names the active query and Pinned scope", () => {
   const session = createUiSession();
@@ -108,9 +124,11 @@ it("keeps the applied Log level focusable and busy during a single pending save"
         session,
         appearanceSettings: {
           ...client.getState(),
-          save: client.save,
-          refresh: client.refresh,
         },
+        onSaveAppearanceSettings: async (patch) => {
+          await client.save(patch);
+        },
+        onRefreshAppearanceSettings: () => client.refresh(),
       })
     );
   await client.start();
@@ -172,8 +190,6 @@ it("keeps Log level natively disabled while unknown or awaiting authority recove
         session,
         appearanceSettings: {
           ...client.getState(),
-          save: client.save,
-          refresh: client.refresh,
         },
       })
     );
@@ -229,7 +245,7 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
         },
       })
     );
-  expect(render().match(/<select[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
+  expect(render().match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
     'disabled=""'
   );
   await client.start();
@@ -237,11 +253,11 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
     await client.save({ autoSync: false });
   });
   for (const html of [render(), render(false)]) {
-    const select = html.match(/<select[^>]*id="auto-sync"[^>]*>/)?.[0];
+    const select = html.match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0];
     expect(select).toContain('aria-disabled="true"');
     expect(select).toContain('aria-busy="true"');
     expect(select).not.toContain('disabled=""');
-    expect(html).toContain('value="enabled" selected=""');
+    expect(select).toContain('aria-checked="true"');
     expect(html).toContain("Saving Auto Sync…");
     expect(html).not.toContain("Auto Sync saved.");
   }
@@ -258,14 +274,16 @@ it("keeps General Auto Sync focusable while either save owner is busy and preser
     },
   });
   await saving;
-  expect(render()).toContain('value="disabled" selected=""');
+  expect(render().match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
+    'aria-checked="false"'
+  );
   expect(render()).toContain("Auto Sync saved.");
   await session.saveAutoSync(async () => ({
     status: "unconfirmed",
     autoSync: false,
     error: "reply_lost",
   }));
-  expect(render().match(/<select[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
+  expect(render().match(/<button[^>]*id="auto-sync"[^>]*>/)?.[0]).toContain(
     'disabled=""'
   );
   expect(render()).toContain("Auto Sync Save could not be confirmed.");
@@ -438,38 +456,19 @@ it("names one connection control without claiming delivery for an untrusted tran
       connectionStateKnown: true,
     })
   );
-  expect(output).toContain('aria-label="Connections: No Trusted Devices yet"');
+  expect(output).toContain('aria-label="Open Devices: No Trusted Devices yet"');
   expect(output).not.toContain("Synced");
 });
 
-it("opens a brief live connection panel while retaining query and the suspended task", () => {
-  const session = createUiSession();
-  session.update({ search: "retained query", filterMode: "pinned" });
-  session.open({ kind: "pairing", origin: "add-device" });
-  session.pairing.change("retained draft");
-  session.open({ kind: "connections", origin: "connections-summary" });
-  const render = (connectionStateKnown: boolean) =>
-    renderToStaticMarkup(
-      React.createElement(ClipboardApp, {
-        ...props,
-        session,
-        connectionStateKnown,
-        autoSyncKnown: true,
-        autoSync: false,
-      })
-    );
-  expect(render(false)).toContain("Connection status unknown.");
-  expect(render(true)).toContain("No Trusted Devices yet.");
-  expect(render(true)).toContain("Auto Sync: Off.");
-  expect(render(true)).toContain("Open Connections settings");
-  session.back();
-  expect(session.getSnapshot()).toMatchObject({
-    search: "retained query",
-    filterMode: "pinned",
-    focusKey: "connections-summary",
-    tasks: [{ kind: "pairing" }],
-  });
-  expect(session.pairing.getSnapshot().raw).toBe("retained draft");
+it("connection control is a direct navigation action", () => {
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, { ...props })
+  );
+  const control = output.match(
+    /<button[^>]*data-session-focus="connections-summary"[^>]*>/
+  )?.[0];
+  expect(control).toContain('aria-label="Open Devices:');
+  expect(control).not.toContain("aria-haspopup");
 });
 
 it("Devices retains honest text status when a reported path is no longer connected", () => {
@@ -500,6 +499,41 @@ it("Devices retains honest text status when a reported path is no longer connect
   expect(render([], false)).toContain("Connection status unknown");
 });
 
+it("Devices distinguishes this installation from trusted devices when one is offline", () => {
+  const session = createUiSession();
+  session.update({ destination: "devices" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      identity: { deviceId: "local", deviceName: "This computer" },
+      devices: [{ deviceId: "trusted", deviceName: "Work laptop" }],
+      connectionStateKnown: true,
+      peers: [],
+    })
+  );
+
+  expect(output).toContain("This device");
+  expect(output).toContain("Trusted Devices");
+  expect(output).toContain("Work laptop");
+  expect(output).toContain("Trusted · Offline");
+  expect(output).not.toContain("Last seen");
+  expect(output).toContain("Pair this device");
+
+  const emptyOutput = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      identity: { deviceId: "local", deviceName: "This computer" },
+      devices: [],
+      connectionStateKnown: true,
+      peers: [],
+    })
+  );
+  expect(emptyOutput).toContain("No Trusted Devices yet.");
+  expect(emptyOutput).toContain("0 devices");
+});
+
 it("organizes routine settings, connections, and advanced tasks by session category", () => {
   const session = createUiSession();
   session.update({ destination: "settings" });
@@ -523,14 +557,112 @@ it("organizes routine settings, connections, and advanced tasks by session categ
     );
   const general = render();
   expect(general).toContain('aria-label="Settings categories"');
-  expect(general).toMatch(/aria-current="page"[^>]*>General/);
+  expect(general).toMatch(/aria-current="location"[^>]*>General/);
   expect(general).toContain('data-settings-panel="general"');
-  expect(general).toContain('data-settings-panel="connections" hidden=""');
-  expect(general).toContain('data-settings-panel="advanced" hidden=""');
+  expect(general).toContain('data-settings-panel="connections"');
+  expect(general).toContain('data-settings-panel="advanced"');
   session.update({ settingsCategory: "advanced" });
   const advanced = render();
-  expect(advanced).toMatch(/aria-current="page"[^>]*>Advanced/);
+  expect(advanced).toMatch(/aria-current="location"[^>]*>Advanced/);
   expect(advanced).toContain('data-settings-panel="advanced"');
   expect(advanced).toContain('data-session-focus="settings-clear"');
   expect(advanced).not.toContain("Generate new identity");
+});
+
+it("explains real settings groups and keeps history and sharing policies distinct", async () => {
+  const session = createUiSession();
+  session.update({ destination: "settings" });
+  const snapshot = {
+    sessionId: "settings",
+    revision: 1,
+    state: {
+      theme: "system" as const,
+      autoSync: true,
+      logLevel: "info" as const,
+      localRetentionMs: 30 * 86400000,
+      sharingLifetimeMs: 86400000,
+    },
+  };
+  const client = createSettingsClient({
+    send: async () => ({ ok: true, snapshot }),
+    subscribe: () => () => {},
+  });
+  await client.start();
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      appearanceSettings: {
+        ...client.getState(),
+      },
+      autoSyncKnown: true,
+      autoSync: true,
+      onSetAutoSync: async () => ({
+        status: "applied" as const,
+        autoSync: true,
+      }),
+    })
+  );
+
+  expect(output).toContain("Choose how this device works with Clipp.");
+  expect(output).toContain("Send and receive Clips with Trusted Devices.");
+  expect(output).toContain("Clipboard History");
+  expect(output).toContain("Clip Sharing Lifetime");
+  expect(output).toContain("Pins are exempt.");
+  expect(output).toContain(
+    "Expiry stops sharing; it does not delete local history."
+  );
+  expect(output).toContain("Clear all local history");
+  client.stop();
+});
+
+it("exposes compact navigation with a truthful expanded state", () => {
+  const session = createUiSession();
+  const render = () =>
+    renderToStaticMarkup(
+      React.createElement(ClipboardApp, { ...props, session })
+    );
+
+  expect(render()).toContain('aria-label="Open navigation"');
+  expect(render()).toContain('aria-expanded="false"');
+  expect(render()).toContain('aria-controls="workspace-navigation"');
+
+  session.update({ showNav: true });
+  expect(render()).toContain('aria-label="Close navigation"');
+  expect(render()).toContain('aria-expanded="true"');
+});
+
+it("Links shows URL Clips from authoritative History state", () => {
+  const session = createUiSession();
+  session.update({ destination: "history", filterMode: "links" });
+  const output = renderToStaticMarkup(
+    React.createElement(ClipboardApp, {
+      ...props,
+      session,
+      clips: [
+        {
+          id: "text-clip",
+          type: "text",
+          content: "A text Clip",
+          originPeerId: "local",
+          capturedAt: 2,
+          shareExpiresAt: 3,
+        },
+        {
+          id: "url-clip",
+          type: "url",
+          content: "https://example.test/article",
+          originPeerId: "remote",
+          capturedAt: 1,
+          shareExpiresAt: 4,
+        },
+      ],
+    })
+  );
+
+  expect(output).toContain("https://example.test/article");
+  expect(output).not.toContain("A text Clip");
+  expect(output).toMatch(
+    /aria-current="page"[^>]*>\s*<svg[^>]*>[\s\S]*?<\/svg><span>Links<\/span>/
+  );
 });

@@ -3,7 +3,7 @@ export type HistoryContext = {
   search?: string;
   timeFilter?: "all" | "24h" | "7d" | "30d";
   sourceFilter?: string;
-  filterMode?: "all" | "pinned";
+  filterMode?: "all" | "pinned" | "links";
 };
 export type UiDestination =
   | {
@@ -94,7 +94,7 @@ export function parseUiDestination(value: unknown): UiDestination | null {
       return null;
     if (
       c.filterMode !== undefined &&
-      !["all", "pinned"].includes(String(c.filterMode))
+      !["all", "pinned", "links"].includes(String(c.filterMode))
     )
       return null;
   }

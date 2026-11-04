@@ -7,9 +7,11 @@ export type ClearHistoryReviewProps = {
   filteredOutCount: number;
   pending: boolean;
   error: string | null;
+  recoveryError?: string | null;
   historyReady?: boolean;
   refreshPending?: boolean;
   onRefresh?(): void;
+  diagnostics?: React.ReactNode;
   onCancel(): void;
   onConfirm(): void;
 };
@@ -20,9 +22,11 @@ export function ClearHistoryReview({
   filteredOutCount,
   pending,
   error,
+  recoveryError = null,
   historyReady = true,
   refreshPending = false,
   onRefresh,
+  diagnostics,
   onCancel,
   onConfirm,
 }: ClearHistoryReviewProps) {
@@ -63,6 +67,11 @@ export function ClearHistoryReview({
           {error}
         </p>
       )}
+      {recoveryError && (
+        <p className="task-dialog-error" role="alert">
+          {recoveryError}
+        </p>
+      )}
       {pending && <p role="status">Clearing local history…</p>}
       {refreshPending && <p role="status">Refreshing History…</p>}
       <div className="task-dialog-actions">
@@ -84,6 +93,12 @@ export function ClearHistoryReview({
           {error ? "Retry Clear" : "Clear all local history"}
         </button>
       </div>
+      {diagnostics && (
+        <details className="history-scenario-controls">
+          <summary>History scenario controls</summary>
+          {diagnostics}
+        </details>
+      )}
     </TaskDialog>
   );
 }

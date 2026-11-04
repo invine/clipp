@@ -24,7 +24,11 @@ export function bindTaskDialogFocus(
   let branch: HTMLElement | null = dialog;
   while (branch?.parentElement) {
     for (const sibling of branch.parentElement.children)
-      if (sibling instanceof HTMLElement && sibling !== branch)
+      if (
+        sibling instanceof HTMLElement &&
+        sibling !== branch &&
+        sibling.dataset.taskScenarioControls === undefined
+      )
         backgrounds.push(sibling);
     branch = branch.parentElement;
     if (branch === document.body) break;

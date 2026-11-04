@@ -71,7 +71,11 @@ export function RecoveryIssues({
       className="recovery-task"
     >
       {details}
-      {issues.length === 0 && <p>No issues need attention.</p>}
+      <p>
+        {issues.length === 0
+          ? "No issues need attention."
+          : `${issues.length} ${issues.length === 1 ? "issue needs" : "issues need"} attention`}
+      </p>
       {issues.map((issue) => (
         <section
           key={issue.id}

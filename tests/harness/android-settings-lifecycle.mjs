@@ -45,16 +45,14 @@ const resetWriteStarted = new Promise((resolve) => {
 });
 let nativeFenced = false;
 let restartAttempts = 0;
-if (resetMode || startupMode) {
-  const require = createRequire(import.meta.url);
-  const denyNetwork = () => {
-    throw Error("fixture_network_unavailable");
-  };
-  require("node:net").Server.prototype.listen = denyNetwork;
-  require("node:net").Socket.prototype.connect = denyNetwork;
-  require("node:dgram").createSocket = denyNetwork;
-  syncBuiltinESMExports();
-}
+const require = createRequire(import.meta.url);
+const denyNetwork = () => {
+  throw Error("fixture_network_unavailable");
+};
+require("node:net").Server.prototype.listen = denyNetwork;
+require("node:net").Socket.prototype.connect = denyNetwork;
+require("node:dgram").createSocket = denyNetwork;
+syncBuiltinESMExports();
 globalThis.cycleNative = {
   get: async ({ key }) => {
     if (startupMode && key === "clipp-android:sharingLifetimeMs") {

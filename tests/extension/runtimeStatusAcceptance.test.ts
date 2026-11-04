@@ -8,6 +8,9 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import { createExtensionUiAdapter } from "../../apps/extension/src/uiRuntimeAdapter";
+import { createUiSession } from "../../packages/ui/src/uiSession";
+import type { RelayConfiguration } from "../../packages/core/network/managedRelays";
 
 // Execute the registered public message handlers and their real forwarding code.
 // Chrome messaging and the already-started libp2p transport are the boundaries;
@@ -169,61 +172,36 @@ const transport = {getConnectedPeers: () => ["synthetic-peer"], getPeerConnectio
   const pageUrl = `chrome-extension://${id}/src/options.html`;
   const message = (value: unknown, senderUrl = pageUrl) =>
     request(background, value, senderUrl);
-  const uiFile = fs.existsSync(
-    path.resolve("apps/extension/src/ExtensionApp.tsx")
-  )
-    ? "apps/extension/src/ExtensionApp.tsx"
-    : "apps/extension/src/options.tsx";
-  let action: ts.FunctionDeclaration | undefined;
-  let save: ts.JsxAttribute | undefined;
-  const visit = (node: ts.Node) => {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === "relayAction")
-      action = node;
-    if (
-      ts.isJsxAttribute(node) &&
-      ["onSetConfigurations", "onMutateManagedRelay"].includes(
-        node.name.getText()
-      )
-    )
-      save = node;
-    ts.forEachChild(node, visit);
-  };
-  visit(source(uiFile));
-  if (
-    !action ||
-    !save?.initializer ||
-    !ts.isJsxExpression(save.initializer) ||
-    !save.initializer.expression
-  )
-    throw new Error("actual page relay Save contract missing");
-  const fieldScoped = save.name.getText() === "onMutateManagedRelay";
-  const page = vm.createContext({
-    ...base,
-    chrome: {
-      runtime: {
-        sendMessage: (value: unknown, reply: (value: unknown) => void) => {
-          void message(value).then(reply);
-        },
-      },
-    },
-  });
-  execute(
-    `${action.getText()}
-let renderedConfigurations; const setManagedRelayConfigurations = (next) => { renderedConfigurations = next; }; const saveRelay = ${save.initializer.expression.getText()};`,
-    page
-  );
   return {
     generationFenced,
-    fieldScoped,
+    fieldScoped: true,
     message,
     saveRelay(configuration: unknown) {
-      page.configuration = configuration;
-      return vm.runInContext(
-        fieldScoped
-          ? 'saveRelay({ type: "add", configuration })'
-          : "saveRelay([configuration])",
-        page
-      );
+      const adapter = createExtensionUiAdapter({
+        runtime: {
+          id,
+          lastError: undefined,
+          sendMessage: (value: unknown, reply: (value: unknown) => void) => {
+            void message(value).then(reply);
+          },
+          onMessage: {
+            addListener() {},
+            removeListener() {},
+          },
+        } as unknown as typeof chrome.runtime,
+        surface: "page",
+        session: createUiSession(),
+        clipboard: { readText: async () => "", writeText: async () => {} },
+        focus: { hasFocus: () => true, subscribe: () => () => {} },
+        subscribeReturn: () => () => {},
+        poll: () => () => {},
+      });
+      const mutate = adapter.actions.onMutateManagedRelay;
+      if (!mutate) throw new Error("actual page relay Save contract missing");
+      return mutate({
+        type: "add",
+        configuration: configuration as RelayConfiguration,
+      });
     },
     status: () =>
       request(
