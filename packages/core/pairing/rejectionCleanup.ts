@@ -1,21 +1,31 @@
 import type { DeviceMembershipAdmissions } from "./membership";
+import type { TransportOwner } from "../messaging/transport";
 
 /** Applies the shared disconnect policy after Pairing has authenticated a sender. */
 export function createPairingRejectionCleanup(options: {
   membership: Pick<DeviceMembershipAdmissions, "membershipStatus">;
-  isCurrentTransport(peerId: string): boolean;
-  disconnect(peerId: string): Promise<void> | void;
+  isCurrentTransport(peerId: string, owner: TransportOwner): boolean;
+  disconnect(peerId: string, owner: TransportOwner): Promise<void> | void;
 }) {
-  const inFlight = new Map<string, Promise<void>>();
+  const inFlight = new Map<TransportOwner, Map<string, Promise<void>>>();
 
-  return (authenticatedPeerId: string | undefined): Promise<void> => {
+  return (
+    authenticatedPeerId: string | undefined,
+    owner: TransportOwner | undefined
+  ): Promise<void> => {
     if (
       !authenticatedPeerId ||
-      !options.isCurrentTransport(authenticatedPeerId)
+      owner === undefined ||
+      !options.isCurrentTransport(authenticatedPeerId, owner)
     )
       return Promise.resolve();
 
-    const existing = inFlight.get(authenticatedPeerId);
+    let transportWork = inFlight.get(owner);
+    if (!transportWork) {
+      transportWork = new Map();
+      inFlight.set(owner, transportWork);
+    }
+    const existing = transportWork.get(authenticatedPeerId);
     if (existing) return existing;
 
     const task = (async () => {
@@ -27,19 +37,21 @@ export function createPairingRejectionCleanup(options: {
         if (
           status === "active" ||
           status === "unknown" ||
-          !options.isCurrentTransport(authenticatedPeerId)
+          !options.isCurrentTransport(authenticatedPeerId, owner)
         )
           return;
-        await options.disconnect(authenticatedPeerId);
+        await options.disconnect(authenticatedPeerId, owner);
       } catch {
         // Rejection cleanup is best-effort. A failed read or disconnect must
         // never change the Pairing result or tear down unrelated runtime work.
       }
     })();
-    inFlight.set(authenticatedPeerId, task);
+    transportWork.set(authenticatedPeerId, task);
     void task.then(() => {
-      if (inFlight.get(authenticatedPeerId) === task)
-        inFlight.delete(authenticatedPeerId);
+      if (transportWork?.get(authenticatedPeerId) !== task) return;
+      transportWork.delete(authenticatedPeerId);
+      if (transportWork.size === 0 && inFlight.get(owner) === transportWork)
+        inFlight.delete(owner);
     });
     return task;
   };

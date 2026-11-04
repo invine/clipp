@@ -19,6 +19,7 @@ import {
   type PairingRejectionReason,
 } from "./diagnostics";
 import type { DeviceMembershipAdmissions } from "./membership";
+import type { TransportOwner } from "../messaging/transport";
 
 export type PairingIdentity = {
   peerId: string;
@@ -63,7 +64,10 @@ export type PairingSessionOptions = {
   onOutcome?(event: PairingOutcomeEvent): void | Promise<void>;
   onRejected?(diagnostic: PairingRejectionDiagnostic): void;
   /** Runs for every authenticated rejection, independently of diagnostic throttling. */
-  onRejectedPeer?(authenticatedPeerId: string): void | Promise<void>;
+  onRejectedPeer?(
+    authenticatedPeerId: string,
+    owner?: TransportOwner
+  ): void | Promise<void>;
   onWaitingChanged?(state: PairingWaitingState[]): void | Promise<void>;
   onErrorsChanged?(state: PairingErrorState[]): void | Promise<void>;
   retryInitialDelayMs?: number;
@@ -91,11 +95,12 @@ export function createPairingSession(options: PairingSessionOptions) {
   const rejectResponse = (
     reason: PairingRejectionReason,
     authenticatedPeerId: string,
-    frame: Uint8Array
+    frame: Uint8Array,
+    owner?: TransportOwner
   ) => {
-    void Promise.resolve(options.onRejectedPeer?.(authenticatedPeerId)).catch(
-      () => undefined
-    );
+    void Promise.resolve(
+      options.onRejectedPeer?.(authenticatedPeerId, owner)
+    ).catch(() => undefined);
     reportRejected({
       reason,
       authenticatedPeerId,
@@ -237,7 +242,8 @@ export function createPairingSession(options: PairingSessionOptions) {
     },
     async receiveResponse(
       authenticatedPeerId: string,
-      frame: Uint8Array
+      frame: Uint8Array,
+      owner?: TransportOwner
     ): Promise<PairingDecision> {
       if (stopped) return null;
       const message = decodePairingFrame(frame);
@@ -245,7 +251,8 @@ export function createPairingSession(options: PairingSessionOptions) {
         return rejectResponse(
           "protobuf_decoding_failed",
           authenticatedPeerId,
-          frame
+          frame,
+          owner
         );
       const envelope = decodeTrustRequestEnvelope(
         message.response.requestEnvelope
@@ -255,7 +262,8 @@ export function createPairingSession(options: PairingSessionOptions) {
         return rejectResponse(
           "protobuf_decoding_failed",
           authenticatedPeerId,
-          frame
+          frame,
+          owner
         );
       if (
         !(await options.verify(
@@ -264,13 +272,19 @@ export function createPairingSession(options: PairingSessionOptions) {
           identity.peerId
         ))
       )
-        return rejectResponse("invalid_signature", authenticatedPeerId, frame);
+        return rejectResponse(
+          "invalid_signature",
+          authenticatedPeerId,
+          frame,
+          owner
+        );
       const request = decodeTrustRequestPayload(envelope.signedPayload);
       if (!request)
         return rejectResponse(
           "protobuf_decoding_failed",
           authenticatedPeerId,
-          frame
+          frame,
+          owner
         );
       if (
         request.initiatorPeerId !== identity.peerId ||
@@ -279,7 +293,8 @@ export function createPairingSession(options: PairingSessionOptions) {
         return rejectResponse(
           "authenticated_identity_mismatch",
           authenticatedPeerId,
-          frame
+          frame,
+          owner
         );
       if (stopped) return null;
       const now = BigInt(options.clock.now());
@@ -287,7 +302,8 @@ export function createPairingSession(options: PairingSessionOptions) {
         return rejectResponse(
           "premature_issued_at",
           authenticatedPeerId,
-          frame
+          frame,
+          owner
         );
       if (
         !validateTrustRequestTime(request, Number(now), {
@@ -295,12 +311,22 @@ export function createPairingSession(options: PairingSessionOptions) {
           clockSkewAllowanceMs,
         })
       )
-        return rejectResponse("expired_request", authenticatedPeerId, frame);
+        return rejectResponse(
+          "expired_request",
+          authenticatedPeerId,
+          frame,
+          owner
+        );
       const membershipStatus =
         await options.membership.membershipStatus(authenticatedPeerId);
       if (membershipStatus === "revoked") {
         await clearRetry(authenticatedPeerId);
-        return rejectResponse("revoked_peer", authenticatedPeerId, frame);
+        return rejectResponse(
+          "revoked_peer",
+          authenticatedPeerId,
+          frame,
+          owner
+        );
       }
       if (stopped) return null;
       await clear(authenticatedPeerId);
@@ -316,7 +342,12 @@ export function createPairingSession(options: PairingSessionOptions) {
           );
           if (admission === "revoked") {
             await clearRetry(authenticatedPeerId);
-            return rejectResponse("revoked_peer", authenticatedPeerId, frame);
+            return rejectResponse(
+              "revoked_peer",
+              authenticatedPeerId,
+              frame,
+              owner
+            );
           }
           await clearRetry(authenticatedPeerId);
         } catch {

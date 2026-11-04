@@ -658,9 +658,11 @@ async function composeElectronRuntime(
     ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
   const cleanupRejectedPeer = createPairingRejectionCleanup({
     membership: identitySvc,
-    isCurrentTransport: (remotePeerId) =>
+    isCurrentTransport: (remotePeerId, owner) =>
+      owner === transport &&
       runtimeNetwork.getConnectedPeers().includes(remotePeerId),
-    disconnect: (remotePeerId) => runtimeNetwork.disconnect?.(remotePeerId),
+    disconnect: (remotePeerId, owner) =>
+      owner === transport ? transport.disconnect?.(remotePeerId) : undefined,
   });
   const pairingSessions = createPairingRuntimeSessions({
     identity: async () => {
@@ -1335,14 +1337,15 @@ async function composeElectronRuntime(
     },
   });
   function bindPairingHandler(target: Pick<typeof transport, "onMessage">) {
-    target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+    target.onMessage(PAIRING_PROTOCOL, (from, frame, owner) => {
       void pairingSessions
         .receive(
           from,
           frame,
-          (peerId, requestFrame) =>
-            pairingPending?.receive(peerId, requestFrame) ??
-            Promise.resolve(false)
+          (peerId, requestFrame, requestOwner) =>
+            pairingPending?.receive(peerId, requestFrame, requestOwner) ??
+            Promise.resolve(false),
+          owner
         )
         .catch((error) => log.warn("Pairing message processing failed", error));
     });
