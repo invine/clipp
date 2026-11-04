@@ -77,6 +77,7 @@
     "test:ui-clip-actions": "playwright test --config tests/clip-actions.playwright.config.ts",
     "test:pairing-code": "playwright test --config tests/pairing-code.playwright.config.ts",
     "test:relay-management": "playwright test --config tests/relay-management.playwright.config.ts",
+    "test:device-management": "playwright test --config tests/device-management.playwright.config.ts",
     "ui-behavior": "vite --config tests/harness/ui-behavior/vite.config.ts",
     "typecheck": "npm run typecheck:shared && npm run typecheck:electron && npm run typecheck:android && npm run typecheck:extension",
     "typecheck:shared": "tsc -p tsconfig.typecheck.json",

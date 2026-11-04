@@ -60,6 +60,7 @@ import {
 } from "./PreferenceSaveFeedback";
 import { ClearHistoryReview } from "./ClearHistoryReview";
 import { browserUiHost, type UiHostEffects } from "./runtimeAdapter";
+import { useDeviceBehavior } from "./deviceBehavior";
 import {
   ManualIdentityResetSettings,
   type ManualIdentityResetActions,
@@ -101,7 +102,7 @@ import {
   type ReuseClipOutcome,
 } from "./clipboardActionFeedback";
 import clippPurpleIcon from "../../../clipp-electron-icons-bundle/clipp-purple-64.png";
-import { nameSaveErrorMessage, saveNonEmptyAlias } from "./nameEditSession";
+import { nameSaveErrorMessage } from "./nameEditSession";
 
 type TimeFilter = "all" | "24h" | "7d" | "30d";
 
@@ -532,6 +533,13 @@ export function ClipboardApp({
     session.getSnapshot,
     session.getSnapshot
   );
+  const identityReady =
+    Boolean(identity) &&
+    !initializationError &&
+    !identityRotationRecovery &&
+    !runtimeError;
+  const currentIdentity = useRef(identity?.deviceId);
+  currentIdentity.current = identity?.deviceId;
   useEffect(
     () => () => session.retireHistoryActions(),
     [runtimeOwner, session]
@@ -650,27 +658,19 @@ export function ClipboardApp({
     aliasSession.getSnapshot,
     aliasSession.getSnapshot
   );
-  const revocations = useRef(new Map<string, symbol>());
-  const [revokingIds, setRevokingIds] = useState<string[]>([]);
-  const revocationOwnerAlive = useRef(true);
-  const currentIdentity = useRef(identity?.deviceId);
-  currentIdentity.current = identity?.deviceId;
-  useEffect(() => {
-    revocationOwnerAlive.current = true;
-    return () => {
-      revocationOwnerAlive.current = false;
-      for (const id of revocations.current.keys())
-        session.setActivity(`revoke:${id}`, false);
-      revocations.current.clear();
-    };
-  }, [session]);
-  const [revocationError, setRevocationError] = useState<{
-    deviceId: string;
-    identityId: string | undefined;
-  } | null>(null);
-  const [deviceCopyFeedback, setDeviceCopyFeedback] = useState<string | null>(
-    null
-  );
+  const deviceBehavior = useDeviceBehavior({
+    session,
+    identity,
+    identityReady,
+    devices,
+    runtimeOwner: runtimeOwner ?? session,
+    host,
+    onRenameIdentity,
+    onRenameDevice,
+    onUnpair,
+  });
+  const { confirmingIds, revokingIds, revocationError, deviceCopyFeedback } =
+    deviceBehavior;
   const [relaysOpen, setRelaysOpen] = useState(true);
   const [addingRelay, setAddingRelay] = useState(false);
   const [editingRelayIndex, setEditingRelayIndex] = useState<number | null>(
@@ -821,11 +821,6 @@ export function ClipboardApp({
   const historyUnavailable =
     sourceHistoryUnavailable ||
     (clips.length === 0 && (initializationError || Boolean(runtimeError)));
-  const identityReady =
-    Boolean(identity) &&
-    !initializationError &&
-    !identityRotationRecovery &&
-    !runtimeError;
   const issues = composeRecoveryIssues({
     initializationError,
     runtimeError,
@@ -1206,44 +1201,6 @@ export function ClipboardApp({
     setUserToggledFilters(true);
   }
 
-  function beginEditLocalName() {
-    if (!identityReady || !identity) return;
-    session.open({
-      kind: "device-name",
-      entity: identity.deviceId,
-      origin: "rename-local",
-    });
-    localNameSession.begin(identity.deviceId, identity.deviceName || "");
-  }
-
-  useEffect(() => {
-    const targetId = localNameSession.getSnapshot().targetId;
-    if (!targetId) return;
-    if (identity?.deviceId !== targetId)
-      localNameSession.removeTarget(targetId);
-    else
-      localNameSession.authoritativeValue(targetId, identity.deviceName || "");
-  }, [identity, localNameSession]);
-
-  useEffect(() => {
-    const targetId = aliasSession.getSnapshot().targetId;
-    if (!targetId) return;
-    const device = devices.find((candidate) => candidate.deviceId === targetId);
-    if (!device) {
-      aliasSession.removeTarget(targetId);
-      session.update({
-        taskNotice:
-          "This device was removed. Its alias edit cannot be saved. Return to the device list.",
-      });
-      session.complete("alias", targetId);
-    } else
-      aliasSession.authoritativeValue(
-        targetId,
-        device.localAlias || device.deviceName || ""
-      );
-    aliasSession.retainTargets(devices.map((device) => device.deviceId));
-  }, [devices, aliasSession, session]);
-
   useEffect(() => {
     if (
       editingRelayIndex !== null &&
@@ -1258,115 +1215,6 @@ export function ClipboardApp({
       setRelayError(null);
     }
   }, [relayAddresses, addingRelay, editingRelayIndex]);
-
-  function saveLocalName() {
-    const submittedTarget = localNameSession.getSnapshot().targetId;
-    void localNameSession
-      .save(async (targetId, raw) => {
-        if (!identity || identity.deviceId !== targetId || !onRenameIdentity) {
-          throw new Error("device_unavailable");
-        }
-        return onRenameIdentity(raw, targetId);
-      })
-      .then(() => {
-        if (!localNameSession.getSnapshot().targetId)
-          session.complete("device-name", submittedTarget ?? undefined);
-      });
-  }
-
-  function beginEditDeviceName(device: Device) {
-    setDeviceCopyFeedback(null);
-    session.open({
-      kind: "alias",
-      entity: device.deviceId,
-      origin: `rename:${device.deviceId}`,
-    });
-    aliasSession.begin(
-      device.deviceId,
-      device.localAlias || device.deviceName || ""
-    );
-  }
-
-  function saveDeviceName() {
-    if (!identityReady) return;
-    const submittedTarget = aliasSession.getSnapshot().targetId;
-    void saveNonEmptyAlias(aliasSession, async (targetId, raw) => {
-      if (
-        !onRenameDevice ||
-        !devices.some((candidate) => candidate.deviceId === targetId)
-      ) {
-        throw new Error("device_unavailable");
-      }
-      return onRenameDevice(targetId, raw);
-    }).then(() => {
-      if (!aliasSession.getSnapshot().targetId)
-        session.complete("alias", submittedTarget ?? undefined);
-    });
-  }
-
-  function useReportedDeviceName() {
-    if (!identityReady) return;
-    const submittedTarget = aliasSession.getSnapshot().targetId;
-    void aliasSession
-      .save(async (targetId) => {
-        if (
-          !onRenameDevice ||
-          !devices.some((candidate) => candidate.deviceId === targetId)
-        ) {
-          throw new Error("device_unavailable");
-        }
-        // An empty value is the existing runtime contract for deleting only
-        // this installation's Local Device Alias.
-        return onRenameDevice(targetId, "");
-      })
-      .then(() => {
-        if (!aliasSession.getSnapshot().targetId)
-          session.complete("alias", submittedTarget ?? undefined);
-      });
-  }
-
-  async function copyDeviceValue(label: string, value: string) {
-    try {
-      await host.copyText(value);
-      setDeviceCopyFeedback(`${label} copied.`);
-    } catch {
-      setDeviceCopyFeedback(
-        `Could not copy ${label.toLowerCase()}. Select and copy it manually.`
-      );
-    }
-  }
-
-  async function revokeDevice(device: Device): Promise<void> {
-    if (!identityReady || revocations.current.has(device.deviceId)) return;
-    const confirmed = await host.confirm(
-      `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`
-    );
-    if (!confirmed) return;
-    const id = device.deviceId,
-      token = Symbol(id),
-      expectedIdentity = identity?.deviceId;
-    revocations.current.set(id, token);
-    session.setActivity(`revoke:${id}`, true);
-    setRevokingIds([...revocations.current.keys()]);
-    const ownsFeedback = () =>
-      revocationOwnerAlive.current &&
-      revocations.current.get(id) === token &&
-      currentIdentity.current === expectedIdentity;
-    try {
-      await onUnpair(id);
-      if (ownsFeedback()) setRevocationError(null);
-    } catch {
-      if (ownsFeedback())
-        setRevocationError({ deviceId: id, identityId: expectedIdentity });
-    } finally {
-      if (revocations.current.get(id) === token) {
-        revocations.current.delete(id);
-        session.setActivity(`revoke:${id}`, false);
-        if (revocationOwnerAlive.current)
-          setRevokingIds([...revocations.current.keys()]);
-      }
-    }
-  }
 
   function reuseClip(id: string) {
     if (!identityReady) return;
@@ -1836,7 +1684,7 @@ export function ClipboardApp({
                           data-session-focus="rename-local"
                           aria-label="Rename this device"
                           disabled={!identityReady}
-                          onClick={beginEditLocalName}
+                          onClick={deviceBehavior.beginEditLocalName}
                         >
                           <Icon name="edit" />
                         </button>
@@ -2032,6 +1880,7 @@ export function ClipboardApp({
                         disabled={
                           !identityReady ||
                           revokingIds.includes(revocationError.deviceId) ||
+                          confirmingIds.includes(revocationError.deviceId) ||
                           !devices.some(
                             (device) =>
                               device.deviceId === revocationError.deviceId
@@ -2042,7 +1891,7 @@ export function ClipboardApp({
                             (candidate) =>
                               candidate.deviceId === revocationError.deviceId
                           );
-                          if (device) void revokeDevice(device);
+                          if (device) void deviceBehavior.revokeDevice(device);
                         }}
                       >
                         Retry
@@ -2088,7 +1937,9 @@ export function ClipboardApp({
                             data-session-focus={`rename:${dev.deviceId}`}
                             aria-label="Edit Local Device Alias"
                             disabled={!identityReady}
-                            onClick={() => beginEditDeviceName(dev)}
+                            onClick={() =>
+                              deviceBehavior.beginEditDeviceName(dev)
+                            }
                           >
                             <Icon name="edit" />
                           </button>
@@ -2097,14 +1948,21 @@ export function ClipboardApp({
                           className="text-button"
                           title="Revoke this device"
                           disabled={
-                            !identityReady || revokingIds.includes(dev.deviceId)
+                            !identityReady ||
+                            confirmingIds.includes(dev.deviceId) ||
+                            revokingIds.includes(dev.deviceId)
                           }
-                          onClick={() => void revokeDevice(dev)}
+                          onClick={() => void deviceBehavior.revokeDevice(dev)}
                         >
                           Revoke device
                         </button>
                         {revokingIds.includes(dev.deviceId) && (
                           <span role="status">Revoking this device…</span>
+                        )}
+                        {confirmingIds.includes(dev.deviceId) && (
+                          <span role="status">
+                            Confirming device revocation…
+                          </span>
                         )}
                       </div>
                     </div>
@@ -2996,12 +2854,13 @@ export function ClipboardApp({
             route={(issue) => {
               session.close();
               if (issue.scope === "task") {
-                if (issue.code === "device-name") beginEditLocalName();
+                if (issue.code === "device-name")
+                  deviceBehavior.beginEditLocalName();
                 if (issue.code === "alias") {
                   const device = devices.find(
                     (device) => device.deviceId === issue.target
                   );
-                  if (device) beginEditDeviceName(device);
+                  if (device) deviceBehavior.beginEditDeviceName(device);
                 }
                 if (issue.code === "pairing")
                   session.open({ kind: "pairing", origin: "pairing-paste" });
@@ -3619,7 +3478,7 @@ export function ClipboardApp({
                         type="button"
                         disabled={!target?.deviceName}
                         onClick={() =>
-                          void copyDeviceValue(
+                          void deviceBehavior.copyDeviceValue(
                             "Device Name",
                             target?.deviceName || ""
                           )
@@ -3633,7 +3492,10 @@ export function ClipboardApp({
                       <button
                         type="button"
                         onClick={() =>
-                          void copyDeviceValue("Peer ID", edit.targetId || "")
+                          void deviceBehavior.copyDeviceValue(
+                            "Peer ID",
+                            edit.targetId || ""
+                          )
                         }
                       >
                         Copy Peer ID
@@ -3658,7 +3520,9 @@ export function ClipboardApp({
                       if (event.key === "Enter") {
                         event.preventDefault();
                         if (!edit.pending)
-                          (alias ? saveDeviceName : saveLocalName)();
+                          (alias
+                            ? deviceBehavior.saveDeviceName
+                            : deviceBehavior.saveLocalName)();
                       }
                     }}
                   />
@@ -3670,7 +3534,11 @@ export function ClipboardApp({
                 <button
                   type="button"
                   disabled={edit.pending || !identityReady}
-                  onClick={alias ? saveDeviceName : saveLocalName}
+                  onClick={
+                    alias
+                      ? deviceBehavior.saveDeviceName
+                      : deviceBehavior.saveLocalName
+                  }
                 >
                   Save {title}
                 </button>
@@ -3678,7 +3546,7 @@ export function ClipboardApp({
                   <button
                     type="button"
                     disabled={edit.pending || !identityReady || !target}
-                    onClick={useReportedDeviceName}
+                    onClick={deviceBehavior.useReportedDeviceName}
                   >
                     Use device name
                   </button>

@@ -1,0 +1,22 @@
+.ui-scenario-controls {
+  position: fixed;
+  z-index: 1001;
+  top: 0.75rem;
+  right: 0.75rem;
+  max-width: min(25rem, calc(100vw - 1.5rem));
+  padding: 0.5rem;
+  border: 1px solid var(--clipp-border);
+  border-radius: 0.75rem;
+  background: var(--clipp-surface-raised);
+  box-shadow: var(--md-elevation-1);
+}
+
+.ui-scenario-controls[open] {
+  max-height: calc(100dvh - 1.5rem);
+  overflow: auto;
+}
+
+.ui-scenario-controls aside {
+  display: grid;
+  gap: 0.4rem;
+}
