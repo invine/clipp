@@ -2295,6 +2295,7 @@ export function ClipboardApp({
                         <ClipSettings
                           section="retention"
                           settings={appearanceSettings}
+                          owner={runtimeOwner ?? session}
                           onRetryRetention={
                             onRetryHistoryCleanup
                               ? async () => {
@@ -2460,6 +2461,7 @@ export function ClipboardApp({
                         <ClipSettings
                           section="lifetime"
                           settings={appearanceSettings}
+                          owner={runtimeOwner ?? session}
                         />
                       </section>
                     )}

@@ -11,6 +11,10 @@ Background Continuity controls. This scenario scripts confirmation, delayed
 enable/stop/refresh results, notification settings, diagnostics export, and
 runtime replacement without invoking Android native behavior.
 
+Open <http://127.0.0.1:4175/settings-recovery.html> to inspect Appearance and
+Clip preference saves through the real settings client with controlled writes
+and refresh outcomes.
+
 Run `npm run test:ui-behavior` for the mounted Chromium journeys. The Vite entry
 is under `tests/harness`, so it is not included in any production application
 build.

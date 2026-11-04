@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useRef } from "react";
 import type { AppearanceSettings } from "./Appearance";
+import { usePreferenceRecoveryBehavior } from "./preferenceRecoveryBehavior";
 import {
   PreferenceRefreshNotice,
   PreferenceSaveFeedback,
@@ -55,15 +56,19 @@ function DurationSelect({
 /** Both settings use the runtime's applied ordered snapshot, including partial cleanup effects. */
 export function ClipSettings({
   settings,
+  owner,
   onRetryRetention,
   section = "both",
 }: {
   settings: AppearanceSettings;
+  owner?: object;
   section?: "retention" | "lifetime" | "both";
   onRetryRetention?(): Promise<void>;
 }) {
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
+  const localOwner = useRef<object>({});
+  const recovery = usePreferenceRecoveryBehavior(owner ?? localOwner.current);
+  const retrying = recovery.pending;
+  const retryError = recovery.error;
   const applied = settings.snapshot?.state;
   const disabled = !applied || settings.recoveryRequired;
   const belongsToSection = (field: string) =>
@@ -72,19 +77,12 @@ export function ClipSettings({
   const feedback = settings.feedback?.fields?.some(belongsToSection)
     ? settings.feedback
     : null;
-  const retry = async () => {
-    if (retrying || !onRetryRetention) return;
-    setRetrying(true);
-    setRetryError(null);
-    try {
+  const retry = () =>
+    recovery.run(async () => {
+      if (!onRetryRetention) return;
       await onRetryRetention();
       await settings.refresh();
-    } catch (error) {
-      setRetryError((error as Error).message);
-    } finally {
-      setRetrying(false);
-    }
-  };
+    });
   return (
     <div className="clip-settings relay-settings">
       {section !== "lifetime" && (
