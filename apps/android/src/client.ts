@@ -71,6 +71,7 @@ import {
 } from "@core/membership/reconciliation";
 import { createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingRuntimeSessions } from "@core/pairing/runtimeCoordinator";
+import { createPairingRejectionCleanup } from "@core/pairing/rejectionCleanup";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
@@ -917,6 +918,12 @@ export class AndroidClient {
       readAddresses: () => this.getRelayAddresses(),
     },
   });
+  private readonly cleanupRejectedPeer = createPairingRejectionCleanup({
+    membership: this.identitySvc,
+    isCurrentTransport: (remotePeerId) =>
+      this.transport?.getConnectedPeers().includes(remotePeerId) ?? false,
+    disconnect: (remotePeerId) => this.transport?.disconnect?.(remotePeerId),
+  });
   private readonly pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () =>
       deviceIdToPeerId((await this.identitySvc.get()).deviceId),
@@ -948,16 +955,8 @@ export class AndroidClient {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void this.identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return this.transport?.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: this.cleanupRejectedPeer,
     onChanged: async (requests) => {
       this.pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,
@@ -999,16 +998,8 @@ export class AndroidClient {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void this.identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return this.transport?.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: this.cleanupRejectedPeer,
     onChanged: () => this.emitState(),
   });
   private readonly runtime = createRuntimeOrchestrator({
