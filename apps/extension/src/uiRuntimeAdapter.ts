@@ -544,6 +544,10 @@ export function createExtensionUiAdapter(
     onSetLocalRetention: async (retentionMs) => {
       await controls.settings.save({ localRetentionMs: retentionMs });
     },
+    onSaveAppearanceSettings: async (patch) => {
+      await controls.settings.save(patch);
+    },
+    onRefreshAppearanceSettings: () => controls.settings.refresh(),
     onSetAutoSync: async (enabled) => {
       await controls.settings.save({ autoSync: enabled });
     },

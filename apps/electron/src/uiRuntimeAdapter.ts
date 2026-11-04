@@ -140,6 +140,10 @@ export function createElectronUiRuntimeAdapter(
     onAcknowledgeIdentityRotationNotice: () =>
       bridge.acknowledgeIdentityRotationNotice(),
     onSetLocalRetention: (retentionMs) => bridge.setLocalRetention(retentionMs),
+    onSaveAppearanceSettings: async (patch) => {
+      await settings.save(patch);
+    },
+    onRefreshAppearanceSettings: () => settings.refresh(),
     onSetAutoSync: (enabled) => bridge.setAutoSync(enabled),
     onRetryAutoSync: () => bridge.refreshAutoSync(),
     onRenameIdentity: (name, expectedDeviceId) =>
@@ -187,11 +191,7 @@ export function createElectronUiRuntimeAdapter(
         ? "history_unavailable"
         : null,
       localRetentionMs: state.localRetentionMs,
-      appearanceSettings: {
-        ...settings.getState(),
-        save: settings.save,
-        refresh: settings.refresh,
-      },
+      appearanceSettings: settings.getState(),
       autoSync: state.autoSync,
       autoSyncKnown: !recovery.loading && !recovery.unavailable,
       autoSyncLoading: recovery.loading,

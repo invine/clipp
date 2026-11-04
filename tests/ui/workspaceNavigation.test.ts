@@ -124,9 +124,11 @@ it("keeps the applied Log level focusable and busy during a single pending save"
         session,
         appearanceSettings: {
           ...client.getState(),
-          save: client.save,
-          refresh: client.refresh,
         },
+        onSaveAppearanceSettings: async (patch) => {
+          await client.save(patch);
+        },
+        onRefreshAppearanceSettings: () => client.refresh(),
       })
     );
   await client.start();
@@ -188,8 +190,6 @@ it("keeps Log level natively disabled while unknown or awaiting authority recove
         session,
         appearanceSettings: {
           ...client.getState(),
-          save: client.save,
-          refresh: client.refresh,
         },
       })
     );
@@ -594,8 +594,6 @@ it("explains real settings groups and keeps history and sharing policies distinc
       session,
       appearanceSettings: {
         ...client.getState(),
-        save: client.save,
-        refresh: client.refresh,
       },
       autoSyncKnown: true,
       autoSync: true,

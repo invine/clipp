@@ -42,6 +42,7 @@ function createScenario() {
   let pendingHistoryRecovery:
     { resolve(): void; reject(error: Error): void } | undefined;
   const effects: string[] = [];
+  const runtimeActionCalls: string[] = [];
   let effectListener = () => {};
   const client = createSettingsClient({
     async send(message) {
@@ -70,8 +71,15 @@ function createScenario() {
     pinnedIds: [],
     appearanceSettings: {
       ...state,
-      save: client.save,
-      refresh: client.refresh,
+    },
+    onSaveAppearanceSettings: async (patch) => {
+      runtimeActionCalls.push(`save:${Object.keys(patch).join(",")}`);
+      await client.save(patch);
+    },
+    onRefreshAppearanceSettings: async () => {
+      runtimeActionCalls.push("refresh");
+      effectListener();
+      await client.refresh();
     },
     autoSync: true,
     autoSyncKnown: true,
@@ -110,6 +118,7 @@ function createScenario() {
     client,
     adapter,
     effects,
+    runtimeActionCalls,
     setEffectListener(listener: () => void) {
       effectListener = listener;
     },
@@ -230,6 +239,9 @@ function ScenarioControls({
       </button>
       <output data-testid="settings-effects" aria-live="polite">
         {effectVersion >= 0 ? JSON.stringify(scenario.effects) : ""}
+      </output>
+      <output data-testid="settings-runtime-actions" aria-live="polite">
+        {JSON.stringify(scenario.runtimeActionCalls)}
       </output>
     </aside>
   );

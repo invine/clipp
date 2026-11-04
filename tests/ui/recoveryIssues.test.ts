@@ -377,8 +377,6 @@ it("removes both the global Issue and partial-save message after acknowledged re
       session,
       appearanceSettings: {
         ...client.getState(),
-        save: client.save,
-        refresh: client.refresh,
       },
     });
   expect(renderCurrent()).toContain("only partly saved");
@@ -469,8 +467,6 @@ it("retires the latest cleanup failure after real retention recovery even while 
       session,
       appearanceSettings: {
         ...client.getState(),
-        save: client.save,
-        refresh: client.refresh,
       },
     });
   expect(renderCurrent()).toContain("cleanup_B");

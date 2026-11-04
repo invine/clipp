@@ -257,11 +257,7 @@ export function createAndroidUiRuntimeAdapter(
       : null,
     onRetryHistoryRefresh: () => owner.retry(),
     localRetentionMs: state.localRetentionMs,
-    appearanceSettings: {
-      ...settingsState,
-      save: settings.save,
-      refresh: settings.refresh,
-    },
+    appearanceSettings: settingsState,
     autoSync: state.autoSync,
     autoSyncKnown: !recovery.loading && !recovery.unavailable,
     autoSyncLoading: recovery.loading,
@@ -323,6 +319,10 @@ export function createAndroidUiRuntimeAdapter(
     onSetLocalRetention: async (retentionMs) => {
       await client.setLocalRetention(retentionMs);
     },
+    onSaveAppearanceSettings: async (patch) => {
+      await settings.save(patch);
+    },
+    onRefreshAppearanceSettings: () => settings.refresh(),
     onSetAutoSync: (enabled) => client.setAutoSync(enabled),
     onRetryAutoSync: () => client.refreshAutoSync(),
     backgroundContinuity: state.backgroundContinuity,

@@ -9,6 +9,9 @@ test("appearance saves keep the applied value and require refresh after an uncon
   await appearance.selectOption("dark");
   await expect(page.getByText("Saving appearance…")).toBeVisible();
   await expect(appearance).toHaveValue("system");
+  await expect(page.getByTestId("settings-runtime-actions")).toContainText(
+    "save:theme"
+  );
 
   await page
     .getByRole("button", { name: "Fail next settings refresh" })
@@ -27,6 +30,9 @@ test("appearance saves keep the applied value and require refresh after an uncon
   await page.getByRole("button", { name: "Refresh appearance" }).click();
   await expect(appearance).toBeEnabled();
   await expect(appearance).toHaveValue("system");
+  await expect(page.getByTestId("settings-runtime-actions")).toContainText(
+    "refresh"
+  );
 });
 
 test("Clip history recovery suppresses duplicate cleanup and reconciles after success", async ({
@@ -96,6 +102,9 @@ test("a rejected Clip preference keeps the authoritative applied value", async (
   });
 
   await retention.selectOption("0");
+  await expect(page.getByTestId("settings-runtime-actions")).toContainText(
+    "save:localRetentionMs"
+  );
   await expect(page.getByText("Saving Clip settings…")).toBeVisible();
   await expect(retention).toHaveValue(String(30 * 86400000));
   await page

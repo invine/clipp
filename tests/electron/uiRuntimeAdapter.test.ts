@@ -114,6 +114,12 @@ it("owns Electron bridge subscriptions and publishes the current runtime snapsho
   await adapter.start?.();
   expect(adapter.getSnapshot().identity?.deviceId).toBe("device-one");
   expect(adapter.getSnapshot().appearanceSettings?.snapshot?.revision).toBe(1);
+  expect(adapter.getSnapshot().appearanceSettings).not.toHaveProperty("save");
+  expect(adapter.getSnapshot().appearanceSettings).not.toHaveProperty(
+    "refresh"
+  );
+  expect(adapter.actions.onSaveAppearanceSettings).toBeDefined();
+  expect(adapter.actions.onRefreshAppearanceSettings).toBeDefined();
   expect(fixture.bridge.onUpdate).toHaveBeenCalledTimes(1);
   expect(fixture.bridge.onSettingsUpdate).toHaveBeenCalledTimes(1);
   expect(

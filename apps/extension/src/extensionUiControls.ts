@@ -1,4 +1,7 @@
-import { createSettingsClient } from "../../../packages/core/runtime/settingsClient";
+import {
+  createSettingsClient,
+  type SettingsClientState,
+} from "../../../packages/core/runtime/settingsClient";
 import type { RuntimeNotificationAvailability } from "../../../packages/core/runtime/notifications";
 import type {
   NotificationAvailabilityBridge,
@@ -18,11 +21,7 @@ export function createExtensionUiControls(options: {
   changed(): void;
 }) {
   const settings = createSettingsClient(options.settings);
-  let appearance = {
-    ...settings.getState(),
-    save: settings.save,
-    refresh: settings.refresh,
-  };
+  let appearance: SettingsClientState = settings.getState();
   let notificationState: RuntimeNotificationAvailability | null = null;
   let notificationPending = false;
   let notificationError = false;
@@ -105,11 +104,7 @@ export function createExtensionUiControls(options: {
       removeReturn = options.subscribeReturn(() => void refreshNotifications());
       void refreshNotifications();
       void settings.start((state) => {
-        appearance = {
-          ...state,
-          save: settings.save,
-          refresh: settings.refresh,
-        };
+        appearance = state;
         options.changed();
       });
     },

@@ -228,6 +228,10 @@ it.each(["popup", "page"] as const)(
       sessionId: "settings",
       revision: 2,
     });
+    expect(snapshot.appearanceSettings).not.toHaveProperty("save");
+    expect(snapshot.appearanceSettings).not.toHaveProperty("refresh");
+    expect(f.adapter.actions.onSaveAppearanceSettings).toBeDefined();
+    expect(f.adapter.actions.onRefreshAppearanceSettings).toBeDefined();
     expect(snapshot.autoSync).toBe(true);
     await f.adapter.stop?.();
     await f.flush();

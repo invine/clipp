@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import type { AppearanceSettings } from "./Appearance";
 import { usePreferenceRecoveryBehavior } from "./preferenceRecoveryBehavior";
+import type { RuntimeSettings } from "../../core/runtime/settingsAuthority";
 import {
   PreferenceRefreshNotice,
   PreferenceSaveFeedback,
@@ -58,12 +59,16 @@ export function ClipSettings({
   settings,
   owner,
   onRetryRetention,
+  onSave,
+  onRefresh,
   section = "both",
 }: {
   settings: AppearanceSettings;
   owner?: object;
   section?: "retention" | "lifetime" | "both";
   onRetryRetention?(): Promise<void>;
+  onSave?(patch: Partial<RuntimeSettings>): void | Promise<void>;
+  onRefresh?(): void | Promise<void>;
 }) {
   const localOwner = useRef<object>({});
   const recovery = usePreferenceRecoveryBehavior(owner ?? localOwner.current);
@@ -81,7 +86,7 @@ export function ClipSettings({
     recovery.run(async () => {
       if (!onRetryRetention) return;
       await onRetryRetention();
-      await settings.refresh();
+      await onRefresh?.();
     });
   return (
     <div className="clip-settings relay-settings">
@@ -97,10 +102,10 @@ export function ClipSettings({
               [90 * day, "90 days"],
               [365 * day, "365 days (maximum)"],
             ]}
-            disabled={disabled}
+            disabled={disabled || !onSave}
             pending={settings.pending}
             onChange={(value) => {
-              void settings.save({ localRetentionMs: value });
+              void onSave?.({ localRetentionMs: value });
             }}
           />
           <p className="peer-sub">
@@ -120,10 +125,10 @@ export function ClipSettings({
               [7 * day, "7 days"],
               [30 * day, "30 days (maximum)"],
             ]}
-            disabled={disabled}
+            disabled={disabled || !onSave}
             pending={settings.pending}
             onChange={(value) => {
-              void settings.save({ sharingLifetimeMs: value });
+              void onSave?.({ sharingLifetimeMs: value });
             }}
           />
           <p className="peer-sub">
@@ -162,7 +167,7 @@ export function ClipSettings({
       <PreferenceRefreshNotice
         subject="Clip settings"
         error={settings.refreshError}
-        onRetry={settings.refresh}
+        onRetry={onRefresh}
       />
       <PreferenceSaveFeedback
         subject="Clip settings"
@@ -173,9 +178,9 @@ export function ClipSettings({
       {settings.recoveryRequired && (
         <button
           type="button"
-          disabled={settings.refreshing}
+          disabled={settings.refreshing || !onRefresh}
           onClick={() => {
-            void settings.refresh();
+            void onRefresh?.();
           }}
         >
           Refresh Clip settings

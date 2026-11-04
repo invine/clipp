@@ -40,6 +40,7 @@ import type {
   RelayMutation,
   RelayMutationResult,
 } from "../../core/network/relayMutations";
+import type { RuntimeSettings } from "../../core/runtime/settingsAuthority";
 import type { RelayActionResult } from "../../core/network/relayActions";
 import { PairingCodeContent } from "./PairingCodeContent";
 import { usePairingCodeTask } from "./usePairingCodeTask";
@@ -350,6 +351,8 @@ export type ClipboardAppProps = {
   onInspectClip?(id: string): void;
   localRetentionMs?: number;
   appearanceSettings?: AppearanceSettings;
+  onSaveAppearanceSettings?(patch: Partial<RuntimeSettings>): Promise<void>;
+  onRefreshAppearanceSettings?(): Promise<void>;
   autoSync?: boolean;
   autoSyncKnown?: boolean;
   autoSyncLoading?: boolean;
@@ -453,6 +456,8 @@ export function ClipboardApp({
   onInspectClip,
   localRetentionMs = 30 * 24 * 60 * 60 * 1000,
   appearanceSettings,
+  onSaveAppearanceSettings,
+  onRefreshAppearanceSettings,
   autoSync = true,
   autoSyncKnown = true,
   autoSyncLoading = false,
@@ -916,11 +921,11 @@ export function ClipboardApp({
           }
         : undefined;
     if (issue.id === "clipboard:focus:observation") return onRetryPopupCapture;
-    if (issue.code === "settings") return appearanceSettings?.refresh;
+    if (issue.code === "settings") return onRefreshAppearanceSettings;
     if (issue.code === "clip-settings")
       return appearanceSettings?.snapshot?.state.retentionError
         ? onRetryHistoryCleanup
-        : appearanceSettings?.refresh;
+        : onRefreshAppearanceSettings;
     if (issue.code === "initialization_failed") return onRetryInitialization;
     if (issue.scope === "runtime" && issue.code === "unavailable")
       return onRetryRuntime;
@@ -1942,7 +1947,11 @@ export function ClipboardApp({
                       >
                         <h4 id="settings-appearance-heading">Appearance</h4>
                         <p>Choose a theme for this device.</p>
-                        <Appearance settings={appearanceSettings} />
+                        <Appearance
+                          settings={appearanceSettings}
+                          onSave={onSaveAppearanceSettings}
+                          onRefresh={onRefreshAppearanceSettings}
+                        />
                       </section>
                     )}
                     {onSetAutoSync && (
@@ -2076,6 +2085,8 @@ export function ClipboardApp({
                           section="retention"
                           settings={appearanceSettings}
                           owner={runtimeOwner ?? session}
+                          onSave={onSaveAppearanceSettings}
+                          onRefresh={onRefreshAppearanceSettings}
                           onRetryRetention={
                             onRetryHistoryCleanup
                               ? async () => {
@@ -2242,6 +2253,8 @@ export function ClipboardApp({
                           section="lifetime"
                           settings={appearanceSettings}
                           owner={runtimeOwner ?? session}
+                          onSave={onSaveAppearanceSettings}
+                          onRefresh={onRefreshAppearanceSettings}
                         />
                       </section>
                     )}
@@ -2306,7 +2319,8 @@ export function ClipboardApp({
                             }
                             disabled={
                               !appearanceSettings.snapshot ||
-                              appearanceSettings.recoveryRequired
+                              appearanceSettings.recoveryRequired ||
+                              !onSaveAppearanceSettings
                             }
                             aria-disabled={
                               appearanceSettings.pending || undefined
@@ -2319,7 +2333,7 @@ export function ClipboardApp({
                                   "";
                                 return;
                               }
-                              void appearanceSettings.save({
+                              void onSaveAppearanceSettings?.({
                                 logLevel: event.target.value as
                                   "debug" | "info" | "warn" | "error",
                               });
@@ -2340,7 +2354,7 @@ export function ClipboardApp({
                         <PreferenceRefreshNotice
                           subject="General settings"
                           error={appearanceSettings.refreshError}
-                          onRetry={appearanceSettings.refresh}
+                          onRetry={onRefreshAppearanceSettings}
                         />
                         <PreferenceSaveFeedback
                           subject="Log level"
@@ -2357,7 +2371,8 @@ export function ClipboardApp({
                         {appearanceSettings.recoveryRequired && (
                           <button
                             type="button"
-                            onClick={() => void appearanceSettings.refresh()}
+                            disabled={!onRefreshAppearanceSettings}
+                            onClick={() => void onRefreshAppearanceSettings?.()}
                           >
                             Refresh General settings
                           </button>
