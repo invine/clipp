@@ -393,6 +393,8 @@ export type ClipboardAppProps = {
   onShareNow?(): void | Promise<void>;
   onSetPinned(id: string, pinned: boolean): void | Promise<void>;
   onClearAll(): void | Promise<void>;
+  /** Test-only controls rendered inside the History review dialog. */
+  historyDiagnostics?: React.ReactNode;
   onDismissClipboardHistoryError?(): void | Promise<void>;
   onRetryHistoryCleanup?(): void | Promise<void>;
   onSetLocalRetention?(retentionMs: number): void | Promise<void>;
@@ -490,6 +492,7 @@ export function ClipboardApp({
   taskInput,
   onSetPinned,
   onClearAll,
+  historyDiagnostics,
   onDismissClipboardHistoryError,
   onRetryHistoryCleanup,
   onSetLocalRetention,
@@ -657,14 +660,20 @@ export function ClipboardApp({
   const [relaySaving, setRelaySaving] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
   const [clearReviewOpen, setClearReviewOpen] = useState(false);
-  const [clearPending, setClearPending] = useState(false);
-  const [clearError, setClearError] = useState<string | null>(null);
-  const [clearNeedsRefresh, setClearNeedsRefresh] = useState(false);
-  const [clearRefreshPending, setClearRefreshPending] = useState(false);
+  const clearAction = sessionState.historyActions.clear;
+  const clearRefreshAction = sessionState.historyActions["clear:refresh"];
+  const clearPending = Boolean(clearAction?.pending);
+  const clearError = clearAction?.feedback?.message ?? null;
+  const clearNeedsRefresh = Boolean(
+    clearAction?.feedback?.requiresAcknowledgement
+  );
+  const clearRefreshPending = Boolean(clearRefreshAction?.pending);
+  const clearRefreshError = clearRefreshAction?.feedback?.message ?? null;
   useEffect(() => {
     const menu = Boolean(timeMenuOpen || sourceMenuOpen);
     const drawer = showNav && sessionState.tasks.length === 0;
-    const guardedClear = clearPending && clearReviewOpen;
+    const guardedClear =
+      (clearPending || clearRefreshPending) && clearReviewOpen;
     if (!taskInput || (!menu && !drawer && !guardedClear)) return;
     if (guardedClear) return taskInput.registerOverlay({});
     return taskInput.registerOverlay({
@@ -682,6 +691,7 @@ export function ClipboardApp({
     showNav,
     sessionState.tasks.length,
     clearPending,
+    clearRefreshPending,
     clearReviewOpen,
   ]);
   useEffect(() => {
@@ -1134,39 +1144,45 @@ export function ClipboardApp({
       historyRefreshError
     )
       return;
-    setClearPending(true);
-    setClearError(null);
-    void Promise.resolve()
-      .then(() => onClearAll())
-      .then(() => {
-        setClearNeedsRefresh(false);
+    void session.runHistoryAction("clear", async () => {
+      try {
+        await onClearAll();
         setClearReviewOpen(false);
         session.complete("clear");
-      })
-      .catch(() => {
-        setClearNeedsRefresh(true);
-        setClearError(
-          "Clear could not be confirmed. History may have changed. Refresh History before trying again."
-        );
-      })
-      .finally(() => setClearPending(false));
+        return null;
+      } catch {
+        return {
+          message:
+            "Clear could not be confirmed. History may have changed. Refresh History before trying again.",
+          action: "dismiss",
+          requiresAcknowledgement: true,
+        };
+      }
+    });
   }
 
   function refreshClearHistory() {
     if (!onRetryHistoryRefresh || clearRefreshPending || clearPending) return;
-    setClearRefreshPending(true);
-    void Promise.resolve()
-      .then(() => onRetryHistoryRefresh())
-      .then((confirmed) => {
+    void session.runHistoryAction("clear:refresh", async () => {
+      try {
+        const confirmed = await onRetryHistoryRefresh();
         if (confirmed) {
-          setClearNeedsRefresh(false);
-          setClearError(null);
-        } else {
-          setClearNeedsRefresh(true);
+          session.reconcileHistoryAction("clear");
+          return null;
         }
-      })
-      .catch(() => setClearNeedsRefresh(true))
-      .finally(() => setClearRefreshPending(false));
+        return {
+          message:
+            "History refresh could not be confirmed. Clear remains blocked until History is refreshed.",
+          action: "retry",
+        };
+      } catch {
+        return {
+          message:
+            "History refresh failed. Clear remains blocked until History is refreshed.",
+          action: "retry",
+        };
+      }
+    });
   }
 
   function toggleFilters() {
@@ -2341,7 +2357,6 @@ export function ClipboardApp({
                         className="text-button labelled-control"
                         data-session-focus="settings-clear"
                         onClick={() => {
-                          setClearError(null);
                           setClearReviewOpen(true);
                           session.open({
                             kind: "clear",
@@ -3103,36 +3118,40 @@ export function ClipboardApp({
                 )}
               </div>
             )}
-            {Object.entries(sessionState.historyActions).map(
-              ([target, action]) =>
-                action.feedback && (
-                  <div
-                    key={target}
-                    className="history-action-error"
-                    role="status"
-                  >
-                    <span>{action.feedback.message}</span>
-                    <button
-                      type="button"
-                      disabled={
-                        action.pending ||
-                        (!identityReady && action.feedback.action === "retry")
-                      }
-                      onClick={() =>
-                        action.feedback?.action === "retry"
-                          ? void session.retryHistoryAction(target)
-                          : session.dismissHistoryAction(target)
-                      }
+            {Object.entries(sessionState.historyActions)
+              .filter(
+                ([target]) => target !== "clear" && target !== "clear:refresh"
+              )
+              .map(
+                ([target, action]) =>
+                  action.feedback && (
+                    <div
+                      key={target}
+                      className="history-action-error"
+                      role="status"
                     >
-                      {action.pending
-                        ? "Retrying…"
-                        : action.feedback.action === "retry"
-                          ? "Retry"
-                          : "Dismiss"}
-                    </button>
-                  </div>
-                )
-            )}
+                      <span>{action.feedback.message}</span>
+                      <button
+                        type="button"
+                        disabled={
+                          action.pending ||
+                          (!identityReady && action.feedback.action === "retry")
+                        }
+                        onClick={() =>
+                          action.feedback?.action === "retry"
+                            ? void session.retryHistoryAction(target)
+                            : session.dismissHistoryAction(target)
+                        }
+                      >
+                        {action.pending
+                          ? "Retrying…"
+                          : action.feedback.action === "retry"
+                            ? "Retry"
+                            : "Dismiss"}
+                      </button>
+                    </div>
+                  )
+              )}
             <div className="history-grid" data-session-scroll="history-clips">
               {!historyLoading &&
                 !historyUnavailable &&
@@ -3301,6 +3320,7 @@ export function ClipboardApp({
               onDismiss={(id) => session.dismissHistoryAction(id)}
               onShareNow={onShareNow ? shareNow : undefined}
               shareNowAction={sessionState.historyActions["send:current"]}
+              historyDiagnostics={historyDiagnostics}
               onHistory={() => {
                 session.back();
                 session.update({ destination: "history" });
@@ -3580,6 +3600,7 @@ export function ClipboardApp({
             filteredOutCount={Math.max(0, clips.length - filteredClips.length)}
             pending={clearPending}
             error={clearError}
+            recoveryError={clearRefreshError}
             historyReady={
               !clearNeedsRefresh &&
               !historyLoading &&
@@ -3588,11 +3609,11 @@ export function ClipboardApp({
             }
             refreshPending={clearRefreshPending}
             onRefresh={refreshClearHistory}
+            diagnostics={historyDiagnostics}
             onCancel={() => {
-              if (clearPending) return;
+              if (clearPending || clearRefreshPending) return;
               setClearReviewOpen(false);
               session.complete("clear");
-              setClearError(null);
             }}
             onConfirm={clearAllHistory}
           />,

@@ -342,6 +342,39 @@ it("retiring the runtime owner clears pending History feedback and ignores late 
   await session.retryHistoryAction("send:current");
   expect(session.getSnapshot().historyActions).toEqual({});
 });
+
+it("keeps an uncertain History action blocked until explicit reconciliation", async () => {
+  const session = createUiSession();
+  let complete!: (feedback: {
+    message: string;
+    action: "dismiss";
+    requiresAcknowledgement: true;
+  }) => void;
+  const pending = session.runHistoryAction(
+    "clear",
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+
+  expect(session.getSnapshot().historyActions.clear?.pending).toBe(true);
+  expect(session.reconcileHistoryAction("clear")).toBe(false);
+  complete({
+    message:
+      "Clear could not be confirmed; refresh History before another attempt.",
+    action: "dismiss",
+    requiresAcknowledgement: true,
+  });
+  await pending;
+
+  expect(
+    session.getSnapshot().historyActions.clear?.feedback
+      ?.requiresAcknowledgement
+  ).toBe(true);
+  expect(session.reconcileHistoryAction("clear")).toBe(true);
+  expect(session.getSnapshot().historyActions.clear).toBeUndefined();
+});
 it("publishes destination availability as suspended editor work starts and is discarded", () => {
   const session = createUiSession();
   const availability: boolean[] = [];

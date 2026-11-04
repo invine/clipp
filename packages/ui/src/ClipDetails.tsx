@@ -16,6 +16,7 @@ export function ClipDetails({
   onHistory,
   onShareNow,
   shareNowAction,
+  historyDiagnostics,
 }: {
   clip?: Clip;
   sourceName?: string;
@@ -30,6 +31,7 @@ export function ClipDetails({
   onHistory(): void;
   onShareNow?(): void;
   shareNowAction?: SessionContext["historyActions"][string];
+  historyDiagnostics?: React.ReactNode;
 }) {
   if (!clip)
     return (
@@ -142,6 +144,12 @@ export function ClipDetails({
             </>
           )}
         </div>
+      )}
+      {historyDiagnostics && (
+        <details className="history-scenario-controls">
+          <summary>History scenario controls</summary>
+          {historyDiagnostics}
+        </details>
       )}
       {Object.entries(actions)
         .filter(([id]) => id.endsWith(`:${clip.id}`))

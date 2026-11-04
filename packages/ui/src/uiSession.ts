@@ -486,6 +486,20 @@ export function createUiSession() {
       else delete historyActions[id];
       update({ historyActions });
     },
+    reconcileHistoryAction(id: string) {
+      const action = state.historyActions[id];
+      if (
+        !action ||
+        action.pending ||
+        !action.feedback?.requiresAcknowledgement
+      )
+        return false;
+      historyRetries.delete(id);
+      const historyActions = { ...state.historyActions };
+      delete historyActions[id];
+      update({ historyActions });
+      return true;
+    },
     async retryHistoryAction(id: string) {
       const action = historyRetries.get(id);
       if (action) await this.runHistoryAction(id, action);

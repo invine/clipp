@@ -79,6 +79,7 @@
     "test:relay-management": "playwright test --config tests/relay-management.playwright.config.ts",
     "test:device-management": "playwright test --config tests/device-management.playwright.config.ts",
     "test:trust-requests": "playwright test --config tests/trust-requests.playwright.config.ts",
+    "test:history-mutations": "playwright test --config tests/history-mutations.playwright.config.ts",
     "ui-behavior": "vite --config tests/harness/ui-behavior/vite.config.ts",
     "typecheck": "npm run typecheck:shared && npm run typecheck:electron && npm run typecheck:android && npm run typecheck:extension",
     "typecheck:shared": "tsc -p tsconfig.typecheck.json",
