@@ -23,6 +23,7 @@ export function createRuntimeOrchestrator<
 ) {
   let currentStatus: RuntimeStatus = "idle";
   let unsubscribeShutdown: (() => void) | undefined;
+  let lifecycleGeneration = 0;
 
   const publisher = createOrderedStatePublisher(
     orchestration.adapter.publicState
@@ -40,6 +41,7 @@ export function createRuntimeOrchestrator<
       currentStatus === "stopping"
     )
       return;
+    lifecycleGeneration++;
     currentStatus = "stopping";
     try {
       await orchestration.stop?.(context);
@@ -53,16 +55,26 @@ export function createRuntimeOrchestrator<
   return {
     async start(): Promise<void> {
       if (currentStatus === "running" || currentStatus === "starting") return;
+      const generation = ++lifecycleGeneration;
       currentStatus = "starting";
       unsubscribeShutdown = orchestration.adapter.lifecycle.onShutdown(stop);
       try {
         await orchestration.start(context);
+        if (generation !== lifecycleGeneration || currentStatus !== "starting")
+          return;
         await publishState();
+        if (generation !== lifecycleGeneration || currentStatus !== "starting")
+          return;
         currentStatus = "running";
       } catch (error) {
-        unsubscribeShutdown();
-        unsubscribeShutdown = undefined;
-        currentStatus = "stopped";
+        if (
+          generation === lifecycleGeneration &&
+          currentStatus === "starting"
+        ) {
+          unsubscribeShutdown?.();
+          unsubscribeShutdown = undefined;
+          currentStatus = "stopped";
+        }
         throw error;
       }
     },

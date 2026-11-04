@@ -37,7 +37,9 @@ async function expectAdapterConformance(
     initialIdentity: { deviceId: "device-a" },
     initialApplicationState: { launches: 0 },
     initialClipboardText: "captured text",
-    getPublicState: async ({ state }) => ({ launches: (await state.read()).launches }),
+    getPublicState: async ({ state }) => ({
+      launches: (await state.read()).launches,
+    }),
   });
   const durable = new Map<string, unknown>([
     ["identity", { deviceId: "device-a" }],
@@ -71,7 +73,11 @@ async function expectAdapterConformance(
     relayAddresses = [...addresses];
     return relayAddresses;
   });
-  let adapter!: RuntimeAdapter<ConformanceIdentity, ConformanceState, ConformancePublicState>;
+  let adapter!: RuntimeAdapter<
+    ConformanceIdentity,
+    ConformanceState,
+    ConformancePublicState
+  >;
   adapter = factory({
     ...nativePorts,
     storage,
@@ -100,8 +106,16 @@ async function expectAdapterConformance(
     state: { launches: state.launches + 1 },
     result: undefined,
   }));
-  await adapter.notifications.show({ id: "notice", title: "Notice", body: "Body" });
-  await adapter.network.send("/clipp/conformance/1.0.0", "device-b", new Uint8Array([1]));
+  await adapter.notifications.show({
+    id: "notice",
+    title: "Notice",
+    body: "Body",
+  });
+  await adapter.network.send(
+    "/clipp/conformance/1.0.0",
+    "device-b",
+    new Uint8Array([1])
+  );
   await adapter.publicState.publish(await adapter.publicState.read());
   await harness.selectNotification("notice");
   await harness.shutdown();
@@ -122,7 +136,9 @@ async function expectAdapterConformance(
   expect(adapter.relays.mode).toBe(expected.relayConfiguration);
   expect(await adapter.relays.readAddresses()).toEqual(relayAddresses);
   if (adapter.relays.mode === "editable") {
-    await adapter.relays.updateAddresses(["/dns4/new-relay.example.com/tcp/443/wss/p2p/relay"]);
+    await adapter.relays.updateAddresses([
+      "/dns4/new-relay.example.com/tcp/443/wss/p2p/relay",
+    ]);
     expect(updateRelayAddresses).toHaveBeenCalledTimes(1);
   } else {
     expect("updateAddresses" in adapter.relays).toBe(false);
@@ -141,6 +157,91 @@ async function expectAdapterConformance(
 }
 
 describe("shared runtime seam", () => {
+  it("keeps a runtime stopped when a pending startup succeeds after stop", async () => {
+    const harness = createRuntimeConformanceHarness({
+      capabilities: RUNTIME_CAPABILITIES.electron,
+      initialApplicationState: { launches: 0 },
+      initialIdentity: { deviceId: "device-a" },
+      getPublicState: async ({ state }) => ({
+        launches: (await state.read()).launches,
+      }),
+    });
+    let finishStartup!: () => void;
+    const startup = new Promise<void>((resolve) => {
+      finishStartup = resolve;
+    });
+    const stopWork = jest.fn();
+    const runtime = createRuntimeOrchestrator({
+      adapter: harness.adapter,
+      start: () => startup,
+      stop: stopWork,
+    });
+
+    const starting = runtime.start();
+    const stopping = runtime.stop();
+    await stopping;
+    finishStartup();
+    await starting;
+
+    expect(runtime.status()).toBe("stopped");
+    expect(harness.observed.publicStates).toEqual([]);
+    expect(stopWork).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a rejected superseded startup without reviving the runtime", async () => {
+    const harness = createRuntimeConformanceHarness({
+      capabilities: RUNTIME_CAPABILITIES.electron,
+      initialApplicationState: { launches: 0 },
+      initialIdentity: { deviceId: "device-a" },
+      getPublicState: async ({ state }) => ({
+        launches: (await state.read()).launches,
+      }),
+    });
+    let failStartup!: (error: Error) => void;
+    const startup = new Promise<void>((_resolve, reject) => {
+      failStartup = reject;
+    });
+    const runtime = createRuntimeOrchestrator({
+      adapter: harness.adapter,
+      start: () => startup,
+    });
+
+    const starting = runtime.start();
+    await runtime.stop();
+    const startupError = new Error("startup failed after retirement");
+    failStartup(startupError);
+
+    await expect(starting).rejects.toBe(startupError);
+    expect(runtime.status()).toBe("stopped");
+    expect(harness.observed.publicStates).toEqual([]);
+  });
+
+  it("starts, publishes, stops, and releases its shutdown subscription", async () => {
+    const harness = createRuntimeConformanceHarness({
+      capabilities: RUNTIME_CAPABILITIES.electron,
+      initialApplicationState: { launches: 1 },
+      initialIdentity: { deviceId: "device-a" },
+      getPublicState: async ({ state }) => ({
+        launches: (await state.read()).launches,
+      }),
+    });
+    const stopWork = jest.fn();
+    const runtime = createRuntimeOrchestrator({
+      adapter: harness.adapter,
+      start: async () => undefined,
+      stop: stopWork,
+    });
+
+    await runtime.start();
+    expect(runtime.status()).toBe("running");
+    expect(harness.observed.publicStates).toEqual([{ launches: 1 }]);
+    await runtime.stop();
+    await harness.shutdown();
+
+    expect(runtime.status()).toBe("stopped");
+    expect(stopWork).toHaveBeenCalledTimes(1);
+  });
+
   it("publishes pending history failures until durable storage recovers", async () => {
     let storageAvailable = false;
     const historyErrors: Array<string | null> = [];
@@ -149,7 +250,8 @@ describe("shared runtime seam", () => {
       getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
       makeId: (() => {
         let id = 0;
-        return () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`;
+        return () =>
+          `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`;
       })(),
       history: {
         accept: async (clip) => {
@@ -193,7 +295,9 @@ describe("shared runtime seam", () => {
     await clipboard.processLocalText?.("secret clipboard content");
 
     expect(historyErrors).toEqual(["clip_too_large"]);
-    expect(JSON.stringify(historyErrors)).not.toContain("secret clipboard content");
+    expect(JSON.stringify(historyErrors)).not.toContain(
+      "secret clipboard content"
+    );
     clipboard.dismissHistoryError?.();
     expect(historyErrors).toEqual(["clip_too_large", null]);
     await clipboard.stop();
@@ -205,10 +309,17 @@ describe("shared runtime seam", () => {
     const clipboard = createRuntimeClipboardService({
       capabilities: RUNTIME_CAPABILITIES.chromeExtension,
       getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
-      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+      makeId: () =>
+        `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
       pendingMaxBytes: 500,
-      history: { accept: async () => { throw new Error("storage unavailable"); } },
-      onHistoryErrorChanged: (error) => { historyErrors.push(error); },
+      history: {
+        accept: async () => {
+          throw new Error("storage unavailable");
+        },
+      },
+      onHistoryErrorChanged: (error) => {
+        historyErrors.push(error);
+      },
     });
     clipboard.start();
 
@@ -230,7 +341,8 @@ describe("shared runtime seam", () => {
     const clipboard = createRuntimeClipboardService({
       capabilities: RUNTIME_CAPABILITIES.chromeExtension,
       getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
-      makeId: () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
+      makeId: () =>
+        `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}`,
       history: {
         accept: async () => {
           accepts += 1;
@@ -238,7 +350,9 @@ describe("shared runtime seam", () => {
           throw new Error("storage unavailable");
         },
       },
-      onHistoryErrorChanged: (error) => { historyErrors.push(error); },
+      onHistoryErrorChanged: (error) => {
+        historyErrors.push(error);
+      },
     });
     clipboard.start();
 
@@ -260,8 +374,14 @@ describe("shared runtime seam", () => {
       getSenderId: () => "12D3KooWJ5oQ9G9kDMwrrzmVWwZnJryHJns8ovH8LYgDgJYJYyXy",
       makeId: () => "00000000-0000-4000-8000-000000000220",
       pendingMaxBytes: 1,
-      history: { accept: async () => { throw new Error("storage unavailable"); } },
-      onHistoryErrorChanged: (error) => { historyErrors.push(error); },
+      history: {
+        accept: async () => {
+          throw new Error("storage unavailable");
+        },
+      },
+      onHistoryErrorChanged: (error) => {
+        historyErrors.push(error);
+      },
     });
     clipboard.start();
 
@@ -285,7 +405,9 @@ describe("shared runtime seam", () => {
     const runtime = createRuntimeOrchestrator({
       adapter: harness.adapter,
       start: async (runtimeContext) => {
-        runtimeContext.notifications.onSelect(() => runtimeContext.lifecycle.openApprovalView());
+        runtimeContext.notifications.onSelect(() =>
+          runtimeContext.lifecycle.openApprovalView()
+        );
         runtimeContext.network.onMessage("/clipp/test/1.0.0", (from, data) => {
           received.push({ from, data });
         });
@@ -294,7 +416,11 @@ describe("shared runtime seam", () => {
           result: undefined,
         }));
         await runtimeContext.clipboard.writeText("remote clip");
-        await runtimeContext.network.send("/clipp/test/1.0.0", "device-b", new Uint8Array([1, 2]));
+        await runtimeContext.network.send(
+          "/clipp/test/1.0.0",
+          "device-b",
+          new Uint8Array([1, 2])
+        );
         await runtimeContext.notifications.show({
           id: "pairing-device-b",
           title: "Pairing request",
@@ -326,46 +452,76 @@ describe("shared runtime seam", () => {
     ]);
     await harness.selectNotification("pairing-device-b");
     expect(harness.observed.approvalViewsOpened).toBe(1);
-    harness.receiveProtocol("/clipp/test/1.0.0", "device-b", new Uint8Array([3, 4]));
-    expect(received).toEqual([{ from: "device-b", data: new Uint8Array([3, 4]) }]);
+    harness.receiveProtocol(
+      "/clipp/test/1.0.0",
+      "device-b",
+      new Uint8Array([3, 4])
+    );
+    expect(received).toEqual([
+      { from: "device-b", data: new Uint8Array([3, 4]) },
+    ]);
     expect(harness.observed.publicStates).toEqual([
       { launches: 1, deviceId: "device-a" },
     ]);
-    expect(await harness.restart().adapter.state.read()).toEqual({ launches: 1 });
+    expect(await harness.restart().adapter.state.read()).toEqual({
+      launches: 1,
+    });
 
     await harness.shutdown();
     expect(runtime.status()).toBe("stopped");
   });
 
   it.each([
-    ["electron", createElectronRuntimeAdapter, RUNTIME_CAPABILITIES.electron, {
-      platform: "electron",
-      clipboardCapture: "polling",
-      relayConfiguration: "editable",
-      pinPersistence: "durable",
-      notificationApi: "electron",
-      postRotationClipboardCapture: "baseline-current",
-      liveClipboardApplicationRecovery: "none",
-    }],
-    ["android", createAndroidRuntimeAdapter, RUNTIME_CAPABILITIES.android, {
-      platform: "android",
-      clipboardCapture: "polling",
-      relayConfiguration: "fixed",
-      pinPersistence: "durable",
-      notificationApi: "capacitor",
-      postRotationClipboardCapture: "baseline-current",
-      liveClipboardApplicationRecovery: "one-resume-retry",
-    }],
-    ["chrome-extension", createChromeExtensionRuntimeAdapter, RUNTIME_CAPABILITIES.chromeExtension, {
-      platform: "chrome-extension",
-      clipboardCapture: "explicit-input",
-      relayConfiguration: "fixed",
-      pinPersistence: "session",
-      notificationApi: "chrome",
-      postRotationClipboardCapture: "deferred",
-      liveClipboardApplicationRecovery: "none",
-    }],
-  ] as const)("conforms the %s runtime adapter", async (_platform, factory, capabilities, expected) => {
-    await expectAdapterConformance(factory as AdapterFactory, capabilities, expected);
-  });
+    [
+      "electron",
+      createElectronRuntimeAdapter,
+      RUNTIME_CAPABILITIES.electron,
+      {
+        platform: "electron",
+        clipboardCapture: "polling",
+        relayConfiguration: "editable",
+        pinPersistence: "durable",
+        notificationApi: "electron",
+        postRotationClipboardCapture: "baseline-current",
+        liveClipboardApplicationRecovery: "none",
+      },
+    ],
+    [
+      "android",
+      createAndroidRuntimeAdapter,
+      RUNTIME_CAPABILITIES.android,
+      {
+        platform: "android",
+        clipboardCapture: "polling",
+        relayConfiguration: "fixed",
+        pinPersistence: "durable",
+        notificationApi: "capacitor",
+        postRotationClipboardCapture: "baseline-current",
+        liveClipboardApplicationRecovery: "one-resume-retry",
+      },
+    ],
+    [
+      "chrome-extension",
+      createChromeExtensionRuntimeAdapter,
+      RUNTIME_CAPABILITIES.chromeExtension,
+      {
+        platform: "chrome-extension",
+        clipboardCapture: "explicit-input",
+        relayConfiguration: "fixed",
+        pinPersistence: "session",
+        notificationApi: "chrome",
+        postRotationClipboardCapture: "deferred",
+        liveClipboardApplicationRecovery: "none",
+      },
+    ],
+  ] as const)(
+    "conforms the %s runtime adapter",
+    async (_platform, factory, capabilities, expected) => {
+      await expectAdapterConformance(
+        factory as AdapterFactory,
+        capabilities,
+        expected
+      );
+    }
+  );
 });
