@@ -1536,6 +1536,7 @@ describe("pending Trust Requests", () => {
 
   it("rate-limits rejection diagnostics by authenticated peer and reason", async () => {
     const diagnostics: any[] = [];
+    const rejectedPeers: string[] = [];
     const coordinator = createPendingTrustRequestCoordinator({
       localPeerId: async () => targetPeerId,
       store: {
@@ -1557,6 +1558,7 @@ describe("pending Trust Requests", () => {
       verify: async () => false,
       connectionPath: () => "direct",
       onRejected: (diagnostic) => void diagnostics.push(diagnostic),
+      onRejectedPeer: (peerId) => void rejectedPeers.push(peerId),
     });
     const frame = encodePairingFrame({
       kind: "request",
@@ -1569,6 +1571,11 @@ describe("pending Trust Requests", () => {
     await coordinator.receive(initiatorPeerId, frame);
     await coordinator.receive(targetPeerId, frame);
     expect(diagnostics).toHaveLength(2);
+    expect(rejectedPeers).toEqual([
+      initiatorPeerId,
+      initiatorPeerId,
+      targetPeerId,
+    ]);
     expect(diagnostics[0]).toMatchObject({
       event: "pairing_message_rejected",
       reason: "invalid_signature",

@@ -34,6 +34,7 @@ import {
   decodePairingTarget,
 } from "../../../packages/core/pairing/v2.js";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator.js";
+import { createPairingRejectionCleanup } from "../../../packages/core/pairing/rejectionCleanup.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
 import {
   PAIRING_PROTOCOL,
@@ -656,6 +657,12 @@ async function composeElectronRuntime(
   }> = [];
   let pairingPending:
     ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
+  const cleanupRejectedPeer = createPairingRejectionCleanup({
+    membership: identitySvc,
+    isCurrentTransport: (remotePeerId) =>
+      runtimeNetwork.getConnectedPeers().includes(remotePeerId),
+    disconnect: (remotePeerId) => runtimeNetwork.disconnect?.(remotePeerId),
+  });
   const pairingSessions = createPairingRuntimeSessions({
     identity: async () => {
       const current = await identitySvc.get();
@@ -682,16 +689,8 @@ async function composeElectronRuntime(
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return runtimeNetwork.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: cleanupRejectedPeer,
     onChanged: () => emitState(),
   });
   let mainWindow: BrowserWindow | null = null;
@@ -1341,16 +1340,8 @@ async function composeElectronRuntime(
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return runtimeNetwork.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: cleanupRejectedPeer,
     onChanged: async (requests) => {
       pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,

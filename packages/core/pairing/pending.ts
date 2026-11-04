@@ -140,6 +140,8 @@ export function createPendingTrustRequestCoordinator(options: {
   responseIdentity?(): Promise<{ deviceName: string; nameRevision: bigint }>;
   connectionPath?(peerId: string): PairingConnectionPath;
   onRejected?(diagnostic: PairingRejectionDiagnostic): void;
+  /** Runs for every authenticated rejection, independently of diagnostic throttling. */
+  onRejectedPeer?(authenticatedPeerId: string): void | Promise<void>;
   onChanged?(
     requests: Array<PendingTrustRequest & { requestVersion: string }>
   ): void | Promise<void>;
@@ -177,6 +179,9 @@ export function createPendingTrustRequestCoordinator(options: {
     frame: Uint8Array,
     messageType: "request" | "response" | "unknown" = "request"
   ) => {
+    void Promise.resolve(options.onRejectedPeer?.(authenticatedPeerId)).catch(
+      () => undefined
+    );
     reportRejected({
       reason,
       authenticatedPeerId,
