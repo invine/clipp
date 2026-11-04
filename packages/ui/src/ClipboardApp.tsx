@@ -2381,6 +2381,7 @@ export function ClipboardApp({
                       </h4>
                       <ManualIdentityResetSettings
                         peerId={identity?.deviceId}
+                        owner={runtimeOwner ?? session}
                         state={identityResetState}
                         available={manualIdentityResetAvailable}
                         actions={identityResetActions}
