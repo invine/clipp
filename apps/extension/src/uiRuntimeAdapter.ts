@@ -5,7 +5,10 @@ import type {
   UiRuntimeActions,
   UiHostEffects,
 } from "../../../packages/ui/src/runtimeAdapter";
-import { browserUiHost } from "../../../packages/ui/src/runtimeAdapter";
+import {
+  browserUiHost,
+  getUiRuntimeCapabilities,
+} from "../../../packages/ui/src/runtimeAdapter";
 import { createExtensionUiControls } from "./extensionUiControls";
 import type { UiSession } from "../../../packages/ui/src/uiSession";
 import {
@@ -577,6 +580,9 @@ export function createExtensionUiAdapter(
       };
     },
     actions,
+    get capabilities() {
+      return getUiRuntimeCapabilities({ ...snapshot, ...actions });
+    },
     host: options.host ?? {
       ...browserUiHost,
       copyText: (text) => clipboard.writeText(text),
