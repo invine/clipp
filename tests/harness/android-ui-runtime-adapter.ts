@@ -48,6 +48,11 @@ export async function runAndroidUiRuntimeAdapterConformance() {
   let pendingAvailability: ((value: typeof availability) => void) | undefined;
   let opens = 0;
   let availabilityReads = 0;
+  let holdAvailabilityReads = 0;
+  const releaseAvailabilityReads: ((value: typeof availability) => void)[] = [];
+  let holdNextSettingsAction = false;
+  let settleSettingsAction: ((error?: Error) => void) | undefined;
+  let failNextSettingsAction = false;
   let state = initialState;
   const runtime = {
     client: {
@@ -74,6 +79,12 @@ export async function runAndroidUiRuntimeAdapterConformance() {
       },
       async getNotificationAvailability() {
         availabilityReads++;
+        if (holdAvailabilityReads > 0) {
+          holdAvailabilityReads -= 1;
+          return new Promise<typeof availability>((resolve) => {
+            releaseAvailabilityReads.push(resolve);
+          });
+        }
         return new Promise<typeof availability>((resolve) => {
           if (pendingAvailability) pendingAvailability = resolve;
           else resolve(availability);
@@ -81,6 +92,17 @@ export async function runAndroidUiRuntimeAdapterConformance() {
       },
       async openNotificationSettings() {
         opens++;
+        if (failNextSettingsAction) {
+          failNextSettingsAction = false;
+          throw new Error("settings failed");
+        }
+        if (holdNextSettingsAction) {
+          holdNextSettingsAction = false;
+          await new Promise<void>((resolve, reject) => {
+            settleSettingsAction = (error) =>
+              error ? reject(error) : resolve();
+          });
+        }
       },
       async requestNotificationPermission() {
         return "granted";
@@ -234,6 +256,143 @@ export async function runAndroidUiRuntimeAdapterConformance() {
   await current.notificationControls?.openSettings?.();
   if (opens !== 1)
     throw new Error("android_notification_action_not_translated");
+
+  holdNextSettingsAction = true;
+  const retiredSuccess = adapter
+    .getSnapshot()
+    .notificationControls?.openSettings?.();
+  const duplicateAction = adapter
+    .getSnapshot()
+    .notificationControls?.openSettings?.();
+  if (
+    !adapter.getSnapshot().notificationControls?.pending ||
+    Number(opens) !== 2
+  )
+    throw new Error("android_notification_duplicate_action_admitted");
+  holdAvailabilityReads = 1;
+  const passiveRefresh = adapter.getSnapshot().notificationControls?.refresh();
+  for (let i = 0; i < 20 && releaseAvailabilityReads.length === 0; i++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  if (releaseAvailabilityReads.length === 0)
+    throw new Error("android_notification_passive_read_not_started");
+  const releaseRead = releaseAvailabilityReads.shift()!;
+  const passiveState = {
+    app: "blocked",
+    channel: "not-applicable",
+    displayError: null,
+  };
+  releaseRead(passiveState);
+  await passiveRefresh;
+  if (
+    adapter.getSnapshot().notificationControls?.pending !== true ||
+    (adapter.getSnapshot().notificationControls?.state as { app?: string })
+      ?.app !== "blocked"
+  )
+    throw new Error("android_notification_passive_refresh_lost_pending");
+  await adapter.stop();
+  await adapter.start();
+  if (adapter.getSnapshot().notificationControls?.pending !== false)
+    throw new Error("android_notification_pending_survived_restart");
+  const replacementSnapshot = adapter.getSnapshot();
+  const settleOldSuccess = settleSettingsAction as
+    ((error?: Error) => void) | undefined;
+  if (!settleOldSuccess)
+    throw new Error("android_notification_action_not_held");
+  settleSettingsAction = undefined;
+  settleOldSuccess();
+  await Promise.all([retiredSuccess, duplicateAction]);
+  if (adapter.getSnapshot() !== replacementSnapshot)
+    throw new Error("android_retired_notification_success_published");
+  availability = {
+    app: "available",
+    channel: "available",
+    displayError: null,
+  };
+  await adapter.getSnapshot().notificationControls?.refresh();
+  if (
+    (adapter.getSnapshot().notificationControls?.state as { app?: string })
+      ?.app !== "available"
+  )
+    throw new Error("android_current_refresh_missed_native_change");
+
+  holdAvailabilityReads = 1;
+  const earlierRead = adapter.getSnapshot().notificationControls?.refresh();
+  for (let i = 0; i < 20 && releaseAvailabilityReads.length === 0; i++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  failNextSettingsAction = true;
+  await adapter.getSnapshot().notificationControls?.openSettings?.();
+  if (!adapter.getSnapshot().notificationControls?.error)
+    throw new Error("android_notification_action_error_not_published");
+  const finishEarlierRead = releaseAvailabilityReads.shift();
+  if (!finishEarlierRead)
+    throw new Error("android_notification_earlier_read_not_held");
+  finishEarlierRead({
+    app: "blocked",
+    channel: "not-applicable",
+    displayError: null,
+  });
+  await earlierRead;
+  if (!adapter.getSnapshot().notificationControls?.error)
+    throw new Error("android_earlier_read_cleared_action_error");
+  holdAvailabilityReads = 1;
+  const recoveryRead = adapter.getSnapshot().notificationControls?.refresh();
+  for (let i = 0; i < 20 && releaseAvailabilityReads.length === 0; i++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  const finishRecoveryRead = releaseAvailabilityReads.shift();
+  if (!finishRecoveryRead)
+    throw new Error("android_notification_recovery_read_not_held");
+  finishRecoveryRead({
+    app: "available",
+    channel: "available",
+    displayError: null,
+  });
+  await recoveryRead;
+  if (adapter.getSnapshot().notificationControls?.error)
+    throw new Error("android_successful_refresh_did_not_clear_action_error");
+  holdAvailabilityReads = 2;
+  const oldestRead = adapter.getSnapshot().notificationControls?.refresh();
+  const newestRead = adapter.getSnapshot().notificationControls?.refresh();
+  for (let i = 0; i < 20 && releaseAvailabilityReads.length < 2; i++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  if (releaseAvailabilityReads.length < 2)
+    throw new Error("android_notification_ordering_reads_not_held");
+  releaseAvailabilityReads[1]({
+    app: "blocked",
+    channel: "not-applicable",
+    displayError: null,
+  });
+  await newestRead;
+  releaseAvailabilityReads[0]({
+    app: "available",
+    channel: "available",
+    displayError: null,
+  });
+  await oldestRead;
+  releaseAvailabilityReads.length = 0;
+  if (
+    (adapter.getSnapshot().notificationControls?.state as { app?: string })
+      ?.app !== "blocked"
+  )
+    throw new Error("android_stale_notification_read_overwrote_newer_state");
+
+  holdNextSettingsAction = true;
+  const retiredFailure = adapter
+    .getSnapshot()
+    .notificationControls?.openSettings?.();
+  for (let i = 0; i < 20 && !settleSettingsAction; i++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  await adapter.stop();
+  await adapter.start();
+  const failureReplacementSnapshot = adapter.getSnapshot();
+  const settleOldFailure = settleSettingsAction as
+    ((error?: Error) => void) | undefined;
+  settleSettingsAction = undefined;
+  if (!settleOldFailure)
+    throw new Error("android_notification_failure_action_not_held");
+  settleOldFailure(new Error("retired settings action failed"));
+  await retiredFailure;
+  if (adapter.getSnapshot() !== failureReplacementSnapshot)
+    throw new Error("android_retired_notification_failure_published");
 
   const firstRuntimeListener = subscriptions.runtime;
   let beforeStop: ReturnType<typeof adapter.getSnapshot> | undefined;

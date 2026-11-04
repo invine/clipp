@@ -301,3 +301,138 @@ it("guards duplicate notification actions and settles pending/error through the 
   expect(failedAdapter.getSnapshot().notificationControls?.error).toBe(true);
   await failedAdapter.stop?.();
 });
+
+it.each(["resolve", "reject"] as const)(
+  "retires a pending notification action after stop and restart (%s)",
+  async (settlement) => {
+    const fixture = electronBridge();
+    const reads: {
+      resolve(value: RuntimeNotificationAvailability): void;
+      reject(error: Error): void;
+    }[] = [];
+    Object.assign(fixture.bridge, {
+      getNotificationAvailability: jest.fn(
+        () =>
+          new Promise<RuntimeNotificationAvailability>((resolve, reject) => {
+            reads.push({ resolve, reject });
+          })
+      ),
+    });
+    let resolveAction!: () => void;
+    let rejectAction!: (error: Error) => void;
+    const action = new Promise<void>((resolve, reject) => {
+      resolveAction = resolve;
+      rejectAction = reject;
+    });
+    const openSettings = jest.fn(() => action);
+    Object.assign(fixture.bridge, { openNotificationSettings: openSettings });
+    const adapter = createElectronUiRuntimeAdapter(
+      fixture.bridge,
+      createUiSession()
+    );
+    await adapter.start?.();
+    const available = {
+      app: "available",
+      channel: "not-applicable",
+      displayError: null,
+    } as const;
+    const blocked = {
+      app: "blocked",
+      channel: "not-applicable",
+      displayError: "permission_denied",
+    } as const;
+    reads[0].resolve(available);
+    await Promise.resolve();
+    const controls = adapter.getSnapshot().notificationControls!;
+    const actionRun = controls.openSettings!();
+    const duplicate = controls.openSettings!();
+    expect(adapter.getSnapshot().notificationControls?.pending).toBe(true);
+    expect(openSettings).toHaveBeenCalledTimes(1);
+
+    const passiveRefresh = controls.refresh();
+    reads[1].resolve(blocked);
+    await passiveRefresh;
+    expect(adapter.getSnapshot().notificationControls).toMatchObject({
+      state: blocked,
+      pending: true,
+      error: false,
+    });
+
+    await adapter.stop?.();
+    const restarted = adapter.start?.();
+    await restarted;
+    expect(adapter.getSnapshot().notificationControls?.pending).toBe(false);
+    reads[2].resolve(available);
+    await Promise.resolve();
+    const replacementSnapshot = adapter.getSnapshot();
+    if (settlement === "resolve") resolveAction();
+    else rejectAction(new Error("retired action failed"));
+    await Promise.all([actionRun, duplicate]);
+    expect(adapter.getSnapshot()).toBe(replacementSnapshot);
+    expect(adapter.getSnapshot().notificationControls).toMatchObject({
+      state: available,
+      pending: false,
+      error: false,
+    });
+    await adapter.stop?.();
+  }
+);
+
+it("keeps availability read ordering separate from notification action errors", async () => {
+  const fixture = electronBridge();
+  const reads: ((value: RuntimeNotificationAvailability) => void)[] = [];
+  Object.assign(fixture.bridge, {
+    getNotificationAvailability: jest.fn(
+      () =>
+        new Promise<RuntimeNotificationAvailability>((resolve) =>
+          reads.push(resolve)
+        )
+    ),
+    openNotificationSettings: jest.fn(async () => {
+      throw new Error("settings failed");
+    }),
+  });
+  const adapter = createElectronUiRuntimeAdapter(
+    fixture.bridge,
+    createUiSession()
+  );
+  await adapter.start?.();
+  const value = (app: "available" | "blocked") => ({
+    app,
+    channel: "not-applicable" as const,
+    displayError: null,
+  });
+  reads[0](value("available"));
+  await Promise.resolve();
+
+  const controls = adapter.getSnapshot().notificationControls!;
+  const olderRead = controls.refresh();
+  const newerRead = controls.refresh();
+  reads[2](value("blocked"));
+  await newerRead;
+  reads[1](value("available"));
+  await olderRead;
+  expect(adapter.getSnapshot().notificationControls?.state?.app).toBe(
+    "blocked"
+  );
+
+  const inFlightRead = controls.refresh();
+  await controls.openSettings!();
+  expect(adapter.getSnapshot().notificationControls?.error).toBe(true);
+  reads[3](value("available"));
+  await inFlightRead;
+  expect(adapter.getSnapshot().notificationControls).toMatchObject({
+    state: value("available"),
+    pending: false,
+    error: true,
+  });
+
+  const recoveryRead = adapter.getSnapshot().notificationControls!.refresh();
+  reads[4](value("blocked"));
+  await recoveryRead;
+  expect(adapter.getSnapshot().notificationControls).toMatchObject({
+    state: value("blocked"),
+    error: false,
+  });
+  await adapter.stop?.();
+});

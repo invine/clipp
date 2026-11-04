@@ -3,6 +3,7 @@ import {
   type SettingsClientState,
 } from "../../../packages/core/runtime/settingsClient";
 import type { RuntimeNotificationAvailability } from "../../../packages/core/runtime/notifications";
+import { createNotificationAvailabilityOwner } from "../../../packages/ui/src/notificationAvailabilityOwner";
 import type {
   NotificationAvailabilityBridge,
   NotificationAvailabilityControls,
@@ -26,8 +27,6 @@ export function createExtensionUiControls(options: {
   let notificationPending = false;
   let notificationError = false;
   let alive = false;
-  let generation = 0;
-  let acting = false;
   let removeBridge: (() => void) | undefined;
   let removeReturn: (() => void) | undefined;
   let notifications: NotificationAvailabilityControls;
@@ -37,58 +36,42 @@ export function createExtensionUiControls(options: {
       state: notificationState,
       pending: notificationPending,
       error: notificationError,
-      refresh: refreshNotifications,
+      refresh: notificationOwner.refresh,
       openSettings: options.notifications.openNotificationSettings
-        ? () => act(() => options.notifications.openNotificationSettings!())
+        ? () =>
+            notificationOwner.run(() =>
+              options.notifications.openNotificationSettings!()
+            )
         : undefined,
       requestPermission: options.notifications.requestNotificationPermission
         ? () =>
-            act(() => options.notifications.requestNotificationPermission!())
+            notificationOwner.run(() =>
+              options.notifications.requestNotificationPermission!()
+            )
         : undefined,
     };
     options.changed();
   }
 
-  async function refreshNotifications() {
-    if (!alive) return;
-    const expected = ++generation;
-    try {
-      const state = await options.notifications.getNotificationAvailability();
-      if (!alive || expected !== generation) return;
+  const notificationOwner = createNotificationAvailabilityOwner({
+    read: () => options.notifications.getNotificationAvailability(),
+    setState: (state) => {
       notificationState = state;
-      notificationError = false;
-    } catch {
-      if (!alive || expected !== generation) return;
-      notificationError = true;
-    }
-    publishNotifications();
-  }
-
-  async function act(action: () => Promise<unknown>) {
-    if (!alive || acting) return;
-    acting = true;
-    notificationPending = true;
-    notificationError = false;
-    publishNotifications();
-    try {
-      await action();
-      await refreshNotifications();
-    } catch {
-      if (alive) notificationError = true;
-    } finally {
-      acting = false;
-      if (alive) {
-        notificationPending = false;
-        publishNotifications();
-      }
-    }
-  }
+    },
+    setPending: (pending) => {
+      notificationPending = pending;
+    },
+    setError: (error) => {
+      notificationError = error;
+    },
+    publish: publishNotifications,
+  });
 
   notifications = {
     state: null,
     pending: false,
     error: false,
-    refresh: refreshNotifications,
+    refresh: () => notificationOwner.refresh(),
   };
 
   return {
@@ -98,11 +81,14 @@ export function createExtensionUiControls(options: {
     start() {
       if (alive) return;
       alive = true;
+      notificationOwner.start();
       removeBridge = options.notifications.onNotificationAvailabilityChanged?.(
-        () => void refreshNotifications()
+        () => void notificationOwner.refresh()
       );
-      removeReturn = options.subscribeReturn(() => void refreshNotifications());
-      void refreshNotifications();
+      removeReturn = options.subscribeReturn(
+        () => void notificationOwner.refresh()
+      );
+      void notificationOwner.refresh();
       void settings.start((state) => {
         appearance = state;
         options.changed();
@@ -110,9 +96,7 @@ export function createExtensionUiControls(options: {
     },
     stop() {
       alive = false;
-      generation += 1;
-      acting = false;
-      notificationPending = false;
+      notificationOwner.stop();
       removeBridge?.();
       removeReturn?.();
       removeBridge = removeReturn = undefined;

@@ -2,7 +2,7 @@ import { createRuntimeUiRecovery } from "../../../packages/core/runtime/uiRecove
 import type { RuntimeUiRecoveryState } from "../../../packages/core/runtime/uiRecovery";
 import { createSettingsClient } from "../../../packages/core/runtime/settingsClient";
 import { bindNotificationRequests } from "../../../packages/ui/src/notificationRequests";
-import { createNotificationActionLifecycle } from "../../../packages/ui/src/notificationActionLifecycle";
+import { createNotificationAvailabilityOwner } from "../../../packages/ui/src/notificationAvailabilityOwner";
 import { createUiRuntimeStore } from "../../../packages/ui/src/runtimeAdapter";
 import type { ClipboardAppProps } from "../../../packages/ui/src/ClipboardApp";
 import type { UiSession } from "../../../packages/ui/src/uiSession";
@@ -176,7 +176,6 @@ export function createAndroidUiRuntimeAdapter(
   let notificationState: RuntimeNotificationAvailability | null = null;
   let notificationPending = false;
   let notificationError = false;
-  let notificationGeneration = 0;
   let removeNotificationEvents: (() => void) | undefined;
   let availabilityUnsubscribe: (() => void) | undefined;
   let requestBinding: ReturnType<typeof bindNotificationRequests> | undefined;
@@ -218,13 +217,13 @@ export function createAndroidUiRuntimeAdapter(
     get error() {
       return notificationError;
     },
-    refresh: refreshNotificationAvailability,
+    refresh: () => notificationOwner.refresh(),
     openSettings: client.openNotificationSettings
-      ? () => runNotificationAction(() => client.openNotificationSettings())
+      ? () => notificationOwner.run(() => client.openNotificationSettings!())
       : undefined,
     requestPermission: client.requestNotificationPermission
       ? () =>
-          runNotificationAction(() => client.requestNotificationPermission())
+          notificationOwner.run(() => client.requestNotificationPermission!())
       : undefined,
   };
 
@@ -348,47 +347,33 @@ export function createAndroidUiRuntimeAdapter(
     if (active) uiStore.publish(makeProps());
   }
 
-  async function refreshNotificationAvailability() {
-    const expected = ++notificationGeneration;
-    try {
-      const next = await client.getNotificationAvailability();
-      if (active && expected === notificationGeneration) {
-        notificationState = next;
-        notificationError = false;
-        publish();
-      }
-    } catch {
-      if (active && expected === notificationGeneration) {
-        notificationError = true;
-        publish();
-      }
-    }
-  }
-
-  const runNotificationAction = createNotificationActionLifecycle({
-    isCurrent: () => active,
+  const notificationOwner = createNotificationAvailabilityOwner({
+    read: () => client.getNotificationAvailability(),
+    setState: (state) => {
+      notificationState = state;
+    },
     setPending: (pending) => {
-      if (active) notificationPending = pending;
+      notificationPending = pending;
     },
     setError: (error) => {
       notificationError = error;
     },
     publish,
-    refresh: refreshNotificationAvailability,
   });
 
   function onAvailabilityChange() {
-    void refreshNotificationAvailability();
+    void notificationOwner.refresh();
   }
 
   function start() {
     if (active) return owner.start();
     active = true;
+    notificationOwner.start();
     availabilityUnsubscribe =
       client.onNotificationAvailabilityChanged(onAvailabilityChange);
     const returned = () => {
       if (document.visibilityState !== "hidden")
-        void refreshNotificationAvailability();
+        void notificationOwner.refresh();
     };
     window.addEventListener("focus", returned);
     document.addEventListener("visibilitychange", returned);
@@ -410,14 +395,14 @@ export function createAndroidUiRuntimeAdapter(
       settingsState = next as typeof settingsState;
       publish();
     });
-    void refreshNotificationAvailability();
+    void notificationOwner.refresh();
     return owner.start();
   }
 
   async function stop() {
     if (!active) return;
     active = false;
-    notificationGeneration++;
+    notificationOwner.stop();
     removeNotificationEvents?.();
     removeNotificationEvents = undefined;
     availabilityUnsubscribe?.();
