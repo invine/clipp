@@ -1,9 +1,10 @@
 # Production runtime adapters
 
-Status: claimed
+Status: ready-for-agent
+Execution: stopped; specification-only instruction D4 applies.
 Blocked by: none
 
-Specification: [spec](../spec.md), requirements R3, R4, R8. Decisions D1–D3.
+Specification: [spec](../../spec.md), requirements R3, R4, R8. Decisions D1–D3.
 
 Implement production adapters and slim runtime views for Electron, Android, extension. Coordinate shared contract with 01 before wiring. Own apps/electron, apps/android, apps/extension and adapter tests; do not edit shared UI files concurrently. Preserve bridge behavior and state authority.
 
@@ -14,3 +15,5 @@ TDD at the user-approved UI/effect seam, relevant regressions, full npm run chec
 ## Comments
 
 Claim: /root coordinator assigns /root/runtime_adapters on 2026-11-03. Baseline main cbfa8887c9f54778c9820f41f4c83460d33b0173; specification decisions D1–D3 preserve accepted invariants.
+
+Prior implementation claim released following the user’s stop instruction. Partial work is preserved, not integrated or accepted. No active assignee; future dispatch requires a new implementation instruction and reconciliation with the current specification.
