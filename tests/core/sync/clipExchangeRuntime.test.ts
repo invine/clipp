@@ -23,7 +23,11 @@ const clip = (id: string, content: string): Clip => ({
   shareExpiresAt: 86_400_001,
 });
 
-function harness() {
+function harness(
+  membershipStatus: () => Promise<
+    "active" | "revoked" | "unknown"
+  > = async () => "active"
+) {
   const localListeners: Array<
     (value: Clip, options?: { shareNow?: boolean }) => void
   > = [];
@@ -32,6 +36,7 @@ function harness() {
     peerId: string;
     data?: Uint8Array;
   }> = [];
+  const remoteApplications: Clip[] = [];
   const connections: Array<(peerId: string) => void> = [];
   let messageHandler: ((peerId: string, data: Uint8Array) => void) | undefined;
   let streamHandlers = new Map<
@@ -47,7 +52,13 @@ function harness() {
     ) => localListeners.push(listener),
     onRemoteClipWritten: jest.fn(),
     reuseLocalClip: jest.fn(),
-    writeRemoteClip: jest.fn(async () => true),
+    writeRemoteClip: jest.fn(
+      async (value: Clip, shouldApply?: () => Promise<boolean>) => {
+        if (shouldApply && !(await shouldApply())) return false;
+        remoteApplications.push(value);
+        return true;
+      }
+    ),
     processLocalText: jest.fn(),
     clearHistory: jest.fn(),
   } as any;
@@ -61,7 +72,7 @@ function harness() {
     clipboardSync,
     history,
     getLocalDeviceId: async () => localPeerId,
-    membershipStatus: async () => "active",
+    membershipStatus,
     now: () => 1_000,
   });
   const transport = {
@@ -109,6 +120,7 @@ function harness() {
     clipboard,
     localListeners,
     deliveries,
+    remoteApplications,
     connections,
     history,
     exchange,
@@ -127,10 +139,12 @@ async function flush(): Promise<void> {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("Clip exchange runtime", () => {
@@ -292,6 +306,114 @@ describe("Clip exchange runtime", () => {
       imported
     );
     expect(fixture.clipboard.writeRemoteClip).toHaveBeenCalledTimes(1);
+    await fixture.exchange.stop();
+  });
+
+  it("does not apply an inbound Clip whose old transport callback settles after replacement", async () => {
+    const membership = deferred<"active">();
+    const fixture = harness(() => membership.promise);
+    fixture.exchange.startLocalCapture();
+    await fixture.exchange.activateReadyTransport(fixture.transport);
+    const oldCallback = fixture.messageHandler();
+    const incoming = {
+      ...clip("00000000-0000-4000-8000-000000000608", "retired inbound"),
+      originPeerId: "12D3KooWFNjtBxwwk1dbR9eAcDX11U9TsiU3Xho3fuY3e25tQzdy",
+    };
+    const secondIncoming = {
+      ...incoming,
+      id: "00000000-0000-4000-8000-000000000609",
+      content: "retired while storing",
+    };
+    oldCallback?.("member", encodeLiveClipFrame({ clip: incoming }));
+    membership.resolve("active");
+    await flush();
+    expect(fixture.clipboard.writeRemoteClip).toHaveBeenCalledTimes(1);
+
+    const stored = deferred<void>();
+    const release = deferred<void>();
+    const accept = fixture.history.accept.bind(fixture.history);
+    fixture.history.accept = async (value, options) => {
+      if (value.id === secondIncoming.id) {
+        stored.resolve();
+        await release.promise;
+      }
+      return await accept(value, options);
+    };
+    oldCallback?.("member", encodeLiveClipFrame({ clip: secondIncoming }));
+    await stored.promise;
+
+    await fixture.exchange.retireTransport();
+    const replacement = { ...fixture.transport };
+    await fixture.exchange.activateReadyTransport(replacement);
+    release.resolve();
+    await flush();
+
+    expect(fixture.remoteApplications).toEqual([incoming]);
+    await fixture.exchange.stop();
+  });
+
+  it("reoffers the same pending Share Now Clip after an ambiguous retired send", async () => {
+    const fixture = harness();
+    const receiver = new MemoryHistoryStore(undefined, { now: () => 1_000 });
+    const oldResult = deferred<void>();
+    const currentResult = deferred<void>();
+    const reofferedIds: string[] = [];
+    const oldTransport = {
+      ...fixture.transport,
+      send: jest.fn(
+        async (_protocol: string, _peerId: string, data: Uint8Array) => {
+          const frame = decodeLiveClipFrame(data);
+          if (frame) {
+            reofferedIds.push(frame.clip.id);
+            await receiver.accept(frame.clip, { liveHandled: true });
+          }
+          await oldResult.promise;
+        }
+      ),
+    };
+    const currentTransport = {
+      ...fixture.transport,
+      send: jest.fn(
+        async (_protocol: string, _peerId: string, data: Uint8Array) => {
+          const frame = decodeLiveClipFrame(data);
+          if (frame) {
+            reofferedIds.push(frame.clip.id);
+            await receiver.accept(frame.clip, { liveHandled: true });
+          }
+          await currentResult.promise;
+        }
+      ),
+    };
+
+    fixture.exchange.startLocalCapture();
+    await fixture.exchange.activateReadyTransport(oldTransport);
+    fixture.exchange.setAutoSync(false);
+    const shared = clip("00000000-0000-4000-8000-000000000610", "Share Now");
+    fixture.localListeners[0](shared, { shareNow: true });
+    await flush();
+    expect(oldTransport.send).toHaveBeenCalledTimes(1);
+    expect((await fixture.history.getById(shared.id))?.shareNowPending).toBe(
+      true
+    );
+
+    await fixture.exchange.retireTransport();
+    await fixture.exchange.activateReadyTransport(currentTransport);
+    await flush();
+    expect(currentTransport.send).toHaveBeenCalledTimes(1);
+    expect(reofferedIds).toEqual([shared.id, shared.id]);
+    expect(await receiver.query()).toHaveLength(1);
+
+    oldResult.reject(new Error("old_transport_result_lost"));
+    await flush();
+    expect((await fixture.history.getById(shared.id))?.shareNowPending).toBe(
+      true
+    );
+
+    currentResult.resolve();
+    await flush();
+    expect((await fixture.history.getById(shared.id))?.shareNowPending).toBe(
+      false
+    );
     await fixture.exchange.stop();
   });
 });
