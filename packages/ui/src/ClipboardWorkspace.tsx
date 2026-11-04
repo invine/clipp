@@ -15,6 +15,7 @@ export function ClipboardWorkspace({
   session: suppliedSession,
   taskInput,
   pairingDiagnostics,
+  pairingTaskDiagnostics,
   backgroundContinuityDiagnostics,
   pairingImport,
 }: {
@@ -24,6 +25,7 @@ export function ClipboardWorkspace({
   | "session"
   | "taskInput"
   | "pairingDiagnostics"
+  | "pairingTaskDiagnostics"
   | "pairingImport"
   | "backgroundContinuityDiagnostics"
 >) {
@@ -73,6 +75,7 @@ export function ClipboardWorkspace({
       {...adapter.actions}
       taskInput={taskInput}
       pairingDiagnostics={pairingDiagnostics}
+      pairingTaskDiagnostics={pairingTaskDiagnostics}
       backgroundContinuityDiagnostics={backgroundContinuityDiagnostics}
       pairingImport={pairingImport}
       session={session}

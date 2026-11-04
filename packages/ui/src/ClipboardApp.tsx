@@ -381,6 +381,7 @@ export type ClipboardAppProps = {
   onReject(dev: PendingRequest): Promise<PairingApprovalResult>;
   onPairText(txt: string): Promise<PairingSubmissionResult>;
   pairingDiagnostics?: React.ReactNode;
+  pairingTaskDiagnostics?: React.ReactNode;
   /** Test-only scenario controls rendered beside the active continuity surface. */
   backgroundContinuityDiagnostics?: React.ReactNode;
   onScanPairingCode?(options: PairingScanOptions): Promise<PairingScanResult>;
@@ -478,6 +479,7 @@ export function ClipboardApp({
   onReject,
   onPairText,
   pairingDiagnostics,
+  pairingTaskDiagnostics,
   backgroundContinuityDiagnostics,
   pairingImport,
   onScanPairingCode,
@@ -610,16 +612,19 @@ export function ClipboardApp({
       unsubscribe();
     };
   }, [scanError, scanCameraPermission]);
-  const activeScan = useRef<AbortController | null>(null);
-  useEffect(
-    () => () => {
-      const capture = activeScan.current;
+  const activeScan = useRef<{
+    controller: AbortController;
+    unsubscribe: () => void;
+  } | null>(null);
+  useEffect(() => {
+    setIsScanningPairing(false);
+    return () => {
+      const active = activeScan.current;
       activeScan.current = null;
-      capture?.abort();
-    },
-    []
-  );
-  useEffect(() => () => activeScan.current?.abort(), [identity?.deviceId]);
+      active?.controller.abort();
+      active?.unsubscribe();
+    };
+  }, [identity?.deviceId, runtimeOwner]);
   const { task: qrTask, state: qrState } = usePairingCodeTask(
     identity ? `${identity.deviceId}:${identity.deviceName}` : null,
     session.qr
@@ -1520,10 +1525,21 @@ export function ClipboardApp({
     if (task?.kind !== "pairing") return;
     const identityId = currentIdentity.current;
     const capture = new AbortController();
-    activeScan.current = capture;
-    const unsubscribe = session.subscribe(() => {
+    const active: {
+      controller: AbortController;
+      unsubscribe: () => void;
+    } = { controller: capture, unsubscribe: () => {} };
+    activeScan.current = active;
+    active.unsubscribe = session.subscribe(() => {
       const tasks = session.getSnapshot().tasks;
-      if (tasks[tasks.length - 1] !== task) capture.abort();
+      if (tasks[tasks.length - 1] !== task) {
+        capture.abort();
+        active.unsubscribe();
+        if (activeScan.current === active) {
+          activeScan.current = null;
+          setIsScanningPairing(false);
+        }
+      }
     });
     setScanError(null);
     setCameraPermission("unknown");
@@ -1546,8 +1562,8 @@ export function ClipboardApp({
       if (!capture.signal.aborted && currentIdentity.current === identityId)
         setScanError("camera_unavailable");
     } finally {
-      unsubscribe();
-      if (activeScan.current === capture) {
+      active.unsubscribe();
+      if (activeScan.current === active) {
         activeScan.current = null;
         setIsScanningPairing(false);
       }
@@ -3493,6 +3509,8 @@ export function ClipboardApp({
                 {isScanningPairing ? "Scanning…" : "Scan QR"}
               </button>
             )}
+            {pairingTaskDiagnostics}
+            {pair.pending && <p role="status">Submitting pairing text…</p>}
             {scanError && (
               <p role="alert">
                 {scanError === "camera_permission_denied" &&
@@ -3682,6 +3700,7 @@ export function ClipboardApp({
                 void qrTask.copy(onCopyPairingText);
               }}
             />
+            {pairingTaskDiagnostics}
           </TaskDialog>,
           document.body
         )}
