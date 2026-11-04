@@ -97,6 +97,7 @@ import {
 } from "../../../packages/core/pairing/pending";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator";
 import { createPairingRejectionCleanup } from "../../../packages/core/pairing/rejectionCleanup";
+import type { TransportOwner } from "../../../packages/core/messaging/transport";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import {
   decodePairingTarget,
@@ -293,6 +294,7 @@ let offscreenOwned = false;
 let offscreenCreateFlight: Promise<void> | null = null;
 let offscreenInitialized = false;
 let offscreenInitFlight: Promise<void> | null = null;
+let offscreenTransportOwner: string | undefined;
 
 async function ensureOffscreenDocument(): Promise<void> {
   await startupResetReady;
@@ -315,6 +317,7 @@ async function ensureOffscreenDocument(): Promise<void> {
       }
       if (!has) {
         offscreenInitialized = false;
+        offscreenTransportOwner = undefined;
         try {
           await chrome.offscreen.createDocument({
             url: OFFSCREEN_URL,
@@ -345,10 +348,12 @@ async function initializeOffscreen(): Promise<void> {
   if (!offscreenInitFlight) {
     offscreenInitFlight = (async () => {
       await managedConfigurationsReady;
+      const transportOwner = (offscreenTransportOwner ??= crypto.randomUUID());
       await sendOffscreen({
         action: "init",
         relays: [],
         managedConfigurations,
+        transportOwner,
       });
       for (const protocol of runtimeProtocolHandlers.keys())
         await sendOffscreen({ action: "runtimeRegisterProtocol", protocol });
@@ -365,6 +370,7 @@ async function initializeOffscreen(): Promise<void> {
 }
 
 async function stopOffscreenDocument(retire = false): Promise<void> {
+  offscreenTransportOwner = undefined;
   const offscreen = chrome.offscreen as typeof chrome.offscreen & {
     hasDocument?(): Promise<boolean>;
     closeDocument?(): Promise<void>;
@@ -516,8 +522,7 @@ const clipExchange = createClipExchangeRuntime({
   history,
   getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
   membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-  onMembershipChanged: (listener) =>
-    identitySvc.onMembershipChanged(listener),
+  onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
 });
 const settingsHandler = createSettingsHandler({
   storage,
@@ -588,9 +593,17 @@ let pendingRequests: Array<{
 }> = [];
 const cleanupRejectedPeer = createPairingRejectionCleanup({
   membership: identitySvc,
-  isCurrentTransport: (remotePeerId) =>
+  isCurrentTransport: (remotePeerId, owner) =>
+    owner === offscreenTransportOwner &&
     extensionNetwork.getConnectedPeers().includes(remotePeerId),
-  disconnect: (remotePeerId) => extensionNetwork.disconnect?.(remotePeerId),
+  disconnect: (remotePeerId, owner) =>
+    owner === offscreenTransportOwner
+      ? sendOffscreen({
+          action: "runtimeDisconnect",
+          peerId: remotePeerId,
+          transportOwner: owner,
+        })
+      : undefined,
 });
 const pairingSessions = createPairingRuntimeSessions({
   identity: async () => {
@@ -628,7 +641,7 @@ const pairingSessions = createPairingRuntimeSessions({
 
 const runtimeProtocolHandlers = new Map<
   string,
-  Array<(from: string, data: Uint8Array) => void>
+  Array<(from: string, data: Uint8Array, owner?: TransportOwner) => void>
 >();
 const extensionStreamReceiver = createExtensionStreamReceiver();
 const runtimeRegisteredStreamProtocols = new Set<string>();
@@ -1006,12 +1019,16 @@ identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
     identityRotationRecovery = recovering;
   },
 });
-extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame, owner) => {
   void pairingPending
     .start()
     .then(() =>
-      pairingSessions.receive(from, frame, (peerId, requestFrame) =>
-        pairingPending.receive(peerId, requestFrame)
+      pairingSessions.receive(
+        from,
+        frame,
+        (peerId, requestFrame, requestOwner) =>
+          pairingPending.receive(peerId, requestFrame, requestOwner),
+        owner
       )
     )
     .catch((error) => log.warn("Pairing message processing failed", error));
@@ -1816,6 +1833,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (
     msg?.action === "runtimeProtocol" &&
+    typeof msg.transportOwner === "string" &&
+    msg.transportOwner === offscreenTransportOwner &&
     typeof msg.protocol === "string" &&
     typeof msg.from === "string" &&
     Array.isArray(msg.data)
@@ -1823,7 +1842,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const data = Uint8Array.from(msg.data);
     runtimeProtocolHandlers
       .get(msg.protocol)
-      ?.forEach((handler) => handler(msg.from, data));
+      ?.forEach((handler) => handler(msg.from, data, msg.transportOwner));
     return;
   }
   if (msg?.action === "peers" && Array.isArray(msg.peers)) {

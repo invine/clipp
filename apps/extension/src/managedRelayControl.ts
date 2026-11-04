@@ -28,7 +28,8 @@ export function isManagedRelayControlAction(action: unknown): boolean {
 
 export function parseManagedRelayControlMessage(
   value: unknown,
-  expectedRuntimeGeneration?: string
+  expectedRuntimeGeneration?: string,
+  expectedTransportOwner?: string
 ): ManagedRelayControlMessage | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   let raw = value as Record<string, unknown>;
@@ -36,6 +37,11 @@ export function parseManagedRelayControlMessage(
     if (raw.runtimeGeneration !== expectedRuntimeGeneration) return null;
     raw = { ...raw };
     delete raw.runtimeGeneration;
+  }
+  if (expectedTransportOwner !== undefined) {
+    if (raw.transportOwner !== expectedTransportOwner) return null;
+    raw = { ...raw };
+    delete raw.transportOwner;
   }
   if (raw.target !== "offscreen") return null;
   const keys = Object.keys(raw);

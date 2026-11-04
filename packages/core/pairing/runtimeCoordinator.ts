@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { decodePairingFrame } from "./protocol";
+import type { TransportOwner } from "../messaging/transport";
 import {
   createPairingSession,
   type PairingDecision,
@@ -317,12 +318,14 @@ export function createPairingRuntimeSessions(
       frame: Uint8Array,
       receiveRequest: (
         peerId: string,
-        requestFrame: Uint8Array
-      ) => Promise<boolean>
+        requestFrame: Uint8Array,
+        owner?: TransportOwner
+      ) => Promise<boolean>,
+      owner?: TransportOwner
     ): Promise<PairingDecision | boolean> {
       assertStarted();
       if (decodePairingFrame(frame)?.kind !== "response") {
-        return receiveRequest(authenticatedPeerId, frame);
+        return receiveRequest(authenticatedPeerId, frame, owner);
       }
       const session = coordinator.getOrAttachFallbackSession(
         authenticatedPeerId,
@@ -330,7 +333,8 @@ export function createPairingRuntimeSessions(
       );
       const decision = await session.receiveResponse(
         authenticatedPeerId,
-        frame
+        frame,
+        owner
       );
       if (
         decision &&
