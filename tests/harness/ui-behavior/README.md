@@ -20,7 +20,13 @@ Open <http://127.0.0.1:4175/settings-recovery.html> to inspect Appearance and
 Clip preference saves through the real settings client with controlled writes
 and refresh outcomes.
 
-Run `npm run test:ui-behavior` for the mounted Chromium journeys. The Vite entry
-is under `tests/harness`, so it is not included in any production application
-build. Run `npm run test:pairing-code` for isolated Pairing code and scanning
-journeys.
+Open <http://127.0.0.1:4175/relay-management.html> to exercise relay edits,
+login/account/retry actions, uncertain removal, and notification return using
+deferred scripted effects. Relay list and connection status change only when
+the scenario publishes an observation.
+
+Run `npm run test:ui-behavior` for the mounted Chromium journeys,
+`npm run test:pairing-code` for Pairing code and scanning,
+`npm run test:relay-management` for relay journeys, and
+`npm run test:ui-behavior -- --grep settings` for settings recovery. The Vite
+entry is under `tests/harness`, so it is not included in any production build.
