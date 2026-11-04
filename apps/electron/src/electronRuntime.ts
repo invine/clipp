@@ -5,7 +5,7 @@ import { createLocalRetentionPreference } from "../../../packages/core/runtime/l
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
 import { createSettingsHandler } from "../../../packages/core/runtime/settingsAuthority.js";
 import { normalizeThemePreference } from "../../../packages/core/runtime/themePreference.js";
-import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction.js";
+import { performAutoSyncSettingsAction } from "../../../packages/core/runtime/autoSyncAction.js";
 import {
   createRelayMutationOwner,
   type RelayMutation,
@@ -248,7 +248,8 @@ async function composeElectronRuntime(
     },
     dismiss: async (request: { receiptId: string }) => {
       if (stopped) throw new Error("identity_runtime_stopped");
-      const state = await identityRotation.dismissIdentityResetReminder(request);
+      const state =
+        await identityRotation.dismissIdentityResetReminder(request);
       startupResetState = state;
       await emitState();
       return state;
@@ -286,6 +287,8 @@ async function composeElectronRuntime(
     for (const window of BrowserWindow.getAllWindows())
       window.setBackgroundColor(windowBackground());
   });
+  // Bootstrap the preference before the settings publisher exists. All later
+  // writes, including the dedicated toggle, go through settingsHandler.
   const autoSyncPreference = createAutoSyncPreference({
     storage: resetStorage,
   });
@@ -1440,29 +1443,26 @@ async function composeElectronRuntime(
         operationId: value.operationId,
         reviewedPeerId: value.reviewedPeerId,
       });
-    if (
-      value.action === "resume" &&
-      typeof value.operationId === "string"
-    )
+    if (value.action === "resume" && typeof value.operationId === "string")
       return identityReset.resume({ operationId: value.operationId });
-    if (
-      value.action === "dismiss" &&
-      typeof value.receiptId === "string"
-    )
+    if (value.action === "dismiss" && typeof value.receiptId === "string")
       return identityReset.dismiss({ receiptId: value.receiptId });
     if (
       value.action === "copyFormerPeerId" &&
       typeof value.receiptId === "string"
     ) {
       await identityReset.reconcile();
-      const receipt = startupResetState?.phase === "idle"
-        ? startupResetState.receipt
-        : startupResetState?.phase === "completed"
+      const receipt =
+        startupResetState?.phase === "idle"
           ? startupResetState.receipt
-          : undefined;
+          : startupResetState?.phase === "completed"
+            ? startupResetState.receipt
+            : undefined;
       if (!receipt || receipt.receiptId !== value.receiptId)
         throw new Error("identity_reset_receipt_unavailable");
-      return copyPayloadText(receipt.formerPeerId, (text) => clipboard.writeText(text));
+      return copyPayloadText(receipt.formerPeerId, (text) =>
+        clipboard.writeText(text)
+      );
     }
     throw new Error("identity_reset_invalid_request");
   });
@@ -1554,23 +1554,13 @@ async function composeElectronRuntime(
   );
 
   handleRuntime("clipp:set-auto-sync", async (_evt, enabled: boolean) =>
-    performAutoSyncAction(enabled, {
-      set: async (value) => {
-        autoSync = await autoSyncPreference.set(value);
-        clipboardSync.setAutoSync(autoSync);
-        return autoSync;
-      },
-      recover: async () => {
-        autoSync = await autoSyncPreference.load();
-        clipboardSync.setAutoSync(autoSync);
-      },
+    performAutoSyncSettingsAction(enabled, settingsHandler, {
       current: () => autoSync,
       reconcile: emitState,
     })
   );
   handleRuntime("clipp:refresh-auto-sync", async () => {
-    autoSync = await autoSyncPreference.load();
-    clipboardSync.setAutoSync(autoSync);
+    await settingsHandler.read();
     await emitState();
     return true;
   });
