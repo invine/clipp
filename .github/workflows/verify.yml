@@ -11,6 +11,10 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      options: --user 1001
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,5 +22,4 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npx playwright install chromium
       - run: npm run verify
