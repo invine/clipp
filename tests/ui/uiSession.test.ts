@@ -319,6 +319,29 @@ it("a new Copy clears earlier success while pending and does not start a duplica
   finish(null);
   await pending;
 });
+it("retiring the runtime owner clears pending History feedback and ignores late results", async () => {
+  const session = createUiSession();
+  let finish!: (value: { message: string; action: "retry" }) => void;
+  const pending = session.runHistoryAction(
+    "send:current",
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  expect(session.getSnapshot().historyActions["send:current"]?.pending).toBe(
+    true
+  );
+
+  session.retireHistoryActions();
+  expect(session.getSnapshot().historyActions).toEqual({});
+  finish({ message: "stale failure", action: "retry" });
+  await pending;
+
+  expect(session.getSnapshot().historyActions).toEqual({});
+  await session.retryHistoryAction("send:current");
+  expect(session.getSnapshot().historyActions).toEqual({});
+});
 it("publishes destination availability as suspended editor work starts and is discarded", () => {
   const session = createUiSession();
   const availability: boolean[] = [];

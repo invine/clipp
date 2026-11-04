@@ -60,6 +60,7 @@ export function createUiSession() {
   const activity = new Set<string>();
   const appliedDestinations = new Map<string, "applied" | "unavailable">();
   let historyGeneration = 0;
+  let historyActionGeneration = 0;
   let retryPairingImport: (() => Promise<void>) | undefined;
   let pairingImportOperation: { submitted: boolean } | undefined;
   const historyRetries = new Map<
@@ -411,6 +412,7 @@ export function createUiSession() {
     },
     rotateIdentity() {
       historyGeneration++;
+      historyActionGeneration++;
       historyRetries.clear();
       appliedDestinations.clear();
       for (
@@ -438,6 +440,12 @@ export function createUiSession() {
         taskNotice: null,
       });
     },
+    retireHistoryActions() {
+      historyActionGeneration++;
+      historyRetries.clear();
+      if (Object.keys(state.historyActions).length)
+        update({ historyActions: {} });
+    },
     async runHistoryAction(
       id: string,
       action: () => Promise<ClipboardActionFeedback | null>
@@ -447,7 +455,7 @@ export function createUiSession() {
         state.historyActions[id]?.feedback?.requiresAcknowledgement
       )
         return;
-      const generation = historyGeneration;
+      const generation = historyActionGeneration;
       update({
         historyActions: {
           ...state.historyActions,
@@ -470,7 +478,7 @@ export function createUiSession() {
           action: "dismiss",
         };
       }
-      if (generation !== historyGeneration) return;
+      if (generation !== historyActionGeneration) return;
       if (feedback?.action === "retry") historyRetries.set(id, action);
       else historyRetries.delete(id);
       const historyActions = { ...state.historyActions };

@@ -532,6 +532,10 @@ export function ClipboardApp({
     session.getSnapshot,
     session.getSnapshot
   );
+  useEffect(
+    () => () => session.retireHistoryActions(),
+    [runtimeOwner, session]
+  );
   const activeTask = sessionState.tasks[sessionState.tasks.length - 1];
   const { search, timeFilter, sourceFilter, filterMode, showNav } =
     sessionState;
@@ -2897,22 +2901,27 @@ export function ClipboardApp({
                 <span className="filter-control-label">Filters</span>
               </button>
               {onShareNow && (
-                <div className="send-control">
-                  <IconButton
-                    icon="send"
-                    label="Share current clipboard now"
-                    hint="Share current system clipboard now"
-                    onClick={shareNow}
-                    disabled={
-                      !identityReady ||
-                      sessionState.historyActions["send:current"]?.pending
-                    }
-                    aria-describedby="send-clipboard-hint"
-                  />
-                  <span id="send-clipboard-hint" className="control-hint">
-                    Sends your current system clipboard
-                  </span>
-                </div>
+                <>
+                  <div className="send-control">
+                    <IconButton
+                      icon="send"
+                      label="Share current clipboard now"
+                      hint="Share current system clipboard now"
+                      onClick={shareNow}
+                      disabled={
+                        !identityReady ||
+                        sessionState.historyActions["send:current"]?.pending
+                      }
+                      aria-describedby="send-clipboard-hint"
+                    />
+                    <span id="send-clipboard-hint" className="control-hint">
+                      Sends your current system clipboard
+                    </span>
+                  </div>
+                  {sessionState.historyActions["send:current"]?.pending && (
+                    <span role="status">Sharing current clipboard…</span>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -3402,6 +3411,8 @@ export function ClipboardApp({
                         }
                         onClick={() => reuseClip(clip.id)}
                       />
+                      {sessionState.historyActions[`copy:${clip.id}`]
+                        ?.pending && <span role="status">Copying Clip…</span>}
                     </div>
                   </article>
                 );

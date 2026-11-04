@@ -74,6 +74,7 @@
   "scripts": {
     "test": "node --no-sparkplug node_modules/jest/bin/jest.js",
     "test:ui-behavior": "playwright test --config tests/ui-behavior.playwright.config.ts",
+    "test:ui-clip-actions": "playwright test --config tests/clip-actions.playwright.config.ts",
     "test:pairing-code": "playwright test --config tests/pairing-code.playwright.config.ts",
     "test:relay-management": "playwright test --config tests/relay-management.playwright.config.ts",
     "ui-behavior": "vite --config tests/harness/ui-behavior/vite.config.ts",
