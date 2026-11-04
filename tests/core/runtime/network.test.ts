@@ -16,11 +16,34 @@ describe("replaceable runtime network", () => {
     current = replacement.transport;
     network.bindCurrent();
     network.bindCurrent();
-    replacement.receive("/clipp/pairing/1.0.0", "replacement-peer", new Uint8Array());
+    replacement.receive(
+      "/clipp/pairing/1.0.0",
+      "replacement-peer",
+      new Uint8Array()
+    );
 
     expect(initial.handlerCount("/clipp/pairing/1.0.0")).toBe(1);
     expect(replacement.handlerCount("/clipp/pairing/1.0.0")).toBe(1);
     expect(received).toEqual(["initial-peer", "replacement-peer"]);
+  });
+
+  it("delivers the exact transport that owns each inbound message", () => {
+    const initial = createObservedRuntimeTransport();
+    const replacement = createObservedRuntimeTransport();
+    let current = initial.transport;
+    const network = createRuntimeNetworkProxy(() => current);
+    const owners: unknown[] = [];
+
+    network.onMessage("/clipp/pairing/1.0.0", (_from, _data, owner) =>
+      owners.push(owner)
+    );
+    initial.receive("/clipp/pairing/1.0.0", "peer-a");
+
+    current = replacement.transport;
+    network.bindCurrent();
+    replacement.receive("/clipp/pairing/1.0.0", "peer-a");
+
+    expect(owners).toEqual([initial.transport, replacement.transport]);
   });
 
   it("forwards disconnect to the current transport", async () => {
@@ -39,13 +62,20 @@ describe("replaceable runtime network", () => {
     const network = createRuntimeNetworkProxy(() => current);
     const received: string[] = [];
 
-    network.onStream("/clipp/history/1.0.0", async (from) => { received.push(from); });
-    expect(() => network.onStream("/clipp/history/1.0.0", async () => {}))
-      .toThrow("protocol_handler_already_registered");
+    network.onStream("/clipp/history/1.0.0", async (from) => {
+      received.push(from);
+    });
+    expect(() =>
+      network.onStream("/clipp/history/1.0.0", async () => {})
+    ).toThrow("protocol_handler_already_registered");
     current = replacement.transport;
     network.bindCurrent();
     network.bindCurrent();
-    await replacement.receiveStream("/clipp/history/1.0.0", "replacement-peer", (async function *() {})());
+    await replacement.receiveStream(
+      "/clipp/history/1.0.0",
+      "replacement-peer",
+      (async function* () {})()
+    );
 
     expect(initial.streamHandlerCount("/clipp/history/1.0.0")).toBe(1);
     expect(replacement.streamHandlerCount("/clipp/history/1.0.0")).toBe(1);

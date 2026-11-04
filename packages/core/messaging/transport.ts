@@ -1,5 +1,15 @@
-export type MessageHandler = (from: string, data: Uint8Array) => void;
-export type MessageStreamHandler = (from: string, chunks: AsyncIterable<Uint8Array>) => Promise<void>;
+/** Identifies the transport generation that delivered an inbound message. */
+export type TransportOwner = object | string | number;
+
+export type MessageHandler = (
+  from: string,
+  data: Uint8Array,
+  owner?: TransportOwner
+) => void;
+export type MessageStreamHandler = (
+  from: string,
+  chunks: AsyncIterable<Uint8Array>
+) => Promise<void>;
 
 export type StreamSendOptions = {
   signal?: AbortSignal;
@@ -46,7 +56,7 @@ export interface MessagingTransport {
     protocol: string,
     target: string,
     frames: AsyncIterable<Uint8Array>,
-    options?: StreamSendOptions,
+    options?: StreamSendOptions
   ): Promise<void>;
 
   /**
@@ -90,7 +100,10 @@ export interface MessagingTransport {
   /** Public, signed reachability data used only by an explicit Pairing Target. */
   getSignedPeerRecord?(): Promise<Uint8Array>;
   getSignedPeerRecordFor?(peerId: string): Promise<Uint8Array | undefined>;
-  importSignedPeerRecord?(expectedPeerId: string, record: Uint8Array): Promise<void>;
+  importSignedPeerRecord?(
+    expectedPeerId: string,
+    record: Uint8Array
+  ): Promise<void>;
   /** Remove cached and persisted reachability after Device Revocation. */
   forgetPeer?(peerId: string): Promise<void>;
 
@@ -103,7 +116,7 @@ export interface StreamingMessagingTransport extends MessagingTransport {
     protocol: string,
     target: string,
     frames: AsyncIterable<Uint8Array>,
-    options?: StreamSendOptions,
+    options?: StreamSendOptions
   ): Promise<void>;
   onStream(protocol: string, cb: MessageStreamHandler): void;
 }

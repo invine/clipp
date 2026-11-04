@@ -13,6 +13,32 @@ const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const workerUrl = `chrome-extension://${id}/service-worker-loader.js`;
 
 describe("offscreen managed relay control", () => {
+  it("accepts initialization only for its transport owner generation", () => {
+    const message = {
+      target: "offscreen",
+      action: "init",
+      relays: [],
+      managedConfigurations: [],
+      runtimeGeneration: "worker-session:0",
+      transportOwner: "transport:1",
+    };
+
+    expect(
+      parseManagedRelayControlMessage(
+        message,
+        "worker-session:0",
+        "transport:1"
+      )
+    ).toEqual({ action: "init", configurations: [] });
+    expect(
+      parseManagedRelayControlMessage(
+        message,
+        "worker-session:0",
+        "transport:2"
+      )
+    ).toBeNull();
+  });
+
   it("accepts only this extension's background service worker", () => {
     expect(
       authorizedBackgroundControl({ id, url: workerUrl }, id, workerUrl)

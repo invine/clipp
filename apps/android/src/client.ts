@@ -910,9 +910,13 @@ export class AndroidClient {
   });
   private readonly cleanupRejectedPeer = createPairingRejectionCleanup({
     membership: this.identitySvc,
-    isCurrentTransport: (remotePeerId) =>
-      this.transport?.getConnectedPeers().includes(remotePeerId) ?? false,
-    disconnect: (remotePeerId) => this.transport?.disconnect?.(remotePeerId),
+    isCurrentTransport: (remotePeerId, owner) =>
+      owner === this.transport &&
+      (this.transport?.getConnectedPeers().includes(remotePeerId) ?? false),
+    disconnect: (remotePeerId, owner) =>
+      owner === this.transport
+        ? this.transport?.disconnect?.(remotePeerId)
+        : undefined,
   });
   private readonly pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () =>
@@ -1247,11 +1251,16 @@ export class AndroidClient {
         await this.ensureMessaging();
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
-          this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+          const currentTransport = this.transport!;
+          currentTransport.onMessage(PAIRING_PROTOCOL, (from, frame) => {
             if (this.workFence.isFenced()) return;
             void this.pairingSessions
-              .receive(from, frame, (peerId, requestFrame) =>
-                this.pairingPending.receive(peerId, requestFrame)
+              .receive(
+                from,
+                frame,
+                (peerId, requestFrame, owner) =>
+                  this.pairingPending.receive(peerId, requestFrame, owner),
+                currentTransport
               )
               .catch((error) =>
                 log.warn("Pairing message processing failed", error)

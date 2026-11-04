@@ -60,6 +60,7 @@ let pairedConnections: ReturnType<
 const runtimeRegisteredProtocols = new Set<string>();
 const runtimeRegisteredStreamProtocols = new Set<string>();
 let runtimeGeneration: string | undefined;
+let transportOwner: string | undefined;
 const storage = new RuntimeMessageStorageBackend(
   undefined,
   undefined,
@@ -265,6 +266,7 @@ async function shutdownMessaging(): Promise<void> {
     started = false;
     runtimeRegisteredProtocols.clear();
     runtimeRegisteredStreamProtocols.clear();
+    transportOwner = undefined;
   }
 }
 
@@ -292,7 +294,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const managedControl = isManagedRelayControlAction(msg.action)
     ? parseManagedRelayControlMessage(
         msg,
-        msg.runtimeGeneration === undefined ? undefined : runtimeGeneration
+        msg.runtimeGeneration === undefined ? undefined : runtimeGeneration,
+        typeof msg.transportOwner === "string" ? msg.transportOwner : undefined
       )
     : null;
   if (
@@ -305,6 +308,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   (async () => {
     if (managedControl?.action === "init") {
+      if (
+        typeof msg.transportOwner !== "string" ||
+        msg.transportOwner.length === 0
+      ) {
+        sendResponse({ ok: false, error: "transport_owner_missing" });
+        return;
+      }
+      transportOwner = msg.transportOwner;
       await initMessaging([], managedControl.configurations);
       sendResponse({ ok: true });
       return;
@@ -406,6 +417,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
     if (msg.action === "runtimeDisconnect" && msg.peerId) {
+      if (
+        typeof msg.transportOwner !== "string" ||
+        msg.transportOwner !== transportOwner
+      ) {
+        sendResponse({ ok: false, error: "transport_retired" });
+        return;
+      }
       await transport.disconnect?.(msg.peerId);
       sendResponse({ ok: true });
       return;
@@ -423,11 +441,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       runtimeRegisteredProtocols.add(msg.protocol);
+      const owner = transportOwner;
       transport.onMessage(msg.protocol, (from, data) => {
         chrome.runtime
           .sendMessage({
             source: "offscreen",
             runtimeGeneration,
+            transportOwner: owner,
             action: "runtimeProtocol",
             protocol: msg.protocol,
             from,
