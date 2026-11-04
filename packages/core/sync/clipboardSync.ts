@@ -24,6 +24,8 @@ export type ClipboardSyncManagerOptions = {
 export interface ClipboardSyncManager {
   start(): void;
   startLocalOnly(): void;
+  activateNetwork(): void;
+  retireNetwork(): void;
   stop(): Promise<void>;
   prepareIdentityRotationCleanup(): Promise<IdentityRotationCaptureCleanup>;
   bindLiveGossip(liveGossip: LiveClipGossip): void;
@@ -230,6 +232,21 @@ export function createClipboardSyncManager(
 
   if (options.liveGossip) bindLiveGossip(options.liveGossip);
 
+  function activateNetwork(): void {
+    if (!running) {
+      running = true;
+      options.clipboard.start();
+    }
+    networkingEnabled = true;
+    currentLiveGossip?.start();
+    enqueuePendingShareNow();
+  }
+
+  function retireNetwork(): void {
+    networkingEnabled = false;
+    currentLiveGossip?.stop();
+  }
+
   async function stop(): Promise<void> {
     running = false;
     networkingEnabled = false;
@@ -241,18 +258,21 @@ export function createClipboardSyncManager(
 
   return {
     start() {
-      running = true;
-      networkingEnabled = true;
-      currentLiveGossip?.start();
-      options.clipboard.start();
-      enqueuePendingShareNow();
+      if (!running) {
+        running = true;
+        options.clipboard.start();
+      }
+      activateNetwork();
     },
     startLocalOnly() {
-      running = true;
-      networkingEnabled = false;
-      currentLiveGossip?.stop();
-      options.clipboard.start();
+      if (!running) {
+        running = true;
+        options.clipboard.start();
+      }
+      retireNetwork();
     },
+    activateNetwork,
+    retireNetwork,
     stop,
     async prepareIdentityRotationCleanup() {
       await stop();
