@@ -12,4 +12,28 @@ export default defineConfig({
       "@ui": path.resolve(__dirname, "../../../packages/ui/src"),
     },
   },
+  build: {
+    outDir: path.resolve(__dirname, "../../../.cache/ui-behavior-harness"),
+    emptyOutDir: true,
+    rollupOptions: {
+      input: Object.fromEntries(
+        [
+          "index.html",
+          "pairing-code.html",
+          "clip-actions.html",
+          "history-mutations.html",
+          "device-management.html",
+          "relay-management.html",
+          "settings-recovery.html",
+          "notification-journeys.html",
+          "background-continuity.html",
+          "identity-reset.html",
+          "trust-requests.html",
+        ].map((entry) => [
+          entry.replace(".html", ""),
+          path.resolve(__dirname, entry),
+        ])
+      ),
+    },
+  },
 });

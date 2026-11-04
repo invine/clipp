@@ -81,6 +81,7 @@
     "test:trust-requests": "playwright test --config tests/trust-requests.playwright.config.ts",
     "test:history-mutations": "playwright test --config tests/history-mutations.playwright.config.ts",
     "ui-behavior": "vite --config tests/harness/ui-behavior/vite.config.ts",
+    "build:ui-behavior": "vite build --config tests/harness/ui-behavior/vite.config.ts",
     "test:notification-journeys": "playwright test --config tests/notification-journeys.playwright.config.ts",
     "test:identity-reset": "playwright test --config tests/identity-reset.playwright.config.ts",
     "typecheck": "npm run typecheck:shared && npm run typecheck:electron && npm run typecheck:android && npm run typecheck:extension",

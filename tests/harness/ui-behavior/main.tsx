@@ -37,6 +37,39 @@ const props: ClipboardAppProps = {
 };
 const adapter = createScriptedUiRuntimeAdapter(props);
 
+function publishConnection(mode: "unknown" | "offline" | "direct" | "relayed") {
+  const peer = "scenario-peer";
+  const connected = mode === "direct" || mode === "relayed";
+  adapter.publish({
+    ...props,
+    devices: [{ deviceId: peer, deviceName: "Scenario Peer" }],
+    peers: connected ? [peer] : [],
+    connectionStateKnown: mode !== "unknown",
+    peerConnections:
+      mode === "direct"
+        ? [
+            {
+              peerId: peer,
+              path: "direct",
+              hasDirect: true,
+              hasRelay: false,
+              addrs: [],
+            },
+          ]
+        : mode === "relayed"
+          ? [
+              {
+                peerId: peer,
+                path: "relay",
+                hasDirect: false,
+                hasRelay: true,
+                addrs: [],
+              },
+            ]
+          : [],
+  });
+}
+
 function ScenarioControls() {
   const [navigationResult, setNavigationResult] = useState("none");
   const navigationSequence = useRef(0);
@@ -53,6 +86,7 @@ function ScenarioControls() {
     session.pairing.discard();
     session.update({ destination: "devices" });
     adapter.clearEffects();
+    adapter.publish(props);
     setNavigationResult("none");
   }
   return (
@@ -72,6 +106,56 @@ function ScenarioControls() {
       <button type="button" onClick={reset}>
         Reset scenario
       </button>
+      <fieldset>
+        <legend>Publish connection observation</legend>
+        <button type="button" onClick={() => publishConnection("unknown")}>
+          Unknown
+        </button>
+        <button type="button" onClick={() => publishConnection("offline")}>
+          Offline
+        </button>
+        <button type="button" onClick={() => publishConnection("direct")}>
+          Direct
+        </button>
+        <button type="button" onClick={() => publishConnection("relayed")}>
+          Relayed
+        </button>
+      </fieldset>
+      <nav aria-label="Scenario catalog">
+        <h2>Open a scenario</h2>
+        <ul>
+          <li>
+            <a href="/pairing-code.html">Pairing code and scanning</a>
+          </li>
+          <li>
+            <a href="/clip-actions.html">Clip actions and Share Now</a>
+          </li>
+          <li>
+            <a href="/history-mutations.html">History mutations</a>
+          </li>
+          <li>
+            <a href="/device-management.html">Device naming and revocation</a>
+          </li>
+          <li>
+            <a href="/relay-management.html">Relay management</a>
+          </li>
+          <li>
+            <a href="/settings-recovery.html">Preferences and recovery</a>
+          </li>
+          <li>
+            <a href="/notification-journeys.html">Notifications</a>
+          </li>
+          <li>
+            <a href="/background-continuity.html">Background controls</a>
+          </li>
+          <li>
+            <a href="/identity-reset.html">Identity reset and rotation</a>
+          </li>
+          <li>
+            <a href="/trust-requests.html">Trust Requests</a>
+          </li>
+        </ul>
+      </nav>
       <button
         type="button"
         onClick={() =>

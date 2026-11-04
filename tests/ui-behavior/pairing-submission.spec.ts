@@ -58,3 +58,45 @@ test("scenario reset retires an outstanding Pairing result", async ({
   await page.getByText("Pairing diagnostics", { exact: true }).click();
   await expect(page.getByTestId("pairing-effects")).toContainText("[]");
 });
+
+test("the scenario catalog publishes connection observations and opens each workflow", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByText("Pairing diagnostics", { exact: true }).click();
+  const status = page.getByRole("button", {
+    name: "Open Devices: Connection status unknown",
+  });
+  await expect(status).toBeVisible();
+
+  await page.getByRole("button", { name: "Offline", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Open Devices: No device connection available",
+    })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Direct", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Open Devices: Direct connection available",
+    })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Relayed", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Open Devices: Relay connection available",
+    })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Unknown", exact: true }).click();
+  await expect(status).toBeVisible();
+
+  const catalog = page.getByRole("navigation", { name: "Scenario catalog" });
+  await expect(catalog.getByRole("link")).toHaveCount(10);
+  await catalog.getByRole("link", { name: "Trust Requests" }).click();
+  await expect(page).toHaveURL(/trust-requests\.html$/);
+  await expect(
+    page.getByRole("complementary", {
+      name: "Trust Request scenario controls",
+    })
+  ).toBeVisible();
+});
