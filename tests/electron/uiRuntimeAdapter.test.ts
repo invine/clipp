@@ -1,6 +1,8 @@
 import type {} from "../../apps/electron/src/preload";
 import { createUiSession } from "../../packages/ui/src/uiSession";
 import { createElectronUiRuntimeAdapter } from "../../apps/electron/src/uiRuntimeAdapter";
+import type { RuntimeNotificationAvailability } from "../../packages/core/runtime/notifications";
+import { verifyUiRuntimeSnapshotConformance } from "../ui/runtimeAdapterConformance";
 
 function electronBridge() {
   let update: Function | undefined;
@@ -147,6 +149,63 @@ it("owns Electron bridge subscriptions and publishes the current runtime snapsho
   unsubscribe();
   await adapter.stop?.();
   expect(fixture.unsubs).toHaveBeenCalled();
+});
+
+it("publishes stable snapshots before notifying and preserves previous observations", async () => {
+  const fixture = electronBridge();
+  let availability: RuntimeNotificationAvailability = {
+    app: "available",
+    channel: "not-applicable",
+    displayError: null,
+  };
+  Object.assign(fixture.bridge, {
+    getNotificationAvailability: jest.fn(async () => availability),
+  });
+  const adapter = createElectronUiRuntimeAdapter(
+    fixture.bridge,
+    createUiSession()
+  );
+  const { previous: before, current: afterRuntimePublication } =
+    await verifyUiRuntimeSnapshotConformance({
+      adapter,
+      afterStart: () => new Promise((resolve) => setImmediate(resolve)),
+      publishObservation: async () => {
+        await fixture.getUpdate()?.({
+          ...fixture.state,
+          identity: {
+            deviceId: "device-two",
+            deviceName: "Device Two",
+            peerId: "peer-two",
+          },
+        });
+      },
+    });
+  expect(adapter.capabilities.actions).toContain("onShareNow");
+  expect(adapter.capabilities.cameraScanning).toBe(false);
+  expect(adapter.capabilities.notifications).toEqual({
+    openSettings: false,
+    requestPermission: false,
+  });
+  expect(before.identity?.deviceId).toBe("device-one");
+  expect(before.notificationControls?.state?.app).toBe("available");
+  expect(afterRuntimePublication.identity?.deviceId).toBe("device-two");
+  expect(before.identity?.deviceId).toBe("device-one");
+
+  availability = {
+    app: "blocked",
+    channel: "not-applicable",
+    displayError: "permission_denied",
+  };
+  fixture.getNotificationUpdate()?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  const afterNotificationPublication = adapter.getSnapshot();
+  expect(afterNotificationPublication).not.toBe(afterRuntimePublication);
+  expect(afterNotificationPublication.notificationControls?.state?.app).toBe(
+    "blocked"
+  );
+  expect(before.notificationControls?.state?.app).toBe("available");
+
+  await adapter.stop?.();
 });
 
 it("translates shared UI actions through the production Electron bridge", async () => {

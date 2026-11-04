@@ -9,6 +9,8 @@ import type {
   UiRuntimeAdapter,
   UiRuntimeSnapshot,
 } from "../../../packages/ui/src/runtimeAdapter";
+import { createUiRuntimeStore } from "../../../packages/ui/src/runtimeAdapter";
+import type { ClipboardAppProps } from "../../../packages/ui/src/ClipboardApp";
 import { bindNotificationRequests } from "../../../packages/ui/src/notificationRequests";
 import { createNotificationActionLifecycle } from "../../../packages/ui/src/notificationActionLifecycle";
 import type { UiSession } from "../../../packages/ui/src/uiSession";
@@ -53,7 +55,6 @@ export function createElectronUiRuntimeAdapter(
   let unbindTaskInput: (() => void) | undefined;
   let notificationConsumer:
     ReturnType<typeof bindNotificationRequests> | undefined;
-  const listeners = new Set<() => void>();
 
   const settings = createSettingsClient({
     send: (message) =>
@@ -167,7 +168,7 @@ export function createElectronUiRuntimeAdapter(
     identityResetActions: bridge.identityReset,
   };
 
-  const getSnapshot = (): UiRuntimeSnapshot =>
+  const projectSnapshot = (): UiRuntimeSnapshot =>
     ({
       clips: state.clips,
       devices: state.devices,
@@ -229,18 +230,24 @@ export function createElectronUiRuntimeAdapter(
       },
     }) as UiRuntimeSnapshot;
 
+  const makeProps = (): ClipboardAppProps =>
+    ({
+      ...projectSnapshot(),
+      ...actions,
+      session,
+    }) as ClipboardAppProps;
+  const store = createUiRuntimeStore(makeProps());
+
   function publish() {
-    listeners.forEach((listener) => listener());
+    store.publish(makeProps());
     if (started) void notificationConsumer?.refresh();
   }
 
   return {
-    getSnapshot,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    actions,
+    getSnapshot: store.getSnapshot,
+    subscribe: store.subscribe,
+    actions: store.actions,
+    capabilities: store.capabilities,
     async start() {
       if (started) return;
       started = true;
