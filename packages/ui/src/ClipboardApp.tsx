@@ -58,6 +58,7 @@ import {
   PreferenceSaveFeedback,
 } from "./PreferenceSaveFeedback";
 import { ClearHistoryReview } from "./ClearHistoryReview";
+import { browserUiHost, type UiHostEffects } from "./runtimeAdapter";
 import {
   ManualIdentityResetSettings,
   type ManualIdentityResetActions,
@@ -321,6 +322,10 @@ function MiddleEllipsisText({
 }
 
 export type ClipboardAppProps = {
+  /** Runtime composition lifetime. Replacing it retires obsolete UI work. */
+  runtimeOwner?: object;
+  /** Host effects are injected so scripted UI sessions never touch native APIs. */
+  host?: UiHostEffects;
   clips: Clip[];
   devices: Device[];
   pending: PendingRequest[];
@@ -419,6 +424,7 @@ export type ClipboardAppProps = {
 };
 
 export function ClipboardApp({
+  host = browserUiHost,
   clips,
   devices,
   pending,
@@ -1300,7 +1306,7 @@ export function ClipboardApp({
 
   async function copyDeviceValue(label: string, value: string) {
     try {
-      await navigator.clipboard.writeText(value);
+      await host.copyText(value);
       setDeviceCopyFeedback(`${label} copied.`);
     } catch {
       setDeviceCopyFeedback(
@@ -1311,7 +1317,7 @@ export function ClipboardApp({
 
   async function revokeDevice(device: Device): Promise<void> {
     if (!identityReady || revocations.current.has(device.deviceId)) return;
-    const confirmed = globalThis.confirm(
+    const confirmed = await host.confirm(
       `Permanently revoke ${device.displayName || device.deviceName || device.deviceId}? This cannot be undone.`
     );
     if (!confirmed) return;
@@ -3505,6 +3511,12 @@ export function ClipboardApp({
             </label>
             {pair.result && (
               <p role="status">{pairingSubmissionMessage(pair.result)}</p>
+            )}
+            {pairingDiagnostics && (
+              <details className="pairing-diagnostics">
+                <summary>Pairing diagnostics</summary>
+                {pairingDiagnostics}
+              </details>
             )}
             {pair.pending && <p role="status">Submitting pairing text…</p>}
             <button

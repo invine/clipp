@@ -5,5 +5,8 @@ export * from "./clipboardActionFeedback";
 export * from "./ClipboardApp";
 export * from "./controls";
 export * from "./pairingFeedback";
+export * from "./ClipboardWorkspace";
+export * from "./runtimeAdapter";
+export * from "./scriptedUiRuntimeAdapter";
 
 export * from "./PairingStatus";
