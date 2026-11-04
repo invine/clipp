@@ -265,7 +265,8 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          const result = await client.identityRotation.beginIdentityReset(request);
+          const result =
+            await client.identityRotation.beginIdentityReset(request);
           if (result.outcome !== "rejected")
             await client.publishIdentityResetState(result.state);
           return result;
@@ -282,7 +283,8 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          const result = await client.identityRotation.resumeIdentityReset(request);
+          const result =
+            await client.identityRotation.resumeIdentityReset(request);
           if (result.outcome !== "rejected")
             await client.publishIdentityResetState(result.state);
           return result;
@@ -331,6 +333,7 @@ export class AndroidClient {
   private readonly settingsListeners = new Set<
     (snapshot: SettingsSnapshot) => void
   >();
+  private autoSyncPublicationWarning: string | undefined;
   private readonly settingsHandler = createSettingsHandler({
     storage: this.storage,
     retention: {
@@ -1124,8 +1127,15 @@ export class AndroidClient {
               this.backgroundNative.isActionCurrent(event.actionToken, action)
           )
           .then(
-            () => this.emitState(),
             async () => {
+              await this.emitState();
+              const warning = this.autoSyncPublicationWarning;
+              this.autoSyncPublicationWarning = undefined;
+              if (warning)
+                await this.backgroundNative.showControlFeedback(warning);
+            },
+            async () => {
+              this.autoSyncPublicationWarning = undefined;
               await this.emitState();
               if (this.workFence.isFenced()) return;
               await this.backgroundNative.showControlFeedback(
@@ -1618,6 +1628,7 @@ export class AndroidClient {
   private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
     const result = await this.settingsHandler.write({ autoSync: enabled });
     if (result.status !== "applied") throw new Error(result.error);
+    this.autoSyncPublicationWarning = result.warning;
     return result.snapshot.state.autoSync;
   }
 
@@ -1625,10 +1636,14 @@ export class AndroidClient {
     return this.workFence.run(() =>
       performAutoSyncAction(enabled, {
         set: async (value) => {
+          this.autoSyncPublicationWarning = undefined;
           await this.backgroundContinuity.setAutoSync(value);
-          return this.autoSync;
+          const warning = this.autoSyncPublicationWarning;
+          this.autoSyncPublicationWarning = undefined;
+          return warning ? { autoSync: this.autoSync, warning } : this.autoSync;
         },
         recover: async () => {
+          this.autoSyncPublicationWarning = undefined;
           const settings = await this.settingsHandler.read();
           await this.backgroundContinuity.reflectAutoSync(
             settings.state.autoSync
@@ -1721,11 +1736,12 @@ export class AndroidClient {
     await this.publishIdentityResetState(
       await this.identityRotation.reconcileIdentityReset()
     );
-    const receipt = this.identityResetState.phase === "idle"
-      ? this.identityResetState.receipt
-      : this.identityResetState.phase === "completed"
+    const receipt =
+      this.identityResetState.phase === "idle"
         ? this.identityResetState.receipt
-        : undefined;
+        : this.identityResetState.phase === "completed"
+          ? this.identityResetState.receipt
+          : undefined;
     if (!receipt || receipt.receiptId !== receiptId)
       return { status: "rejected" as const };
     return copyPayloadText(receipt.formerPeerId, (value) =>
