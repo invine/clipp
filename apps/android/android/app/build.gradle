@@ -79,6 +79,9 @@ android {
             androidTest.java.srcDir 'src/identityResetAcceptanceAndroidTest/java'
         }
     }
+    sourceSets {
+        androidTest.assets.srcDir layout.buildDirectory.dir('generated/androidTestAssets')
+    }
     if (runtimeResetAssets != null) {
         sourceSets {
             acceptance.assets.srcDir runtimeResetAssets
