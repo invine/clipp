@@ -27,7 +27,7 @@ export function bindTaskDialogFocus(
       if (
         sibling instanceof HTMLElement &&
         sibling !== branch &&
-        !sibling.hasAttribute("data-task-scenario-controls")
+        sibling.dataset.taskScenarioControls === undefined
       )
         backgrounds.push(sibling);
     branch = branch.parentElement;
