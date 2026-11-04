@@ -14,6 +14,7 @@ export type UiRuntimeSnapshot = Omit<
   | "session"
   | "taskInput"
   | "pairingDiagnostics"
+  | "backgroundContinuityDiagnostics"
   | "pairingImport"
   | "host"
   | "runtimeOwner"
@@ -97,6 +98,7 @@ function projectSnapshot(props: ClipboardAppProps): UiRuntimeSnapshot {
   delete snapshot.session;
   delete snapshot.taskInput;
   delete snapshot.pairingDiagnostics;
+  delete snapshot.backgroundContinuityDiagnostics;
   delete snapshot.pairingImport;
   delete snapshot.host;
   delete snapshot.runtimeOwner;

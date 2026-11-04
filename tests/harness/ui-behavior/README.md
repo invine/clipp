@@ -6,6 +6,11 @@ its document-lived Pairing submission behavior. Scenario controls can settle a
 pending request as success or failure, inspect requested Pairing effects, and
 reset the mounted session.
 
+Open <http://127.0.0.1:4175/background-continuity.html> to exercise the
+Background Continuity controls. This scenario scripts confirmation, delayed
+enable/stop/refresh results, notification settings, diagnostics export, and
+runtime replacement without invoking Android native behavior.
+
 Run `npm run test:ui-behavior` for the mounted Chromium journeys. The Vite entry
 is under `tests/harness`, so it is not included in any production application
 build.

@@ -2,6 +2,7 @@ import { createUiSession } from "../../packages/ui/src/uiSession";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BackgroundContinuityControls } from "../../packages/ui/src/BackgroundContinuityControls";
+import type { BackgroundContinuityActionRunner } from "../../packages/ui/src/backgroundContinuityBehavior";
 import type { BackgroundContinuityState } from "../../packages/ui/src/types";
 
 const state: BackgroundContinuityState = {
@@ -19,10 +20,18 @@ const state: BackgroundContinuityState = {
   supportState: "unqualified",
   batteryOptimizationGuidance: false,
 };
+const behavior: BackgroundContinuityActionRunner = {
+  state: { pendingAction: null, error: null },
+  perform: async (_action, effect) => {
+    await effect();
+    return true;
+  },
+};
 function render(value: BackgroundContinuityState) {
   return renderToStaticMarkup(
     React.createElement(BackgroundContinuityControls, {
       state: value,
+      behavior,
       setEnabled: async () => undefined,
       setAutoSync: async () => undefined,
       refresh: async () => undefined,
@@ -60,6 +69,14 @@ it("keeps disabled and stopped background mode distinct without claiming active 
   expect(stopped).toContain("Stop background mode");
 });
 
+it("keeps Background Continuity controls unavailable when the native capability is missing", () => {
+  const html = render({ ...state, available: false });
+  expect(html).toContain("Available on Android 12 and later.");
+  expect(html).not.toContain("Enable background mode");
+  expect(html).not.toContain("Start background mode");
+  expect(html).not.toContain("Stop background mode");
+});
+
 it.each(["unconfirmed", "partial"] as const)(
   "keeps Pause/Resume unavailable after actual session %s feedback until a confirmed refresh",
   async (status) => {
@@ -75,6 +92,7 @@ it.each(["unconfirmed", "partial"] as const)(
       renderToStaticMarkup(
         React.createElement(BackgroundContinuityControls, {
           state: { ...state, autoSync: applied },
+          behavior,
           autoSyncRecoveryRequired:
             session.getSnapshot().autoSync.recoveryRequired,
           setEnabled: async () => undefined,

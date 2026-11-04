@@ -17,6 +17,7 @@ import {
   BackgroundContinuityControls,
   BackgroundContinuityHelp,
 } from "./BackgroundContinuityControls";
+import { useBackgroundContinuityBehavior } from "./backgroundContinuityBehavior";
 import type { BackgroundContinuityState } from "./types";
 import { ClipSettings } from "./ClipSettings";
 import { findSessionFocus } from "./sessionFocus";
@@ -380,6 +381,8 @@ export type ClipboardAppProps = {
   onReject(dev: PendingRequest): Promise<PairingApprovalResult>;
   onPairText(txt: string): Promise<PairingSubmissionResult>;
   pairingDiagnostics?: React.ReactNode;
+  /** Test-only scenario controls rendered beside the active continuity surface. */
+  backgroundContinuityDiagnostics?: React.ReactNode;
   onScanPairingCode?(options: PairingScanOptions): Promise<PairingScanResult>;
   scanCameraPermission?: PairingCameraPermission;
   onRequestPairingCode(): Promise<PairingCode | null>;
@@ -475,6 +478,7 @@ export function ClipboardApp({
   onReject,
   onPairText,
   pairingDiagnostics,
+  backgroundContinuityDiagnostics,
   pairingImport,
   onScanPairingCode,
   scanCameraPermission,
@@ -511,11 +515,16 @@ export function ClipboardApp({
   identityResetActions,
   onPairAfterIdentityReset,
   onCopyFormerIdentity,
+  runtimeOwner,
 }: ClipboardAppProps) {
   const [isNarrow, setIsNarrow] = useState(false);
   const [isCramped, setIsCramped] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [session] = useState(() => providedSession ?? createUiSession());
+  const backgroundContinuityBehavior = useBackgroundContinuityBehavior(
+    runtimeOwner ?? session,
+    host.confirm
+  );
   const sessionState = useSyncExternalStore(
     session.subscribe,
     session.getSnapshot,
@@ -925,7 +934,10 @@ export function ClipboardApp({
     if (issue.code === "continuity")
       return onRefreshBackgroundContinuity
         ? async () => {
-            await onRefreshBackgroundContinuity();
+            return backgroundContinuityBehavior.perform(
+              "Refreshing background state",
+              onRefreshBackgroundContinuity
+            );
           }
         : undefined;
     if (issue.id === "clipboard:focus:observation") return onRetryPopupCapture;
@@ -2371,6 +2383,8 @@ export function ClipboardApp({
                         </h4>
                         <BackgroundContinuityControls
                           state={backgroundContinuity}
+                          behavior={backgroundContinuityBehavior}
+                          scenarioControls={backgroundContinuityDiagnostics}
                           setEnabled={onSetBackgroundContinuity}
                           setAutoSync={(enabled) =>
                             session.saveAutoSync(() => onSetAutoSync?.(enabled))
@@ -2944,7 +2958,9 @@ export function ClipboardApp({
               activeTask?.entity === "continuity" && backgroundContinuity ? (
                 <BackgroundContinuityHelp
                   state={backgroundContinuity}
+                  behavior={backgroundContinuityBehavior}
                   exportDiagnostics={onExportBackgroundContinuityDiagnostics}
+                  scenarioControls={backgroundContinuityDiagnostics}
                 />
               ) : undefined
             }

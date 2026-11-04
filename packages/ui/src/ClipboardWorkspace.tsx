@@ -15,12 +15,17 @@ export function ClipboardWorkspace({
   session: suppliedSession,
   taskInput,
   pairingDiagnostics,
+  backgroundContinuityDiagnostics,
   pairingImport,
 }: {
   adapter: UiRuntimeAdapter;
 } & Pick<
   ClipboardAppProps,
-  "session" | "taskInput" | "pairingDiagnostics" | "pairingImport"
+  | "session"
+  | "taskInput"
+  | "pairingDiagnostics"
+  | "pairingImport"
+  | "backgroundContinuityDiagnostics"
 >) {
   const session = useMemo(
     () => suppliedSession ?? createUiSession(),
@@ -68,6 +73,7 @@ export function ClipboardWorkspace({
       {...adapter.actions}
       taskInput={taskInput}
       pairingDiagnostics={pairingDiagnostics}
+      backgroundContinuityDiagnostics={backgroundContinuityDiagnostics}
       pairingImport={pairingImport}
       session={session}
       runtimeError={

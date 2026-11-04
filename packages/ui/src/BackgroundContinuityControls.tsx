@@ -1,8 +1,11 @@
-import React, { useState } from "react";
+import React from "react";
+import type { BackgroundContinuityActionRunner } from "./backgroundContinuityBehavior";
 import type { BackgroundContinuityState } from "./types";
 
 export function BackgroundContinuityControls({
   state,
+  behavior,
+  scenarioControls,
   setEnabled,
   setAutoSync,
   refresh,
@@ -13,6 +16,8 @@ export function BackgroundContinuityControls({
   autoSyncRecoveryRequired = false,
 }: {
   state: BackgroundContinuityState;
+  behavior: BackgroundContinuityActionRunner;
+  scenarioControls?: React.ReactNode;
   setEnabled(enabled: boolean): Promise<void>;
   setAutoSync(enabled: boolean): Promise<unknown>;
   refresh?(): Promise<unknown>;
@@ -22,23 +27,10 @@ export function BackgroundContinuityControls({
   autoSyncPending?: boolean;
   autoSyncRecoveryRequired?: boolean;
 }) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const busy = pending || state.controlPending || autoSyncPending;
-  async function act(operation: () => Promise<unknown>) {
-    if (busy) return;
-    setPending(true);
-    setError(null);
-    try {
-      await operation();
-    } catch {
-      setError(
-        "The action could not be confirmed. Open background help and recovery."
-      );
-    } finally {
-      setPending(false);
-    }
-  }
+  const busy =
+    behavior.state.pendingAction !== null ||
+    state.controlPending ||
+    autoSyncPending;
   return (
     <div className="relay-settings">
       <p className="peer-sub">Experimental background continuity</p>
@@ -68,14 +60,13 @@ export function BackgroundContinuityControls({
               className="text-button labelled-control"
               disabled={busy}
               onClick={() => {
-                if (
-                  !state.backgroundEnabled &&
-                  !window.confirm(
-                    "Enable experimental background continuity? Clipp holds a partial CPU wake lock and uses extra battery and network while Android keeps its current runtime alive. Clipboard capture still requires a focused Clipp window."
-                  )
-                )
-                  return;
-                void act(() => setEnabled(true));
+                void behavior.perform(
+                  "Enabling background mode",
+                  () => setEnabled(true),
+                  !state.backgroundEnabled
+                    ? "Enable experimental background continuity? Clipp holds a partial CPU wake lock and uses extra battery and network while Android keeps its current runtime alive. Clipboard capture still requires a focused Clipp window."
+                    : undefined
+                );
               }}
             >
               {state.backgroundEnabled
@@ -90,7 +81,11 @@ export function BackgroundContinuityControls({
                 type="button"
                 className="text-button labelled-control"
                 disabled={busy || autoSyncRecoveryRequired}
-                onClick={() => void act(() => setAutoSync(!state.autoSync))}
+                onClick={() =>
+                  void behavior.perform("Updating Auto Sync", () =>
+                    setAutoSync(!state.autoSync)
+                  )
+                }
               >
                 {state.autoSync ? "Pause Auto Sync" : "Resume Auto Sync"}
               </button>
@@ -103,7 +98,11 @@ export function BackgroundContinuityControls({
             type="button"
             className="text-button labelled-control"
             disabled={busy}
-            onClick={() => void act(() => setEnabled(false))}
+            onClick={() =>
+              void behavior.perform("Stopping background mode", () =>
+                setEnabled(false)
+              )
+            }
           >
             Stop background mode
           </button>
@@ -118,21 +117,23 @@ export function BackgroundContinuityControls({
               type="button"
               className="text-button labelled-control"
               disabled={busy}
-              onClick={() => void act(refreshAutoSync)}
+              onClick={() =>
+                void behavior.perform("Refreshing Auto Sync", refreshAutoSync)
+              }
             >
               Refresh Auto Sync
             </button>
           )}
         </>
       )}
-      {busy && (
+      {behavior.state.pendingAction && (
         <p role="status" className="peer-sub">
           Updating background controls…
         </p>
       )}
-      {(error || state.controlError) && (
+      {(behavior.state.error || state.controlError) && (
         <p role="status" className="peer-sub">
-          {state.controlError || error}
+          {state.controlError || behavior.state.error}
         </p>
       )}
       {state.available && state.notificationAvailability === "blocked" && (
@@ -151,7 +152,12 @@ export function BackgroundContinuityControls({
           type="button"
           className="text-button labelled-control"
           disabled={busy}
-          onClick={() => void act(openNotificationSettings)}
+          onClick={() =>
+            void behavior.perform(
+              "Opening notification settings",
+              openNotificationSettings
+            )
+          }
         >
           Notification settings
         </button>
@@ -161,7 +167,9 @@ export function BackgroundContinuityControls({
           type="button"
           className="text-button labelled-control"
           disabled={busy}
-          onClick={() => void act(refresh)}
+          onClick={() =>
+            void behavior.perform("Refreshing background state", refresh)
+          }
         >
           Refresh background state
         </button>
@@ -174,15 +182,20 @@ export function BackgroundContinuityControls({
       >
         Background help and recovery
       </button>
+      {scenarioControls}
     </div>
   );
 }
 
 export function BackgroundContinuityHelp({
   state,
+  behavior,
+  scenarioControls,
   exportDiagnostics,
 }: {
   state: BackgroundContinuityState;
+  behavior: BackgroundContinuityActionRunner;
+  scenarioControls?: React.ReactNode;
   exportDiagnostics?(): void | Promise<void>;
 }) {
   return (
@@ -214,19 +227,28 @@ export function BackgroundContinuityHelp({
           not request a battery exemption during onboarding.
         </p>
       )}
-      {state.available && exportDiagnostics && (
-        <button
-          type="button"
-          className="text-button labelled-control"
-          onClick={() => {
-            void Promise.resolve(exportDiagnostics()).catch(() => {
-              window.alert("Clipp could not export background diagnostics.");
-            });
-          }}
-        >
-          Export privacy-safe diagnostics
-        </button>
+      {behavior.state.pendingAction && (
+        <p role="status">{behavior.state.pendingAction}…</p>
       )}
+      {state.available && exportDiagnostics && (
+        <>
+          <button
+            type="button"
+            className="text-button labelled-control"
+            disabled={behavior.state.pendingAction !== null}
+            onClick={() =>
+              void behavior.perform(
+                "Exporting privacy-safe diagnostics",
+                exportDiagnostics
+              )
+            }
+          >
+            Export privacy-safe diagnostics
+          </button>
+          {behavior.state.error && <p role="status">{behavior.state.error}</p>}
+        </>
+      )}
+      {scenarioControls}
     </section>
   );
 }
