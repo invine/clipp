@@ -238,6 +238,41 @@ it.each(["popup", "page"] as const)(
   }
 );
 
+it.each(["popup", "page"] as const)(
+  "%s retires notification actions with its extension document lifecycle",
+  async (surface) => {
+    const f = fixture(surface);
+    f.adapter.start?.();
+    await f.reply("getNotificationAvailability", {
+      ok: true,
+      state: { status: "available" },
+    });
+    const controls = f.adapter.getSnapshot().notificationControls!;
+    const action = controls.openSettings!();
+    const duplicate = controls.openSettings!();
+    expect(
+      f.requests.filter((entry) => entry.type === "openNotificationSettings")
+    ).toHaveLength(1);
+
+    await f.adapter.stop?.();
+    f.adapter.start?.();
+    await f.reply("getNotificationAvailability", {
+      ok: true,
+      state: { status: "available" },
+    });
+    const replacement = f.adapter.getSnapshot();
+    await f.reply("openNotificationSettings", { ok: false });
+    await Promise.all([action, duplicate]);
+    expect(f.adapter.getSnapshot()).toBe(replacement);
+    expect(f.adapter.getSnapshot().notificationControls).toMatchObject({
+      pending: false,
+      error: false,
+      state: { status: "available" },
+    });
+    await f.adapter.stop?.();
+  }
+);
+
 it("keeps popup capture and Share Now out of the management page", async () => {
   const page = fixture("page");
   page.adapter.start?.();

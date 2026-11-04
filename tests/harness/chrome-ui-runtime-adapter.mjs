@@ -26,6 +26,7 @@ try {
     import { verifyUiRuntimeSnapshotConformance, verifyUiRuntimeLifecycleConformance } from ${JSON.stringify(join(root, "tests/ui/runtimeAdapterConformance.ts"))};
     const focusListeners = new Set();
     const diagnostics = { clipboardReads: 0, received: [] };
+    let notificationAction;
     chrome.runtime.onMessage.addListener(message => diagnostics.received.push(message?.type));
     const adapter = createExtensionUiAdapter({
       runtime: chrome.runtime,
@@ -45,6 +46,24 @@ try {
       async publish(message) { await chrome.runtime.sendMessage({type:"__fixture_publish", message}); await settle(); },
       async holdNextRuntimeRead() { await chrome.runtime.sendMessage({type:"__fixture_hold_runtime"}); },
       async releaseRuntimeRead() { await chrome.runtime.sendMessage({type:"__fixture_release_runtime"}); await settle(); },
+      async holdNextNotificationRead() { await chrome.runtime.sendMessage({type:"__fixture_hold_notification_read"}); },
+      async releaseNotificationRead(state, index=0) { await chrome.runtime.sendMessage({type:"__fixture_release_notification_read", state, index}); await settle(); },
+      async setNotificationState(state) { await chrome.runtime.sendMessage({type:"__fixture_set_notification_state", state}); await settle(); },
+      async holdNextSettingsAction() { await chrome.runtime.sendMessage({type:"__fixture_hold_settings_action"}); },
+      async releaseSettingsAction(ok) { await chrome.runtime.sendMessage({type:"__fixture_release_settings_action", ok}); await settle(); },
+      async waitForHeldNotificationRead(count=1) { for(let i=0;i<80;i++){const value=await chrome.runtime.sendMessage({type:"__fixture_notification_read_held"});if(value.count>=count)return;await new Promise(r=>setTimeout(r,5));}throw new Error("notification_read_not_held"); },
+      async waitForHeldSettingsAction() { for(let i=0;i<80;i++){const value=await chrome.runtime.sendMessage({type:"__fixture_settings_action_held"});if(value.held)return;await new Promise(r=>setTimeout(r,5));}const counts=await chrome.runtime.sendMessage({type:"__fixture_notification_counts"});throw new Error("notification_action_not_held:"+JSON.stringify(counts)+":"+JSON.stringify(adapter.getSnapshot().notificationControls)); },
+      async failNextSettingsAction() { await chrome.runtime.sendMessage({type:"__fixture_fail_next_settings_action"}); },
+      async notificationCounts() { return chrome.runtime.sendMessage({type:"__fixture_notification_counts"}); },
+      async notificationAction() {
+        const controls = adapter.getSnapshot().notificationControls;
+        const first = controls?.openSettings?.();
+        const duplicate = controls?.openSettings?.();
+        notificationAction = Promise.all([first, duplicate]);
+        await settle();
+      },
+      async waitNotificationAction() { await notificationAction; },
+      async refreshNotifications() { return adapter.getSnapshot().notificationControls?.refresh(); },
       async exerciseSnapshot() {
         return verifyUiRuntimeSnapshotConformance({ adapter, afterStart: settle, publishObservation: async () => {
           await chrome.runtime.sendMessage({type:"__fixture_publish", message:{type:"runtimeState", state:{identity:{deviceId:"updated",deviceName:"updated"},devices:[],pending:[],waiting:[],pairingErrors:[],pairingState:{sessionId:"runtime-a",revision:5,waiting:[],errors:[],outcomes:[]},peers:[],peerConnections:[],connectionStateKnown:true}}});
@@ -89,6 +108,11 @@ try {
     const history={sessionId:"history-a",revision:1,clips:[],pinnedIds:[]};
     const state={identity:{deviceId:"local",deviceName:"local"},devices:[],pending:[],waiting:[],pairingErrors:[],pairingState:{sessionId:"runtime-a",revision:1,waiting:[],errors:[],outcomes:[]},peers:[],peerConnections:[],connectionStateKnown:true};
     let holdNextRuntime=false, heldRuntimeReply;
+    let holdNotificationReads=0, heldNotificationReplies=[];
+    let holdNextSettingsAction=false, heldSettingsReply;
+    let failNextSettingsAction=false;
+    let notificationState={status:"available"};
+    let notificationReadCount=0, settingsActionCount=0;
     chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       if(message?.type==="__fixture_publish"){
         if(message.message?.type==="historyChanged"){
@@ -99,6 +123,15 @@ try {
       }
       if(message?.type==="__fixture_hold_runtime"){holdNextRuntime=true;sendResponse({ok:true});return;}
       if(message?.type==="__fixture_release_runtime"){heldRuntimeReply?.();heldRuntimeReply=undefined;sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_hold_notification_read"){holdNotificationReads++;sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_release_notification_read"){notificationState=message.state;const reply=heldNotificationReplies.splice(message.index??0,1)[0];reply?.({ok:true,state:notificationState});sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_set_notification_state"){notificationState=message.state;sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_hold_settings_action"){holdNextSettingsAction=true;sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_release_settings_action"){heldSettingsReply?.({ok:message.ok});heldSettingsReply=undefined;sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_fail_next_settings_action"){failNextSettingsAction=true;sendResponse({ok:true});return;}
+      if(message?.type==="__fixture_notification_read_held"){sendResponse({count:heldNotificationReplies.length});return;}
+      if(message?.type==="__fixture_settings_action_held"){sendResponse({held:!!heldSettingsReply});return;}
+      if(message?.type==="__fixture_notification_counts"){sendResponse({notificationReadCount,settingsActionCount});return;}
       if(message?.type==="__fixture_runtime_held"){sendResponse({held:!!heldRuntimeReply});return;}
       if(message?.type==="getRuntimeState"&&holdNextRuntime){holdNextRuntime=false;heldRuntimeReply=()=>sendResponse({state:{...state,identity:{deviceId:"stale-popup-read",deviceName:"stale"},pairingState:{...state.pairingState,revision:88}}});return true;}
       let reply={ok:true};
@@ -109,7 +142,15 @@ try {
         case "getClipHistory": reply={ok:true,snapshot:history}; break;
         case "getSettings": reply={ok:true,snapshot:settings}; break;
         case "setSettings": settings.revision++;Object.assign(settings.state,message.settings);reply={status:"confirmed",snapshot:settings};break;
-        case "getNotificationAvailability": reply={ok:true,state:{status:"available"}};break;
+        case "getNotificationAvailability":
+          notificationReadCount++;
+          if(holdNotificationReads>0){holdNotificationReads--;heldNotificationReplies.push(sendResponse);return true;}
+          reply={ok:true,state:notificationState};break;
+        case "openNotificationSettings":
+          settingsActionCount++;
+          if(holdNextSettingsAction){holdNextSettingsAction=false;heldSettingsReply=sendResponse;return true;}
+          if(failNextSettingsAction){failNextSettingsAction=false;reply={ok:false};break;}
+          reply={ok:true};break;
         case "identityResetRead": reply={ok:true,state:{phase:"idle"}};break;
         case "managementStatus": reply={ok:true,records:[]};break;
         default: reply={ok:true};
@@ -197,6 +238,95 @@ try {
       await __adapterHarness.exerciseLifecycle();
     });
     report.cases.push("common-lifecycle-conformance");
+    await page.evaluate(async () => {
+      await __adapterHarness.start();
+      await __adapterHarness.holdNextSettingsAction();
+      await __adapterHarness.notificationAction();
+      await __adapterHarness.waitForHeldSettingsAction();
+      const readsBefore = (await __adapterHarness.notificationCounts())
+        .notificationReadCount;
+      await __adapterHarness.holdNextNotificationRead();
+      const refresh = __adapterHarness.refreshNotifications();
+      await __adapterHarness.waitForHeldNotificationRead();
+      await __adapterHarness.releaseNotificationRead({ status: "blocked" });
+      await refresh;
+      const pendingSnapshot = __adapterHarness.adapter.getSnapshot();
+      if (
+        pendingSnapshot.notificationControls?.pending !== true ||
+        pendingSnapshot.notificationControls?.state?.status !== "blocked"
+      )
+        throw new Error("passive_refresh_did_not_preserve_pending_action");
+      const counts = await __adapterHarness.notificationCounts();
+      if (
+        counts.settingsActionCount < 1 ||
+        counts.notificationReadCount <= readsBefore
+      )
+        throw new Error("notification_effects_not_translated");
+      await __adapterHarness.stop();
+      await __adapterHarness.start();
+      await __adapterHarness.flush();
+      if (
+        __adapterHarness.adapter.getSnapshot().notificationControls?.pending !==
+        false
+      )
+        throw new Error("pending_action_survived_restart");
+      globalThis.__retiredNotificationSnapshot =
+        __adapterHarness.adapter.getSnapshot();
+      await __adapterHarness.releaseSettingsAction(
+        document.documentElement.dataset.surface === "popup"
+      );
+      await __adapterHarness.waitNotificationAction();
+      if (
+        __adapterHarness.adapter.getSnapshot() !==
+        globalThis.__retiredNotificationSnapshot
+      )
+        throw new Error("retired_action_published_into_replacement");
+      await __adapterHarness.setNotificationState({ status: "available" });
+      await __adapterHarness.refreshNotifications();
+      if (
+        __adapterHarness.adapter.getSnapshot().notificationControls?.state
+          ?.status !== "available"
+      )
+        throw new Error("current_refresh_missed_retired_native_change");
+      await __adapterHarness.holdNextNotificationRead();
+      const earlierRead = __adapterHarness.refreshNotifications();
+      await __adapterHarness.waitForHeldNotificationRead();
+      await __adapterHarness.failNextSettingsAction();
+      await __adapterHarness.adapter
+        .getSnapshot()
+        .notificationControls.openSettings();
+      if (!__adapterHarness.adapter.getSnapshot().notificationControls?.error)
+        throw new Error("notification_action_error_not_published");
+      await __adapterHarness.releaseNotificationRead({ status: "blocked" });
+      await earlierRead;
+      if (!__adapterHarness.adapter.getSnapshot().notificationControls?.error)
+        throw new Error("earlier_read_cleared_notification_action_error");
+      await __adapterHarness.holdNextNotificationRead();
+      const recoveryRead = __adapterHarness.refreshNotifications();
+      await __adapterHarness.waitForHeldNotificationRead();
+      await __adapterHarness.releaseNotificationRead({ status: "available" });
+      await recoveryRead;
+      if (__adapterHarness.adapter.getSnapshot().notificationControls?.error)
+        throw new Error("successful_refresh_did_not_clear_notification_error");
+      await __adapterHarness.holdNextNotificationRead();
+      await __adapterHarness.holdNextNotificationRead();
+      const oldestRead = __adapterHarness.refreshNotifications();
+      const newestRead = __adapterHarness.refreshNotifications();
+      await __adapterHarness.waitForHeldNotificationRead(2);
+      await __adapterHarness.releaseNotificationRead({ status: "blocked" }, 1);
+      await newestRead;
+      await __adapterHarness.releaseNotificationRead(
+        { status: "available" },
+        0
+      );
+      await oldestRead;
+      if (
+        __adapterHarness.adapter.getSnapshot().notificationControls?.state
+          ?.status !== "blocked"
+      )
+        throw new Error("stale_read_overwrote_newer_notification_state");
+    });
+    report.cases.push("notification-action-generation-and-passive-refresh");
     await page.evaluate(async () => {
       await __adapterHarness.stop();
     });

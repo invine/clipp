@@ -22,6 +22,7 @@ it("runs popup and options production adapters in Chrome extension contexts", ()
     cases: expect.arrayContaining([
       "common-snapshot-conformance",
       "common-lifecycle-conformance",
+      "notification-action-generation-and-passive-refresh",
       "surface-capabilities-and-popup-capture",
       "retired-popup-read-does-not-affect-replacement-or-options",
       "settings-and-history-authorities-remain-independent",
