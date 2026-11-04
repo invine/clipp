@@ -45,10 +45,8 @@ import type { RelayActionResult } from "../../core/network/relayActions";
 import { PairingCodeContent } from "./PairingCodeContent";
 import { usePairingCodeTask } from "./usePairingCodeTask";
 import type { PayloadCopyResult } from "../../core/clipboard/payloadCopy";
-import {
-  pairingSubmissionMessage,
-  pairingApprovalMessage,
-} from "./pairingFeedback";
+import { pairingSubmissionMessage } from "./pairingFeedback";
+import { useTrustRequestBehavior } from "./trustRequestBehavior";
 import type {
   PairingSubmissionResult,
   PairingApprovalResult,
@@ -524,6 +522,22 @@ export function ClipboardApp({
   const [isCramped, setIsCramped] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [session] = useState(() => providedSession ?? createUiSession());
+  const identityReady =
+    Boolean(identity) &&
+    !initializationError &&
+    !identityRotationRecovery &&
+    !runtimeError;
+  const trustRequestBehavior = useTrustRequestBehavior({
+    owner: runtimeOwner ?? session,
+    identityId: identity?.deviceId,
+    ready: identityReady,
+    loading: requestsLoading,
+    unavailable: requestsUnavailable,
+    pending,
+    onAccept,
+    onReject,
+  });
+  const approvalsPending = trustRequestBehavior.state.pendingKeys;
   const backgroundContinuityBehavior = useBackgroundContinuityBehavior(
     runtimeOwner ?? session,
     host.confirm
@@ -533,11 +547,6 @@ export function ClipboardApp({
     session.getSnapshot,
     session.getSnapshot
   );
-  const identityReady =
-    Boolean(identity) &&
-    !initializationError &&
-    !identityRotationRecovery &&
-    !runtimeError;
   const currentIdentity = useRef(identity?.deviceId);
   currentIdentity.current = identity?.deviceId;
   useEffect(
@@ -567,38 +576,6 @@ export function ClipboardApp({
     pairingTask.getSnapshot,
     pairingTask.getSnapshot
   );
-  const approvalBusy = useRef(new Set<string>());
-  const [approvalsPending, setApprovalsPending] = useState<string[]>([]);
-  const [approvalFeedback, setApprovalFeedback] = useState<
-    Record<string, string>
-  >({});
-  async function decideRequest(request: PendingRequest, accepted: boolean) {
-    if (
-      !identityReady ||
-      requestsLoading ||
-      requestsUnavailable ||
-      approvalBusy.current.has(request.deviceId)
-    )
-      return;
-    approvalBusy.current.add(request.deviceId);
-    setApprovalsPending([...approvalBusy.current]);
-    const identityId = identity?.deviceId;
-    let result: PairingApprovalResult;
-    try {
-      result = await (accepted ? onAccept(request) : onReject(request));
-    } catch {
-      result = { ok: false, error: "outcome_unconfirmed", admitted: null };
-    }
-    if (!result || typeof result.ok !== "boolean")
-      result = { ok: false, error: "outcome_unconfirmed", admitted: null };
-    if (currentIdentity.current === identityId)
-      setApprovalFeedback((previous) => ({
-        ...previous,
-        [request.deviceId]: pairingApprovalMessage(result, accepted),
-      }));
-    approvalBusy.current.delete(request.deviceId);
-    setApprovalsPending([...approvalBusy.current]);
-  }
   const [isScanningPairing, setIsScanningPairing] = useState(false);
   const [scanError, setScanError] = useState<PairingScanError | null>(null);
   const [cameraPermission, setCameraPermission] =
@@ -750,7 +727,6 @@ export function ClipboardApp({
       identity.deviceId !== previousIdentity.current
     ) {
       session.rotateIdentity();
-      setApprovalFeedback({});
     }
     if (identity?.deviceId) previousIdentity.current = identity.deviceId;
   }, [identity?.deviceId, session]);
@@ -1731,9 +1707,13 @@ export function ClipboardApp({
                 devices={devices}
                 onDismiss={onDismissPairingOutcome}
               />
-              {Object.entries(approvalFeedback).map(([id, message]) => (
-                <p key={id} role="status" style={{ overflowWrap: "anywhere" }}>
-                  {message}
+              {trustRequestBehavior.visibleFeedback.map((item) => (
+                <p
+                  key={`${item.deviceId}:${item.requestVersion}`}
+                  role="status"
+                  style={{ overflowWrap: "anywhere" }}
+                >
+                  {item.message}
                 </p>
               ))}
               {requestsLoading && <p role="status">Loading Requests…</p>}
@@ -1805,9 +1785,11 @@ export function ClipboardApp({
                             !identityReady ||
                             requestsLoading ||
                             requestsUnavailable ||
-                            approvalsPending.includes(req.deviceId)
+                            trustRequestBehavior.isPending(req)
                           }
-                          onClick={() => void decideRequest(req, true)}
+                          onClick={() =>
+                            void trustRequestBehavior.decide(req, true)
+                          }
                         >
                           Accept
                         </button>
@@ -1817,13 +1799,18 @@ export function ClipboardApp({
                             !identityReady ||
                             requestsLoading ||
                             requestsUnavailable ||
-                            approvalsPending.includes(req.deviceId)
+                            trustRequestBehavior.isPending(req)
                           }
-                          onClick={() => void decideRequest(req, false)}
+                          onClick={() =>
+                            void trustRequestBehavior.decide(req, false)
+                          }
                         >
                           Reject
                         </button>
                       </div>
+                      {trustRequestBehavior.isPending(req) && (
+                        <p role="status">Deciding Trust Request…</p>
+                      )}
                     </div>
                   );
                 })}
