@@ -1,4 +1,4 @@
-import React, { useSyncExternalStore } from "react";
+import React, { useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { ClipboardWorkspace } from "../../../packages/ui/src/ClipboardWorkspace";
 import { createUiSession } from "../../../packages/ui/src/uiSession";
@@ -7,6 +7,7 @@ import { createScriptedUiRuntimeAdapter } from "../../../packages/ui/src/scripte
 import type { PairingSubmissionResult } from "../../../packages/core/pairing/results";
 import "../../../packages/ui/src/styles.css";
 import "../../../packages/ui/src/host.css";
+import "./scenario.css";
 
 const session = createUiSession();
 session.update({ destination: "devices" });
@@ -37,6 +38,8 @@ const props: ClipboardAppProps = {
 const adapter = createScriptedUiRuntimeAdapter(props);
 
 function ScenarioControls() {
+  const [navigationResult, setNavigationResult] = useState("none");
+  const navigationSequence = useRef(0);
   const effects = useSyncExternalStore(
     adapter.subscribeEffects,
     adapter.getEffects,
@@ -50,6 +53,7 @@ function ScenarioControls() {
     session.pairing.discard();
     session.update({ destination: "devices" });
     adapter.clearEffects();
+    setNavigationResult("none");
   }
   return (
     <aside aria-label="Scenario controls">
@@ -68,6 +72,36 @@ function ScenarioControls() {
       <button type="button" onClick={reset}>
         Reset scenario
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          setNavigationResult(
+            session.acceptDestination(
+              `scenario-settings-${++navigationSequence.current}`,
+              { kind: "settings", category: "general" },
+              { ready: true, clipIds: [], requestIds: [] }
+            )
+          )
+        }
+      >
+        Attempt Settings navigation
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          setNavigationResult(
+            session.acceptDestination(
+              `scenario-notification-${++navigationSequence.current}`,
+              { kind: "requests" },
+              { ready: true, clipIds: [], requestIds: [] },
+              "notification"
+            )
+          )
+        }
+      >
+        Open Requests notification
+      </button>
+      <output data-testid="navigation-result">{navigationResult}</output>
       <h2>Requested Pairing effects</h2>
       <output data-testid="pairing-effects" aria-live="polite">
         {JSON.stringify(effects)}

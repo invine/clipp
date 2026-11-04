@@ -5,55 +5,24 @@ import { createNameEditSession } from "./nameEditSession";
 import { createPairingSubmission } from "./pairingSubmission";
 import { createPairingCodeTask } from "./pairingCodeTask";
 import {
-  createRelayEditSession,
-  type RelayEditHandle,
-} from "./relayEditSession";
+  createInitialUiSessionNavigationState,
+  reduceUiSessionNavigation,
+  type NotificationReturn,
+  type SessionTask,
+  type UiSessionNavigationEvent,
+  type UiSessionNavigationState,
+} from "./uiSessionReducer";
+import { createRelayEditSession } from "./relayEditSession";
 import type { RelayActionResult } from "../../core/network/relayActions";
-export type SessionTask = {
-  kind:
-    | "clip-details"
-    | "device-name"
-    | "alias"
-    | "relay"
-    | "pairing"
-    | "paste"
-    | "qr"
-    | "clear"
-    | "issues"
-    | "pairing-recovery";
-  entity?: string;
-  origin: string;
-  initialFocusKey?: string;
-};
-type NotificationReturn = Pick<
-  SessionContext,
-  "destination" | "focusKey" | "showNav" | "settingsCategory" | "taskNotice"
-> & {
-  tasks: (SessionTask & { relayEdit?: RelayEditHandle | null })[];
-  previous: NotificationReturn | null;
-};
-export type SessionContext = {
-  notificationReturn: NotificationReturn | null;
-  search: string;
-  timeFilter: "all" | "24h" | "7d" | "30d";
-  sourceFilter: string;
-  filterMode: "all" | "pinned" | "links";
-  showNav: boolean;
-  destination: "history" | "devices" | "settings" | "requests";
-  tasks: SessionTask[];
-  focusKey: string | null;
-  scroll: Record<string, number>;
-  historyAnchor: { clipId: string; offset: number } | null;
+export type { SessionTask } from "./uiSessionReducer";
+
+export type SessionContext = UiSessionNavigationState & {
   autoSync: {
     pending: boolean;
     recoveryRequired: boolean;
     refreshed: boolean;
     feedback: AutoSyncActionResult | null;
   };
-  navigationVersion?: number;
-  settingsCategory?:
-    "general" | "connections" | "advanced" | "appearance" | "clips" | "relays";
-  taskNotice: string | null;
   pairingImport: { pending: boolean; error: string | null };
   historyActions: Record<
     string,
@@ -74,17 +43,7 @@ export function createUiSession() {
     pairing = createPairingSubmission(),
     qr = createPairingCodeTask();
   let state: SessionContext = {
-    notificationReturn: null,
-    search: "",
-    timeFilter: "all",
-    sourceFilter: "all",
-    filterMode: "all",
-    showNav: false,
-    destination: "history",
-    tasks: [],
-    focusKey: null,
-    scroll: {},
-    historyAnchor: null,
+    ...createInitialUiSessionNavigationState(),
     autoSync: {
       pending: false,
       recoveryRequired: false,
@@ -109,8 +68,21 @@ export function createUiSession() {
   >();
   const listeners = new Set<() => void>();
   const update = (fields: Partial<SessionContext>) => {
-    state = { ...state, ...fields };
+    state = fields.destination
+      ? reduceUiSessionNavigation(state, {
+          type: "select-destination",
+          fields: { ...fields, destination: fields.destination },
+          canReplace: true,
+        })
+      : reduceUiSessionNavigation(state, { type: "patch", fields });
     listeners.forEach((listener) => listener());
+  };
+  const transition = (event: UiSessionNavigationEvent) => {
+    const next = reduceUiSessionNavigation(state, event);
+    if (next === state) return false;
+    state = next;
+    listeners.forEach((listener) => listener());
+    return true;
   };
   // Destination registration must observe editor work even while its task is suspended.
   for (const owner of [name, alias, relay, pairing, qr])
@@ -181,7 +153,7 @@ export function createUiSession() {
         (state.destination !== "requests" || state.tasks.length)
       ) {
         const {
-          destination,
+          destination: previousDestination,
           tasks,
           focusKey,
           showNav,
@@ -190,10 +162,11 @@ export function createUiSession() {
         } = state;
         // Suspend presentation only. Drafts and in-flight operations retain their
         // existing owners, and their completions can still update this context.
-        update({
-          notificationReturn: {
-            previous: state.notificationReturn,
-            destination,
+        transition({
+          type: "suspend-for-notification",
+          destination,
+          context: {
+            destination: previousDestination,
             tasks: tasks.map((task) =>
               task.kind === "relay"
                 ? {
@@ -207,7 +180,9 @@ export function createUiSession() {
             settingsCategory,
             taskNotice,
           },
-          tasks: [],
+          requestAvailable:
+            !destination.entity ||
+            authority.requestIds.includes(destination.entity),
         });
       }
       let result: "applied" | "unavailable" = "applied";
@@ -336,18 +311,14 @@ export function createUiSession() {
     },
     update,
     open(task: SessionTask) {
-      const current = state.tasks[state.tasks.length - 1];
-      if (current?.kind === task.kind && current.entity === task.entity) return;
-      const subtask =
-        (current?.kind === "pairing" &&
-          (task.kind === "paste" || task.kind === "qr")) ||
-        (current?.kind === "issues" && task.kind === "pairing-recovery");
-      if (!subtask) state.tasks.forEach(dismissTask);
-      update({
-        tasks: subtask ? [...state.tasks, task] : [task],
-        focusKey: task.origin,
-        taskNotice: null,
+      const next = reduceUiSessionNavigation(state, {
+        type: "open-task",
+        task,
       });
+      if (next === state) return;
+      if (next.tasks.length <= state.tasks.length)
+        state.tasks.forEach(dismissTask);
+      transition({ type: "open-task", task });
     },
     back() {
       if (!state.tasks.length && state.notificationReturn) {
@@ -376,26 +347,16 @@ export function createUiSession() {
               : task,
           ];
         });
-        update({
-          ...returning,
-          tasks,
-          notificationReturn: previous,
-          navigationVersion: (state.navigationVersion ?? 0) + 1,
+        transition({
+          type: "return-from-notification",
+          context: { ...returning, tasks, previous },
         });
         return;
       }
       const task = state.tasks[state.tasks.length - 1];
+      if (!task) return;
       dismissTask(task);
-      update({
-        tasks: state.tasks
-          .slice(0, -1)
-          .map((parent, index) =>
-            index === state.tasks.length - 2
-              ? { ...parent, initialFocusKey: task?.origin }
-              : parent
-          ),
-        focusKey: task?.origin ?? state.focusKey,
-      });
+      transition({ type: "back-task" });
     },
     complete(kind: SessionTask["kind"], entity?: string) {
       const task = state.tasks[state.tasks.length - 1];
@@ -425,7 +386,10 @@ export function createUiSession() {
     close() {
       const task = state.tasks[state.tasks.length - 1];
       state.tasks.forEach(dismissTask);
-      update({ tasks: [], focusKey: task?.origin ?? state.focusKey });
+      transition({
+        type: "close-tasks",
+        focusKey: task?.origin ?? state.focusKey,
+      });
     },
     discard() {
       const task = state.tasks[state.tasks.length - 1];

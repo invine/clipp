@@ -3418,6 +3418,19 @@ export function ClipboardApp({
           </TaskDialog>,
           document.body
         )}
+      {pairingDiagnostics &&
+        createPortal(
+          <details
+            className="pairing-diagnostics ui-scenario-controls"
+            data-task-scenario-controls
+          >
+            <summary aria-label="Open navigation scenario controls">
+              Pairing diagnostics
+            </summary>
+            {pairingDiagnostics}
+          </details>,
+          document.body
+        )}
       {activeTask?.kind === "pairing" &&
         createPortal(
           <TaskDialog
@@ -3478,12 +3491,6 @@ export function ClipboardApp({
             {pair.result && (
               <p role="status">{pairingSubmissionMessage(pair.result)}</p>
             )}
-            {pairingDiagnostics && (
-              <details className="pairing-diagnostics">
-                <summary>Pairing diagnostics</summary>
-                {pairingDiagnostics}
-              </details>
-            )}
           </TaskDialog>,
           document.body
         )}
@@ -3511,12 +3518,6 @@ export function ClipboardApp({
             </label>
             {pair.result && (
               <p role="status">{pairingSubmissionMessage(pair.result)}</p>
-            )}
-            {pairingDiagnostics && (
-              <details className="pairing-diagnostics">
-                <summary>Pairing diagnostics</summary>
-                {pairingDiagnostics}
-              </details>
             )}
             {pair.pending && <p role="status">Submitting pairing text…</p>}
             <button

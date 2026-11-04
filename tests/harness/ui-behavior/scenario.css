@@ -1,0 +1,30 @@
+.ui-scenario-controls {
+  position: fixed;
+  z-index: 10000;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: min(22rem, calc(100vw - 1rem));
+  max-height: 35dvh;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--clipp-border);
+  border-radius: 0.6rem;
+  background: var(--clipp-surface);
+  color: var(--clipp-text);
+  box-shadow: 0 0.5rem 2rem #0004;
+}
+
+.ui-scenario-controls > summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+@media (max-width: 640px) {
+  .ui-scenario-controls {
+    top: auto;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    width: min(14rem, calc(100vw - 1rem));
+    max-height: 28dvh;
+  }
+}
