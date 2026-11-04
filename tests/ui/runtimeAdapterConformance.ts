@@ -9,6 +9,12 @@ export type UiRuntimeSnapshotConformanceHarness = {
   publishObservation(): Promise<void>;
 };
 
+export type UiRuntimeLifecycleConformanceHarness = {
+  adapter: UiRuntimeAdapter;
+  exerciseAction(): Promise<void>;
+  publishRetiredObservation(): Promise<void>;
+};
+
 /** Shared public-interface case for stable reads and coherent publication. */
 export async function verifyUiRuntimeSnapshotConformance(
   harness: UiRuntimeSnapshotConformanceHarness
@@ -37,4 +43,34 @@ export async function verifyUiRuntimeSnapshotConformance(
     throw new Error("snapshot_identity_changed_after_publication");
 
   return { previous, current };
+}
+
+/** Shared public-interface case for host actions and retired lifecycle input. */
+export async function verifyUiRuntimeLifecycleConformance(
+  harness: UiRuntimeLifecycleConformanceHarness
+): Promise<void> {
+  const { adapter } = harness;
+  if (!adapter.start || !adapter.stop)
+    throw new Error("adapter_lifecycle_unavailable");
+
+  await adapter.start();
+  await harness.exerciseAction();
+
+  const beforeStop = adapter.getSnapshot();
+  let publicationsAfterStop = 0;
+  const unsubscribe = adapter.subscribe(() => {
+    publicationsAfterStop += 1;
+  });
+
+  try {
+    await adapter.stop();
+    await harness.publishRetiredObservation();
+  } finally {
+    unsubscribe();
+  }
+
+  if (publicationsAfterStop !== 0)
+    throw new Error("retired_adapter_published_after_stop");
+  if (adapter.getSnapshot() !== beforeStop)
+    throw new Error("retired_observation_changed_snapshot");
 }
