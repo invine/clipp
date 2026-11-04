@@ -162,7 +162,11 @@ test("ordinary pull requests and main changes use the same read-only routine com
   expect(jobs[0].environment).toBeUndefined();
   expect(
     jobs[0].steps.filter((step) => step.run).map((step) => step.run)
-  ).toEqual(["npm ci", "npm run verify"]);
+  ).toEqual([
+    "timeout 180s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'",
+    "npm ci",
+    "npm run verify",
+  ]);
   const setup = jobs[0].steps.find((step) =>
     step.uses?.startsWith("actions/setup-node@")
   );
