@@ -2,7 +2,10 @@ import type {} from "../../apps/electron/src/preload";
 import { createUiSession } from "../../packages/ui/src/uiSession";
 import { createElectronUiRuntimeAdapter } from "../../apps/electron/src/uiRuntimeAdapter";
 import type { RuntimeNotificationAvailability } from "../../packages/core/runtime/notifications";
-import { verifyUiRuntimeSnapshotConformance } from "../ui/runtimeAdapterConformance";
+import {
+  verifyUiRuntimeLifecycleConformance,
+  verifyUiRuntimeSnapshotConformance,
+} from "../ui/runtimeAdapterConformance";
 
 function electronBridge() {
   let update: Function | undefined;
@@ -206,6 +209,33 @@ it("publishes stable snapshots before notifying and preserves previous observati
   expect(before.notificationControls?.state?.app).toBe("available");
 
   await adapter.stop?.();
+});
+
+it("drives a public action and stop without accepting a retired host callback", async () => {
+  const fixture = electronBridge();
+  const adapter = createElectronUiRuntimeAdapter(
+    fixture.bridge,
+    createUiSession()
+  );
+
+  await verifyUiRuntimeLifecycleConformance({
+    adapter,
+    exerciseAction: async () => {
+      await adapter.actions.onSetAutoSync?.(false);
+    },
+    publishRetiredObservation: async () => {
+      await fixture.getUpdate()?.({
+        ...fixture.state,
+        identity: {
+          deviceId: "retired-device",
+          deviceName: "Retired Device",
+          peerId: "retired-peer",
+        },
+      });
+    },
+  });
+
+  expect(fixture.bridge.setAutoSync).toHaveBeenCalledWith(false);
 });
 
 it("translates shared UI actions through the production Electron bridge", async () => {
