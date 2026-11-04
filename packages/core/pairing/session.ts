@@ -62,6 +62,8 @@ export type PairingSessionOptions = {
   connectionPath?(peerId: string): PairingConnectionPath;
   onOutcome?(event: PairingOutcomeEvent): void | Promise<void>;
   onRejected?(diagnostic: PairingRejectionDiagnostic): void;
+  /** Runs for every authenticated rejection, independently of diagnostic throttling. */
+  onRejectedPeer?(authenticatedPeerId: string): void | Promise<void>;
   onWaitingChanged?(state: PairingWaitingState[]): void | Promise<void>;
   onErrorsChanged?(state: PairingErrorState[]): void | Promise<void>;
   retryInitialDelayMs?: number;
@@ -91,6 +93,9 @@ export function createPairingSession(options: PairingSessionOptions) {
     authenticatedPeerId: string,
     frame: Uint8Array
   ) => {
+    void Promise.resolve(options.onRejectedPeer?.(authenticatedPeerId)).catch(
+      () => undefined
+    );
     reportRejected({
       reason,
       authenticatedPeerId,

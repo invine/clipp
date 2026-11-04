@@ -464,6 +464,7 @@ describe("Pairing session", () => {
   it("reports a structured rejection for an invalid response", async () => {
     let sent!: Uint8Array;
     const diagnostics: any[] = [];
+    const rejectedPeers: string[] = [];
     const session = createPairingSession({
       identity: async () => ({
         peerId: localPeerId,
@@ -482,6 +483,7 @@ describe("Pairing session", () => {
       },
       connectionPath: () => "relayed",
       onRejected: (diagnostic) => void diagnostics.push(diagnostic),
+      onRejectedPeer: (peerId) => void rejectedPeers.push(peerId),
     });
     await session.request(targetPeerId);
     const request = decodePairingFrame(sent);
@@ -499,6 +501,9 @@ describe("Pairing session", () => {
     await expect(
       session.receiveResponse(targetPeerId, response)
     ).resolves.toBeNull();
+    await expect(
+      session.receiveResponse(targetPeerId, response)
+    ).resolves.toBeNull();
     expect(diagnostics[0]).toMatchObject({
       event: "pairing_message_rejected",
       reason: "invalid_signature",
@@ -507,6 +512,8 @@ describe("Pairing session", () => {
       connectionPath: "relayed",
     });
     expect(session.waiting()).toHaveLength(1);
+    expect(rejectedPeers).toEqual([targetPeerId, targetPeerId]);
+    expect(diagnostics).toHaveLength(1);
   });
 
   it("rejects a validly signed rejected response from a revoked target", async () => {

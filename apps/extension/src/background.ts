@@ -96,6 +96,7 @@ import {
   createPendingTrustRequestCoordinator,
 } from "../../../packages/core/pairing/pending";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator";
+import { createPairingRejectionCleanup } from "../../../packages/core/pairing/rejectionCleanup";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import {
   decodePairingTarget,
@@ -578,6 +579,12 @@ let pendingRequests: Array<{
   deviceName: string;
   requestVersion: string;
 }> = [];
+const cleanupRejectedPeer = createPairingRejectionCleanup({
+  membership: identitySvc,
+  isCurrentTransport: (remotePeerId) =>
+    extensionNetwork.getConnectedPeers().includes(remotePeerId),
+  disconnect: (remotePeerId) => extensionNetwork.disconnect?.(remotePeerId),
+});
 const pairingSessions = createPairingRuntimeSessions({
   identity: async () => {
     const current = await identitySvc.get();
@@ -607,16 +614,8 @@ const pairingSessions = createPairingRuntimeSessions({
   },
   onRejected: (diagnostic) => {
     log.warn(diagnostic.event, diagnostic);
-    if (diagnostic.authenticatedPeerId)
-      void identitySvc
-        .membershipStatus(diagnostic.authenticatedPeerId)
-        .then((status) => {
-          if (status !== "active")
-            return extensionNetwork.disconnect?.(
-              diagnostic.authenticatedPeerId!
-            );
-        });
   },
+  onRejectedPeer: cleanupRejectedPeer,
   onChanged: () => sharedRuntime.publishState(),
 });
 
@@ -991,16 +990,8 @@ const pairingPending = createPendingTrustRequestCoordinator({
   },
   onRejected: (diagnostic) => {
     log.warn(diagnostic.event, diagnostic);
-    if (diagnostic.authenticatedPeerId)
-      void identitySvc
-        .membershipStatus(diagnostic.authenticatedPeerId)
-        .then((status) => {
-          if (status !== "active")
-            return extensionNetwork.disconnect?.(
-              diagnostic.authenticatedPeerId!
-            );
-        });
   },
+  onRejectedPeer: cleanupRejectedPeer,
   onChanged: async (requests) => {
     pendingRequests = requests.map((request) => ({
       deviceId: request.initiatorPeerId,
