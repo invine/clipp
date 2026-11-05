@@ -22,6 +22,17 @@ export type UiRuntimeSnapshot = Omit<
   | "runtimeOwner"
 >;
 
+/** Optional effects are explicit host capabilities at the adapter boundary. */
+export type UiRuntimeCapabilities = Readonly<{
+  actions: readonly ActionName[];
+  identityReset: boolean;
+  cameraScanning: boolean;
+  notifications: Readonly<{
+    openSettings: boolean;
+    requestPermission: boolean;
+  }>;
+}>;
+
 export type UiHostEffects = {
   copyText(text: string): Promise<void>;
   confirm(message: string): boolean | Promise<boolean>;
@@ -32,6 +43,7 @@ export type UiRuntimeAdapter = {
   getSnapshot(): UiRuntimeSnapshot;
   subscribe(listener: () => void): () => void;
   actions: UiRuntimeActions;
+  capabilities: UiRuntimeCapabilities;
   host?: UiHostEffects;
   start?(): void | Promise<void>;
   stop?(): void | Promise<void>;
@@ -69,7 +81,6 @@ export function createUiRuntimeStore(
     },
   });
   const typedActions = actions as unknown as UiRuntimeActions;
-
   return {
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) {
@@ -77,6 +88,9 @@ export function createUiRuntimeStore(
       return () => listeners.delete(listener);
     },
     actions: typedActions,
+    get capabilities() {
+      return getUiRuntimeCapabilities(current);
+    },
     host,
     publish(next: ClipboardAppProps) {
       current = next;
@@ -86,8 +100,30 @@ export function createUiRuntimeStore(
   };
 }
 
+export function getUiRuntimeCapabilities(
+  props: Partial<ClipboardAppProps>
+): UiRuntimeCapabilities {
+  const values = props as Record<string, unknown>;
+  const actions = Object.keys(props).filter(
+    (key): key is ActionName =>
+      key.startsWith("on") && typeof values[key] === "function"
+  );
+  const notificationControls = values.notificationControls as
+    ClipboardAppProps["notificationControls"] | undefined;
+  return Object.freeze({
+    actions: Object.freeze(actions),
+    identityReset: values.identityResetActions !== undefined,
+    cameraScanning: values.scanCameraPermission !== undefined,
+    notifications: Object.freeze({
+      openSettings: typeof notificationControls?.openSettings === "function",
+      requestPermission:
+        typeof notificationControls?.requestPermission === "function",
+    }),
+  });
+}
+
 function projectSnapshot(props: ClipboardAppProps): UiRuntimeSnapshot {
-  const snapshot = { ...props } as Partial<ClipboardAppProps>;
+  const snapshot = cloneObservation(props) as Partial<ClipboardAppProps>;
   for (const key of Object.keys(props)) {
     if (
       key.startsWith("on") ||
@@ -107,6 +143,28 @@ function projectSnapshot(props: ClipboardAppProps): UiRuntimeSnapshot {
   delete snapshot.host;
   delete snapshot.runtimeOwner;
   return snapshot as UiRuntimeSnapshot;
+}
+
+function cloneObservation<T>(
+  value: T,
+  seen = new WeakMap<object, object>()
+): T {
+  if (value === null || typeof value !== "object") return value;
+  const existing = seen.get(value);
+  if (existing) return existing as T;
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(cloneObservation(item, seen));
+    return copy as T;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  const copy: Record<string, unknown> = {};
+  seen.set(value, copy);
+  for (const [key, item] of Object.entries(value))
+    copy[key] = cloneObservation(item, seen);
+  return copy as T;
 }
 
 /** Production browser hosts opt into clipboard and confirmation effects explicitly. */

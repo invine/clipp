@@ -1,4 +1,5 @@
 import { createPairingSession as createCorePairingSession } from "../../../packages/core/pairing/session";
+import type { TransportOwner } from "../../../packages/core/messaging/transport";
 import {
   decodePairingFrame,
   decodeTrustRequestEnvelope,
@@ -464,6 +465,8 @@ describe("Pairing session", () => {
   it("reports a structured rejection for an invalid response", async () => {
     let sent!: Uint8Array;
     const diagnostics: any[] = [];
+    const rejectedPeers: Array<[string, TransportOwner | undefined]> = [];
+    const transportOwner = {};
     const session = createPairingSession({
       identity: async () => ({
         peerId: localPeerId,
@@ -482,6 +485,8 @@ describe("Pairing session", () => {
       },
       connectionPath: () => "relayed",
       onRejected: (diagnostic) => void diagnostics.push(diagnostic),
+      onRejectedPeer: (peerId, owner) =>
+        void rejectedPeers.push([peerId, owner]),
     });
     await session.request(targetPeerId);
     const request = decodePairingFrame(sent);
@@ -497,7 +502,10 @@ describe("Pairing session", () => {
       },
     });
     await expect(
-      session.receiveResponse(targetPeerId, response)
+      session.receiveResponse(targetPeerId, response, transportOwner)
+    ).resolves.toBeNull();
+    await expect(
+      session.receiveResponse(targetPeerId, response, transportOwner)
     ).resolves.toBeNull();
     expect(diagnostics[0]).toMatchObject({
       event: "pairing_message_rejected",
@@ -507,6 +515,11 @@ describe("Pairing session", () => {
       connectionPath: "relayed",
     });
     expect(session.waiting()).toHaveLength(1);
+    expect(rejectedPeers).toEqual([
+      [targetPeerId, transportOwner],
+      [targetPeerId, transportOwner],
+    ]);
+    expect(diagnostics).toHaveLength(1);
   });
 
   it("rejects a validly signed rejected response from a revoked target", async () => {

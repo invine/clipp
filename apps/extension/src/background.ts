@@ -40,6 +40,7 @@ import {
   ChromeStorageBackend,
   createChromeIdentityRotationCoordinator,
 } from "./chromeStorage";
+import { createChromeIdentityResetLifecycle } from "./identityResetRuntime";
 import { createSettingsHandler } from "./settingsHandler";
 import { handleOffscreenStorageRequest } from "./runtimeMessageStorage";
 import {
@@ -61,11 +62,10 @@ import {
   type RuntimeClipboardHistoryError,
 } from "../../../packages/core/runtime";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync";
-import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation";
+import { createClipExchangeRuntime } from "../../../packages/core/sync/clipExchangeRuntime";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions";
 import { createExtensionClipboardBridge } from "./clipboardBridge";
 import { isAuthorizedPopupShareNowSender } from "./popupClipboardActions";
-import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip";
 import * as log from "../../../packages/core/logger";
 import { deviceIdToPeerId } from "../../../packages/core/network/peerId";
 import {
@@ -96,6 +96,8 @@ import {
   createPendingTrustRequestCoordinator,
 } from "../../../packages/core/pairing/pending";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator";
+import { createPairingRejectionCleanup } from "../../../packages/core/pairing/rejectionCleanup";
+import type { TransportOwner } from "../../../packages/core/messaging/transport";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target";
 import {
   decodePairingTarget,
@@ -292,6 +294,7 @@ let offscreenOwned = false;
 let offscreenCreateFlight: Promise<void> | null = null;
 let offscreenInitialized = false;
 let offscreenInitFlight: Promise<void> | null = null;
+let offscreenTransportOwner: string | undefined;
 
 async function ensureOffscreenDocument(): Promise<void> {
   await startupResetReady;
@@ -314,6 +317,7 @@ async function ensureOffscreenDocument(): Promise<void> {
       }
       if (!has) {
         offscreenInitialized = false;
+        offscreenTransportOwner = undefined;
         try {
           await chrome.offscreen.createDocument({
             url: OFFSCREEN_URL,
@@ -344,10 +348,12 @@ async function initializeOffscreen(): Promise<void> {
   if (!offscreenInitFlight) {
     offscreenInitFlight = (async () => {
       await managedConfigurationsReady;
+      const transportOwner = (offscreenTransportOwner ??= crypto.randomUUID());
       await sendOffscreen({
         action: "init",
         relays: [],
         managedConfigurations,
+        transportOwner,
       });
       for (const protocol of runtimeProtocolHandlers.keys())
         await sendOffscreen({ action: "runtimeRegisterProtocol", protocol });
@@ -364,6 +370,7 @@ async function initializeOffscreen(): Promise<void> {
 }
 
 async function stopOffscreenDocument(retire = false): Promise<void> {
+  offscreenTransportOwner = undefined;
   const offscreen = chrome.offscreen as typeof chrome.offscreen & {
     hasDocument?(): Promise<boolean>;
     closeDocument?(): Promise<void>;
@@ -509,14 +516,20 @@ const clipboardSync = createClipboardSyncManager({
     const id = await identitySvc.get();
     return id.deviceId;
   },
-  onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
+});
+const clipExchange = createClipExchangeRuntime({
+  clipboardSync,
+  history,
+  getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
+  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+  onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
 });
 const settingsHandler = createSettingsHandler({
   storage,
   retention: retentionPreference,
   applyAutoSync: (enabled) => {
     autoSync = enabled;
-    clipboardSync.setAutoSync(enabled);
+    clipExchange.setAutoSync(enabled);
   },
   applyLogLevel: (level) => log.setLogLevel(level),
   applySharingLifetime: (value) => {
@@ -578,6 +591,20 @@ let pendingRequests: Array<{
   deviceName: string;
   requestVersion: string;
 }> = [];
+const cleanupRejectedPeer = createPairingRejectionCleanup({
+  membership: identitySvc,
+  isCurrentTransport: (remotePeerId, owner) =>
+    owner === offscreenTransportOwner &&
+    extensionNetwork.getConnectedPeers().includes(remotePeerId),
+  disconnect: (remotePeerId, owner) =>
+    owner === offscreenTransportOwner
+      ? sendOffscreen({
+          action: "runtimeDisconnect",
+          peerId: remotePeerId,
+          transportOwner: owner,
+        })
+      : undefined,
+});
 const pairingSessions = createPairingRuntimeSessions({
   identity: async () => {
     const current = await identitySvc.get();
@@ -607,22 +634,14 @@ const pairingSessions = createPairingRuntimeSessions({
   },
   onRejected: (diagnostic) => {
     log.warn(diagnostic.event, diagnostic);
-    if (diagnostic.authenticatedPeerId)
-      void identitySvc
-        .membershipStatus(diagnostic.authenticatedPeerId)
-        .then((status) => {
-          if (status !== "active")
-            return extensionNetwork.disconnect?.(
-              diagnostic.authenticatedPeerId!
-            );
-        });
   },
+  onRejectedPeer: cleanupRejectedPeer,
   onChanged: () => sharedRuntime.publishState(),
 });
 
 const runtimeProtocolHandlers = new Map<
   string,
-  Array<(from: string, data: Uint8Array) => void>
+  Array<(from: string, data: Uint8Array, owner?: TransportOwner) => void>
 >();
 const extensionStreamReceiver = createExtensionStreamReceiver();
 const runtimeRegisteredStreamProtocols = new Set<string>();
@@ -701,19 +720,6 @@ const extensionNetwork: StreamingMessagingTransport = {
   getPeerConnectionInfo: () => [...runtimePeerConnections],
   ...createExtensionReachabilityBridge((message) => sendOffscreen(message)),
 };
-const liveClipGossip = createLiveClipGossip({
-  transport: extensionNetwork,
-  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-});
-clipboardSync.bindLiveGossip(liveClipGossip);
-const historyReconciliation = createHistoryReconciliation({
-  transport: extensionNetwork,
-  history,
-  getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
-  membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-  onMembershipChanged: (listener) => identitySvc.onMembershipChanged(listener),
-  autoSync,
-});
 const notificationSelection = createRuntimeNotificationSelection();
 const notificationStatus = createRuntimeNotificationStatus({
   inspect: async () => ({
@@ -747,14 +753,19 @@ const identityRotation = createChromeIdentityRotationCoordinator({
   history: historyBackend,
   ...(historyBackend instanceof IndexedDBHistoryBackend
     ? {
-        lifecycle: {
-          async acquireFence() {
+        lifecycle: createChromeIdentityResetLifecycle({
+          workFence: identityWork,
+          retireOffscreenOwnership: () => {
             offscreenOwned = false;
-            return identityWork.acquireFence();
           },
-          async quiesce() {
-            await identityRotationShutdown();
-            await identityWork.quiesce();
+          stopRuntime: () => identityRotationShutdown(),
+          waitForOffscreenStartup: async () => {
+            await Promise.allSettled(
+              [offscreenCreateFlight, offscreenInitFlight].filter(Boolean)
+            );
+          },
+          finalizeOffscreen: () => stopOffscreenDocument(),
+          clearHostState: async () => {
             await clipboard.discardPending?.();
             notificationSelection.clear();
             const notifications = chrome.notifications?.getAll
@@ -764,12 +775,8 @@ const identityRotation = createChromeIdentityRotationCoordinator({
               : {};
             for (const id of Object.keys(notifications))
               await chrome.notifications?.clear?.(id);
-            await Promise.allSettled(
-              [offscreenCreateFlight, offscreenInitFlight].filter(Boolean)
-            );
-            await stopOffscreenDocument();
           },
-        },
+        }),
       }
     : {}),
   identityKey: IDENTITY_KEY,
@@ -797,8 +804,7 @@ async function identityRotationShutdown() {
       await stopIdentityBoundRuntimeServices([
         () => pairingSessions.stop(),
         () => pairingPending.stop(),
-        () => clipboardSync.stop(),
-        () => historyReconciliation.stop(),
+        () => clipExchange.stop(),
         () => extensionNetwork.stop(),
       ]);
     },
@@ -991,16 +997,8 @@ const pairingPending = createPendingTrustRequestCoordinator({
   },
   onRejected: (diagnostic) => {
     log.warn(diagnostic.event, diagnostic);
-    if (diagnostic.authenticatedPeerId)
-      void identitySvc
-        .membershipStatus(diagnostic.authenticatedPeerId)
-        .then((status) => {
-          if (status !== "active")
-            return extensionNetwork.disconnect?.(
-              diagnostic.authenticatedPeerId!
-            );
-        });
   },
+  onRejectedPeer: cleanupRejectedPeer,
   onChanged: async (requests) => {
     pendingRequests = requests.map((request) => ({
       deviceId: request.initiatorPeerId,
@@ -1015,18 +1013,22 @@ identityRotationLifecycle = createRuntimeIdentityRotationLifecycle({
   workFence: identityWork,
   loadIdentity: () => identitySvc.get(),
   restart: () => chrome.runtime.reload(),
-  startLocalRecovery: () => clipboardSync.startLocalOnly(),
+  startLocalRecovery: () => clipExchange.startLocalCapture(),
   publishState: () => sharedRuntime.publishState(),
   onRecoveryChanged: (recovering) => {
     identityRotationRecovery = recovering;
   },
 });
-extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+extensionNetwork.onMessage(PAIRING_PROTOCOL, (from, frame, owner) => {
   void pairingPending
     .start()
     .then(() =>
-      pairingSessions.receive(from, frame, (peerId, requestFrame) =>
-        pairingPending.receive(peerId, requestFrame)
+      pairingSessions.receive(
+        from,
+        frame,
+        (peerId, requestFrame, requestOwner) =>
+          pairingPending.receive(peerId, requestFrame, requestOwner),
+        owner
       )
     )
     .catch((error) => log.warn("Pairing message processing failed", error));
@@ -1054,7 +1056,7 @@ const sharedRuntime = createRuntimeOrchestrator({
         identityWork.assertOpen(generation);
         await autoSyncReady;
         identityWork.assertOpen(generation);
-        clipboardSync.setAutoSync(autoSync);
+        clipExchange.setAutoSync(autoSync);
         await historyPolicyReady;
         identityWork.assertOpen(generation);
         historyRetentionCleanup ??= startHistoryRetentionCleanup(
@@ -1079,7 +1081,7 @@ const sharedRuntime = createRuntimeOrchestrator({
         );
         if (identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
         pairingSessions.start();
-        clipboardSync.start();
+        clipExchange.startLocalCapture();
       },
       startNetworkServices: async () => {
         const generation = identityWork.generation();
@@ -1089,8 +1091,8 @@ const sharedRuntime = createRuntimeOrchestrator({
         identityWork.assertOpen(generation);
         await extensionNetwork.start();
         identityWork.assertOpen(generation);
+        await clipExchange.activateReadyTransport(extensionNetwork);
         membershipReconciler.start();
-        historyReconciliation.start();
         await pairingPending.start();
         identityWork.assertOpen(generation);
       },
@@ -1108,8 +1110,7 @@ const sharedRuntime = createRuntimeOrchestrator({
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = undefined;
     await pairingSessions.stop();
-    await clipboardSync.stop();
-    await historyReconciliation.stop();
+    await clipExchange.stop();
   },
 });
 
@@ -1172,10 +1173,7 @@ chrome.runtime.onMessage.addListener(
         );
       return true;
     }
-    if (
-      typeof msg?.type === "string" &&
-      msg.type.startsWith("identityReset")
-    ) {
+    if (typeof msg?.type === "string" && msg.type.startsWith("identityReset")) {
       if (sender?.id !== chrome.runtime.id || sender.url !== OPTIONS_URL) {
         sendResponse({ ok: false, error: "identity_reset_unauthorized" });
         return false;
@@ -1184,7 +1182,9 @@ chrome.runtime.onMessage.addListener(
         if (msg.type === "identityResetRead")
           return {
             ok: true,
-            state: copyIdentityResetState(startupResetState ?? { phase: "idle" }),
+            state: copyIdentityResetState(
+              startupResetState ?? { phase: "idle" }
+            ),
           };
         if (msg.type === "identityResetReconcile") {
           const state = await chromeRuntime.identityReset.reconcile();
@@ -1192,7 +1192,10 @@ chrome.runtime.onMessage.addListener(
           return { ok: true, state };
         }
         if (msg.type === "identityResetBegin") {
-          if (typeof msg.operationId !== "string" || typeof msg.reviewedPeerId !== "string")
+          if (
+            typeof msg.operationId !== "string" ||
+            typeof msg.reviewedPeerId !== "string"
+          )
             throw new Error("identity_reset_invalid_request");
           return {
             ok: true,
@@ -1207,24 +1210,29 @@ chrome.runtime.onMessage.addListener(
             throw new Error("identity_reset_invalid_request");
           return {
             ok: true,
-            result: await chromeRuntime.identityReset.resume({ operationId: msg.operationId }),
+            result: await chromeRuntime.identityReset.resume({
+              operationId: msg.operationId,
+            }),
           };
         }
         if (msg.type === "identityResetDismiss") {
           if (typeof msg.receiptId !== "string")
             throw new Error("identity_reset_invalid_request");
-          const state = await chromeRuntime.identityReset.dismiss({ receiptId: msg.receiptId });
+          const state = await chromeRuntime.identityReset.dismiss({
+            receiptId: msg.receiptId,
+          });
           startupResetState = copyIdentityResetState(state);
           return { ok: true, state };
         }
         if (msg.type === "identityResetCopyFormerPeerId") {
           if (typeof msg.receiptId !== "string")
             throw new Error("identity_reset_invalid_request");
-          const receipt = startupResetState?.phase === "idle"
-            ? startupResetState.receipt
-            : startupResetState?.phase === "completed"
+          const receipt =
+            startupResetState?.phase === "idle"
               ? startupResetState.receipt
-              : undefined;
+              : startupResetState?.phase === "completed"
+                ? startupResetState.receipt
+                : undefined;
           if (!receipt || receipt.receiptId !== msg.receiptId)
             throw new Error("identity_reset_receipt_unavailable");
           return { ok: true, text: receipt.formerPeerId };
@@ -1232,7 +1240,9 @@ chrome.runtime.onMessage.addListener(
         throw new Error("identity_reset_unknown_action");
       })()
         .then(sendResponse)
-        .catch((error) => sendResponse({ ok: false, error: (error as Error).message }));
+        .catch((error) =>
+          sendResponse({ ok: false, error: (error as Error).message })
+        );
       return true;
     }
     const recoveryReadable = [
@@ -1823,6 +1833,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (
     msg?.action === "runtimeProtocol" &&
+    typeof msg.transportOwner === "string" &&
+    msg.transportOwner === offscreenTransportOwner &&
     typeof msg.protocol === "string" &&
     typeof msg.from === "string" &&
     Array.isArray(msg.data)
@@ -1830,7 +1842,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const data = Uint8Array.from(msg.data);
     runtimeProtocolHandlers
       .get(msg.protocol)
-      ?.forEach((handler) => handler(msg.from, data));
+      ?.forEach((handler) => handler(msg.from, data, msg.transportOwner));
     return;
   }
   if (msg?.action === "peers" && Array.isArray(msg.peers)) {

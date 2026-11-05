@@ -3,6 +3,7 @@ import {
   createIdentityBoundWorkFence,
   type IdentityBoundWorkFence,
 } from "../../../packages/core/runtime/identityInitialization";
+import { retireIdentityRuntime } from "../../../packages/core/runtime/identityRetirement";
 import { createKVPendingTrustRequestStore } from "../../../packages/core/pairing/pending";
 import type { KVStorageBackend } from "../../../packages/core/trust/storage";
 
@@ -52,10 +53,12 @@ export function createAndroidIdentityResetRuntime(options: {
         };
       },
       async quiesce() {
-        await options.suspend();
-        await workFence.quiesce();
-        // An admitted start can complete after the first stop; reap its resulting owners.
-        await options.suspend();
+        await retireIdentityRuntime({
+          stop: options.suspend,
+          drain: () => workFence.quiesce(),
+          // An admitted start can complete after the first stop; reap its resulting owners.
+          finalStop: options.suspend,
+        });
         await native.clearNativeQueues();
       },
     },

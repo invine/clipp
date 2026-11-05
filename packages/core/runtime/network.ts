@@ -1,4 +1,9 @@
-import type { MessageHandler, MessageStreamHandler, MessagingTransport, StreamingMessagingTransport } from "../messaging/transport";
+import type {
+  MessageHandler,
+  MessageStreamHandler,
+  MessagingTransport,
+  StreamingMessagingTransport,
+} from "../messaging/transport";
 
 export interface RuntimeNetworkProxy extends StreamingMessagingTransport {
   /** Attach registered protocol handlers to the currently active transport. */
@@ -30,7 +35,9 @@ export function createRuntimeNetworkProxy(
     network: StreamingMessagingTransport
   ) => {
     if (registration.boundTransports.has(network)) return;
-    network.onMessage(registration.protocol, registration.handler);
+    network.onMessage(registration.protocol, (from, data) =>
+      registration.handler(from, data, network)
+    );
     registration.boundTransports.add(network);
   };
   const bindStreamHandler = (
@@ -47,7 +54,8 @@ export function createRuntimeNetworkProxy(
       await requireNetwork().start();
     },
     stop: async () => current()?.stop(),
-    send: (protocol, target, data) => requireNetwork().send(protocol, target, data),
+    send: (protocol, target, data) =>
+      requireNetwork().send(protocol, target, data),
     sendStream: (protocol, target, frames, options) => {
       const network = requireNetwork();
       return network.sendStream(protocol, target, frames, options);
@@ -57,24 +65,40 @@ export function createRuntimeNetworkProxy(
       await requireNetwork().disconnect?.(peerId);
     },
     onMessage(protocol, handler) {
-      if (streamHandlers.has(protocol)) throw new Error("protocol_stream_handler_already_registered");
-      const registration = { protocol, handler, boundTransports: new WeakSet<MessagingTransport>() };
+      if (streamHandlers.has(protocol))
+        throw new Error("protocol_stream_handler_already_registered");
+      const registration = {
+        protocol,
+        handler,
+        boundTransports: new WeakSet<MessagingTransport>(),
+      };
       const network = current();
       if (network) bindProtocolHandler(registration, network);
       protocolHandlers.push(registration);
     },
     onStream(protocol, handler) {
-      if (streamHandlers.has(protocol) || protocolHandlers.some((registration) => registration.protocol === protocol)) {
+      if (
+        streamHandlers.has(protocol) ||
+        protocolHandlers.some(
+          (registration) => registration.protocol === protocol
+        )
+      ) {
         throw new Error("protocol_handler_already_registered");
       }
-      const registration = { protocol, handler, boundTransports: new WeakSet<MessagingTransport>() };
+      const registration = {
+        protocol,
+        handler,
+        boundTransports: new WeakSet<MessagingTransport>(),
+      };
       const network = current();
       if (network) bindStreamHandler(registration, network);
       streamHandlers.set(protocol, registration);
     },
     onPeerConnected: (handler) => requireNetwork().onPeerConnected(handler),
-    onPeerDisconnected: (handler) => requireNetwork().onPeerDisconnected(handler),
-    onRelayConnectionChanged: (handler) => requireNetwork().onRelayConnectionChanged?.(handler),
+    onPeerDisconnected: (handler) =>
+      requireNetwork().onPeerDisconnected(handler),
+    onRelayConnectionChanged: (handler) =>
+      requireNetwork().onRelayConnectionChanged?.(handler),
     onSelfPeerUpdate: (handler) => requireNetwork().onSelfPeerUpdate(handler),
     getConnectedPeers: () => current()?.getConnectedPeers() ?? [],
     getSelfMultiaddrs: () => current()?.getSelfMultiaddrs?.() ?? [],
@@ -82,19 +106,26 @@ export function createRuntimeNetworkProxy(
     getRelayConnectionInfo: () => current()?.getRelayConnectionInfo?.() ?? [],
     getSignedPeerRecord: () => {
       const network = requireNetwork();
-      if (!network.getSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
+      if (!network.getSignedPeerRecord)
+        throw new Error("signed_peer_record_unavailable");
       return network.getSignedPeerRecord();
     },
     importSignedPeerRecord: (expectedPeerId, record) => {
       const network = requireNetwork();
-      if (!network.importSignedPeerRecord) throw new Error("signed_peer_record_unavailable");
+      if (!network.importSignedPeerRecord)
+        throw new Error("signed_peer_record_unavailable");
       return network.importSignedPeerRecord(expectedPeerId, record);
     },
-    forgetPeer: (peerId) => current()?.forgetPeer?.(peerId) ?? Promise.resolve(),
+    forgetPeer: (peerId) =>
+      current()?.forgetPeer?.(peerId) ?? Promise.resolve(),
     bindCurrent() {
       const network = requireNetwork();
-      protocolHandlers.forEach((registration) => bindProtocolHandler(registration, network));
-      streamHandlers.forEach((registration) => bindStreamHandler(registration, network));
+      protocolHandlers.forEach((registration) =>
+        bindProtocolHandler(registration, network)
+      );
+      streamHandlers.forEach((registration) =>
+        bindStreamHandler(registration, network)
+      );
     },
   };
   return proxy;

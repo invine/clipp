@@ -1,4 +1,5 @@
 import { createRuntimeNotificationSelection } from "../../../packages/core/runtime/notifications";
+import type { TransportOwner } from "../../../packages/core/messaging/transport";
 import {
   createKVPendingTrustRequestStore,
   createPendingTrustRequestCoordinator as createCorePendingTrustRequestCoordinator,
@@ -1536,6 +1537,8 @@ describe("pending Trust Requests", () => {
 
   it("rate-limits rejection diagnostics by authenticated peer and reason", async () => {
     const diagnostics: any[] = [];
+    const rejectedPeers: Array<[string, TransportOwner | undefined]> = [];
+    const transportOwner = {};
     const coordinator = createPendingTrustRequestCoordinator({
       localPeerId: async () => targetPeerId,
       store: {
@@ -1557,6 +1560,8 @@ describe("pending Trust Requests", () => {
       verify: async () => false,
       connectionPath: () => "direct",
       onRejected: (diagnostic) => void diagnostics.push(diagnostic),
+      onRejectedPeer: (peerId, owner) =>
+        void rejectedPeers.push([peerId, owner]),
     });
     const frame = encodePairingFrame({
       kind: "request",
@@ -1565,10 +1570,15 @@ describe("pending Trust Requests", () => {
         signature: new Uint8Array([1]),
       }),
     });
-    await coordinator.receive(initiatorPeerId, frame);
-    await coordinator.receive(initiatorPeerId, frame);
-    await coordinator.receive(targetPeerId, frame);
+    await coordinator.receive(initiatorPeerId, frame, transportOwner);
+    await coordinator.receive(initiatorPeerId, frame, transportOwner);
+    await coordinator.receive(targetPeerId, frame, transportOwner);
     expect(diagnostics).toHaveLength(2);
+    expect(rejectedPeers).toEqual([
+      [initiatorPeerId, transportOwner],
+      [initiatorPeerId, transportOwner],
+      [targetPeerId, transportOwner],
+    ]);
     expect(diagnostics[0]).toMatchObject({
       event: "pairing_message_rejected",
       reason: "invalid_signature",

@@ -58,8 +58,7 @@ import { createHistoryStateReader } from "@core/history/state";
 import { IndexedDBHistoryBackend } from "@core/history/indexeddb";
 import { InMemoryHistoryBackend } from "@core/history/types";
 import { createClipboardSyncManager } from "@core/sync/clipboardSync";
-import { createHistoryReconciliation } from "@core/sync/historyReconciliation";
-import { createLiveClipGossip } from "@core/sync/liveClipGossip";
+import { createClipExchangeRuntime } from "@core/sync/clipExchangeRuntime";
 import { reuseRetainedClip } from "@core/clipboard/explicitActions";
 import {
   PAIRING_PROTOCOL,
@@ -71,6 +70,7 @@ import {
 } from "@core/membership/reconciliation";
 import { createPendingTrustRequestCoordinator } from "@core/pairing/pending";
 import { createPairingRuntimeSessions } from "@core/pairing/runtimeCoordinator";
+import { createPairingRejectionCleanup } from "@core/pairing/rejectionCleanup";
 import { importPairingTargetAndRequest } from "@core/pairing/target";
 import { decodePairingTarget, encodePairingTarget } from "@core/pairing/v2";
 import {
@@ -264,7 +264,8 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          const result = await client.identityRotation.beginIdentityReset(request);
+          const result =
+            await client.identityRotation.beginIdentityReset(request);
           if (result.outcome !== "rejected")
             await client.publishIdentityResetState(result.state);
           return result;
@@ -281,7 +282,8 @@ export class AndroidClient {
           >[0]
         ) => {
           if (stopped) throw new Error("identity_runtime_stopped");
-          const result = await client.identityRotation.resumeIdentityReset(request);
+          const result =
+            await client.identityRotation.resumeIdentityReset(request);
           if (result.outcome !== "rejected")
             await client.publishIdentityResetState(result.state);
           return result;
@@ -330,6 +332,7 @@ export class AndroidClient {
   private readonly settingsListeners = new Set<
     (snapshot: SettingsSnapshot) => void
   >();
+  private autoSyncPublicationWarning: string | undefined;
   private readonly settingsHandler = createSettingsHandler({
     storage: this.storage,
     retention: {
@@ -338,7 +341,7 @@ export class AndroidClient {
     },
     applyAutoSync: (enabled) => {
       this.autoSync = enabled;
-      this.clipboardSync.setAutoSync(enabled);
+      this.clipExchange.setAutoSync(enabled);
     },
     applyLogLevel: () => {},
     applySharingLifetime: (value) => {
@@ -477,7 +480,7 @@ export class AndroidClient {
         } else window.location.reload();
       },
       startLocalRecovery: () => {
-        this.clipboardSync.startLocalOnly();
+        this.clipExchange.startLocalCapture();
         this.started = true;
       },
       publishState: () => this.emitState(),
@@ -494,10 +497,6 @@ export class AndroidClient {
     null;
   private pairedConnections: ReturnType<
     typeof createPairedPeerConnectionManager
-  > | null = null;
-  private liveClipGossip: ReturnType<typeof createLiveClipGossip> | null = null;
-  private historyReconciliation: ReturnType<
-    typeof createHistoryReconciliation
   > | null = null;
   private membershipReconciler: ReturnType<
     typeof createMembershipReconciler
@@ -543,7 +542,7 @@ export class AndroidClient {
 
   private async ensureMessaging(): Promise<void> {
     this.workFence.assertOpen();
-    if (this.transport && this.liveClipGossip) {
+    if (this.transport) {
       if (!this.pairedConnections) {
         this.pairedConnections = createPairedPeerConnectionManager({
           transport: this.transport,
@@ -596,20 +595,6 @@ export class AndroidClient {
       transport: this.transport,
       getPairedPeers: activeMemberReconnectPeers(this.identitySvc),
     });
-    this.liveClipGossip = createLiveClipGossip({
-      transport: this.transport,
-      membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
-    });
-    this.historyReconciliation = createHistoryReconciliation({
-      transport: this.transport,
-      history: this.history,
-      getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
-      membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
-      onMembershipChanged: (listener) =>
-        this.identitySvc.onMembershipChanged(listener),
-      autoSync: this.autoSync,
-    });
-    this.clipboardSync.bindLiveGossip(this.liveClipGossip);
     this.membershipReconciler = createMembershipReconciler({
       transport: this.transport,
       identity: this.identitySvc,
@@ -667,10 +652,16 @@ export class AndroidClient {
       const id = await this.identitySvc.get();
       return id.deviceId;
     },
-    onAutoSyncChanged: (enabled) =>
-      this.historyReconciliation?.setAutoSync(enabled),
     onLiveClipboardApplication: (clip, result) =>
       this.backgroundContinuity.recordLiveClipboardApplication(clip, result),
+  });
+  private readonly clipExchange = createClipExchangeRuntime({
+    clipboardSync: this.clipboardSync,
+    history: this.history,
+    getLocalDeviceId: async () => (await this.identitySvc.get()).deviceId,
+    membershipStatus: (peerId) => this.identitySvc.membershipStatus(peerId),
+    onMembershipChanged: (listener) =>
+      this.identitySvc.onMembershipChanged(listener),
   });
 
   private pendingRequests: PendingRequest[] = [];
@@ -917,6 +908,16 @@ export class AndroidClient {
       readAddresses: () => this.getRelayAddresses(),
     },
   });
+  private readonly cleanupRejectedPeer = createPairingRejectionCleanup({
+    membership: this.identitySvc,
+    isCurrentTransport: (remotePeerId, owner) =>
+      owner === this.transport &&
+      (this.transport?.getConnectedPeers().includes(remotePeerId) ?? false),
+    disconnect: (remotePeerId, owner) =>
+      owner === this.transport
+        ? this.transport?.disconnect?.(remotePeerId)
+        : undefined,
+  });
   private readonly pairingPending = createPendingTrustRequestCoordinator({
     localPeerId: async () =>
       deviceIdToPeerId((await this.identitySvc.get()).deviceId),
@@ -948,16 +949,8 @@ export class AndroidClient {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void this.identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return this.transport?.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: this.cleanupRejectedPeer,
     onChanged: async (requests) => {
       this.pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,
@@ -999,16 +992,8 @@ export class AndroidClient {
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void this.identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return this.transport?.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: this.cleanupRejectedPeer,
     onChanged: () => this.emitState(),
   });
   private readonly runtime = createRuntimeOrchestrator({
@@ -1133,8 +1118,15 @@ export class AndroidClient {
               this.backgroundNative.isActionCurrent(event.actionToken, action)
           )
           .then(
-            () => this.emitState(),
             async () => {
+              await this.emitState();
+              const warning = this.autoSyncPublicationWarning;
+              this.autoSyncPublicationWarning = undefined;
+              if (warning)
+                await this.backgroundNative.showControlFeedback(warning);
+            },
+            async () => {
+              this.autoSyncPublicationWarning = undefined;
               await this.emitState();
               if (this.workFence.isFenced()) return;
               await this.backgroundNative.showControlFeedback(
@@ -1225,7 +1217,7 @@ export class AndroidClient {
             }
           );
         }
-        this.clipboardSync.setAutoSync(this.autoSync);
+        this.clipExchange.setAutoSync(this.autoSync);
         await this.backgroundContinuity.reflectAutoSync(this.autoSync);
         this.historyRetentionCleanup ??= startHistoryRetentionCleanup(
           {
@@ -1248,7 +1240,7 @@ export class AndroidClient {
         if (this.identityRotationLifecycle.startLocalOnlyIfRecovering()) return;
         this.pairingSessions.start();
         await this.pairingPending.start();
-        this.clipboardSync.start();
+        this.clipExchange.startLocalCapture();
         await this.setBackgroundActivityState();
         // A retained resume can drain before capture starts and consume the
         // resume transition. Retry durable ingress now that capture is ready.
@@ -1259,11 +1251,16 @@ export class AndroidClient {
         await this.ensureMessaging();
         if (!this.pairingInboundBound) {
           this.pairingInboundBound = true;
-          this.transport!.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+          const currentTransport = this.transport!;
+          currentTransport.onMessage(PAIRING_PROTOCOL, (from, frame) => {
             if (this.workFence.isFenced()) return;
             void this.pairingSessions
-              .receive(from, frame, (peerId, requestFrame) =>
-                this.pairingPending.receive(peerId, requestFrame)
+              .receive(
+                from,
+                frame,
+                (peerId, requestFrame, owner) =>
+                  this.pairingPending.receive(peerId, requestFrame, owner),
+                currentTransport
               )
               .catch((error) =>
                 log.warn("Pairing message processing failed", error)
@@ -1274,8 +1271,8 @@ export class AndroidClient {
         this.workFence.assertOpen();
         await this.startManagedRelays();
         this.workFence.assertOpen();
+        await this.clipExchange.activateReadyTransport(this.transport!);
         this.pairedConnections?.start();
-        this.historyReconciliation?.start();
       },
       onNetworkingFailure: (error) => {
         log.warn("Messaging transport failed to start", error);
@@ -1307,13 +1304,12 @@ export class AndroidClient {
       await stopIdentityBoundRuntimeServices([
         () => this.pairingSessions.stop(),
         () => this.pairingPending.stop(),
-        () => this.clipboardSync.stop(),
-        () => this.historyReconciliation?.stop(),
+        () => this.clipExchange.stop(),
         () => this.pairedConnections?.stop(),
         () => this.transport?.stop(),
       ]);
     } finally {
-      this.historyReconciliation = null;
+      this.transport = null;
       this.managedRelays = null;
       this.membershipReconciler = null;
       this.started = false;
@@ -1627,6 +1623,7 @@ export class AndroidClient {
   private async setAutoSyncPreference(enabled: boolean): Promise<boolean> {
     const result = await this.settingsHandler.write({ autoSync: enabled });
     if (result.status !== "applied") throw new Error(result.error);
+    this.autoSyncPublicationWarning = result.warning;
     return result.snapshot.state.autoSync;
   }
 
@@ -1634,10 +1631,14 @@ export class AndroidClient {
     return this.workFence.run(() =>
       performAutoSyncAction(enabled, {
         set: async (value) => {
+          this.autoSyncPublicationWarning = undefined;
           await this.backgroundContinuity.setAutoSync(value);
-          return this.autoSync;
+          const warning = this.autoSyncPublicationWarning;
+          this.autoSyncPublicationWarning = undefined;
+          return warning ? { autoSync: this.autoSync, warning } : this.autoSync;
         },
         recover: async () => {
+          this.autoSyncPublicationWarning = undefined;
           const settings = await this.settingsHandler.read();
           await this.backgroundContinuity.reflectAutoSync(
             settings.state.autoSync
@@ -1730,11 +1731,12 @@ export class AndroidClient {
     await this.publishIdentityResetState(
       await this.identityRotation.reconcileIdentityReset()
     );
-    const receipt = this.identityResetState.phase === "idle"
-      ? this.identityResetState.receipt
-      : this.identityResetState.phase === "completed"
+    const receipt =
+      this.identityResetState.phase === "idle"
         ? this.identityResetState.receipt
-        : undefined;
+        : this.identityResetState.phase === "completed"
+          ? this.identityResetState.receipt
+          : undefined;
     if (!receipt || receipt.receiptId !== receiptId)
       return { status: "rejected" as const };
     return copyPayloadText(receipt.formerPeerId, (value) =>

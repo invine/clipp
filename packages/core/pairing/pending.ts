@@ -19,6 +19,7 @@ import {
   type PairingRejectionReason,
 } from "./diagnostics";
 import type { DeviceMembershipAdmissions } from "./membership";
+import type { TransportOwner } from "../messaging/transport";
 import { normalizeDeviceName, shortenPeerId } from "./presentation";
 
 export type PendingTrustRequest = {
@@ -140,6 +141,11 @@ export function createPendingTrustRequestCoordinator(options: {
   responseIdentity?(): Promise<{ deviceName: string; nameRevision: bigint }>;
   connectionPath?(peerId: string): PairingConnectionPath;
   onRejected?(diagnostic: PairingRejectionDiagnostic): void;
+  /** Runs for every authenticated rejection, independently of diagnostic throttling. */
+  onRejectedPeer?(
+    authenticatedPeerId: string,
+    owner?: TransportOwner
+  ): void | Promise<void>;
   onChanged?(
     requests: Array<PendingTrustRequest & { requestVersion: string }>
   ): void | Promise<void>;
@@ -175,8 +181,12 @@ export function createPendingTrustRequestCoordinator(options: {
     reason: PairingRejectionReason,
     authenticatedPeerId: string,
     frame: Uint8Array,
-    messageType: "request" | "response" | "unknown" = "request"
+    messageType: "request" | "response" | "unknown" = "request",
+    owner?: TransportOwner
   ) => {
+    void Promise.resolve(
+      options.onRejectedPeer?.(authenticatedPeerId, owner)
+    ).catch(() => undefined);
     reportRejected({
       reason,
       authenticatedPeerId,
@@ -433,7 +443,11 @@ export function createPendingTrustRequestCoordinator(options: {
       }
       return startPromise;
     },
-    receive(authenticatedPeerId: string, frame: Uint8Array): Promise<boolean> {
+    receive(
+      authenticatedPeerId: string,
+      frame: Uint8Array,
+      owner?: TransportOwner
+    ): Promise<boolean> {
       if (stopped) return Promise.resolve(false);
       const receive = () =>
         serializeMutation(authenticatedPeerId, async () => {
@@ -443,14 +457,17 @@ export function createPendingTrustRequestCoordinator(options: {
               "protobuf_decoding_failed",
               authenticatedPeerId,
               frame,
-              parsed?.kind ?? "unknown"
+              parsed?.kind ?? "unknown",
+              owner
             );
           const envelope = decodeTrustRequestEnvelope(parsed.envelope);
           if (!envelope)
             return reject(
               "protobuf_decoding_failed",
               authenticatedPeerId,
-              frame
+              frame,
+              "request",
+              owner
             );
           // The authenticated stream peer supplies the verification key; never
           // parse attacker-controlled signed fields before their signature holds.
@@ -461,28 +478,56 @@ export function createPendingTrustRequestCoordinator(options: {
               authenticatedPeerId
             ))
           )
-            return reject("invalid_signature", authenticatedPeerId, frame);
+            return reject(
+              "invalid_signature",
+              authenticatedPeerId,
+              frame,
+              "request",
+              owner
+            );
           const payload = decodeTrustRequestPayload(envelope.signedPayload);
           if (!payload)
             return reject(
               "protobuf_decoding_failed",
               authenticatedPeerId,
-              frame
+              frame,
+              "request",
+              owner
             );
           if (payload.initiatorPeerId !== authenticatedPeerId)
             return reject(
               "authenticated_identity_mismatch",
               authenticatedPeerId,
-              frame
+              frame,
+              "request",
+              owner
             );
           if (payload.targetPeerId !== (await options.localPeerId()))
-            return reject("wrong_target", authenticatedPeerId, frame);
+            return reject(
+              "wrong_target",
+              authenticatedPeerId,
+              frame,
+              "request",
+              owner
+            );
           const now = BigInt(options.clock.now());
           const skew = BigInt(options.clockSkewAllowanceMs ?? 2 * 60 * 1000);
           if (payload.issuedAtUnixMs > now + skew)
-            return reject("premature_issued_at", authenticatedPeerId, frame);
+            return reject(
+              "premature_issued_at",
+              authenticatedPeerId,
+              frame,
+              "request",
+              owner
+            );
           if (!validateTrustRequestTime(payload, Number(now), options))
-            return reject("expired_request", authenticatedPeerId, frame);
+            return reject(
+              "expired_request",
+              authenticatedPeerId,
+              frame,
+              "request",
+              owner
+            );
 
           const request: PendingTrustRequest = {
             initiatorPeerId: payload.initiatorPeerId,

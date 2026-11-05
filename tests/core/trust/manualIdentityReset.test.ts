@@ -4,6 +4,7 @@ import {
   createIdentityRotationCoordinator,
   createIdentityRotationCommitter,
 } from "../../../packages/core/trust/identityRotation";
+import { retireIdentityRuntime } from "../../../packages/core/runtime/identityRetirement";
 import {
   createKVIdentityRepository,
   type KVStorageBackend,
@@ -442,6 +443,86 @@ it.each([
     expect(await f.storage.get("manualIdentityReset")).toBeUndefined();
   }
 );
+
+it("keeps reset cleanup fenced when final runtime retirement is unconfirmed and resumes later", async () => {
+  const f = await setup();
+  let finalStopFails = true;
+  let firstStopAttempt = true;
+  f.ports.quiesce = () =>
+    retireIdentityRuntime({
+      stop: async () => {
+        if (firstStopAttempt) {
+          firstStopAttempt = false;
+          throw new Error("initial_stop_ack_lost");
+        }
+      },
+      drain: async () => {
+        f.effects.push("drain");
+      },
+      finalStop: async () => {
+        if (finalStopFails) throw new Error("final_stop_unconfirmed");
+      },
+    });
+
+  await expect(
+    f.coordinator.beginIdentityReset({
+      operationId: "operation-1",
+      reviewedPeerId: "old",
+    })
+  ).resolves.toMatchObject({
+    outcome: "accepted",
+    state: { phase: "quiescing", error: "cleanup_failed" },
+  });
+  expect(
+    await f.storage.get<{ phase: string }>("manualIdentityReset")
+  ).toMatchObject({
+    phase: "quiescing",
+  });
+  expect(f.effects).not.toContain("clear");
+  expect(f.effects).not.toContain("release");
+
+  finalStopFails = false;
+  await expect(
+    f.coordinator.resumeIdentityReset({ operationId: "operation-1" })
+  ).resolves.toMatchObject({ outcome: "completed" });
+  expect(f.effects.filter((effect) => effect === "clear")).toHaveLength(1);
+});
+
+it("joins a concurrent retry to the active retirement attempt", async () => {
+  const f = await setup();
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const quiesceStarted = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let attempts = 0;
+  f.ports.quiesce = async () => {
+    attempts += 1;
+    entered();
+    await held;
+  };
+
+  const initial = f.coordinator.beginIdentityReset({
+    operationId: "operation-1",
+    reviewedPeerId: "old",
+  });
+  await quiesceStarted;
+  const retry = f.coordinator.resumeIdentityReset({
+    operationId: "operation-1",
+  });
+  await Promise.resolve();
+  expect(attempts).toBe(1);
+
+  release();
+  await expect(Promise.all([initial, retry])).resolves.toEqual([
+    expect.objectContaining({ outcome: "completed" }),
+    expect.objectContaining({ outcome: "completed" }),
+  ]);
+  expect(attempts).toBe(1);
+});
 
 it("preserves the previous manual reminder across later automatic rotation and replays its original result", async () => {
   const f = await setup();

@@ -5,7 +5,7 @@ import { createLocalRetentionPreference } from "../../../packages/core/runtime/l
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
 import { createSettingsHandler } from "../../../packages/core/runtime/settingsAuthority.js";
 import { normalizeThemePreference } from "../../../packages/core/runtime/themePreference.js";
-import { performAutoSyncAction } from "../../../packages/core/runtime/autoSyncAction.js";
+import { performAutoSyncSettingsAction } from "../../../packages/core/runtime/autoSyncAction.js";
 import {
   createRelayMutationOwner,
   type RelayMutation,
@@ -34,6 +34,7 @@ import {
   decodePairingTarget,
 } from "../../../packages/core/pairing/v2.js";
 import { createPairingRuntimeSessions } from "../../../packages/core/pairing/runtimeCoordinator.js";
+import { createPairingRejectionCleanup } from "../../../packages/core/pairing/rejectionCleanup.js";
 import { importPairingTargetAndRequest } from "../../../packages/core/pairing/target.js";
 import {
   PAIRING_PROTOCOL,
@@ -62,6 +63,7 @@ import {
   createRuntimeApprovalEntries,
   createRuntimeIdentityManager,
   createIdentityBoundWorkFence,
+  retireIdentityRuntime,
   createRuntimeIdentityRotationLifecycle,
   createRuntimeNetworkProxy,
   createRuntimeOrchestrator,
@@ -98,10 +100,9 @@ import {
 } from "../../../packages/core/network/pairedConnections.js";
 import { createKVSignedPeerRecordPersistence } from "../../../packages/core/network/peerRecords.js";
 import { createClipboardSyncManager } from "../../../packages/core/sync/clipboardSync.js";
-import { createHistoryReconciliation } from "../../../packages/core/sync/historyReconciliation.js";
+import { createClipExchangeRuntime } from "../../../packages/core/sync/clipExchangeRuntime.js";
 import { reuseRetainedClip } from "../../../packages/core/clipboard/explicitActions.js";
 import * as log from "../../../packages/core/logger.js";
-import { createLiveClipGossip } from "../../../packages/core/sync/liveClipGossip.js";
 import {
   deviceIdToPeerIdObject,
   peerIdFromPrivateKeyBase64,
@@ -197,13 +198,16 @@ async function composeElectronRuntime(
     identityKey: IDENTITY_KEY,
     lifecycle: {
       acquireFence: identityWork.acquireFence,
-      async quiesce() {
-        await stopIdentityBoundServicesForRotation();
-        await identityWork.quiesce();
-        await stopIdentityBoundServicesForRotation();
-        electronNotifications.closeAll();
-        approvalEntries.clear();
-      },
+      quiesce: () =>
+        retireIdentityRuntime({
+          stop: () => stopIdentityBoundServicesForRotation(),
+          drain: () => identityWork.quiesce(),
+          finalStop: async () => {
+            await stopIdentityBoundServicesForRotation();
+            electronNotifications.closeAll();
+            approvalEntries.clear();
+          },
+        }),
     },
     shutdown: () => stopIdentityBoundServicesForRotation(),
     runtimeCleanup: { prepare: () => prepareIdentityRotationCleanup() },
@@ -247,7 +251,8 @@ async function composeElectronRuntime(
     },
     dismiss: async (request: { receiptId: string }) => {
       if (stopped) throw new Error("identity_runtime_stopped");
-      const state = await identityRotation.dismissIdentityResetReminder(request);
+      const state =
+        await identityRotation.dismissIdentityResetReminder(request);
       startupResetState = state;
       await emitState();
       return state;
@@ -285,6 +290,8 @@ async function composeElectronRuntime(
     for (const window of BrowserWindow.getAllWindows())
       window.setBackgroundColor(windowBackground());
   });
+  // Bootstrap the preference before the settings publisher exists. All later
+  // writes, including the dedicated toggle, go through settingsHandler.
   const autoSyncPreference = createAutoSyncPreference({
     storage: resetStorage,
   });
@@ -486,19 +493,6 @@ async function composeElectronRuntime(
     transport,
     getPairedPeers: activeMemberReconnectPeers(identitySvc),
   });
-  let liveClipGossip = createLiveClipGossip({
-    transport,
-    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-  });
-  let historyReconciliation = createHistoryReconciliation({
-    transport,
-    history,
-    getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
-    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-    onMembershipChanged: (listener) =>
-      identitySvc.onMembershipChanged(listener),
-    autoSync,
-  });
   let messagingStarted = false;
 
   async function ensureMessagingStarted() {
@@ -635,7 +629,6 @@ async function composeElectronRuntime(
   const clipboardSync = createClipboardSyncManager({
     clipboard: clipboardSvc,
     history,
-    liveGossip: liveClipGossip,
     isActiveMember: async (peerId) =>
       (await identitySvc.membershipStatus(peerId)) === "active",
     getLocalDeviceId: async () => {
@@ -643,9 +636,16 @@ async function composeElectronRuntime(
       return id.deviceId;
     },
     autoSync,
-    onAutoSyncChanged: (enabled) => historyReconciliation.setAutoSync(enabled),
   });
-  applyLiveAutoSync = (enabled) => clipboardSync.setAutoSync(enabled);
+  const clipExchange = createClipExchangeRuntime({
+    clipboardSync,
+    history,
+    getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
+    membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
+    onMembershipChanged: (listener) =>
+      identitySvc.onMembershipChanged(listener),
+  });
+  applyLiveAutoSync = (enabled) => clipExchange.setAutoSync(enabled);
   prepareIdentityRotationCleanup = () =>
     clipboardSync.prepareIdentityRotationCleanup();
 
@@ -656,6 +656,14 @@ async function composeElectronRuntime(
   }> = [];
   let pairingPending:
     ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
+  const cleanupRejectedPeer = createPairingRejectionCleanup({
+    membership: identitySvc,
+    isCurrentTransport: (remotePeerId, owner) =>
+      owner === transport &&
+      runtimeNetwork.getConnectedPeers().includes(remotePeerId),
+    disconnect: (remotePeerId, owner) =>
+      owner === transport ? transport.disconnect?.(remotePeerId) : undefined,
+  });
   const pairingSessions = createPairingRuntimeSessions({
     identity: async () => {
       const current = await identitySvc.get();
@@ -682,16 +690,8 @@ async function composeElectronRuntime(
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return runtimeNetwork.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: cleanupRejectedPeer,
     onChanged: () => emitState(),
   });
   let mainWindow: BrowserWindow | null = null;
@@ -840,7 +840,7 @@ async function composeElectronRuntime(
     bindTransportHandlers(transport);
     await pairingPending?.start();
     identityWork.assertOpen(generation);
-    clipboardSync.start();
+    clipExchange.startLocalCapture();
   }
 
   async function startNetworkServices() {
@@ -848,9 +848,9 @@ async function composeElectronRuntime(
     identityWork.assertOpen(generation);
     await ensureMessagingStarted();
     identityWork.assertOpen(generation);
+    await clipExchange.activateReadyTransport(transport);
     membershipReconciler.start();
     pairedConnections.start();
-    historyReconciliation.start();
   }
 
   async function restartMessaging() {
@@ -863,7 +863,7 @@ async function composeElectronRuntime(
     });
     managedHost = null;
     try {
-      const historyStopped = historyReconciliation.stop();
+      const historyStopped = clipExchange.retireTransport();
       const reconnectsStopped = pairedConnections.stop();
       await transport.stop();
       await Promise.allSettled([historyStopped, reconnectsStopped]);
@@ -889,26 +889,12 @@ async function composeElectronRuntime(
       transport,
       getPairedPeers: activeMemberReconnectPeers(identitySvc),
     });
-    liveClipGossip = createLiveClipGossip({
-      transport,
-      membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-    });
-    historyReconciliation = createHistoryReconciliation({
-      transport,
-      history,
-      getLocalDeviceId: async () => (await identitySvc.get()).deviceId,
-      membershipStatus: (peerId) => identitySvc.membershipStatus(peerId),
-      onMembershipChanged: (listener) =>
-        identitySvc.onMembershipChanged(listener),
-      autoSync,
-    });
     bindTransportHandlers(transport);
     runtimeNetwork.bindCurrent();
-    clipboardSync.bindLiveGossip(liveClipGossip);
     await ensureMessagingStarted();
     identityWork.assertOpen(generation);
+    await clipExchange.activateReadyTransport(transport);
     pairedConnections.start();
-    historyReconciliation.start();
     await emitState();
   }
 
@@ -1211,8 +1197,7 @@ async function composeElectronRuntime(
     historyRetentionCleanup?.stop();
     historyRetentionCleanup = null;
     await pairingSessions.stop();
-    await clipboardSync.stop();
-    await historyReconciliation.stop();
+    await clipExchange.stop();
     pairedConnections.stop();
     await managedController
       .stop()
@@ -1257,8 +1242,7 @@ async function composeElectronRuntime(
     await stopIdentityBoundRuntimeServices([
       () => pairingSessions.stop(),
       () => pairingPending?.stop(),
-      () => clipboardSync.stop(),
-      () => historyReconciliation.stop(),
+      () => clipExchange.stop(),
       () => pairedConnections.stop(),
       () => runtimeNetwork.stop(),
     ]);
@@ -1268,7 +1252,7 @@ async function composeElectronRuntime(
     if (identityWork.isFenced()) await clipboardSvc.discardPending?.();
   };
   publishIdentityRecovery = emitState;
-  startLocalIdentityRecovery = () => clipboardSync.startLocalOnly();
+  startLocalIdentityRecovery = () => clipExchange.startLocalCapture();
   const runtimeAdapter = createElectronRuntimeAdapter({
     storage: kvStore,
     identityKey: IDENTITY_KEY,
@@ -1341,16 +1325,8 @@ async function composeElectronRuntime(
     },
     onRejected: (diagnostic) => {
       log.warn(diagnostic.event, diagnostic);
-      if (diagnostic.authenticatedPeerId)
-        void identitySvc
-          .membershipStatus(diagnostic.authenticatedPeerId)
-          .then((status) => {
-            if (status !== "active")
-              return runtimeNetwork.disconnect?.(
-                diagnostic.authenticatedPeerId!
-              );
-          });
     },
+    onRejectedPeer: cleanupRejectedPeer,
     onChanged: async (requests) => {
       pendingRequests = requests.map((request) => ({
         deviceId: request.initiatorPeerId,
@@ -1361,14 +1337,15 @@ async function composeElectronRuntime(
     },
   });
   function bindPairingHandler(target: Pick<typeof transport, "onMessage">) {
-    target.onMessage(PAIRING_PROTOCOL, (from, frame) => {
+    target.onMessage(PAIRING_PROTOCOL, (from, frame, owner) => {
       void pairingSessions
         .receive(
           from,
           frame,
-          (peerId, requestFrame) =>
-            pairingPending?.receive(peerId, requestFrame) ??
-            Promise.resolve(false)
+          (peerId, requestFrame, requestOwner) =>
+            pairingPending?.receive(peerId, requestFrame, requestOwner) ??
+            Promise.resolve(false),
+          owner
         )
         .catch((error) => log.warn("Pairing message processing failed", error));
     });
@@ -1449,29 +1426,26 @@ async function composeElectronRuntime(
         operationId: value.operationId,
         reviewedPeerId: value.reviewedPeerId,
       });
-    if (
-      value.action === "resume" &&
-      typeof value.operationId === "string"
-    )
+    if (value.action === "resume" && typeof value.operationId === "string")
       return identityReset.resume({ operationId: value.operationId });
-    if (
-      value.action === "dismiss" &&
-      typeof value.receiptId === "string"
-    )
+    if (value.action === "dismiss" && typeof value.receiptId === "string")
       return identityReset.dismiss({ receiptId: value.receiptId });
     if (
       value.action === "copyFormerPeerId" &&
       typeof value.receiptId === "string"
     ) {
       await identityReset.reconcile();
-      const receipt = startupResetState?.phase === "idle"
-        ? startupResetState.receipt
-        : startupResetState?.phase === "completed"
+      const receipt =
+        startupResetState?.phase === "idle"
           ? startupResetState.receipt
-          : undefined;
+          : startupResetState?.phase === "completed"
+            ? startupResetState.receipt
+            : undefined;
       if (!receipt || receipt.receiptId !== value.receiptId)
         throw new Error("identity_reset_receipt_unavailable");
-      return copyPayloadText(receipt.formerPeerId, (text) => clipboard.writeText(text));
+      return copyPayloadText(receipt.formerPeerId, (text) =>
+        clipboard.writeText(text)
+      );
     }
     throw new Error("identity_reset_invalid_request");
   });
@@ -1563,23 +1537,13 @@ async function composeElectronRuntime(
   );
 
   handleRuntime("clipp:set-auto-sync", async (_evt, enabled: boolean) =>
-    performAutoSyncAction(enabled, {
-      set: async (value) => {
-        autoSync = await autoSyncPreference.set(value);
-        clipboardSync.setAutoSync(autoSync);
-        return autoSync;
-      },
-      recover: async () => {
-        autoSync = await autoSyncPreference.load();
-        clipboardSync.setAutoSync(autoSync);
-      },
+    performAutoSyncSettingsAction(enabled, settingsHandler, {
       current: () => autoSync,
       reconcile: emitState,
     })
   );
   handleRuntime("clipp:refresh-auto-sync", async () => {
-    autoSync = await autoSyncPreference.load();
-    clipboardSync.setAutoSync(autoSync);
+    await settingsHandler.read();
     await emitState();
     return true;
   });

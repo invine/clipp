@@ -9,8 +9,10 @@ import type {
   UiRuntimeAdapter,
   UiRuntimeSnapshot,
 } from "../../../packages/ui/src/runtimeAdapter";
+import { createUiRuntimeStore } from "../../../packages/ui/src/runtimeAdapter";
+import type { ClipboardAppProps } from "../../../packages/ui/src/ClipboardApp";
 import { bindNotificationRequests } from "../../../packages/ui/src/notificationRequests";
-import { createNotificationActionLifecycle } from "../../../packages/ui/src/notificationActionLifecycle";
+import { createNotificationAvailabilityOwner } from "../../../packages/ui/src/notificationAvailabilityOwner";
 import type { UiSession } from "../../../packages/ui/src/uiSession";
 import { bindElectronHostTaskInput } from "./hostTaskInput";
 
@@ -44,7 +46,6 @@ export function createElectronUiRuntimeAdapter(
   let notificationState: RuntimeNotificationAvailability | null = null;
   let notificationPending = false;
   let notificationError = false;
-  let notificationGeneration = 0;
   let started = false;
   let unsubscribeUpdate: (() => void) | undefined;
   let unsubscribeLog: (() => void) | undefined;
@@ -53,7 +54,6 @@ export function createElectronUiRuntimeAdapter(
   let unbindTaskInput: (() => void) | undefined;
   let notificationConsumer:
     ReturnType<typeof bindNotificationRequests> | undefined;
-  const listeners = new Set<() => void>();
 
   const settings = createSettingsClient({
     send: (message) =>
@@ -83,24 +83,11 @@ export function createElectronUiRuntimeAdapter(
     },
   });
 
-  const refreshNotifications = async () => {
-    const requestGeneration = ++notificationGeneration;
-    try {
-      const next = await bridge.getNotificationAvailability();
-      if (started && requestGeneration === notificationGeneration) {
-        notificationState = next;
-        notificationError = false;
-        publish();
-      }
-    } catch {
-      if (started && requestGeneration === notificationGeneration) {
-        notificationError = true;
-        publish();
-      }
-    }
-  };
-  const performNotificationAction = createNotificationActionLifecycle({
-    isCurrent: () => started,
+  const notificationOwner = createNotificationAvailabilityOwner({
+    read: () => bridge.getNotificationAvailability(),
+    setState: (state) => {
+      notificationState = state;
+    },
     setPending: (pending) => {
       notificationPending = pending;
     },
@@ -108,8 +95,8 @@ export function createElectronUiRuntimeAdapter(
       notificationError = error;
     },
     publish,
-    refresh: refreshNotifications,
   });
+  const performNotificationAction = notificationOwner.run;
 
   const actions: UiRuntimeActions = {
     onRetryRequests: () => recoveryOwner.load(),
@@ -167,7 +154,7 @@ export function createElectronUiRuntimeAdapter(
     identityResetActions: bridge.identityReset,
   };
 
-  const getSnapshot = (): UiRuntimeSnapshot =>
+  const projectSnapshot = (): UiRuntimeSnapshot =>
     ({
       clips: state.clips,
       devices: state.devices,
@@ -213,7 +200,7 @@ export function createElectronUiRuntimeAdapter(
         state: notificationState,
         pending: notificationPending,
         error: notificationError,
-        refresh: refreshNotifications,
+        refresh: notificationOwner.refresh,
         openSettings: bridge.openNotificationSettings
           ? () =>
               performNotificationAction(() =>
@@ -229,21 +216,28 @@ export function createElectronUiRuntimeAdapter(
       },
     }) as UiRuntimeSnapshot;
 
+  const makeProps = (): ClipboardAppProps =>
+    ({
+      ...projectSnapshot(),
+      ...actions,
+      session,
+    }) as ClipboardAppProps;
+  const store = createUiRuntimeStore(makeProps());
+
   function publish() {
-    listeners.forEach((listener) => listener());
+    store.publish(makeProps());
     if (started) void notificationConsumer?.refresh();
   }
 
   return {
-    getSnapshot,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    actions,
+    getSnapshot: store.getSnapshot,
+    subscribe: store.subscribe,
+    actions: store.actions,
+    capabilities: store.capabilities,
     async start() {
       if (started) return;
       started = true;
+      notificationOwner.start();
       unsubscribeUpdate = bridge.onUpdate((next) => recoveryOwner.live(next));
       unsubscribeLog = bridge.onLog?.((payload) => {
         const { level, message, data } = payload || {};
@@ -267,12 +261,12 @@ export function createElectronUiRuntimeAdapter(
         requestIds: state.pending.map((request) => request.deviceId),
       }));
       unsubscribeNotifications = bridge.onNotificationAvailabilityChanged?.(
-        () => void refreshNotifications()
+        () => void notificationOwner.refresh()
       );
       const doc = typeof document === "undefined" ? undefined : document;
       const view = typeof window === "undefined" ? undefined : window;
       const returned = () => {
-        if (doc?.visibilityState !== "hidden") void refreshNotifications();
+        if (doc?.visibilityState !== "hidden") void notificationOwner.refresh();
       };
       view?.addEventListener("focus", returned);
       doc?.addEventListener("visibilitychange", returned);
@@ -281,13 +275,13 @@ export function createElectronUiRuntimeAdapter(
         doc?.removeEventListener("visibilitychange", returned);
       };
       void settings.start(() => publish());
-      void refreshNotifications();
+      void notificationOwner.refresh();
       await recoveryOwner.load();
     },
     stop() {
       if (!started) return;
       started = false;
-      notificationGeneration++;
+      notificationOwner.stop();
       recoveryOwner.cancel();
       settings.stop();
       notificationConsumer?.dispose();
