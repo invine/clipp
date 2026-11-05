@@ -19,6 +19,7 @@ export function ClipboardWorkspace({
   pairingTaskDiagnostics,
   backgroundContinuityDiagnostics,
   pairingImport,
+  headerActions,
 }: {
   adapter: UiRuntimeAdapter;
 } & Pick<
@@ -29,6 +30,7 @@ export function ClipboardWorkspace({
   | "historyDiagnostics"
   | "pairingTaskDiagnostics"
   | "pairingImport"
+  | "headerActions"
   | "backgroundContinuityDiagnostics"
 >) {
   const session = useMemo(
@@ -81,6 +83,7 @@ export function ClipboardWorkspace({
       pairingTaskDiagnostics={pairingTaskDiagnostics}
       backgroundContinuityDiagnostics={backgroundContinuityDiagnostics}
       pairingImport={pairingImport}
+      headerActions={headerActions}
       session={session}
       runtimeError={
         failure?.owner === adapter ? failure.message : snapshot.runtimeError

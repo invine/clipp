@@ -58,16 +58,21 @@ export function projectConnectionSummary(facts: ConnectionFacts) {
   const label = {
     idle: "No Trusted Devices yet",
     attention: "Connections need attention",
-    direct: "Direct connection available",
-    relay: "Relay connection available",
+    direct: "Direct Connection",
+    relay: "Relayed Connection",
     unknown: "Connection status unknown",
     starting: "Connections starting",
-    waiting: "Waiting for Trusted Devices",
+    waiting: "Relay ready · no Trusted Devices",
     offline: "No device connection available",
   }[kind];
+  const currentPath = direct ? "Direct Connection" : relayed ? "Relayed Connection" : null;
+  const visibleLabel =
+    kind === "attention" && currentPath
+      ? `${currentPath} · relay needs attention`
+      : label;
   return {
     kind,
-    label,
+    label: visibleLabel,
     direct,
     relayed,
     unknown,

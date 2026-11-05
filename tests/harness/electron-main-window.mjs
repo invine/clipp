@@ -142,7 +142,13 @@ class Window extends EventEmitter {
   setBackgroundColor() {}
 }
 let menu;
+let trayInstance;
 class Tray extends EventEmitter {
+  constructor(image) {
+    super();
+    this.image = image;
+    trayInstance = this;
+  }
   setToolTip() {}
   setContextMenu(value) {
     menu = value;
@@ -702,6 +708,13 @@ try {
   const open = menu.find((entry) => entry.label === "Open Clipp");
   assert.ok(open, "actual production tray must expose Open Clipp");
   requireDockBeforeShow = true;
+  trayInstance.emit("click");
+  await waitFor(
+    () => window.visible && window.focused,
+    "normal tray click did not restore and focus the existing window"
+  );
+  assert.equal(windows.length, 1, "normal tray click reuses the live window");
+  window.close();
   await open.click();
   await Promise.resolve();
   assert.equal(window.visible, true);

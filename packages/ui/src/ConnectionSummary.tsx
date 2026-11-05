@@ -15,8 +15,9 @@ export function ConnectionStatusButton({
       type="button"
       className={`connection-status connection-${summary.kind}`}
       data-session-focus="connections-summary"
-      aria-label={`Open Devices: ${summary.label}`}
-      title={`${summary.label} · Open Devices`}
+      aria-label={summary.label}
+      title={summary.label}
+      aria-describedby="connections-summary-action"
       onClick={() => {
         session.close();
         session.update({
@@ -28,6 +29,9 @@ export function ConnectionStatusButton({
     >
       <span className="connection-indicator" aria-hidden="true" />
       <span className="connection-label">{summary.label}</span>
+      <span id="connections-summary-action" className="visually-hidden">
+        Opens Devices
+      </span>
       <svg
         viewBox="0 0 24 24"
         width="26"

@@ -12,6 +12,23 @@ export function iconBasePath(
   return path.join(root, "clipp-electron-icons-bundle");
 }
 
+export function trayIconCandidates(
+  iconBase: string,
+  platform: NodeJS.Platform
+): string[] {
+  const primary =
+    platform === "darwin" ? "clipp-trayTemplate.png" : "clipp-tray.png";
+  return [
+    path.join(iconBase, primary),
+    path.join(iconBase, "clipp-tray-16.png"),
+    path.join(iconBase, "clipp-tray-32.png"),
+    path.join(iconBase, "clipp-tray-64.png"),
+    path.join(iconBase, "clipp-purple-32.png"),
+    path.join(iconBase, "clipp-purple-16.png"),
+    path.join(iconBase, "clipp-purple-256.png"),
+  ];
+}
+
 export function pickTrayIcon(
   candidates: string[],
   createFromPath: typeof nativeImage.createFromPath,

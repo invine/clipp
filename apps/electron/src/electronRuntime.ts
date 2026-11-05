@@ -1,6 +1,11 @@
 import { createElectronNotifications } from "./notifications";
 import { createElectronTaskActivation } from "./hostTaskActivation.js";
 import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
+import {
+  iconBasePath,
+  pickTrayIcon as chooseTrayIcon,
+  trayIconCandidates,
+} from "./trayIcon.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
 import { createSettingsHandler } from "../../../packages/core/runtime/settingsAuthority.js";
@@ -527,20 +532,13 @@ async function composeElectronRuntime(
       throw err;
     }
   }
-  // TODO: improve icon import
-  const iconRoot = app.isPackaged
-    ? path.dirname(app.getPath("exe"))
-    : path.resolve(__dirnameFallback || process.cwd(), "..", "..", "..");
-  const iconBase = path.join(iconRoot, "clipp-electron-icons-bundle");
+  const iconBase = iconBasePath(
+    app.isPackaged,
+    process.resourcesPath,
+    __dirnameFallback || process.cwd()
+  );
   const appIconPath = path.join(iconBase, "clipp-purple-256.png");
-  const trayIconCandidates = [
-    "clipp-tray-16.png",
-    "clipp-tray-32.png",
-    "clipp-tray-64.png",
-    "clipp-purple-32.png",
-    "clipp-purple-16.png",
-    "clipp-purple-256.png",
-  ].map((f) => path.join(iconBase, f));
+  const trayIconPaths = trayIconCandidates(iconBase, process.platform);
 
   function dedupeMultiaddrs(values: string[]) {
     const seen = new Set<string>();
@@ -1148,21 +1146,12 @@ async function composeElectronRuntime(
   }
 
   function pickTrayIcon(): Electron.NativeImage {
-    for (const candidate of trayIconCandidates) {
-      const img = nativeImage.createFromPath(candidate);
-      if (!img.isEmpty()) {
-        if (
-          candidate.includes("trayTemplate") &&
-          process.platform === "darwin"
-        ) {
-          img.setTemplateImage?.(true);
-        } else {
-          img.setTemplateImage?.(false);
-        }
-        return img;
-      }
-    }
-    return nativeImage.createEmpty();
+    return chooseTrayIcon(
+      trayIconPaths,
+      (candidate) => nativeImage.createFromPath(candidate),
+      () => nativeImage.createEmpty(),
+      process.platform
+    );
   }
 
   function createTray() {
@@ -1186,7 +1175,7 @@ async function composeElectronRuntime(
     ]);
     tray.setToolTip("Clipp – clipboard sync");
     tray.setContextMenu(contextMenu);
-    tray.on("click", () => tray?.popUpContextMenu());
+    tray.on("click", () => showWindow());
   }
 
   async function shutdownServices() {

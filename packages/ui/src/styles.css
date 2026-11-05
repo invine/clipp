@@ -2347,6 +2347,20 @@ html[data-host-geometry="android"] .android-host {
 .connection-attention {
   color: var(--clipp-warning);
 }
+.connection-waiting {
+  color: var(--clipp-focus);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .connection-status:focus-visible {
   outline: 2px solid var(--clipp-focus);
   outline-offset: 2px;
