@@ -77,7 +77,8 @@ beforeEach(() => {
 const fs=require('node:fs'),path=require('node:path');
 if(process.argv.includes('--version')){console.log('Fixture Chromium 1');process.exit(0);}
 const dir=process.argv.find(x=>x.startsWith('--user-data-dir=')).split('=').slice(1).join('=');
-fs.writeFileSync(path.join(dir,'DevToolsActivePort'),'12345\\n/devtools/browser/fixture');fs.writeFileSync(${JSON.stringify(path.join(fixture, "pid"))},String(process.pid));
+// The process adapter publishes the child PID before returning from spawn.
+fs.writeFileSync(path.join(dir,'DevToolsActivePort'),'12345\\n/devtools/browser/fixture');
 setTimeout(()=>{fs.writeFileSync(${JSON.stringify(path.join(fixture, "self-expired"))},"expired");process.exit(0);},4000);
 `,
     { mode: 0o755 }
@@ -102,7 +103,7 @@ if(method==='Target.getTargets')return {targetInfos:[{targetId:'tab-id',type:'ta
 if(method==='Browser.getWindowForTarget')return {windowId:behavior==='tab-window-mismatch'&&params.targetId!=='page-id'?2:1};
 if(method==='Extensions.triggerAction'){if(params.targetId!=='tab-id')throw new Error('Action can only be triggered on a tab target.');opened=true;}return {};}};
 const context={async addInitScript(){},serviceWorkers:()=>[{url:()=> 'chrome-extension://fixture/background.js'}],pages:()=>opened?[tab,popup]:[tab],async newCDPSession(){return session;}};
-export const chromium={executablePath:()=>${JSON.stringify(bin)},async connectOverCDP(){return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(behavior==='cleanup')throw new Error('cleanup_fixture');if(behavior==='reuse')return;const pid=Number(fs.readFileSync(${JSON.stringify(path.join(fixture, "pid"))},'utf8'));process.kill(pid,'SIGTERM');}};}};
+export const chromium={executablePath:()=>${JSON.stringify(bin)},async connectOverCDP(){return {contexts:()=>[context],async newBrowserCDPSession(){return session;},async close(){if(behavior==='cleanup')throw new Error('cleanup_fixture');if(behavior==='reuse')return;if(behavior==='empty-pid')fs.writeFileSync(${JSON.stringify(path.join(fixture, "pid"))},'');const pid=Number(fs.readFileSync(${JSON.stringify(path.join(fixture, "pid"))},'utf8'));if(!Number.isSafeInteger(pid)||pid<=1)throw new Error('fixture_browser_pid_invalid');process.kill(pid,'SIGTERM');}};}};
  `
   );
   // Controlled public process adapter: observes only its self-expiring owned child.
@@ -113,6 +114,14 @@ import cp from 'node:child_process';
 import fs from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
 const profileRecord = ${JSON.stringify(path.join(fixture, "profile"))};
+const signalProcess = process.kill.bind(process);
+process.kill = (pid, signal) => {
+ if(process.env.FIXTURE_BEHAVIOR==='empty-pid' && signal==='SIGTERM' && pid<=1) {
+  fs.appendFileSync(${JSON.stringify(path.join(fixture, "unsafe-signals"))},String(pid)+'\\n');
+  throw new Error('unsafe_fixture_signal');
+ }
+ return signalProcess(pid,signal);
+};
 const spawn = cp.spawn;
 cp.spawn = (bin,args,opts) => {
  const argument = args.find(x=>x.startsWith('--user-data-dir='));
@@ -231,6 +240,17 @@ test("the native toolbar popup captures and pins a visible clip while header sea
     shutdown: "verified-owned-browser-closed",
   });
 });
+test("malformed browser PID data never signals a process group", () => {
+  freeze();
+  const run = invoke("empty-pid");
+  expect(run.signal).toBeNull();
+  expect(run.status).toBe(1);
+  expect(existsSync(path.join(fixture, "unsafe-signals"))).toBe(false);
+  expect(result()).toMatchObject({
+    classification: "cleanup",
+    shutdown: "unknown",
+  });
+}, 15000);
 test.each(["tab", "boundary"])(
   "%s evidence cannot qualify the actual toolbar popup",
   (mode) => {
