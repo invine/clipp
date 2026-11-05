@@ -13,9 +13,9 @@ it("loads packaged icons from the macOS Resources directory", () => {
   );
 });
 
-it("loads development icons from the repository root", () => {
+it("loads development icons from the Electron asset directory", () => {
   expect(iconBasePath(false, "/unused", "/repo/apps/electron/dist")).toBe(
-    "/repo/clipp-electron-icons-bundle"
+    "/repo/apps/electron/assets/icons"
   );
 });
 
