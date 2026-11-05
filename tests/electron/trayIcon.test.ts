@@ -45,10 +45,10 @@ it("makes the selected macOS menu bar image adapt to light and dark backgrounds"
 it("prefers the density-aware template artwork on macOS and a visible mark elsewhere", () => {
   expect(trayIconCandidates("/resources/icons", "darwin")).toEqual([
     "/resources/icons/clipp-trayTemplate.png",
+    "/resources/icons/clipp-trayTemplate@2x.png",
     "/resources/icons/clipp-trayTemplate-16.png",
     "/resources/icons/clipp-trayTemplate-32.png",
     "/resources/icons/clipp-trayTemplate-64.png",
-    "/resources/icons/clipp-trayTemplate@2x.png",
     "/resources/icons/clipp-tray-16.png",
     "/resources/icons/clipp-tray-32.png",
     "/resources/icons/clipp-tray-64.png",
@@ -95,3 +95,17 @@ it.each(["apps/electron/assets/icons", "clipp-electron-icons-bundle"])(
     }
   }
 );
+
+it("packages the SVG source and its native PNG renderings", () => {
+  const electronPackage = JSON.parse(
+    readFileSync("apps/electron/package.json", "utf8")
+  );
+  const packagedIcons = electronPackage.build.extraResources[0].filter;
+  expect(packagedIcons).toEqual(
+    expect.arrayContaining([
+      "clipp-trayTemplate.svg",
+      "clipp-trayTemplate.png",
+      "clipp-trayTemplate@2x.png",
+    ])
+  );
+});
