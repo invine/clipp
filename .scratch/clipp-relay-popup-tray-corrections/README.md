@@ -7,8 +7,6 @@ Clipp owns all shared UI, runtime bridge, extension popup and Electron tray work
 
 [Specification](spec.md) · [Decisions](decisions.md) · [Implementation ticket 01](issues/01-relay-popup-and-tray-controls.md)
 
-The user later authorized implementation with `$implement` on 2026-11-05, superseding the publication-only boundary recorded below and in D5.
-
-The user approved one implementation ticket for original findings 1, 4, 5 and 6 on 2026-11-05. No blockers. Ticket publication is complete; implementation has not started and must not start in this session, per the user's explicit instruction.
+The user approved one implementation ticket for original findings 1, 4, 5 and 6 on 2026-11-05. The later `$implement` request authorizes implementation within that scope and supersedes the publication-only boundary recorded in D5. Current implementation and acceptance evidence are recorded in ticket 01.
 
 Device-row colour (finding 2) and direct-connectivity troubleshooting (finding 3) are outside this implementation ticket.
