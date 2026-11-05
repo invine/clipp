@@ -44,9 +44,10 @@ it("makes the selected macOS menu bar image adapt to light and dark backgrounds"
 
 it("prefers the density-aware template artwork on macOS and a visible mark elsewhere", () => {
   expect(trayIconCandidates("/resources/icons", "darwin")).toEqual([
+    "/resources/icons/clipp-trayTemplate-16.png",
+    "/resources/icons/clipp-trayTemplate-16@2x.png",
     "/resources/icons/clipp-trayTemplate.png",
     "/resources/icons/clipp-trayTemplate@2x.png",
-    "/resources/icons/clipp-trayTemplate-16.png",
     "/resources/icons/clipp-trayTemplate-32.png",
     "/resources/icons/clipp-trayTemplate-64.png",
     "/resources/icons/clipp-tray-16.png",
@@ -104,8 +105,28 @@ it("packages the SVG source and its native PNG renderings", () => {
   expect(packagedIcons).toEqual(
     expect.arrayContaining([
       "clipp-trayTemplate.svg",
+      "clipp-trayTemplate-16.png",
+      "clipp-trayTemplate-16@2x.png",
       "clipp-trayTemplate.png",
       "clipp-trayTemplate@2x.png",
     ])
   );
 });
+
+it.each(["apps/electron/assets/icons", "clipp-electron-icons-bundle"])(
+  "ships the supplied 16 px tray template at 1x and 2x in %s",
+  (directory) => {
+    for (const name of [
+      "clipp-trayTemplate-16.png",
+      "clipp-trayTemplate-16@2x.png",
+    ]) {
+      expect(() => readFileSync(path.join(directory, name))).not.toThrow();
+    }
+    const oneX = readFileSync(path.join(directory, "clipp-trayTemplate-16.png"));
+    const twoX = readFileSync(
+      path.join(directory, "clipp-trayTemplate-16@2x.png")
+    );
+    expect([oneX.readUInt32BE(16), oneX.readUInt32BE(20)]).toEqual([16, 16]);
+    expect([twoX.readUInt32BE(16), twoX.readUInt32BE(20)]).toEqual([32, 32]);
+  }
+);

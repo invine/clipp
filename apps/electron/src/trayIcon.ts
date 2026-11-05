@@ -15,14 +15,14 @@ export function trayIconCandidates(
   iconBase: string,
   platform: NodeJS.Platform
 ): string[] {
-  // Electron nativeImage decodes PNG/JPEG; the template PNGs are rendered from
-  // clipp-trayTemplate.svg and keep its 1x/2x density representations together.
+  // Prefer the supplied 16 px template artwork and its 2x render on macOS.
   const names =
     platform === "darwin"
       ? [
+          "clipp-trayTemplate-16.png",
+          "clipp-trayTemplate-16@2x.png",
           "clipp-trayTemplate.png",
           "clipp-trayTemplate@2x.png",
-          "clipp-trayTemplate-16.png",
           "clipp-trayTemplate-32.png",
           "clipp-trayTemplate-64.png",
           "clipp-tray-16.png",
