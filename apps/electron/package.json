@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@koush/wrtc": "^0.5.3",
+    "@libp2p/webrtc": "^6.1.0",
     "better-sqlite3": "13.0.3",
     "ws": "^8.18.3"
   },

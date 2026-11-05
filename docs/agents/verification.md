@@ -57,3 +57,38 @@ instrumentation or forced live relay transfer. These remain separate procedures:
 No live acceptance, signed release, publication or deployment is implied by a
 routine pass. Preserve existing unresolved runtime acceptance tickets and record
 unexecuted procedures as **not run**.
+
+### Packaged Electron WebRTC smoke check
+
+Electron's main bundle leaves `@libp2p/webrtc` external. Keep it in the Electron
+workspace's production dependencies so the distribution includes the transport
+and its native `node-datachannel` dependency tree. Loading `@koush/wrtc` alone
+does not establish that these transports are available.
+
+Build a local unsigned package into a new directory outside the repository:
+
+```sh
+npm --workspace apps/electron run build
+package_output=$(mktemp -d /tmp/clipp-electron-package.XXXXXX)
+CSC_IDENTITY_AUTO_DISCOVERY=false npm exec --package=electron-builder@26.18.0 -- \
+  electron-builder --projectDir apps/electron --dir \
+  --config.directories.output="$package_output"
+```
+
+On macOS Apple Silicon, run the smoke check with that package's executable:
+
+```sh
+ELECTRON_RUN_AS_NODE=1 \
+  "$package_output/mac-arm64/Clipp.app/Contents/MacOS/Clipp" \
+  tests/harness/electron-packaged-webrtc.cjs \
+  "$package_output/mac-arm64/Clipp.app/Contents/Resources/app.asar"
+```
+
+For other platforms or architectures, select the corresponding packaged
+executable and `resources/app.asar` path. The check imports from the packaged
+main's context, rejects dependencies resolved outside the archive, loads both
+WebRTC transport factories, and constructs/closes a native data channel. It
+requires local ICE socket access, starts no Clipp profile, and does not replace
+the installed app. This is packaging/native-loading evidence; direct peer
+upgrade and application-frame delivery still require a connectivity harness or
+runtime acceptance.
