@@ -16,13 +16,41 @@
   },
   "dependencies": {
     "@koush/wrtc": "^0.5.3",
+    "@libp2p/webrtc": "^6.1.0",
     "better-sqlite3": "13.0.3",
-    "electron": "43.4.0"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.4.1",
+    "electron": "43.4.0",
     "esbuild": "^0.25.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
+  },
+  "build": {
+    "appId": "com.clipp.app",
+    "productName": "Clipp",
+    "directories": {
+      "buildResources": "assets/icons",
+      "output": "release"
+    },
+    "mac": {
+      "icon": "assets/icons/clipp-appicon.icns",
+      "target": [
+        "dmg"
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "assets/icons",
+        "to": "clipp-electron-icons-bundle",
+        "filter": [
+          "clipp-appicon-256.png",
+          "clipp-trayTemplate-16.png",
+          "clipp-trayTemplate-32.png",
+          "clipp-trayTemplate-64.png"
+        ]
+      }
+    ]
   }
 }

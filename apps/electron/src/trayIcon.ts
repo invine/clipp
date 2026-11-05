@@ -6,10 +6,9 @@ export function iconBasePath(
   resourcesPath: string,
   mainBundleDir: string
 ): string {
-  const root = isPackaged
-    ? resourcesPath
-    : path.resolve(mainBundleDir || process.cwd(), "..", "..", "..");
-  return path.join(root, "clipp-electron-icons-bundle");
+  return isPackaged
+    ? path.join(resourcesPath, "clipp-electron-icons-bundle")
+    : path.resolve(mainBundleDir || process.cwd(), "..", "assets", "icons");
 }
 
 export function pickTrayIcon(

@@ -1,5 +1,6 @@
 import { createElectronNotifications } from "./notifications";
 import { createElectronTaskActivation } from "./hostTaskActivation.js";
+import { iconBasePath } from "./trayIcon.js";
 import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
@@ -527,19 +528,16 @@ async function composeElectronRuntime(
       throw err;
     }
   }
-  // TODO: improve icon import
-  const iconRoot = app.isPackaged
-    ? path.dirname(app.getPath("exe"))
-    : path.resolve(__dirnameFallback || process.cwd(), "..", "..", "..");
-  const iconBase = path.join(iconRoot, "clipp-electron-icons-bundle");
-  const appIconPath = path.join(iconBase, "clipp-purple-256.png");
+  const iconBase = iconBasePath(
+    app.isPackaged,
+    process.resourcesPath,
+    __dirnameFallback
+  );
+  const appIconPath = path.join(iconBase, "clipp-appicon-256.png");
   const trayIconCandidates = [
-    "clipp-tray-16.png",
-    "clipp-tray-32.png",
-    "clipp-tray-64.png",
-    "clipp-purple-32.png",
-    "clipp-purple-16.png",
-    "clipp-purple-256.png",
+    "clipp-trayTemplate-16.png",
+    "clipp-trayTemplate-32.png",
+    "clipp-trayTemplate-64.png",
   ].map((f) => path.join(iconBase, f));
 
   function dedupeMultiaddrs(values: string[]) {
