@@ -19,9 +19,9 @@ it("loads packaged icons from the macOS Resources directory", () => {
   );
 });
 
-it("loads development icons from the repository root", () => {
+it("loads development icons from the Electron asset directory", () => {
   expect(iconBasePath(false, "/unused", "/repo/apps/electron/dist")).toBe(
-    "/repo/clipp-electron-icons-bundle"
+    "/repo/apps/electron/assets/icons"
   );
 });
 
@@ -45,6 +45,10 @@ it("makes the selected macOS menu bar image adapt to light and dark backgrounds"
 it("prefers the density-aware template artwork on macOS and a visible mark elsewhere", () => {
   expect(trayIconCandidates("/resources/icons", "darwin")).toEqual([
     "/resources/icons/clipp-trayTemplate.png",
+    "/resources/icons/clipp-trayTemplate-16.png",
+    "/resources/icons/clipp-trayTemplate-32.png",
+    "/resources/icons/clipp-trayTemplate-64.png",
+    "/resources/icons/clipp-trayTemplate@2x.png",
     "/resources/icons/clipp-tray-16.png",
     "/resources/icons/clipp-tray-32.png",
     "/resources/icons/clipp-tray-64.png",
@@ -52,9 +56,16 @@ it("prefers the density-aware template artwork on macOS and a visible mark elsew
     "/resources/icons/clipp-purple-16.png",
     "/resources/icons/clipp-purple-256.png",
   ]);
-  expect(trayIconCandidates("/resources/icons", "win32")[0]).toBe(
-    "/resources/icons/clipp-tray.png"
-  );
+  expect(trayIconCandidates("/resources/icons", "win32")).toEqual([
+    "/resources/icons/clipp-tray.png",
+    "/resources/icons/clipp-tray-16.png",
+    "/resources/icons/clipp-tray-32.png",
+    "/resources/icons/clipp-tray-64.png",
+    "/resources/icons/clipp-tray@2x.png",
+    "/resources/icons/clipp-purple-32.png",
+    "/resources/icons/clipp-purple-16.png",
+    "/resources/icons/clipp-purple-256.png",
+  ]);
 });
 
 it("keeps the selected artwork as a macOS template and disables template mode elsewhere", () => {

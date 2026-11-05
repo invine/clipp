@@ -1,11 +1,11 @@
 import { createElectronNotifications } from "./notifications";
 import { createElectronTaskActivation } from "./hostTaskActivation.js";
-import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import {
   iconBasePath,
   pickTrayIcon as chooseTrayIcon,
   trayIconCandidates,
 } from "./trayIcon.js";
+import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
 import { createSettingsHandler } from "../../../packages/core/runtime/settingsAuthority.js";
@@ -535,9 +535,9 @@ async function composeElectronRuntime(
   const iconBase = iconBasePath(
     app.isPackaged,
     process.resourcesPath,
-    __dirnameFallback || process.cwd()
+    __dirnameFallback
   );
-  const appIconPath = path.join(iconBase, "clipp-purple-256.png");
+  const appIconPath = path.join(iconBase, "clipp-appicon-256.png");
   const trayIconPaths = trayIconCandidates(iconBase, process.platform);
 
   function dedupeMultiaddrs(values: string[]) {
