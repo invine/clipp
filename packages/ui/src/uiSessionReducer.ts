@@ -2,6 +2,7 @@ export type SessionTask = {
   kind:
     | "clip-details"
     | "device-name"
+    | "peer-id"
     | "alias"
     | "relay"
     | "pairing"

@@ -1,8 +1,8 @@
 .ui-scenario-controls {
   position: fixed;
   z-index: 1001;
-  top: 0.75rem;
-  right: 0.75rem;
+  bottom: 0.75rem;
+  left: 0.75rem;
   max-width: min(25rem, calc(100vw - 1.5rem));
   padding: 0.5rem;
   border: 1px solid var(--clipp-border);
