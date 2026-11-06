@@ -4107,10 +4107,6 @@ html[data-host-geometry="android"] .android-host {
   border-radius: 0.5rem;
 }
 
-.devices-topbar .connection-status {
-  margin-inline-start: 0;
-}
-
 .device-local-name {
   flex: 1;
   min-width: 0;
@@ -4330,9 +4326,5 @@ html[data-host-geometry="android"] .android-host {
   .app-shell.workspace-narrow .devices-topbar {
     flex-wrap: nowrap;
     padding-inline: 0.5rem;
-  }
-
-  .devices-topbar .connection-status {
-    position: static;
   }
 }
