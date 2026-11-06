@@ -183,6 +183,7 @@ const waitFor = async (condition, description) => {
   }
 };
 let failed = false;
+globalThis.nativeWebRtcCleanups = 0;
 try {
   await build({
     ...(entryMode
@@ -213,15 +214,21 @@ try {
       {
         name: "inert-desktop-os",
         setup(builder) {
+          builder.onResolve({ filter: /nativeWebrtcCleanup\.js$/ }, () => ({
+            path: "native-cleanup",
+            namespace: "os",
+          }));
           builder.onResolve(
             { filter: /^(electron|@koush\/wrtc)$/ },
             (args) => ({ path: args.path, namespace: "os" })
           );
           builder.onLoad({ filter: /.*/, namespace: "os" }, (args) => ({
             contents:
-              args.path === "electron"
-                ? "export const {app,BrowserWindow,Tray,Menu,nativeImage,nativeTheme,ipcMain,clipboard,safeStorage,shell,Notification}=globalThis.windowBoundary;"
-                : "export default {};",
+              args.path === "native-cleanup"
+                ? "export function cleanupNativeWebRtc() { globalThis.nativeWebRtcCleanups++; }"
+                : args.path === "electron"
+                  ? "export const {app,BrowserWindow,Tray,Menu,nativeImage,nativeTheme,ipcMain,clipboard,safeStorage,shell,Notification}=globalThis.windowBoundary;"
+                  : "export default {};",
             loader: "js",
           }));
         },
@@ -723,7 +730,17 @@ try {
   await Promise.resolve();
   assert.equal(dockVisible, true);
   assert.ok(dockShows >= 2);
+  assert.equal(
+    globalThis.nativeWebRtcCleanups,
+    0,
+    "close-to-tray must retain the native WebRTC runtime"
+  );
   onProcessQuit = () => {
+    assert.equal(
+      globalThis.nativeWebRtcCleanups,
+      1,
+      "final Quit must clean up native WebRTC exactly once before process exit"
+    );
     assert.equal(
       window.close(),
       false,

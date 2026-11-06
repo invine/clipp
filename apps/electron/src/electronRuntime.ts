@@ -1,6 +1,7 @@
 import { createElectronNotifications } from "./notifications";
 import { createElectronTaskActivation } from "./hostTaskActivation.js";
 import { iconBasePath } from "./trayIcon.js";
+import { cleanupNativeWebRtc } from "./nativeWebrtcCleanup.js";
 import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
 import { DEFAULT_CLIP_SHARING_LIFETIME_MS } from "../../../packages/core/models/Clip.js";
@@ -1384,6 +1385,13 @@ async function composeElectronRuntime(
         if (runtimeShutdownHandler) await runtimeShutdownHandler();
         else await shutdownServices();
       } finally {
+        // Release native data-channel callbacks while Node's environment is still
+        // alive; their finalizers can otherwise deadlock during process teardown.
+        try {
+          cleanupNativeWebRtc(__dirnameFallback);
+        } catch (error) {
+          log.warn("Native WebRTC cleanup failed", error);
+        }
         shutdownComplete = true;
         app.quit();
       }

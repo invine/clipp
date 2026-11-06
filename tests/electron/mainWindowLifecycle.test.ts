@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-it("the production tray restores its retained main window and Dock after close-to-tray", () => {
+it("the production tray retains WebRTC on close-to-tray and cleans it up once on final Quit", () => {
   execFileSync(process.execPath, ["tests/harness/electron-main-window.mjs"], {
     cwd: process.cwd(),
     stdio: "pipe",
