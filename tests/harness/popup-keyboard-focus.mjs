@@ -69,7 +69,10 @@ const sourceFiles = [
   "apps/extension/src/styles/tailwind-built.css",
   "apps/extension/src/popup-host.css",
   "apps/extension/src/management-host.css",
+  "packages/ui/src/ClipboardWorkspace.tsx",
   "packages/ui/src/ClipboardApp.tsx",
+  "packages/ui/src/ConnectionSummary.tsx",
+  "packages/ui/src/controls.tsx",
   "packages/ui/src/styles.css",
   "packages/ui/src/host.css",
   "packages/ui/src/sessionFocus.ts",
@@ -436,8 +439,8 @@ const sampleFocus = () => {
         }),
     };
   };
-  const openFull = [...document.querySelectorAll("button")].find(
-    (button) => button.textContent.trim() === "Open full-page Clipp"
+  const openFull = document.querySelector(
+    'button[aria-label="Open full-page Clipp"]'
   );
   const log = document.querySelector('[aria-label="Log level"]');
   return {
@@ -477,7 +480,13 @@ const sampleFocus = () => {
       body: getComputedStyle(document.body).zoom,
     },
     textMetrics: {
-      openFull: textMetrics(openFull),
+      openFull: openFull
+        ? {
+            ...textMetrics(openFull),
+            inHeader: !!openFull.closest(".workspace-topbar"),
+            disabled: openFull.disabled,
+          }
+        : null,
       logLabel: textMetrics(log?.closest("label")),
       logControl: textMetrics(log),
     },
@@ -878,6 +887,14 @@ try {
     assert.equal(m.active.value, "info");
     assert.equal(m.active.focusVisible, true);
     assert.notEqual(m.outlineStyle, "none");
+    assert.ok(m.textMetrics.openFull, "popup expand control is present");
+    assert.equal(m.textMetrics.openFull.inHeader, true);
+    assert.equal(m.textMetrics.openFull.disabled, false);
+    assert.ok(
+      m.textMetrics.openFull.rect.width >= 40 &&
+        m.textMetrics.openFull.rect.height >= 40,
+      "popup expand action keeps a usable target"
+    );
     assert.equal(m.diagnostics.clipboardWrites, 0);
     assert.deepEqual(m.diagnostics.unknown, []);
     assert.ok(m.documentWidth <= 481, "no horizontal document hunting");

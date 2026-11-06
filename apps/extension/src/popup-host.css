@@ -38,3 +38,16 @@ body,
   flex: 1;
   min-height: 0;
 }
+@media (max-width: 600px) {
+  .popup-host .workspace-topbar {
+    padding-inline-end: 1rem;
+  }
+  .popup-host .workspace-topbar .connection-status {
+    position: static;
+    inset: auto;
+    margin-inline-start: auto;
+  }
+  .popup-host .app-shell.workspace-narrow .workspace-topbar {
+    padding-inline-end: 1rem;
+  }
+}

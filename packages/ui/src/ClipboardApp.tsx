@@ -384,6 +384,7 @@ export type ClipboardAppProps = {
   onPairText(txt: string): Promise<PairingSubmissionResult>;
   pairingDiagnostics?: React.ReactNode;
   pairingTaskDiagnostics?: React.ReactNode;
+  headerActions?: React.ReactNode;
   /** Test-only scenario controls rendered beside the active continuity surface. */
   backgroundContinuityDiagnostics?: React.ReactNode;
   onScanPairingCode?(options: PairingScanOptions): Promise<PairingScanResult>;
@@ -486,6 +487,7 @@ export function ClipboardApp({
   onPairText,
   pairingDiagnostics,
   pairingTaskDiagnostics,
+  headerActions,
   backgroundContinuityDiagnostics,
   pairingImport,
   onScanPairingCode,
@@ -2815,6 +2817,7 @@ export function ClipboardApp({
               session={session}
             />
           )}
+          {headerActions}
         </header>
 
         {showIssueNotice && issues.length > 0 && !activeTask && (

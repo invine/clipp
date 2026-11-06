@@ -2,6 +2,7 @@ import { createUiSession } from "../../packages/ui/src/uiSession";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  ManagementExpandControl,
   navigateManagement,
   ManagementNavigationView,
 } from "../../apps/extension/src/ManagementNavigation";
@@ -145,8 +146,11 @@ it("the real navigation view retains an uncertain Open notice and retries its or
     renderToStaticMarkup(
       React.createElement(ManagementNavigationView, {
         consumer,
-        surface: "popup",
       })
+    );
+  const renderExpandControl = () =>
+    renderToStaticMarkup(
+      React.createElement(ManagementExpandControl, { consumer })
     );
   fixture.requests[0].reply({ ok: true, records: [] });
   try {
@@ -156,7 +160,7 @@ it("the real navigation view retains an uncertain Open notice and retries its or
       kind: "history",
       context: { search: "retained query", filterMode: "pinned" },
     });
-    expect(render()).toContain('disabled=""');
+    expect(renderExpandControl()).toContain('disabled=""');
     await jest.advanceTimersByTimeAsync(15000);
     fixture.requests.at(-1)?.reply({ ok: true, records: [] });
     expect(consumer.getSnapshot().records).toContainEqual(
@@ -177,7 +181,6 @@ it("the real navigation view retains an uncertain Open notice and retries its or
       renderToStaticMarkup(
         React.createElement(ManagementNavigationView, {
           consumer,
-          surface: "page",
         })
       )
     ).not.toContain("Open full-page Clipp");
@@ -185,6 +188,20 @@ it("the real navigation view retains an uncertain Open notice and retries its or
     stop();
     jest.useRealTimers();
   }
+});
+
+it("renders the popup expand action as an accessible compact header control", () => {
+  const fixture = runtimeFixture();
+  const consumer = createManagementNavigationConsumer(
+    fixture.runtime,
+    createUiSession()
+  );
+  const output = renderToStaticMarkup(
+    React.createElement(ManagementExpandControl, { consumer })
+  );
+  expect(output).toContain('aria-label="Open full-page Clipp"');
+  expect(output).toContain('title="Open full-page Clipp"');
+  expect(output).toContain('class="icon-button popup-expand-control"');
 });
 it.each(["status", "dismiss"])(
   "uncertain Open is released by confirmed %s before another explicit Open",

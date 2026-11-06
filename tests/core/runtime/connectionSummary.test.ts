@@ -19,7 +19,7 @@ it("counts only Trusted Devices and keeps a known direct path during additional 
     })
   ).toMatchObject({
     kind: "direct",
-    label: "Direct connection available",
+    label: "Direct Connection",
     direct: 1,
     relayed: 0,
   });
@@ -48,6 +48,7 @@ it.each([
     });
     expect(summary).toMatchObject({
       kind: "attention",
+      label: "Direct Connection · relay needs attention",
       direct: 1,
       ready: status === "ready" ? 2 : 1,
     });
@@ -144,4 +145,36 @@ it("keeps first use neutral when no Trusted Device or relay has been configured"
     direct: 0,
     relayed: 0,
   });
+});
+
+it("distinguishes a ready relay without a connected Trusted Device from peer paths", () => {
+  const facts = {
+    devices: [],
+    peers: [],
+    connectionStateKnown: true,
+    managedRelayConfigurations: [{ key: "relay" }],
+    managedRelayStates: [
+      {
+        key: "relay",
+        name: "Relay",
+        kind: "managed" as const,
+        status: "ready" as const,
+      },
+    ],
+  };
+  expect(projectConnectionSummary(facts)).toMatchObject({
+    kind: "waiting",
+    label: "Relay ready · no Trusted Devices",
+    ready: 1,
+  });
+  expect(
+    projectConnectionSummary({
+      ...facts,
+      devices: [{ deviceId: "trusted" }],
+      peers: ["trusted"],
+      peerConnections: [
+        { peerId: "trusted", hasDirect: true, hasRelay: false },
+      ],
+    }).label
+  ).toBe("Direct Connection");
 });

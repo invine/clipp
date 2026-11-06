@@ -456,7 +456,7 @@ it("names one connection control without claiming delivery for an untrusted tran
       connectionStateKnown: true,
     })
   );
-  expect(output).toContain('aria-label="Open Devices: No Trusted Devices yet"');
+  expect(output).toContain('aria-label="No Trusted Devices yet"');
   expect(output).not.toContain("Synced");
 });
 
@@ -467,7 +467,8 @@ it("connection control is a direct navigation action", () => {
   const control = output.match(
     /<button[^>]*data-session-focus="connections-summary"[^>]*>/
   )?.[0];
-  expect(control).toContain('aria-label="Open Devices:');
+  expect(control).toContain('aria-label="');
+  expect(control).toMatch(/title="[^"]+"/);
   expect(control).not.toContain("aria-haspopup");
 });
 

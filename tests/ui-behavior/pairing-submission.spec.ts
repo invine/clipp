@@ -65,26 +65,26 @@ test("the scenario catalog publishes connection observations and opens each work
   await page.goto("/");
   await page.getByText("Pairing diagnostics", { exact: true }).click();
   const status = page.getByRole("button", {
-    name: "Open Devices: Connection status unknown",
+    name: "Connection status unknown",
   });
   await expect(status).toBeVisible();
 
   await page.getByRole("button", { name: "Offline", exact: true }).click();
   await expect(
     page.getByRole("button", {
-      name: "Open Devices: No device connection available",
+      name: "No device connection available",
     })
   ).toBeVisible();
   await page.getByRole("button", { name: "Direct", exact: true }).click();
   await expect(
     page.getByRole("button", {
-      name: "Open Devices: Direct connection available",
+      name: "Direct Connection",
     })
   ).toBeVisible();
   await page.getByRole("button", { name: "Relayed", exact: true }).click();
   await expect(
     page.getByRole("button", {
-      name: "Open Devices: Relay connection available",
+      name: "Relayed Connection",
     })
   ).toBeVisible();
   await page.getByRole("button", { name: "Unknown", exact: true }).click();
