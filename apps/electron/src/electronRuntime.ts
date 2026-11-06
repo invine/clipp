@@ -29,6 +29,7 @@ import {
   shell,
   Tray,
 } from "electron";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createPairingCode } from "../../../packages/core/pairing/qrCode.js";
 import {
@@ -1155,6 +1156,21 @@ async function composeElectronRuntime(
           process.platform === "darwin"
         ) {
           img.setTemplateImage?.(true);
+          if (
+            candidate.endsWith("clipp-trayTemplate-16.png") &&
+            existsSync(path.join(iconBase, "clipp-trayTemplate-16@2x.png"))
+          ) {
+            const retinaPath = path.join(
+              iconBase,
+              "clipp-trayTemplate-16@2x.png"
+            );
+            img.addRepresentation({
+              scaleFactor: 2,
+              buffer: readFileSync(retinaPath),
+              width: 32,
+              height: 32,
+            });
+          }
         } else {
           img.setTemplateImage?.(false);
         }
