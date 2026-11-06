@@ -2809,10 +2809,12 @@ export function ClipboardApp({
               </button>
             </div>
           )}
-          <ConnectionStatusButton
-            summary={connectionSummary}
-            session={session}
-          />
+          {sessionState.destination !== "devices" && (
+            <ConnectionStatusButton
+              summary={connectionSummary}
+              session={session}
+            />
+          )}
         </header>
 
         {showIssueNotice && issues.length > 0 && !activeTask && (
