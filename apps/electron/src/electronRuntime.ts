@@ -1,6 +1,10 @@
 import { createElectronNotifications } from "./notifications";
 import { createElectronTaskActivation } from "./hostTaskActivation.js";
-import { iconBasePath } from "./trayIcon.js";
+import {
+  iconBasePath,
+  pickTrayIcon as chooseTrayIcon,
+  trayIconCandidates,
+} from "./trayIcon.js";
 import { cleanupNativeWebRtc } from "./nativeWebrtcCleanup.js";
 import { createElectronClipboardService as composeElectronClipboard } from "./clipboardFactory.js";
 import { createLocalRetentionPreference } from "../../../packages/core/runtime/localRetentionPreference.js";
@@ -535,11 +539,7 @@ async function composeElectronRuntime(
     __dirnameFallback
   );
   const appIconPath = path.join(iconBase, "clipp-appicon-256.png");
-  const trayIconCandidates = [
-    "clipp-trayTemplate-16.png",
-    "clipp-trayTemplate-32.png",
-    "clipp-trayTemplate-64.png",
-  ].map((f) => path.join(iconBase, f));
+  const trayIconPaths = trayIconCandidates(iconBase, process.platform);
 
   function dedupeMultiaddrs(values: string[]) {
     const seen = new Set<string>();
@@ -1147,21 +1147,12 @@ async function composeElectronRuntime(
   }
 
   function pickTrayIcon(): Electron.NativeImage {
-    for (const candidate of trayIconCandidates) {
-      const img = nativeImage.createFromPath(candidate);
-      if (!img.isEmpty()) {
-        if (
-          candidate.includes("trayTemplate") &&
-          process.platform === "darwin"
-        ) {
-          img.setTemplateImage?.(true);
-        } else {
-          img.setTemplateImage?.(false);
-        }
-        return img;
-      }
-    }
-    return nativeImage.createEmpty();
+    return chooseTrayIcon(
+      trayIconPaths,
+      (candidate) => nativeImage.createFromPath(candidate),
+      () => nativeImage.createEmpty(),
+      process.platform
+    );
   }
 
   function createTray() {
@@ -1185,7 +1176,7 @@ async function composeElectronRuntime(
     ]);
     tray.setToolTip("Clipp – clipboard sync");
     tray.setContextMenu(contextMenu);
-    tray.on("click", () => tray?.popUpContextMenu());
+    tray.on("click", () => showWindow());
   }
 
   async function shutdownServices() {

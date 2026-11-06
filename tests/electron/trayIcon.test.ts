@@ -1,5 +1,11 @@
 import type { NativeImage } from "electron";
-import { iconBasePath, pickTrayIcon } from "../../apps/electron/src/trayIcon";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import {
+  iconBasePath,
+  pickTrayIcon,
+  trayIconCandidates,
+} from "../../apps/electron/src/trayIcon";
 
 it("loads packaged icons from the macOS Resources directory", () => {
   expect(
@@ -35,3 +41,92 @@ it("makes the selected macOS menu bar image adapt to light and dark backgrounds"
   ).toBe(image);
   expect(image.setTemplateImage).toHaveBeenCalledWith(true);
 });
+
+it("prefers the density-aware template artwork on macOS and a visible mark elsewhere", () => {
+  expect(trayIconCandidates("/resources/icons", "darwin")).toEqual([
+    "/resources/icons/clipp-trayTemplate-16.png",
+    "/resources/icons/clipp-trayTemplate-16@2x.png",
+    "/resources/icons/clipp-trayTemplate.png",
+    "/resources/icons/clipp-trayTemplate@2x.png",
+    "/resources/icons/clipp-trayTemplate-32.png",
+    "/resources/icons/clipp-trayTemplate-64.png",
+    "/resources/icons/clipp-tray-16.png",
+    "/resources/icons/clipp-tray-32.png",
+    "/resources/icons/clipp-tray-64.png",
+    "/resources/icons/clipp-purple-32.png",
+    "/resources/icons/clipp-purple-16.png",
+    "/resources/icons/clipp-purple-256.png",
+  ]);
+  expect(trayIconCandidates("/resources/icons", "win32")).toEqual([
+    "/resources/icons/clipp-tray.png",
+    "/resources/icons/clipp-tray-16.png",
+    "/resources/icons/clipp-tray-32.png",
+    "/resources/icons/clipp-tray-64.png",
+    "/resources/icons/clipp-tray@2x.png",
+    "/resources/icons/clipp-purple-32.png",
+    "/resources/icons/clipp-purple-16.png",
+    "/resources/icons/clipp-purple-256.png",
+  ]);
+});
+
+it("keeps the selected artwork as a macOS template and disables template mode elsewhere", () => {
+  const image = {
+    isEmpty: () => false,
+    setTemplateImage: jest.fn(),
+  } as unknown as NativeImage;
+  pickTrayIcon(
+    ["tray.png"],
+    () => image,
+    () => image,
+    "win32"
+  );
+  expect(image.setTemplateImage).toHaveBeenCalledWith(false);
+});
+
+it.each(["apps/electron/assets/icons", "clipp-electron-icons-bundle"])(
+  "ships 1x and 2x tray artwork in %s",
+  (directory) => {
+    for (const base of ["clipp-tray", "clipp-trayTemplate"]) {
+      const oneX = readFileSync(path.join(directory, `${base}.png`));
+      const twoX = readFileSync(path.join(directory, `${base}@2x.png`));
+      expect(oneX.readUInt32BE(16)).toBe(16);
+      expect(oneX.readUInt32BE(20)).toBe(16);
+      expect(twoX.readUInt32BE(16)).toBe(32);
+      expect(twoX.readUInt32BE(20)).toBe(32);
+    }
+  }
+);
+
+it("packages the SVG source and its native PNG renderings", () => {
+  const electronPackage = JSON.parse(
+    readFileSync("apps/electron/package.json", "utf8")
+  );
+  const packagedIcons = electronPackage.build.extraResources[0].filter;
+  expect(packagedIcons).toEqual(
+    expect.arrayContaining([
+      "clipp-trayTemplate.svg",
+      "clipp-trayTemplate-16.png",
+      "clipp-trayTemplate-16@2x.png",
+      "clipp-trayTemplate.png",
+      "clipp-trayTemplate@2x.png",
+    ])
+  );
+});
+
+it.each(["apps/electron/assets/icons", "clipp-electron-icons-bundle"])(
+  "ships the supplied 16 px tray template at 1x and 2x in %s",
+  (directory) => {
+    for (const name of [
+      "clipp-trayTemplate-16.png",
+      "clipp-trayTemplate-16@2x.png",
+    ]) {
+      expect(() => readFileSync(path.join(directory, name))).not.toThrow();
+    }
+    const oneX = readFileSync(path.join(directory, "clipp-trayTemplate-16.png"));
+    const twoX = readFileSync(
+      path.join(directory, "clipp-trayTemplate-16@2x.png")
+    );
+    expect([oneX.readUInt32BE(16), oneX.readUInt32BE(20)]).toEqual([16, 16]);
+    expect([twoX.readUInt32BE(16), twoX.readUInt32BE(20)]).toEqual([32, 32]);
+  }
+);

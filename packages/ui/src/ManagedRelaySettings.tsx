@@ -310,23 +310,25 @@ export function ManagedRelaySettings({
               </p>
             )}
             <div className="peer-actions">
-              {config.kind === "managed" && onLogin && (
-                <button
-                  className="primary-button compact-button"
-                  type="button"
-                  onClick={() =>
-                    void session.relayAction(config.key, () =>
-                      onLogin(config.key)
-                    )
-                  }
-                  disabled={
-                    context.relayActions[config.key]?.pending ||
-                    (draft?.key === config.key && draft.pending)
-                  }
-                >
-                  Log in
-                </button>
-              )}
+              {config.kind === "managed" &&
+                onLogin &&
+                (!state || state.status === "login_needed") && (
+                  <button
+                    className="primary-button compact-button"
+                    type="button"
+                    onClick={() =>
+                      void session.relayAction(config.key, () =>
+                        onLogin(config.key)
+                      )
+                    }
+                    disabled={
+                      context.relayActions[config.key]?.pending ||
+                      (draft?.key === config.key && draft.pending)
+                    }
+                  >
+                    Log in
+                  </button>
+                )}
               {config.kind === "managed" && onManageAccount && (
                 <button
                   className="text-button"

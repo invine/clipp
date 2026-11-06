@@ -71,6 +71,12 @@ const paths = {
       <path d="m5.5 14.5 5-7m3 0 5 7M7 17h10" />
     </>
   ),
+  openExternal: (
+    <>
+      <path d="M14 4h6v6m0-6-9 9" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </>
+  ),
   moon: <path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   clipboard: (
