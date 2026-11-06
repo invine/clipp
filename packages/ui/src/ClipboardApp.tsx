@@ -607,6 +607,15 @@ export function ClipboardApp({
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [timeMenuOpen, setTimeMenuOpen] = useState(false);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState<string | null>(null);
+  useEffect(() => {
+    if (
+      deviceMenuOpen &&
+      (sessionState.destination !== "devices" ||
+        !devices.some((device) => device.deviceId === deviceMenuOpen))
+    )
+      setDeviceMenuOpen(null);
+  }, [deviceMenuOpen, devices, sessionState.destination]);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const [userToggledFilters, setUserToggledFilters] = useState(false);
   const localNameSession = session.name;
@@ -634,6 +643,25 @@ export function ClipboardApp({
   });
   const { confirmingIds, revokingIds, revocationError, deviceCopyFeedback } =
     deviceBehavior;
+  useEffect(() => {
+    if (
+      activeTask?.kind !== "peer-id" ||
+      !activeTask.entity ||
+      activeTask.entity === identity?.deviceId ||
+      devices.some((device) => device.deviceId === activeTask.entity)
+    )
+      return;
+    session.back();
+    session.update({
+      taskNotice: "This device is no longer available. Its peer ID was closed.",
+    });
+  }, [
+    activeTask?.kind,
+    activeTask?.entity,
+    identity?.deviceId,
+    devices,
+    session,
+  ]);
   const [relaysOpen, setRelaysOpen] = useState(true);
   const relayAddressBehavior = session.relayAddresses;
   useLayoutEffect(() => {
@@ -662,7 +690,7 @@ export function ClipboardApp({
   const clearRefreshPending = Boolean(clearRefreshAction?.pending);
   const clearRefreshError = clearRefreshAction?.feedback?.message ?? null;
   useEffect(() => {
-    const menu = Boolean(timeMenuOpen || sourceMenuOpen);
+    const menu = Boolean(timeMenuOpen || sourceMenuOpen || deviceMenuOpen);
     const drawer = showNav && sessionState.tasks.length === 0;
     const guardedClear =
       (clearPending || clearRefreshPending) && clearReviewOpen;
@@ -673,6 +701,13 @@ export function ClipboardApp({
         if (menu) {
           setTimeMenuOpen(false);
           setSourceMenuOpen(false);
+          const deviceMenu = rootRef.current?.querySelector<HTMLDetailsElement>(
+            ".device-action-menu[open]"
+          );
+          if (deviceMenu) {
+            deviceMenu.open = false;
+            deviceMenu.querySelector("summary")?.focus();
+          }
         } else dismissNav();
       },
     });
@@ -680,6 +715,7 @@ export function ClipboardApp({
     taskInput,
     timeMenuOpen,
     sourceMenuOpen,
+    deviceMenuOpen,
     showNav,
     sessionState.tasks.length,
     clearPending,
@@ -963,11 +999,15 @@ export function ClipboardApp({
       const target = e.target as HTMLElement | null;
       if (
         target?.closest(".time-filter-wrap") ||
-        target?.closest(".source-filter-wrap")
+        target?.closest(".source-filter-wrap") ||
+        target?.closest(".device-action-menu")
       )
         return;
       setTimeMenuOpen(false);
       setSourceMenuOpen(false);
+      rootRef.current
+        ?.querySelectorAll<HTMLDetailsElement>(".device-action-menu[open]")
+        .forEach((element) => (element.open = false));
     }
     document.addEventListener("mousedown", handleDocClick);
     return () => document.removeEventListener("mousedown", handleDocClick);
@@ -976,7 +1016,10 @@ export function ClipboardApp({
   useEffect(() => {
     function handleResize() {
       const size = hostContentSize(window, document);
-      setIsNarrow(size.width <= NARROW_CONTENT_WIDTH);
+      setIsNarrow(
+        size.width <=
+          (sessionState.destination === "devices" ? 640 : NARROW_CONTENT_WIDTH)
+      );
       const controls =
         rootRef.current?.querySelectorAll<HTMLElement>(".workspace-topbar");
       const controlsHeight = [...(controls ?? [])].reduce(
@@ -997,7 +1040,7 @@ export function ClipboardApp({
       window.removeEventListener("resize", handleResize);
       window.removeEventListener(HOST_GEOMETRY_EVENT, handleResize);
     };
-  }, []);
+  }, [sessionState.destination]);
 
   useEffect(() => {
     function handleHeight() {
@@ -1542,6 +1585,11 @@ export function ClipboardApp({
     );
   }
 
+  function openPeerId(deviceId: string, origin: string) {
+    deviceBehavior.resetDeviceCopyFeedback();
+    session.open({ kind: "peer-id", entity: deviceId, origin });
+  }
+
   function renderDestination() {
     return (
       <>
@@ -1558,58 +1606,47 @@ export function ClipboardApp({
         )}
         {sessionState.destination === "devices" && (
           <>
-            <section
-              className="device-section"
-              aria-labelledby="this-device-heading"
-            >
+            <section className="device-section" aria-label="This device">
               {identity && (
                 <>
-                  <h2 className="device-section-title" id="this-device-heading">
-                    This device
-                  </h2>
                   <div className="device-card device-card-local">
-                    <div className="device-card-icon" aria-hidden="true">
-                      <Icon name="computer" />
-                    </div>
                     <div className="peer-meta">
-                      <div className="peer-name-row">
+                      <h2 className="device-local-name">
                         <MiddleEllipsisText
                           className="peer-name"
                           text={identity.deviceName || "Local device"}
                         />
-                        <button
-                          className="icon-button"
-                          data-session-focus="rename-local"
-                          aria-label="Rename this device"
-                          disabled={!identityReady}
-                          onClick={deviceBehavior.beginEditLocalName}
-                        >
-                          <Icon name="edit" />
-                        </button>
-                      </div>
+                      </h2>
                       <MiddleEllipsisText
                         className="peer-sub"
                         text={identity.deviceId}
                         max={isNarrow ? 22 : 30}
                       />
-                      <span className="device-membership-status">
-                        This installation
-                      </span>
+                    </div>
+                    <div className="local-device-actions">
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="Show and copy this device's peer ID"
+                        data-session-focus="peer-id-local"
+                        onClick={() =>
+                          openPeerId(identity.deviceId, "peer-id-local")
+                        }
+                      >
+                        <Icon name="copy" />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        data-session-focus="rename-local"
+                        aria-label="Rename this device"
+                        disabled={!identityReady}
+                        onClick={deviceBehavior.beginEditLocalName}
+                      >
+                        <Icon name="edit" />
+                      </button>
                     </div>
                   </div>
-                  <button
-                    className="text-button"
-                    style={{
-                      marginTop: 4,
-                      marginLeft: 6,
-                      alignSelf: "flex-start",
-                    }}
-                    data-session-focus="pairing-qr"
-                    onClick={handleShowQr}
-                  >
-                    <Icon name="qr" />
-                    Show my QR
-                  </button>
                 </>
               )}
             </section>
@@ -1745,18 +1782,6 @@ export function ClipboardApp({
 
         {sessionState.destination === "devices" && (
           <>
-            <button
-              type="button"
-              className="primary-button"
-              disabled={!identityReady}
-              data-session-focus="pairing-start"
-              onClick={() =>
-                session.open({ kind: "pairing", origin: "pairing-start" })
-              }
-            >
-              Pair this device
-            </button>
-
             <section
               className="device-section trusted-device-section"
               aria-labelledby="trusted-devices-heading"
@@ -1766,7 +1791,7 @@ export function ClipboardApp({
                   className="device-section-title"
                   id="trusted-devices-heading"
                 >
-                  Trusted Devices
+                  Trusted devices
                 </h2>
                 <span className="device-count">
                   {devices.length} {devices.length === 1 ? "device" : "devices"}
@@ -1822,9 +1847,6 @@ export function ClipboardApp({
                       className={`device-card device-card-trusted ${isOnline ? "is-online" : "is-offline"}`}
                       title={connectionStatus.title}
                     >
-                      <div className="device-card-icon" aria-hidden="true">
-                        <Icon name="device" />
-                      </div>
                       <div className="peer-meta">
                         <MiddleEllipsisText
                           className="peer-name"
@@ -1836,35 +1858,12 @@ export function ClipboardApp({
                           max={isNarrow ? 22 : 32}
                         />
                         <span className="device-membership-status">
-                          Trusted · {connectionStatus.title}
+                          <span
+                            className={`device-status-dot ${isOnline ? "is-online" : connectionStateKnown ? "is-offline" : "is-unknown"}`}
+                            aria-hidden="true"
+                          />
+                          {connectionStatus.title}
                         </span>
-                      </div>
-                      <div className="peer-actions">
-                        {onRenameDevice && (
-                          <button
-                            className="icon-button"
-                            data-session-focus={`rename:${dev.deviceId}`}
-                            aria-label="Edit Local Device Alias"
-                            disabled={!identityReady}
-                            onClick={() =>
-                              deviceBehavior.beginEditDeviceName(dev)
-                            }
-                          >
-                            <Icon name="edit" />
-                          </button>
-                        )}
-                        <button
-                          className="text-button"
-                          title="Revoke this device"
-                          disabled={
-                            !identityReady ||
-                            confirmingIds.includes(dev.deviceId) ||
-                            revokingIds.includes(dev.deviceId)
-                          }
-                          onClick={() => void deviceBehavior.revokeDevice(dev)}
-                        >
-                          Revoke device
-                        </button>
                         {revokingIds.includes(dev.deviceId) && (
                           <span role="status">Revoking this device…</span>
                         )}
@@ -1873,6 +1872,88 @@ export function ClipboardApp({
                             Confirming device revocation…
                           </span>
                         )}
+                      </div>
+                      <div className="peer-actions">
+                        <details
+                          className="device-action-menu"
+                          onToggle={(event) => {
+                            const menu = event.currentTarget;
+                            if (menu.open) {
+                              rootRef.current
+                                ?.querySelectorAll<HTMLDetailsElement>(
+                                  ".device-action-menu[open]"
+                                )
+                                .forEach((other) => {
+                                  if (other !== menu) other.open = false;
+                                });
+                              setDeviceMenuOpen(dev.deviceId);
+                            } else {
+                              setDeviceMenuOpen((current) =>
+                                current === dev.deviceId ? null : current
+                              );
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Escape") return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            event.currentTarget.open = false;
+                            event.currentTarget
+                              .querySelector("summary")
+                              ?.focus();
+                          }}
+                        >
+                          <summary
+                            role="button"
+                            aria-expanded={deviceMenuOpen === dev.deviceId}
+                            aria-label={`${dev.displayName || dev.deviceName || "Device"} actions`}
+                            data-session-focus={`rename:${dev.deviceId}`}
+                          >
+                            <Icon name="more" />
+                          </summary>
+                          <div className="device-action-popover">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.currentTarget.closest("details")!.open =
+                                  false;
+                                openPeerId(
+                                  dev.deviceId,
+                                  `rename:${dev.deviceId}`
+                                );
+                              }}
+                            >
+                              View peer ID
+                            </button>
+                            {onRenameDevice && (
+                              <button
+                                type="button"
+                                aria-label="Edit Local Device Alias"
+                                disabled={!identityReady}
+                                onClick={(event) => {
+                                  event.currentTarget.closest("details")!.open =
+                                    false;
+                                  deviceBehavior.beginEditDeviceName(dev);
+                                }}
+                              >
+                                Edit alias
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={
+                                !identityReady ||
+                                confirmingIds.includes(dev.deviceId) ||
+                                revokingIds.includes(dev.deviceId)
+                              }
+                              onClick={() =>
+                                void deviceBehavior.revokeDevice(dev)
+                              }
+                            >
+                              Revoke device
+                            </button>
+                          </div>
+                        </details>
                       </div>
                     </div>
                   );
@@ -2616,7 +2697,9 @@ export function ClipboardApp({
         />
       )}
       <div className="workspace-content">
-        <header className="workspace-topbar">
+        <header
+          className={`workspace-topbar ${sessionState.destination === "devices" ? "devices-topbar" : ""}`}
+        >
           <button
             type="button"
             className="icon-button navigation-toggle"
@@ -2700,6 +2783,32 @@ export function ClipboardApp({
                   )}
                 </>
               )}
+            </div>
+          )}
+          {sessionState.destination === "devices" && (
+            <div className="device-header-actions">
+              <button
+                type="button"
+                className="primary-button"
+                aria-label="Pair this device"
+                disabled={!identityReady}
+                data-session-focus="pairing-start"
+                onClick={() =>
+                  session.open({ kind: "pairing", origin: "pairing-start" })
+                }
+              >
+                Pair
+              </button>
+              <button
+                type="button"
+                className="icon-button device-qr-button"
+                aria-label="Show my QR"
+                disabled={!identityReady}
+                data-session-focus="pairing-qr"
+                onClick={handleShowQr}
+              >
+                <Icon name="qr" />
+              </button>
             </div>
           )}
           <ConnectionStatusButton
@@ -2881,29 +2990,29 @@ export function ClipboardApp({
           data-session-focus="workspace"
           style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
         >
-          <div className="workspace-page-head" aria-hidden="true">
-            <div>
-              <div className="workspace-page-title">
-                {sessionState.destination === "history"
-                  ? filterMode === "pinned"
-                    ? "Pinned Clips"
-                    : filterMode === "links"
-                      ? "Links"
-                      : "Clipboard"
-                  : sessionState.destination[0].toUpperCase() +
-                    sessionState.destination.slice(1)}
-              </div>
-              <p>
-                {sessionState.destination === "history"
-                  ? "Your clipboard, across your devices."
-                  : sessionState.destination === "settings"
-                    ? "Make Clipp work the way you do."
-                    : sessionState.destination === "devices"
-                      ? "Manage the devices in your network."
+          {sessionState.destination !== "devices" && (
+            <div className="workspace-page-head" aria-hidden="true">
+              <div>
+                <div className="workspace-page-title">
+                  {sessionState.destination === "history"
+                    ? filterMode === "pinned"
+                      ? "Pinned Clips"
+                      : filterMode === "links"
+                        ? "Links"
+                        : "Clipboard"
+                    : sessionState.destination[0].toUpperCase() +
+                      sessionState.destination.slice(1)}
+                </div>
+                <p>
+                  {sessionState.destination === "history"
+                    ? "Your clipboard, across your devices."
+                    : sessionState.destination === "settings"
+                      ? "Make Clipp work the way you do."
                       : "Review your device requests."}
-              </p>
+                </p>
+              </div>
             </div>
-          </div>
+          )}
           {sessionState.destination !== "history" && (
             <section
               className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : sessionState.destination === "devices" ? "devices-pane" : ""}`}
@@ -3357,6 +3466,45 @@ export function ClipboardApp({
               onClick={() => void submitPairText()}
             >
               Submit pairing text
+            </button>
+          </TaskDialog>,
+          document.body
+        )}
+
+      {activeTask?.kind === "peer-id" &&
+        activeTask.entity &&
+        createPortal(
+          <TaskDialog
+            title="Peer ID"
+            pending={false}
+            originKey={activeTask.origin}
+            cancelLabel="Close"
+            onCancel={() => {
+              deviceBehavior.resetDeviceCopyFeedback();
+              session.back();
+            }}
+          >
+            <p className="peer-id-full">{activeTask.entity}</p>
+            {deviceCopyFeedback && <p role="alert">{deviceCopyFeedback}</p>}
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                const id = activeTask.entity!;
+                void deviceBehavior
+                  .copyDeviceValue("Peer ID", id, true)
+                  .then((copied) => {
+                    const current = session.getSnapshot().tasks.at(-1);
+                    if (
+                      copied &&
+                      current?.kind === "peer-id" &&
+                      current.entity === id
+                    )
+                      session.back();
+                  });
+              }}
+            >
+              Copy peer ID
             </button>
           </TaskDialog>,
           document.body

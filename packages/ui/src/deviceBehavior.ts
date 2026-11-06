@@ -130,8 +130,13 @@ export function useDeviceBehavior({
       });
   }
 
-  function beginEditDeviceName(device: Device) {
+  function resetDeviceCopyFeedback() {
+    copyGeneration.current += 1;
     setDeviceCopyFeedback(null);
+  }
+
+  function beginEditDeviceName(device: Device) {
+    resetDeviceCopyFeedback();
     session.open({
       kind: "alias",
       entity: device.deviceId,
@@ -179,7 +184,7 @@ export function useDeviceBehavior({
       });
   }
 
-  async function copyDeviceValue(label: string, value: string) {
+  async function copyDeviceValue(label: string, value: string, silent = false) {
     const expectedOwner = runtimeOwner;
     const expectedIdentity = identity?.deviceId;
     const generation = ++copyGeneration.current;
@@ -191,7 +196,8 @@ export function useDeviceBehavior({
         identityRef.current === expectedIdentity &&
         generation === copyGeneration.current
       ) {
-        setDeviceCopyFeedback(`${label} copied.`);
+        setDeviceCopyFeedback(silent ? null : `${label} copied.`);
+        return true;
       }
     } catch {
       if (
@@ -205,6 +211,7 @@ export function useDeviceBehavior({
         );
       }
     }
+    return false;
   }
 
   async function revokeDevice(device: Device): Promise<void> {
@@ -278,6 +285,7 @@ export function useDeviceBehavior({
     saveDeviceName,
     restoreReportedDeviceName,
     copyDeviceValue,
+    resetDeviceCopyFeedback,
     revokeDevice,
   };
 }

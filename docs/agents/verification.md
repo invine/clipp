@@ -58,6 +58,18 @@ No live acceptance, signed release, publication or deployment is implied by a
 routine pass. Preserve existing unresolved runtime acceptance tickets and record
 unexecuted procedures as **not run**.
 
+### Electron Quit regression
+
+After building Electron, run `node tests/harness/electron-quit.mjs` on a desktop
+session. It starts the production main with a temporary profile and an inert
+clipboard, creates and closes a data channel using libp2p's own native WebRTC
+dependency, requests normal Quit, and requires exit code 0 within five seconds.
+This catches native callback finalizer deadlocks that the inert window lifecycle
+test cannot observe. It opens local networking sockets but uses no saved profile
+or relay credentials. Failed probes terminate only their own child process.
+To check packaged dependencies, pass the absolute `app.asar/dist/main.cjs` path
+and a compatible development Electron executable as the two arguments.
+
 ### Packaged Electron WebRTC smoke check
 
 Electron's main bundle leaves `@libp2p/webrtc` external. Keep it in the Electron

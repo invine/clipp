@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ClipboardWorkspace } from "../../../packages/ui/src/ClipboardWorkspace";
 import { createUiRuntimeStore } from "../../../packages/ui/src/runtimeAdapter";
 import { createUiSession } from "../../../packages/ui/src/uiSession";
+import { createHostTaskInput } from "../../../packages/ui/src/hostTaskInput";
 import type { ClipboardAppProps } from "../../../packages/ui/src/ClipboardApp";
 import type { Device } from "../../../packages/ui/src/types";
 import type {
@@ -35,12 +36,16 @@ const device: Device = {
 const identity = { deviceId: "local-one", deviceName: "Local Device" };
 const session = createUiSession();
 session.update({ destination: "devices" });
+const taskInput = createHostTaskInput(session);
+taskInput.setReady(true);
+let backSequence = 0;
 let effects: readonly string[] = [];
 const effectListeners = new Set<() => void>();
 const pending: Deferred[] = [];
 const confirmations: Array<(result: boolean) => void> = [];
 let confirmationCount = 0;
 let copyShouldFail = true;
+let holdCopies = false;
 function notify() {
   effectListeners.forEach((listener) => listener());
 }
@@ -65,6 +70,11 @@ function reject(kind: string, message: string) {
 const host: UiHostEffects = {
   copyText: async (text) => {
     record("copy", text);
+    if (holdCopies) {
+      await new Promise<void>((resolve, reject) =>
+        pending.push({ kind: "copy", resolve: () => resolve(), reject })
+      );
+    }
     if (copyShouldFail) throw new Error("clipboard unavailable");
   },
   confirm: async (message) => {
@@ -149,7 +159,7 @@ function ScenarioControls({
   }
   return (
     <aside aria-label="Device management scenario controls">
-      <h1>Device management scenario</h1>
+      <h2>Scenario controls</h2>
       <button
         type="button"
         onClick={() =>
@@ -187,6 +197,49 @@ function ScenarioControls({
       </button>
       <button
         type="button"
+        onClick={() => {
+          copyShouldFail = false;
+          holdCopies = true;
+        }}
+      >
+        Hold clipboard writes
+      </button>
+      <button type="button" onClick={() => resolve("copy", undefined)}>
+        Resolve held clipboard write
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const current = adapter.getSnapshot() as ClipboardAppProps;
+          adapter.publish({
+            ...current,
+            peers: [device.deviceId],
+            connectionStateKnown: true,
+            peerConnections: [
+              {
+                peerId: device.deviceId,
+                path: "direct",
+                hasDirect: true,
+                hasRelay: false,
+                addrs: [],
+              },
+            ],
+          });
+        }}
+      >
+        Publish connected device observation
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const current = adapter.getSnapshot() as ClipboardAppProps;
+          adapter.publish({ ...current, connectionStateKnown: false });
+        }}
+      >
+        Publish unknown connection observation
+      </button>
+      <button
+        type="button"
         onClick={() =>
           publishDevices([
             {
@@ -217,6 +270,14 @@ function ScenarioControls({
       </button>
       <button type="button" onClick={() => session.back()}>
         Return to device editor
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void taskInput.back({ sequence: ++backSequence, imeVisible: false })
+        }
+      >
+        Send native back
       </button>
       <button type="button" onClick={() => resolveConfirmation(true)}>
         Confirm scripted revocation
@@ -253,6 +314,7 @@ function Scenario() {
     <ClipboardWorkspace
       adapter={adapter}
       session={session}
+      taskInput={taskInput}
       pairingDiagnostics={controls}
     />
   );

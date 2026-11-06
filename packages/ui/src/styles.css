@@ -4088,6 +4088,203 @@ html[data-host-geometry="android"] .android-host {
 .workspace-topbar .connection-label {
   display: none;
 }
+
+.device-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline-start: auto;
+}
+
+.device-header-actions .primary-button {
+  min-height: 2.5rem;
+  padding-inline: 0.875rem;
+  border-radius: 0.5rem;
+}
+
+.device-header-actions .device-qr-button {
+  background: var(--workspace-raised);
+  border-radius: 0.5rem;
+}
+
+.devices-topbar .connection-status {
+  margin-inline-start: 0;
+}
+
+.device-local-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Device rows stay compact while leaving enough room for full touch targets. */
+.app-shell:not(.workspace-cramped) .app-main:has(.devices-pane) {
+  padding: 1.5rem 1.75rem;
+}
+
+.devices-pane {
+  gap: 0.75rem;
+  padding: 0;
+}
+
+.devices-pane .device-section {
+  padding: 1rem;
+}
+
+.devices-pane .peer-name {
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.devices-pane .peer-sub {
+  font-size: 0.8125rem;
+}
+
+.devices-pane .device-local-name .peer-name {
+  font-size: 1rem;
+}
+
+.devices-pane .device-card {
+  flex-wrap: nowrap;
+  align-items: center;
+  padding: 0.75rem 0;
+  gap: 0.625rem;
+}
+
+.devices-pane .device-card-local {
+  padding: 0;
+  border: 0;
+}
+
+.devices-pane .device-card .peer-meta {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.local-device-actions {
+  display: flex;
+  flex: none;
+}
+
+.devices-pane .device-list {
+  gap: 0;
+}
+
+.devices-pane .device-card-trusted:last-child {
+  border-bottom: 0;
+}
+
+.devices-pane .device-card .peer-actions {
+  flex: none;
+  margin: 0;
+  align-items: center;
+}
+
+.device-membership-status {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.device-status-dot {
+  flex: 0 0 0.5rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--clipp-text-muted);
+}
+
+.device-status-dot.is-online {
+  background: #22c55e;
+}
+
+.device-action-menu {
+  position: relative;
+}
+
+.device-action-menu > summary {
+  display: grid;
+  place-items: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.device-action-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.device-action-menu > summary:hover,
+.device-action-menu[open] > summary {
+  background: var(--workspace-raised);
+}
+
+.device-action-menu > summary:focus-visible {
+  outline: 2px solid var(--clipp-focus);
+  outline-offset: 2px;
+}
+
+.device-action-menu > summary .icon {
+  transform: rotate(90deg);
+}
+
+.device-action-popover {
+  position: absolute;
+  z-index: 5;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  min-width: 10.5rem;
+  padding: 0.3rem;
+  border-radius: 0.5rem;
+  background: var(--workspace-raised);
+  box-shadow: var(--md-elevation-2);
+}
+
+.device-action-popover button {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--clipp-text);
+  text-align: start;
+}
+
+.device-action-popover button:hover:not(:disabled) {
+  background: var(--clipp-border);
+}
+
+.peer-id-full {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 800px) {
+  .app-shell:not(.workspace-cramped) .app-main:has(.devices-pane) {
+    padding: 1rem;
+  }
+
+  .devices-pane > .trusted-device-section {
+    margin-top: 0;
+  }
+}
+
+@media (min-width: 1101px) {
+  .devices-pane {
+    max-width: 65rem;
+    grid-template-columns: minmax(17rem, 0.8fr) minmax(23rem, 1.2fr);
+    gap: 1rem;
+  }
+
+  .devices-pane > .trusted-device-section {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
 .workspace-topbar .search-field {
   flex: 1 1 10rem;
   max-width: none;
@@ -4128,5 +4325,14 @@ html[data-host-geometry="android"] .android-host {
 @media (max-width: 600px) {
   .app-shell.workspace-narrow .workspace-topbar {
     padding-inline-end: max(3.5rem, 48px);
+  }
+
+  .app-shell.workspace-narrow .devices-topbar {
+    flex-wrap: nowrap;
+    padding-inline: 0.5rem;
+  }
+
+  .devices-topbar .connection-status {
+    position: static;
   }
 }

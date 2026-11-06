@@ -108,7 +108,7 @@ it("keeps ordinary offline devices and empty relays out of the fault count and b
   const session = createUiSession();
   session.update({ destination: "devices" });
   const html = render({ initializationError: true, session });
-  expect(html).toMatch(/disabled=""[^>]*>Pair this device/);
+  expect(html).toMatch(/aria-label="Pair this device"[^>]*disabled=""/);
   expect(html).not.toContain('aria-label="Share current clipboard now"');
   session.update({ destination: "history" });
   const historyHtml = render({ initializationError: true, session });

@@ -1,7 +1,7 @@
 .ui-scenario-controls {
   position: fixed;
   z-index: 10000;
-  top: 0.5rem;
+  bottom: 0.5rem;
   right: 0.5rem;
   width: min(22rem, calc(100vw - 1rem));
   max-height: 35dvh;

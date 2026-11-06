@@ -515,9 +515,9 @@ it("Devices distinguishes this installation from trusted devices when one is off
   );
 
   expect(output).toContain("This device");
-  expect(output).toContain("Trusted Devices");
+  expect(output).toContain("Trusted devices");
   expect(output).toContain("Work laptop");
-  expect(output).toContain("Trusted · Offline");
+  expect(output).toContain("Offline");
   expect(output).not.toContain("Last seen");
   expect(output).toContain("Pair this device");
 
