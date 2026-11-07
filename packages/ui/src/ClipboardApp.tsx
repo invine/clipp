@@ -3269,6 +3269,7 @@ export function ClipboardApp({
         createPortal(
           <TaskDialog
             title="Clip details"
+            fullOnNarrow={false}
             focusVersion={sessionState.navigationVersion}
             pending={false}
             originKey={activeTask?.origin}

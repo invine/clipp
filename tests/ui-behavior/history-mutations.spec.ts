@@ -42,6 +42,22 @@ test("a History row has only Copy and Delete actions, while Clip details stay on
   await expect(page.getByRole("dialog", { name: "Clip details" })).toBeVisible();
 });
 
+test("Clip details stay centered at phone width", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/history-mutations.html?history");
+  await page
+    .locator('[data-clip-id="clip-one"]')
+    .getByRole("button", { name: "View Clip details" })
+    .click();
+
+  const dialog = page.getByRole("dialog", { name: "Clip details" });
+  const bounds = await dialog.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.width).toBeLessThan(390);
+  expect(bounds!.x).toBeGreaterThan(0);
+  expect(bounds!.y).toBeGreaterThan(0);
+});
+
 test("folding History filters preserves search, tab selection, and Source", async ({
   page,
 }) => {

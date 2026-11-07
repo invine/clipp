@@ -14,6 +14,7 @@ export type TaskDialogProps = {
   onDismiss?(): void;
   originKey?: string;
   className?: string;
+  fullOnNarrow?: boolean;
   initialFocusKey?: string;
   returnLabel?: string;
   focusVersion?: number;
@@ -30,6 +31,7 @@ export function TaskDialog({
   onDismiss,
   originKey,
   className,
+  fullOnNarrow = true,
   initialFocusKey,
   returnLabel = "Close",
   focusVersion,
@@ -80,7 +82,7 @@ export function TaskDialog({
 
   return (
     <div
-      className={`task-dialog-backdrop ${narrow && role === "dialog" ? "task-dialog-full" : ""}`}
+      className={`task-dialog-backdrop ${narrow && role === "dialog" && fullOnNarrow ? "task-dialog-full" : ""}`}
       role="presentation"
     >
       <div
