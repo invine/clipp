@@ -51,11 +51,16 @@ test("Clip details stay centered at phone width", async ({ page }) => {
     .click();
 
   const dialog = page.getByRole("dialog", { name: "Clip details" });
+  await expect(dialog.getByRole("button", { name: "Close details" })).toBeVisible();
   const bounds = await dialog.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.width).toBeLessThan(390);
   expect(bounds!.x).toBeGreaterThan(0);
   expect(bounds!.y).toBeGreaterThan(0);
+  const metadata = dialog.locator("details.clip-details-metadata");
+  await expect(metadata).not.toHaveAttribute("open", "");
+  await metadata.getByText("Clip information", { exact: true }).click();
+  await expect(metadata.getByText("clip-one", { exact: true })).toBeVisible();
 });
 
 test("folding History filters preserves search, tab selection, and Source", async ({

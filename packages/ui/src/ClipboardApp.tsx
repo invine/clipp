@@ -3270,6 +3270,8 @@ export function ClipboardApp({
           <TaskDialog
             title="Clip details"
             fullOnNarrow={false}
+            headerDismiss
+            showCancel={false}
             focusVersion={sessionState.navigationVersion}
             pending={false}
             originKey={activeTask?.origin}

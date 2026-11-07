@@ -47,9 +47,6 @@ export function ClipDetails({
   return (
     <div className="clip-details">
       <div className="clip-details-primary">
-        <p className="clip-details-type">
-          {clip.type === "url" ? "Link" : "Text Clip"}
-        </p>
         <pre className="clip-details-content">{clip.content}</pre>
       </div>
       <div className="task-dialog-actions clip-details-actions">
@@ -104,7 +101,7 @@ export function ClipDetails({
           Delete Clip
         </button>
       </div>
-      <details className="clip-details-metadata" open>
+      <details className="clip-details-metadata">
         <summary>Clip information</summary>
         <dl>
           {sourceName && (

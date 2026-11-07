@@ -2529,6 +2529,26 @@ html[data-host-geometry="android"] .android-host {
 .task-dialog-header h2 {
   margin: 0;
 }
+.task-dialog-header-close {
+  display: grid;
+  width: var(--clipp-target-min, 44px);
+  height: var(--clipp-target-min, 44px);
+  flex: 0 0 auto;
+  place-items: center;
+  order: 1;
+  margin-inline-start: auto;
+  border: 0;
+  border-radius: var(--md-radius-sm);
+  background: transparent;
+  color: var(--clipp-text);
+  font: inherit;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+.task-dialog-header-close:focus-visible {
+  outline: 2px solid var(--clipp-focus);
+  outline-offset: 2px;
+}
 .task-dialog label {
   display: flex;
   flex-direction: column;
