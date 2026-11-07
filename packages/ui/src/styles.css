@@ -3687,19 +3687,13 @@ html[data-host-geometry="android"] .android-host {
 }
 
 .clip-details-dialog .clip-details-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
+  justify-content: flex-start;
   gap: 0.5rem;
 }
 
 .clip-details-dialog .clip-details-actions > .primary-button {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.clip-details-dialog .clip-details-actions > .text-button {
-  grid-column: 2;
-  grid-row: 1;
+  min-width: 6rem;
 }
 
 .clip-details-more {
