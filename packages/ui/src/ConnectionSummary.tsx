@@ -3,6 +3,84 @@ import type { projectConnectionSummary } from "../../core/runtime/connectionSumm
 import type { UiSession } from "./uiSession";
 
 type Summary = ReturnType<typeof projectConnectionSummary>;
+type ConnectionKind = Summary["kind"];
+
+const connectionPresentation: Record<
+  ConnectionKind,
+  { description(summary: Summary): string; glyph: React.ReactNode }
+> = {
+  direct: {
+    description: (summary) =>
+      `${summary.direct} Trusted Device${summary.direct === 1 ? " is" : "s are"} connected directly.`,
+    glyph: (
+      <>
+        <circle cx="12" cy="5" r="2.5" />
+        <path d="m5.5 14.5 5-7m3 0 5 7M7 17h10" />
+      </>
+    ),
+  },
+  relay: {
+    description: (summary) =>
+      `${summary.relayed} Trusted Device${summary.relayed === 1 ? " is" : "s are"} connected through a relay.`,
+    glyph: <path d="m6 14 4-6m4 0 4 6M12 2l3 3-3 3-3-3Z" />,
+  },
+  attention: {
+    description: (summary) => {
+      const connected = summary.direct + summary.relayed;
+      return `${connected} Trusted Device${connected === 1 ? " has" : "s have"} a working connection. One or more configured relays need attention.`;
+    },
+    glyph: <path d="m5.5 14.5 3-5m10 5-3-5M12 2v8m0 4h.01" />,
+  },
+  unknown: {
+    description: () =>
+      "Clipp cannot confirm the current connection state. Check Devices for the latest available information.",
+    glyph: <path d="M9 6a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01M7 17h10" />,
+  },
+  starting: {
+    description: (summary) =>
+      `Clipp is trying to connect to ${summary.configured} configured relay${summary.configured === 1 ? "" : "s"}.`,
+    glyph: (
+      <>
+        <circle cx="12" cy="5" r="2.5" />
+        <path strokeDasharray="1 3" d="m6 14 3-4m6 0 3 4" />
+      </>
+    ),
+  },
+  waiting: {
+    description: (summary) =>
+      `${summary.ready} of ${summary.configured} configured relay${summary.configured === 1 ? " is" : "s are"} ready. No Trusted Devices are currently connected.`,
+    glyph: (
+      <>
+        <circle cx="12" cy="5" r="2.5" />
+        <path strokeDasharray="1 3" d="m6 14 3-4m6 0 3 4" />
+      </>
+    ),
+  },
+  idle: {
+    description: () =>
+      "No Trusted Devices or managed relays are set up. Add or pair a device to use Clipp across devices.",
+    glyph: (
+      <>
+        <circle cx="12" cy="5" r="2.5" />
+        <path strokeDasharray="1 3" d="m6 14 3-4m6 0 3 4" />
+      </>
+    ),
+  },
+  offline: {
+    description: (summary) =>
+      summary.trustedDevices
+        ? `${summary.trustedDevices} Trusted Device${summary.trustedDevices === 1 ? " remains" : "s remain"} trusted while offline; none are connected right now.`
+        : "No Trusted Devices are connected right now.",
+    glyph: (
+      <>
+        <circle cx="12" cy="5" r="2.5" />
+        <path d="m6 14 3-4m6 0 3 4" />
+        <path d="m3 3 18 18" />
+      </>
+    ),
+  },
+};
+
 export function ConnectionStatusButton({
   summary,
   session,
@@ -15,23 +93,8 @@ export function ConnectionStatusButton({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
-  const connected = summary.direct + summary.relayed;
-  const description =
-    summary.kind === "direct"
-      ? `${summary.direct} Trusted Device${summary.direct === 1 ? " is" : "s are"} connected directly.`
-      : summary.kind === "relay"
-        ? `${summary.relayed} Trusted Device${summary.relayed === 1 ? " is" : "s are"} connected through a relay.`
-        : summary.kind === "attention"
-          ? `${connected} Trusted Device${connected === 1 ? " has" : "s have"} a working connection. One or more configured relays need attention.`
-          : summary.kind === "unknown"
-            ? "Clipp cannot confirm the current connection state. Check Devices for the latest available information."
-            : summary.kind === "starting"
-              ? `Clipp is trying to connect to ${summary.configured} configured relay${summary.configured === 1 ? "" : "s"}.`
-              : summary.kind === "waiting"
-                ? `${summary.ready} of ${summary.configured} configured relay${summary.configured === 1 ? " is" : "s are"} ready. No Trusted Devices are currently connected.`
-                : summary.kind === "idle"
-                  ? "No Trusted Devices or managed relays are set up. Add or pair a device to use Clipp across devices."
-                  : `${summary.trustedDevices} Trusted Device${summary.trustedDevices === 1 ? " is" : "s are"} available, but none are connected right now.`;
+  const presentation = connectionPresentation[summary.kind];
+  const description = presentation.description(summary);
 
   useEffect(() => {
     if (!open) return;
@@ -79,27 +142,7 @@ export function ConnectionStatusButton({
         >
           <circle cx="4" cy="17" r="2.5" />
           <circle cx="20" cy="17" r="2.5" />
-          {summary.kind === "direct" ? (
-            <>
-              <circle cx="12" cy="5" r="2.5" />
-              <path d="m5.5 14.5 5-7m3 0 5 7M7 17h10" />
-            </>
-          ) : summary.kind === "attention" ? (
-            <path d="m5.5 14.5 3-5m10 5-3-5M12 2v8m0 4h.01" />
-          ) : summary.kind === "relay" ? (
-            <path d="m6 14 4-6m4 0 4 6M12 2l3 3-3 3-3-3Z" />
-          ) : summary.kind === "unknown" ? (
-            <path d="M9 6a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01M7 17h10" />
-          ) : (
-            <>
-              <circle cx="12" cy="5" r="2.5" />
-              <path
-                strokeDasharray={summary.kind === "offline" ? undefined : "1 3"}
-                d="m6 14 3-4m6 0 3 4"
-              />
-              {summary.kind === "offline" && <path d="m3 3 18 18" />}
-            </>
-          )}
+          {presentation.glyph}
         </svg>
       </button>
       {open && (

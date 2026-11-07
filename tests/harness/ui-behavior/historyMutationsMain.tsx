@@ -65,6 +65,39 @@ const atLocalTime = (hours: number, minutes: number) => {
   capturedAt.setHours(hours, minutes, 0, 0);
   return capturedAt.getTime();
 };
+const atLocalDayTime = (daysAgo: number, hours: number, minutes: number) => {
+  const capturedAt = new Date();
+  capturedAt.setDate(capturedAt.getDate() - daysAgo);
+  capturedAt.setHours(hours, minutes, 0, 0);
+  return capturedAt.getTime();
+};
+const mondayAt = (hours: number, minutes: number) => {
+  const capturedAt = new Date();
+  capturedAt.setDate(capturedAt.getDate() - ((capturedAt.getDay() + 6) % 7));
+  capturedAt.setHours(hours, minutes, 0, 0);
+  return capturedAt.getTime();
+};
+const referenceClips: Clip[] = [
+  [1, "text", "77082497161", "scenario-device", atLocalTime(11, 22)],
+  [2, "text", "77082497161", "scenario-device", atLocalTime(11, 14)],
+  [3, "url", "https://clipp.app/notes/device-sync", "pixel-nine", atLocalTime(11, 7)],
+  [4, "text", "7082497161", "scenario-device", atLocalTime(11, 5)],
+  [5, "text", "576097", "scenario-device", atLocalTime(10, 58)],
+  [6, "text", "0xdaa2b3b9fb5932bea5ece173c1aced92269f3c48", "scenario-device", atLocalTime(10, 57)],
+  [7, "text", "Pick up the documents before the meeting.", "pixel-nine", atLocalDayTime(1, 18, 32)],
+  [8, "url", "https://developer.mozilla.org/en-US/docs/Web", "scenario-device", atLocalDayTime(1, 15, 10)],
+  [9, "text", "Meeting notes: review the mobile layout, test the connection states, and share the updated design with the team before Friday.", "scenario-device", atLocalDayTime(1, 13, 45)],
+  [10, "text", "23 Orchard Street, Dubai", "pixel-nine", atLocalDayTime(1, 11, 28)],
+  [11, "url", "https://example.com/articles/designing-for-small-screens", "pixel-nine", mondayAt(16, 12)],
+  [12, "text", "Remember to bring the charger.", "scenario-device", mondayAt(9, 6)],
+].map(([id, type, content, originPeerId, capturedAt]) => ({
+  id: `reference-clip-${id}`,
+  type: type as Clip["type"],
+  content: content as string,
+  originPeerId: originPeerId as string,
+  capturedAt: capturedAt as number,
+  shareExpiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+}));
 clip.capturedAt = atLocalTime(11, 22);
 otherClip.capturedAt = atLocalTime(11, 14);
 clip.shareExpiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
@@ -149,22 +182,30 @@ function ScenarioControls() {
 
 let dynamicProps: ClipboardAppProps;
 const previewConnection = new URLSearchParams(window.location.search).get("connection");
+const referencePreview = new URLSearchParams(window.location.search).has("reference");
 const connectedPreview = previewConnection === "direct" || previewConnection === "relay";
+const previewPeerId = referencePreview ? "pixel-nine" : "remote-device";
 const props: ClipboardAppProps = {
-  clips: [clip, otherClip],
-  devices: [{ deviceId: "remote-device", deviceName: connectedPreview ? "Pixel 9" : "Remote Device" }],
+  clips: referencePreview ? referenceClips : [clip, otherClip],
+  devices: referencePreview
+    ? [{ deviceId: "pixel-nine", deviceName: "Pixel 9" }]
+    : [{ deviceId: "remote-device", deviceName: connectedPreview ? "Pixel 9" : "Remote Device" }],
   pending: [],
-  peers: connectedPreview ? ["remote-device"] : [],
+  peers: connectedPreview ? [previewPeerId] : [],
   ...(connectedPreview
     ? {
         connectionStateKnown: true,
         peerConnections: [
-          { peerId: "remote-device", path: previewConnection === "direct" ? "direct" : "relay", hasDirect: previewConnection === "direct", hasRelay: previewConnection === "relay", addrs: [] },
+          { peerId: previewPeerId, path: previewConnection === "direct" ? "direct" : "relay", hasDirect: previewConnection === "direct", hasRelay: previewConnection === "relay", addrs: [] },
         ],
       }
     : {}),
-  identity: { deviceId: "scenario-device", deviceName: connectedPreview ? "Desktop" : "Scenario Device" },
-  pinnedIds: connectedPreview ? ["clip-one"] : [],
+  identity: { deviceId: "scenario-device", deviceName: referencePreview || connectedPreview ? "Desktop" : "Scenario Device" },
+  pinnedIds: referencePreview
+    ? ["reference-clip-3", "reference-clip-7", "reference-clip-12"]
+    : connectedPreview
+      ? ["clip-one"]
+      : [],
   session,
   onDeleteClip: async (id) => {
     noteTarget(`delete:${id}`);

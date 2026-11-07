@@ -67,6 +67,18 @@ test("folding History filters preserves search, tab selection, and Source", asyn
   await expect(page.getByRole("button", { name: "Source: Remote" })).toBeVisible();
 });
 
+test("the extension-sized History view keeps filters expanded by default", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 340, height: 600 });
+  await page.goto("/history-mutations.html?history");
+
+  await expect(page.getByRole("group", { name: "History filters" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Hide History filters" })
+  ).toHaveAttribute("aria-expanded", "true");
+});
+
 test("the connection glyph opens a truthful summary before its Devices route", async ({
   page,
 }) => {

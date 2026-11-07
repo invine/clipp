@@ -122,8 +122,76 @@ test("the scenario catalog publishes connection observations and opens each work
   await expect(page.locator('.connection-status svg path[stroke-dasharray="1 3"]')).toHaveCount(1);
   await page.getByRole("button", { name: "Unknown", exact: true }).click();
   await expect(status).toBeVisible();
-
+  const scenarioControls = page.getByRole("complementary", {
+    name: "Scenario controls",
+  });
   const catalog = page.getByRole("navigation", { name: "Scenario catalog" });
+
+  const summaryCases = [
+    {
+      control: "Direct",
+      label: "Direct Connection",
+      description: "1 Trusted Device is connected directly.",
+    },
+    {
+      control: "Relayed",
+      label: "Relayed Connection",
+      description: "1 Trusted Device is connected through a relay.",
+    },
+    {
+      control: "Attention",
+      label: "Direct Connection · relay needs attention",
+      description:
+        "1 Trusted Device has a working connection. One or more configured relays need attention.",
+    },
+    {
+      control: "Unknown",
+      label: "Connection status unknown",
+      description:
+        "Clipp cannot confirm the current connection state. Check Devices for the latest available information.",
+    },
+    {
+      control: "Starting",
+      label: "Connections starting",
+      description: "Clipp is trying to connect to 1 configured relay.",
+    },
+    {
+      control: "Waiting",
+      label: "Relay ready · no Trusted Devices",
+      description:
+        "1 of 1 configured relay is ready. No Trusted Devices are currently connected.",
+    },
+    {
+      control: "Idle",
+      label: "No Trusted Devices yet",
+      description:
+        "No Trusted Devices or managed relays are set up. Add or pair a device to use Clipp across devices.",
+    },
+    {
+      control: "Offline",
+      label: "No device connection available",
+      description:
+        "1 Trusted Device remains trusted while offline; none are connected right now.",
+    },
+  ];
+  for (const state of summaryCases) {
+    await scenarioControls
+      .getByRole("button", { name: state.control, exact: true })
+      .click();
+    const trigger = page.getByRole("button", { name: state.label, exact: true });
+    await trigger.click();
+    const summary = page.getByRole("dialog", { name: "Connection summary" });
+    await expect(summary.getByRole("heading", { name: state.label })).toBeVisible();
+    await expect(summary.locator("p").first()).toHaveText(state.description);
+    await summary.getByRole("button", { name: "Open Devices" }).click();
+    await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await page
+      .getByRole("navigation", { name: "Clipp destinations" })
+      .getByRole("button", { name: "History", exact: true })
+      .click();
+  }
+
   await expect(catalog.getByRole("link")).toHaveCount(10);
   await catalog.getByRole("link", { name: "Trust Requests" }).click();
   await expect(page).toHaveURL(/trust-requests\.html$/);

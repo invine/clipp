@@ -1040,7 +1040,7 @@ export function ClipboardApp({
 
   useEffect(() => {
     function handleHeight() {
-      const shouldCollapse = hostContentSize(window, document).height < 760;
+      const shouldCollapse = hostContentSize(window, document).height < 560;
       if (!userToggledFilters) {
         setFiltersCollapsed(shouldCollapse);
       }
