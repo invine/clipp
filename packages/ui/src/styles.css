@@ -2549,6 +2549,9 @@ html[data-host-geometry="android"] .android-host {
   outline: 2px solid var(--clipp-focus);
   outline-offset: 2px;
 }
+.task-dialog.clip-details-dialog {
+  background: var(--clipp-surface-raised);
+}
 .task-dialog label {
   display: flex;
   flex-direction: column;
@@ -3668,13 +3671,57 @@ html[data-host-geometry="android"] .android-host {
   margin: 0;
   padding: 0.85rem;
   border-radius: var(--md-radius-md);
-  background: var(--clipp-surface-raised);
+  background: color-mix(in srgb, var(--clipp-surface-raised) 45%, var(--clipp-border));
   font-size: 1rem;
   line-height: 1.5;
 }
 
+.clip-details-source-time {
+  margin: 0.5rem 0 0;
+  color: var(--clipp-text-muted);
+  font-size: 0.8125rem;
+}
+
 .clip-details-actions {
   align-items: center;
+}
+
+.clip-details-dialog .clip-details-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.clip-details-dialog .clip-details-actions > .primary-button {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.clip-details-dialog .clip-details-actions > .text-button {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.clip-details-more {
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--clipp-border);
+}
+
+.clip-details-more > summary {
+  width: fit-content;
+  min-height: var(--clipp-target-min, 44px);
+  align-content: center;
+  cursor: pointer;
+  color: var(--clipp-text-muted);
+}
+
+.clip-details-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-block: 0.5rem;
 }
 
 .clip-details-actions > .primary-button,
@@ -3700,25 +3747,12 @@ html[data-host-geometry="android"] .android-host {
 
 .clip-details-delete:focus-visible,
 .clip-details-actions > .text-button:focus-visible,
-.clip-details-metadata summary:focus-visible {
+.clip-details-more summary:focus-visible {
   outline: 2px solid var(--clipp-focus);
   outline-offset: 2px;
 }
 
-.clip-details-metadata {
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--clipp-border);
-}
-
-.clip-details-metadata summary {
-  width: fit-content;
-  min-height: var(--clipp-target-min, 44px);
-  align-content: center;
-  cursor: pointer;
-  color: var(--clipp-text-muted);
-}
-
-.clip-details-metadata dl {
+.clip-details-more dl {
   display: grid;
   grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
   gap: 0.35rem 0.75rem;
@@ -3726,7 +3760,7 @@ html[data-host-geometry="android"] .android-host {
   font-size: 0.8125rem;
 }
 
-.clip-details-metadata dd {
+.clip-details-more dd {
   margin: 0;
   overflow-wrap: anywhere;
 }

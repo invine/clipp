@@ -5,6 +5,7 @@ import type { SessionContext } from "./uiSession";
 export function ClipDetails({
   clip,
   sourceName,
+  capturedAtLabel,
   isLocal,
   pinned,
   disabled,
@@ -21,6 +22,7 @@ export function ClipDetails({
 }: {
   clip?: Clip;
   sourceName?: string;
+  capturedAtLabel?: string;
   isLocal?: boolean;
   pinned: boolean;
   disabled: boolean;
@@ -48,6 +50,9 @@ export function ClipDetails({
     <div className="clip-details">
       <div className="clip-details-primary">
         <pre className="clip-details-content">{clip.content}</pre>
+        <p className="clip-details-source-time">
+          {sourceName || clip.originPeerId} · {capturedAtLabel || new Date(clip.capturedAt).toLocaleString()}
+        </p>
       </div>
       <div className="task-dialog-actions clip-details-actions">
         <button
@@ -63,24 +68,6 @@ export function ClipDetails({
         >
           Copy Clip
         </button>
-        {onShareNow && (
-          <div className="send-control clip-details-share">
-            <IconButton
-              icon="send"
-              label="Share current clipboard now"
-              disabled={
-                disabled ||
-                shareNowAction?.pending ||
-                shareNowAction?.feedback?.requiresAcknowledgement
-              }
-              onClick={onShareNow}
-            />
-            <span className="control-hint">
-              Sends your current system clipboard. This Clip is not sent by this
-              action.
-            </span>
-          </div>
-        )}
         <button
           type="button"
           className="text-button"
@@ -91,18 +78,38 @@ export function ClipDetails({
         >
           {pinned ? "Unpin Clip" : "Pin Clip"}
         </button>
-        <button
-          type="button"
-          className="clip-details-delete"
-          aria-label="Delete Clip"
-          disabled={disabled || actions[`delete:${clip.id}`]?.pending}
-          onClick={onDelete}
-        >
-          Delete Clip
-        </button>
       </div>
-      <details className="clip-details-metadata">
-        <summary>Clip information</summary>
+      <details className="clip-details-more">
+        <summary>More Clip actions and information</summary>
+        <div className="clip-details-secondary-actions">
+          {onShareNow && (
+            <div className="send-control clip-details-share">
+              <IconButton
+                icon="send"
+                label="Share current clipboard now"
+                disabled={
+                  disabled ||
+                  shareNowAction?.pending ||
+                  shareNowAction?.feedback?.requiresAcknowledgement
+                }
+                onClick={onShareNow}
+              />
+              <span className="control-hint">
+                Sends your current system clipboard only; it does not send this
+                Clip.
+              </span>
+            </div>
+          )}
+          <button
+            type="button"
+            className="clip-details-delete"
+            aria-label="Delete Clip"
+            disabled={disabled || actions[`delete:${clip.id}`]?.pending}
+            onClick={onDelete}
+          >
+            Delete Clip
+          </button>
+        </div>
         <dl>
           {sourceName && (
             <>

@@ -1,4 +1,4 @@
-import type {} from "../../apps/electron/src/preload";
+/// <reference path="../../apps/electron/src/preload.ts" />
 import { createUiSession } from "../../packages/ui/src/uiSession";
 import { createElectronUiRuntimeAdapter } from "../../apps/electron/src/uiRuntimeAdapter";
 import type { RuntimeNotificationAvailability } from "../../packages/core/runtime/notifications";

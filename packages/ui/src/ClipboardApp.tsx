@@ -3269,6 +3269,7 @@ export function ClipboardApp({
         createPortal(
           <TaskDialog
             title="Clip details"
+            className="clip-details-dialog"
             fullOnNarrow={false}
             headerDismiss
             showCancel={false}
@@ -3288,6 +3289,7 @@ export function ClipboardApp({
                     detailsClip.originPeerId
                   : undefined
               }
+              capturedAtLabel={detailsClip ? formatTime(detailsClip.capturedAt) : undefined}
                 isLocal={identity ? detailsClip?.originPeerId === identity.deviceId : undefined}
               pinned={pinnedSet.has(activeTask?.entity ?? "")}
               disabled={

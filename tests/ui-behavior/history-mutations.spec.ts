@@ -52,14 +52,15 @@ test("Clip details stay centered at phone width", async ({ page }) => {
 
   const dialog = page.getByRole("dialog", { name: "Clip details" });
   await expect(dialog.getByRole("button", { name: "Close details" })).toBeVisible();
+  await expect(dialog.getByText(/^Scenario Device · Today/)).toBeVisible();
   const bounds = await dialog.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.width).toBeLessThan(390);
   expect(bounds!.x).toBeGreaterThan(0);
   expect(bounds!.y).toBeGreaterThan(0);
-  const metadata = dialog.locator("details.clip-details-metadata");
+  const metadata = dialog.locator("details.clip-details-more");
   await expect(metadata).not.toHaveAttribute("open", "");
-  await metadata.getByText("Clip information", { exact: true }).click();
+  await metadata.getByText("More Clip actions and information", { exact: true }).click();
   await expect(metadata.getByText("clip-one", { exact: true })).toBeVisible();
 });
 
@@ -215,6 +216,7 @@ test("pin and delete failures keep observations authoritative and expose retry",
   await page.getByRole("button", { name: "Resolve Pin: success" }).click();
   await expect(details.getByRole("button", { name: "Unpin Clip" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('[data-clip-id="clip-one"] .history-pin-marker')).toBeVisible();
+  await details.getByText("More Clip actions and information", { exact: true }).click();
   await details.getByRole("button", { name: "Delete Clip" }).click();
   await details
     .getByRole("button", { name: "Resolve Delete: failure" })
