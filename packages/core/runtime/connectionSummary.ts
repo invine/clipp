@@ -73,6 +73,7 @@ export function projectConnectionSummary(facts: ConnectionFacts) {
   return {
     kind,
     label: visibleLabel,
+    trustedDevices: trusted.size,
     direct,
     relayed,
     unknown,

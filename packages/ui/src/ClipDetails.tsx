@@ -5,6 +5,7 @@ import type { SessionContext } from "./uiSession";
 export function ClipDetails({
   clip,
   sourceName,
+  isLocal,
   pinned,
   disabled,
   actions,
@@ -20,6 +21,7 @@ export function ClipDetails({
 }: {
   clip?: Clip;
   sourceName?: string;
+  isLocal?: boolean;
   pinned: boolean;
   disabled: boolean;
   actions: SessionContext["historyActions"];
@@ -111,8 +113,20 @@ export function ClipDetails({
               <dd>{sourceName}</dd>
             </>
           )}
+          <dt>Type</dt>
+          <dd>{clip.type === "url" ? "Link" : "Text"}</dd>
+          {isLocal !== undefined && (
+            <>
+              <dt>Location</dt>
+              <dd>{isLocal ? "Local Clip" : "Remote Clip"}</dd>
+            </>
+          )}
           <dt>Captured</dt>
           <dd>{new Date(clip.capturedAt).toLocaleString()}</dd>
+          <dt>Pinned</dt>
+          <dd>{pinned ? "Yes" : "No"}</dd>
+          <dt>Clip Sharing Lifetime ends</dt>
+          <dd>{new Date(clip.shareExpiresAt).toLocaleString()}</dd>
           <dt>Source Peer ID</dt>
           <dd>{clip.originPeerId}</dd>
           <dt>Clip ID</dt>

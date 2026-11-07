@@ -144,7 +144,6 @@ export function createManagementNavigationConsumer(
               ...current,
               context: {
                 search: context.search,
-                timeFilter: context.timeFilter,
                 sourceFilter: context.sourceFilter,
                 filterMode: context.filterMode,
               },

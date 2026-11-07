@@ -1,5 +1,111 @@
 import { expect, test } from "@playwright/test";
 
+test("the Clipp mark opens navigation on History and remains available on every destination", async ({
+  page,
+}) => {
+  for (const width of [390, 1200]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/history-mutations.html?history");
+
+    const openNavigation = page.getByRole("button", { name: "Open navigation" });
+    await expect(openNavigation.locator("img")).toBeVisible();
+    await openNavigation.click();
+    const navigation = page.getByRole("navigation", { name: "Clipp destinations" });
+    await expect(navigation).toBeVisible();
+    await expect(page.getByRole("banner").getByRole("button", { name: "Close navigation" })).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+
+    for (const destination of ["Settings", "Devices", "Requests"] as const) {
+      await page.getByRole("button", { name: "Open navigation" }).click();
+      await navigation.getByRole("button", { name: destination }).click();
+      await expect(page.getByRole("button", { name: "Open navigation" }).locator("img")).toBeVisible();
+    }
+  }
+});
+
+test("a History row has only Copy and Delete actions, while Clip details stay on the content control", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/history-mutations.html?history");
+  const row = page.locator('[data-clip-id="clip-one"]');
+
+  await expect(row.getByRole("button", { name: "Copy Clip" })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Delete Clip" })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Pin Clip" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Time filter/i })).toHaveCount(0);
+
+  await row.getByRole("button", { name: "Copy Clip" }).click();
+  await expect(page.getByRole("dialog", { name: "Clip details" })).toHaveCount(0);
+  await row.getByRole("button", { name: "View Clip details" }).click();
+  await expect(page.getByRole("dialog", { name: "Clip details" })).toBeVisible();
+});
+
+test("folding History filters preserves search, tab selection, and Source", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/history-mutations.html?history");
+  const fold = page.getByRole("button", { name: "Hide History filters" });
+  const panel = page.getByRole("group", { name: "History filters" });
+  await expect(panel).toBeVisible();
+
+  await page.getByRole("button", { name: "Pinned", exact: true }).click();
+  await page.getByRole("button", { name: "Source: All" }).click();
+  await expect(page.getByRole("button", { name: "Remote", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Remote", exact: true }).click();
+  await page.getByRole("textbox", { name: "Search history" }).fill("target");
+  await fold.click();
+
+  await expect(page.getByRole("button", { name: "Show History filters" })).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toBeHidden();
+  await expect(page.locator('[data-session-focus="history-query"]')).toHaveValue("target");
+  await page.getByRole("button", { name: "Show History filters" }).click();
+  await expect(panel).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pinned", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Source: Remote" })).toBeVisible();
+});
+
+test("the connection glyph opens a truthful summary before its Devices route", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/history-mutations.html?history");
+  await page.getByRole("button", { name: "Connection status unknown" }).click();
+  const summary = page.getByRole("dialog", { name: "Connection summary" });
+  await expect(summary).toBeVisible();
+  await expect(summary.getByText("Connection status unknown", { exact: true })).toBeVisible();
+  await expect(summary.getByText(/Clipp cannot confirm the current connection state/)).toBeVisible();
+  await summary.getByRole("button", { name: "Open Devices" }).click();
+  await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+});
+
+test("Copy and Delete act on the selected row and retain retry after a Delete failure", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/history-mutations.html?history");
+  const row = page.locator('[data-clip-id="clip-two"]');
+  const targets = page.getByTestId("history-targets");
+
+  await row.getByRole("button", { name: "Copy Clip" }).click();
+  await expect(page.getByText("Copying Clip…")).toBeVisible();
+  await expect(targets).toHaveText('["copy:clip-two"]');
+  await page.getByLabel("Open navigation scenario controls").click();
+  await page.getByRole("button", { name: "Resolve Copy: success" }).click();
+
+  await row.getByRole("button", { name: "Delete Clip" }).click();
+  await expect(row.getByRole("button", { name: "Delete Clip" })).toBeDisabled();
+  await page.getByRole("button", { name: "Resolve Delete: failure" }).click();
+  await expect(page.getByText("Could not delete this Clip. It is still in your history.")).toBeVisible();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(targets).toHaveText('["copy:clip-two","delete:clip-two","delete:clip-two"]');
+  await page.getByRole("button", { name: "Resolve Delete: success" }).click();
+  await expect(row).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Clip details" })).toHaveCount(0);
+});
+
 test("uncertain Clear blocks another attempt until History refresh is confirmed", async ({
   page,
 }) => {
@@ -57,25 +163,26 @@ test("pin and delete failures keep observations authoritative and expose retry",
   page,
 }) => {
   await page.goto("/history-mutations.html?history");
-  await page.getByText("Pairing diagnostics", { exact: true }).click();
-  await page.getByRole("button", { name: "Pin Clip" }).click();
+  await page.locator('[data-clip-id="clip-one"]').getByRole("button", { name: "View Clip details" }).click();
+  const details = page.getByRole("dialog", { name: "Clip details" });
+  await details.getByText("History scenario controls", { exact: true }).click();
+  const pin = details.getByRole("button", { name: "Pin Clip" });
+  await pin.click();
   await page.getByRole("button", { name: "Resolve Pin: failure" }).click();
   await expect(
-    page
+    details
       .getByRole("status")
       .filter({ hasText: "Could not confirm this Clip's pin state" })
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pin Clip" })).toHaveAttribute(
+  await expect(pin).toHaveAttribute(
     "aria-pressed",
     "false"
   );
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await details.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByRole("button", { name: "Resolve Pin: success" }).click();
-
-  await page.getByRole("button", { name: "View Clip details" }).click();
-  const details = page.getByRole("dialog", { name: "Clip details" });
-  await details.getByText("History scenario controls", { exact: true }).click();
-  await page.getByRole("button", { name: "Delete Clip" }).click();
+  await expect(details.getByRole("button", { name: "Unpin Clip" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-clip-id="clip-one"] .history-pin-marker')).toBeVisible();
+  await details.getByRole("button", { name: "Delete Clip" }).click();
   await details
     .getByRole("button", { name: "Resolve Delete: failure" })
     .click();

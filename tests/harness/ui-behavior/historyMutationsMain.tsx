@@ -17,7 +17,9 @@ type Deferred = {
 const deferred: Deferred[] = [];
 let nextClip = true;
 const listeners = new Set<() => void>();
+const targetListeners = new Set<() => void>();
 let requestedEffects: string[] = [];
+let requestedTargets: string[] = [];
 const session = createUiSession();
 session.update(
   window.location.search.includes("history")
@@ -27,6 +29,11 @@ session.update(
 
 function notify() {
   listeners.forEach((listener) => listener());
+}
+
+function noteTarget(target: string) {
+  requestedTargets = [...requestedTargets, target];
+  targetListeners.forEach((listener) => listener());
 }
 
 function request(kind: string): Promise<unknown> {
@@ -45,6 +52,23 @@ const clip: Clip = {
   capturedAt: 1,
   shareExpiresAt: 2,
 };
+const otherClip: Clip = {
+  id: "clip-two",
+  type: "url",
+  content: "https://example.test/remote-clip",
+  originPeerId: "remote-device",
+  capturedAt: 2,
+  shareExpiresAt: 3,
+};
+const atLocalTime = (hours: number, minutes: number) => {
+  const capturedAt = new Date();
+  capturedAt.setHours(hours, minutes, 0, 0);
+  return capturedAt.getTime();
+};
+clip.capturedAt = atLocalTime(11, 22);
+otherClip.capturedAt = atLocalTime(11, 14);
+clip.shareExpiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+otherClip.shareExpiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
 
 const unavailable = async (): Promise<never> => {
   throw new Error("Unexpected runtime effect in History scenario");
@@ -58,6 +82,14 @@ function ScenarioControls() {
     },
     () => requestedEffects,
     () => requestedEffects
+  );
+  const targets = useSyncExternalStore(
+    (listener) => {
+      targetListeners.add(listener);
+      return () => targetListeners.delete(listener);
+    },
+    () => JSON.stringify(requestedTargets),
+    () => JSON.stringify(requestedTargets)
   );
   function resolveNext(kind: string, value?: unknown) {
     const index = deferred.findIndex((action) => action.kind === kind);
@@ -97,6 +129,12 @@ function ScenarioControls() {
       <button type="button" onClick={() => resolveNext("pin")}>
         Resolve Pin: success
       </button>
+      <button type="button" onClick={() => rejectNext("copy")}>
+        Resolve Copy: failure
+      </button>
+      <button type="button" onClick={() => resolveNext("copy", "complete")}>
+        Resolve Copy: success
+      </button>
       <button type="button" onClick={() => rejectNext("delete")}>
         Resolve Delete: failure
       </button>
@@ -104,20 +142,39 @@ function ScenarioControls() {
         Resolve Delete: success
       </button>
       <output data-testid="history-effects">{JSON.stringify(effects)}</output>
+      <output data-testid="history-targets">{targets}</output>
     </aside>
   );
 }
 
+let dynamicProps: ClipboardAppProps;
+const previewConnection = new URLSearchParams(window.location.search).get("connection");
+const connectedPreview = previewConnection === "direct" || previewConnection === "relay";
 const props: ClipboardAppProps = {
-  clips: [clip],
-  devices: [],
+  clips: [clip, otherClip],
+  devices: [{ deviceId: "remote-device", deviceName: connectedPreview ? "Pixel 9" : "Remote Device" }],
   pending: [],
-  peers: [],
-  identity: { deviceId: "scenario-device", deviceName: "Scenario Device" },
-  pinnedIds: [],
+  peers: connectedPreview ? ["remote-device"] : [],
+  ...(connectedPreview
+    ? {
+        connectionStateKnown: true,
+        peerConnections: [
+          { peerId: "remote-device", path: previewConnection === "direct" ? "direct" : "relay", hasDirect: previewConnection === "direct", hasRelay: previewConnection === "relay", addrs: [] },
+        ],
+      }
+    : {}),
+  identity: { deviceId: "scenario-device", deviceName: connectedPreview ? "Desktop" : "Scenario Device" },
+  pinnedIds: connectedPreview ? ["clip-one"] : [],
   session,
-  onDeleteClip: async () => {
+  onDeleteClip: async (id) => {
+    noteTarget(`delete:${id}`);
     await request("delete");
+    dynamicProps = {
+      ...dynamicProps,
+      clips: dynamicProps.clips.filter((item) => item.id !== id),
+      pinnedIds: dynamicProps.pinnedIds.filter((pinnedId) => pinnedId !== id),
+    };
+    historyStore.publish(dynamicProps);
   },
   onUnpair: unavailable,
   onAccept: unavailable,
@@ -125,10 +182,19 @@ const props: ClipboardAppProps = {
   onPairText: async () => ({ ok: false, error: "outcome_unconfirmed" }),
   onRequestPairingCode: unavailable,
   onCopyPairingText: unavailable,
-  onReuseClip: unavailable,
+  onReuseClip: async (id) => {
+    noteTarget(`copy:${id}`);
+    return (await request("copy")) as "complete";
+  },
   onShareNow: unavailable,
-  onSetPinned: async () => {
+  onSetPinned: async (id, pinned) => {
+    noteTarget(`pin:${id}`);
     await request("pin");
+    const pinnedIds = new Set(dynamicProps.pinnedIds);
+    if (pinned) pinnedIds.add(id);
+    else pinnedIds.delete(id);
+    dynamicProps = { ...dynamicProps, pinnedIds: [...pinnedIds] };
+    historyStore.publish(dynamicProps);
   },
   onClearAll: async () => {
     await request("clear");
@@ -137,6 +203,7 @@ const props: ClipboardAppProps = {
     return (await request("refresh")) as boolean;
   },
 };
+dynamicProps = props;
 const historyStore = createUiRuntimeStore(props);
 const adapter = {
   ...historyStore,

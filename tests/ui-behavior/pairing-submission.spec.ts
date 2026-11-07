@@ -63,11 +63,22 @@ test("the scenario catalog publishes connection observations and opens each work
   page,
 }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("navigation", { name: "Clipp destinations" }).getByRole("button", { name: "History" }).click();
   await page.getByText("Pairing diagnostics", { exact: true }).click();
+  await page.evaluate(() => {
+    document.documentElement.setAttribute("data-clipp-theme", "dark");
+  });
   const status = page.getByRole("button", {
     name: "Connection status unknown",
   });
   await expect(status).toBeVisible();
+  const glyphColor = async () =>
+    page.locator(".connection-status svg").evaluate((svg) =>
+      getComputedStyle(svg).color
+    );
+  await expect.poll(glyphColor).toBe("rgb(146, 145, 152)");
+  await expect(page.locator('.connection-status svg path[d^="M9 6"]')).toHaveCount(1);
 
   await page.getByRole("button", { name: "Offline", exact: true }).click();
   await expect(
@@ -75,18 +86,40 @@ test("the scenario catalog publishes connection observations and opens each work
       name: "No device connection available",
     })
   ).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(146, 145, 152)");
+  await expect(page.locator('.connection-status svg path[d="m3 3 18 18"]')).toHaveCount(1);
   await page.getByRole("button", { name: "Direct", exact: true }).click();
   await expect(
     page.getByRole("button", {
       name: "Direct Connection",
     })
   ).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(34, 197, 94)");
+  await expect(page.locator('.connection-status svg path[d="m5.5 14.5 5-7m3 0 5 7M7 17h10"]')).toHaveCount(1);
   await page.getByRole("button", { name: "Relayed", exact: true }).click();
   await expect(
     page.getByRole("button", {
       name: "Relayed Connection",
     })
   ).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(34, 197, 94)");
+  await expect(page.locator('.connection-status svg path[d="m6 14 4-6m4 0 4 6M12 2l3 3-3 3-3-3Z"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Attention", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Direct Connection · relay needs attention" })).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(234, 179, 78)");
+  await expect(page.locator('.connection-status svg path[d^="m5.5 14.5 3-5"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Starting", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Connections starting" })).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(146, 145, 152)");
+  await expect(page.locator('.connection-status svg path[stroke-dasharray="1 3"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Waiting", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Relay ready · no Trusted Devices" })).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(181, 167, 242)");
+  await expect(page.locator('.connection-status svg path[stroke-dasharray="1 3"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Idle", exact: true }).click();
+  await expect(page.getByRole("button", { name: "No Trusted Devices yet" })).toBeVisible();
+  await expect.poll(glyphColor).toBe("rgb(146, 145, 152)");
+  await expect(page.locator('.connection-status svg path[stroke-dasharray="1 3"]')).toHaveCount(1);
   await page.getByRole("button", { name: "Unknown", exact: true }).click();
   await expect(status).toBeVisible();
 

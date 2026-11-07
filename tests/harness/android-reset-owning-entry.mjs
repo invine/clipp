@@ -479,7 +479,11 @@ try {
       assert.equal(await page.evaluate(() => shellPlatform.stats().resets), 0);
     }
     if (["execute", "resume", "checking-resume"].includes(mode)) {
-      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByRole("button", { name: "Open navigation" }).click();
+      await page
+        .getByRole("navigation", { name: "Clipp destinations" })
+        .getByRole("button", { name: "Settings", exact: true })
+        .click();
       await page
         .getByRole("combobox", { name: "Appearance", exact: true })
         .selectOption("dark");
@@ -489,7 +493,11 @@ try {
             document.querySelector("#clipp-reset-owning-progress").textContent
           ).theme === "dark"
       );
-      await page.getByRole("button", { name: "History", exact: true }).click();
+      await page.getByRole("button", { name: "Open navigation" }).click();
+      await page
+        .getByRole("navigation", { name: "Clipp destinations" })
+        .getByRole("button", { name: "History", exact: true })
+        .click();
       await page.evaluate(() =>
         shellPlatform.ingress("clipp-reset-source-marker")
       );
@@ -499,7 +507,13 @@ try {
             document.querySelector("#clipp-reset-owning-progress").textContent
           ).clipCount === 1
       );
-      await page.getByRole("button", { name: "Pin Clip", exact: true }).click();
+      await page
+        .getByRole("button", { name: "View Clip details" })
+        .click();
+      await page
+        .getByRole("dialog", { name: "Clip details" })
+        .getByRole("button", { name: "Pin Clip", exact: true })
+        .click();
       await page.waitForFunction(
         () =>
           JSON.parse(

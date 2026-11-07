@@ -32,7 +32,6 @@ export type NotificationReturn = {
 export type UiSessionNavigationState = {
   notificationReturn: NotificationReturn | null;
   search: string;
-  timeFilter: "all" | "24h" | "7d" | "30d";
   sourceFilter: string;
   filterMode: "all" | "pinned" | "links";
   showNav: boolean;
@@ -73,7 +72,6 @@ export function createInitialUiSessionNavigationState(): UiSessionNavigationStat
   return {
     notificationReturn: null,
     search: "",
-    timeFilter: "all",
     sourceFilter: "all",
     filterMode: "all",
     showNav: false,

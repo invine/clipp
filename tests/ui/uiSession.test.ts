@@ -7,6 +7,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createUiSession } from "../../packages/ui/src/uiSession";
 import { createHostTaskInput } from "../../packages/ui/src/hostTaskInput";
+import { parseUiDestination } from "../../packages/ui/src/uiDestination";
 import { ManagedRelaySettings } from "../../packages/ui/src/ManagedRelaySettings";
 const a = {
   key: "a",
@@ -1171,7 +1172,6 @@ it.each(["all", "pinned", "links"] as const)(
         context: {
           search: "needle",
           filterMode,
-          timeFilter: "7d",
           sourceFilter: "source",
         },
       },
@@ -1183,9 +1183,41 @@ it.each(["all", "pinned", "links"] as const)(
       destination: "history",
       search: "needle",
       filterMode,
-      timeFilter: "7d",
       sourceFilter: "source",
       tasks: [],
     });
   }
 );
+
+it("accepts a legacy navigation time range but normalizes it away", () => {
+  const destination = parseUiDestination({
+    kind: "clip-details",
+    entity: "selected",
+    context: {
+      search: "needle",
+      timeFilter: "30d",
+      sourceFilter: "source",
+      filterMode: "links",
+    },
+  });
+  expect(destination).toEqual({
+    kind: "clip-details",
+    entity: "selected",
+    context: { search: "needle", sourceFilter: "source", filterMode: "links" },
+  });
+
+  const session = createUiSession();
+  expect(
+    session.acceptDestination(
+      "legacy-time-filter",
+      destination!,
+      { ready: true, clipIds: ["selected"], requestIds: [] }
+    )
+  ).toBe("applied");
+  expect(session.getSnapshot()).toMatchObject({
+    search: "needle",
+    sourceFilter: "source",
+    filterMode: "links",
+  });
+  expect(session.getSnapshot()).not.toHaveProperty("timeFilter");
+});
