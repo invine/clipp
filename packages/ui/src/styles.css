@@ -3696,6 +3696,16 @@ html[data-host-geometry="android"] .android-host {
   min-width: 6rem;
 }
 
+.clip-details-dialog .clip-details-actions > .text-button {
+  border-radius: var(--md-radius-sm);
+  background: color-mix(
+    in srgb,
+    var(--clipp-border) 45%,
+    var(--clipp-surface-raised)
+  );
+  padding-inline: 0.75rem;
+}
+
 .clip-details-more {
   padding-top: 0.25rem;
   border-top: 1px solid var(--clipp-border);
