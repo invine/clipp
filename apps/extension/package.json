@@ -7,6 +7,7 @@
     "build:relay-acceptance": "vite build --mode relay-acceptance",
     "test:clipboard": "node ./scripts/verify-clipboard-io.mjs",
     "test:clipboard:contract": "node ./scripts/test-clipboard-acceptance.mjs",
+    "test:popup-history": "node ./scripts/verify-popup-history-performance.mjs",
     "test:integration": "npm run build && node ./scripts/verify-identity-initialization.mjs && node ./scripts/verify-pairing-response.mjs",
     "test:pairing-response": "node ./scripts/verify-pairing-response.mjs",
     "test:offscreen-storage": "npm run build && node ./scripts/verify-offscreen-storage.mjs",

@@ -1,4 +1,5 @@
-import { shortenPreview, previewGraphemes } from "./previewText";
+import { shortenPreview } from "./previewText";
+import { MiddleEllipsisText } from "./MiddleEllipsisText";
 import { projectConnectionSummary } from "../../core/runtime/connectionSummary";
 import { ConnectionStatusButton } from "./ConnectionSummary";
 import { NotificationSettings } from "./NotificationSettings";
@@ -234,96 +235,6 @@ function relayStatusFor(connection: RelayConnectionInfo | undefined) {
       ? "Relay status is not available yet"
       : "Relay address is configured; connection status cannot be tracked for this address",
   };
-}
-
-type MiddleEllipsisTextProps = {
-  text: string;
-  max?: number;
-  className?: string;
-  style?: React.CSSProperties;
-};
-
-function MiddleEllipsisText({
-  text,
-  max,
-  className,
-  style,
-}: MiddleEllipsisTextProps) {
-  const [display, setDisplay] = useState(text);
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const measureRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    const measure = measureRef.current;
-    if (!container || !measure) return;
-
-    const computeDisplay = () => {
-      const containerWidth = container.clientWidth;
-      if (!containerWidth) {
-        setDisplay(text);
-        return;
-      }
-
-      // If the full string fits, keep it.
-      measure.textContent = text;
-      if (measure.scrollWidth <= containerWidth + 0.5) {
-        setDisplay(text);
-        return;
-      }
-
-      // Find the longest middle-ellipsized string that fits the current pixel width.
-      const maxChars = Math.max(
-        1,
-        Math.min(
-          max ?? previewGraphemes(text).length,
-          previewGraphemes(text).length
-        )
-      );
-      let low = 1;
-      let high = maxChars;
-      let best = shortenPreview(text, low, "middle");
-
-      while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        const candidate = shortenPreview(text, mid, "middle");
-        measure.textContent = candidate;
-        if (measure.scrollWidth <= containerWidth + 0.5) {
-          best = candidate;
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
-      }
-
-      setDisplay(best);
-    };
-
-    computeDisplay();
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(computeDisplay)
-        : null;
-    resizeObserver?.observe(container);
-    window.addEventListener("resize", computeDisplay);
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", computeDisplay);
-    };
-  }, [text, max]);
-
-  const classes = className
-    ? `middle-ellipsis ${className}`
-    : "middle-ellipsis";
-
-  return (
-    <span ref={containerRef} className={classes} style={style} title={text}>
-      <span ref={measureRef} className="middle-ellipsis-measure" aria-hidden>
-        {display}
-      </span>
-      {display}
-    </span>
-  );
 }
 
 export type ClipboardAppProps = {
