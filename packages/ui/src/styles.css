@@ -458,14 +458,11 @@
   min-width: 0;
 }
 
-.middle-ellipsis-measure {
-  position: absolute;
-  visibility: hidden;
-  pointer-events: none;
+.middle-ellipsis-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: none;
-  left: 0;
-  top: 0;
 }
 
 .peer-actions {
@@ -4991,12 +4988,17 @@ html[data-host-geometry="android"] .android-host {
   gap: 0.25rem;
 }
 .history-card .history-meta .meta-time {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-inline-start: 0;
   text-align: left;
 }
 .history-card .history-meta .history-source-label {
+  flex: 0 0 auto;
   width: auto;
+  max-width: min(65%, 18rem);
 }
 .history-card .history-actions {
   gap: 0;

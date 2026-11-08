@@ -29,3 +29,39 @@ export function shortenPreview(
     (tail ? graphemes.slice(-tail).join("") : "")
   );
 }
+
+/** Fit a label using text metrics, without modifying or measuring DOM nodes. */
+export function fitMiddlePreview(
+  text: string,
+  width: number,
+  measure: (value: string) => number,
+  maximum?: number
+): string {
+  // Match layout's subpixel rounding rather than shortening a label that fits.
+  const availableWidth = width + 0.5;
+  if (measure(text) <= availableWidth) return text;
+  const graphemes = previewGraphemes(text);
+  // Without segmentation, retain the input and let CSS clip it safely.
+  if (graphemes.length === 1) return text;
+  let low = 1;
+  let high = Math.max(
+    1,
+    Math.min(maximum ?? graphemes.length, graphemes.length)
+  );
+  let best = "…";
+  while (low <= high) {
+    const count = Math.floor((low + high) / 2);
+    const available = count - 1;
+    const lead = Math.ceil(available / 2);
+    const tail = Math.floor(available / 2);
+    const candidate =
+      graphemes.slice(0, lead).join("") +
+      "…" +
+      (tail ? graphemes.slice(-tail).join("") : "");
+    if (measure(candidate) <= availableWidth) {
+      best = candidate;
+      low = count + 1;
+    } else high = count - 1;
+  }
+  return best;
+}
