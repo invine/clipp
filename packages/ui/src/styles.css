@@ -1720,7 +1720,8 @@
   flex: 1 1 auto;
 }
 @media (max-width: 800px) {
-  .app-shell:not(.workspace-cramped) .app-main:has(.content-pane:not([hidden])) {
+  .app-shell:not(.workspace-cramped)
+    .app-main:has(.content-pane:not([hidden])) {
     padding: 10px 18px 18px;
   }
 }
@@ -1802,16 +1803,28 @@
 .workspace-topbar .connection-control.connection-relay .connection-status svg {
   color: var(--connection-direct);
 }
-.workspace-topbar .connection-control.connection-attention .connection-status svg {
+.workspace-topbar
+  .connection-control.connection-attention
+  .connection-status
+  svg {
   color: var(--connection-attention);
 }
-.workspace-topbar .connection-control.connection-waiting .connection-status svg {
+.workspace-topbar
+  .connection-control.connection-waiting
+  .connection-status
+  svg {
   color: var(--connection-waiting);
 }
 .workspace-topbar .connection-control.connection-unknown .connection-status svg,
-.workspace-topbar .connection-control.connection-starting .connection-status svg,
+.workspace-topbar
+  .connection-control.connection-starting
+  .connection-status
+  svg,
 .workspace-topbar .connection-control.connection-idle .connection-status svg,
-.workspace-topbar .connection-control.connection-offline .connection-status svg {
+.workspace-topbar
+  .connection-control.connection-offline
+  .connection-status
+  svg {
   color: var(--connection-neutral);
 }
 .connection-summary-popover {
@@ -3671,7 +3684,11 @@ html[data-host-geometry="android"] .android-host {
   margin: 0;
   padding: 0.85rem;
   border-radius: var(--md-radius-md);
-  background: color-mix(in srgb, var(--clipp-surface-raised) 45%, var(--clipp-border));
+  background: color-mix(
+    in srgb,
+    var(--clipp-surface-raised) 45%,
+    var(--clipp-border)
+  );
   font-size: 1rem;
   line-height: 1.5;
 }
@@ -4846,9 +4863,6 @@ html[data-host-geometry="android"] .android-host {
   height: 68px;
   min-height: 68px;
 }
-.workspace-topbar.history-topbar .send-control {
-  display: none;
-}
 .workspace-topbar.history-topbar .search-field {
   flex: 1 1 18rem;
   max-width: 35rem;
@@ -4856,9 +4870,6 @@ html[data-host-geometry="android"] .android-host {
 }
 .workspace-topbar.history-topbar .search-field input {
   min-height: 40px;
-}
-.workspace-topbar.history-topbar .filter-control-label {
-  display: none;
 }
 .workspace-topbar.history-topbar {
   gap: 12px;
@@ -4950,13 +4961,97 @@ html[data-host-geometry="android"] .android-host {
   }
 }
 @media (min-width: 801px) {
-  .app-shell .content-pane { padding-inline: 32px !important; }
-  .app-shell .history-card:not(.history-empty) { padding-inline: 0 !important; padding-block: 14px 21px !important; }
+  .app-shell .content-pane {
+    padding-inline: 32px !important;
+  }
+  .app-shell .history-card:not(.history-empty) {
+    padding-inline: 0 !important;
+    padding-block: 14px 21px !important;
+  }
 }
 @media (min-width: 601px) and (max-width: 800px) {
-  .app-shell .content-pane { padding-inline: 0 !important; }
-  .app-shell .history-card:not(.history-empty) { padding-inline: 0 !important; padding-block: 8px 6px !important; }
+  .app-shell .content-pane {
+    padding-inline: 0 !important;
+  }
+  .app-shell .history-card:not(.history-empty) {
+    padding-inline: 0 !important;
+    padding-block: 8px 6px !important;
+  }
 }
 @media (max-width: 600px) {
-  .app-shell .history-card:not(.history-empty) { padding-inline: 0 !important; padding-block: 11px 12px !important; }
+  .app-shell .history-card:not(.history-empty) {
+    padding-inline: 0 !important;
+    padding-block: 11px 12px !important;
+  }
+}
+
+.history-card .history-meta {
+  justify-content: flex-start;
+  text-align: left;
+  gap: 0.25rem;
+}
+.history-card .history-meta .meta-time {
+  flex: 0 0 auto;
+  margin-inline-start: 0;
+  text-align: left;
+}
+.history-card .history-meta .history-source-label {
+  width: auto;
+}
+.history-card .history-actions {
+  gap: 0;
+}
+.history-card .history-actions .icon-button {
+  width: 42px;
+  height: 44px;
+  min-width: 42px;
+  min-height: 44px;
+}
+@media (max-width: 800px) {
+  .history-card .history-actions .icon-button,
+  .workspace-narrow .history-card .history-actions .icon-button {
+    width: 40px;
+    height: 44px;
+    min-width: 40px;
+    min-height: 44px;
+  }
+}
+.workspace-topbar.history-topbar .history-share-controls .icon-button {
+  width: 40px;
+  height: 44px;
+  min-width: 40px;
+  min-height: 44px;
+}
+.workspace-topbar.history-topbar .connection-control {
+  position: relative;
+  inset-inline-end: auto;
+  top: auto;
+  width: 48px;
+  flex: 0 0 48px;
+  margin-inline-start: auto;
+}
+.workspace-topbar.history-topbar .connection-control .connection-status {
+  position: relative;
+  inset-inline-end: auto;
+  top: auto;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.workspace-topbar.history-topbar .history-share-controls {
+  flex: 0 0 auto;
+  margin-inline-start: 0;
+}
+@media (max-width: 600px) {
+  .workspace-topbar.history-topbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  .app-shell.workspace-narrow .workspace-topbar.history-topbar {
+    padding-inline: 12px;
+  }
+  .workspace-topbar.history-topbar .search-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 }

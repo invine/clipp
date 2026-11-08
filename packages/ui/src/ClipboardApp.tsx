@@ -616,8 +616,6 @@ export function ClipboardApp({
     )
       setDeviceMenuOpen(null);
   }, [deviceMenuOpen, devices, sessionState.destination]);
-  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
-  const [userToggledFilters, setUserToggledFilters] = useState(false);
   const localNameSession = session.name;
   const localNameEdit = useSyncExternalStore(
     localNameSession.subscribe,
@@ -1038,22 +1036,6 @@ export function ClipboardApp({
     };
   }, [sessionState.destination]);
 
-  useEffect(() => {
-    function handleHeight() {
-      const shouldCollapse = hostContentSize(window, document).height < 560;
-      if (!userToggledFilters) {
-        setFiltersCollapsed(shouldCollapse);
-      }
-    }
-    handleHeight();
-    window.addEventListener("resize", handleHeight);
-    window.addEventListener(HOST_GEOMETRY_EVENT, handleHeight);
-    return () => {
-      window.removeEventListener("resize", handleHeight);
-      window.removeEventListener(HOST_GEOMETRY_EVENT, handleHeight);
-    };
-  }, [userToggledFilters]);
-
   const deviceNameMap = useMemo(() => {
     const map = new Map<string, string>();
     if (identity) map.set(identity.deviceId, identity.deviceName);
@@ -1209,14 +1191,6 @@ export function ClipboardApp({
         };
       }
     });
-  }
-
-  function toggleFilters() {
-    if (session.getSnapshot().destination !== "history") {
-      session.update({ destination: "history", focusKey: "history-filters" });
-      setFiltersCollapsed(false);
-    } else setFiltersCollapsed((v) => !v);
-    setUserToggledFilters(true);
   }
 
   useEffect(() => {
@@ -2472,11 +2446,12 @@ export function ClipboardApp({
         destination,
         filterMode,
         showNav: false,
-        focusKey: isNarrow || showNav
-          ? "nav-toggle"
-          : filterMode === "all"
-            ? `destination:${destination}`
-            : `destination:${destination}:${filterMode}`,
+        focusKey:
+          isNarrow || showNav
+            ? "nav-toggle"
+            : filterMode === "all"
+              ? `destination:${destination}`
+              : `destination:${destination}:${filterMode}`,
       });
     };
     return (
@@ -2738,45 +2713,6 @@ export function ClipboardApp({
               )}
             </div>
           )}
-          {sessionState.destination === "history" && (
-            <div className="workspace-controls">
-              <button
-                type="button"
-                className="text-button"
-                aria-label={filtersCollapsed ? "Show History filters" : "Hide History filters"}
-                aria-expanded={!filtersCollapsed}
-                aria-controls="history-filters"
-                data-session-focus="history-filters"
-                onClick={toggleFilters}
-              >
-                <Icon name="filters" />
-                <span className="filter-control-label">Filters</span>
-              </button>
-              {onShareNow && (
-                <>
-                  <div className="send-control">
-                    <IconButton
-                      icon="send"
-                      label="Share current clipboard now"
-                      hint="Share current system clipboard now"
-                      onClick={shareNow}
-                      disabled={
-                        !identityReady ||
-                        sessionState.historyActions["send:current"]?.pending
-                      }
-                      aria-describedby="send-clipboard-hint"
-                    />
-                    <span id="send-clipboard-hint" className="control-hint">
-                      Sends your current system clipboard
-                    </span>
-                  </div>
-                  {sessionState.historyActions["send:current"]?.pending && (
-                    <span role="status">Sharing current clipboard…</span>
-                  )}
-                </>
-              )}
-            </div>
-          )}
           {sessionState.destination === "devices" && (
             <div className="device-header-actions">
               <button
@@ -2803,11 +2739,34 @@ export function ClipboardApp({
               </button>
             </div>
           )}
-        {sessionState.destination !== "devices" && (
+          {sessionState.destination !== "devices" && (
             <ConnectionStatusButton
               summary={connectionSummary}
               session={session}
             />
+          )}
+          {sessionState.destination === "history" && onShareNow && (
+            <div className="workspace-controls history-share-controls">
+              <div className="send-control">
+                <IconButton
+                  icon="send"
+                  label="Share current clipboard now"
+                  hint="Share current system clipboard now"
+                  onClick={shareNow}
+                  disabled={
+                    !identityReady ||
+                    sessionState.historyActions["send:current"]?.pending
+                  }
+                  aria-describedby="send-clipboard-hint"
+                />
+                <span id="send-clipboard-hint" className="control-hint">
+                  Sends your current system clipboard
+                </span>
+              </div>
+              {sessionState.historyActions["send:current"]?.pending && (
+                <span role="status">Sharing current clipboard…</span>
+              )}
+            </div>
           )}
           {headerActions}
         </header>
@@ -2986,20 +2945,20 @@ export function ClipboardApp({
         >
           {sessionState.destination !== "devices" &&
             sessionState.destination !== "history" && (
-            <div className="workspace-page-head" aria-hidden="true">
-              <div>
-                <div className="workspace-page-title">
-                  {sessionState.destination[0].toUpperCase() +
-                    sessionState.destination.slice(1)}
-                </div>
-                <p>
-                  {sessionState.destination === "settings"
+              <div className="workspace-page-head" aria-hidden="true">
+                <div>
+                  <div className="workspace-page-title">
+                    {sessionState.destination[0].toUpperCase() +
+                      sessionState.destination.slice(1)}
+                  </div>
+                  <p>
+                    {sessionState.destination === "settings"
                       ? "Make Clipp work the way you do."
                       : "Review your device requests."}
-                </p>
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
           {sessionState.destination !== "history" && (
             <section
               className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : sessionState.destination === "devices" ? "devices-pane" : ""}`}
@@ -3019,63 +2978,62 @@ export function ClipboardApp({
                 id="history-filters"
                 role="group"
                 aria-label="History filters"
-                hidden={filtersCollapsed}
               >
-                  <div className="segmented">
-                    <button
-                      className={filterMode === "all" ? "active" : ""}
-                      aria-pressed={filterMode === "all"}
-                      onClick={() => setFilterMode("all")}
-                    >
-                      All
-                    </button>
-                    <button
-                      className={filterMode === "pinned" ? "active" : ""}
-                      aria-pressed={filterMode === "pinned"}
-                      onClick={() => setFilterMode("pinned")}
-                    >
-                      Pinned
-                    </button>
-                    <button
-                      className={filterMode === "links" ? "active" : ""}
-                      aria-pressed={filterMode === "links"}
-                      onClick={() => setFilterMode("links")}
-                    >
-                      Links
-                    </button>
-                  </div>
+                <div className="segmented">
+                  <button
+                    className={filterMode === "all" ? "active" : ""}
+                    aria-pressed={filterMode === "all"}
+                    onClick={() => setFilterMode("all")}
+                  >
+                    All
+                  </button>
+                  <button
+                    className={filterMode === "pinned" ? "active" : ""}
+                    aria-pressed={filterMode === "pinned"}
+                    onClick={() => setFilterMode("pinned")}
+                  >
+                    Pinned
+                  </button>
+                  <button
+                    className={filterMode === "links" ? "active" : ""}
+                    aria-pressed={filterMode === "links"}
+                    onClick={() => setFilterMode("links")}
+                  >
+                    Links
+                  </button>
+                </div>
 
-                  <div className="source-filter-wrap">
-                    <button
-                      className="text-button"
-                      aria-expanded={sourceMenuOpen}
-                      onClick={() => setSourceMenuOpen((v) => !v)}
-                    >
-                      <Icon name="filters" />
-                      <span className="filter-button-label">
-                        {sourceFilterLabel(sourceFilter)}
-                      </span>
-                      <Icon name="chevron" />
-                    </button>
-                    {sourceMenuOpen && (
-                      <div className="time-menu source-menu">
-                        {sources.map((src) => (
-                          <button
-                            key={src}
-                            className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
-                            onClick={() => {
-                              setSourceFilter(src);
-                              setSourceMenuOpen(false);
-                            }}
-                          >
-                            <span className="filter-menu-label">
-                              {sourceOptionLabel(src)}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <div className="source-filter-wrap">
+                  <button
+                    className="text-button"
+                    aria-expanded={sourceMenuOpen}
+                    onClick={() => setSourceMenuOpen((v) => !v)}
+                  >
+                    <Icon name="filters" />
+                    <span className="filter-button-label">
+                      {sourceFilterLabel(sourceFilter)}
+                    </span>
+                    <Icon name="chevron" />
+                  </button>
+                  {sourceMenuOpen && (
+                    <div className="time-menu source-menu">
+                      {sources.map((src) => (
+                        <button
+                          key={src}
+                          className={`time-menu-item ${sourceFilter === src ? "active" : ""}`}
+                          onClick={() => {
+                            setSourceFilter(src);
+                            setSourceMenuOpen(false);
+                          }}
+                        >
+                          <span className="filter-menu-label">
+                            {sourceOptionLabel(src)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             {historyLoading && <p role="status">Loading History…</p>}
@@ -3206,7 +3164,11 @@ export function ClipboardApp({
                         {shortenPreview(clip.content, 220)}
                       </span>
                       {pinned && (
-                        <span className="history-pin-marker" role="img" aria-label="Pinned Clip">
+                        <span
+                          className="history-pin-marker"
+                          role="img"
+                          aria-label="Pinned Clip"
+                        >
                           <Icon name="pin" />
                         </span>
                       )}
@@ -3218,7 +3180,10 @@ export function ClipboardApp({
                         text={label}
                       />
                       <span aria-hidden="true"> · </span>
-                      <time className="meta-time" dateTime={new Date(clip.capturedAt).toISOString()}>
+                      <time
+                        className="meta-time"
+                        dateTime={new Date(clip.capturedAt).toISOString()}
+                      >
                         {timeLabel}
                       </time>
                     </div>
@@ -3247,13 +3212,13 @@ export function ClipboardApp({
                           historyLoading ||
                           historyUnavailable ||
                           Boolean(historyRefreshError) ||
-                          sessionState.historyActions[`delete:${clip.id}`]?.pending
+                          sessionState.historyActions[`delete:${clip.id}`]
+                            ?.pending
                         }
                         onClick={() => handleDelete(clip.id)}
                       />
-                      {sessionState.historyActions[`delete:${clip.id}`]?.pending && (
-                        <span role="status">Deleting Clip…</span>
-                      )}
+                      {sessionState.historyActions[`delete:${clip.id}`]
+                        ?.pending && <span role="status">Deleting Clip…</span>}
                       {sessionState.historyActions[`copy:${clip.id}`]
                         ?.pending && <span role="status">Copying Clip…</span>}
                     </div>
@@ -3289,8 +3254,14 @@ export function ClipboardApp({
                     detailsClip.originPeerId
                   : undefined
               }
-              capturedAtLabel={detailsClip ? formatTime(detailsClip.capturedAt) : undefined}
-                isLocal={identity ? detailsClip?.originPeerId === identity.deviceId : undefined}
+              capturedAtLabel={
+                detailsClip ? formatTime(detailsClip.capturedAt) : undefined
+              }
+              isLocal={
+                identity
+                  ? detailsClip?.originPeerId === identity.deviceId
+                  : undefined
+              }
               pinned={pinnedSet.has(activeTask?.entity ?? "")}
               disabled={
                 !identityReady ||
