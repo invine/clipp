@@ -55,7 +55,7 @@ it("leads with Clip content and actions, with technical metadata available on di
     })
   );
   expect(output.indexOf("https://example.test/a-long-resource")).toBeLessThan(
-    output.indexOf("Clip information")
+    output.indexOf("More Clip actions and information")
   );
   expect(output).toContain("Link");
   expect(output).toContain('aria-label="Copy Clip"');
@@ -180,7 +180,7 @@ it("only presents Share Now when the runtime provides it and states what it shar
   );
   expect(supported).toContain('aria-label="Share current clipboard now"');
   expect(supported).toContain("Sends your current system clipboard");
-  expect(supported).toContain("This Clip is not sent by this action.");
+  expect(supported).toContain("it does not send this Clip.");
 });
 
 it("shows current clipboard Share Now failure feedback inside details", () => {

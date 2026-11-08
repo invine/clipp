@@ -14,6 +14,9 @@ export type TaskDialogProps = {
   onDismiss?(): void;
   originKey?: string;
   className?: string;
+  fullOnNarrow?: boolean;
+  headerDismiss?: boolean;
+  showCancel?: boolean;
   initialFocusKey?: string;
   returnLabel?: string;
   focusVersion?: number;
@@ -30,6 +33,9 @@ export function TaskDialog({
   onDismiss,
   originKey,
   className,
+  fullOnNarrow = true,
+  headerDismiss = false,
+  showCancel = true,
   initialFocusKey,
   returnLabel = "Close",
   focusVersion,
@@ -80,7 +86,7 @@ export function TaskDialog({
 
   return (
     <div
-      className={`task-dialog-backdrop ${narrow && role === "dialog" ? "task-dialog-full" : ""}`}
+      className={`task-dialog-backdrop ${narrow && role === "dialog" && fullOnNarrow ? "task-dialog-full" : ""}`}
       role="presentation"
     >
       <div
@@ -101,23 +107,27 @@ export function TaskDialog({
               data-task-return=""
               ref={returnRef}
               type="button"
+              aria-label={headerDismiss ? "Close details" : undefined}
+              className={headerDismiss ? "task-dialog-header-close" : undefined}
               onClick={onDismiss}
             >
-              {returnLabel}
+              {headerDismiss ? "×" : returnLabel}
             </button>
           )}
           <h2 id={titleId}>{title}</h2>
         </header>
         {children}
-        <button
-          ref={cancelRef}
-          type="button"
-          onClick={onCancel}
-          disabled={pending}
-          className="text-button"
-        >
-          {cancelLabel}
-        </button>
+        {showCancel && (
+          <button
+            ref={cancelRef}
+            type="button"
+            onClick={onCancel}
+            disabled={pending}
+            className="text-button"
+          >
+            {cancelLabel}
+          </button>
+        )}
       </div>
     </div>
   );

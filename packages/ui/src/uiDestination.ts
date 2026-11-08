@@ -1,7 +1,6 @@
 /** Navigation data only; runtime authorization remains with the host. */
 export type HistoryContext = {
   search?: string;
-  timeFilter?: "all" | "24h" | "7d" | "30d";
   sourceFilter?: string;
   filterMode?: "all" | "pinned" | "links";
 };
@@ -105,7 +104,7 @@ export function parseUiDestination(value: unknown): UiDestination | null {
   if (v.context !== undefined) {
     const incoming = v.context as Record<string, unknown>,
       context: Record<string, unknown> = {};
-    for (const key of ["search", "timeFilter", "sourceFilter", "filterMode"])
+    for (const key of ["search", "sourceFilter", "filterMode"])
       if (incoming[key] !== undefined) context[key] = incoming[key];
     normalized.context = context;
   }

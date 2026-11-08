@@ -17,7 +17,9 @@ type Deferred = {
 const deferred: Deferred[] = [];
 let nextClip = true;
 const listeners = new Set<() => void>();
+const targetListeners = new Set<() => void>();
 let requestedEffects: string[] = [];
+let requestedTargets: string[] = [];
 const session = createUiSession();
 session.update(
   window.location.search.includes("history")
@@ -27,6 +29,11 @@ session.update(
 
 function notify() {
   listeners.forEach((listener) => listener());
+}
+
+function noteTarget(target: string) {
+  requestedTargets = [...requestedTargets, target];
+  targetListeners.forEach((listener) => listener());
 }
 
 function request(kind: string): Promise<unknown> {
@@ -45,6 +52,56 @@ const clip: Clip = {
   capturedAt: 1,
   shareExpiresAt: 2,
 };
+const otherClip: Clip = {
+  id: "clip-two",
+  type: "url",
+  content: "https://example.test/remote-clip",
+  originPeerId: "remote-device",
+  capturedAt: 2,
+  shareExpiresAt: 3,
+};
+const atLocalTime = (hours: number, minutes: number) => {
+  const capturedAt = new Date();
+  capturedAt.setHours(hours, minutes, 0, 0);
+  return capturedAt.getTime();
+};
+const atLocalDayTime = (daysAgo: number, hours: number, minutes: number) => {
+  const capturedAt = new Date();
+  capturedAt.setDate(capturedAt.getDate() - daysAgo);
+  capturedAt.setHours(hours, minutes, 0, 0);
+  return capturedAt.getTime();
+};
+const mondayAt = (hours: number, minutes: number) => {
+  const capturedAt = new Date();
+  capturedAt.setDate(capturedAt.getDate() - ((capturedAt.getDay() + 6) % 7));
+  capturedAt.setHours(hours, minutes, 0, 0);
+  return capturedAt.getTime();
+};
+const referenceClips: Clip[] = [
+  [1, "text", "77082497161", "scenario-device", atLocalTime(11, 22)],
+  [2, "text", "77082497161", "scenario-device", atLocalTime(11, 14)],
+  [3, "url", "https://clipp.app/notes/device-sync", "pixel-nine", atLocalTime(11, 7)],
+  [4, "text", "7082497161", "scenario-device", atLocalTime(11, 5)],
+  [5, "text", "576097", "scenario-device", atLocalTime(10, 58)],
+  [6, "text", "0xdaa2b3b9fb5932bea5ece173c1aced92269f3c48", "scenario-device", atLocalTime(10, 57)],
+  [7, "text", "Pick up the documents before the meeting.", "pixel-nine", atLocalDayTime(1, 18, 32)],
+  [8, "url", "https://developer.mozilla.org/en-US/docs/Web", "scenario-device", atLocalDayTime(1, 15, 10)],
+  [9, "text", "Meeting notes: review the mobile layout, test the connection states, and share the updated design with the team before Friday.", "scenario-device", atLocalDayTime(1, 13, 45)],
+  [10, "text", "23 Orchard Street, Dubai", "pixel-nine", atLocalDayTime(1, 11, 28)],
+  [11, "url", "https://example.com/articles/designing-for-small-screens", "pixel-nine", mondayAt(16, 12)],
+  [12, "text", "Remember to bring the charger.", "scenario-device", mondayAt(9, 6)],
+].map(([id, type, content, originPeerId, capturedAt]) => ({
+  id: `reference-clip-${id}`,
+  type: type as Clip["type"],
+  content: content as string,
+  originPeerId: originPeerId as string,
+  capturedAt: capturedAt as number,
+  shareExpiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+}));
+clip.capturedAt = atLocalTime(11, 22);
+otherClip.capturedAt = atLocalTime(11, 14);
+clip.shareExpiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+otherClip.shareExpiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
 
 const unavailable = async (): Promise<never> => {
   throw new Error("Unexpected runtime effect in History scenario");
@@ -58,6 +115,14 @@ function ScenarioControls() {
     },
     () => requestedEffects,
     () => requestedEffects
+  );
+  const targets = useSyncExternalStore(
+    (listener) => {
+      targetListeners.add(listener);
+      return () => targetListeners.delete(listener);
+    },
+    () => JSON.stringify(requestedTargets),
+    () => JSON.stringify(requestedTargets)
   );
   function resolveNext(kind: string, value?: unknown) {
     const index = deferred.findIndex((action) => action.kind === kind);
@@ -97,6 +162,12 @@ function ScenarioControls() {
       <button type="button" onClick={() => resolveNext("pin")}>
         Resolve Pin: success
       </button>
+      <button type="button" onClick={() => rejectNext("copy")}>
+        Resolve Copy: failure
+      </button>
+      <button type="button" onClick={() => resolveNext("copy", "complete")}>
+        Resolve Copy: success
+      </button>
       <button type="button" onClick={() => rejectNext("delete")}>
         Resolve Delete: failure
       </button>
@@ -104,20 +175,47 @@ function ScenarioControls() {
         Resolve Delete: success
       </button>
       <output data-testid="history-effects">{JSON.stringify(effects)}</output>
+      <output data-testid="history-targets">{targets}</output>
     </aside>
   );
 }
 
+let dynamicProps: ClipboardAppProps;
+const previewConnection = new URLSearchParams(window.location.search).get("connection");
+const referencePreview = new URLSearchParams(window.location.search).has("reference");
+const connectedPreview = previewConnection === "direct" || previewConnection === "relay";
+const previewPeerId = referencePreview ? "pixel-nine" : "remote-device";
 const props: ClipboardAppProps = {
-  clips: [clip],
-  devices: [],
+  clips: referencePreview ? referenceClips : [clip, otherClip],
+  devices: referencePreview
+    ? [{ deviceId: "pixel-nine", deviceName: "Pixel 9" }]
+    : [{ deviceId: "remote-device", deviceName: connectedPreview ? "Pixel 9" : "Remote Device" }],
   pending: [],
-  peers: [],
-  identity: { deviceId: "scenario-device", deviceName: "Scenario Device" },
-  pinnedIds: [],
+  peers: connectedPreview ? [previewPeerId] : [],
+  ...(connectedPreview
+    ? {
+        connectionStateKnown: true,
+        peerConnections: [
+          { peerId: previewPeerId, path: previewConnection === "direct" ? "direct" : "relay", hasDirect: previewConnection === "direct", hasRelay: previewConnection === "relay", addrs: [] },
+        ],
+      }
+    : {}),
+  identity: { deviceId: "scenario-device", deviceName: referencePreview || connectedPreview ? "Desktop" : "Scenario Device" },
+  pinnedIds: referencePreview
+    ? ["reference-clip-3", "reference-clip-7", "reference-clip-12"]
+    : connectedPreview
+      ? ["clip-one"]
+      : [],
   session,
-  onDeleteClip: async () => {
+  onDeleteClip: async (id) => {
+    noteTarget(`delete:${id}`);
     await request("delete");
+    dynamicProps = {
+      ...dynamicProps,
+      clips: dynamicProps.clips.filter((item) => item.id !== id),
+      pinnedIds: dynamicProps.pinnedIds.filter((pinnedId) => pinnedId !== id),
+    };
+    historyStore.publish(dynamicProps);
   },
   onUnpair: unavailable,
   onAccept: unavailable,
@@ -125,10 +223,19 @@ const props: ClipboardAppProps = {
   onPairText: async () => ({ ok: false, error: "outcome_unconfirmed" }),
   onRequestPairingCode: unavailable,
   onCopyPairingText: unavailable,
-  onReuseClip: unavailable,
+  onReuseClip: async (id) => {
+    noteTarget(`copy:${id}`);
+    return (await request("copy")) as "complete";
+  },
   onShareNow: unavailable,
-  onSetPinned: async () => {
+  onSetPinned: async (id, pinned) => {
+    noteTarget(`pin:${id}`);
     await request("pin");
+    const pinnedIds = new Set(dynamicProps.pinnedIds);
+    if (pinned) pinnedIds.add(id);
+    else pinnedIds.delete(id);
+    dynamicProps = { ...dynamicProps, pinnedIds: [...pinnedIds] };
+    historyStore.publish(dynamicProps);
   },
   onClearAll: async () => {
     await request("clear");
@@ -137,6 +244,7 @@ const props: ClipboardAppProps = {
     return (await request("refresh")) as boolean;
   },
 };
+dynamicProps = props;
 const historyStore = createUiRuntimeStore(props);
 const adapter = {
   ...historyStore,
