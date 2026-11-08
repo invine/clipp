@@ -155,6 +155,7 @@ test("ordinary pull requests and main changes use the same read-only routine com
       run?: string;
       uses?: string;
       with?: Record<string, string>;
+      env?: Record<string, string>;
     }>;
   }>;
   expect(jobs).toHaveLength(1);
@@ -167,6 +168,8 @@ test("ordinary pull requests and main changes use the same read-only routine com
     "npm ci",
     "npm run verify",
   ]);
+  const install = jobs[0].steps.find((step) => step.run === "npm ci");
+  expect(install?.env).toEqual({ SKIP_BIN: "1" });
   const setup = jobs[0].steps.find((step) =>
     step.uses?.startsWith("actions/setup-node@")
   );

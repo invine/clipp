@@ -55,7 +55,8 @@ it("an active History query has a named clear route", () => {
     React.createElement(ClipboardApp, { ...props, session })
   );
   expect(output).toContain('aria-label="Clear search"');
-  expect(output).toContain('<h1 class="workspace-current-title">Pinned</h1>');
+  expect(output).not.toContain('<h1 class="workspace-current-title">Pinned</h1>');
+  expect(output).not.toContain('<h1 class="workspace-current-title">History</h1>');
 });
 it("keeps History controls off task destinations while retaining a screen heading", () => {
   const session = createUiSession();
@@ -423,7 +424,8 @@ it("History exposes the Clip content as details selection and keeps complete gra
   expect(output).toContain("a".repeat(219) + "👩🏽‍💻…");
   expect(output).not.toContain('aria-label="More Clip actions"');
   expect(output).toContain('aria-label="Copy Clip"');
-  expect(output).toContain('aria-label="Pin Clip"');
+  expect(output).toContain('aria-label="Delete Clip"');
+  expect(output).not.toContain('aria-label="Pin Clip"');
 });
 
 it.each(["e\u0301", "👍🏽", "🇦🇪"])(
@@ -460,7 +462,7 @@ it("names one connection control without claiming delivery for an untrusted tran
   expect(output).not.toContain("Synced");
 });
 
-it("connection control is a direct navigation action", () => {
+it("connection control names its accessible summary and route", () => {
   const output = renderToStaticMarkup(
     React.createElement(ClipboardApp, { ...props })
   );
@@ -469,7 +471,10 @@ it("connection control is a direct navigation action", () => {
   )?.[0];
   expect(control).toContain('aria-label="');
   expect(control).toMatch(/title="[^"]+"/);
-  expect(control).not.toContain("aria-haspopup");
+  expect(control).toContain('aria-haspopup="dialog"');
+  expect(control).toContain('aria-expanded="false"');
+  expect(control).toContain('aria-controls="connection-summary-panel"');
+  expect(output).not.toContain('aria-label="Connection summary"');
 });
 
 it("Devices retains honest text status when a reported path is no longer connected", () => {

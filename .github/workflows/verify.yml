@@ -22,4 +22,7 @@ jobs:
           cache: npm
       - run: timeout 180s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'
       - run: npm ci
+        env:
+          # Routine CI does not run native Electron startup checks.
+          SKIP_BIN: "1"
       - run: npm run verify
