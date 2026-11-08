@@ -20,6 +20,18 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - run: timeout 180s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential cmake python3'
-      - run: npm ci
+      - run: timeout 180s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'
+      - name: Install dependencies (retry transient native prebuild downloads)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "npm ci failed on attempt $attempt/3; retrying in 10 seconds"
+              sleep 10
+            fi
+          done
+          exit 1
       - run: npm run verify
