@@ -25,6 +25,21 @@
     },
     { "id": "ui-behavior", "command": ["npm", "run", "test:ui-behavior"] }
   ],
+  "electronPackage": {
+    "applicationFiles": ["dist/**/*"],
+    "resourceFiles": [
+      "clipp-appicon-256.png",
+      "clipp-tray.png",
+      "clipp-tray@2x.png",
+      "clipp-trayTemplate.svg",
+      "clipp-trayTemplate.png",
+      "clipp-trayTemplate@2x.png",
+      "clipp-trayTemplate-16.png",
+      "clipp-trayTemplate-16@2x.png",
+      "clipp-trayTemplate-32.png",
+      "clipp-trayTemplate-64.png"
+    ]
+  },
   "targets": {
     "electron-package": {
       "dependsOn": [],
@@ -93,7 +108,9 @@
   "toolchain": {
     "node": ">=22.22.1",
     "npm": ">=10.0.0",
+    "electron": "43.4.0",
     "electronBuilder": "26.18.0",
+    "electronAsar": "3.4.1",
     "gradle": "wrapper"
   }
 }

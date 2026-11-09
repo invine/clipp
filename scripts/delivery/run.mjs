@@ -20,6 +20,11 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
+import {
+  electronNativeInventory,
+  inspectElectronConfig,
+  packageElectron,
+} from "./electron.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, message) => {
@@ -198,6 +203,14 @@ function planRecord(file, identity) {
     JSON.stringify(knownChecks.map(([id, command]) => ({ id, command })))
   )
     fail("invalid_profile", "Frozen common check allocation is unsupported");
+  const supportedProfile = JSON.parse(
+    readFileSync(new URL("./profiles/v1.json", import.meta.url), "utf8")
+  );
+  if (
+    JSON.stringify(plan.profile.electronPackage) !==
+    JSON.stringify(supportedProfile.electronPackage)
+  )
+    fail("invalid_profile", "Frozen Electron package profile is unsupported");
   if (
     JSON.stringify(plan.profile.candidateGeneratedOutputs) !==
     JSON.stringify(knownGeneratedOutputs)
@@ -260,7 +273,8 @@ function validateRun(record, plan, digest) {
     record.profileSha256 !== plan.profile.sha256 ||
     record.configurationSha256 !== plan.configurationSha256 ||
     !record.stages?.prepare ||
-    !record.stages?.commonVerify
+    !record.stages?.commonVerify ||
+    !record.stages?.electronPackage
   )
     fail("invalid_run", "Run record is incompatible with the frozen plan");
   if (
@@ -300,6 +314,9 @@ function environmentIdentity() {
   };
 }
 function summary(run) {
+  const outstanding = Object.entries(run.targets || {}).find(
+    ([, target]) => target.state !== "complete"
+  );
   return {
     ...run,
     nextAction:
@@ -307,7 +324,8 @@ function summary(run) {
         ? "prepare candidate"
         : run.stages.commonVerify.state !== "passed"
           ? "run common local verification"
-          : "complete requested platform adapters",
+          : outstanding?.[1].nextAction ||
+            (outstanding ? `complete ${outstanding[0]}` : null),
   };
 }
 function stage(run, name, state, detail, file) {
@@ -608,6 +626,7 @@ function newRun(plan, digest) {
     stages: {
       prepare: { state: "pending", attempts: [], updatedAt: null },
       commonVerify: { state: "pending", attempts: [], updatedAt: null },
+      electronPackage: { state: "pending", attempts: [], updatedAt: null },
     },
     targets: Object.fromEntries(
       Object.keys(plan.targets).map((target) => [
@@ -616,6 +635,7 @@ function newRun(plan, digest) {
       ])
     ),
     artifacts: null,
+    nativeDependencyInventory: null,
     generatedOutputs: null,
     uiFailureDiagnostics: [],
     installationSha256: null,
@@ -688,6 +708,7 @@ async function commandAttempt(
     );
   if (!observation.passed)
     fail("required_check_failed", `${name} failed; see private log ${log}`);
+  return log;
 }
 async function prepare(run, plan, file) {
   if (run.stages.prepare.state === "passed") {
@@ -832,6 +853,20 @@ async function commonVerify(run, plan, file) {
   }
   sourceClean(run.checkout, plan.source.commit);
   run.artifacts = outputs(run.checkout);
+  if (plan.targets["electron-package"]) {
+    try {
+      const manifest = readJson(
+        path.join(run.checkout, "apps/electron/package.json"),
+        "prerequisite_unavailable"
+      );
+      inspectElectronConfig(manifest, plan.profile.electronPackage);
+      run.nativeDependencyInventory = electronNativeInventory(run.checkout);
+    } catch {
+      // Electron-specific prerequisite is reported by its adapter after the
+      // common checks. It must not invalidate independent target progress.
+      run.nativeDependencyInventory = null;
+    }
+  }
   run.generatedOutputs = generatedOutputs(run.checkout);
   stage(
     run,
@@ -916,7 +951,7 @@ export async function runDelivery(planPath, identity) {
     canRecover: () => {
       if (!existsSync(file)) return true;
       const previous = readJson(file, "invalid_run");
-      return ["prepare", "commonVerify"].every(
+      return ["prepare", "commonVerify", "electronPackage"].every(
         (name) =>
           previous.stages?.[name]?.state !== "running" ||
           (previous.stages[name].attempts.length &&
@@ -929,7 +964,7 @@ export async function runDelivery(planPath, identity) {
       ? validateRun(readJson(file, "invalid_run"), plan, digest)
       : newRun(plan, digest);
     if (!existsSync(file)) atomically(file, run);
-    for (const name of ["prepare", "commonVerify"]) {
+    for (const name of ["prepare", "commonVerify", "electronPackage"]) {
       if (run.stages[name].state !== "running") continue;
       const attempt = run.stages[name].attempts.at(-1);
       if (attempt?.state === "running")
@@ -972,7 +1007,67 @@ export async function runDelivery(planPath, identity) {
         run: summary(run),
       };
     }
-    return { code: "delivery_incomplete", run: summary(run) };
+    let platformCode = null;
+    if (run.targets["electron-package"]) {
+      try {
+        await packageElectron({
+          plan,
+          run,
+          file,
+          execute: (bin, args, cwd, environment, timeout, checkId) =>
+            commandAttempt(
+              run,
+              "electronPackage",
+              bin,
+              args,
+              cwd,
+              environment,
+              timeout,
+              file,
+              checkId
+            ),
+          save: () => atomically(file, run),
+        });
+        if (run.stages.electronPackage.state !== "passed")
+          stage(
+            run,
+            "electronPackage",
+            "passed",
+            "Electron DMG and packaged runtime verified",
+            file
+          );
+      } catch (error) {
+        const blocked =
+          !error.code || error.code === "prerequisite_unavailable";
+        platformCode = blocked ? null : error.code;
+        run.targets["electron-package"] = {
+          ...run.targets["electron-package"],
+          state: blocked ? "blocked" : "failed",
+          nextAction: error.message,
+          updatedAt: new Date().toISOString(),
+        };
+        stage(
+          run,
+          "electronPackage",
+          blocked ? "blocked" : "failed",
+          {
+            code: error.code || "prerequisite_unavailable",
+            message: error.message,
+          },
+          file
+        );
+      }
+    }
+    return {
+      code:
+        platformCode ||
+        (Object.values(run.targets).every(
+          (target) => target.state === "complete"
+        )
+          ? "delivery_complete"
+          : "delivery_incomplete"),
+      run: summary(run),
+    };
   } finally {
     release();
   }
