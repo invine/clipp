@@ -38,6 +38,7 @@ test("notification availability failures stay visible until refreshed and permis
   await expect(
     page.getByRole("heading", { name: "Notification journey scenario" })
   ).toBeVisible();
+  await page.getByRole("button", { name: "Open navigation" }).click();
   await page
     .getByRole("navigation", { name: "Clipp destinations" })
     .getByRole("button", { name: "Settings", exact: true })
