@@ -3,7 +3,7 @@
 // This imports from the packaged main's context, without starting Clipp or opening a profile.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const { findPackageJSON } = require("node:module");
+const { createRequire, findPackageJSON } = require("node:module");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const vm = require("node:vm");
@@ -14,6 +14,12 @@ async function main() {
   const appRoot = fs.realpathSync(process.argv[2]);
   const mainPath = path.join(appRoot, "dist/main.cjs");
   assert.ok(fs.existsSync(mainPath), "Packaged main bundle must exist");
+
+  // Main imports this CommonJS module during startup. A missing native addon
+  // crashes Clipp before the WebRTC transport factories can be used.
+  const wrtc = createRequire(mainPath)("@koush/wrtc");
+  assert.equal(typeof wrtc.RTCPeerConnection, "function");
+  console.log("PASS: packaged @koush/wrtc native addon loads");
 
   function packageImport(specifier, parent = mainPath) {
     const manifest = findPackageJSON(specifier, pathToFileURL(parent));
@@ -57,6 +63,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("FAIL: packaged WebRTC runtime", error.code || error.message);
+  console.error("FAIL: packaged WebRTC runtime", error.message);
   process.exitCode = 1;
 });
