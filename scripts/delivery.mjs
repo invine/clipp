@@ -24,7 +24,7 @@ const profilePath = path.join(
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const moduleSha256 = () =>
   sha(
-    ["run.mjs", "ownership.mjs"]
+    ["run.mjs", "ownership.mjs", "android-qualification.mjs"]
       .map((name) =>
         readFileSync(path.join(path.dirname(script), "delivery", name))
       )
@@ -287,6 +287,12 @@ function configuration(file, root) {
     "androidDeviceSerial",
     "playApplicationId",
     "playTrack",
+    "androidAcceptanceEffort",
+    "androidAcceptanceSerialApi31",
+    "androidAcceptanceSerialApi33",
+    "androidAcceptanceSerialApi34",
+    "androidAcceptanceSerialApi35",
+    "androidAcceptanceSerialApi36",
   ];
   if (
     Object.keys(config.destinations).some(
@@ -302,6 +308,8 @@ function configuration(file, root) {
     "playCredentialRef",
     "androidSdkRef",
     "javaHomeRef",
+    "androidAcceptanceStateRootRef",
+    "androidAcceptanceAuthorizationRef",
   ];
   if (
     config.references &&
@@ -357,6 +365,15 @@ function prerequisites(target, profile, config) {
   if (target.startsWith("android")) {
     for (const key of ["androidSdkRef", "javaHomeRef"])
       if (!config.references?.[key]) missing.push(`reference:${key}`);
+    if (!config.references?.androidAcceptanceStateRootRef)
+      missing.push("reference:androidAcceptanceStateRootRef");
+    if (!config.references?.androidAcceptanceAuthorizationRef)
+      missing.push("reference:androidAcceptanceAuthorizationRef");
+    if (!config.destinations.androidAcceptanceEffort)
+      missing.push("destination:androidAcceptanceEffort");
+    for (const api of profile.androidQualification.apis)
+      if (!config.destinations[`androidAcceptanceSerialApi${api}`])
+        missing.push(`destination:androidAcceptanceSerialApi${api}`);
   }
   if (
     ["android-package", "android-internal"].includes(target) &&
@@ -467,6 +484,18 @@ function plan(args) {
               : profile.targets[target].signing,
         destinationIdentity:
           config.destinations[profile.targets[target].destination] || null,
+        qualification: target.startsWith("android")
+          ? {
+              effort: config.destinations.androidAcceptanceEffort || null,
+              serials: Object.fromEntries(
+                profile.androidQualification.apis.map((api) => [
+                  api,
+                  config.destinations[`androidAcceptanceSerialApi${api}`] ||
+                    null,
+                ])
+              ),
+            }
+          : undefined,
         prerequisites: [
           ...hostMissing,
           ...prerequisites(target, profile, config),
@@ -501,6 +530,7 @@ function plan(args) {
       preflight: profile.preflight,
       candidateGeneratedOutputs: profile.candidateGeneratedOutputs,
       commonChecks: profile.commonChecks,
+      androidQualification: profile.androidQualification,
     },
     configurationSha256: sha(JSON.stringify(config)),
     privateReferences: config.references || {},
@@ -529,17 +559,36 @@ function plan(args) {
   return { code: "planned", path: destination, plan: record };
 }
 function help() {
-  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source, and leaves unimplemented target adapters incomplete. Status is read-only.\n`;
+  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--native-diagnostic-change <text> --native-expected-observation <text>] [--native-renewal <absolute decision file>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source. Android qualification uses explicitly selected and authorized acceptance emulators; other platform stages may remain incomplete. Status is read-only.\n`;
 }
-function runOptions(args) {
+function runOptions(args, { status = false } = {}) {
   const [selector, ...rest] = args;
   if (!selector || selector.startsWith("--"))
     fail("invalid_options", "Expected plan path or run ID");
   let configPath = process.env.CLIPP_DELIVERY_CONFIG;
+  const native = {};
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--json") continue;
     if (rest[i] === "--config" && rest[i + 1]) configPath = rest[++i];
-    else fail("invalid_options", `Unsupported run/status option: ${rest[i]}`);
+    else if (
+      [
+        "--native-diagnostic-change",
+        "--native-expected-observation",
+        "--native-renewal",
+        "--native-successor",
+      ].includes(rest[i]) &&
+      rest[i + 1] &&
+      !rest[i + 1].startsWith("--")
+    ) {
+      const field = {
+        "--native-diagnostic-change": "change",
+        "--native-expected-observation": "expectation",
+        "--native-renewal": "renewal",
+        "--native-successor": "successor",
+      }[rest[i]];
+      if (native[field]) fail("invalid_options", `Duplicate ${rest[i]}`);
+      native[field] = rest[++i];
+    } else fail("invalid_options", `Unsupported run/status option: ${rest[i]}`);
   }
   const isId = /^[0-9a-f-]{36}$/.test(selector);
   if (isId && !configPath)
@@ -552,7 +601,22 @@ function runOptions(args) {
     : null;
   if (configPath && (typeof runRoot !== "string" || !path.isAbsolute(runRoot)))
     fail("invalid_configuration", "Configuration requires absolute runRoot");
-  return { selector, isId, runRoot };
+  if (status && Object.keys(native).length)
+    fail("invalid_options", "Status does not accept native retry options");
+  if (
+    Boolean(native.change) !== Boolean(native.expectation) ||
+    [native.change, native.expectation].some(
+      (value) => value && (value.length > 200 || !value.trim())
+    ) ||
+    (native.renewal && !path.isAbsolute(native.renewal)) ||
+    (native.successor && !path.isAbsolute(native.successor)) ||
+    (native.renewal && native.successor)
+  )
+    fail(
+      "invalid_options",
+      "Native retry requires a bounded changed diagnosis and observation; decisions use absolute paths"
+    );
+  return { selector, isId, runRoot, native };
 }
 let json = process.argv.includes("--json");
 try {
@@ -566,14 +630,17 @@ try {
         : `Planned ${result.plan.id} at ${result.path}\nSource ${result.plan.source.commit}\nTargets ${Object.keys(result.plan.targets).join(", ")}\n`
     );
   } else if (process.argv[2] === "run") {
-    const { selector, isId, runRoot } = runOptions(process.argv.slice(3));
+    const { selector, isId, runRoot, native } = runOptions(
+      process.argv.slice(3)
+    );
     const result = await runDelivery(
       isId ? planPathForId(runRoot, selector) : path.resolve(selector),
       {
         scriptSha256: sha(readFileSync(script)),
         moduleSha256: moduleSha256(),
         profileSha256: sha(readFileSync(profilePath)),
-      }
+      },
+      { native }
     );
     process.stdout.write(
       json
@@ -587,7 +654,9 @@ try {
           ? 0
           : 1;
   } else if (process.argv[2] === "status") {
-    const { selector, isId, runRoot } = runOptions(process.argv.slice(3));
+    const { selector, isId, runRoot } = runOptions(process.argv.slice(3), {
+      status: true,
+    });
     if (!isId || !runRoot)
       fail("invalid_options", "Status requires a run ID and --config");
     const result = statusDelivery(runRoot, selector);
