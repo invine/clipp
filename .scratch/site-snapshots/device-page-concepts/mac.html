@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clipp · Mac devices preview</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b0b0d; color: #f4f3f6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, a, summary { font: inherit; }
+    button, summary { cursor: pointer; }
+    button { color: inherit; border: 0; }
+    button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid #c8baff; outline-offset: 2px; }
+    .preview-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; background: #222127; }
+    .preview-nav a, .preview-nav button { display: inline-flex; align-items: center; min-height: 36px; padding: 0 11px; border-radius: 6px; text-decoration: none; color: #d1ced9; font-size: 13px; background: transparent; }
+    .preview-nav a[aria-current="page"] { background: #494453; color: #fff; }
+    .preview-nav button { margin-left: auto; border: 1px solid #55525e; }
+    .preview-stage { width: 100%; overflow-x: auto; }
+    .scale-box { position: relative; overflow: hidden; }
+    .mac-window { position: absolute; top: 0; left: 0; width: 1440px; height: 900px; transform-origin: top left; background: #0b0b0d; display: flex; overflow: hidden; }
+    .mac-window.half { width: 720px; }
+    .sidebar { width: 218px; flex: 0 0 218px; height: 100%; border-right: 1px solid #303035; display: flex; flex-direction: column; background: #0c0c0f; }
+    .traffic { display: flex; gap: 8px; height: 30px; align-items: center; padding-left: 16px; }
+    .traffic i { display: block; width: 10px; height: 10px; border-radius: 50%; background: #68676d; }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 14px 22px 20px; font-size: 16px; font-weight: 700; }
+    .brand img { width: 28px; height: 28px; }
+    .navigation { padding: 0 10px; display: grid; gap: 2px; }
+    .navigation span { display: flex; align-items: center; gap: 14px; min-height: 42px; padding: 0 12px; border-radius: 7px; color: #b1afb8; font-size: 14px; }
+    .navigation span.current { background: #1b1b20; color: #f4f3f6; font-weight: 650; }
+    .nav-icon { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: #b1afb8; }
+    .sync { margin: auto 16px 20px; padding: 18px 6px 0; border-top: 1px solid #303035; display: flex; justify-content: space-between; font-size: 13px; color: #b1afb8; }
+    .content { flex: 1; min-width: 0; }
+    .titlebar { height: 62px; border-bottom: 1px solid #303035; display: flex; align-items: center; padding: 0 28px; font-size: 17px; font-weight: 650; }
+    .header-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .header-actions .icon-button { background: #29282f; }
+    .content-inner { padding: 26px 28px; max-width: 1070px; }
+    .half .content-inner { padding: 22px; }
+    .pair-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .button { min-height: 40px; padding: 0 15px; border-radius: 8px; background: #29282f; font-size: 14px; font-weight: 600; }
+    .primary { color: #17151d; background: #ae9cf4; }
+    .panels { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(380px, 1.2fr); gap: 16px; align-items: start; }
+    .half .panels { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .panel { padding: 18px; background: #151518; border-radius: 9px; }
+    h1, h2 { margin: 0; font-size: 16px; }
+    .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+    .count, .id { font-size: 13px; color: #b1afb8; }
+    .row { display: flex; align-items: center; gap: 10px; padding: 12px 0; min-width: 0; }
+    .row + .row { border-top: 1px solid #303035; }
+    .local-row { padding: 0; }
+    .row-body { flex: 1; min-width: 0; }
+    .device-name { display: block; font-size: 14px; font-weight: 650; }
+    .id { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 13px; color: #d0ced6; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex: 0 0 8px; }
+    .dot.offline { background: #777781; }
+    .local-actions { display: flex; }
+    .icon-button, .menu-trigger { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 8px; background: transparent; }
+    .icon-button:hover, .menu-trigger:hover { background: #29282f; }
+    .icon-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    details { position: relative; flex: none; }
+    summary { list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    .menu-trigger { font-size: 24px; line-height: 1; }
+    .menu { position: absolute; top: 38px; right: 0; z-index: 2; min-width: 165px; padding: 5px; background: #333139; border-radius: 8px; box-shadow: 0 6px 20px #0009; }
+    .menu button { width: 100%; padding: 10px; text-align: left; background: transparent; border-radius: 5px; font-size: 13px; }
+    .menu button:hover { background: #4a4850; }
+    dialog { max-width: min(440px, calc(100vw - 32px)); width: 100%; padding: 22px; border: 1px solid #414047; border-radius: 12px; background: #202026; color: #f4f3f6; }
+    dialog::backdrop { background: #000a; }
+    dialog h2 { margin-bottom: 12px; }
+    dialog p { overflow-wrap: anywhere; line-height: 1.5; color: #d0ced6; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    #copy-error { font-size: 13px; color: #ffb7bd; }
+  </style>
+</head>
+<body>
+  <nav class="preview-nav" aria-label="Preview layouts"><a href="index.html">Phone</a><a id="full-link" href="mac.html?size=full">Mac · full screen</a><a id="half-link" href="mac.html?size=half">Mac · half screen</a><button type="button" id="scale-toggle" aria-pressed="false">Actual size</button></nav>
+  <div class="preview-stage" id="stage"><div class="scale-box" id="scale-box"><div class="mac-window" id="mac-window">
+    <aside class="sidebar" aria-label="Clipp navigation">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="brand"><img src="clipp-icon.png" alt=""><span>Clipp</span></div>
+      <nav class="navigation" aria-label="App sections">
+        <span><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5V3h6v1.5M9 10h6M9 14h6"/></svg>History</span>
+        <span><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8l-1 7 3 4v2H6v-2l3-4-1-7Zm4 13v6"/></svg>Pinned</span>
+        <span><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8.5 15.5l-1 1a4 4 0 0 1-5.5-5.8l4-4a4 4 0 0 1 5.7 0M15.5 8.5l1-1a4 4 0 0 1 5.5 5.8l-4 4a4 4 0 0 1-5.7 0"/></svg>Links</span>
+        <span class="current" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5M6 21h12"/></svg>Devices</span>
+        <span><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>Requests</span>
+        <span><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 14 3l.8 2.2 1.7.9 2.2-.6 1.5 1.5-.6 2.2.9 1.7 2.2.8v2l-2.2.8-.9 1.7.6 2.2-1.5 1.5-2.2-.6-1.7.9-.8 2.2h-2l-.8-2.2-1.7-.9-2.2.6-1.5-1.5.6-2.2-.9-1.7-2.2-.8v-2l2.2-.8.9-1.7-.6-2.2 1.5-1.5 2.2.6 1.7-.9.8-2.2Z"/><circle cx="12" cy="12" r="3"/></svg>Settings</span>
+      </nav>
+      <div class="sync"><span>Auto Sync</span><span>On</span></div>
+    </aside>
+    <div class="content">
+      <div class="titlebar"><h1>Devices</h1><div class="header-actions"><button class="button primary" type="button" data-preview="Pair this device">Pair</button><button class="icon-button" type="button" data-preview="Show my QR" aria-label="Show my QR"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h3v3h3v3h-6ZM21 12h-3M12 3v9H3M12 15v6"/></svg></button></div></div>
+      <main class="content-inner">
+        <div class="panels">
+          <section class="panel" aria-labelledby="local-heading"><div class="row local-row"><div class="row-body"><h2 id="local-heading">MacBook Pro</h2><span class="id">12D3KooWNL4...nefUjBRWVc</span></div><div class="local-actions"><button class="icon-button" type="button" data-id="local" aria-label="Show and copy this device's peer ID"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="1.5"></rect><path d="M16 8V5H5v11h3"></path></svg></button><button class="icon-button" type="button" data-preview="Rename this device" aria-label="Rename this device"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 12-12 4 4L8 20H4v-4ZM13 7l4 4"></path></svg></button></div></div></section>
+          <section class="panel" aria-labelledby="trusted-heading">
+            <div class="panel-head"><h2 id="trusted-heading">Trusted devices</h2><span class="count">3 devices</span></div>
+            <div class="row"><div class="row-body"><span class="device-name">Samsung</span><span class="id">12D3KooWBdY...LQfmQXHiho</span><span class="status"><span class="dot"></span>Connected · direct</span></div><details><summary class="menu-trigger" aria-label="Samsung actions">⋮</summary><div class="menu"><button type="button" data-id="samsung">View peer ID</button><button type="button" data-preview="Edit Samsung alias">Edit alias</button><button type="button" data-preview="Revoke Samsung">Revoke device</button></div></details></div>
+            <div class="row"><div class="row-body"><span class="device-name">Extension</span><span class="id">12D3KooWBon...HnWfv9hXMP</span><span class="status"><span class="dot"></span>Connected · relay</span></div><details><summary class="menu-trigger" aria-label="Extension actions">⋮</summary><div class="menu"><button type="button" data-id="extension">View peer ID</button><button type="button" data-preview="Edit Extension alias">Edit alias</button><button type="button" data-preview="Revoke Extension">Revoke device</button></div></details></div>
+            <div class="row"><div class="row-body"><span class="device-name">Tablet</span><span class="id">12D3KooWJ3d...7gK2sBRtD8</span><span class="status"><span class="dot offline"></span>Offline</span></div><details><summary class="menu-trigger" aria-label="Tablet actions">⋮</summary><div class="menu"><button type="button" data-id="tablet">View peer ID</button><button type="button" data-preview="Edit Tablet alias">Edit alias</button><button type="button" data-preview="Revoke Tablet">Revoke device</button></div></details></div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div></div></div>
+  <dialog id="details-dialog" aria-labelledby="dialog-title"><h2 id="dialog-title"></h2><p id="dialog-copy"></p><p id="copy-error" role="alert" hidden></p><div class="dialog-actions"><button class="button" id="close-dialog" type="button">Close</button><button class="button primary" id="copy-id" type="button">Copy peer ID</button></div></dialog>
+  <script>
+    const half = new URLSearchParams(location.search).get('size') === 'half';
+    const width = half ? 720 : 1440;
+    const windowMock = document.getElementById('mac-window');
+    const box = document.getElementById('scale-box');
+    const stage = document.getElementById('stage');
+    const scaleToggle = document.getElementById('scale-toggle');
+    let actualSize = false;
+    windowMock.classList.toggle('half', half);
+    document.getElementById(half ? 'half-link' : 'full-link').setAttribute('aria-current', 'page');
+    function fit() {
+      const scale = actualSize ? 1 : Math.min(1, stage.clientWidth / width);
+      windowMock.style.transform = `scale(${scale})`;
+      box.style.width = `${width * scale}px`;
+      box.style.height = `${900 * scale}px`;
+      scaleToggle.textContent = actualSize ? 'Fit to screen' : 'Actual size';
+      scaleToggle.setAttribute('aria-pressed', String(actualSize));
+    }
+    scaleToggle.addEventListener('click', () => { actualSize = !actualSize; fit(); });
+    window.addEventListener('resize', fit);
+    fit();
+    const ids = {local: ['MacBook Pro', '12D3KooWNL4MdH9Z7gT2w4qJ5c3r8BXanefUjBRWVc'], samsung: ['Samsung', '12D3KooWBdY7nb5eMZp94rKJJ4xwzTcsmaLQfmQXHiho'], extension: ['Extension', '12D3KooWBon4XJ2wzPea83TZcb96mGkqEHnWfv9hXMP'], tablet: ['Tablet', '12D3KooWJ3d38Jthd8dQ52kA9BmK8e3f7gK2sBRtD8']};
+    const dialog = document.getElementById('details-dialog');
+    const title = document.getElementById('dialog-title');
+    const copy = document.getElementById('dialog-copy');
+    const copyButton = document.getElementById('copy-id');
+    const copyError = document.getElementById('copy-error');
+    let activeId = '';
+    document.querySelectorAll('[data-id]').forEach(button => button.addEventListener('click', () => {
+      const item = ids[button.dataset.id]; activeId = item[1]; copyError.hidden = true;
+      title.textContent = item[0] + ' · Peer ID'; copy.textContent = activeId; copyButton.hidden = false;
+      button.closest('details')?.removeAttribute('open'); dialog.showModal();
+    }));
+    document.querySelectorAll('[data-preview]').forEach(button => button.addEventListener('click', () => {
+      title.textContent = button.dataset.preview; copyError.hidden = true;
+      copy.textContent = 'This is a design preview. This action is not connected to a device.';
+      copyButton.hidden = true; button.closest('details')?.removeAttribute('open'); dialog.showModal();
+    }));
+    document.getElementById('close-dialog').addEventListener('click', () => dialog.close());
+    copyButton.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(activeId); dialog.close(); }
+      catch { copyError.textContent = 'Copy unavailable. Select the peer ID above to copy it.'; copyError.hidden = false; }
+    });
+  </script>
+</body>
+</html>
