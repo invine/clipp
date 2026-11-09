@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-10T08:46:19.467345+00:00",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "sourceCount": 145,
+  "changedSources": [],
+  "trackedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492",
+  "sourceChangesByStudy": false,
+  "reusedBuildVerification": [
+    {
+      "command": "npm --workspace apps/electron run build",
+      "count": 8,
+      "changed": []
+    },
+    {
+      "command": "CLIPP_RELAY_ACCEPTANCE_TRANSPORT=wss npm --workspace apps/extension run build:relay-acceptance",
+      "count": 43,
+      "changed": []
+    }
+  ]
+}

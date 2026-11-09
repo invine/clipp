@@ -1,0 +1,599 @@
+{
+  "at": "2026-10-08T20:58:44.490Z",
+  "browser": "143.0.7499.4",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "restored-900-1-dark-all",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 114,
+      "cardHeights": [
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 776,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "restored-900-1-dark-all.png"
+    },
+    {
+      "id": "restored-900-1-dark-pinned",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 114,
+      "cardHeights": [
+        184.296875,
+        184.296875
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 658.390625,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "restored-900-1-dark-pinned.png"
+    },
+    {
+      "id": "wide-1440-1-dark-all",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 114,
+      "cardHeights": [
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 1316,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "wide-1440-1-dark-all.png"
+    },
+    {
+      "id": "wide-1440-1-dark-pinned",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 114,
+      "cardHeights": [
+        184.296875,
+        184.296875
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 1198.390625,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "wide-1440-1-dark-pinned.png"
+    },
+    {
+      "id": "fullscreen-1920-1-dark-all",
+      "viewport": {
+        "w": 1920,
+        "h": 1080
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 114,
+      "cardHeights": [
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 1796,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "fullscreen-1920-1-dark-all.png"
+    },
+    {
+      "id": "fullscreen-1920-1-dark-pinned",
+      "viewport": {
+        "w": 1920,
+        "h": 1080
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 114,
+      "cardHeights": [
+        184.296875,
+        184.296875
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 1678.390625,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "fullscreen-1920-1-dark-pinned.png"
+    },
+    {
+      "id": "restored-721-2-light-all",
+      "viewport": {
+        "w": 721,
+        "h": 668
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 229.390625,
+      "cardHeights": [
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375
+      ],
+      "toolbarHeight": 68.203125,
+      "searchWidth": 597,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "restored-721-2-light-all.png"
+    },
+    {
+      "id": "restored-721-2-light-menu",
+      "viewport": {
+        "w": 721,
+        "h": 668
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 229.390625,
+      "cardHeights": [
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375
+      ],
+      "toolbarHeight": 68.203125,
+      "searchWidth": 597,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "restored-721-2-light-menu.png"
+    },
+    {
+      "id": "restored-721-2-light-pinned",
+      "viewport": {
+        "w": 721,
+        "h": 668
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 229.390625,
+      "cardHeights": [
+        284.59375,
+        284.59375
+      ],
+      "toolbarHeight": 68.203125,
+      "searchWidth": 390.15625,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "restored-721-2-light-pinned.png"
+    },
+    {
+      "id": "tablet-1200-1-dark-all",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 151,
+      "cardHeights": [
+        192.296875,
+        192.296875,
+        192.296875,
+        192.296875,
+        192.296875,
+        192.296875,
+        192.296875,
+        192.296875,
+        192.296875
+      ],
+      "toolbarHeight": 48,
+      "searchWidth": 1060,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "tablet-1200-1-dark-all.png"
+    },
+    {
+      "id": "tablet-1200-1-dark-pinned",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 151,
+      "cardHeights": [
+        192.296875,
+        192.296875
+      ],
+      "toolbarHeight": 48,
+      "searchWidth": 942.390625,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "tablet-1200-1-dark-pinned.png"
+    },
+    {
+      "id": "small-320-1-dark-all",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 84,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        69,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "toolbarHeight": 48,
+      "searchWidth": 144,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "small-320-1-dark-all.png"
+    },
+    {
+      "id": "small-320-1-dark-pinned",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 134,
+      "cardHeights": [
+        83.3125,
+        69
+      ],
+      "toolbarHeight": 48,
+      "searchWidth": 144,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "small-320-1-dark-pinned.png"
+    },
+    {
+      "id": "small-320-2-light-all",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 0,
+      "firstClipY": 325.8125,
+      "cardHeights": [
+        196.578125,
+        196.578125,
+        196.578125,
+        196.578125,
+        154.46875,
+        230.9375,
+        196.578125,
+        196.578125,
+        196.578125
+      ],
+      "toolbarHeight": 119.34375,
+      "searchWidth": 248,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "small-320-2-light-all.png"
+    },
+    {
+      "id": "small-320-2-light-pinned",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 384.28125,
+      "cardHeights": [
+        196.578125,
+        154.46875
+      ],
+      "toolbarHeight": 119.34375,
+      "searchWidth": 248,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "small-320-2-light-pinned.png"
+    },
+    {
+      "id": "resized-narrow-query-pinned",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "visibleScopeIndicators": 1,
+      "firstClipY": 94,
+      "cardHeights": [
+        62.25
+      ],
+      "toolbarHeight": 40,
+      "searchWidth": 168,
+      "overlaysOutsideViewport": 0,
+      "screenshot": "resized-narrow-query-pinned.png"
+    }
+  ],
+  "checks": [
+    {
+      "name": "restored-900-1-dark scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "restored-900-1-dark pinned selection",
+      "passed": true
+    },
+    {
+      "name": "restored-900-1-dark selection focus",
+      "passed": true
+    },
+    {
+      "name": "restored-900-1-dark clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "restored-900-1-dark clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "restored-900-1-dark all restored",
+      "passed": true
+    },
+    {
+      "name": "restored-900-1-dark Escape focus",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark pinned selection",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark selection focus",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark all restored",
+      "passed": true
+    },
+    {
+      "name": "wide-1440-1-dark Escape focus",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark pinned selection",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark selection focus",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark all restored",
+      "passed": true
+    },
+    {
+      "name": "fullscreen-1920-1-dark Escape focus",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light pinned selection",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light selection focus",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light all restored",
+      "passed": true
+    },
+    {
+      "name": "restored-721-2-light Escape focus",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark pinned selection",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark selection focus",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark all restored",
+      "passed": true
+    },
+    {
+      "name": "tablet-1200-1-dark Escape focus",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark pinned selection",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark selection focus",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark all restored",
+      "passed": true
+    },
+    {
+      "name": "small-320-1-dark Escape focus",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light scope only in Filters",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light pinned selection",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light selection focus",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light clear scope keeps query",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light clear scope focus",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light all restored",
+      "passed": true
+    },
+    {
+      "name": "small-320-2-light Escape focus",
+      "passed": true
+    },
+    {
+      "name": "wide to narrow retains query and scope",
+      "passed": true
+    },
+    {
+      "name": "narrow to wide retains query and scope",
+      "passed": true
+    },
+    {
+      "name": "resized scope and query remain clearable",
+      "passed": true
+    },
+    {
+      "name": "All Clips in Filters restores full history",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "geometryFailures": [],
+  "interactionFailures": []
+}

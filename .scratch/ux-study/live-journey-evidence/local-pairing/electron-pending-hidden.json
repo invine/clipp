@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-10T07:57:43.095Z",
+  "state": {
+    "clips": 0,
+    "devices": 0,
+    "pending": 1,
+    "waiting": 0,
+    "pairingErrors": [],
+    "autoSync": true,
+    "relays": 0,
+    "connections": [
+      {
+        "path": "direct",
+        "hasDirect": true,
+        "hasRelay": false
+      }
+    ],
+    "notice": null
+  },
+  "notificationEvents": [
+    {
+      "at": "2026-10-10T07:57:30.195Z",
+      "event": "show-called"
+    },
+    {
+      "at": "2026-10-10T07:57:30.197Z",
+      "event": "failed"
+    }
+  ]
+}

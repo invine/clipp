@@ -1,0 +1,302 @@
+{
+  "desktop-dark": {
+    "width": 1440,
+    "height": 900,
+    "scrollWidth": 1440,
+    "menu": {
+      "top": 0,
+      "bottom": 0,
+      "right": 0,
+      "width": 0,
+      "height": 0,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgb(32, 29, 39)",
+      "text": "Menu"
+    },
+    "theme": {
+      "top": 23,
+      "bottom": 59,
+      "right": 735,
+      "width": 100,
+      "height": 36,
+      "color": "rgb(33, 26, 44)",
+      "background": "rgb(23, 21, 29)",
+      "text": "Light theme"
+    },
+    "logout": {
+      "top": 842,
+      "bottom": 882,
+      "right": 200,
+      "width": 170,
+      "height": 40,
+      "color": "rgb(33, 26, 44)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Log out"
+    },
+    "quota": {
+      "top": 189,
+      "bottom": 640,
+      "right": 846,
+      "width": 573,
+      "height": 451,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgb(23, 21, 29)",
+      "text": "Your allowance\n      \n\n\n\n25%\nrecorded\n\n\n"
+    },
+    "capacity": {
+      "top": 189,
+      "bottom": 640,
+      "right": 1391,
+      "width": 521,
+      "height": 451,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgb(23, 21, 29)",
+      "text": "Connections & sign-ins\n\n\n\n\nResource\nLive"
+    },
+    "history": {
+      "top": 770,
+      "bottom": 1096,
+      "right": 1366,
+      "width": 1068,
+      "height": 327,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Recorded Relay Usage · week starting UTC"
+    },
+    "card": {
+      "top": 97,
+      "bottom": 163,
+      "right": 1391,
+      "width": 1118,
+      "height": 66,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Your relay accountActive\nmorgan.lee@clip"
+    }
+  },
+  "phone-dark": {
+    "width": 390,
+    "height": 844,
+    "scrollWidth": 390,
+    "menu": {
+      "top": 19,
+      "bottom": 59,
+      "right": 413,
+      "width": 88,
+      "height": 40,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgb(32, 29, 39)",
+      "text": "Menu"
+    },
+    "theme": {
+      "top": 21,
+      "bottom": 57,
+      "right": 312,
+      "width": 100,
+      "height": 36,
+      "color": "rgb(33, 26, 44)",
+      "background": "rgb(23, 21, 29)",
+      "text": "Light theme"
+    },
+    "logout": {
+      "top": 0,
+      "bottom": 0,
+      "right": 0,
+      "width": 0,
+      "height": 0,
+      "color": "rgb(33, 26, 44)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Log out"
+    },
+    "quota": {
+      "top": 233,
+      "bottom": 655,
+      "right": 365,
+      "width": 340,
+      "height": 422,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgb(23, 21, 29)",
+      "text": "Your allowance\n      \n\n\n\n25%\nrecorded\n\n\n"
+    },
+    "capacity": {
+      "top": 679,
+      "bottom": 1010,
+      "right": 365,
+      "width": 340,
+      "height": 331,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgb(23, 21, 29)",
+      "text": "Connections & sign-ins\n\n\n\n\nResource\nLive"
+    },
+    "history": {
+      "top": 1169,
+      "bottom": 1219,
+      "right": 346,
+      "width": 302,
+      "height": 50,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Recorded Relay Usage · week starting UTC"
+    },
+    "card": {
+      "top": 93,
+      "bottom": 215,
+      "right": 365,
+      "width": 340,
+      "height": 122,
+      "color": "rgb(241, 237, 248)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Your relay accountActive\nmorgan.lee@clip"
+    }
+  },
+  "desktop-light": {
+    "width": 1440,
+    "height": 900,
+    "scrollWidth": 1440,
+    "menu": {
+      "top": 0,
+      "bottom": 0,
+      "right": 0,
+      "width": 0,
+      "height": 0,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(255, 255, 255)",
+      "text": "Menu"
+    },
+    "theme": {
+      "top": 23,
+      "bottom": 59,
+      "right": 732,
+      "width": 97,
+      "height": 36,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(240, 235, 248)",
+      "text": "Dark theme"
+    },
+    "logout": {
+      "top": 842,
+      "bottom": 882,
+      "right": 200,
+      "width": 170,
+      "height": 40,
+      "color": "rgb(89, 103, 96)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Log out"
+    },
+    "quota": {
+      "top": 189,
+      "bottom": 640,
+      "right": 846,
+      "width": 573,
+      "height": 451,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(255, 255, 255)",
+      "text": "Your allowance\n      \n\n\n\n25%\nrecorded\n\n\n"
+    },
+    "capacity": {
+      "top": 189,
+      "bottom": 640,
+      "right": 1391,
+      "width": 521,
+      "height": 451,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(255, 255, 255)",
+      "text": "Connections & sign-ins\n\n\n\n\nResource\nLive"
+    },
+    "history": {
+      "top": 770,
+      "bottom": 1096,
+      "right": 1366,
+      "width": 1068,
+      "height": 327,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Recorded Relay Usage · week starting UTC"
+    },
+    "card": {
+      "top": 97,
+      "bottom": 163,
+      "right": 1391,
+      "width": 1118,
+      "height": 66,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Your relay accountActive\nmorgan.lee@clip"
+    }
+  },
+  "phone-light": {
+    "width": 390,
+    "height": 844,
+    "scrollWidth": 390,
+    "menu": {
+      "top": 19,
+      "bottom": 59,
+      "right": 410,
+      "width": 88,
+      "height": 40,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(255, 255, 255)",
+      "text": "Menu"
+    },
+    "theme": {
+      "top": 21,
+      "bottom": 57,
+      "right": 310,
+      "width": 97,
+      "height": 36,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(240, 235, 248)",
+      "text": "Dark theme"
+    },
+    "logout": {
+      "top": 0,
+      "bottom": 0,
+      "right": 0,
+      "width": 0,
+      "height": 0,
+      "color": "rgb(89, 103, 96)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Log out"
+    },
+    "quota": {
+      "top": 233,
+      "bottom": 655,
+      "right": 365,
+      "width": 340,
+      "height": 422,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(255, 255, 255)",
+      "text": "Your allowance\n      \n\n\n\n25%\nrecorded\n\n\n"
+    },
+    "capacity": {
+      "top": 679,
+      "bottom": 1010,
+      "right": 365,
+      "width": 340,
+      "height": 331,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgb(255, 255, 255)",
+      "text": "Connections & sign-ins\n\n\n\n\nResource\nLive"
+    },
+    "history": {
+      "top": 1169,
+      "bottom": 1219,
+      "right": 346,
+      "width": 302,
+      "height": 50,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Recorded Relay Usage · week starting UTC"
+    },
+    "card": {
+      "top": 93,
+      "bottom": 215,
+      "right": 365,
+      "width": 340,
+      "height": 122,
+      "color": "rgb(25, 45, 39)",
+      "background": "rgba(0, 0, 0, 0)",
+      "text": "Your relay accountActive\nmorgan.lee@clip"
+    }
+  }
+}

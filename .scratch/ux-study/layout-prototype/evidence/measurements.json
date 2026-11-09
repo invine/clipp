@@ -1,0 +1,621 @@
+{
+  "at": "2026-10-08T16:29:26.920Z",
+  "browser": "143.0.7499.4",
+  "fixture": "nine synthetic Clips from app.js; compare variants only, not a native before/after benchmark",
+  "records": [
+    {
+      "id": "A-phone-1-everyday-history-dark",
+      "variant": "A",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-phone-1-everyday-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 89,
+        "w": 360,
+        "h": 545.09375,
+        "scrollW": 360,
+        "scrollH": 972
+      },
+      "fullClips": 4,
+      "visibleClips": 5,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "A-popup-1-everyday-history-dark",
+      "variant": "A",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-popup-1-everyday-history-dark.png",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 480,
+      "content": {
+        "x": 0,
+        "y": 57,
+        "w": 480,
+        "h": 543,
+        "scrollW": 480,
+        "scrollH": 874
+      },
+      "fullClips": 5,
+      "visibleClips": 6,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "A-wide-1-everyday-history-dark",
+      "variant": "A",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-wide-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 1440,
+      "content": {
+        "x": 180,
+        "y": 57,
+        "w": 1260,
+        "h": 811,
+        "scrollW": 1260,
+        "scrollH": 811
+      },
+      "fullClips": 9,
+      "visibleClips": 9,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "A-small-2-long-history-light",
+      "variant": "A",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "view": "history",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-small-2-long-history-light.png",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 320,
+      "content": {
+        "x": 0,
+        "y": 380.96875,
+        "w": 320,
+        "h": 2351.078125,
+        "scrollW": 320,
+        "scrollH": 2351
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "A-short-1-everyday-history-dark",
+      "variant": "A",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-short-1-everyday-history-dark.png",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 340,
+      "content": {
+        "x": 0,
+        "y": 49,
+        "w": 340,
+        "h": 243.09375,
+        "scrollW": 340,
+        "scrollH": 929
+      },
+      "fullClips": 1,
+      "visibleClips": 2,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "A-phone-2-recovery-history-dark",
+      "variant": "A",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-phone-2-recovery-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 380.96875,
+        "w": 360,
+        "h": 2567.4375,
+        "scrollW": 360,
+        "scrollH": 2567
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "A-phone-1-everyday-settings-light",
+      "variant": "A",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "settings",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "A-phone-1-everyday-settings-light.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 89,
+        "w": 360,
+        "h": 545.09375,
+        "scrollW": 360,
+        "scrollH": 1027
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "B-phone-1-everyday-history-dark",
+      "variant": "B",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-phone-1-everyday-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 150,
+        "w": 360,
+        "h": 546,
+        "scrollW": 360,
+        "scrollH": 972
+      },
+      "fullClips": 4,
+      "visibleClips": 5,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "B-popup-1-everyday-history-dark",
+      "variant": "B",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-popup-1-everyday-history-dark.png",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 480,
+      "content": {
+        "x": 0,
+        "y": 57,
+        "w": 480,
+        "h": 543,
+        "scrollW": 480,
+        "scrollH": 874
+      },
+      "fullClips": 5,
+      "visibleClips": 6,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "B-wide-1-everyday-history-dark",
+      "variant": "B",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-wide-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 1440,
+      "content": {
+        "x": 0,
+        "y": 114,
+        "w": 1440,
+        "h": 754,
+        "scrollW": 1440,
+        "scrollH": 869
+      },
+      "fullClips": 7,
+      "visibleClips": 8,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "B-small-2-long-history-light",
+      "variant": "B",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "view": "history",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-small-2-long-history-light.png",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 320,
+      "content": {
+        "x": 0,
+        "y": 377.0625,
+        "w": 320,
+        "h": 2417.796875,
+        "scrollW": 320,
+        "scrollH": 2418
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "B-short-1-everyday-history-dark",
+      "variant": "B",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-short-1-everyday-history-dark.png",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 340,
+      "content": {
+        "x": 0,
+        "y": 98,
+        "w": 340,
+        "h": 252,
+        "scrollW": 340,
+        "scrollH": 929
+      },
+      "fullClips": 1,
+      "visibleClips": 2,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "B-phone-2-recovery-history-dark",
+      "variant": "B",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-phone-2-recovery-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 377.0625,
+        "w": 360,
+        "h": 2567.4375,
+        "scrollW": 360,
+        "scrollH": 2567
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "B-phone-1-everyday-settings-light",
+      "variant": "B",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "settings",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "B-phone-1-everyday-settings-light.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 150,
+        "w": 360,
+        "h": 546,
+        "scrollW": 360,
+        "scrollH": 1027
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "C-phone-1-everyday-history-dark",
+      "variant": "C",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-phone-1-everyday-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 150,
+        "w": 360,
+        "h": 546,
+        "scrollW": 360,
+        "scrollH": 2090
+      },
+      "fullClips": 1,
+      "visibleClips": 2,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "C-popup-1-everyday-history-dark",
+      "variant": "C",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-popup-1-everyday-history-dark.png",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 480,
+      "content": {
+        "x": 0,
+        "y": 57,
+        "w": 480,
+        "h": 543,
+        "scrollW": 480,
+        "scrollH": 1897
+      },
+      "fullClips": 2,
+      "visibleClips": 2,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "C-wide-1-everyday-history-dark",
+      "variant": "C",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-wide-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 1440,
+      "content": {
+        "x": 0,
+        "y": 114,
+        "w": 1440,
+        "h": 754,
+        "scrollW": 1440,
+        "scrollH": 888
+      },
+      "fullClips": 8,
+      "visibleClips": 9,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "C-small-2-long-history-light",
+      "variant": "C",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "view": "history",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-small-2-long-history-light.png",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 320,
+      "content": {
+        "x": 0,
+        "y": 377.0625,
+        "w": 320,
+        "h": 3692.640625,
+        "scrollW": 320,
+        "scrollH": 3693
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "C-short-1-everyday-history-dark",
+      "variant": "C",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-short-1-everyday-history-dark.png",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 340,
+      "content": {
+        "x": 0,
+        "y": 98,
+        "w": 340,
+        "h": 252,
+        "scrollW": 340,
+        "scrollH": 2009
+      },
+      "fullClips": 0,
+      "visibleClips": 1,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "C-phone-2-recovery-history-dark",
+      "variant": "C",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-phone-2-recovery-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 377.0625,
+        "w": 360,
+        "h": 3730.25,
+        "scrollW": 360,
+        "scrollH": 3730
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "C-phone-1-everyday-settings-light",
+      "variant": "C",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "settings",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "C-phone-1-everyday-settings-light.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "scrollY": 0,
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 150,
+        "w": 360,
+        "h": 546,
+        "scrollW": 360,
+        "scrollH": 1023
+      },
+      "fullClips": 0,
+      "visibleClips": 0,
+      "controlsOutsideBody": [],
+      "topFont": "16px"
+    }
+  ],
+  "interactions": {
+    "copyFeedback": "Copied · demonstration only",
+    "switched": "B · Reading workspace"
+  },
+  "errors": []
+}

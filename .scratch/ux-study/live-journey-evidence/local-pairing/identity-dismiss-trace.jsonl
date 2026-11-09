@@ -1,0 +1,11 @@
+{"at":"2026-10-10T08:04:14.948Z","ready":true,"profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-native-continuation-dX0koS","baseline":{"clips":0,"autoSync":false,"relays":0}}
+{"at":"2026-10-10T08:04:34.660Z","capture":"identity-dismiss-before","native":{"dockVisible":true,"windows":[{"visible":true,"focused":false,"minimized":false,"bounds":{"x":496,"y":111,"width":520,"height":760}}]},"dom":{"w":520,"h":728,"dpr":2}}
+{"at":"2026-10-10T08:04:34.661Z","case":"before-dismiss","notice":"identity-loss"}
+{"at":"2026-10-10T08:04:34.662Z","commandDone":true}
+{"at":"2026-10-10T08:04:56.374Z","capture":"identity-dismiss-after","native":{"dockVisible":true,"windows":[{"visible":true,"focused":false,"minimized":false,"bounds":{"x":496,"y":111,"width":520,"height":760}}]},"dom":{"w":520,"h":728,"dpr":2}}
+{"at":"2026-10-10T08:04:56.375Z","case":"after-dismiss","notice":null,"identityPreserved":true,"clips":0,"autoSync":false}
+{"at":"2026-10-10T08:04:56.522Z","closed":true,"exitCode":0}
+{"at":"2026-10-10T08:05:33.511Z","ready":true,"profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-native-continuation-dX0koS","baseline":{"clips":0,"autoSync":false,"relays":0}}
+{"at":"2026-10-10T08:06:05.192Z","case":"dismiss-survives-restart","notice":null,"identityPreserved":true,"clips":0,"autoSync":false}
+{"at":"2026-10-10T08:06:05.266Z","capture":"identity-dismiss-after-restart","native":{"dockVisible":true,"windows":[{"visible":true,"focused":false,"minimized":false,"bounds":{"x":496,"y":111,"width":520,"height":760}}]},"dom":{"w":520,"h":728,"dpr":2}}
+{"at":"2026-10-10T08:06:05.414Z","closed":true,"exitCode":0}

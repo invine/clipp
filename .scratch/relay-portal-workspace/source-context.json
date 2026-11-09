@@ -1,0 +1,206 @@
+{
+  "date": "2026-10-26",
+  "timezone": "Asia/Dubai",
+  "canonical_tracker": "Clipp Local Markdown",
+  "implementation_repository_role": "relay",
+  "decision": {
+    "accepted_variant": "A",
+    "name": "Workspace",
+    "user_evidence": "I prefer A. use $to-spec to create spec for this change",
+    "testing_seams": "confirmed by the user on 2026-10-26",
+    "implementation_authorized": true,
+    "implementation_authorization": {
+      "date": "2026-10-26",
+      "source": "User directly requested: use implement-spec to implement .scratch/relay-portal-workspace/backlog.md",
+      "scope": "Implement all twelve approved tickets on the relay integration branch, including their accepted test seams."
+    },
+    "testing_seams_confirmation": "Confirm these test seams"
+  },
+  "repositories": {
+    "client": {
+      "root": "/Users/invine/src/js/clipp",
+      "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+      "relevant_contracts": [
+        "AGENTS.md",
+        "docs/agents/issue-tracker.md",
+        "docs/agents/triage-labels.md",
+        "docs/agents/operations.md",
+        "docs/adr/0012-relay-transport-fallback-and-concurrent-sessions.md"
+      ]
+    },
+    "relay": {
+      "root": "/Users/invine/src/go/clipp-relay",
+      "head": "6288b48e47f2fd659347e6c83e274e569f7d76d5",
+      "source_anchors": [
+        {
+          "path": "AGENTS.md",
+          "sha256": "096b2e59d35115647073e77aa56880eb22698f830d8efd54c7cee5ac53479850"
+        },
+        {
+          "path": "GLOSSARY.md",
+          "sha256": "c38ba61b5bc9fd83724b8e1601d19a399304df7799682940d09a5fd77a99716e"
+        },
+        {
+          "path": "README.md",
+          "sha256": "a9017a1480be477313cf563cd31c4b13fbdbb9e81130b0a408939d561f014410"
+        },
+        {
+          "path": "docs/verification.md",
+          "sha256": "2400ff64c272bf454ada57beb2eefa3dc626e509d6dd7f388b81182df9695da2"
+        },
+        {
+          "path": "internal/portal/portal.go",
+          "sha256": "310760327d2d0d8de8899892e99069e6506a952188c4532d177ce54719efdb37"
+        },
+        {
+          "path": "internal/portal/histogram.go",
+          "sha256": "87f018d8651d3ee905e0b86a28b5581d4547984a550d40e2cf767c7c93416fc4"
+        },
+        {
+          "path": "internal/portal/histogram_test.go",
+          "sha256": "c710cd13db40c5d10a3cebb5629cae7837bd1c833b21289d29d1de34f22f1fd5"
+        },
+        {
+          "path": "internal/portal/templates/account.html",
+          "sha256": "da93c93f35f3edc1c09f11d1721594dc963d51ef943e5faa6e7caca346d58d43"
+        },
+        {
+          "path": "internal/portal/templates/admin.html",
+          "sha256": "fff1ad25adf78e053253e0fd681dc68e97d45f6e801bec49b9236b5295cade6f"
+        },
+        {
+          "path": "internal/portal/templates/messages.html",
+          "sha256": "bd2b8d0f0730b8db0512dbdf7916a4678c71149806869a0ac4ab314a2fe17713"
+        },
+        {
+          "path": "internal/portal/assets/portal.css",
+          "sha256": "93c6700ddc6aedad89dd5b2ab9a654599d949c2dfaff995981ecf933e256996d"
+        },
+        {
+          "path": "internal/auth/auth.go",
+          "sha256": "9e07261760253bd8930c77584b2fe1bccb516a344a724d5910d373c23343c1a1"
+        },
+        {
+          "path": "internal/auth/admin.go",
+          "sha256": "bbc93747e2ab0514ded61531058bd569635d15870220cd008eb41584e7578f5c"
+        },
+        {
+          "path": "internal/auth/oauth.go",
+          "sha256": "5b5769f23280ae86ebbd8d212737756f51ea891aad80442864d5d0838dd7d473"
+        },
+        {
+          "path": "internal/auth/admin_test.go",
+          "sha256": "66864ec2df9a9aa8abf6662dc804db3460a1568399fb0e00bd19cae2fe78c5f7"
+        },
+        {
+          "path": "internal/auth/admin_consistency_test.go",
+          "sha256": "4f4ec2e3c96c32f4e33dd62eae014297b04ce502b56d3575a8c2e11599a5dc64"
+        },
+        {
+          "path": "internal/auth/oauth_test.go",
+          "sha256": "d5e03798c34126cad14ec4c2a62ffd7b71e1e8b2a2af07ff4f38aba758281480"
+        },
+        {
+          "path": "internal/auth/consent_policy_test.go",
+          "sha256": "e81c557c3b8d2374e9f52e02fa13d52c84d982846a4fc2a7cea8dfd91736fccc"
+        },
+        {
+          "path": "internal/auth/deletion_test.go",
+          "sha256": "be69ee093dbd7e01dca907300813f3d1083bb110f4c4447fba1448db7fd148ee"
+        }
+      ]
+    }
+  },
+  "prototype_review_baseline": {
+    "source": "/Users/invine/src/go/clipp-relay",
+    "revision": "a8bf211ffaf01c529fe042237ff5b48869fd739d",
+    "mode": "Unmodified Go templates rendered locally with synthetic account and plan data. No live service or authentication exercised.",
+    "sample": {
+      "account": "mira@example.test",
+      "recorded": "256 MiB",
+      "weekly": "1 GiB",
+      "sessions": "2 of 5",
+      "grants": "3 of 20",
+      "admin_counts": {
+        "Pending": 1,
+        "Active": 2,
+        "Suspended": 1,
+        "Denied": 1
+      },
+      "plans": [
+        "Standard: 1 GiB, 5 sessions",
+        "Team: 5 GiB, 10 sessions"
+      ]
+    }
+  },
+  "artifacts": [
+    {
+      "path": "reference/prototype.html",
+      "sha256": "5a39c899ba9bee682f414b28e11789e1a28e6c12177d032d39d0a582a1230d6d",
+      "source": ".taste-skill/relay-portal-mocks/Clipp Relay proposals.html"
+    },
+    {
+      "path": "reference/styles.html",
+      "sha256": "9245ecdb6f2a63fd1b24ad184099a92f6f1667f3abc8887e25e009f466dbb1be",
+      "source": ".taste-skill/relay-portal-mocks/Style proposal.html"
+    },
+    {
+      "path": "reference/account-desktop.jpg",
+      "sha256": "8760529d97df0b16c5ff2c450d23ecb0128266248ac54a2bd79b74901cf2cdfe",
+      "source": ".taste-skill/relay-portal-mocks/inspect/A-account/desktop-fold.jpg"
+    },
+    {
+      "path": "reference/account-mobile.jpg",
+      "sha256": "ff7c8edb0c456c564dd6abd11067bd5109257f8258708dfefb231087e7e02baf",
+      "source": ".taste-skill/relay-portal-mocks/inspect/A-account/mobile-fold.jpg"
+    },
+    {
+      "path": "reference/accounts-desktop.jpg",
+      "sha256": "543633a58a6caaf0a219622f4ce13518de15f7922dda920fd3c96f0216543615",
+      "source": ".taste-skill/relay-portal-mocks/inspect/A-admin/desktop-fold.jpg"
+    },
+    {
+      "path": "reference/accounts-mobile.jpg",
+      "sha256": "5392c37833605784d72300349211c529d5ddfc7889c872f650a053f43565258d",
+      "source": ".taste-skill/relay-portal-mocks/inspect/A-admin/mobile-fold.jpg"
+    },
+    {
+      "path": "reference/design-review.json",
+      "sha256": "43fe3b9cb7c84780789f01c0a1375cfba9623f9d1cb6f48feb46edd65243532d",
+      "source": ".taste-skill/relay-portal-mocks/design-review.json"
+    },
+    {
+      "path": "reference/interactions.json",
+      "sha256": "7a1a88f09e076b2e55e86feae58f2df9c7a4eb73ebe97725cb8110c2fbf70575",
+      "source": ".taste-skill/relay-portal-mocks/evidence/interactions.json"
+    },
+    {
+      "path": "reference/inspection-summary.json",
+      "sha256": "f8631f861f8fd68b7f8fc0e7be2d06db2910031d652f6e0c42a19fef9b9a1c9c",
+      "source": ".taste-skill/relay-portal-mocks/evidence/inspection-summary.json"
+    }
+  ],
+  "primary_testing_seam": {
+    "boundary": "Production portal HTTP handler, existing deterministic local identity provider and real migrated disposable PostgreSQL",
+    "prior_art": [
+      "TestAccountSecurityActionsThroughPortal",
+      "TestAdministratorApprovalAndImmutablePlanThroughPortal",
+      "TestLiveQuotaOverridesPreserveRecordedUsageAndCredentials",
+      "TestOwnerProfileUsesOnePolicySnapshotAcrossConcurrentChange",
+      "TestPlanCreateLostCommitAckReplaysOneOperation",
+      "TestConsentSubmissionIsAtomicOneUse",
+      "TestConsentUsesCapturedCredentialGeneration",
+      "TestConsentPolicyAllowsRegisteredCallback",
+      "TestOwnerDeletionAllAccountStatesAndCapacityGate",
+      "TestOwnerDeletionJournalReconciliationAndFreshPendingAccount"
+    ],
+    "browser_acceptance": "The built service and same domain fixtures; no UI-only model or public test-login route",
+    "small_existing_helpers": [
+      "TestByteDisplaysAndEditValues",
+      "TestQuotaHistogramPreservesWeeksAndScalesRecordedAmounts"
+    ]
+  },
+  "evidence_boundary": "Prior 36 interaction checks and 39 viewport checks exercised synthetic mocks, not live relay/auth/database integration. No implementation tests or live checks were run in this spec-writing task.",
+  "preservation": "Existing modified and untracked work in both checkouts was left unchanged. This feature does not claim any existing tracker ticket.",
+  "tracker_status": "ready-for-agent"
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-07T23:07:50.197322+00:00",
+  "clientDate": "2026-10-08",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "status": " M apps/electron/src/managedRelayAuth.ts\n M tests/electron/managedRelayAuth.test.ts\n?? .scratch/ux-study/\n",
+  "inventorySourceChanges": [],
+  "temporaryRoot": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-android-h8ada4bo",
+  "avdHome": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-android-h8ada4bo/avd",
+  "avd": "Clipp_UX_API_35",
+  "serial": "emulator-5580",
+  "package": "com.clipp.app.acceptance"
+}

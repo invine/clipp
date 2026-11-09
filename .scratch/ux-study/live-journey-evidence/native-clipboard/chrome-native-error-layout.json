@@ -1,0 +1,34 @@
+{
+  "viewport": {
+    "w": 495,
+    "h": 600,
+    "dpr": 2
+  },
+  "gridRows": "72px 152px 376px",
+  "children": [
+    {
+      "className": "app-bar",
+      "role": null,
+      "top": 0,
+      "height": 72,
+      "bottom": 72,
+      "scrollHeight": 71
+    },
+    {
+      "className": "initialization-error",
+      "role": "alert",
+      "top": 72,
+      "height": 152,
+      "bottom": 224,
+      "scrollHeight": 151
+    },
+    {
+      "className": "app-main",
+      "role": null,
+      "top": 224,
+      "height": 376,
+      "bottom": 600,
+      "scrollHeight": 376
+    }
+  ]
+}

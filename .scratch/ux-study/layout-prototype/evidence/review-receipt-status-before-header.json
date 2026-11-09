@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-09T05:54:51.055046+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Explore individual device path icons and one History connection-health indicator",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "ba4f65b8d25522d8d8223783291684a5be001f0d8361897fd14198c8d99bcbc4",
+    "app.js": "0485fe9109555c297803cb8d4519003e9028d1d82fba347377c00a9f096830e6",
+    "management.js": "3ac57ab3848ff6a3c95d23533b9f09beb410cde2e38468953701d83a39efd31a",
+    "connections.js": "1c354ee5c2dfedf333b5490a44f426989a2dba36d7daedcad7d786b360768acb",
+    "style.css": "8ebd7749808567133f94e01f3ea407a25982143bbd0d934ef32352b0bf937235",
+    "server.cjs": "e2061b56401a78cbc98f0e737ee95551fb816f64a29eab561136a271c4ced344",
+    "capture-connections.cjs": "7e633804c8c9950dc19312bc63c47633e0b29786e96008ef84320418e0d135da",
+    "README.md": "4d4ade510a4d3d451604e237ce524dc436cc6c39965473e7fca9091db77617d3"
+  },
+  "captureCount": 59,
+  "checkCount": 14,
+  "measurements": "connections/measurements.json",
+  "contrast": "connections/contrast.json",
+  "previousReceipt": "review-receipt-management.json",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "statusFailures": [],
+  "linkErrors": [],
+  "managementDecision": "M1 Devices + M3 Settings explicitly accepted by user",
+  "statusDecision": "Glyph and partial-problem priority pending; S2 and showing partial problems recommended",
+  "controlsSecondRound": "unanswered"
+}

@@ -1,0 +1,55 @@
+<div id="device-page-choices" class="viz-carousel viz-dotted-background" aria-label="Device page design options">
+  <section data-variant="Compact menu" aria-label="Compact menu option">
+    <div class="mock-device">
+      <header><span>☰</span><strong>Devices</strong></header>
+      <main>
+        <div class="pair-actions"><button class="primary" type="button">Pair this device</button><button type="button">Show my QR</button></div>
+        <section><h3>This device</h3><div class="device-row"><div><strong>Samsung</strong><div class="sub">This installation</div></div><button type="button" aria-label="Rename this device">✎</button></div><details><summary>Peer ID</summary><p>12D3KooWBdY...LQfmQXHiho</p></details></section>
+        <section><div class="heading"><h3>Trusted devices</h3><span>3 devices</span></div>
+          <div class="device-row"><div><strong>Extension</strong><div class="sub">Connected · direct</div></div><details class="row-menu"><summary aria-label="Extension actions">⋮</summary><div class="menu"><button type="button">Edit alias</button><button type="button">Revoke device</button></div></details></div>
+          <div class="device-row"><div><strong>Desktop</strong><div class="sub">Connected · direct</div></div><details class="row-menu"><summary aria-label="Desktop actions">⋮</summary><div class="menu"><button type="button">Edit alias</button><button type="button">Revoke device</button></div></details></div>
+          <div class="device-row"><div><strong>Tablet</strong><div class="sub">Offline</div></div><details class="row-menu"><summary aria-label="Tablet actions">⋮</summary><div class="menu"><button type="button">Edit alias</button><button type="button">Revoke device</button></div></details></div>
+        </section>
+      </main>
+    </div>
+  </section>
+  <section data-variant="Visible actions" aria-label="Visible actions option" hidden>
+    <div class="mock-device">
+      <header><span>☰</span><strong>Devices</strong></header>
+      <main>
+        <div class="pair-actions"><button class="primary" type="button">Pair this device</button><button type="button">Show my QR</button></div>
+        <section><h3>This device</h3><div class="device-row"><div><strong>Samsung</strong><div class="sub">This installation</div></div><button type="button" aria-label="Rename this device">✎</button></div><details><summary>Peer ID</summary><p>12D3KooWBdY...LQfmQXHiho</p></details></section>
+        <section><div class="heading"><h3>Trusted devices</h3><span>3 devices</span></div>
+          <div class="device-row"><div><strong>Extension</strong><div class="sub">Connected · direct</div></div><div class="actions"><button type="button" aria-label="Edit Extension alias">✎</button><button type="button">Revoke</button></div></div>
+          <div class="device-row"><div><strong>Desktop</strong><div class="sub">Connected · direct</div></div><div class="actions"><button type="button" aria-label="Edit Desktop alias">✎</button><button type="button">Revoke</button></div></div>
+          <div class="device-row"><div><strong>Tablet</strong><div class="sub">Offline</div></div><div class="actions"><button type="button" aria-label="Edit Tablet alias">✎</button><button type="button">Revoke</button></div></div>
+        </section>
+      </main>
+    </div>
+  </section>
+</div>
+<style>
+#device-page-choices > section { min-height: 640px; padding: 20px 12px 70px; }
+#device-page-choices .mock-device { max-width: 390px; margin: auto; background: #09090c; color: #f1f0f5; font: 15px/1.4 system-ui, sans-serif; border-radius: 12px; overflow: visible; }
+#device-page-choices header { display:flex; align-items:center; gap:20px; padding:20px; border-bottom:1px solid #303036; }
+#device-page-choices header strong { font-size: 19px; }
+#device-page-choices main { display:grid; gap:12px; padding:16px; }
+#device-page-choices main section { padding:16px; border-radius:9px; background:#141419; }
+#device-page-choices h3 { font-size:16px; margin:0 0 8px; }
+#device-page-choices .heading { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+#device-page-choices .heading span, #device-page-choices .sub, #device-page-choices details p { color:#b3b1bb; font-size:13px; }
+#device-page-choices .pair-actions { display:flex; flex-wrap:wrap; gap:8px; }
+#device-page-choices button { border:0; border-radius:7px; background:#29282f; color:#f1f0f5; padding:10px 12px; font:inherit; min-height:42px; cursor:pointer; }
+#device-page-choices .primary { background:#b79bf4; color:#171127; font-weight:600; }
+#device-page-choices .device-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; }
+#device-page-choices .device-row + .device-row { border-top:1px solid #303036; }
+#device-page-choices .actions { display:flex; gap:4px; }
+#device-page-choices details:not(.row-menu) { padding-top:6px; color:#c7c4d0; }
+#device-page-choices details p { overflow-wrap:anywhere; margin:6px 0 0; }
+#device-page-choices summary { cursor:pointer; }
+#device-page-choices .row-menu { position:relative; }
+#device-page-choices .row-menu summary { display:grid; place-items:center; width:42px; height:42px; font-size:24px; list-style:none; border-radius:7px; background:#29282f; }
+#device-page-choices .row-menu summary::-webkit-details-marker { display:none; }
+#device-page-choices .menu { position:absolute; right:0; top:46px; z-index:2; width:150px; padding:4px; background:#333139; border-radius:8px; box-shadow:0 6px 20px #0008; }
+#device-page-choices .menu button { width:100%; text-align:left; background:transparent; }
+</style>

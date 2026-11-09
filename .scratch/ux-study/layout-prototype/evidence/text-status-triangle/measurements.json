@@ -1,0 +1,128 @@
+{
+  "at": "2026-10-09T06:22:03.935Z",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "S2-history-phone-1",
+      "view": "history",
+      "textStatuses": [],
+      "deviceIconCount": 0,
+      "headerAboveSearch": true,
+      "triangle": [
+        [
+          "4",
+          "17"
+        ],
+        [
+          "20",
+          "17"
+        ],
+        [
+          "12",
+          "5"
+        ]
+      ],
+      "statusName": "Direct connection available. Connection status and options",
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": 0,
+      "screenshot": "S2-history-phone-1.png"
+    },
+    {
+      "id": "S3-history-phone-1",
+      "view": "history",
+      "textStatuses": [],
+      "deviceIconCount": 0,
+      "headerAboveSearch": true,
+      "triangle": [
+        [
+          "4",
+          "17"
+        ],
+        [
+          "20",
+          "17"
+        ],
+        [
+          "12",
+          "5"
+        ]
+      ],
+      "statusName": "Direct connection available. Connection status and options",
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": 0,
+      "screenshot": "S3-history-phone-1.png"
+    },
+    {
+      "id": "S2-history-restored-1",
+      "view": "history",
+      "textStatuses": [],
+      "deviceIconCount": 0,
+      "headerAboveSearch": true,
+      "triangle": [
+        [
+          "4",
+          "17"
+        ],
+        [
+          "20",
+          "17"
+        ],
+        [
+          "12",
+          "5"
+        ]
+      ],
+      "statusName": "Direct connection available. Connection status and options",
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": 0,
+      "screenshot": "S2-history-restored-1.png"
+    },
+    {
+      "id": "S2-devices-phone-1",
+      "view": "devices",
+      "textStatuses": [
+        "Connected · direct",
+        "Connected · relay",
+        "Offline"
+      ],
+      "deviceIconCount": 0,
+      "headerAboveSearch": true,
+      "triangle": [],
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": 0,
+      "screenshot": "S2-devices-phone-1.png"
+    },
+    {
+      "id": "S2-devices-small-2",
+      "view": "devices",
+      "textStatuses": [
+        "Connected · direct",
+        "Connected · relay",
+        "Offline"
+      ],
+      "deviceIconCount": 0,
+      "headerAboveSearch": true,
+      "triangle": [],
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": 0,
+      "screenshot": "S2-devices-small-2.png"
+    },
+    {
+      "id": "M1-devices-phone-1",
+      "view": "devices",
+      "textStatuses": [
+        "Connected · direct",
+        "Connected · relay",
+        "Offline"
+      ],
+      "deviceIconCount": 0,
+      "headerAboveSearch": true,
+      "triangle": [],
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": 0,
+      "screenshot": "M1-devices-phone-1.png"
+    }
+  ],
+  "errors": [],
+  "failures": []
+}

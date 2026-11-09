@@ -1,0 +1,41 @@
+{"at":"2026-10-10T07:35:36.962Z","event":"peer-incoming-pending","count":0}
+{"at":"2026-10-10T07:35:37.061Z","ready":true,"pid":98477,"role":"Fresh headless peer using actual shared Pairing protocol; native UI under test is Electron","targetValid":true,"relays":0,"privateKeyPersisted":false}
+{"at":"2026-10-10T07:36:00.637Z","command":"request","error":"The dial request has no valid addresses"}
+{"at":"2026-10-10T07:36:37.176Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:36:37.179Z","closed":true}
+{"at":"2026-10-10T07:57:20.230Z","event":"peer-incoming-pending","count":0}
+{"at":"2026-10-10T07:57:20.310Z","ready":true,"pid":99136,"role":"Fresh headless peer using actual shared Pairing protocol; native UI under test is Electron","targetValid":true,"relays":0,"privateKeyPersisted":false}
+{"at":"2026-10-10T07:57:30.182Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:57:30.192Z","event":"initiator-state","waiting":1,"errors":0}
+{"at":"2026-10-10T07:57:30.192Z","requestSent":true,"connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T07:58:30.174Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:58:30.175Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:58:30.175Z","event":"received-decision","decision":"rejected"}
+{"at":"2026-10-10T07:58:43.152Z","waiting":0,"pending":0,"remoteMembership":"unknown","connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T07:58:43.154Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:58:43.158Z","event":"initiator-state","waiting":1,"errors":0}
+{"at":"2026-10-10T07:58:43.158Z","requestSent":true,"connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T07:59:10.173Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:59:10.173Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:59:10.174Z","event":"received-decision","decision":"accepted"}
+{"at":"2026-10-10T07:59:24.656Z","waiting":0,"pending":0,"remoteMembership":"active","connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T07:59:59.445Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T07:59:59.455Z","closed":true}
+{"at":"2026-10-10T08:00:13.314Z","event":"peer-incoming-pending","count":0}
+{"at":"2026-10-10T08:00:13.414Z","ready":true,"pid":99361,"role":"Fresh headless peer using actual shared Pairing protocol; native UI under test is Electron","targetValid":true,"relays":0,"privateKeyPersisted":false}
+{"at":"2026-10-10T08:00:51.655Z","event":"peer-incoming-notification-seam"}
+{"at":"2026-10-10T08:00:51.655Z","event":"peer-incoming-pending","count":1}
+{"at":"2026-10-10T08:00:51.655Z","event":"received-decision","decision":true}
+{"at":"2026-10-10T08:01:08.935Z","waiting":0,"pending":1,"remoteMembership":"unknown","connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T08:01:21.628Z","event":"peer-incoming-pending","count":0}
+{"at":"2026-10-10T08:01:21.628Z","peerDecision":"reject"}
+{"at":"2026-10-10T08:01:49.817Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T08:01:49.821Z","event":"initiator-state","waiting":1,"errors":0}
+{"at":"2026-10-10T08:01:49.821Z","requestSent":true,"connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T08:02:40.369Z","waiting":1,"pending":0,"remoteMembership":"unknown","connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T08:02:47.876Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T08:02:47.876Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T08:02:47.876Z","event":"received-decision","decision":"accepted"}
+{"at":"2026-10-10T08:03:25.255Z","waiting":0,"pending":0,"remoteMembership":"active","connections":[{"path":"direct","hasDirect":true,"hasRelay":false}]}
+{"at":"2026-10-10T08:03:25.257Z","event":"initiator-state","waiting":0,"errors":0}
+{"at":"2026-10-10T08:03:25.265Z","closed":true}

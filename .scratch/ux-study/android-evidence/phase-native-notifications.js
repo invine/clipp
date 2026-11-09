@@ -1,0 +1,6 @@
+(async()=>{
+await ensureDrawer();await capture('native-clean-drawer',{scenario:'Fresh process drawer, native navigation trial'});await shell('input','keyevent','4');await sleep(1200);out({cleanBack:await foreground()});await nativeCapture('native-clean-back-drawer',{scenario:'Back from drawer in fresh process'});await returnApp();out({cleanBackReturn:{drawer:await evaluate("!!document.querySelector('.drawer-pane')"),timeOrigin:await evaluate('performance.timeOrigin')}});await capture('native-clean-return-back',{scenario:'Return after Back, fresh process'});
+await ensureDrawer();await evaluate("document.querySelector('.drawer-pane').scrollTop=10000");await capture('native-continuity-clean-bottom',{scenario:'Continuity help/select/diagnostics with no native dialog'});
+// Schedule only a synthetic notification through the real Android adapter. No real request or paired device.
+evaluate("__uxClient.runtimeAdapter.notifications.show({id:'study-request',title:'Clipp study request',body:'Synthetic request for UX inspection'})").catch(e=>out({notificationCall:String(e)}));await sleep(1800);await nativeCapture('native-notification-permission',{scenario:'Actual Android POST_NOTIFICATIONS prompt, adapter-triggered synthetic notification'});out({notificationPrompt:await uiTree()});
+})();

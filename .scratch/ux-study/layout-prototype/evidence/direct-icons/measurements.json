@@ -1,0 +1,171 @@
+{
+  "at": "2026-10-09T06:11:11.579Z",
+  "browser": "143.0.7499.4",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "L1-history-phone-1-direct",
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 7H7a5 5 0 0 0 0 10h2m6-10h2a5 5 0 0 1 0 10h-2M8 12h8\"></path></svg>",
+      "screenshot": "L1-history-phone-1-direct.png"
+    },
+    {
+      "id": "L1-devices-phone-1-direct",
+      "statusCount": 0,
+      "statusInHeader": false,
+      "headerAboveSearch": true,
+      "brandVisible": false,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "deviceDirectIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 7H7a5 5 0 0 0 0 10h2m6-10h2a5 5 0 0 1 0 10h-2M8 12h8\"></path></svg>",
+      "screenshot": "L1-devices-phone-1-direct.png"
+    },
+    {
+      "id": "L2-history-phone-1-direct",
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"2\" y=\"4\" width=\"13\" height=\"11\" rx=\"2\"></rect><path d=\"M5 19h7m-3.5-4v4\"></path><rect x=\"15\" y=\"8\" width=\"7\" height=\"13\" rx=\"1.5\"></rect><path d=\"M18 18h1\"></path></svg>",
+      "screenshot": "L2-history-phone-1-direct.png"
+    },
+    {
+      "id": "L2-devices-phone-1-direct",
+      "statusCount": 0,
+      "statusInHeader": false,
+      "headerAboveSearch": true,
+      "brandVisible": false,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "deviceDirectIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"2\" y=\"4\" width=\"13\" height=\"11\" rx=\"2\"></rect><path d=\"M5 19h7m-3.5-4v4\"></path><rect x=\"15\" y=\"8\" width=\"7\" height=\"13\" rx=\"1.5\"></rect><path d=\"M18 18h1\"></path></svg>",
+      "screenshot": "L2-devices-phone-1-direct.png"
+    },
+    {
+      "id": "L3-history-phone-1-direct",
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" opacity=\".4\"></circle><circle cx=\"12\" cy=\"12\" r=\"5\" fill=\"currentColor\" stroke=\"none\"></circle></svg>",
+      "screenshot": "L3-history-phone-1-direct.png"
+    },
+    {
+      "id": "L3-devices-phone-1-direct",
+      "statusCount": 0,
+      "statusInHeader": false,
+      "headerAboveSearch": true,
+      "brandVisible": false,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "deviceDirectIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" opacity=\".4\"></circle><circle cx=\"12\" cy=\"12\" r=\"5\" fill=\"currentColor\" stroke=\"none\"></circle></svg>",
+      "screenshot": "L3-devices-phone-1-direct.png"
+    },
+    {
+      "id": "L1-history-restored-1-direct",
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 7H7a5 5 0 0 0 0 10h2m6-10h2a5 5 0 0 1 0 10h-2M8 12h8\"></path></svg>",
+      "screenshot": "L1-history-restored-1-direct.png",
+      "visibleGeometry": {
+        "headerBottom": 56,
+        "visibleSearchTop": 66
+      }
+    },
+    {
+      "id": "L1-history-popup-1-direct",
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 7H7a5 5 0 0 0 0 10h2m6-10h2a5 5 0 0 1 0 10h-2M8 12h8\"></path></svg>",
+      "screenshot": "L1-history-popup-1-direct.png"
+    },
+    {
+      "id": "L1-history-small-2-direct",
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 7H7a5 5 0 0 0 0 10h2m6-10h2a5 5 0 0 1 0 10h-2M8 12h8\"></path></svg>",
+      "screenshot": "L1-history-small-2-direct.png"
+    },
+    {
+      "id": "L1-history-phone-1-relayed",
+      "statusCount": 1,
+      "statusName": "Connected through relay. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"m7 15 5-8 5 8M10 15h4\"></path></svg>",
+      "screenshot": "L1-history-phone-1-relayed.png"
+    },
+    {
+      "id": "L1-history-phone-1-offline",
+      "statusCount": 1,
+      "statusName": "No device connection. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"m7 7 10 10\"></path></svg>",
+      "screenshot": "L1-history-phone-1-offline.png"
+    },
+    {
+      "id": "L1-history-phone-1-warning",
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusInHeader": true,
+      "headerAboveSearch": true,
+      "brandVisible": true,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerIcon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"M12 6v8m0 4h.01\"></path></svg>",
+      "screenshot": "L1-history-phone-1-warning.png"
+    }
+  ],
+  "checks": [
+    {
+      "name": "Escape returns to header icon",
+      "passed": true
+    },
+    {
+      "name": "Bottom arrows cycle the three direct alternatives",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "failures": [],
+  "validationNotes": "Header checks apply to History. Narrow Devices intentionally has no app header. Wide History has a hidden narrow Search input; compare the visible Search input. Device-row glyphs are compared with the matching History capture.",
+  "initialValidationFlags": [
+    "L1-devices-phone-1-direct",
+    "L2-devices-phone-1-direct",
+    "L3-devices-phone-1-direct",
+    "L1-history-restored-1-direct"
+  ]
+}

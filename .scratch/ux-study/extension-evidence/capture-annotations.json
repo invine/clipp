@@ -1,0 +1,20 @@
+{
+  "popup-fixture-qr-failure-confirmed": "Mislabeled intermediate capture: failure injection had been removed. Shows a successful QR, not an error. Use popup-fixture-qr-error-verified for the failure claim.",
+  "options-native-fullscreen": "Taken during the fullscreen transition. Excluded from settled bounds; use options-native-fullscreen-settled and the report limitation.",
+  "popup-fixture-stacked-recovery": "Adversarial simultaneous error fixture; not evidence that all these states co-occur natively.",
+  "popup-fixture-pending-overflow": "Text glyphs extend beyond constrained Peer ID boxes; box-only overflow checks miss this. Relay actions were reachable.",
+  "options-native-invalid-settings": "Real background validation, but 480\u00d7640 options viewport/DPR 1 is emulated.",
+  "popup-native-zoom-1": "Tab zoom setting did not affect this native popup: actual viewport 480\u00d7600 and DPR 2. Not an enlarged-popup test.",
+  "options-native-zoom-1.25": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "popup-native-zoom-1.25": "Tab zoom setting did not affect this native popup: actual viewport 480\u00d7600 and DPR 2. Not an enlarged-popup test.",
+  "options-native-zoom-1.5": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "popup-native-zoom-1.5": "Tab zoom setting did not affect this native popup: actual viewport 480\u00d7600 and DPR 2. Not an enlarged-popup test.",
+  "options-native-zoom-2": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "popup-native-zoom-2": "Tab zoom setting did not affect this native popup: actual viewport 480\u00d7600 and DPR 2. Not an enlarged-popup test.",
+  "options-fixture-native-zoom-1.25": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "options-fixture-native-zoom-1.25-bottom": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "options-fixture-native-zoom-1.5": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "options-fixture-native-zoom-1.5-bottom": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "options-fixture-native-zoom-2": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions.",
+  "options-fixture-native-zoom-2-bottom": "Unsuitable zoom screenshot: Playwright capture crops or blanks the viewport. DOM geometry retained. Use options-zoom-cdp-* replacements for visual conclusions."
+}

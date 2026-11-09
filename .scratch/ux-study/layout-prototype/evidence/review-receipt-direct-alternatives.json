@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-09T06:12:23.974999+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Compare three replacement direct-connection icons in the agreed History header and Devices rows",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "ba4f65b8d25522d8d8223783291684a5be001f0d8361897fd14198c8d99bcbc4",
+    "app.js": "55ebc66d1560730ec517c74d931d242b912986ff6eb1c206a23676c82509d6c4",
+    "management.js": "3ac57ab3848ff6a3c95d23533b9f09beb410cde2e38468953701d83a39efd31a",
+    "connections.js": "79e9ecc4b6d476ff0acf226a920999283dcca37a091a0fb4e1843394ddd9e68e",
+    "style.css": "8725cdb00cc6c8d5a34c23bea1a2ea843f57459a48cefc63162dd60c2730689d",
+    "server.cjs": "e2061b56401a78cbc98f0e737ee95551fb816f64a29eab561136a271c4ced344",
+    "capture-connections.cjs": "7e633804c8c9950dc19312bc63c47633e0b29786e96008ef84320418e0d135da",
+    "README.md": "d433a156556a945fa0a7c94b99886226b5660f0200ad693f7cb0d12da461b54b"
+  },
+  "captureCount": 12,
+  "measurements": "direct-icons/measurements.json",
+  "contrast": "connections/contrast.json",
+  "previousReceipt": "review-receipt-history-header.json",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "statusFailures": [],
+  "linkErrors": [],
+  "managementDecision": "M1 Devices + M3 Settings explicitly accepted by user",
+  "statusDecision": "User rejected current direct glyph; replacement L1/L2/L3 and complete status family/partial-problem priority pending.",
+  "controlsSecondRound": "unanswered",
+  "verification": "Phone History/Devices for all alternatives; L1 popup, restored, 320px/200% light and non-direct states; URL cycling and Escape focus return. Capture-selector corrections documented in ledger.",
+  "headerDecision": "User explicitly requires Clipp branding above Search at narrow widths; status stays in that top line.",
+  "checkCount": 2
+}

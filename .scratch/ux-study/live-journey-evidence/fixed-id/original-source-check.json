@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-10T00:02:15.361783+00:00",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "sourceCount": 145,
+  "changedSinceInventory": [],
+  "originalBuildArtifactCount": 43,
+  "changedOriginalBuildArtifacts": [],
+  "symlinkTarget": "/Users/invine/src/js/clipp",
+  "gitStatus": " M apps/electron/src/managedRelayAuth.ts\n M tests/electron/managedRelayAuth.test.ts\n?? .scratch/ux-study/\n"
+}

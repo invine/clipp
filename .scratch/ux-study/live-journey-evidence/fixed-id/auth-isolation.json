@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-09T23:57:43.812Z",
+  "purpose": "Prevent capture of copy/cut events on account sign-in pages in disposable study copy",
+  "extensionPath": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-fixed-id-build-gHI7YD",
+  "onlyAdditionalManifestChange": "Removed content_scripts",
+  "removedContentScripts": [
+    {
+      "js": [
+        "assets/content.ts-Dj57AVJC.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "manifestSha256Before": "8b23f2acbd31687f5982c9ba31b2249cceab4f2dfa3726d2d716cec3b4d488d8",
+  "manifestSha256After": "b2ffd2f7296e4b08c59410b5db88327b71f2f71a42764241eec2d3659b99beff",
+  "loaderKeyPreserved": true,
+  "permissionsPreserved": true,
+  "authImplementationChanged": false,
+  "sharedBuildChanged": false,
+  "qualificationBoundary": "Web-page clipboard capture is excluded; extension HTML uses memory clipboard guards; real account authorization uses unchanged native identity API and background logic."
+}

@@ -1,0 +1,149 @@
+{
+  "at": "2026-10-26T17:00:17.618Z",
+  "results": [
+    {
+      "name": "Account opens with a useful title",
+      "passed": true
+    },
+    {
+      "name": "Recent four weeks are visible by default",
+      "passed": true
+    },
+    {
+      "name": "All 13 historical weeks can be selected",
+      "passed": true
+    },
+    {
+      "name": "Connect action opens copyable discovery URL",
+      "passed": true
+    },
+    {
+      "name": "Unavailable count is distinct from zero",
+      "passed": true
+    },
+    {
+      "name": "New account has an honest zero usage bar and full allowance",
+      "passed": true
+    },
+    {
+      "name": "Account list shows all five sample accounts",
+      "passed": true
+    },
+    {
+      "name": "Pending filter shows the account needing review",
+      "passed": true
+    },
+    {
+      "name": "Sample approval updates status and review counts together",
+      "passed": true
+    },
+    {
+      "name": "Email search and visible count agree",
+      "passed": true
+    },
+    {
+      "name": "New plan form adds a sample plan",
+      "passed": true
+    },
+    {
+      "name": "Archiving explains unchanged existing assignments",
+      "passed": true
+    },
+    {
+      "name": "Confirmed sample archive updates the plan state",
+      "passed": true
+    },
+    {
+      "name": "Mobile Review action is visible without sideways scrolling",
+      "passed": true
+    },
+    {
+      "name": "Mobile review opens its own detail view with a Back action",
+      "passed": true
+    },
+    {
+      "name": "Phone navigation opens labelled destinations",
+      "passed": true
+    },
+    {
+      "name": "A mobile active: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "A mobile pending: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "A mobile suspended: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "A mobile exhausted: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "A mobile unavailable: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "A mobile empty: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "B mobile active: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "B mobile pending: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "B mobile suspended: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "B mobile exhausted: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "B mobile unavailable: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "B mobile empty: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "C mobile active: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "C mobile pending: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "C mobile suspended: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "C mobile exhausted: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "C mobile unavailable: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "C mobile empty: no page overflow, one title",
+      "passed": true
+    },
+    {
+      "name": "Style system includes six explicit color roles",
+      "passed": true
+    },
+    {
+      "name": "Browser produced no JavaScript exceptions",
+      "passed": true
+    }
+  ]
+}

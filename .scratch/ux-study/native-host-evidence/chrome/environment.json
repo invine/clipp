@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-10-09T20:20:57.001Z",
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-chrome-profile-yF9orY",
+  "extensionPath": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-chrome-build-QR9xgm",
+  "extensionId": "mgbhapohdjbmjpnifgkafnmphahfebbm",
+  "browser": "143.0.7499.4",
+  "executable": "/Users/invine/Library/Caches/ms-playwright/chromium-1200/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "os": "25.4.0",
+  "arch": "arm64",
+  "isolation": "new profile; compiled WSS relay-only; clipboard boundary guarded in popup/options/offscreen",
+  "screen": {
+    "width": 1512,
+    "height": 982,
+    "availWidth": 1512,
+    "availHeight": 949,
+    "dpr": 2
+  },
+  "windows": [
+    {
+      "alwaysOnTop": false,
+      "focused": true,
+      "height": 820,
+      "id": 1119982189,
+      "incognito": false,
+      "left": 22,
+      "state": "normal",
+      "top": 55,
+      "type": "normal",
+      "width": 1100
+    }
+  ]
+}

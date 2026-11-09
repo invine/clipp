@@ -1,0 +1,1467 @@
+{
+  "at": "2026-10-08T19:51:09.497Z",
+  "browser": "143.0.7499.4",
+  "fixture": "same nine synthetic Clips; browser prototype comparison only",
+  "records": [
+    {
+      "id": "1-phone-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "1-small-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "small",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 535,
+        "scrollW": 320
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 5,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-small-1-everyday-dark.png"
+    },
+    {
+      "id": "1-popup-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "bodyScrollWidth": 480,
+      "content": {
+        "w": 480,
+        "h": 551,
+        "scrollW": 480
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 52,
+      "fullClips": 7,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        62.25,
+        83.31,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-popup-1-everyday-dark.png"
+    },
+    {
+      "id": "1-narrow-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "narrow",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 520,
+        "h": 728
+      },
+      "bodyScrollWidth": 520,
+      "content": {
+        "w": 520,
+        "h": 679,
+        "scrollW": 520
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 52,
+      "fullClips": 8,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        62.25,
+        83.31,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-narrow-1-everyday-dark.png"
+    },
+    {
+      "id": "1-short-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "bodyScrollWidth": 340,
+      "content": {
+        "w": 340,
+        "h": 788.75,
+        "scrollW": 340
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 101,
+      "fullClips": 2,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        62.25,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-short-1-everyday-dark.png"
+    },
+    {
+      "id": "1-landscape-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "landscape",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 640,
+        "h": 360
+      },
+      "bodyScrollWidth": 640,
+      "content": {
+        "w": 640,
+        "h": 746.25,
+        "scrollW": 640
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 141,
+      "fullClips": 2,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        69,
+        69,
+        83.31,
+        69,
+        69,
+        83.31,
+        69,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-landscape-1-everyday-dark.png"
+    },
+    {
+      "id": "1-wide-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "w": 1440,
+        "h": 812,
+        "scrollW": 1440
+      },
+      "toolbarHeight": null,
+      "firstClipY": 114,
+      "fullClips": 9,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "1-small-1.3-long-light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "small",
+      "scale": "1.3",
+      "scene": "long",
+      "theme": "light",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 520.03125,
+        "scrollW": 320
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 3,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        163.66,
+        124.19,
+        124.19,
+        124.19,
+        96.83,
+        124.19,
+        100.45,
+        100.45,
+        100.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-small-1.3-long-light.png"
+    },
+    {
+      "id": "1-small-2-long-light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "theme": "light",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 2130.34375,
+        "scrollW": 320
+      },
+      "toolbarHeight": 132.296875,
+      "firstClipY": 338.765625,
+      "fullClips": 1,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        278.17,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-small-2-long-light.png"
+    },
+    {
+      "id": "1-phone-2-recovery-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 2446.734375,
+        "scrollW": 360
+      },
+      "toolbarHeight": 132.296875,
+      "firstClipY": 720.140625,
+      "fullClips": 0,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        213.45,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-phone-2-recovery-dark.png"
+    },
+    {
+      "id": "1-phone-1-nomatch-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "nomatch",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": null,
+      "fullClips": 0,
+      "visibleClipCount": 0,
+      "cardHeights": [],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-phone-1-nomatch-dark.png"
+    },
+    {
+      "id": "1-phone-1-empty-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "empty",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": null,
+      "fullClips": 0,
+      "visibleClipCount": 0,
+      "cardHeights": [],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-phone-1-empty-dark.png"
+    },
+    {
+      "id": "1-scope-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "scope panel",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-scope-panel.png"
+    },
+    {
+      "id": "1-pinned",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "pinned",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 134,
+      "fullClips": 2,
+      "visibleClipCount": 2,
+      "cardHeights": [
+        83.31,
+        69
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-pinned.png"
+    },
+    {
+      "id": "1-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "search",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 1,
+      "visibleClipCount": 1,
+      "cardHeights": [
+        69
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-search.png"
+    },
+    {
+      "id": "1-more-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "more panel",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-more-panel.png"
+    },
+    {
+      "id": "1-auto-off",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "Auto Sync off",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 136,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-auto-off.png"
+    },
+    {
+      "id": "1-large-scope-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "200% scope panel",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 2065.625,
+        "scrollW": 320
+      },
+      "toolbarHeight": 132.296875,
+      "firstClipY": 338.765625,
+      "fullClips": 1,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-large-scope-panel.png"
+    },
+    {
+      "id": "1-large-history-scrolled",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "200% history scrolled",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 2065.625,
+        "scrollW": 320
+      },
+      "toolbarHeight": 132.296875,
+      "firstClipY": 338.765625,
+      "fullClips": 1,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-large-history-scrolled.png"
+    },
+    {
+      "id": "1-short-more-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "1",
+      "state": "short menu",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "bodyScrollWidth": 340,
+      "content": {
+        "w": 340,
+        "h": 788.75,
+        "scrollW": 340
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 101,
+      "fullClips": 2,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        62.25,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "1-short-more-panel.png"
+    },
+    {
+      "id": "3-phone-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "3-small-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "small",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 535,
+        "scrollW": 320
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 5,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-small-1-everyday-dark.png"
+    },
+    {
+      "id": "3-popup-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "bodyScrollWidth": 480,
+      "content": {
+        "w": 480,
+        "h": 551,
+        "scrollW": 480
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 52,
+      "fullClips": 7,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        62.25,
+        83.31,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-popup-1-everyday-dark.png"
+    },
+    {
+      "id": "3-narrow-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "narrow",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 520,
+        "h": 728
+      },
+      "bodyScrollWidth": 520,
+      "content": {
+        "w": 520,
+        "h": 679,
+        "scrollW": 520
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 52,
+      "fullClips": 8,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        62.25,
+        83.31,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-narrow-1-everyday-dark.png"
+    },
+    {
+      "id": "3-short-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "bodyScrollWidth": 340,
+      "content": {
+        "w": 340,
+        "h": 788.75,
+        "scrollW": 340
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 101,
+      "fullClips": 2,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        62.25,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-short-1-everyday-dark.png"
+    },
+    {
+      "id": "3-landscape-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "landscape",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 640,
+        "h": 360
+      },
+      "bodyScrollWidth": 640,
+      "content": {
+        "w": 640,
+        "h": 746.25,
+        "scrollW": 640
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 141,
+      "fullClips": 2,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        69,
+        69,
+        83.31,
+        69,
+        69,
+        83.31,
+        69,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-landscape-1-everyday-dark.png"
+    },
+    {
+      "id": "3-wide-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "w": 1440,
+        "h": 812,
+        "scrollW": 1440
+      },
+      "toolbarHeight": null,
+      "firstClipY": 114,
+      "fullClips": 9,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "3-small-1.3-long-light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "small",
+      "scale": "1.3",
+      "scene": "long",
+      "theme": "light",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 520.03125,
+        "scrollW": 320
+      },
+      "toolbarHeight": 68,
+      "firstClipY": 104,
+      "fullClips": 3,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        163.66,
+        124.19,
+        124.19,
+        124.19,
+        96.83,
+        124.19,
+        100.45,
+        100.45,
+        100.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-small-1.3-long-light.png"
+    },
+    {
+      "id": "3-small-2-long-light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "theme": "light",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 2128.109375,
+        "scrollW": 320
+      },
+      "toolbarHeight": 130.0625,
+      "firstClipY": 336.53125,
+      "fullClips": 1,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        278.17,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-small-2-long-light.png"
+    },
+    {
+      "id": "3-phone-2-recovery-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 2444.5,
+        "scrollW": 360
+      },
+      "toolbarHeight": 130.0625,
+      "firstClipY": 717.90625,
+      "fullClips": 0,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        213.45,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-phone-2-recovery-dark.png"
+    },
+    {
+      "id": "3-phone-1-nomatch-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "nomatch",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": null,
+      "fullClips": 0,
+      "visibleClipCount": 0,
+      "cardHeights": [],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-phone-1-nomatch-dark.png"
+    },
+    {
+      "id": "3-phone-1-empty-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "empty",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": null,
+      "fullClips": 0,
+      "visibleClipCount": 0,
+      "cardHeights": [],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-phone-1-empty-dark.png"
+    },
+    {
+      "id": "3-scope-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "scope panel",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-scope-panel.png"
+    },
+    {
+      "id": "3-pinned",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "pinned",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 2,
+      "visibleClipCount": 2,
+      "cardHeights": [
+        83.31,
+        69
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-pinned.png"
+    },
+    {
+      "id": "3-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "search",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 1,
+      "visibleClipCount": 1,
+      "cardHeights": [
+        69
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-search.png"
+    },
+    {
+      "id": "3-more-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "more panel",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 84,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-more-panel.png"
+    },
+    {
+      "id": "3-auto-off",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "Auto Sync off",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "h": 615,
+        "scrollW": 360
+      },
+      "toolbarHeight": 48,
+      "firstClipY": 136,
+      "fullClips": 6,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-auto-off.png"
+    },
+    {
+      "id": "3-large-scope-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "200% scope panel",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 2063.390625,
+        "scrollW": 320
+      },
+      "toolbarHeight": 130.0625,
+      "firstClipY": 336.53125,
+      "fullClips": 1,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-large-scope-panel.png"
+    },
+    {
+      "id": "3-large-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "200% search",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 258.6875,
+        "scrollW": 320
+      },
+      "toolbarHeight": 67.34375,
+      "firstClipY": 273.8125,
+      "fullClips": 1,
+      "visibleClipCount": 1,
+      "cardHeights": [
+        171.34
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-large-search.png"
+    },
+    {
+      "id": "3-large-history-scrolled",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "200% history scrolled",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "h": 2063.390625,
+        "scrollW": 320
+      },
+      "toolbarHeight": 130.0625,
+      "firstClipY": 336.53125,
+      "fullClips": 1,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-large-history-scrolled.png"
+    },
+    {
+      "id": "3-short-more-panel",
+      "evidenceClass": "throwaway-browser-simulation",
+      "variant": "3",
+      "state": "short menu",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "bodyScrollWidth": 340,
+      "content": {
+        "w": 340,
+        "h": 788.75,
+        "scrollW": 340
+      },
+      "toolbarHeight": 40,
+      "firstClipY": 101,
+      "fullClips": 2,
+      "visibleClipCount": 9,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        62.25,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "controlsOutsideBody": [],
+      "undersizedTouchTargets": [],
+      "dialogOutsideViewport": false,
+      "screenshot": "3-short-more-panel.png"
+    }
+  ],
+  "interactions": [
+    {
+      "variant": "1",
+      "escapeRestoredFocus": true,
+      "pinnedCount": 2,
+      "searchCount": 1,
+      "noMatchVisible": true,
+      "returnedCount": 9,
+      "offVisible": true,
+      "shareFeedback": "Share current clipboard · demonstration only",
+      "copyFeedback": "Copied · demonstration only",
+      "queryAfterResize": "npm",
+      "matchesAfterResize": 1
+    },
+    {
+      "variant": "3",
+      "escapeRestoredFocus": true,
+      "pinnedCount": 2,
+      "searchCount": 1,
+      "noMatchVisible": true,
+      "returnedCount": 9,
+      "offVisible": true,
+      "shareFeedback": "Share current clipboard · demonstration only",
+      "copyFeedback": "Copied · demonstration only",
+      "queryAfterResize": "npm",
+      "matchesAfterResize": 1
+    }
+  ],
+  "switched": "3 · Browse first",
+  "errors": [],
+  "geometryFailures": []
+}

@@ -1,0 +1,19 @@
+{
+  "required_sections": [
+    "Problem Statement",
+    "Solution",
+    "User Stories",
+    "Implementation Decisions",
+    "Testing Decisions",
+    "Out of Scope",
+    "Further Notes"
+  ],
+  "user_stories": 74,
+  "local_links_valid": true,
+  "frozen_artifact_hashes_valid": true,
+  "implementation_decisions_have_no_source_paths": true,
+  "design_selection": "A / Workspace",
+  "testing_seam_confirmation": "confirmed by the user on 2026-10-26",
+  "status": "ready-for-agent",
+  "validation_scope": "Document structure, reference existence and artifact hashes only. No implementation tests run."
+}

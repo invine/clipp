@@ -1,0 +1,48 @@
+{
+  "signatureValid": true,
+  "addressCount": 6,
+  "addresses": [
+    {
+      "loopback": true,
+      "ws": false,
+      "tcp": false,
+      "webrtc": true,
+      "relay": false
+    },
+    {
+      "loopback": false,
+      "ws": false,
+      "tcp": false,
+      "webrtc": true,
+      "relay": false
+    },
+    {
+      "loopback": true,
+      "ws": false,
+      "tcp": true,
+      "webrtc": false,
+      "relay": false
+    },
+    {
+      "loopback": false,
+      "ws": false,
+      "tcp": true,
+      "webrtc": false,
+      "relay": false
+    },
+    {
+      "loopback": true,
+      "ws": true,
+      "tcp": true,
+      "webrtc": false,
+      "relay": false
+    },
+    {
+      "loopback": false,
+      "ws": true,
+      "tcp": true,
+      "webrtc": false,
+      "relay": false
+    }
+  ]
+}

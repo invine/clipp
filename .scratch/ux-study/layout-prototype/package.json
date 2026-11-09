@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "name": "clipp-ux-layout-prototype",
+  "scripts": { "start": "node server.cjs" }
+}

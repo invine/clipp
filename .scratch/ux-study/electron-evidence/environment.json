@@ -1,0 +1,98 @@
+{
+  "os": "darwin",
+  "osVersion": "26.4.1",
+  "arch": "arm64",
+  "versions": {
+    "node": "24.18.1",
+    "acorn": "8.16.0",
+    "ada": "3.4.4",
+    "amaro": "1.1.9",
+    "ares": "1.34.6",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.2",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "148",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.69.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "0.0.0",
+    "simdjson": "4.6.4",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.1",
+    "tz": "2025c",
+    "undici": "7.29.0",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "15.0.245.28-electron.0",
+    "zlib": "1.3.2.1-motley",
+    "zstd": "1.6.0",
+    "electron": "43.4.0",
+    "chrome": "150.0.7871.224"
+  },
+  "displays": [
+    {
+      "accelerometerSupport": "unknown",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1512,
+        "height": 982
+      },
+      "colorDepth": 30,
+      "colorSpace": "{primaries:P3, transfer:{0.0777*x + 0.0000 if abs(x) < 0.0450 else sign(x)*((0.9495*abs(x) + 0.0495)**2.3955 + 0.0003)}, matrix:RGB, range:FULL}",
+      "depthPerComponent": 10,
+      "detected": true,
+      "displayFrequency": 120.0006103515625,
+      "id": 1,
+      "internal": true,
+      "label": "Built-in Retina Display",
+      "maximumCursorSize": {
+        "width": 0,
+        "height": 0
+      },
+      "monochrome": false,
+      "nativeOrigin": {
+        "x": 0,
+        "y": 0
+      },
+      "rotation": 0,
+      "scaleFactor": 2,
+      "size": {
+        "width": 1512,
+        "height": 982
+      },
+      "workArea": {
+        "x": 0,
+        "y": 33,
+        "width": 1512,
+        "height": 949
+      },
+      "workAreaSize": {
+        "width": 1512,
+        "height": 949
+      },
+      "touchSupport": "unknown"
+    }
+  ],
+  "outer": {
+    "x": 496,
+    "y": 111,
+    "width": 520,
+    "height": 760
+  },
+  "content": {
+    "x": 496,
+    "y": 143,
+    "width": 520,
+    "height": 728
+  },
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-electron-AgzJr0",
+  "clipboard": "memory only",
+  "network": "relay-only, empty managed configuration"
+}

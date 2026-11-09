@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-10T09:15:08.022014+00:00",
+  "hosts": {
+    "electron": {
+      "pid": 1550,
+      "alive": false,
+      "at": "2026-10-10T09:12:53.171Z",
+      "closed": true,
+      "exitCode": 0
+    },
+    "chrome": {
+      "pid": 1571,
+      "alive": false,
+      "at": "2026-10-10T09:12:45.944Z",
+      "closed": true,
+      "exitCode": 0
+    }
+  },
+  "globalDisplayRestored": true,
+  "clipboard": "memory only throughout; no coordinated native clipboard interval"
+}

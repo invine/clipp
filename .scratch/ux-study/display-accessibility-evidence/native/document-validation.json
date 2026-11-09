@@ -1,0 +1,48 @@
+{
+  "at": "2026-10-10T09:16:52.861335+00:00",
+  "findingCount": 51,
+  "runtimeCounts": {
+    "E": 17,
+    "C": 16,
+    "A": 18
+  },
+  "changedFilesValidated": [
+    "display-accessibility-observations.md",
+    "display-accessibility-evidence/native/README.md",
+    "map.md",
+    "issues/15-qualify-display-scaling-and-accessibility.md",
+    "issues/08-prioritize-ux-study-handoff.md",
+    "handoff.md",
+    "handoff-findings.md",
+    "electron-observations.md",
+    "extension-observations.md",
+    "sign-in-free-journeys.md"
+  ],
+  "localLinksChecked": 401,
+  "anchorsChecked": 89,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "displayClosure": {
+    "at": "2026-10-10T09:15:08.022014+00:00",
+    "hosts": {
+      "electron": {
+        "pid": 1550,
+        "alive": false,
+        "at": "2026-10-10T09:12:53.171Z",
+        "closed": true,
+        "exitCode": 0
+      },
+      "chrome": {
+        "pid": 1571,
+        "alive": false,
+        "at": "2026-10-10T09:12:45.944Z",
+        "closed": true,
+        "exitCode": 0
+      }
+    },
+    "globalDisplayRestored": true,
+    "clipboard": "memory only throughout; no coordinated native clipboard interval"
+  },
+  "ticketStatus": "display task resolved; display restored; owned hosts closed; exact remaining native prerequisites retained; live journeys open"
+}

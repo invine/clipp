@@ -1,0 +1,32 @@
+{
+  "at": "2026-10-10T08:17:45.703Z",
+  "clips": [
+    {
+      "copyMarker": true,
+      "permissionMarker": false
+    }
+  ],
+  "devices": 0,
+  "relays": 0,
+  "autoSync": true,
+  "clipboardHistoryError": null,
+  "guard": {
+    "nativeEnabled": true,
+    "nativeReads": 2,
+    "nativeWrites": 0,
+    "unexpected": 0,
+    "readCallFocus": {
+      "focused": false,
+      "active": true
+    },
+    "lastReadError": {
+      "name": "NotAllowedError",
+      "message": "Failed to execute 'readText' on 'Clipboard': Document is not focused."
+    }
+  },
+  "viewport": {
+    "width": 495,
+    "height": 600,
+    "dpr": 2
+  }
+}

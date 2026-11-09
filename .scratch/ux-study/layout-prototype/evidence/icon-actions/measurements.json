@@ -1,0 +1,1351 @@
+{
+  "at": "2026-10-08T20:47:32.336Z",
+  "browser": "143.0.7499.4",
+  "fixture": "same nine synthetic Clips, no real clipboard or runtime mutation",
+  "records": [
+    {
+      "id": "phone-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": 84,
+      "fullClips": 6,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        69,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 300,
+        "y": 101.15625,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 184,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-1-everyday-dark.png"
+    },
+    {
+      "id": "small-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "small",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 84,
+      "fullClips": 5,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        69,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 208,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 101.15625,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 144,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-1-everyday-dark.png"
+    },
+    {
+      "id": "popup-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "bodyScrollWidth": 480,
+      "content": {
+        "w": 480,
+        "scrollW": 480
+      },
+      "firstClipY": 52,
+      "fullClips": 7,
+      "cardHeights": [
+        62.25,
+        83.3125,
+        83.3125,
+        62.25,
+        62.25,
+        83.3125,
+        62.25,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 384,
+        "y": 8,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 428,
+        "y": 62.625,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 12,
+        "y": 8,
+        "w": 328,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "popup-1-everyday-dark.png"
+    },
+    {
+      "id": "narrow-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "narrow",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 520,
+        "h": 728
+      },
+      "bodyScrollWidth": 520,
+      "content": {
+        "w": 520,
+        "scrollW": 520
+      },
+      "firstClipY": 52,
+      "fullClips": 8,
+      "cardHeights": [
+        62.25,
+        83.3125,
+        83.3125,
+        62.25,
+        62.25,
+        83.3125,
+        62.25,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 424,
+        "y": 8,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 468,
+        "y": 62.625,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 12,
+        "y": 8,
+        "w": 368,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "narrow-1-everyday-dark.png"
+    },
+    {
+      "id": "short-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "bodyScrollWidth": 340,
+      "content": {
+        "w": 340,
+        "scrollW": 340
+      },
+      "firstClipY": 101,
+      "fullClips": 2,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        62.25,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 244,
+        "y": 57,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 288,
+        "y": 122.15625,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 12,
+        "y": 57,
+        "w": 188,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "short-1-everyday-dark.png"
+    },
+    {
+      "id": "landscape-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "landscape",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 640,
+        "h": 360
+      },
+      "bodyScrollWidth": 640,
+      "content": {
+        "w": 640,
+        "scrollW": 640
+      },
+      "firstClipY": 141,
+      "fullClips": 2,
+      "cardHeights": [
+        69,
+        69,
+        83.3125,
+        69,
+        69,
+        83.3125,
+        69,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 528,
+        "y": 89,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 580,
+        "y": 151,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 89,
+        "w": 464,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "landscape-1-everyday-dark.png"
+    },
+    {
+      "id": "wide-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "w": 1440,
+        "scrollW": 1440
+      },
+      "firstClipY": 114,
+      "fullClips": 9,
+      "cardHeights": [
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875
+      ],
+      "share": {
+        "x": 1384,
+        "y": 66,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 307.5,
+        "y": 245.296875,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 16,
+        "y": 66,
+        "w": 1200.734375,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "wide-1-everyday-dark.png"
+    },
+    {
+      "id": "fullscreen-1-everyday-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "fullscreen",
+      "scale": "1",
+      "scene": "everyday",
+      "theme": "dark",
+      "inner": {
+        "w": 1920,
+        "h": 1080
+      },
+      "bodyScrollWidth": 1920,
+      "content": {
+        "w": 1920,
+        "scrollW": 1920
+      },
+      "firstClipY": 114,
+      "fullClips": 9,
+      "cardHeights": [
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875
+      ],
+      "share": {
+        "x": 1864,
+        "y": 66,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 269.328125,
+        "y": 245.296875,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 16,
+        "y": 66,
+        "w": 1680.734375,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "fullscreen-1-everyday-dark.png"
+    },
+    {
+      "id": "small-1.3-long-light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "small",
+      "scale": "1.3",
+      "scene": "long",
+      "theme": "light",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 84,
+      "fullClips": 3,
+      "cardHeights": [
+        163.65625,
+        100.453125,
+        124.1875,
+        100.453125,
+        73.09375,
+        124.1875,
+        100.453125,
+        100.453125,
+        100.453125
+      ],
+      "share": {
+        "x": 208,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 141.328125,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 144,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-1.3-long-light.png"
+    },
+    {
+      "id": "small-2-long-light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "theme": "light",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 325.8125,
+      "fullClips": 1,
+      "cardHeights": [
+        261.296875,
+        196.578125,
+        196.578125,
+        196.578125,
+        154.46875,
+        230.9375,
+        196.578125,
+        196.578125,
+        196.578125
+      ],
+      "share": {
+        "x": 208,
+        "y": 273.8125,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 528.109375,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 202.46875,
+        "w": 248,
+        "h": 67.34375
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-2-long-light.png"
+    },
+    {
+      "id": "wide-2-long-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "wide",
+      "scale": "2",
+      "scene": "long",
+      "theme": "dark",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "w": 1440,
+        "scrollW": 1440
+      },
+      "firstClipY": 229.390625,
+      "fullClips": 4,
+      "cardHeights": [
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375,
+        284.59375
+      ],
+      "share": {
+        "x": 1384,
+        "y": 167.28125,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 662,
+        "y": 460.984375,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 16,
+        "y": 153.1875,
+        "w": 1101.484375,
+        "h": 68.203125
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "wide-2-long-dark.png"
+    },
+    {
+      "id": "phone-2-recovery-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": 707.1875,
+      "fullClips": 0,
+      "cardHeights": [
+        196.578125,
+        196.578125,
+        196.578125,
+        196.578125,
+        154.46875,
+        196.578125,
+        196.578125,
+        196.578125,
+        196.578125
+      ],
+      "share": {
+        "x": 248,
+        "y": 655.1875,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 300,
+        "y": 844.765625,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 583.84375,
+        "w": 288,
+        "h": 67.34375
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-2-recovery-dark.png"
+    },
+    {
+      "id": "phone-1-nomatch-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "nomatch",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": null,
+      "fullClips": 0,
+      "cardHeights": [],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": null,
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 136,
+        "h": 48
+      },
+      "clearSearch": {
+        "x": 148,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-1-nomatch-dark.png"
+    },
+    {
+      "id": "phone-1-empty-dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "empty",
+      "theme": "dark",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": null,
+      "fullClips": 0,
+      "cardHeights": [],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": null,
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 184,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-1-empty-dark.png"
+    },
+    {
+      "id": "phone-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": 84,
+      "fullClips": 1,
+      "cardHeights": [
+        69
+      ],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 300,
+        "y": 94,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 136,
+        "h": 48
+      },
+      "clearSearch": {
+        "x": 148,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-search.png"
+    },
+    {
+      "id": "phone-copied",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": 84,
+      "fullClips": 6,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        69,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 300,
+        "y": 101.15625,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 184,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-copied.png"
+    },
+    {
+      "id": "phone-details",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": 84,
+      "fullClips": 6,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        69,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 300,
+        "y": 101.15625,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 184,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-details.png"
+    },
+    {
+      "id": "phone-detail-copied",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "w": 360,
+        "scrollW": 360
+      },
+      "firstClipY": 84,
+      "fullClips": 6,
+      "cardHeights": [
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125,
+        69,
+        83.3125,
+        83.3125,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 248,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 300,
+        "y": 101.15625,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 184,
+        "h": 48
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "phone-detail-copied.png"
+    },
+    {
+      "id": "small-130-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 84,
+      "fullClips": 1,
+      "cardHeights": [
+        73.09375
+      ],
+      "share": {
+        "x": 208,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 96.046875,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 32,
+        "w": 96,
+        "h": 48
+      },
+      "clearSearch": {
+        "x": 108,
+        "y": 32,
+        "w": 48,
+        "h": 48
+      },
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-130-search.png"
+    },
+    {
+      "id": "small-200-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 325.8125,
+      "fullClips": 1,
+      "cardHeights": [
+        154.46875
+      ],
+      "share": {
+        "x": 208,
+        "y": 273.8125,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 421.28125,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 202.46875,
+        "w": 200,
+        "h": 67.34375
+      },
+      "clearSearch": {
+        "x": 212,
+        "y": 202.46875,
+        "w": 48,
+        "h": 48
+      },
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-200-search.png"
+    },
+    {
+      "id": "small-200-details",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 325.8125,
+      "fullClips": 1,
+      "cardHeights": [
+        261.296875,
+        196.578125,
+        196.578125,
+        196.578125,
+        154.46875,
+        230.9375,
+        196.578125,
+        196.578125,
+        196.578125
+      ],
+      "share": {
+        "x": 208,
+        "y": 273.8125,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 528.109375,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 202.46875,
+        "w": 248,
+        "h": 67.34375
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-200-details.png"
+    },
+    {
+      "id": "small-200-history-scrolled",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "w": 320,
+        "scrollW": 320
+      },
+      "firstClipY": 325.8125,
+      "fullClips": 1,
+      "cardHeights": [
+        261.296875,
+        196.578125,
+        196.578125,
+        196.578125,
+        154.46875,
+        230.9375,
+        196.578125,
+        196.578125,
+        196.578125
+      ],
+      "share": {
+        "x": 208,
+        "y": 273.8125,
+        "w": 48,
+        "h": 48
+      },
+      "copy": {
+        "x": 260,
+        "y": 528.109375,
+        "w": 48,
+        "h": 48
+      },
+      "search": {
+        "x": 12,
+        "y": 202.46875,
+        "w": 248,
+        "h": 67.34375
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "small-200-history-scrolled.png"
+    },
+    {
+      "id": "desktop-hover-send",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 520,
+        "h": 728
+      },
+      "bodyScrollWidth": 520,
+      "content": {
+        "w": 520,
+        "scrollW": 520
+      },
+      "firstClipY": 52,
+      "fullClips": 8,
+      "cardHeights": [
+        62.25,
+        83.3125,
+        83.3125,
+        62.25,
+        62.25,
+        83.3125,
+        62.25,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 424,
+        "y": 8,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 468,
+        "y": 62.625,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 12,
+        "y": 8,
+        "w": 368,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "desktop-hover-send.png"
+    },
+    {
+      "id": "desktop-focus-send",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 520,
+        "h": 728
+      },
+      "bodyScrollWidth": 520,
+      "content": {
+        "w": 520,
+        "scrollW": 520
+      },
+      "firstClipY": 52,
+      "fullClips": 8,
+      "cardHeights": [
+        62.25,
+        83.3125,
+        83.3125,
+        62.25,
+        62.25,
+        83.3125,
+        62.25,
+        83.3125,
+        83.3125
+      ],
+      "share": {
+        "x": 424,
+        "y": 8,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 468,
+        "y": 62.625,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 12,
+        "y": 8,
+        "w": 368,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "desktop-focus-send.png"
+    },
+    {
+      "id": "wide-search",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "w": 1440,
+        "scrollW": 1440
+      },
+      "firstClipY": 114,
+      "fullClips": 1,
+      "cardHeights": [
+        184.296875
+      ],
+      "share": {
+        "x": 1384,
+        "y": 66,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 307.5,
+        "y": 245.296875,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 16,
+        "y": 66,
+        "w": 1160.734375,
+        "h": 40
+      },
+      "clearSearch": {
+        "x": 1176.734375,
+        "y": 66,
+        "w": 40,
+        "h": 40
+      },
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "wide-search.png"
+    },
+    {
+      "id": "wide-detail-tooltip",
+      "evidenceClass": "throwaway-browser-simulation",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "w": 1440,
+        "scrollW": 1440
+      },
+      "firstClipY": 114,
+      "fullClips": 9,
+      "cardHeights": [
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875,
+        184.296875
+      ],
+      "share": {
+        "x": 1384,
+        "y": 66,
+        "w": 40,
+        "h": 40
+      },
+      "copy": {
+        "x": 307.5,
+        "y": 245.296875,
+        "w": 40,
+        "h": 40
+      },
+      "search": {
+        "x": 16,
+        "y": 66,
+        "w": 1200.734375,
+        "h": 40
+      },
+      "clearSearch": null,
+      "controlsOutsideBody": [],
+      "smallTouchTargets": [],
+      "unnamedIcons": 0,
+      "overlaysOutsideViewport": [],
+      "screenshot": "wide-detail-tooltip.png"
+    }
+  ],
+  "interactions": {
+    "clearInitiallyHidden": true,
+    "searchCount": 1,
+    "clearReturnedFocus": true,
+    "clearedCount": 9,
+    "copyCheckVisible": true,
+    "copyNameStable": true,
+    "copyFeedback": "Copied to clipboard · demonstration only; clipboard unchanged",
+    "copyCheckCleared": true,
+    "pinNameStable": true,
+    "pinPressed": "true",
+    "shareFeedback": "Sharing requested for the current clipboard · demo only; nothing sent",
+    "detailFeedbackInsideDialog": true,
+    "detailCopyFeedback": "Copied to clipboard · demonstration only; clipboard unchanged",
+    "closeReturnedFocus": true,
+    "escapeClosedDetails": true,
+    "escapeReturnedFocus": true,
+    "hoverTooltip": "Share current clipboard now",
+    "focusTooltip": "Share current clipboard now",
+    "escapeDismissedTooltip": true,
+    "wideClearReturnedFocus": true,
+    "textReferencePreserved": true
+  },
+  "errors": [],
+  "geometryFailures": []
+}

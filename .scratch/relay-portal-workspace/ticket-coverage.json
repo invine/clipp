@@ -1,0 +1,451 @@
+{
+  "parent_sha256": "9646de15e5ae2ce7d9466c59144641b5b2d7668e31a5ba744d726b5bcc1cc278",
+  "user_stories": 74,
+  "coverage": {
+    "1": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "2": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "3": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "4": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "5": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "6": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "7": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "8": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "9": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "10": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "11": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "12": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "13": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "14": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "15": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "16": [
+      {
+        "number": 2,
+        "path": "issues/02-read-recent-recorded-relay-usage.md"
+      }
+    ],
+    "17": [
+      {
+        "number": 2,
+        "path": "issues/02-read-recent-recorded-relay-usage.md"
+      }
+    ],
+    "18": [
+      {
+        "number": 2,
+        "path": "issues/02-read-recent-recorded-relay-usage.md"
+      }
+    ],
+    "19": [
+      {
+        "number": 2,
+        "path": "issues/02-read-recent-recorded-relay-usage.md"
+      }
+    ],
+    "20": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "21": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "22": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "23": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "24": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "25": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "26": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "27": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "28": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "29": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "30": [
+      {
+        "number": 1,
+        "path": "issues/01-read-relay-account-capacity-in-workspace.md"
+      }
+    ],
+    "31": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "32": [
+      {
+        "number": 3,
+        "path": "issues/03-connect-clipp-and-sign-in.md"
+      }
+    ],
+    "33": [
+      {
+        "number": 4,
+        "path": "issues/04-manage-portal-and-account-wide-access.md"
+      }
+    ],
+    "34": [
+      {
+        "number": 4,
+        "path": "issues/04-manage-portal-and-account-wide-access.md"
+      }
+    ],
+    "35": [
+      {
+        "number": 4,
+        "path": "issues/04-manage-portal-and-account-wide-access.md"
+      }
+    ],
+    "36": [
+      {
+        "number": 5,
+        "path": "issues/05-delete-relay-account-with-truthful-results.md"
+      }
+    ],
+    "37": [
+      {
+        "number": 5,
+        "path": "issues/05-delete-relay-account-with-truthful-results.md"
+      }
+    ],
+    "38": [
+      {
+        "number": 5,
+        "path": "issues/05-delete-relay-account-with-truthful-results.md"
+      }
+    ],
+    "39": [
+      {
+        "number": 5,
+        "path": "issues/05-delete-relay-account-with-truthful-results.md"
+      }
+    ],
+    "40": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "41": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "42": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "43": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "44": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "45": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "46": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "47": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "48": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "49": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "50": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "51": [
+      {
+        "number": 6,
+        "path": "issues/06-find-and-review-relay-accounts.md"
+      }
+    ],
+    "52": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "53": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "54": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "55": [
+      {
+        "number": 8,
+        "path": "issues/08-restrict-relay-access-and-complete-recovery-review.md"
+      }
+    ],
+    "56": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "57": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "58": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "59": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "60": [
+      {
+        "number": 7,
+        "path": "issues/07-approve-and-assign-relay-quotas.md"
+      }
+    ],
+    "61": [
+      {
+        "number": 9,
+        "path": "issues/09-maintain-immutable-quota-plans.md"
+      }
+    ],
+    "62": [
+      {
+        "number": 9,
+        "path": "issues/09-maintain-immutable-quota-plans.md"
+      }
+    ],
+    "63": [
+      {
+        "number": 9,
+        "path": "issues/09-maintain-immutable-quota-plans.md"
+      }
+    ],
+    "64": [
+      {
+        "number": 9,
+        "path": "issues/09-maintain-immutable-quota-plans.md"
+      }
+    ],
+    "65": [
+      {
+        "number": 10,
+        "path": "issues/10-authorize-or-cancel-clipp-app-consent.md"
+      }
+    ],
+    "66": [
+      {
+        "number": 10,
+        "path": "issues/10-authorize-or-cancel-clipp-app-consent.md"
+      }
+    ],
+    "67": [
+      {
+        "number": 10,
+        "path": "issues/10-authorize-or-cancel-clipp-app-consent.md"
+      }
+    ],
+    "68": [
+      {
+        "number": 11,
+        "path": "issues/11-recover-failed-portal-requests.md"
+      }
+    ],
+    "69": [
+      {
+        "number": 11,
+        "path": "issues/11-recover-failed-portal-requests.md"
+      }
+    ],
+    "70": [
+      {
+        "number": 12,
+        "path": "issues/12-complete-workspace-cutover-and-journeys.md"
+      }
+    ],
+    "71": [
+      {
+        "number": 12,
+        "path": "issues/12-complete-workspace-cutover-and-journeys.md"
+      }
+    ],
+    "72": [
+      {
+        "number": 12,
+        "path": "issues/12-complete-workspace-cutover-and-journeys.md"
+      }
+    ],
+    "73": [
+      {
+        "number": 12,
+        "path": "issues/12-complete-workspace-cutover-and-journeys.md"
+      }
+    ],
+    "74": [
+      {
+        "number": 12,
+        "path": "issues/12-complete-workspace-cutover-and-journeys.md"
+      }
+    ]
+  },
+  "scope": "Traceability only; issue files own execution state."
+}

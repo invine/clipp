@@ -1,0 +1,97 @@
+{
+  "at": "2026-10-10T09:01:51.254Z",
+  "surface": "src/options.html",
+  "width": 819,
+  "height": 400,
+  "dpr": 2.5,
+  "screen": {
+    "width": 1024,
+    "height": 665,
+    "availWidth": 1024,
+    "availHeight": 639
+  },
+  "visualViewport": {
+    "width": 807.2000122070312,
+    "height": 400,
+    "scale": 1
+  },
+  "document": {
+    "width": 807,
+    "height": 400,
+    "scrollWidth": 807,
+    "scrollHeight": 627
+  },
+  "active": {
+    "tag": "BODY",
+    "name": "\n  \n  Clipboard Share – SettingsTrusted Devices(No devices)A"
+  },
+  "focusEvents": [],
+  "buttons": [
+    {
+      "text": "Add Device (QR)",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 83.5999984741211,
+        "y": 112,
+        "width": 640,
+        "height": 26,
+        "top": 112,
+        "right": 723.5999984741211,
+        "bottom": 138,
+        "left": 83.5999984741211
+      }
+    },
+    {
+      "text": "Generate My QR",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 83.5999984741211,
+        "y": 146,
+        "width": 640,
+        "height": 26,
+        "top": 146,
+        "right": 723.5999984741211,
+        "bottom": 172,
+        "left": 83.5999984741211
+      }
+    },
+    {
+      "text": "Add relay",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 83.5999984741211,
+        "y": 232,
+        "width": 53.04375076293945,
+        "height": 18,
+        "top": 232,
+        "right": 136.64374923706055,
+        "bottom": 250,
+        "left": 83.5999984741211
+      }
+    },
+    {
+      "text": "Toggle Dark Mode",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 83.5999984741211,
+        "y": 585.2000122070312,
+        "width": 127.0250015258789,
+        "height": 26,
+        "top": 585.2000122070312,
+        "right": 210.625,
+        "bottom": 611.2000122070312,
+        "left": 83.5999984741211
+      }
+    }
+  ],
+  "bodyFont": "12px",
+  "rootFont": "16px",
+  "screenshotPixels": {
+    "width": 2048,
+    "height": 1000
+  }
+}

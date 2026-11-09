@@ -1,0 +1,111 @@
+{
+  "sourceRoot": "/Users/invine/src/js/clipp/.local/clipp-approved-workspace/worktrees/ticket-05",
+  "sourceRevision": "2e11dfd",
+  "host": "electron",
+  "renderKind": "shared ClipboardApp + controlled props + host stylesheet in Chromium; not native app",
+  "layouts": [
+    {
+      "label": "desktop",
+      "width": 1400,
+      "height": 900,
+      "theme": "dark",
+      "checks": [
+        "empty history",
+        "Clip details content and supported action names",
+        "Escape close and return focus",
+        "this device and Trusted Devices status",
+        "Auto Sync, retention and empty managed-relay settings",
+        "Clip Sharing Lifetime",
+        "History unavailable alert",
+        "no page-level horizontal overflow"
+      ]
+    },
+    {
+      "label": "desktop",
+      "width": 1400,
+      "height": 900,
+      "theme": "light",
+      "checks": [
+        "empty history",
+        "Clip details content and supported action names",
+        "Escape close and return focus",
+        "this device and Trusted Devices status",
+        "Auto Sync, retention and empty managed-relay settings",
+        "Clip Sharing Lifetime",
+        "History unavailable alert",
+        "no page-level horizontal overflow"
+      ]
+    },
+    {
+      "label": "tablet",
+      "width": 768,
+      "height": 1024,
+      "theme": "dark",
+      "checks": [
+        "empty history",
+        "Clip details content and supported action names",
+        "Escape close and return focus",
+        "this device and Trusted Devices status",
+        "Auto Sync, retention and empty managed-relay settings",
+        "Clip Sharing Lifetime",
+        "History unavailable alert",
+        "no page-level horizontal overflow"
+      ]
+    },
+    {
+      "label": "tablet",
+      "width": 768,
+      "height": 1024,
+      "theme": "light",
+      "checks": [
+        "empty history",
+        "Clip details content and supported action names",
+        "Escape close and return focus",
+        "this device and Trusted Devices status",
+        "Auto Sync, retention and empty managed-relay settings",
+        "Clip Sharing Lifetime",
+        "History unavailable alert",
+        "no page-level horizontal overflow"
+      ]
+    },
+    {
+      "label": "phone",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "checks": [
+        "empty history",
+        "Clip details content and supported action names",
+        "Escape close and return focus",
+        "this device and Trusted Devices status",
+        "Auto Sync, retention and empty managed-relay settings",
+        "Clip Sharing Lifetime",
+        "History unavailable alert",
+        "no page-level horizontal overflow"
+      ]
+    },
+    {
+      "label": "phone",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "checks": [
+        "empty history",
+        "Clip details content and supported action names",
+        "Escape close and return focus",
+        "this device and Trusted Devices status",
+        "Auto Sync, retention and empty managed-relay settings",
+        "Clip Sharing Lifetime",
+        "History unavailable alert",
+        "no page-level horizontal overflow"
+      ]
+    }
+  ],
+  "blockedRequests": 0,
+  "clipboardCalls": {
+    "reads": 0,
+    "writes": 0
+  },
+  "fixtureActions": [],
+  "pageErrors": []
+}

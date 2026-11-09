@@ -1,0 +1,7 @@
+{"at":"2026-10-09T20:31:59.996Z","case":"electron-baseline","clips":1,"autoSync":false,"privateStateExported":false}
+{"at":"2026-10-09T20:32:59.838Z","case":"after-native-close-input","state":{"visible":true,"dock":true,"fullscreen":false}}
+{"at":"2026-10-09T20:33:54.059Z","case":"native-close-timeline","events":[{"event":"close","at":1791578018582,"visible":false,"dock":false},{"event":"show","at":1791578018777,"visible":true,"dock":true},{"event":"hide","at":1791578019858,"visible":true,"dock":true}],"state":{"visible":true,"dock":true}}
+{"at":"2026-10-09T20:34:39.078Z","case":"electron-close","timedOut":false,"exitCode":0,"signal":null}
+{"at":"2026-10-09T20:34:42.179Z","case":"native-electron-restart","identityPreserved":true,"clipsBefore":1,"clipsAfter":1,"autoSync":false,"configurationCount":0}
+{"at":"2026-10-09T20:37:51.323Z","case":"native-minimize-timeline","events":[{"name":"minimize","at":1791578263291,"visible":false,"minimized":true},{"name":"restore","at":1791578263915,"visible":true,"minimized":false},{"name":"show","at":1791578263933,"visible":true,"minimized":false},{"name":"hide","at":1791578263933,"visible":true,"minimized":false},{"name":"show","at":1791578264071,"visible":true,"minimized":false},{"name":"hide","at":1791578264888,"visible":true,"minimized":false}],"final":{"visible":true,"minimized":false},"cuaObservationActivatesApp":true}
+{"at":"2026-10-09T20:38:40.134Z","case":"electron-close","timedOut":false,"exitCode":0,"signal":null}

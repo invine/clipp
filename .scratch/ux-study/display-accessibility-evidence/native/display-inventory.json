@@ -1,0 +1,51 @@
+{
+  "userData": "/private/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-display-electron-K5F0wd",
+  "displays": [
+    {
+      "accelerometerSupport": "unknown",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1512,
+        "height": 982
+      },
+      "colorDepth": 30,
+      "colorSpace": "{primaries:P3, transfer:{0.0777*x + 0.0000 if abs(x) < 0.0450 else sign(x)*((0.9495*abs(x) + 0.0495)**2.3955 + 0.0003)}, matrix:RGB, range:FULL}",
+      "depthPerComponent": 10,
+      "detected": true,
+      "displayFrequency": 120.0006103515625,
+      "id": 1,
+      "internal": true,
+      "label": "Built-in Retina Display",
+      "maximumCursorSize": {
+        "width": 0,
+        "height": 0
+      },
+      "monochrome": false,
+      "nativeOrigin": {
+        "x": 0,
+        "y": 0
+      },
+      "rotation": 0,
+      "scaleFactor": 2,
+      "size": {
+        "width": 1512,
+        "height": 982
+      },
+      "workArea": {
+        "x": 0,
+        "y": 33,
+        "width": 1512,
+        "height": 949
+      },
+      "workAreaSize": {
+        "width": 1512,
+        "height": 949
+      },
+      "touchSupport": "unknown"
+    }
+  ],
+  "accessibilitySupport": false,
+  "trustedAccessibility": true,
+  "profileMatches": true
+}

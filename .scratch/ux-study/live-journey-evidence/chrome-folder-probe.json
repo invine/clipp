@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-09T22:16:43.147Z",
+  "extensionPath": "/Users/invine/src/js/clipp/apps/extension/dist",
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-original-path-C0ESOH",
+  "registeredExtensionId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+  "manifestHasKey": false,
+  "manifestSha256Before": "9361792c4017cf97b7a2bdc9922535bc99e8312d133538161845829379981677",
+  "personalProfileAccessed": false,
+  "folderModified": false,
+  "popupOpened": false,
+  "webPagesOpened": false,
+  "signInAttempted": false,
+  "browser": "143.0.7499.4",
+  "observed": {
+    "extensionId": "hpmkdfhffpekhgkinfgfjlfdekcaokhd",
+    "redirectUrl": "https://hpmkdfhffpekhgkinfgfjlfdekcaokhd.chromiumapp.org/clipp-relay",
+    "version": "0.1.0"
+  },
+  "installedIdMatchesRegistered": false,
+  "redirectMatchesRegistered": false,
+  "openPageUrls": [
+    "about:blank"
+  ],
+  "ownedBrowserClosed": true,
+  "manifestSha256After": "9361792c4017cf97b7a2bdc9922535bc99e8312d133538161845829379981677",
+  "manifestUnchanged": true
+}

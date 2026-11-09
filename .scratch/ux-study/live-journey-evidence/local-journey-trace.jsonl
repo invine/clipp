@@ -1,0 +1,17 @@
+{"at":"2026-10-09T22:18:06.019Z","ready":true,"extensionId":"hpmkdfhffpekhgkinfgfjlfdekcaokhd","profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-original-path-C0ESOH","extensionPath":"/Users/invine/src/js/clipp/apps/extension/dist","pageGuardInstalled":true}
+{"at":"2026-10-09T22:18:36.462Z","case":"options-before-actions","guard":{"present":true,"reads":0,"writes":0},"publicState":{"clips":0,"devices":0,"relays":0}}
+{"at":"2026-10-09T22:18:36.463Z","commandDone":true}
+{"at":"2026-10-09T22:18:57.307Z","capture":"native-options-generated-qr","geometry":{"width":1100,"height":733,"dpr":2,"clipboardGuard":true}}
+{"at":"2026-10-09T22:18:57.307Z","commandDone":true}
+{"at":"2026-10-09T22:19:24.769Z","case":"native-generated-qr-decode","image":{"displayedWidth":320,"displayedHeight":320,"sourceWidth":244},"imageDecoded":true,"qrTargetValid":true,"copiedTargetValid":true,"sameTarget":true,"guardedWrites":1,"guardedReads":0,"osClipboardQualified":false,"cameraQualified":false,"publicPayloadExported":false}
+{"at":"2026-10-09T22:19:24.769Z","commandDone":true}
+{"at":"2026-10-09T22:20:10.002Z","capture":"native-options-relay-login-needed","geometry":{"width":1100,"height":733,"dpr":2,"clipboardGuard":true}}
+{"at":"2026-10-09T22:20:10.004Z","case":"test-relay-configured","result":{"ok":true,"configurations":1,"statuses":["login_needed"]},"realSignIn":"NOT RUN: callback mismatch"}
+{"at":"2026-10-09T22:20:10.005Z","commandDone":true}
+{"at":"2026-10-09T22:20:54.766Z","case":"pair-response-observer-installed","responsesModified":false}
+{"at":"2026-10-09T22:20:54.767Z","commandDone":true}
+{"at":"2026-10-09T22:21:07.044Z","case":"native-self-pair-import","observation":{"responses":[{"ok":false,"errorCode":"non-code-error"}],"showsScannedText":true,"devices":0,"waiting":0,"pairingErrors":0,"guardedReads":1,"guardedWrites":1}}
+{"at":"2026-10-09T22:21:07.283Z","capture":"native-options-self-pair-response","geometry":{"width":1100,"height":733,"dpr":2,"clipboardGuard":true}}
+{"at":"2026-10-09T22:21:07.283Z","commandDone":true}
+{"at":"2026-10-09T22:21:42.267Z","case":"end-state","state":{"clips":0,"devices":0,"configurations":1,"statuses":["login_needed"]},"note":"QR measurement exports no raw payload text in its receipt; the screenshot contains a synthetic public QR."}
+{"at":"2026-10-09T22:21:42.541Z","closed":true}

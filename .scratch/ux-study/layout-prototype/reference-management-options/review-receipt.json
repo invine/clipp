@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-08T21:29:48.577727+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Compare Devices and Settings organization while preserving approved History",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "4491b6424593f8ca617c42d7a5795e1a11cbcc72d3df5d40858d8c26cbbb9ca7",
+    "app.js": "64baaffdd71ae09ae1c9a3e2ab0d57dc9f68ccd23f42a5c0e918aeeca63695f5",
+    "management.js": "94061f572c6ab2a3f2681e8452c4611e59bff2892acd07913644b2bb7ac61be6",
+    "style.css": "39e024e90b36708363fa72385cc444123bd8ef9d176a99075842bc7b9771b033",
+    "server.cjs": "6b87fbcbdfa4db26134c09a05aa47566223f515cc32140cdb5b01790aaeed396",
+    "capture-management.cjs": "8d17adb8345c9ece99703013388631b7db72dab283f3202312f9934f7bcca55f",
+    "README.md": "8b830a2ca41cbd537a4dc11d7f1ad798cd108351fe43f61dc76819ac69129ed7"
+  },
+  "captureCount": 65,
+  "checkCount": 17,
+  "measurements": "management/measurements.json",
+  "workbenchChecks": "management/workbench-checks.json",
+  "previousReceipt": "review-receipt-delete-icon.json",
+  "approvedHistorySource": "../reference-approved-history/",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "linkErrors": [],
+  "syntaxCheck": "node --check on app.js and management.js",
+  "decisionStatus": "Awaiting user selection. M1 Devices + M3 Settings recommended, not accepted.",
+  "controlsSecondRound": "unanswered"
+}

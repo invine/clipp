@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-10T00:13:42.119696+00:00",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "sourceCount": 145,
+  "changedSources": [],
+  "buildsReusedFrom": "../source-build-receipt.json",
+  "changedBuilds": [],
+  "trackedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492"
+}

@@ -1,0 +1,84 @@
+{
+  "case": "qr-tab-escape",
+  "events": [
+    {
+      "type": "keydown",
+      "key": "Enter",
+      "tag": "INPUT",
+      "role": null,
+      "name": "",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "focusin",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "qr_codeShow my QR",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "keydown",
+      "key": "Tab",
+      "tag": "BODY",
+      "role": null,
+      "name": "ClippOfflineClipboard sharing across all your devices.searchdark_modePeers0 onlineL😀😀😀\ud83d",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "focusin",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Close QR dialog",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "keydown",
+      "key": "Tab",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Close QR dialog",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "focusin",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Copy pairing text",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "keydown",
+      "key": "Tab",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Copy pairing text",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "focusin",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Toggle theme",
+      "placeholder": null,
+      "focused": true
+    },
+    {
+      "type": "keydown",
+      "key": "Escape",
+      "tag": "BUTTON",
+      "role": null,
+      "name": "Toggle theme",
+      "placeholder": null,
+      "focused": true
+    }
+  ],
+  "active": "<button class=\"icon-button\" title=\"Toggle theme\"><span class=\"icon\">dark_mode</span></button>",
+  "dialogPresent": true
+}

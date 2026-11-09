@@ -1,0 +1,55 @@
+{"at":"2026-10-10T00:09:54.852Z","event":"Target.targetCreated","targetId":"464E27322AA5A1FCA6F97F0B66DF72B3","type":"page","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:09:54.873Z","event":"Target.targetCreated","targetId":"394E62B1BD965955D7062819DB3B7C22","type":"service_worker","path":"/thunk.js","attached":false}
+{"at":"2026-10-10T00:10:16.192Z","event":"Target.targetCreated","targetId":"4F48FEEA858D7BFB0FAB33CFE92A2464","type":"page","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:10:16.220Z","event":"Target.targetCreated","targetId":"0DBDDAC34267CD0252E2EFF12A8CC344","type":"service_worker","path":"/thunk.js","attached":false}
+{"at":"2026-10-10T00:10:16.225Z","event":"Target.targetCreated","targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false}
+{"at":"2026-10-10T00:10:16.322Z","ready":true,"profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-passive-chrome-TTCRBV","extensionPath":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-passive-build-D3xMJs","extensionId":"nkeimhogjdpnpccoofpliimaahmaaome","browser":{"protocolVersion":"1.3","product":"Chrome/143.0.7499.4","revision":"@ee5ecaf663495e92dfe322aa76c114a3465602ab","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36","jsVersion":"14.3.127.1"},"observer":"Browser-level target discovery only; no auto-attach to workers or popup; explicit options observations detach immediately","isolation":"Fresh profile, WSS-only build, empty relays, extension memory clipboard guards, no webpage content scripts","pid":89172}
+{"at":"2026-10-10T00:10:16.650Z","event":"Target.targetCreated","targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"other","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:10:39.656Z","extensionTargets":[{"id":"nkeimhogjdpnpccoofpliimaahmaaome","path":"/thunk.js","type":"service_worker","attached":false},{"id":"bcieneccfnmbbkkeojimcjleafikipjm","path":"/service-worker-loader.js","type":"service_worker","attached":false},{"id":"bcieneccfnmbbkkeojimcjleafikipjm","path":"/offscreen.html","type":"background_page","attached":false}]}
+{"at":"2026-10-10T00:10:39.657Z","commandDone":true}
+{"at":"2026-10-10T00:10:46.468Z","event":"Target.targetDestroyed","targetId":"0DBDDAC34267CD0252E2EFF12A8CC344"}
+{"at":"2026-10-10T00:10:51.702Z","selectionCorrected":true,"extensionId":"bcieneccfnmbbkkeojimcjleafikipjm","targets":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false}]}
+{"at":"2026-10-10T00:10:51.702Z","commandDone":true}
+{"at":"2026-10-10T00:11:15.604Z","event":"Target.targetCreated","targetId":"82A303D78A8E99194C8DF939DD078447","type":"other","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:11:44.105Z","beforeNativePopupDismiss":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"82A303D78A8E99194C8DF939DD078447","type":"page","path":"/src/popup.html","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false},{"targetId":"4F48FEEA858D7BFB0FAB33CFE92A2464","type":"page","path":"/src/options.html","attached":false}]}
+{"at":"2026-10-10T00:11:44.106Z","commandDone":true}
+{"at":"2026-10-10T00:12:17.334Z","event":"Target.targetDestroyed","targetId":"82A303D78A8E99194C8DF939DD078447"}
+{"at":"2026-10-10T00:12:29.119Z","case":"nested-task-native-Escape","targets":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false},{"targetId":"4F48FEEA858D7BFB0FAB33CFE92A2464","type":"page","path":"/src/options.html","attached":false}]}
+{"at":"2026-10-10T00:12:29.133Z","baseline":{"clips":0,"autoSync":false,"relays":0,"guard":true},"workerAttached":false}
+{"at":"2026-10-10T00:12:29.133Z","commandDone":true}
+{"at":"2026-10-10T00:12:39.613Z","event":"Target.targetCreated","targetId":"A3B56D5964D0A8F0DD85610B6282C6CF","type":"other","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:13:48.551Z","pendingManualClickAway":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false},{"targetId":"A3B56D5964D0A8F0DD85610B6282C6CF","type":"page","path":"/src/popup.html","attached":false},{"targetId":"4F48FEEA858D7BFB0FAB33CFE92A2464","type":"page","path":"/src/options.html","attached":false}]}
+{"at":"2026-10-10T00:13:48.551Z","commandDone":true}
+{"at":"2026-10-10T00:14:51.734Z","case":"manual-click-away-check-ending-without-user-result","targets":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false},{"targetId":"A3B56D5964D0A8F0DD85610B6282C6CF","type":"page","path":"/src/popup.html","attached":false},{"targetId":"4F48FEEA858D7BFB0FAB33CFE92A2464","type":"page","path":"/src/options.html","attached":false}],"qualification":"No human result yet; subsequent host activation must not be counted as outside-pointer proof"}
+{"at":"2026-10-10T00:14:51.735Z","commandDone":true}
+{"at":"2026-10-10T00:14:58.921Z","event":"Target.targetDestroyed","targetId":"A3B56D5964D0A8F0DD85610B6282C6CF"}
+{"at":"2026-10-10T00:15:11.190Z","case":"idle-observation-start","targets":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false}]}
+{"at":"2026-10-10T00:15:11.191Z","commandDone":true}
+{"at":"2026-10-10T00:16:00.639Z","case":"idle-sample","elapsedSeconds":49.449,"targets":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false}]}
+{"at":"2026-10-10T00:16:00.640Z","commandDone":true}
+{"at":"2026-10-10T00:26:02.399Z","case":"idle-observation-end","elapsedSeconds":651.21,"targets":[{"targetId":"12B0A6F3FA17B5CBD2D02FB072CB8795","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"1985DE1C647B6D7596B0B3ED138E389E","type":"background_page","path":"/offscreen.html","attached":false}]}
+{"at":"2026-10-10T00:26:02.400Z","commandDone":true}
+{"at":"2026-10-10T00:26:33.773Z","event":"Target.targetCreated","targetId":"20CB855BE7A5AF12D3CA489CFFA9591F","type":"other","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:26:35.285Z","event":"Target.targetDestroyed","targetId":"20CB855BE7A5AF12D3CA489CFFA9591F"}
+{"at":"2026-10-10T00:28:34.147Z","case":"manual-click-away-user-confirmation","reportedClosed":true,"source":"User response","qualification":"Manual observation; trace attribution is ambiguous because later agent Escape also closes popup"}
+{"at":"2026-10-10T00:28:34.162Z","event":"Target.targetDestroyed","targetId":"4F48FEEA858D7BFB0FAB33CFE92A2464"}
+{"at":"2026-10-10T00:28:34.371Z","closed":true,"exitCode":0}
+{"at":"2026-10-10T00:33:38.624Z","event":"Target.targetCreated","targetId":"4257082A95DEE008567705DA42ECEE64","type":"page","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:33:38.640Z","event":"Target.targetCreated","targetId":"92F774278299AE421AC3C3BA75247C4E","type":"service_worker","path":"/thunk.js","attached":false}
+{"at":"2026-10-10T00:33:38.648Z","event":"Target.targetCreated","targetId":"91818A583588FD7339D7D53CD4C622AB","type":"service_worker","path":"/service-worker-loader.js","attached":false}
+{"at":"2026-10-10T00:33:38.751Z","ready":true,"profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-passive-chrome-Jsf78j","extensionPath":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-passive-build-cOHgnM","extensionId":"oofibnkiagopmjjcphiecbmilhcofifo","browser":{"protocolVersion":"1.3","product":"Chrome/143.0.7499.4","revision":"@ee5ecaf663495e92dfe322aa76c114a3465602ab","userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36","jsVersion":"14.3.127.1"},"observer":"Browser-level target discovery only; no auto-attach to workers or popup; explicit options observations detach immediately","isolation":"Fresh profile, WSS-only build, empty relays, extension memory clipboard guards, no webpage content scripts","pid":93247}
+{"at":"2026-10-10T00:33:39.317Z","event":"Target.targetCreated","targetId":"D336B1ECF70E56396FEAE718542E905C","type":"other","path":"non-extension","attached":false}
+{"at":"2026-10-10T00:33:48.629Z","event":"Target.targetDestroyed","targetId":"D336B1ECF70E56396FEAE718542E905C"}
+{"at":"2026-10-10T00:33:48.633Z","case":"offscreen-closed-natural-idle-start","nativeCloseError":false,"targets":[{"targetId":"91818A583588FD7339D7D53CD4C622AB","type":"service_worker","path":"/service-worker-loader.js","attached":false}]}
+{"at":"2026-10-10T00:33:48.633Z","commandDone":true}
+{"at":"2026-10-10T00:34:09.156Z","event":"Target.targetDestroyed","targetId":"92F774278299AE421AC3C3BA75247C4E"}
+{"at":"2026-10-10T00:34:18.638Z","event":"Target.targetDestroyed","targetId":"91818A583588FD7339D7D53CD4C622AB"}
+{"at":"2026-10-10T05:57:45.284Z","error":"Error: Timeout Target.getTargets"}
+{"at":"2026-10-10T05:57:45.289Z","commandDone":true}
+{"at":"2026-10-10T05:58:10.530Z","error":"Error: Timeout Target.getTargets"}
+{"at":"2026-10-10T05:58:10.531Z","commandDone":true}
+{"at":"2026-10-10T05:58:37.126Z","error":"SyntaxError: Unexpected identifier 'fs'"}
+{"at":"2026-10-10T05:58:37.127Z","commandDone":true}
+{"at":"2026-10-10T05:58:46.464Z","case":"observer-reconnected-after-wall-clock-gap","targets":[{"targetId":"9B98B2B0FA49BF8890324C03A1D5B14D","type":"service_worker","path":"/service-worker-loader.js","attached":false},{"targetId":"4B57E89B3D1FAA2CE5248E56BD7F86B4","type":"background_page","path":"/offscreen.html","attached":false},{"targetId":"4257082A95DEE008567705DA42ECEE64","type":"page","path":"/src/options.html","attached":false}]}
+{"at":"2026-10-10T05:58:46.471Z","case":"public-state-after-native-wake","state":{"clips":0,"devices":0,"relays":0,"autoSync":true,"guard":true}}
+{"at":"2026-10-10T05:58:46.589Z","closed":true,"exitCode":0}

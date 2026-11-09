@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-08T21:00:02.563321+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Remove duplicate wide All/Pinned control from selected Search first prototype",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "3f0eab1302d506b8647f360507230969ae2d96b217e99596f5a8ded49be5d777",
+    "app.js": "123919d76f4b6b89548b8ca2d480dfb663a91bad46eebb75902fb5f3c4307e80",
+    "style.css": "bb6c4cf1bc55c343f52a5e43d37af79a29588a323a4c8d3a97d73fcc89ac796e",
+    "capture-filter-scope.cjs": "a0a53ad69568b4353196941801eea0d9b147ce2c348c6b8e0e305b59624b0a16",
+    "server.cjs": "a2ece29f5b82414f2254c9dd8515b7c4ce67bb310fc22ac579a86fa164fc8810",
+    "README.md": "27c97f98807ad42a9f267be6bdd9e061d12f1091fc51daef1b5f80c2ddb0deb6"
+  },
+  "captureCount": 16,
+  "checkCount": 53,
+  "measurements": "filter-scope/measurements.json",
+  "previousIconReceipt": "icon-actions/review-receipt.json",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "syntaxCheck": "node --check on app.js and capture-filter-scope.cjs",
+  "visualInspection": [
+    "restored-900-1-dark-all",
+    "restored-900-1-dark-pinned",
+    "restored-721-2-light-pinned"
+  ],
+  "decision": "Filters owns All/Pinned at every width in Search first; clearable active Pinned indication remains visible without adding a wide row.",
+  "remainingLayoutDecision": "Broader visual/management contract remains open in the layout ticket.",
+  "controlsSecondRound": "unanswered"
+}

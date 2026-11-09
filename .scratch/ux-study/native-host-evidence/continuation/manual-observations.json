@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-10T05:57:26.499698+00:00",
+  "observations": [
+    {
+      "case": "Chrome popup click-away",
+      "result": "Clicked the page; popup closed",
+      "source": "Direct user response",
+      "qualification": "Manual observation; trace not uniquely attributable because agent later pressed Escape"
+    },
+    {
+      "case": "Electron tray Open Clipp",
+      "result": "Window reopened; Dock icon returned",
+      "source": "Direct user response",
+      "qualification": "Manual observation; passive recording was interrupted by scheduled identity recovery restart, so not independently correlated to a specific menu invocation",
+      "implication": "E17 not reproduced by this manual route; retain conflicting earlier callback evidence and revalidate before changing behavior"
+    }
+  ]
+}

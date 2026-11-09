@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-08T19:54:42.408426+00:00",
+  "question": "Compare lightweight narrow toolbars",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "3f0eab1302d506b8647f360507230969ae2d96b217e99596f5a8ded49be5d777",
+    "app.js": "2b7df3082d1fc0ee8fd4ccb6da66ba4355230d1933c4fc49d63a75030379616d",
+    "style.css": "2d841177e122a552243852820c7d446e57e3cbd3f46f09d5d3219bdeb95806ba",
+    "capture-light.cjs": "272416b91107a53e79f9b2d89659293ed984fbe9ddeacdf9bb7e95783e8c6876",
+    "capture-hybrid.cjs": "d122d02021f0dbc8a64e2fcc01065c249423216055721b9feec37d69c273a216",
+    "capture.cjs": "063afa05308a34528bcb72801890786263a44b934c492ece6afdd2bb7c63afb6",
+    "server.cjs": "a2ece29f5b82414f2254c9dd8515b7c4ce67bb310fc22ac579a86fa164fc8810",
+    "package.json": "15766c2170aa5d365fea3aeb0208f4acc3e6c060f8eea3a2f644984990ec8c1a",
+    "README.md": "92467f8a17b76146b9656a479e20360d0cb8b60a9af8cabd32910798abf67042"
+  },
+  "captureCount": 41,
+  "measurements": "light-toolbars/measurements.json",
+  "priorHybridReceipt": "../reference-hybrid/review-receipt.json",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "linkErrors": [],
+  "syntaxCheck": "node --check on prototype JavaScript and capture aids",
+  "contrast": "Existing semantic tokens unchanged; previous arithmetic is not a new accessibility conformance claim.",
+  "interactions": [
+    {
+      "variant": "1",
+      "escapeRestoredFocus": true,
+      "pinnedCount": 2,
+      "searchCount": 1,
+      "noMatchVisible": true,
+      "returnedCount": 9,
+      "offVisible": true,
+      "shareFeedback": "Share current clipboard \u00b7 demonstration only",
+      "copyFeedback": "Copied \u00b7 demonstration only",
+      "queryAfterResize": "npm",
+      "matchesAfterResize": 1
+    },
+    {
+      "variant": "3",
+      "escapeRestoredFocus": true,
+      "pinnedCount": 2,
+      "searchCount": 1,
+      "noMatchVisible": true,
+      "returnedCount": 9,
+      "offVisible": true,
+      "shareFeedback": "Share current clipboard \u00b7 demonstration only",
+      "copyFeedback": "Copied \u00b7 demonstration only",
+      "queryAfterResize": "npm",
+      "matchesAfterResize": 1
+    }
+  ],
+  "switched": "3 \u00b7 Browse first",
+  "toolbarChoice": "Selected by the user on 2026-10-09: option 1, Search first. Comparison ticket resolved.",
+  "historyChoice": "A narrow + C wide remains selected; equal-height wide cards, no sidebar.",
+  "controlsSecondRound": "unanswered",
+  "iconEvaluation": "../../button-icon-evaluation.md; recommendations only, no action icon changes applied.",
+  "decisionUpdate": {
+    "localDate": "2026-10-09",
+    "timezone": "Asia/Dubai",
+    "change": "Recorded user choice and updated workbench/documentation copy. App-surface rendering and interactions remain as captured; this is not a new 41-case run."
+  }
+}

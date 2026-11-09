@@ -1,0 +1,112 @@
+{
+  "at": "2026-10-10T09:05:50.406Z",
+  "surface": "src/popup.html",
+  "width": 495,
+  "height": 600,
+  "dpr": 2,
+  "screen": {
+    "width": 1800,
+    "height": 1169,
+    "availWidth": 1800,
+    "availHeight": 1130
+  },
+  "visualViewport": {
+    "width": 480,
+    "height": 600,
+    "scale": 1
+  },
+  "document": {
+    "width": 480,
+    "height": 600,
+    "scrollWidth": 480,
+    "scrollHeight": 800
+  },
+  "active": {
+    "tag": "BODY",
+    "name": "\n    ClippOfflineClipboard sharing across all your devices.s"
+  },
+  "focusEvents": [],
+  "buttons": [
+    {
+      "text": "dark_mode",
+      "label": null,
+      "title": "Toggle theme",
+      "rect": {
+        "x": 432,
+        "y": 19.5,
+        "width": 32,
+        "height": 32,
+        "top": 19.5,
+        "right": 464,
+        "bottom": 51.5,
+        "left": 432
+      }
+    },
+    {
+      "text": "sendShare Now",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 93.015625,
+        "y": 148,
+        "width": 99.984375,
+        "height": 35,
+        "top": 148,
+        "right": 193,
+        "bottom": 183,
+        "left": 93.015625
+      }
+    },
+    {
+      "text": "All",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 208,
+        "y": 153.25,
+        "width": 64,
+        "height": 24.5,
+        "top": 153.25,
+        "right": 272,
+        "bottom": 177.75,
+        "left": 208
+      }
+    },
+    {
+      "text": "Pinned",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 272,
+        "y": 153.25,
+        "width": 64,
+        "height": 24.5,
+        "top": 153.25,
+        "right": 336,
+        "bottom": 177.75,
+        "left": 272
+      }
+    },
+    {
+      "text": "unfold_moreMore",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 351,
+        "y": 148,
+        "width": 96,
+        "height": 35,
+        "top": 148,
+        "right": 447,
+        "bottom": 183,
+        "left": 351
+      }
+    }
+  ],
+  "bodyFont": "12px",
+  "rootFont": "16px",
+  "screenshotPixels": {
+    "width": 990,
+    "height": 1200
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-10T08:11:22.347662+00:00",
+  "protocolPeerPids": [
+    98477,
+    99136,
+    99361
+  ],
+  "protocolPeersClosed": true,
+  "aliveProtocolPeers": [],
+  "electronClosed": true,
+  "chromeClosed": true,
+  "recoveryProfileClosed": true,
+  "nativeClipboardProfiles": "Prepared separately; gates off, awaiting user Ready",
+  "sqliteWriterLock": "Released by newline; helper reported rollback/close and exited 0"
+}

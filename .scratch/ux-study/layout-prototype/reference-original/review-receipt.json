@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-08",
+  "question": "Compare history density and navigation",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "3f0eab1302d506b8647f360507230969ae2d96b217e99596f5a8ded49be5d777",
+    "capture.cjs": "caa446ddad026ffe94c856994654ec72139997d3897eaade1eef28fe027c8ac4",
+    "README.md": "ad902422b4658719bd37dfc9c622ba79fc55a0e52013f3d80488a44574606614",
+    "package.json": "15766c2170aa5d365fea3aeb0208f4acc3e6c060f8eea3a2f644984990ec8c1a",
+    "server.cjs": "a2ece29f5b82414f2254c9dd8515b7c4ce67bb310fc22ac579a86fa164fc8810",
+    "style.css": "4f70f951fef6d4818ffe7e21f2f6416fafa4790d350ceab1e1281b694d82f0a8",
+    "app.js": "f3107f0f55ea2515ca92f5f46aae107c9d1130ad39411ec02b8e49cca39c1b97"
+  },
+  "captureCount": 21,
+  "scriptErrors": [],
+  "contrastFailures": [],
+  "linkOrSyntaxErrors": [],
+  "controlsSecondRound": "unanswered",
+  "layoutChoice": "unanswered"
+}

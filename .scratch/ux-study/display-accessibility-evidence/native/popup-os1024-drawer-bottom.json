@@ -1,0 +1,187 @@
+{
+  "at": "2026-10-10T09:03:25.874Z",
+  "surface": "src/popup.html",
+  "width": 495,
+  "height": 559,
+  "dpr": 2,
+  "screen": {
+    "width": 1024,
+    "height": 665,
+    "availWidth": 1024,
+    "availHeight": 639
+  },
+  "visualViewport": {
+    "width": 480,
+    "height": 559,
+    "scale": 1
+  },
+  "document": {
+    "width": 480,
+    "height": 559,
+    "scrollWidth": 480,
+    "scrollHeight": 800
+  },
+  "active": {
+    "tag": "SELECT",
+    "name": "EnabledDisabled — keep Clips local"
+  },
+  "focusEvents": [],
+  "buttons": [
+    {
+      "text": "dark_mode",
+      "label": null,
+      "title": "Toggle theme",
+      "rect": {
+        "x": 432,
+        "y": 19.5,
+        "width": 32,
+        "height": 32,
+        "top": 19.5,
+        "right": 464,
+        "bottom": 51.5,
+        "left": 432
+      }
+    },
+    {
+      "text": "sendShare Now",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 93.015625,
+        "y": 148,
+        "width": 99.984375,
+        "height": 35,
+        "top": 148,
+        "right": 193,
+        "bottom": 183,
+        "left": 93.015625
+      }
+    },
+    {
+      "text": "All",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 208,
+        "y": 153.25,
+        "width": 64,
+        "height": 24.5,
+        "top": 153.25,
+        "right": 272,
+        "bottom": 177.75,
+        "left": 208
+      }
+    },
+    {
+      "text": "Pinned",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 272,
+        "y": 153.25,
+        "width": 64,
+        "height": 24.5,
+        "top": 153.25,
+        "right": 336,
+        "bottom": 177.75,
+        "left": 272
+      }
+    },
+    {
+      "text": "unfold_moreMore",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 351,
+        "y": 148,
+        "width": 96,
+        "height": 35,
+        "top": 148,
+        "right": 447,
+        "bottom": 183,
+        "left": 351
+      }
+    },
+    {
+      "text": "close",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 279,
+        "y": -43.5,
+        "width": 32,
+        "height": 32,
+        "top": -43.5,
+        "right": 311,
+        "bottom": -11.5,
+        "left": 279
+      }
+    },
+    {
+      "text": "edit",
+      "label": null,
+      "title": "Rename this device",
+      "rect": {
+        "x": 256,
+        "y": 17.75,
+        "width": 18,
+        "height": 18,
+        "top": 17.75,
+        "right": 274,
+        "bottom": 35.75,
+        "left": 256
+      }
+    },
+    {
+      "text": "qr_codeShow my QR",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 24,
+        "y": 76.5,
+        "width": 109.40625,
+        "height": 35,
+        "top": 76.5,
+        "right": 133.40625,
+        "bottom": 111.5,
+        "left": 24
+      }
+    },
+    {
+      "text": "Add",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 246,
+        "y": 193,
+        "width": 51.2734375,
+        "height": 32,
+        "top": 193,
+        "right": 297.2734375,
+        "bottom": 225,
+        "left": 246
+      }
+    },
+    {
+      "text": "Add relay",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 18,
+        "y": 410,
+        "width": 293,
+        "height": 18,
+        "top": 410,
+        "right": 311,
+        "bottom": 428,
+        "left": 18
+      }
+    }
+  ],
+  "bodyFont": "12px",
+  "rootFont": "16px",
+  "screenshotPixels": {
+    "width": 990,
+    "height": 1118
+  }
+}

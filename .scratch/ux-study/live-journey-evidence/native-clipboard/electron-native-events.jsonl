@@ -1,0 +1,10 @@
+{"at":"2026-10-10T08:06:08.156Z","pid":99645,"event":"process-start"}
+{"at":"2026-10-10T08:06:08.509Z","pid":99645,"event":"state-change","dockVisible":true,"windows":[{"visible":false,"focused":false,"minimized":false}]}
+{"at":"2026-10-10T08:06:08.999Z","pid":99645,"event":"focus","dockVisible":true,"windows":[{"visible":true,"focused":true,"minimized":false}]}
+{"at":"2026-10-10T08:06:09.011Z","pid":99645,"event":"state-change","dockVisible":true,"windows":[{"visible":true,"focused":true,"minimized":false}]}
+{"at":"2026-10-10T08:06:09.145Z","pid":99645,"event":"show","dockVisible":true,"windows":[{"visible":true,"focused":true,"minimized":false}]}
+{"at":"2026-10-10T08:06:11.371Z","pid":99645,"event":"hide","dockVisible":true,"windows":[{"visible":true,"focused":true,"minimized":false}]}
+{"at":"2026-10-10T08:06:12.182Z","pid":99645,"event":"blur","dockVisible":true,"windows":[{"visible":true,"focused":false,"minimized":false}]}
+{"at":"2026-10-10T08:06:12.275Z","pid":99645,"event":"state-change","dockVisible":true,"windows":[{"visible":true,"focused":false,"minimized":false}]}
+{"at":"2026-10-10T08:24:15.516Z","pid":99645,"event":"close","dockVisible":true,"windows":[{"visible":true,"focused":false,"minimized":false}]}
+{"at":"2026-10-10T08:24:15.520Z","pid":99645,"event":"will-quit"}

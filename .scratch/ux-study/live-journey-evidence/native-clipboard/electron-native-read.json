@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-10T08:14:00.282Z",
+  "state": {
+    "clips": [
+      {
+        "copyMarker": true,
+        "permissionMarker": false
+      },
+      {
+        "copyMarker": false,
+        "permissionMarker": true
+      }
+    ],
+    "error": null,
+    "devices": 0,
+    "relays": 0
+  },
+  "boundary": {
+    "enabled": false,
+    "stats": {
+      "reads": 25,
+      "writes": 0,
+      "unexpected": 0
+    }
+  }
+}

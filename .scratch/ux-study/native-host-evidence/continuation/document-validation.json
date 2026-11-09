@@ -1,0 +1,86 @@
+{
+  "at": "2026-10-10T06:01:15.107041+00:00",
+  "findingCount": 51,
+  "runtimeCounts": {
+    "E": 17,
+    "C": 16,
+    "A": 18
+  },
+  "localLinksChecked": 276,
+  "anchorsChecked": 80,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSourceHashes": [],
+  "changedBuildHashes": [],
+  "ownedHostClosure": {
+    "chrome-first-closed.json": true,
+    "chrome-closed.json": true,
+    "electron-closed.json": true,
+    "identity-closed.json": true
+  },
+  "decisionStatus": "Native window/popup lifecycle resolved with bounded native and manual evidence; live journeys and display/accessibility remain open; sign-in deferred",
+  "mapStatus": "open",
+  "ticketStatus": {
+    "04": {
+      "title": "Observe Chrome popup and options flows",
+      "status": "resolved"
+    },
+    "05": {
+      "title": "Observe Android layouts and native interactions",
+      "status": "resolved"
+    },
+    "12": {
+      "title": "Explore compact connection status",
+      "status": "resolved"
+    },
+    "01": {
+      "title": "Establish platform sizing and interaction constraints",
+      "status": "resolved"
+    },
+    "09": {
+      "title": "Compare history density and navigation",
+      "status": "resolved"
+    },
+    "07": {
+      "title": "Decide visual consistency and efficient layout",
+      "status": "resolved"
+    },
+    "02": {
+      "title": "Inventory user flows and control coverage",
+      "status": "resolved"
+    },
+    "08": {
+      "title": "Prioritize the UX findings and handoff",
+      "status": "open"
+    },
+    "06": {
+      "title": "Decide missing controls and obsolete entry points",
+      "status": "resolved"
+    },
+    "11": {
+      "title": "Compare Devices and Settings organization",
+      "status": "resolved"
+    },
+    "15": {
+      "title": "Qualify desktop display scaling and accessibility",
+      "status": "open"
+    },
+    "14": {
+      "title": "Observe live Pairing and account journeys",
+      "status": "open"
+    },
+    "13": {
+      "title": "Observe native window and popup lifecycle",
+      "status": "resolved"
+    },
+    "03": {
+      "title": "Observe Electron flows across window sizes",
+      "status": "resolved"
+    },
+    "10": {
+      "title": "Compare lightweight narrow toolbars",
+      "status": "resolved"
+    }
+  },
+  "scope": "Non-account native continuation, lifecycle resolution and affected canonical reports"
+}

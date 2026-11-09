@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-08T19:17:38.418597+00:00",
+  "question": "Compare history density and navigation",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "3f0eab1302d506b8647f360507230969ae2d96b217e99596f5a8ded49be5d777",
+    "app.js": "30a35a88109869be1e7b376b5298c32d4e4dd21e23a3ae99d2fa8078cad768cf",
+    "style.css": "6bd3e823dd864b7a75d5294daeea80f812697e75065416f6a3b5d679195df535",
+    "capture.cjs": "e184c44d02ba79c46922f911e0712cb757fc77e53671c4faa580bded3b69d87f",
+    "capture-hybrid.cjs": "d3c4a05a31864c5feba7ed0772a9d8cfbe56328932ffd77fffeee8b141b42fc6",
+    "server.cjs": "a2ece29f5b82414f2254c9dd8515b7c4ce67bb310fc22ac579a86fa164fc8810",
+    "package.json": "15766c2170aa5d365fea3aeb0208f4acc3e6c060f8eea3a2f644984990ec8c1a",
+    "README.md": "47df7f938185de6a5c3e94d18b4f684f15a9dc54701a750e32f289cdd8d6ad4d"
+  },
+  "captureCount": 25,
+  "measurements": "hybrid/measurements.json",
+  "originalComparison": "measurements.json",
+  "scriptErrors": [],
+  "horizontalOverflowCases": [],
+  "unequalWideCardCases": [],
+  "undersizedSimulatedAndroidTargets": [],
+  "linkErrors": [],
+  "syntaxCheck": "node --check on app.js, capture.cjs and capture-hybrid.cjs",
+  "contrast": "Original checked tokens unchanged; see contrast.json. Not a conformance claim.",
+  "interactions": {
+    "fullTextUntruncated": true,
+    "pinnedVisible": 2,
+    "searchVisible": 1,
+    "queryAfterResize": "npm run check",
+    "copyFeedback": "Copied \u00b7 demonstration only",
+    "switched": "A \u00b7 Reference \u00b7 compact rows"
+  },
+  "controlsSecondRound": "unanswered",
+  "layoutChoice": "User selected A narrow + C wide, equal-height cards, no wide sidebar, compact controls; B rejected. Comparison ticket resolved.",
+  "remainingLayoutDecision": "Visual tone and broader management/responsive contract remain in the layout ticket."
+}

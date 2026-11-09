@@ -1,0 +1,187 @@
+{
+  "at": "2026-10-10T09:01:30.299Z",
+  "native": {
+    "displays": [
+      {
+        "accelerometerSupport": "unknown",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1024,
+          "height": 665
+        },
+        "colorDepth": 30,
+        "colorSpace": "{primaries:BT709, transfer:SRGB, matrix:RGB, range:FULL}",
+        "depthPerComponent": 10,
+        "detected": true,
+        "displayFrequency": 120.0006103515625,
+        "id": 1,
+        "internal": true,
+        "label": "Built-in Retina Display",
+        "maximumCursorSize": {
+          "width": 0,
+          "height": 0
+        },
+        "monochrome": false,
+        "nativeOrigin": {
+          "x": 0,
+          "y": 0
+        },
+        "rotation": 0,
+        "scaleFactor": 2,
+        "size": {
+          "width": 1024,
+          "height": 665
+        },
+        "workArea": {
+          "x": 0,
+          "y": 26,
+          "width": 1024,
+          "height": 639
+        },
+        "workAreaSize": {
+          "width": 1024,
+          "height": 639
+        },
+        "touchSupport": "unknown"
+      }
+    ],
+    "outer": {
+      "x": 0,
+      "y": 26,
+      "width": 1024,
+      "height": 639
+    },
+    "content": {
+      "x": 0,
+      "y": 58,
+      "width": 1024,
+      "height": 607
+    },
+    "normal": {
+      "x": 496,
+      "y": -206,
+      "width": 520,
+      "height": 760
+    },
+    "fullscreen": false,
+    "maximized": true,
+    "zoom": 1,
+    "accessibility": true
+  },
+  "dom": {
+    "width": 1024,
+    "height": 607,
+    "dpr": 2,
+    "visualViewport": {
+      "width": 1024,
+      "height": 607,
+      "scale": 1
+    },
+    "body": {
+      "scrollWidth": 1024,
+      "scrollHeight": 607
+    },
+    "active": {
+      "tag": "BODY",
+      "title": null,
+      "label": null
+    },
+    "buttons": [
+      {
+        "text": "dark_mode",
+        "title": "Toggle theme",
+        "label": null,
+        "rect": {
+          "x": 968,
+          "y": 14.5,
+          "width": 32,
+          "height": 32,
+          "top": 14.5,
+          "right": 1000,
+          "bottom": 46.5,
+          "left": 968
+        }
+      },
+      {
+        "text": "sendShare Now",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 627.6328125,
+          "y": 95,
+          "width": 101.3671875,
+          "height": 30,
+          "top": 95,
+          "right": 729,
+          "bottom": 125,
+          "left": 627.6328125
+        }
+      },
+      {
+        "text": "All",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 744,
+          "y": 99.5,
+          "width": 64,
+          "height": 21,
+          "top": 99.5,
+          "right": 808,
+          "bottom": 120.5,
+          "left": 744
+        }
+      },
+      {
+        "text": "Pinned",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 808,
+          "y": 99.5,
+          "width": 64,
+          "height": 21,
+          "top": 99.5,
+          "right": 872,
+          "bottom": 120.5,
+          "left": 808
+        }
+      },
+      {
+        "text": "unfold_moreMore",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 887,
+          "y": 95,
+          "width": 96,
+          "height": 30,
+          "top": 95,
+          "right": 983,
+          "bottom": 125,
+          "left": 887
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "placeholder": "Search history: text, URL, device…",
+        "rect": {
+          "x": 735,
+          "y": 22,
+          "width": 208,
+          "height": 17,
+          "top": 22,
+          "right": 943,
+          "bottom": 39,
+          "left": 735
+        }
+      }
+    ]
+  },
+  "screenshotPixels": {
+    "width": 2048,
+    "height": 1214
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "at": "2026-10-08T21:02:57.682Z",
+  "browser": "143.0.7499.4",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "restored-1-dark",
+      "name": "Delete Clip",
+      "iconOnly": true,
+      "focused": true,
+      "tooltip": "Delete Clip",
+      "dangerColor": "rgb(255, 181, 181)",
+      "target": {
+        "w": 40,
+        "h": 40
+      },
+      "minimum": 40,
+      "visible": true,
+      "dialogFits": true,
+      "tooltipFits": true,
+      "noHorizontalOverflow": true,
+      "screenshot": "restored-1-dark.png"
+    },
+    {
+      "id": "popup-1-dark",
+      "name": "Delete Clip",
+      "iconOnly": true,
+      "focused": true,
+      "tooltip": "Delete Clip",
+      "dangerColor": "rgb(255, 181, 181)",
+      "target": {
+        "w": 40,
+        "h": 40
+      },
+      "minimum": 40,
+      "visible": true,
+      "dialogFits": true,
+      "tooltipFits": true,
+      "noHorizontalOverflow": true,
+      "screenshot": "popup-1-dark.png"
+    },
+    {
+      "id": "small-1-dark",
+      "name": "Delete Clip",
+      "iconOnly": true,
+      "focused": true,
+      "tooltip": "Delete Clip",
+      "dangerColor": "rgb(255, 181, 181)",
+      "target": {
+        "w": 48,
+        "h": 48
+      },
+      "minimum": 48,
+      "visible": true,
+      "dialogFits": true,
+      "tooltipFits": true,
+      "noHorizontalOverflow": true,
+      "screenshot": "small-1-dark.png"
+    },
+    {
+      "id": "small-2-light",
+      "name": "Delete Clip",
+      "iconOnly": true,
+      "focused": true,
+      "tooltip": "Delete Clip",
+      "dangerColor": "rgb(168, 38, 53)",
+      "target": {
+        "w": 48,
+        "h": 48
+      },
+      "minimum": 48,
+      "visible": true,
+      "dialogFits": true,
+      "tooltipFits": true,
+      "noHorizontalOverflow": true,
+      "screenshot": "small-2-light.png"
+    }
+  ],
+  "errors": [],
+  "failures": []
+}

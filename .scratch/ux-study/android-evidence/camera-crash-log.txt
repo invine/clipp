@@ -1,0 +1,20 @@
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: FATAL EXCEPTION: Chrome_InProcGpuThread
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: Process: com.clipp.app.acceptance, PID: 3513
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: org.chromium.base.JniAndroid$UncaughtExceptionException: Native stack trace:
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: 
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: 	at org.chromium.base.JniAndroid.handleException(chromium-SystemWebView.apk-default-636771901:21)
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: Caused by: com.google.android.gms.common.GooglePlayServicesMissingManifestValueException: A required meta-data tag in your app's AndroidManifest.xml does not exist.  You must have the following declaration within the <application> element:     <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: 	at WV.on.b(chromium-SystemWebView.apk-default-636771901:152)
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: 	at WV.mn.b(chromium-SystemWebView.apk-default-636771901:1)
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: 	at WV.Sb.a(chromium-SystemWebView.apk-default-636771901:6)
+10-08 03:25:02.924  3513  3572 E AndroidRuntime: 	at org.chromium.shape_detection.InterfaceRegistrar.bindBarcodeDetectionProvider(chromium-SystemWebView.apk-default-636771901:18)
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: FATAL EXCEPTION: Chrome_InProcGpuThread
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: Process: com.clipp.app.acceptance, PID: 4736
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: org.chromium.base.JniAndroid$UncaughtExceptionException: Native stack trace:
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: 
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: 	at org.chromium.base.JniAndroid.handleException(chromium-SystemWebView.apk-default-636771901:21)
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: Caused by: com.google.android.gms.common.GooglePlayServicesMissingManifestValueException: A required meta-data tag in your app's AndroidManifest.xml does not exist.  You must have the following declaration within the <application> element:     <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: 	at WV.on.b(chromium-SystemWebView.apk-default-636771901:152)
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: 	at WV.mn.b(chromium-SystemWebView.apk-default-636771901:1)
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: 	at WV.Sb.a(chromium-SystemWebView.apk-default-636771901:6)
+10-08 03:26:54.617  4736  4794 E AndroidRuntime: 	at org.chromium.shape_detection.InterfaceRegistrar.bindBarcodeDetectionProvider(chromium-SystemWebView.apk-default-636771901:18)

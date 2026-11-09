@@ -1,0 +1,21 @@
+{
+  "status": "published and validated",
+  "date": "2026-10-26",
+  "tickets": 12,
+  "story_coverage": 74,
+  "uncovered_stories": [],
+  "blockers_match_approved_breakdown": true,
+  "blockers_precede_dependents": true,
+  "cyclic": false,
+  "initial_frontier": [
+    1
+  ],
+  "parent_unchanged": true,
+  "parent_sha256": "9646de15e5ae2ce7d9466c59144641b5b2d7668e31a5ba744d726b5bcc1cc278",
+  "published_issue_files": 12,
+  "all_ticket_statuses": "ready-for-agent",
+  "all_assignees": "Unassigned",
+  "implementation": "not started",
+  "acceptance_boxes_checked": 0,
+  "relative_links_valid": true
+}

@@ -1,0 +1,14 @@
+{
+  "storedNameCodePoints": 64,
+  "storedNameWellFormed": true,
+  "visible": [
+    {
+      "text": "😀😀😀😀😀😀\ud83d...😀😀😀😀😀😀",
+      "wellFormed": false,
+      "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "titleWellFormed": true,
+      "role": null,
+      "tabIndex": -1
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+await readOptions(`(()=>{globalThis.__uxPairingResponses=[];const original=chrome.runtime.sendMessage.bind(chrome.runtime);chrome.runtime.sendMessage=(message,...args)=>{if(message?.type==='pairDevice'){const index=args.findIndex(a=>typeof a==='function');if(index>=0){const callback=args[index];args[index]=result=>{__uxPairingResponses.push({at:new Date().toISOString(),ok:result?.ok===true,error:typeof result?.error==='string'?result.error.slice(0,160):null});callback(result)}}}return original(message,...args)};return true})()`);
+out({pairingResponseObserverInstalled:true});

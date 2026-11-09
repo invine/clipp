@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-09T22:31:34.775282+00:00",
+  "suppliedPath": "/Users/invine/src/js/clipp/.local/managed-relay/worktrees/consolidated/apps/extension/dist",
+  "resolvedPath": "/Users/invine/src/js/clipp/apps/extension/dist",
+  "compatibilitySymlink": {
+    "path": "/Users/invine/src/js/clipp/.local/managed-relay/worktrees/consolidated",
+    "target": "/Users/invine/src/js/clipp"
+  },
+  "suppliedPathHashId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+  "resolvedPathHashId": "hpmkdfhffpekhgkinfgfjlfdekcaokhd",
+  "idProbe": "chrome-folder-probe.json",
+  "buildInspection": [
+    {
+      "file": "background.ts-BJqgEOcc.js",
+      "sha256": "d7766a462f1dc5ee8b61d1ec07426f95cad196d9d0b58e68a0a7eb19774570d7",
+      "registeredIdLiteralPresent": true,
+      "registrationGuardPresent": true,
+      "factoryArgumentContext": [
+        "Ve=null,j,oe=null;const W=new Mt,se=Ln(\"gkmcpbabbekiafkmkgjmdlmdlijhjdle\"),Nt"
+      ]
+    }
+  ],
+  "sharedBuildChanged": false,
+  "symlinkChanged": false,
+  "proposedCopyTest": {
+    "script": "../chrome-fixed-id-probe.cjs",
+    "executed": true,
+    "approvalStatus": "Explicit user approval received; normal escalation review approved execution",
+    "reason": "Changing copied manifest loader identity was not covered by authorization to check the supplied build.",
+    "priorApprovalStatus": "Automatic review rejected; explicit user approval requested",
+    "resultReceipt": "../fixed-id/chrome-folder-probe.json",
+    "installedIdMatchesRegistered": true,
+    "redirectMatchesRegistered": true
+  },
+  "primarySource": "https://chromium.googlesource.com/chromium/src/+/main/extensions/common/extension.cc"
+}

@@ -1,0 +1,252 @@
+[
+  {
+    "id": "C01",
+    "title": "A stale options page silently re-enables Auto Sync",
+    "priority": "High",
+    "evidenceIds": [
+      "options-native-stale-autosync",
+      "options-native-stale-overwrite"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/options.tsx"
+    ],
+    "expectedAndProposal": "an unrelated preference cannot overwrite a newer Auto Sync choice; every open surface reflects authoritative state. Propose field-level writes plus a shared preference subscription and acknowledged results. This affects the user's control over automatic sharing, beyond a cosmetic stale checkbox.",
+    "detail": "**Native-isolated, options 1100×733 and popup 480×600, 100%, DPR 2.** Open options with Auto-sync enabled. Disable Auto Sync through the popup drawer. Close the popup normally: stored state is false, while options still displays a checked box. Change Expiry to 7 in options. The real stored Auto Sync becomes true. The handler sends the entire stale settings object; options only applies relay fields from runtime updates.\n\nExpected: an unrelated preference cannot overwrite a newer Auto Sync choice; every open surface reflects authoritative state. Propose field-level writes plus a shared preference subscription and acknowledged results. This affects the user's control over automatic sharing, beyond a cosmetic stale checkbox. [Stale display](extension-evidence/options-native-stale-autosync.png), [overwrite](extension-evidence/options-native-stale-overwrite.png), trace `staleBeforeChange` / `staleAfterChange`; [options subscription and writes](../../apps/extension/src/options.tsx), lines 68–86 and 134–139. **Confidence: observed native behavior.**"
+  },
+  {
+    "id": "C02",
+    "title": "Expiry and type preferences promise behavior they do not control",
+    "priority": "High",
+    "evidenceIds": [
+      "options-native-types-off"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/background.ts",
+      "../../../packages/ui/src/types.ts"
+    ],
+    "expectedAndProposal": "controls correspond to supported capabilities, and local retention is distinguished from the accepted 24-hour sharing lifetime. Propose removing or replacing these legacy controls after the control decision; do not silently reinterpret Expiry as either lifetime.",
+    "detail": "**Native-isolated, options 1100×733, 100%.** Uncheck Text, then capture synthetic text through the real background path: the Clip is still stored. Set Expiry to 7 days, then capture another Clip: `shareExpiresAt - capturedAt` is **86400000ms**, while `localRetentionMs` remains **2592000000ms** (30 days). The preference values save, but neither changes the behavior implied by these labels. Images and Files are also exposed despite the current text/URL Clip model.\n\nExpected: controls correspond to supported capabilities, and local retention is distinguished from the accepted 24-hour sharing lifetime. Propose removing or replacing these legacy controls after the control decision; do not silently reinterpret Expiry as either lifetime. [Text disabled but captured](extension-evidence/options-native-types-off.png), trace `expiryNativeClip` / `settingsAfterInertChange`; [background settings](../../apps/extension/src/background.ts), lines 1241–1335, and [Clip type](../../packages/ui/src/types.ts), lines 1–8. **Confidence: native text/expiry observation plus source-supported unsupported-type gap.**"
+  },
+  {
+    "id": "C03",
+    "title": "Options relay controls lose styling and overflow with long names",
+    "priority": "High",
+    "evidenceIds": [
+      "options-native-relay-editor",
+      "options-native-relay-invalid",
+      "options-fixture-long-relay-name",
+      "popup-fixture-dense-relays"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/options.tsx",
+      "../../../packages/ui/src/ManagedRelaySettings.tsx"
+    ],
+    "expectedAndProposal": "relay controls use the same distinguishable field/button states across surfaces, long content wraps or has an accessible disclosure, and the document fits the viewport. Import the shared component's required styling without accidentally restyling the entire options page.",
+    "detail": "**Native editor at 1100×733; dense fixture at 480×640.** Choose Add relay in options. Labels, inputs and actions look like plain inline text; Save and Cancel run together. Populated rows render strings such as `Manage accountRetryEditRemove`. The emitted options stylesheet has 116 top-level rules and no `.managed-relay` or `.relay-settings` rules. A 236-character unbroken name extends document width to 2118px; its end is offscreen.\n\nExpected: relay controls use the same distinguishable field/button states across surfaces, long content wraps or has an accessible disclosure, and the document fits the viewport. Import the shared component's required styling without accidentally restyling the entire options page. [Native editor](extension-evidence/options-native-relay-editor.png), [native validation](extension-evidence/options-native-relay-invalid.png), [long relay](extension-evidence/options-fixture-long-relay-name.png), [popup comparison](extension-evidence/popup-fixture-dense-relays.png); [direct component import](../../apps/extension/src/options.tsx), line 9, [component classes](../../packages/ui/src/ManagedRelaySettings.tsx), [stylesheet receipt](extension-evidence/source-build-receipt.json). **Confidence: observed native rendering, emitted CSS and fixture geometry.**"
+  },
+  {
+    "id": "C04",
+    "title": "Popup recovery notices overlap the header and history",
+    "priority": "High",
+    "evidenceIds": [
+      "popup-native-share-denied",
+      "popup-fixture-recovery",
+      "popup-fixture-stacked-recovery"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/styles.css",
+      "../../../packages/ui/src/ClipboardApp.tsx"
+    ],
+    "expectedAndProposal": "complete notice text and actions occupy reserved space and remain usable. Propose an explicit notice region with measured wrapping/scroll ownership.",
+    "detail": "**Native clipboard-denial boundary and rendered recovery fixtures, 480×600.** Invoke Share Now with the memory clipboard rejecting with `NotAllowedError`. The error row receives only 17px at y=72 although its content needs more height; the sticky header and history panel cover text and part of Retry. A single identity-recovery notice reproduces this. A separately labelled adversarial stack demonstrates overlapping messages, without asserting that all injected errors arise together natively.\n\nExpected: complete notice text and actions occupy reserved space and remain usable. Propose an explicit notice region with measured wrapping/scroll ownership. [Share Now denial](extension-evidence/popup-native-share-denied.png), [single recovery](extension-evidence/popup-fixture-recovery.png), [adversarial stack](extension-evidence/popup-fixture-stacked-recovery.png); [shell rows](../../packages/ui/src/styles.css), lines 57–93, [banners](../../packages/ui/src/ClipboardApp.tsx), lines 1628–1718. This confirms the shared Electron finding in the actual Chrome popup. **Confidence: observed UI, not an OS permission-prompt test.**"
+  },
+  {
+    "id": "C05",
+    "title": "Theme controls are ineffective and some fields become unreadable",
+    "priority": "High",
+    "evidenceIds": [
+      "popup-fixture-select-contrast",
+      "options-fixture-system-dark",
+      "options-native-dark-toggle"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/ClipboardApp.tsx",
+      "../../../apps/extension/src/options.tsx",
+      "../../../apps/extension/src/styles/tailwind-built.css"
+    ],
+    "expectedAndProposal": "the selected theme controls all surfaces consistently, text/fields remain legible and controls meet the study's chosen accessibility criteria. Decide whether to implement or retire the inert toggles; define shared field/theme tokens.",
+    "detail": "**Native popup/options plus dark-media fixture.** Popup Auto Sync and retention selects use `rgb(226,226,231)` on white: calculated contrast **1.29:1**, with 16px-high control boxes. The popup theme icon has no click handler. Options' Toggle Dark Mode toggles a `dark` class, while its compiled CSS uses the system media query instead. The button changes no relevant card colors. Simulating system dark mode gives device/history cards black text on `rgb(31,41,55)`, **1.43:1**, against a still-white page.\n\nExpected: the selected theme controls all surfaces consistently, text/fields remain legible and controls meet the study's chosen accessibility criteria. Decide whether to implement or retire the inert toggles; define shared field/theme tokens. [Popup selects](extension-evidence/popup-fixture-select-contrast.png), [options system-dark fixture](extension-evidence/options-fixture-system-dark.png), [native toggle](extension-evidence/options-native-dark-toggle.png); [popup toggle](../../packages/ui/src/ClipboardApp.tsx), line 1622, [options toggle](../../apps/extension/src/options.tsx), [compiled Tailwind source](../../apps/extension/src/styles/tailwind-built.css). **Confidence: observed rendering/computed styles and source; system dark mode was emulated.**"
+  },
+  {
+    "id": "C06",
+    "title": "The only popup navigation entry is absent from the keyboard sequence",
+    "priority": "High",
+    "evidenceIds": [
+      "popup-fixture-qr-keyboard"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/ClipboardApp.tsx",
+      "../../../packages/ui/src/ClipboardApp.tsx"
+    ],
+    "expectedAndProposal": "a named button opens navigation by keyboard, modal focus moves inside and returns on close. Give dialogs an explicit focus/keyboard contract. Native Escape dismissal cannot be inferred from the attached-debugger check; Chrome may close the whole popup when uninspected.",
+    "detail": "**Actual popup host, fixture state, 480×600.** Press Tab from the document: focus first reaches the inert theme button. The logo that opens navigation is a `DIV`, `tabIndex=-1`, with no role. Keyboard users lack the route to Pairing, approvals, identity naming, relays and preferences. QR opens with focus on the body rather than its dialog; an in-document Escape check leaves it open.\n\nExpected: a named button opens navigation by keyboard, modal focus moves inside and returns on close. Give dialogs an explicit focus/keyboard contract. Native Escape dismissal cannot be inferred from the attached-debugger check; Chrome may close the whole popup when uninspected. [QR focus capture](extension-evidence/popup-fixture-qr-keyboard.png), trace `popupFirstTab`, `logo`, `qrFocusOnOpen`, `qrAfterEscape`; [navigation logo](../../packages/ui/src/ClipboardApp.tsx), line 1591, [QR portal](../../packages/ui/src/ClipboardApp.tsx), line 1981. **Confidence: observed document behavior plus source; native Escape lifecycle remains a gap.**"
+  },
+  {
+    "id": "C07",
+    "title": "Pairing failures are presented as success or silently discarded",
+    "priority": "High",
+    "evidenceIds": [
+      "options-native-invalid-paste",
+      "options-fixture-pair-failure",
+      "popup-fixture-pair-failure",
+      "popup-fixture-visible-accept-failure"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/options.tsx",
+      "../../../apps/extension/src/popup.tsx",
+      "../../../packages/ui/src/ClipboardApp.tsx"
+    ],
+    "expectedAndProposal": "distinguish payload read, validation, request sent, waiting, accepted and failure. Retain recoverable input; show a useful retry path and prevent ambiguous repeated submissions.",
+    "detail": "**Native invalid input in options; mocked action rejection in both surfaces.** Paste `not-a-pairing-target` through options: it displays green `QR scanned` without reporting invalidity. With a valid generated pairing target and a rejected `pairDevice` response, options keeps the same green status. In the popup, rejected valid text is cleared with no visible error. Rejecting `respondTrust` after Accept leaves the request in place with no explanation or retry state.\n\nExpected: distinguish payload read, validation, request sent, waiting, accepted and failure. Retain recoverable input; show a useful retry path and prevent ambiguous repeated submissions. [Native invalid paste](extension-evidence/options-native-invalid-paste.png), [options failed Pairing](extension-evidence/options-fixture-pair-failure.png), [popup failed submission](extension-evidence/popup-fixture-pair-failure.png), [failed Accept](extension-evidence/popup-fixture-visible-accept-failure.png); [options scan](../../apps/extension/src/options.tsx), lines 93–105, [popup callbacks](../../apps/extension/src/popup.tsx), lines 265–274 and 356–389, [input cleared on submit](../../packages/ui/src/ClipboardApp.tsx), line 858. **Confidence: observed native validation wording and response-seam failure UI.**"
+  },
+  {
+    "id": "C08",
+    "title": "Failed QR generation leaves a misleading Hide control in options",
+    "priority": "Medium",
+    "evidenceIds": [
+      "options-fixture-qr-failure",
+      "popup-fixture-qr-error-verified"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/options.tsx"
+    ],
+    "expectedAndProposal": "visible loading/result/error state shared across both entry points, with retry available.",
+    "detail": "**Options fixture, 480×640.** Return no pairing target, then choose Generate My QR. The button changes to Hide My QR, with no image, loading explanation, failure or retry. The popup's equivalent renders “Unable to create a pairing QR code,” providing a useful comparison.\n\nExpected: visible loading/result/error state shared across both entry points, with retry available. [Options blank result](extension-evidence/options-fixture-qr-failure.png), [verified popup error](extension-evidence/popup-fixture-qr-error-verified.png); [options QR generation/toggle](../../apps/extension/src/options.tsx), lines 110–121 and 167–173. **Confidence: observed response-seam rendering.**"
+  },
+  {
+    "id": "C09",
+    "title": "Options history stays stale after Clear and violates its active search",
+    "priority": "High",
+    "evidenceIds": [
+      "options-native-stale-history",
+      "options-native-clear-after-reload",
+      "options-native-search-newclip"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/components/ClipHistoryList.tsx"
+    ],
+    "expectedAndProposal": "all surfaces agree on current history and maintain the active filter. Subscribe to authoritative changes and derive results from current query/state.",
+    "detail": "**Native-isolated, options 1100×733 and real popup.** Populate history, leave options open, then use popup More → Clear. Real history has zero Clips, but options still shows old rows until reloaded. Separately, enter an unmatched query in options and capture unrelated text: the new Clip appears in the filtered view. The component only listens for `newClip`, prepending it without applying the query; it does not reconcile removal/clear state.\n\nExpected: all surfaces agree on current history and maintain the active filter. Subscribe to authoritative changes and derive results from current query/state. [Stale cleared rows](extension-evidence/options-native-stale-history.png), [after reload](extension-evidence/options-native-clear-after-reload.png), [nonmatching arrival](extension-evidence/options-native-search-newclip.png); [history component](../../apps/extension/src/components/ClipHistoryList.tsx), lines 8–41. **Confidence: observed native behavior.**"
+  },
+  {
+    "id": "C10",
+    "title": "Rejected settings appear saved",
+    "priority": "High",
+    "evidenceIds": [
+      "options-native-invalid-settings",
+      "options-fixture-setting-save-failure"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/options.tsx",
+      "../../../apps/extension/src/background.ts"
+    ],
+    "expectedAndProposal": "validate before submission, acknowledge successful saves, and restore or mark unsaved values on rejection. A subsequent unrelated change should not keep resending an invalid setting.",
+    "detail": "**Native validation at a controlled 480×640 viewport; fixture storage rejection.** Enter Expiry 0. The real background rejects it, but options retains 0 without explaining the failure; stored Expiry remains 7. A rejected Auto Sync save similarly leaves the new checkbox value visible while the fixture's authoritative state stays unchanged. The current handler does not consume a response.\n\nExpected: validate before submission, acknowledge successful saves, and restore or mark unsaved values on rejection. A subsequent unrelated change should not keep resending an invalid setting. [Native invalid preference](extension-evidence/options-native-invalid-settings.png), [failed Auto Sync save](extension-evidence/options-fixture-setting-save-failure.png), trace `invalidExpiry` / `settingSaveFailure`; [options write handler](../../apps/extension/src/options.tsx), line 134, [background validation](../../apps/extension/src/background.ts), line 1269. **Confidence: native validation and mocked persistence rejection.**"
+  },
+  {
+    "id": "C11",
+    "title": "Essential controls are split across surfaces without a visible handoff",
+    "priority": "High",
+    "evidenceIds": [
+      "popup-fixture-pending-hidden",
+      "options-fixture-recovery-invisible",
+      "options-fixture-480x640"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/styles.css",
+      "../../../apps/extension/src/options.tsx",
+      "../../../apps/extension/src/components/ClipHistoryList.tsx"
+    ],
+    "expectedAndProposal": "each surface has an explicit role, and users can continue a task in the appropriate persistent surface while retaining context. Decide the minimum daily popup controls and the complete management surface; do not blindly duplicate every control.",
+    "detail": "**Actual popup and options; source-confirmed inventories.** Popup search is always hidden at its 480px host width. Options has search, but its history has no Copy, Pin, Delete or Clear controls. Options also has no incoming approvals, local identity/alias editing, actual local-retention control or recovery notices. A pending request is invisible in the popup's closed navigation, and options cannot approve it. No in-app options link exists in the popup; Chrome's extension context-menu route is separate host UI.\n\nExpected: each surface has an explicit role, and users can continue a task in the appropriate persistent surface while retaining context. Decide the minimum daily popup controls and the complete management surface; do not blindly duplicate every control. [Pending hidden](extension-evidence/popup-fixture-pending-hidden.png), [options during recovery](extension-evidence/options-fixture-recovery-invisible.png), [options history](extension-evidence/options-fixture-480x640.png); [popup search rule](../../packages/ui/src/styles.css), line 1455, [options](../../apps/extension/src/options.tsx), [history actions](../../apps/extension/src/components/ClipHistoryList.tsx). **Confidence: observed rendering and source coverage.**"
+  },
+  {
+    "id": "C12",
+    "title": "Popup dismissal loses relay drafts",
+    "priority": "Medium",
+    "evidenceIds": [
+      "popup-native-unsaved-draft",
+      "popup-native-draft-lost"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/ManagedRelaySettings.tsx"
+    ],
+    "expectedAndProposal": "either retain recoverable drafts or send long configuration work to a persistent, styled editor. Provide a visible route there.",
+    "detail": "**Native-isolated, 480×600.** Open navigation → Add relay, type a name, detach the inspection debugger, click the options tab, confirm POPUP context is gone, then reopen. The editor/draft is gone. This is normal Chrome popup lifetime exposing a product-flow mismatch: longer configuration work lives in a transient host.\n\nExpected: either retain recoverable drafts or send long configuration work to a persistent, styled editor. Provide a visible route there. [Draft](extension-evidence/popup-native-unsaved-draft.png), [after reopening](extension-evidence/popup-native-draft-lost.png), trace `popupClosedContexts` / `editorAfterReopen`; [local editor state](../../packages/ui/src/ManagedRelaySettings.tsx), lines 36–44. **Confidence: observed native dismissal with inspection detached.**"
+  },
+  {
+    "id": "C13",
+    "title": "Popup history uses most space for chrome and fixed card structure",
+    "priority": "Medium",
+    "evidenceIds": [
+      "popup-native-populated",
+      "popup-fixture-last-clip",
+      "options-fixture-480x640"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/ClipboardApp.tsx",
+      "../../../packages/ui/src/styles.css",
+      "../../../apps/extension/src/components/ClipHistoryList.tsx"
+    ],
+    "expectedAndProposal": "compact repeated use should preserve Copy, distinguishing content and accessible full inspection. Compare a compact row or adjustable density with the existing card treatment; measure useful Clips per viewport rather than selecting a style now.",
+    "detail": "**Native local history and 12/200-Clip fixtures, 480×600.** Only one complete Clip fits initially in a 328px history scroller. Each 160px card repeats source/location/date/type and has substantial spacing even for a one-line note. Two long Clips with different tails have indistinguishable truncated previews; there is no full-content inspector. Options uses shorter rows and a 256px nested list, but removes actions and still limits text previews to 200 characters (full text is available only through a native title tooltip).\n\nExpected: compact repeated use should preserve Copy, distinguishing content and accessible full inspection. Compare a compact row or adjustable density with the existing card treatment; measure useful Clips per viewport rather than selecting a style now. [Popup](extension-evidence/popup-native-populated.png), [last Clip reachable](extension-evidence/popup-fixture-last-clip.png), [options rows](extension-evidence/options-fixture-480x640.png); [shared card](../../packages/ui/src/ClipboardApp.tsx), line 1866, [160px styling](../../packages/ui/src/styles.css), line 1126, [options preview](../../apps/extension/src/components/ClipHistoryList.tsx). **Confidence: observed geometry and source-supported inspection gap.**"
+  },
+  {
+    "id": "C14",
+    "title": "Dense management lists bury frequent preferences",
+    "priority": "Medium",
+    "evidenceIds": [
+      "popup-fixture-dense-bottom",
+      "popup-fixture-dense-relays",
+      "popup-fixture-pending-overflow",
+      "options-fixture-dense-bottom"
+    ],
+    "sourcePointers": [
+      "../../../packages/ui/src/ClipboardApp.tsx",
+      "../../../apps/extension/src/options.tsx"
+    ],
+    "expectedAndProposal": "routine preferences and actionable approvals should be directly reachable without traversing every diagnostic/detail row. Consider separate management sections, collapsed details, constrained labels with disclosure and a persistent everyday control area.",
+    "detail": "**Dense public fixture, popup 480×600/options 480×640.** Four incoming requests, four waiting requests, one Pairing error, 20 devices and seven relay states produce 3079px of drawer content before the final preferences. Options places the Settings heading at y=2276. A single long relay name/endpoint takes much of a popup viewport. Raw waiting Peer IDs overflow their text boxes and are clipped by the drawer; the 418px scroll extent is not evidence that relay buttons are lost. The relay actions wrap and the final selects remain reachable.\n\nExpected: routine preferences and actionable approvals should be directly reachable without traversing every diagnostic/detail row. Consider separate management sections, collapsed details, constrained labels with disclosure and a persistent everyday control area. [Drawer bottom](extension-evidence/popup-fixture-dense-bottom.png), [long relay](extension-evidence/popup-fixture-dense-relays.png), [raw identifiers](extension-evidence/popup-fixture-pending-overflow.png), [options bottom](extension-evidence/options-fixture-dense-bottom.png); [navigation order](../../packages/ui/src/ClipboardApp.tsx), lines 1114–1460, [options section order](../../apps/extension/src/options.tsx). **Confidence: observed fixture geometry; not a claim that scrolling is trapped.**"
+  },
+  {
+    "id": "C15",
+    "title": "Styling and terminology diverge beyond useful runtime adaptation",
+    "priority": "Medium",
+    "evidenceIds": [
+      "popup-native-empty",
+      "options-native-empty",
+      "options-fixture-1920x1080"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/options.tsx",
+      "../../../apps/extension/src/components/DeviceList.tsx"
+    ],
+    "expectedAndProposal": "common language, semantic colors, fields and status treatment, with deliberate runtime-specific layout. The wide column itself is not a defect; reassess truncation and fixed list height before merely stretching the form.",
+    "detail": "**Native empty/ordinary surfaces and controlled wide options.** Popup is branded Clipp, uses Roboto, dark rounded surfaces and purple actions; options says “Clipboard Share – Settings,” uses system/Inter fallback, white space, blue full-width actions and unstyled relay text. “Peers”/“Connected devices” versus “Trusted Devices,” “Show my QR” versus “Generate My QR,” and “Auto Sync” versus “Auto-sync” describe overlapping tasks differently. At 1920px, options keeps a 672px column (35% of width), yet device labels are capped at 140px and history at 256px high.\n\nExpected: common language, semantic colors, fields and status treatment, with deliberate runtime-specific layout. The wide column itself is not a defect; reassess truncation and fixed list height before merely stretching the form. [Native popup](extension-evidence/popup-native-empty.png), [native options](extension-evidence/options-native-empty.png), [wide options](extension-evidence/options-fixture-1920x1080.png); [options layout](../../apps/extension/src/options.tsx), line 152, [device label cap](../../apps/extension/src/components/DeviceList.tsx). **Confidence: observed styling/layout; preferred organization remains a user decision.**"
+  },
+  {
+    "id": "C16",
+    "title": "Automatic clipboard-read failure has no visible recovery context",
+    "priority": "Medium",
+    "evidenceIds": [
+      "popup-fixture-focus-read-denied",
+      "popup-native-share-denied"
+    ],
+    "sourcePointers": [
+      "../../../apps/extension/src/popup.tsx",
+      "../../../apps/extension/src/components/QRScanner.tsx"
+    ],
+    "expectedAndProposal": "users who cannot capture should have a discoverable, consistent explanation and a deliberate retry action; avoid repetitive alerts on every focus. Clarify the status of local capture separately from network connectivity.",
+    "detail": "**Clipboard boundary fixture, popup 480×600.** Make the guarded clipboard reject, then dispatch the focus event used for automatic local capture. The failure is swallowed and no capture/permission notice appears. Explicit Share Now does report the read failure, although its banner has the layout defect above. The options scanner also has its own separate browser-alert error path in source.\n\nExpected: users who cannot capture should have a discoverable, consistent explanation and a deliberate retry action; avoid repetitive alerts on every focus. Clarify the status of local capture separately from network connectivity. [Focus denial](extension-evidence/popup-fixture-focus-read-denied.png), [explicit failure](extension-evidence/popup-native-share-denied.png); [focus capture catch](../../apps/extension/src/popup.tsx), lines 161–178, [scanner clipboard errors](../../apps/extension/src/components/QRScanner.tsx). **Confidence: observed boundary-seam behavior; real permission prompts were not exercised.**"
+  }
+]

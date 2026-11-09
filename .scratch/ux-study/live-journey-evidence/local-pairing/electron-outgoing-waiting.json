@@ -1,0 +1,43 @@
+{
+  "at": "2026-10-10T08:01:13.665Z",
+  "state": {
+    "clips": 0,
+    "devices": 1,
+    "pending": 0,
+    "waiting": 1,
+    "pairingErrors": [],
+    "autoSync": true,
+    "relays": 0,
+    "connections": [
+      {
+        "path": "direct",
+        "hasDirect": true,
+        "hasRelay": false
+      }
+    ],
+    "notice": null
+  },
+  "notificationEvents": [
+    {
+      "at": "2026-10-10T07:57:30.195Z",
+      "event": "show-called"
+    },
+    {
+      "at": "2026-10-10T07:57:30.197Z",
+      "event": "failed"
+    },
+    {
+      "at": "2026-10-10T07:58:43.160Z",
+      "event": "show-called"
+    },
+    {
+      "at": "2026-10-10T07:58:43.161Z",
+      "event": "failure-detail",
+      "message": "The operation couldn’t be completed. (UNErrorDomain error 1.)"
+    },
+    {
+      "at": "2026-10-10T07:58:43.161Z",
+      "event": "failed"
+    }
+  ]
+}

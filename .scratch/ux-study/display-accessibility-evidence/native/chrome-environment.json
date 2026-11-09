@@ -1,0 +1,15 @@
+{
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-display-chrome-2Bzdv1",
+  "extensionPath": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-display-build-RocHBc",
+  "extensionId": "cgjpkpcbbgmpckcbdmkclgeeidjjdofc",
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "Chrome/143.0.7499.4",
+    "revision": "@ee5ecaf663495e92dfe322aa76c114a3465602ab",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+    "jsVersion": "14.3.127.1"
+  },
+  "observer": "Browser-level target discovery only; no auto-attach to workers or popup; explicit options observations detach immediately",
+  "isolation": "Fresh profile, WSS-only build, empty relays, extension memory clipboard guards, no webpage content scripts",
+  "pid": 1571
+}

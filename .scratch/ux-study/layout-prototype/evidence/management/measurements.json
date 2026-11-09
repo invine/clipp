@@ -1,0 +1,1120 @@
+{
+  "at": "2026-10-08T21:26:01.192Z",
+  "browser": "143.0.7499.4",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "M1-devices-phone-1-everyday-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-settings-phone-1-everyday-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 760,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-devices-restored-1-everyday-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 612,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-restored-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-settings-restored-1-everyday-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 612,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-restored-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-devices-wide-1-everyday-dark",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "contentHeight": 812,
+      "contentViewport": 812,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-settings-wide-1-everyday-dark",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "contentHeight": 812,
+      "contentViewport": 812,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-devices-tab-1-everyday-light",
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "contentHeight": 744,
+      "contentViewport": 744,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-tab-1-everyday-light.png"
+    },
+    {
+      "id": "M1-settings-tab-1-everyday-light",
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "contentHeight": 744,
+      "contentViewport": 744,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-tab-1-everyday-light.png"
+    },
+    {
+      "id": "M1-devices-tablet-1-everyday-dark",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "contentHeight": 691,
+      "contentViewport": 691,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-tablet-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-settings-tablet-1-everyday-dark",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "contentHeight": 691,
+      "contentViewport": 691,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-tablet-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-devices-small-2-long-light",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 1016,
+      "contentViewport": 1016,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-small-2-long-light.png"
+    },
+    {
+      "id": "M1-settings-small-2-long-light",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 1432,
+      "contentViewport": 1432,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-small-2-long-light.png"
+    },
+    {
+      "id": "M1-devices-phone-1-empty-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-phone-1-empty-dark.png"
+    },
+    {
+      "id": "M1-devices-restored-1-dense-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 1771,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 20,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-restored-1-dense-dark.png"
+    },
+    {
+      "id": "M1-settings-restored-1-dense-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 612,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-restored-1-dense-dark.png"
+    },
+    {
+      "id": "M1-devices-phone-1-recovery-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-phone-1-recovery-dark.png"
+    },
+    {
+      "id": "M1-settings-landscape-1-everyday-dark",
+      "viewport": {
+        "w": 640,
+        "h": 360
+      },
+      "contentHeight": 741,
+      "contentViewport": 741,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-settings-landscape-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-devices-popup-1-everyday-dark",
+      "viewport": {
+        "w": 480,
+        "h": 600
+      },
+      "contentHeight": 551,
+      "contentViewport": 551,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 0,
+      "screenshot": "M1-devices-popup-1-everyday-dark.png"
+    },
+    {
+      "id": "M1-device-details",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-device-details.png"
+    },
+    {
+      "id": "M1-pairing-small",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 535,
+      "contentViewport": 535,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-pairing-small.png"
+    },
+    {
+      "id": "M2-devices-phone-1-everyday-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 770,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-settings-phone-1-everyday-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 968,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-devices-restored-1-everyday-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 758,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-restored-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-settings-restored-1-everyday-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 782,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-restored-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-devices-wide-1-everyday-dark",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "contentHeight": 812,
+      "contentViewport": 812,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-settings-wide-1-everyday-dark",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "contentHeight": 812,
+      "contentViewport": 812,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-devices-tab-1-everyday-light",
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "contentHeight": 758,
+      "contentViewport": 744,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-tab-1-everyday-light.png"
+    },
+    {
+      "id": "M2-settings-tab-1-everyday-light",
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "contentHeight": 782,
+      "contentViewport": 744,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 5,
+      "screenshot": "M2-settings-tab-1-everyday-light.png"
+    },
+    {
+      "id": "M2-devices-tablet-1-everyday-dark",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "contentHeight": 778,
+      "contentViewport": 691,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-tablet-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-settings-tablet-1-everyday-dark",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "contentHeight": 816,
+      "contentViewport": 691,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-tablet-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-devices-small-2-long-light",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 1605,
+      "contentViewport": 1605,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-small-2-long-light.png"
+    },
+    {
+      "id": "M2-settings-small-2-long-light",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 1770,
+      "contentViewport": 1770,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-small-2-long-light.png"
+    },
+    {
+      "id": "M2-devices-phone-1-empty-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-phone-1-empty-dark.png"
+    },
+    {
+      "id": "M2-devices-restored-1-dense-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 2016,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 20,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-restored-1-dense-dark.png"
+    },
+    {
+      "id": "M2-settings-restored-1-dense-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 782,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-restored-1-dense-dark.png"
+    },
+    {
+      "id": "M2-devices-phone-1-recovery-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 865,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-phone-1-recovery-dark.png"
+    },
+    {
+      "id": "M2-settings-landscape-1-everyday-dark",
+      "viewport": {
+        "w": 640,
+        "h": 360
+      },
+      "contentHeight": 914,
+      "contentViewport": 914,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 4,
+      "screenshot": "M2-settings-landscape-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-devices-popup-1-everyday-dark",
+      "viewport": {
+        "w": 480,
+        "h": 600
+      },
+      "contentHeight": 551,
+      "contentViewport": 551,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 0,
+      "screenshot": "M2-devices-popup-1-everyday-dark.png"
+    },
+    {
+      "id": "M2-device-details",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 770,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-device-details.png"
+    },
+    {
+      "id": "M2-pairing-small",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 770,
+      "contentViewport": 535,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M2-pairing-small.png"
+    },
+    {
+      "id": "M3-devices-phone-1-everyday-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-settings-phone-1-everyday-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-phone-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-devices-restored-1-everyday-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 612,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-restored-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-settings-restored-1-everyday-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 612,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-restored-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-devices-wide-1-everyday-dark",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "contentHeight": 812,
+      "contentViewport": 812,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-settings-wide-1-everyday-dark",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "contentHeight": 812,
+      "contentViewport": 812,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-wide-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-devices-tab-1-everyday-light",
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "contentHeight": 744,
+      "contentViewport": 744,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-tab-1-everyday-light.png"
+    },
+    {
+      "id": "M3-settings-tab-1-everyday-light",
+      "viewport": {
+        "w": 1280,
+        "h": 800
+      },
+      "contentHeight": 744,
+      "contentViewport": 744,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-tab-1-everyday-light.png"
+    },
+    {
+      "id": "M3-devices-tablet-1-everyday-dark",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "contentHeight": 691,
+      "contentViewport": 691,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-tablet-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-settings-tablet-1-everyday-dark",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "contentHeight": 691,
+      "contentViewport": 691,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-tablet-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-devices-small-2-long-light",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 862,
+      "contentViewport": 862,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-small-2-long-light.png"
+    },
+    {
+      "id": "M3-settings-small-2-long-light",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 959,
+      "contentViewport": 959,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-small-2-long-light.png"
+    },
+    {
+      "id": "M3-devices-phone-1-empty-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-phone-1-empty-dark.png"
+    },
+    {
+      "id": "M3-devices-restored-1-dense-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 1635,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 20,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-restored-1-dense-dark.png"
+    },
+    {
+      "id": "M3-settings-restored-1-dense-dark",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "contentHeight": 612,
+      "contentViewport": 612,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-restored-1-dense-dark.png"
+    },
+    {
+      "id": "M3-devices-phone-1-recovery-dark",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-phone-1-recovery-dark.png"
+    },
+    {
+      "id": "M3-settings-landscape-1-everyday-dark",
+      "viewport": {
+        "w": 640,
+        "h": 360
+      },
+      "contentHeight": 491,
+      "contentViewport": 491,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M3-settings-landscape-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-devices-popup-1-everyday-dark",
+      "viewport": {
+        "w": 480,
+        "h": 600
+      },
+      "contentHeight": 551,
+      "contentViewport": 551,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 0,
+      "screenshot": "M3-devices-popup-1-everyday-dark.png"
+    },
+    {
+      "id": "M3-device-details",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-device-details.png"
+    },
+    {
+      "id": "M3-pairing-small",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 535,
+      "contentViewport": 535,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M3-pairing-small.png"
+    },
+    {
+      "id": "M1-connections-small-200",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 1432,
+      "contentViewport": 1432,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-connections-small-200.png"
+    },
+    {
+      "id": "M1-background-small-200",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 1432,
+      "contentViewport": 1432,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-background-small-200.png"
+    },
+    {
+      "id": "M1-relay-draft-small",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "contentHeight": 736,
+      "contentViewport": 591,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 0,
+      "preferenceControls": 3,
+      "screenshot": "M1-relay-draft-small.png"
+    },
+    {
+      "id": "M1-pairing-recovery",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-pairing-recovery.png"
+    },
+    {
+      "id": "M1-request-review",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "contentHeight": 615,
+      "contentViewport": 615,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "dialogsOutsideViewport": [],
+      "visibleDeviceRows": 3,
+      "preferenceControls": 0,
+      "screenshot": "M1-request-review.png"
+    }
+  ],
+  "checks": [
+    {
+      "name": "M1 saves local alias",
+      "passed": true
+    },
+    {
+      "name": "M1 restores Device Name",
+      "passed": true
+    },
+    {
+      "name": "M1 Pairing draft survives resize",
+      "passed": true
+    },
+    {
+      "name": "M1 Pairing Escape returns focus",
+      "passed": true
+    },
+    {
+      "name": "M2 saves local alias",
+      "passed": true
+    },
+    {
+      "name": "M2 restores Device Name",
+      "passed": true
+    },
+    {
+      "name": "M2 Pairing draft survives resize",
+      "passed": true
+    },
+    {
+      "name": "M2 Pairing Escape returns focus",
+      "passed": true
+    },
+    {
+      "name": "M3 saves local alias",
+      "passed": true
+    },
+    {
+      "name": "M3 restores Device Name",
+      "passed": true
+    },
+    {
+      "name": "M3 Pairing draft survives resize",
+      "passed": true
+    },
+    {
+      "name": "M3 Pairing Escape returns focus",
+      "passed": true
+    },
+    {
+      "name": "relay draft survives resize",
+      "passed": true
+    },
+    {
+      "name": "retry retains Pairing input",
+      "passed": true
+    },
+    {
+      "name": "M1 approved History controls",
+      "passed": true
+    },
+    {
+      "name": "M2 approved History controls",
+      "passed": true
+    },
+    {
+      "name": "M3 approved History controls",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "geometryFailures": [],
+  "interactionFailures": []
+}

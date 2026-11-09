@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-10-07T17:03:16.541Z",
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-chrome-zoom-profile-Ls8K6K",
+  "extensionPath": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-chrome-zoom-build-C08Ifu",
+  "extensionId": "anlblnhmlcbehigklhpgnpopgpgiimdf",
+  "browser": "143.0.7499.4",
+  "method": "Raw CDP Page.captureScreenshot; new isolated profile, same build, synthetic UI responses, clipboard guard",
+  "screen": {
+    "width": 1512,
+    "height": 982,
+    "dpr": 2
+  }
+}

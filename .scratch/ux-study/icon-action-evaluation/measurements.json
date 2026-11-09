@@ -1,0 +1,563 @@
+{
+  "at": "2026-10-08T20:18:39.535Z",
+  "browser": "143.0.7499.4",
+  "note": "Only current text-button geometry was measured. Width released estimates assume existing 40/48px square hit areas; no icon variant was rendered and no density/usability improvement is proven.",
+  "records": [
+    {
+      "surface": "small",
+      "w": 320,
+      "h": 640,
+      "scale": "1",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 48,
+      "share": {
+        "w": 79.33,
+        "h": 48,
+        "x": 176.67,
+        "y": 32
+      },
+      "copy": {
+        "w": 57.02,
+        "h": 48,
+        "x": 250.98,
+        "y": 101.16
+      },
+      "search": {
+        "w": 112.67,
+        "h": 48,
+        "x": 12,
+        "y": 32
+      },
+      "clipPreview": {
+        "w": 180.98,
+        "h": 62.31,
+        "x": 12,
+        "y": 94
+      },
+      "firstClipY": 84,
+      "estimatedWidthReleased": {
+        "share": 31.33,
+        "copy": 9.02
+      }
+    },
+    {
+      "surface": "small",
+      "w": 320,
+      "h": 640,
+      "scale": "1.3",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 48,
+      "share": {
+        "w": 100.3,
+        "h": 48,
+        "x": 155.7,
+        "y": 32
+      },
+      "copy": {
+        "w": 72.19,
+        "h": 48,
+        "x": 235.81,
+        "y": 109.72
+      },
+      "search": {
+        "w": 91.7,
+        "h": 48,
+        "x": 12,
+        "y": 32
+      },
+      "clipPreview": {
+        "w": 165.81,
+        "h": 79.45,
+        "x": 12,
+        "y": 94
+      },
+      "firstClipY": 84,
+      "estimatedWidthReleased": {
+        "share": 52.3,
+        "copy": 24.19
+      }
+    },
+    {
+      "surface": "small",
+      "w": 320,
+      "h": 640,
+      "scale": "2",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 48,
+      "share": {
+        "w": 150.86,
+        "h": 60.95,
+        "x": 105.14,
+        "y": 273.81
+      },
+      "copy": {
+        "w": 108.91,
+        "h": 64.88,
+        "x": 199.09,
+        "y": 476.34
+      },
+      "search": {
+        "w": 248,
+        "h": 67.34,
+        "x": 12,
+        "y": 202.47
+      },
+      "clipPreview": {
+        "w": 296,
+        "h": 119.58,
+        "x": 12,
+        "y": 348.77
+      },
+      "firstClipY": 338.765625,
+      "estimatedWidthReleased": {
+        "share": 102.86,
+        "copy": 60.91
+      }
+    },
+    {
+      "surface": "phone",
+      "w": 360,
+      "h": 720,
+      "scale": "1",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 48,
+      "share": {
+        "w": 79.33,
+        "h": 48,
+        "x": 216.67,
+        "y": 32
+      },
+      "copy": {
+        "w": 57.02,
+        "h": 48,
+        "x": 290.98,
+        "y": 101.16
+      },
+      "search": {
+        "w": 152.67,
+        "h": 48,
+        "x": 12,
+        "y": 32
+      },
+      "clipPreview": {
+        "w": 220.98,
+        "h": 62.31,
+        "x": 12,
+        "y": 94
+      },
+      "firstClipY": 84,
+      "estimatedWidthReleased": {
+        "share": 31.33,
+        "copy": 9.02
+      }
+    },
+    {
+      "surface": "phone",
+      "w": 360,
+      "h": 720,
+      "scale": "1.3",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 48,
+      "share": {
+        "w": 100.3,
+        "h": 48,
+        "x": 195.7,
+        "y": 32
+      },
+      "copy": {
+        "w": 72.19,
+        "h": 48,
+        "x": 275.81,
+        "y": 109.72
+      },
+      "search": {
+        "w": 131.7,
+        "h": 48,
+        "x": 12,
+        "y": 32
+      },
+      "clipPreview": {
+        "w": 205.81,
+        "h": 79.45,
+        "x": 12,
+        "y": 94
+      },
+      "firstClipY": 84,
+      "estimatedWidthReleased": {
+        "share": 52.3,
+        "copy": 24.19
+      }
+    },
+    {
+      "surface": "phone",
+      "w": 360,
+      "h": 720,
+      "scale": "2",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 48,
+      "share": {
+        "w": 150.86,
+        "h": 60.95,
+        "x": 145.14,
+        "y": 239.72
+      },
+      "copy": {
+        "w": 108.91,
+        "h": 64.88,
+        "x": 239.09,
+        "y": 442.25
+      },
+      "search": {
+        "w": 288,
+        "h": 67.34,
+        "x": 12,
+        "y": 168.38
+      },
+      "clipPreview": {
+        "w": 336,
+        "h": 119.58,
+        "x": 12,
+        "y": 314.67
+      },
+      "firstClipY": 304.671875,
+      "estimatedWidthReleased": {
+        "share": 102.86,
+        "copy": 60.91
+      }
+    },
+    {
+      "surface": "popup",
+      "w": 480,
+      "h": 600,
+      "scale": "1",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 79.33,
+        "h": 40,
+        "x": 344.67,
+        "y": 8
+      },
+      "copy": {
+        "w": 57.02,
+        "h": 40,
+        "x": 410.98,
+        "y": 62.63
+      },
+      "search": {
+        "w": 288.67,
+        "h": 40,
+        "x": 12,
+        "y": 8
+      },
+      "clipPreview": {
+        "w": 348.98,
+        "h": 41.25,
+        "x": 12,
+        "y": 62
+      },
+      "firstClipY": 52,
+      "estimatedWidthReleased": {
+        "share": 39.33,
+        "copy": 17.02
+      }
+    },
+    {
+      "surface": "popup",
+      "w": 480,
+      "h": 600,
+      "scale": "1.3",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 100.3,
+        "h": 40,
+        "x": 323.7,
+        "y": 9.88
+      },
+      "copy": {
+        "w": 72.19,
+        "h": 42.89,
+        "x": 395.81,
+        "y": 84.05
+      },
+      "search": {
+        "w": 267.7,
+        "h": 43.77,
+        "x": 12,
+        "y": 8
+      },
+      "clipPreview": {
+        "w": 333.81,
+        "h": 79.45,
+        "x": 12,
+        "y": 65.77
+      },
+      "firstClipY": 55.765625,
+      "estimatedWidthReleased": {
+        "share": 60.3,
+        "copy": 32.19
+      }
+    },
+    {
+      "surface": "popup",
+      "w": 480,
+      "h": 600,
+      "scale": "2",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 150.86,
+        "h": 60.95,
+        "x": 273.14,
+        "y": 150.03
+      },
+      "copy": {
+        "w": 108.91,
+        "h": 64.88,
+        "x": 359.09,
+        "y": 352.56
+      },
+      "search": {
+        "w": 416,
+        "h": 67.34,
+        "x": 12,
+        "y": 78.69
+      },
+      "clipPreview": {
+        "w": 456,
+        "h": 119.58,
+        "x": 12,
+        "y": 224.98
+      },
+      "firstClipY": 214.984375,
+      "estimatedWidthReleased": {
+        "share": 110.86,
+        "copy": 68.91
+      }
+    },
+    {
+      "surface": "narrow",
+      "w": 520,
+      "h": 728,
+      "scale": "1",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 79.33,
+        "h": 40,
+        "x": 384.67,
+        "y": 8
+      },
+      "copy": {
+        "w": 57.02,
+        "h": 40,
+        "x": 450.98,
+        "y": 62.63
+      },
+      "search": {
+        "w": 328.67,
+        "h": 40,
+        "x": 12,
+        "y": 8
+      },
+      "clipPreview": {
+        "w": 388.98,
+        "h": 41.25,
+        "x": 12,
+        "y": 62
+      },
+      "firstClipY": 52,
+      "estimatedWidthReleased": {
+        "share": 39.33,
+        "copy": 17.02
+      }
+    },
+    {
+      "surface": "narrow",
+      "w": 520,
+      "h": 728,
+      "scale": "1.3",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 100.3,
+        "h": 40,
+        "x": 363.7,
+        "y": 9.88
+      },
+      "copy": {
+        "w": 72.19,
+        "h": 42.89,
+        "x": 435.81,
+        "y": 70.36
+      },
+      "search": {
+        "w": 307.7,
+        "h": 43.77,
+        "x": 12,
+        "y": 8
+      },
+      "clipPreview": {
+        "w": 373.81,
+        "h": 52.09,
+        "x": 12,
+        "y": 65.77
+      },
+      "firstClipY": 55.765625,
+      "estimatedWidthReleased": {
+        "share": 60.3,
+        "copy": 32.19
+      }
+    },
+    {
+      "surface": "narrow",
+      "w": 520,
+      "h": 728,
+      "scale": "2",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 150.86,
+        "h": 60.95,
+        "x": 313.14,
+        "y": 150.03
+      },
+      "copy": {
+        "w": 108.91,
+        "h": 64.88,
+        "x": 399.09,
+        "y": 352.56
+      },
+      "search": {
+        "w": 456,
+        "h": 67.34,
+        "x": 12,
+        "y": 78.69
+      },
+      "clipPreview": {
+        "w": 496,
+        "h": 119.58,
+        "x": 12,
+        "y": 224.98
+      },
+      "firstClipY": 214.984375,
+      "estimatedWidthReleased": {
+        "share": 110.86,
+        "copy": 68.91
+      }
+    },
+    {
+      "surface": "wide",
+      "w": 1440,
+      "h": 868,
+      "scale": "1",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 92.52,
+        "h": 40,
+        "x": 1331.48,
+        "y": 66
+      },
+      "copy": {
+        "w": 57.02,
+        "h": 40,
+        "x": 290.48,
+        "y": 245.3
+      },
+      "search": {
+        "w": 1148.22,
+        "h": 40,
+        "x": 16,
+        "y": 66
+      },
+      "clipPreview": {
+        "w": 318.5,
+        "h": 108.3,
+        "x": 29,
+        "y": 127
+      },
+      "firstClipY": 114,
+      "estimatedWidthReleased": {
+        "share": 52.52,
+        "copy": 17.02
+      }
+    },
+    {
+      "surface": "wide",
+      "w": 1440,
+      "h": 868,
+      "scale": "1.3",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 116.86,
+        "h": 46.33,
+        "x": 1307.14,
+        "y": 66
+      },
+      "copy": {
+        "w": 72.19,
+        "h": 42.89,
+        "x": 393.47,
+        "y": 281.7
+      },
+      "search": {
+        "w": 1094.75,
+        "h": 46.33,
+        "x": 16,
+        "y": 66
+      },
+      "clipPreview": {
+        "w": 436.66,
+        "h": 138.38,
+        "x": 29,
+        "y": 133.33
+      },
+      "firstClipY": 120.328125,
+      "estimatedWidthReleased": {
+        "share": 76.86,
+        "copy": 32.19
+      }
+    },
+    {
+      "surface": "wide",
+      "w": 1440,
+      "h": 868,
+      "scale": "2",
+      "evidenceClass": "read-only-browser-prototype-geometry",
+      "target": 40,
+      "share": {
+        "w": 175.27,
+        "h": 70.2,
+        "x": 1248.73,
+        "y": 153.19
+      },
+      "copy": {
+        "w": 108.91,
+        "h": 64.88,
+        "x": 593.09,
+        "y": 462.98
+      },
+      "search": {
+        "w": 966.22,
+        "h": 70.2,
+        "x": 16,
+        "y": 153.19
+      },
+      "clipPreview": {
+        "w": 673,
+        "h": 208.59,
+        "x": 29,
+        "y": 244.39
+      },
+      "firstClipY": 231.390625,
+      "estimatedWidthReleased": {
+        "share": 135.27,
+        "copy": 68.91
+      }
+    }
+  ],
+  "errors": []
+}

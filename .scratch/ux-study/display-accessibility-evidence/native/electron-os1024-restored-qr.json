@@ -1,0 +1,203 @@
+{
+  "at": "2026-10-10T09:00:29.310Z",
+  "native": {
+    "displays": [
+      {
+        "accelerometerSupport": "unknown",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1024,
+          "height": 665
+        },
+        "colorDepth": 30,
+        "colorSpace": "{primaries:BT709, transfer:SRGB, matrix:RGB, range:FULL}",
+        "depthPerComponent": 10,
+        "detected": true,
+        "displayFrequency": 120.0006103515625,
+        "id": 1,
+        "internal": true,
+        "label": "Built-in Retina Display",
+        "maximumCursorSize": {
+          "width": 0,
+          "height": 0
+        },
+        "monochrome": false,
+        "nativeOrigin": {
+          "x": 0,
+          "y": 0
+        },
+        "rotation": 0,
+        "scaleFactor": 2,
+        "size": {
+          "width": 1024,
+          "height": 665
+        },
+        "workArea": {
+          "x": 0,
+          "y": 26,
+          "width": 1024,
+          "height": 639
+        },
+        "workAreaSize": {
+          "width": 1024,
+          "height": 639
+        },
+        "touchSupport": "unknown"
+      }
+    ],
+    "outer": {
+      "x": 252,
+      "y": 26,
+      "width": 520,
+      "height": 640
+    },
+    "content": {
+      "x": 252,
+      "y": 58,
+      "width": 520,
+      "height": 608
+    },
+    "normal": {
+      "x": 252,
+      "y": 26,
+      "width": 520,
+      "height": 640
+    },
+    "fullscreen": false,
+    "maximized": false,
+    "zoom": 1,
+    "accessibility": true
+  },
+  "dom": {
+    "width": 520,
+    "height": 608,
+    "dpr": 2,
+    "visualViewport": {
+      "width": 520,
+      "height": 608,
+      "scale": 1
+    },
+    "body": {
+      "scrollWidth": 520,
+      "scrollHeight": 608
+    },
+    "active": {
+      "tag": "BUTTON",
+      "title": "Toggle theme",
+      "label": null
+    },
+    "buttons": [
+      {
+        "text": "dark_mode",
+        "title": "Toggle theme",
+        "label": null,
+        "rect": {
+          "x": 472,
+          "y": 14.5,
+          "width": 32,
+          "height": 32,
+          "top": 14.5,
+          "right": 504,
+          "bottom": 46.5,
+          "left": 472
+        }
+      },
+      {
+        "text": "sendShare Now",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 131.6328125,
+          "y": 95,
+          "width": 101.3671875,
+          "height": 30,
+          "top": 95,
+          "right": 233,
+          "bottom": 125,
+          "left": 131.6328125
+        }
+      },
+      {
+        "text": "All",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 248,
+          "y": 99.5,
+          "width": 64,
+          "height": 21,
+          "top": 99.5,
+          "right": 312,
+          "bottom": 120.5,
+          "left": 248
+        }
+      },
+      {
+        "text": "Pinned",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 312,
+          "y": 99.5,
+          "width": 64,
+          "height": 21,
+          "top": 99.5,
+          "right": 376,
+          "bottom": 120.5,
+          "left": 312
+        }
+      },
+      {
+        "text": "unfold_moreMore",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 391,
+          "y": 95,
+          "width": 96,
+          "height": 30,
+          "top": 95,
+          "right": 487,
+          "bottom": 125,
+          "left": 391
+        }
+      },
+      {
+        "text": "close",
+        "title": "",
+        "label": "Close QR dialog",
+        "rect": {
+          "x": 391,
+          "y": 102.25,
+          "width": 32,
+          "height": 32,
+          "top": 102.25,
+          "right": 423,
+          "bottom": 134.25,
+          "left": 391
+        }
+      },
+      {
+        "text": "Copy pairing text",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 97,
+          "y": 478.25,
+          "width": 326,
+          "height": 27.5,
+          "top": 478.25,
+          "right": 423,
+          "bottom": 505.75,
+          "left": 97
+        }
+      }
+    ],
+    "inputs": []
+  },
+  "screenshotPixels": {
+    "width": 1040,
+    "height": 1216
+  }
+}

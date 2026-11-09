@@ -1,0 +1,16 @@
+{"at":"2026-10-09T23:57:51.771Z","ready":true,"extensionId":"gkmcpbabbekiafkmkgjmdlmdlijhjdle","profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-original-path-T9cJbK","extensionPath":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-fixed-id-build-gHI7YD","extensionHtmlGuardsInstalled":true}
+{"at":"2026-10-09T23:58:37.508Z","capture":"native-options-fixed-id-login-needed","geometry":{"width":1100,"height":733,"dpr":2,"clipboardGuard":true}}
+{"at":"2026-10-09T23:58:37.510Z","publicState":{"clips":0,"devices":0,"relays":[{"status":"login_needed"}],"guard":true}}
+{"at":"2026-10-09T23:58:37.511Z","commandDone":true}
+{"at":"2026-10-09T23:58:51.067Z","pageDestinations":[{"origin":"null","path":"/src/options.html","hasQuery":false},{"origin":"https://accounts.google.com","path":"/v3/signin/identifier","hasQuery":true}]}
+{"at":"2026-10-09T23:58:51.068Z","commandDone":true}
+{"at":"2026-10-09T23:59:19.394Z","capture":"native-options-login-cancelled","geometry":{"width":1100,"height":733,"dpr":2,"clipboardGuard":true}}
+{"at":"2026-10-09T23:59:19.397Z","afterCancel":{"relays":[{"status":"login_needed"}],"visibleText":"Clipboard Share – Settings\nTrusted Devices\n(No devices)\nAdd Device (QR)\nGenerate My QR\nRelays\nUX Study test relay\nLogin needed\nhttps://relay-portal-test.everk8s.duckdns.org/v1/relay\nLog inManage accountEditRemove\nAdd relay\nClipboard History\n(No history)\nSettings\nAuto-sync\nExpiry (days)\nLog level\nDebug\nInfo\nWarn\nError\nText\nImages\nFiles\nToggle Dark Mode"}}
+{"at":"2026-10-09T23:59:19.397Z","commandDone":true}
+{"at":"2026-10-10T00:00:09.437Z","cancelledAuthWindowClosed":true,"remainingPageCount":1}
+{"at":"2026-10-10T00:00:09.547Z","closed":true}
+{"at":"2026-10-10T00:00:19.279Z","ready":true,"extensionId":"gkmcpbabbekiafkmkgjmdlmdlijhjdle","profile":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-original-path-T9cJbK","extensionPath":"/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-fixed-id-build-gHI7YD","extensionHtmlGuardsInstalled":true}
+{"at":"2026-10-10T00:00:47.863Z","retry":[{"origin":"null","path":"/src/options.html","hasQuery":false},{"origin":"https://accounts.google.com","path":"/v3/signin/identifier","hasQuery":true}]}
+{"at":"2026-10-10T00:00:47.863Z","commandDone":true}
+{"at":"2026-10-10T00:03:53.764Z","userReportedGoogleBrowserRejected":true,"userRequestedSkipForNow":true,"successfulAuthorization":"UNVERIFIED","reasonEvidence":"User report; account page not inspected"}
+{"at":"2026-10-10T00:03:53.912Z","closed":true}

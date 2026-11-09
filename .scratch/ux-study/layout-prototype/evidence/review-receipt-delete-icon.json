@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-08T21:03:27.790269+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Use a trash icon for Delete in Clip details, as requested by the user",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "3f0eab1302d506b8647f360507230969ae2d96b217e99596f5a8ded49be5d777",
+    "app.js": "26b21ef6dcb46b917f8df4aafc776d0784052846ab80f6deee576493391dcabf",
+    "style.css": "654fd59d0136301d07f7589e107292a4da102dd7583751d84b0cedfc847a2c62",
+    "README.md": "4508588b7007acb7b901157d72f05abebc14fee88fb01f3c627122879b5bc703"
+  },
+  "captureCount": 4,
+  "measurements": "delete-icon/measurements.json",
+  "previousReceipt": "review-receipt-filter-scope.json",
+  "scriptErrors": [],
+  "failures": [],
+  "syntaxCheck": "node --check on app.js",
+  "visualInspection": [
+    "restored-1-dark",
+    "small-2-light"
+  ],
+  "decision": "Icon-only Delete in Clip details with trash SVG, danger color, accessible name and hint; separate from Copy/Pin in the footer.",
+  "remainingLayoutDecision": "Broader visual/management contract remains open in the layout ticket.",
+  "controlsSecondRound": "unanswered; Delete appearance does not settle confirmation policy"
+}

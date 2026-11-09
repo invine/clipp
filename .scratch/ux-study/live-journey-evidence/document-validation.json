@@ -1,0 +1,80 @@
+{
+  "at": "2026-10-09T22:23:37.152853+00:00",
+  "findingCount": 51,
+  "runtimeCounts": {
+    "E": 17,
+    "C": 16,
+    "A": 18
+  },
+  "localLinksChecked": 285,
+  "anchorsChecked": 79,
+  "errors": [],
+  "decisionStatus": "Priority approved; native tasks remain open. Exact supplied folder installs as hpm\u2026; matching registration confirmation is pending.",
+  "nativeEvidence": [
+    "native-host-evidence/source-build-receipt.json",
+    "live-journey-evidence/existing-build-receipt.json"
+  ],
+  "mapStatus": "open",
+  "ticketStatus": {
+    "04": {
+      "title": "Observe Chrome popup and options flows",
+      "status": "resolved"
+    },
+    "05": {
+      "title": "Observe Android layouts and native interactions",
+      "status": "resolved"
+    },
+    "12": {
+      "title": "Explore compact connection status",
+      "status": "resolved"
+    },
+    "01": {
+      "title": "Establish platform sizing and interaction constraints",
+      "status": "resolved"
+    },
+    "09": {
+      "title": "Compare history density and navigation",
+      "status": "resolved"
+    },
+    "07": {
+      "title": "Decide visual consistency and efficient layout",
+      "status": "resolved"
+    },
+    "02": {
+      "title": "Inventory user flows and control coverage",
+      "status": "resolved"
+    },
+    "08": {
+      "title": "Prioritize the UX findings and handoff",
+      "status": "open"
+    },
+    "06": {
+      "title": "Decide missing controls and obsolete entry points",
+      "status": "resolved"
+    },
+    "11": {
+      "title": "Compare Devices and Settings organization",
+      "status": "resolved"
+    },
+    "15": {
+      "title": "Qualify desktop display scaling and accessibility",
+      "status": "open"
+    },
+    "14": {
+      "title": "Observe live Pairing and account journeys",
+      "status": "claimed"
+    },
+    "13": {
+      "title": "Observe native window and popup lifecycle",
+      "status": "open"
+    },
+    "03": {
+      "title": "Observe Electron flows across window sizes",
+      "status": "resolved"
+    },
+    "10": {
+      "title": "Compare lightweight narrow toolbars",
+      "status": "resolved"
+    }
+  }
+}

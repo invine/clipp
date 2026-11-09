@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-10T07:34:06.418Z",
+  "state": {
+    "clips": 0,
+    "devices": 0,
+    "pending": 0,
+    "waiting": 0,
+    "pairingErrors": [],
+    "autoSync": false,
+    "relays": 0,
+    "connections": [],
+    "responses": [
+      {
+        "at": "2026-10-10T07:33:28.134Z",
+        "ok": false,
+        "error": "The connection gater denied all addresses in the dial request"
+      }
+    ],
+    "notifications": 0,
+    "viewport": {
+      "width": 1100,
+      "height": 681,
+      "dpr": 2
+    },
+    "bodySummary": {
+      "scanReported": true,
+      "waitingReported": false
+    }
+  }
+}

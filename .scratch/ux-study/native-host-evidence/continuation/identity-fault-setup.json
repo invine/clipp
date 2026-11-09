@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-10T00:30:57.259011+00:00",
+  "scope": "Only owned disposable study SQLite",
+  "changedRows": 1,
+  "change": "Replace privateKey field with synthetic invalid bytes",
+  "originalKeyReadOrExported": false,
+  "privateSnapshot": "Inside same disposable profile; not exported",
+  "expected": "Actual Identity Loss path, automatic new identity, local history deletion and fresh-Pairing notice"
+}

@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-09T23:54:53.508Z",
+  "extensionPath": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-fixed-id-build-gHI7YD",
+  "originalPath": "/Users/invine/src/js/clipp/.local/managed-relay/worktrees/consolidated/apps/extension/dist",
+  "manifestKeyInput": "original user-supplied development path bytes, not a signing key",
+  "originalBuildModified": false,
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-original-path-T9cJbK",
+  "registeredExtensionId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+  "manifestHasKey": true,
+  "manifestSha256Before": "8b23f2acbd31687f5982c9ba31b2249cceab4f2dfa3726d2d716cec3b4d488d8",
+  "personalProfileAccessed": false,
+  "folderModified": false,
+  "popupOpened": false,
+  "webPagesOpened": false,
+  "signInAttempted": false,
+  "browser": "143.0.7499.4",
+  "observed": {
+    "extensionId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+    "redirectUrl": "https://gkmcpbabbekiafkmkgjmdlmdlijhjdle.chromiumapp.org/clipp-relay",
+    "version": "0.1.0"
+  },
+  "installedIdMatchesRegistered": true,
+  "redirectMatchesRegistered": true,
+  "openPageUrls": [
+    "about:blank"
+  ],
+  "ownedBrowserClosed": true,
+  "manifestSha256After": "8b23f2acbd31687f5982c9ba31b2249cceab4f2dfa3726d2d716cec3b4d488d8",
+  "manifestUnchanged": true
+}

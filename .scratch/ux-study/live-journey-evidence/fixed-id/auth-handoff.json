@@ -1,0 +1,28 @@
+{
+  "recordedAtUtc": "2026-10-10T00:04:41.327104+00:00",
+  "browser": "Google Chrome for Testing 143.0.7499.4",
+  "ownedBrowserLeftOpen": false,
+  "observerSession": 21062,
+  "profile": "/var/folders/bz/tmc_hngn2f755x9pdlww7p5w0000gn/T/clipp-ux-original-path-T9cJbK",
+  "installedIdMatchesRegistered": true,
+  "callbackMatchesRegistered": true,
+  "signInEntryObserved": true,
+  "nativeCancellationObserved": true,
+  "retryObservedAfterBrowserRestart": true,
+  "currentPage": {
+    "origin": "https://accounts.google.com",
+    "path": "/v3/signin/identifier",
+    "queryExported": false
+  },
+  "nextRequiredAction": "None for sign-in now: user requested skip for now after Google rejected the test browser",
+  "authorizationCompleted": "UNVERIFIED",
+  "tokensInspected": false,
+  "originalBuildChanged": false,
+  "note": "Both owned runs are closed. Retain prior sign-in entry, cancellation and post-restart retry evidence. No bypass, alternative browser or personal profile attempted.",
+  "initialHandoffRecordedAtUtc": "2026-10-10T00:02:15.361783+00:00",
+  "ownedBrowserClosed": true,
+  "disposition": "Deferred by user, not passed",
+  "userReportedResult": "Google says this is not a safe browser",
+  "resultEvidence": "User report; rejection page and exact provider error were not inspected",
+  "closureReceipt": "local-journey-closed.json"
+}

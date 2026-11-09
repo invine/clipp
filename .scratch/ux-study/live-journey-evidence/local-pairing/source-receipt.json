@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-10T07:11:10.018708+00:00",
+  "head": "a2e1a64cad05eadb7c567b48e3ec45ce7cd51e33",
+  "buildVerification": [
+    {
+      "receipt": ".scratch/ux-study/native-host-evidence/source-build-receipt.json",
+      "artifactCount": 8,
+      "changedArtifacts": []
+    },
+    {
+      "receipt": ".scratch/ux-study/live-journey-evidence/existing-build-receipt.json",
+      "artifactCount": 43,
+      "changedArtifacts": []
+    }
+  ],
+  "trackedDiffSha256": "6f7c474ee3b51695fd0b322c456a799487a15a090ea884dff40b4844c32c2492",
+  "sourceChangesByStudy": false,
+  "firstLaunchAttempts": "Sandboxed native launch failed; reviewed native launches succeeded",
+  "sourceCount": 145,
+  "changedSources": []
+}

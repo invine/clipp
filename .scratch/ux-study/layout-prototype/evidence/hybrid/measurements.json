@@ -1,0 +1,1136 @@
+{
+  "at": "2026-10-08T19:14:48.976Z",
+  "browser": "143.0.7499.4",
+  "fixture": "same nine synthetic Clips; compare prototype variants only, never native before/after",
+  "records": [
+    {
+      "id": "D-phone-360-1-everyday-history-dark",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-phone-360-1-everyday-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 83,
+        "w": 360,
+        "h": 556,
+        "scrollW": 360,
+        "scrollH": 856
+      },
+      "toolbar": {
+        "y": 91,
+        "h": 100
+      },
+      "firstClipY": 195,
+      "columns": 1,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "fullClips": 5,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-popup-480-1-everyday-history-dark",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-popup-480-1-everyday-history-dark.png",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "bodyScrollWidth": 480,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 480,
+        "h": 544,
+        "scrollW": 480,
+        "scrollH": 770
+      },
+      "toolbar": {
+        "y": 64,
+        "h": 84
+      },
+      "firstClipY": 152,
+      "columns": 1,
+      "cardHeights": [
+        62.25,
+        83.31,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "fullClips": 6,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-wide-1440-1-everyday-history-dark",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-wide-1440-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 1440,
+        "h": 812,
+        "scrollW": 1440,
+        "scrollH": 812
+      },
+      "toolbar": {
+        "y": 66,
+        "h": 40
+      },
+      "firstClipY": 114,
+      "columns": 4,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "fullClips": 9,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-fullscreen-1920-1-everyday-history-dark",
+      "surface": "fullscreen",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-fullscreen-1920-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1920,
+        "h": 1080
+      },
+      "bodyScrollWidth": 1920,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 1920,
+        "h": 1024,
+        "scrollW": 1920,
+        "scrollH": 1024
+      },
+      "toolbar": {
+        "y": 66,
+        "h": 40
+      },
+      "firstClipY": 114,
+      "columns": 6,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "fullClips": 9,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-narrow-520-1-everyday-history-dark",
+      "surface": "narrow",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-narrow-520-1-everyday-history-dark.png",
+      "inner": {
+        "w": 520,
+        "h": 728
+      },
+      "bodyScrollWidth": 520,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 520,
+        "h": 623,
+        "scrollW": 520,
+        "scrollH": 770
+      },
+      "toolbar": {
+        "y": 64,
+        "h": 84
+      },
+      "firstClipY": 152,
+      "columns": 1,
+      "cardHeights": [
+        62.25,
+        83.31,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "fullClips": 7,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-restored-900-1-everyday-history-dark",
+      "surface": "restored",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-restored-900-1-everyday-history-dark.png",
+      "inner": {
+        "w": 900,
+        "h": 668
+      },
+      "bodyScrollWidth": 900,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 900,
+        "h": 612,
+        "scrollW": 900,
+        "scrollH": 1029
+      },
+      "toolbar": {
+        "y": 66,
+        "h": 40
+      },
+      "firstClipY": 114,
+      "columns": 2,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "fullClips": 4,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-tab-1280-1-everyday-history-dark",
+      "surface": "tab",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-tab-1280-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1280,
+        "h": 800
+      },
+      "bodyScrollWidth": 1280,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 1280,
+        "h": 744,
+        "scrollW": 1280,
+        "scrollH": 744
+      },
+      "toolbar": {
+        "y": 66,
+        "h": 40
+      },
+      "firstClipY": 114,
+      "columns": 4,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "fullClips": 9,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-tablet-1200-1-everyday-history-dark",
+      "surface": "tablet",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-tablet-1200-1-everyday-history-dark.png",
+      "inner": {
+        "w": 1200,
+        "h": 800
+      },
+      "bodyScrollWidth": 1200,
+      "content": {
+        "x": 0,
+        "y": 85,
+        "w": 1200,
+        "h": 691,
+        "scrollW": 1200,
+        "scrollH": 691
+      },
+      "toolbar": {
+        "y": 95,
+        "h": 48
+      },
+      "firstClipY": 151,
+      "columns": 3,
+      "cardHeights": [
+        192.3,
+        192.3,
+        192.3,
+        192.3,
+        192.3,
+        192.3,
+        192.3,
+        192.3,
+        192.3
+      ],
+      "fullClips": 9,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-short-340-1-everyday-history-dark",
+      "surface": "short",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-short-340-1-everyday-history-dark.png",
+      "inner": {
+        "w": 340,
+        "h": 350
+      },
+      "bodyScrollWidth": 340,
+      "content": {
+        "x": 0,
+        "y": 105,
+        "w": 340,
+        "h": 832.75,
+        "scrollW": 340,
+        "scrollH": 833
+      },
+      "toolbar": {
+        "y": 113,
+        "h": 84
+      },
+      "firstClipY": 201,
+      "columns": 1,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        62.25,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "fullClips": 1,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-landscape-640-1-everyday-history-dark",
+      "surface": "landscape",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-landscape-640-1-everyday-history-dark.png",
+      "inner": {
+        "w": 640,
+        "h": 360
+      },
+      "bodyScrollWidth": 640,
+      "content": {
+        "x": 0,
+        "y": 140,
+        "w": 640,
+        "h": 750.25,
+        "scrollW": 640,
+        "scrollH": 750
+      },
+      "toolbar": {
+        "y": 148,
+        "h": 48
+      },
+      "firstClipY": 204,
+      "columns": 1,
+      "cardHeights": [
+        69,
+        69,
+        83.31,
+        69,
+        69,
+        83.31,
+        69,
+        83.31,
+        83.31
+      ],
+      "fullClips": 2,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-small-320-1-everyday-history-dark",
+      "surface": "small",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-small-320-1-everyday-history-dark.png",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "x": 0,
+        "y": 83,
+        "w": 320,
+        "h": 476,
+        "scrollW": 320,
+        "scrollH": 856
+      },
+      "toolbar": {
+        "y": 91,
+        "h": 100
+      },
+      "firstClipY": 195,
+      "columns": 1,
+      "cardHeights": [
+        83.31,
+        83.31,
+        83.31,
+        83.31,
+        69,
+        83.31,
+        83.31,
+        83.31,
+        83.31
+      ],
+      "fullClips": 4,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-narrow-720-1-everyday-history-dark",
+      "surface": "narrow",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-narrow-720-1-everyday-history-dark.png",
+      "inner": {
+        "w": 720,
+        "h": 728
+      },
+      "bodyScrollWidth": 720,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 720,
+        "h": 623,
+        "scrollW": 720,
+        "scrollH": 687
+      },
+      "toolbar": {
+        "y": 64,
+        "h": 40
+      },
+      "firstClipY": 112,
+      "columns": 1,
+      "cardHeights": [
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        62.25,
+        62.25,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "fullClips": 8,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-narrow-721-1-everyday-history-dark",
+      "surface": "narrow",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-narrow-721-1-everyday-history-dark.png",
+      "inner": {
+        "w": 721,
+        "h": 728
+      },
+      "bodyScrollWidth": 721,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 721,
+        "h": 672,
+        "scrollW": 721,
+        "scrollH": 1029
+      },
+      "toolbar": {
+        "y": 66,
+        "h": 40
+      },
+      "firstClipY": 114,
+      "columns": 2,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "fullClips": 6,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-popup-600-1-everyday-history-dark",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-popup-600-1-everyday-history-dark.png",
+      "inner": {
+        "w": 600,
+        "h": 600
+      },
+      "bodyScrollWidth": 600,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 600,
+        "h": 544,
+        "scrollW": 600,
+        "scrollH": 749
+      },
+      "toolbar": {
+        "y": 64,
+        "h": 84
+      },
+      "firstClipY": 152,
+      "columns": 1,
+      "cardHeights": [
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "fullClips": 6,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-popup-601-1-everyday-history-dark",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-popup-601-1-everyday-history-dark.png",
+      "inner": {
+        "w": 601,
+        "h": 600
+      },
+      "bodyScrollWidth": 601,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 601,
+        "h": 544,
+        "scrollW": 601,
+        "scrollH": 709
+      },
+      "toolbar": {
+        "y": 64,
+        "h": 40
+      },
+      "firstClipY": 112,
+      "columns": 1,
+      "cardHeights": [
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        62.25,
+        83.31,
+        62.25,
+        83.31,
+        83.31
+      ],
+      "fullClips": 7,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-small-320-1.3-long-history-light",
+      "surface": "small",
+      "scale": "1.3",
+      "scene": "long",
+      "view": "history",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-small-320-1.3-long-history-light.png",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "x": 0,
+        "y": 83,
+        "w": 320,
+        "h": 461.03125,
+        "scrollW": 320,
+        "scrollH": 1179
+      },
+      "toolbar": {
+        "y": 91,
+        "h": 100
+      },
+      "firstClipY": 195,
+      "columns": 1,
+      "cardHeights": [
+        163.66,
+        124.19,
+        124.19,
+        124.19,
+        96.83,
+        124.19,
+        100.45,
+        100.45,
+        100.45
+      ],
+      "fullClips": 2,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "20.8px"
+    },
+    {
+      "id": "D-small-320-2-long-history-light",
+      "surface": "small",
+      "scale": "2",
+      "scene": "long",
+      "view": "history",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-small-320-2-long-history-light.png",
+      "inner": {
+        "w": 320,
+        "h": 640
+      },
+      "bodyScrollWidth": 320,
+      "content": {
+        "x": 0,
+        "y": 314.3125,
+        "w": 320,
+        "h": 2205.34375,
+        "scrollW": 320,
+        "scrollH": 2205
+      },
+      "toolbar": {
+        "y": 322.3125,
+        "h": 207.296875
+      },
+      "firstClipY": 533.609375,
+      "columns": 1,
+      "cardHeights": [
+        278.17,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        247.81,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "fullClips": 0,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "D-phone-360-2-recovery-history-dark",
+      "surface": "phone",
+      "scale": "2",
+      "scene": "recovery",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-phone-360-2-recovery-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 280.21875,
+        "w": 360,
+        "h": 2521.734375,
+        "scrollW": 360,
+        "scrollH": 2522
+      },
+      "toolbar": {
+        "y": 703.6875,
+        "h": 207.296875
+      },
+      "firstClipY": 914.984375,
+      "columns": 1,
+      "cardHeights": [
+        213.45,
+        213.45,
+        213.45,
+        213.45,
+        171.34,
+        213.45,
+        213.45,
+        213.45,
+        213.45
+      ],
+      "fullClips": 0,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "D-wide-1440-2-long-history-dark",
+      "surface": "wide",
+      "scale": "2",
+      "scene": "long",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-wide-1440-2-long-history-dark.png",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "x": 0,
+        "y": 143.1875,
+        "w": 1440,
+        "h": 724.8125,
+        "scrollW": 1440,
+        "scrollH": 1686
+      },
+      "toolbar": {
+        "y": 153.1875,
+        "h": 70.203125
+      },
+      "firstClipY": 231.390625,
+      "columns": 2,
+      "cardHeights": [
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47
+      ],
+      "fullClips": 4,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "D-narrow-721-2-long-history-dark",
+      "surface": "narrow",
+      "scale": "2",
+      "scene": "long",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-narrow-721-2-long-history-dark.png",
+      "inner": {
+        "w": 721,
+        "h": 728
+      },
+      "bodyScrollWidth": 721,
+      "content": {
+        "x": 0,
+        "y": 143.1875,
+        "w": 721,
+        "h": 584.8125,
+        "scrollW": 721,
+        "scrollH": 2963
+      },
+      "toolbar": {
+        "y": 153.1875,
+        "h": 70.203125
+      },
+      "firstClipY": 231.390625,
+      "columns": 1,
+      "cardHeights": [
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47,
+        309.47
+      ],
+      "fullClips": 1,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "32px"
+    },
+    {
+      "id": "D-phone-360-1-everyday-settings-light",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "settings",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-phone-360-1-everyday-settings-light.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 83,
+        "w": 360,
+        "h": 556,
+        "scrollW": 360,
+        "scrollH": 1015
+      },
+      "toolbar": null,
+      "firstClipY": null,
+      "columns": 0,
+      "cardHeights": [],
+      "fullClips": 0,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-wide-1440-1-long-history-light",
+      "surface": "wide",
+      "scale": "1",
+      "scene": "long",
+      "view": "history",
+      "theme": "light",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-wide-1440-1-long-history-light.png",
+      "inner": {
+        "w": 1440,
+        "h": 868
+      },
+      "bodyScrollWidth": 1440,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 1440,
+        "h": 812,
+        "scrollW": 1440,
+        "scrollH": 812
+      },
+      "toolbar": {
+        "y": 66,
+        "h": 40
+      },
+      "firstClipY": 114,
+      "columns": 4,
+      "cardHeights": [
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3,
+        184.3
+      ],
+      "fullClips": 9,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-phone-360-1-empty-history-dark",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "empty",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-phone-360-1-empty-history-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 83,
+        "w": 360,
+        "h": 556,
+        "scrollW": 360,
+        "scrollH": 556
+      },
+      "toolbar": {
+        "y": 91,
+        "h": 100
+      },
+      "firstClipY": null,
+      "columns": 0,
+      "cardHeights": [],
+      "fullClips": 0,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-popup-480-1-nomatch-history-dark",
+      "surface": "popup",
+      "scale": "1",
+      "scene": "nomatch",
+      "view": "history",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-popup-480-1-nomatch-history-dark.png",
+      "inner": {
+        "w": 480,
+        "h": 600
+      },
+      "bodyScrollWidth": 480,
+      "content": {
+        "x": 0,
+        "y": 56,
+        "w": 480,
+        "h": 544,
+        "scrollW": 480,
+        "scrollH": 544
+      },
+      "toolbar": {
+        "y": 64,
+        "h": 84
+      },
+      "firstClipY": null,
+      "columns": 0,
+      "cardHeights": [],
+      "fullClips": 0,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    },
+    {
+      "id": "D-phone-360-1-everyday-devices-dark",
+      "surface": "phone",
+      "scale": "1",
+      "scene": "everyday",
+      "view": "devices",
+      "theme": "dark",
+      "evidenceClass": "throwaway-browser-simulation",
+      "screenshot": "D-phone-360-1-everyday-devices-dark.png",
+      "inner": {
+        "w": 360,
+        "h": 720
+      },
+      "bodyScrollWidth": 360,
+      "content": {
+        "x": 0,
+        "y": 83,
+        "w": 360,
+        "h": 556,
+        "scrollW": 360,
+        "scrollH": 737
+      },
+      "toolbar": null,
+      "firstClipY": null,
+      "columns": 0,
+      "cardHeights": [],
+      "fullClips": 0,
+      "controlsOutsideBody": [],
+      "smallTouchControls": [],
+      "topFont": "16px"
+    }
+  ],
+  "references": [
+    {
+      "variant": "A",
+      "surface": "phone",
+      "w": 360,
+      "h": 720,
+      "controlsHeight": 164,
+      "firstClipY": 275
+    },
+    {
+      "variant": "A",
+      "surface": "popup",
+      "w": 480,
+      "h": 600,
+      "controlsHeight": 136,
+      "firstClipY": 215
+    },
+    {
+      "variant": "A",
+      "surface": "wide",
+      "w": 1440,
+      "h": 868,
+      "controlsHeight": 136,
+      "firstClipY": 225
+    },
+    {
+      "variant": "A",
+      "surface": "short",
+      "w": 340,
+      "h": 350,
+      "controlsHeight": 136,
+      "firstClipY": 203
+    },
+    {
+      "variant": "C",
+      "surface": "phone",
+      "w": 360,
+      "h": 720,
+      "controlsHeight": 186,
+      "firstClipY": 356
+    },
+    {
+      "variant": "C",
+      "surface": "popup",
+      "w": 480,
+      "h": 600,
+      "controlsHeight": 158,
+      "firstClipY": 235
+    },
+    {
+      "variant": "C",
+      "surface": "wide",
+      "w": 1440,
+      "h": 868,
+      "controlsHeight": 166,
+      "firstClipY": 312
+    },
+    {
+      "variant": "C",
+      "surface": "short",
+      "w": 340,
+      "h": 350,
+      "controlsHeight": 158,
+      "firstClipY": 276
+    }
+  ],
+  "interactions": {
+    "fullTextUntruncated": true,
+    "pinnedVisible": 2,
+    "searchVisible": 1,
+    "queryAfterResize": "npm run check",
+    "copyFeedback": "Copied · demonstration only",
+    "switched": "A · Reference · compact rows"
+  },
+  "errors": []
+}

@@ -1,0 +1,4 @@
+{"at":"2026-10-10T00:31:02.864Z","pid":92824,"event":"process-start"}
+{"at":"2026-10-10T00:31:03.071Z","pid":92826,"event":"process-start"}
+{"at":"2026-10-10T00:31:04.372Z","pid":92826,"event":"public-recovery-state","identityChanged":true,"clipsBefore":2,"clipsAfter":0,"autoSyncBefore":false,"autoSyncAfter":false,"relayCount":0,"rotationNotice":"identity-loss","rotationRecovery":false,"deviceName":"Desktop","viewport":{"w":520,"h":728,"dpr":2}}
+{"at":"2026-10-10T00:32:18.357Z","pid":92826,"event":"will-quit"}

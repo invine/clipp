@@ -1,0 +1,24 @@
+(async()=>{
+globalThis.closePopup=async()=>{await browserCDP.send('Target.detachFromTarget',{sessionId:popup.sessionId}).catch(()=>{});await options.bringToFront();await options.locator('h1').click();await sleep(350);out({popupClosedContexts:await worker.evaluate(()=>chrome.runtime.getContexts({contextTypes:['POPUP']}))})};
+await clickPopup('.app-logo');
+await peval("document.querySelector('.drawer-pane').scrollTop=1000;[...document.querySelectorAll('.drawer-pane button')].find(b=>b.textContent==='Add relay').click()");
+await peval("(()=>{const e=document.querySelector('.drawer-pane .managed-relay-editor input');const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;s.call(e,'UNSAVED RELAY DRAFT');e.dispatchEvent(new Event('input',{bubbles:true}));e.scrollIntoView()})()");
+await capture('popup-native-unsaved-draft','popup',{scenario:'Relay draft before native popup closes'});
+await closePopup();await openPopup();await clickPopup('.app-logo');await capture('popup-native-draft-lost','popup',{scenario:'Reopen after real click-away closes popup'});
+out({editorAfterReopen:await peval("!!document.querySelector('.managed-relay-editor')"),popupLinks:await peval("[...document.querySelectorAll('a')].map(e=>e.textContent)")});
+await closePopup();await options.reload();await options.waitForSelector('h1');
+await options.getByLabel('Auto-sync',{exact:true}).check();await sleep(200);
+await openPopup();await clickPopup('.app-logo');await peval("(()=>{const e=document.querySelector('#auto-sync');e.value='disabled';e.dispatchEvent(new Event('change',{bubbles:true}))})()");await sleep(200);await closePopup();
+out({staleBeforeChange:{stored:(await message({type:'getSettings'})).autoSync,displayed:await options.getByLabel('Auto-sync',{exact:true}).isChecked()}});
+await options.locator('input[type=number]').fill('7');await options.locator('input[type=number]').blur();await sleep(250);
+out({staleAfterChange:await message({type:'getSettings'})});await capture('options-native-stale-overwrite','options',{scenario:'Change Expiry while stale Auto-sync checkbox is enabled; stored Auto Sync becomes true'});
+await message({type:'clipboardUpdate',text:'Expiry seven days native check'});await sleep(150);out({expiryNativeClip:(await message({type:'getClipHistory'})).clips.find(c=>c.content==='Expiry seven days native check')});
+await options.getByLabel('Auto-sync',{exact:true}).uncheck();await options.getByLabel('Text',{exact:true}).check();
+await openPopup();await peval("[...document.querySelectorAll('.content-header button')].find(b=>b.textContent.includes('Clear')).click()");await sleep(300);out({afterClearNative:(await message({type:'getClipHistory'})).clips.length});await capture('popup-native-cleared','popup',{scenario:'Clear synthetic history from actual popup'});await closePopup();await capture('options-native-stale-history','options',{scenario:'Options history still displays Clips cleared from popup'});
+await options.reload();await options.waitForSelector('h1');await capture('options-native-clear-after-reload','options',{scenario:'Options reload reflects cleared history'});
+globalThis.nativeWindow=async(state,width,height)=>{await worker.evaluate(async p=>{const w=(await chrome.windows.getAll()).find(w=>w.type==='normal');await chrome.windows.update(w.id,{state:'normal'});await chrome.windows.update(w.id,p)},state==='normal'?{state,width,height,left:20,top:40}:{state});await options.bringToFront();await sleep(600);out({nativeWindow:await worker.evaluate(()=>chrome.windows.getAll())})};
+await nativeWindow('normal',520,440);await capture('options-native-short','options',{scenario:'Actual short nonmaximized Chrome window'});await openPopup();await capture('popup-native-short-window','popup',{scenario:'Actual toolbar popup from a short window'});await closePopup();
+await nativeWindow('maximized');await capture('options-native-maximized','options',{scenario:'Native maximized window'});
+await nativeWindow('fullscreen');await capture('options-native-fullscreen','options',{scenario:'Native fullscreen window'});
+await nativeWindow('normal',1100,820);
+})();

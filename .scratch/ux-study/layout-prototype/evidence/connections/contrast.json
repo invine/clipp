@@ -1,0 +1,90 @@
+{
+  "method": "sRGB relative luminance for opaque foreground/background tokens",
+  "pairs": [
+    {
+      "theme": "dark",
+      "state": "direct",
+      "color": "#82d6b7",
+      "background": "#101114",
+      "contrast": 11.01
+    },
+    {
+      "theme": "dark",
+      "state": "direct",
+      "color": "#82d6b7",
+      "background": "#191b21",
+      "contrast": 10.04
+    },
+    {
+      "theme": "dark",
+      "state": "relay",
+      "color": "#efb366",
+      "background": "#101114",
+      "contrast": 10.17
+    },
+    {
+      "theme": "dark",
+      "state": "relay",
+      "color": "#efb366",
+      "background": "#191b21",
+      "contrast": 9.27
+    },
+    {
+      "theme": "dark",
+      "state": "offline",
+      "color": "#b4b6c2",
+      "background": "#101114",
+      "contrast": 9.36
+    },
+    {
+      "theme": "dark",
+      "state": "offline",
+      "color": "#b4b6c2",
+      "background": "#191b21",
+      "contrast": 8.53
+    },
+    {
+      "theme": "light",
+      "state": "direct",
+      "color": "#17654f",
+      "background": "#f4f5f8",
+      "contrast": 6.4
+    },
+    {
+      "theme": "light",
+      "state": "direct",
+      "color": "#17654f",
+      "background": "#ffffff",
+      "contrast": 6.97
+    },
+    {
+      "theme": "light",
+      "state": "relay",
+      "color": "#955206",
+      "background": "#f4f5f8",
+      "contrast": 5.52
+    },
+    {
+      "theme": "light",
+      "state": "relay",
+      "color": "#955206",
+      "background": "#ffffff",
+      "contrast": 6.02
+    },
+    {
+      "theme": "light",
+      "state": "offline",
+      "color": "#545968",
+      "background": "#f4f5f8",
+      "contrast": 6.41
+    },
+    {
+      "theme": "light",
+      "state": "offline",
+      "color": "#545968",
+      "background": "#ffffff",
+      "contrast": 6.99
+    }
+  ],
+  "minimum": 5.52
+}

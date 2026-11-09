@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-09T06:53:37.697Z",
+  "evidenceClass": "throwaway-browser-simulation",
+  "screenshots": [
+    "direct.png",
+    "partial-problem.png"
+  ],
+  "checks": [
+    {
+      "name": "Default preview selects approved S2",
+      "passed": true
+    },
+    {
+      "name": "Default direct icon is green triangle",
+      "passed": true
+    },
+    {
+      "name": "Partial problem shows attention and preserves direct availability in explanation",
+      "passed": true
+    },
+    {
+      "name": "Status panel Escape returns focus",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "failures": []
+}

@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-09T06:16:03.601977+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Rotate the original two-node direct icon bottom-left to top-right",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "ba4f65b8d25522d8d8223783291684a5be001f0d8361897fd14198c8d99bcbc4",
+    "app.js": "6e9c09325a4dca64f439a170c405b5e8343ff837438209aec7f382f27f75ae21",
+    "management.js": "3ac57ab3848ff6a3c95d23533b9f09beb410cde2e38468953701d83a39efd31a",
+    "connections.js": "b1214871fad8553dcfbe3994ce649ca51711b214b94c60ac6fd996143a181047",
+    "style.css": "8725cdb00cc6c8d5a34c23bea1a2ea843f57459a48cefc63162dd60c2730689d",
+    "server.cjs": "e2061b56401a78cbc98f0e737ee95551fb816f64a29eab561136a271c4ced344",
+    "capture-connections.cjs": "7e633804c8c9950dc19312bc63c47633e0b29786e96008ef84320418e0d135da",
+    "README.md": "612227eaeda4e8b5bb4dad8b10d3ce1ec357595141c7af912d1702ef0a15f9da"
+  },
+  "captureCount": 6,
+  "measurements": "diagonal-direct/measurements.json",
+  "contrast": "connections/contrast.json",
+  "previousReceipt": "review-receipt-direct-alternatives.json",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "statusFailures": [],
+  "linkErrors": [],
+  "managementDecision": "M1 Devices + M3 Settings explicitly accepted by user",
+  "statusDecision": "Direct motif selected: original two nodes rotated -45 degrees; L1/L2/L3 rejected. Other status states and partial-problem priority pending.",
+  "controlsSecondRound": "unanswered",
+  "verification": "Six browser captures check SVG orientation, shared glyph and viewport bounds across History/Devices and phone/popup/restored sizes.",
+  "headerDecision": "User explicitly requires Clipp branding above Search at narrow widths; status stays in that top line."
+}

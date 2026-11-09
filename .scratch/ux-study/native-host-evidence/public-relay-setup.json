@@ -1,0 +1,57 @@
+{
+  "recordedAtUtc": "2026-10-09T20:43:54.484491+00:00",
+  "userProvided": {
+    "portalUrl": "http://relay-portal-test.everk8s.duckdns.org/",
+    "registeredExtensionId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle"
+  },
+  "publicReadOnlyProbe": {
+    "method": "GET with redirects disabled, certificate verification enabled, no credentials",
+    "httpPortal": {
+      "status": 301,
+      "location": "https://relay-portal-test.everk8s.duckdns.org:443/"
+    },
+    "httpsDiscovery": {
+      "url": "https://relay-portal-test.everk8s.duckdns.org/v1/relay",
+      "status": 401
+    },
+    "responseBodiesExported": false
+  },
+  "interpretation": "Unauthenticated 401 is consistent with authenticated discovery, not proof of authenticated readiness. Client obtains an access token before discovery; relay requires a Bearer header.",
+  "callbackRequired": "https://gkmcpbabbekiafkmkgjmdlmdlijhjdle.chromiumapp.org/clipp-relay",
+  "observedIsolatedExtensionId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+  "matchingRegisteredInstalledId": true,
+  "manifestContainsKey": true,
+  "boundedSetupSearch": "No registered ID or manifest-key setup found in tracked apps/extension, scripts and docs (108 files searched, 17 binary skipped; no truncation).",
+  "requiredNextInput": "None now; user requested to skip Google sign-in for now after browser rejection",
+  "realSignIn": "ATTEMPTED / DEFERRED: entry/cancel/retry observed; user reports Google rejected browser; successful authorization/readiness UNVERIFIED",
+  "registrationChanged": false,
+  "accountStateRead": false,
+  "exactUserFolderProbe": {
+    "receipt": "../live-journey-evidence/chrome-folder-probe.json",
+    "folder": "/Users/invine/src/js/clipp/apps/extension/dist",
+    "observedId": "hpmkdfhffpekhgkinfgfjlfdekcaokhd",
+    "matchesOriginalRegisteredId": false,
+    "status": "Awaiting whether observed callback is already registered, or a fixed-ID build/key for original gkm ID"
+  },
+  "correctedFolder": {
+    "path": "/Users/invine/src/js/clipp/.local/managed-relay/worktrees/consolidated/apps/extension/dist",
+    "resolvedPath": "/Users/invine/src/js/clipp/apps/extension/dist",
+    "nativeInstalledId": "hpmkdfhffpekhgkinfgfjlfdekcaokhd",
+    "originalPathHashId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+    "compiledRegisteredId": "gkmcpbabbekiafkmkgjmdlmdlijhjdle",
+    "receipt": "../live-journey-evidence/corrected-folder/configuration-receipt.json"
+  },
+  "initialObservedIsolatedExtensionId": "mgbhapohdjbmjpnifgkafnmphahfebbm",
+  "fixedIdCopy": {
+    "receipt": "../live-journey-evidence/fixed-id/chrome-folder-probe.json",
+    "approvedByUser": true,
+    "registrationChanged": false
+  },
+  "latestUpdatedAtUtc": "2026-10-10T00:04:41.327104+00:00",
+  "userDisposition": {
+    "scope": "Current isolated Chrome account sign-in",
+    "decision": "skip for now",
+    "source": "Direct user reply",
+    "doesNotWaive": "Other native evidence gaps or final study closure"
+  }
+}

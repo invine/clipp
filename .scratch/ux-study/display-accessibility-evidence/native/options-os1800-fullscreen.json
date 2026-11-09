@@ -1,0 +1,97 @@
+{
+  "at": "2026-10-10T09:05:02.740Z",
+  "surface": "src/options.html",
+  "width": 1800,
+  "height": 990,
+  "dpr": 2,
+  "screen": {
+    "width": 1800,
+    "height": 1169,
+    "availWidth": 1800,
+    "availHeight": 1130
+  },
+  "visualViewport": {
+    "width": 1800,
+    "height": 990,
+    "scale": 1
+  },
+  "document": {
+    "width": 1800,
+    "height": 990,
+    "scrollWidth": 1800,
+    "scrollHeight": 990
+  },
+  "active": {
+    "tag": "BODY",
+    "name": "\n  \n  Clipboard Share – SettingsTrusted Devices(No devices)A"
+  },
+  "focusEvents": [],
+  "buttons": [
+    {
+      "text": "Add Device (QR)",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 580,
+        "y": 112,
+        "width": 640,
+        "height": 26,
+        "top": 112,
+        "right": 1220,
+        "bottom": 138,
+        "left": 580
+      }
+    },
+    {
+      "text": "Generate My QR",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 580,
+        "y": 146,
+        "width": 640,
+        "height": 26,
+        "top": 146,
+        "right": 1220,
+        "bottom": 172,
+        "left": 580
+      }
+    },
+    {
+      "text": "Add relay",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 580,
+        "y": 232,
+        "width": 53.0390625,
+        "height": 18,
+        "top": 232,
+        "right": 633.0390625,
+        "bottom": 250,
+        "left": 580
+      }
+    },
+    {
+      "text": "Toggle Dark Mode",
+      "label": null,
+      "title": "",
+      "rect": {
+        "x": 580,
+        "y": 586,
+        "width": 127.0234375,
+        "height": 26,
+        "top": 586,
+        "right": 707.0234375,
+        "bottom": 612,
+        "left": 580
+      }
+    }
+  ],
+  "bodyFont": "12px",
+  "rootFont": "16px",
+  "screenshotPixels": {
+    "width": 3600,
+    "height": 1980
+  }
+}

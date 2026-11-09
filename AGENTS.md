@@ -19,4 +19,4 @@ Start operational work from [project operations](docs/agents/operations.md): ver
 - Domain vocabulary and decision conflicts: [domain docs](docs/agents/domain.md).
 - Local ticket lifecycle: [issue tracker](docs/agents/issue-tracker.md) and [triage labels](docs/agents/triage-labels.md).
 - Bounded source listing/search: [lookup command](docs/agents/source-lookup.md). Select the repository and scope explicitly.
-- This cross-repository effort: [canonical tracker](.scratch/agent-workflow/README.md). The coordinator owns claims, integration and resolution.
+- Coordination: select the requested feature’s canonical integration checkout before reading current tickets or run limits; the coordinator owns claims, integration and resolution.

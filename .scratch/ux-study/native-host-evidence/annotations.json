@@ -1,0 +1,7 @@
+{
+  "chrome/cold-offline-popup.png": "EXCLUDED for offline conclusions: actual popup stayed online with fonts loaded.",
+  "chrome/native-zoomed-window.png": "SUPERSEDED: unsettled geometry; use recheck/native-maximized-settled.png.",
+  "chrome/offline-popup-verified.png": "VALID: target-specific offline, empty font faces, native popup literal icon names/overlap.",
+  "chrome/recheck/native-fullscreen-settled.png": "BOUNDED: actual fullscreen state, reported content1512\u00d7861, not full display pixel proof.",
+  "electron/native-after-minimize.png": "BOUNDED: CUA inspection activates/restores the app; read event timeline."
+}

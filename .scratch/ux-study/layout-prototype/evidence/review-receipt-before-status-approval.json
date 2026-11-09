@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-09T06:22:46.900112+00:00",
+  "localDecisionDate": "2026-10-09",
+  "timezone": "Asia/Dubai",
+  "question": "Restore Compact summaries device text statuses and the original triangle for direct connections",
+  "nativeEvidence": false,
+  "productionMutations": false,
+  "sourceHashes": {
+    "index.html": "ba4f65b8d25522d8d8223783291684a5be001f0d8361897fd14198c8d99bcbc4",
+    "app.js": "bd1d069f0a21f82691815003074039ed920bba7b4e9cb40fffadb359daefbd18",
+    "management.js": "43bc63b0b90dab65167a3d7ab5912daed2173bedca9b7a1b86618f526a3ef0e7",
+    "connections.js": "e4c119319148354873e095db8003a47650dc8cac6cce33baa3c85d343a75a750",
+    "style.css": "8725cdb00cc6c8d5a34c23bea1a2ea843f57459a48cefc63162dd60c2730689d",
+    "server.cjs": "e2061b56401a78cbc98f0e737ee95551fb816f64a29eab561136a271c4ced344",
+    "capture-connections.cjs": "7e633804c8c9950dc19312bc63c47633e0b29786e96008ef84320418e0d135da",
+    "README.md": "8b52b26be281a4d3a30df237310a37d1ddbd4998998868f6eeb84a8b6747183e"
+  },
+  "captureCount": 6,
+  "measurements": "text-status-triangle/measurements.json",
+  "contrast": "connections/contrast.json",
+  "previousReceipt": "review-receipt-diagonal-direct.json",
+  "scriptErrors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "statusFailures": [],
+  "linkErrors": [],
+  "managementDecision": "M1 Devices + M3 Settings explicitly accepted by user",
+  "statusDecision": "User explicitly approved device status text and the original green direct-connection triangle. Other status glyphs and partial-problem priority remain pending.",
+  "controlsSecondRound": "unanswered",
+  "verification": "Six browser captures verify triangle, History header order, visible device status text with no row icons, and viewport width at phone/restored/320px with 200% text.",
+  "headerDecision": "User explicitly requires Clipp branding above Search at narrow widths; status stays in that top line.",
+  "approvalRecordedAt": "2026-10-09T06:25:01.067979+00:00"
+}

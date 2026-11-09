@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-07T23:11:26.258Z",
+  "serial": "emulator-5580",
+  "package": "com.clipp.app.acceptance",
+  "android": "15",
+  "api": "35",
+  "model": "Android SDK built for arm64",
+  "build": "Android/sdk_phone64_arm64/emu64a:15/AE3A.240806.019/12368160:userdebug/test-keys",
+  "webview": "Current WebView Update Service state\n  Current WebView package (name, version): (com.android.webview, 124.0.6367.219)\n  Minimum targetSdkVersion: 33\n  Minimum WebView version code: 636771901\n  Number of relros started: 1\n  Number of relros finished: 1\n  WebView package dirty: false\n  Any WebView package installed: true\n  Preferred WebView package (name, version): (com.android.webview, 124.0.6367.219)\n  WebView packages:\n    Valid package com.android.webview (versionName: 124.0.6367.219, versionCode: 636771901, targetSdkVersion: 34) is  installed/enabled for all users\n",
+  "display": "Physical size: 1080x2160\n",
+  "density": "Physical density: 480\n",
+  "fontScale": "1.0",
+  "navigationMode": "0",
+  "isolation": "Fresh temporary AOSP emulator; acceptance-only package; no operator data; emulated cameras; headless emulator has no host clipboard UI"
+}

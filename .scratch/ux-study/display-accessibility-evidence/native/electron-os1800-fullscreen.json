@@ -1,0 +1,305 @@
+{
+  "at": "2026-10-10T09:04:20.617Z",
+  "native": {
+    "displays": [
+      {
+        "accelerometerSupport": "unknown",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1800,
+          "height": 1169
+        },
+        "colorDepth": 30,
+        "colorSpace": "{primaries:BT709, transfer:SRGB, matrix:RGB, range:FULL}",
+        "depthPerComponent": 10,
+        "detected": true,
+        "displayFrequency": 120.0006103515625,
+        "id": 1,
+        "internal": true,
+        "label": "Built-in Retina Display",
+        "maximumCursorSize": {
+          "width": 0,
+          "height": 0
+        },
+        "monochrome": false,
+        "nativeOrigin": {
+          "x": 0,
+          "y": 0
+        },
+        "rotation": 0,
+        "scaleFactor": 2,
+        "size": {
+          "width": 1800,
+          "height": 1169
+        },
+        "workArea": {
+          "x": 0,
+          "y": 39,
+          "width": 1800,
+          "height": 1130
+        },
+        "workAreaSize": {
+          "width": 1800,
+          "height": 1130
+        },
+        "touchSupport": "unknown"
+      }
+    ],
+    "outer": {
+      "x": 0,
+      "y": 39,
+      "width": 1800,
+      "height": 1130
+    },
+    "content": {
+      "x": 0,
+      "y": 39,
+      "width": 1800,
+      "height": 1130
+    },
+    "normal": {
+      "x": 496,
+      "y": 298,
+      "width": 520,
+      "height": 760
+    },
+    "fullscreen": true,
+    "maximized": false,
+    "zoom": 1,
+    "accessibility": true
+  },
+  "dom": {
+    "width": 1800,
+    "height": 1130,
+    "dpr": 2,
+    "visualViewport": {
+      "width": 1800,
+      "height": 1130,
+      "scale": 1
+    },
+    "body": {
+      "scrollWidth": 1800,
+      "scrollHeight": 1130
+    },
+    "active": {
+      "tag": "BODY",
+      "title": null,
+      "label": null
+    },
+    "buttons": [
+      {
+        "text": "dark_mode",
+        "title": "Toggle theme",
+        "label": null,
+        "rect": {
+          "x": 1744,
+          "y": 14.5,
+          "width": 32,
+          "height": 32,
+          "top": 14.5,
+          "right": 1776,
+          "bottom": 46.5,
+          "left": 1744
+        }
+      },
+      {
+        "text": "edit",
+        "title": "Rename this device",
+        "label": null,
+        "rect": {
+          "x": 212,
+          "y": 140.5,
+          "width": 18,
+          "height": 18,
+          "top": 140.5,
+          "right": 230,
+          "bottom": 158.5,
+          "left": 212
+        }
+      },
+      {
+        "text": "qr_codeShow my QR",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 47,
+          "y": 194,
+          "width": 112.6875,
+          "height": 30,
+          "top": 194,
+          "right": 159.6875,
+          "bottom": 224,
+          "left": 47
+        }
+      },
+      {
+        "text": "Add",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 215.8671875,
+          "y": 301.5,
+          "width": 51.1328125,
+          "height": 29.5,
+          "top": 301.5,
+          "right": 267,
+          "bottom": 331,
+          "left": 215.8671875
+        }
+      },
+      {
+        "text": "Add relay",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 41,
+          "y": 501,
+          "width": 226,
+          "height": 21.5,
+          "top": 501,
+          "right": 267,
+          "bottom": 522.5,
+          "left": 41
+        }
+      },
+      {
+        "text": "sendShare Now",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 1403.6328125,
+          "y": 95,
+          "width": 101.3671875,
+          "height": 30,
+          "top": 95,
+          "right": 1505,
+          "bottom": 125,
+          "left": 1403.6328125
+        }
+      },
+      {
+        "text": "All",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 1520,
+          "y": 99.5,
+          "width": 64,
+          "height": 21,
+          "top": 99.5,
+          "right": 1584,
+          "bottom": 120.5,
+          "left": 1520
+        }
+      },
+      {
+        "text": "Pinned",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 1584,
+          "y": 99.5,
+          "width": 64,
+          "height": 21,
+          "top": 99.5,
+          "right": 1648,
+          "bottom": 120.5,
+          "left": 1584
+        }
+      },
+      {
+        "text": "unfold_lessLess",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 1663,
+          "y": 95,
+          "width": 96,
+          "height": 30,
+          "top": 95,
+          "right": 1759,
+          "bottom": 125,
+          "left": 1663
+        }
+      },
+      {
+        "text": "scheduleAll timeexpand_more",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 325,
+          "y": 141,
+          "width": 150,
+          "height": 30,
+          "top": 141,
+          "right": 475,
+          "bottom": 171,
+          "left": 325
+        }
+      },
+      {
+        "text": "filter_altSource: Allexpand_more",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 487,
+          "y": 141,
+          "width": 280,
+          "height": 30,
+          "top": 141,
+          "right": 767,
+          "bottom": 171,
+          "left": 487
+        }
+      },
+      {
+        "text": "delete_sweepClear",
+        "title": "",
+        "label": null,
+        "rect": {
+          "x": 779,
+          "y": 141,
+          "width": 70.6796875,
+          "height": 30,
+          "top": 141,
+          "right": 849.6796875,
+          "bottom": 171,
+          "left": 779
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "placeholder": "Search history: text, URL, device…",
+        "rect": {
+          "x": 1511,
+          "y": 22,
+          "width": 208,
+          "height": 17,
+          "top": 22,
+          "right": 1719,
+          "bottom": 39,
+          "left": 1511
+        }
+      },
+      {
+        "placeholder": "Paste pairing text (base64)…",
+        "rect": {
+          "x": 41,
+          "y": 301.5,
+          "width": 166.8671875,
+          "height": 29.5,
+          "top": 301.5,
+          "right": 207.8671875,
+          "bottom": 331,
+          "left": 41
+        }
+      }
+    ]
+  },
+  "screenshotPixels": {
+    "width": 3600,
+    "height": 2260
+  }
+}

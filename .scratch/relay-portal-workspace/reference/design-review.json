@@ -1,0 +1,96 @@
+{
+  "purpose": "Local, throwaway proposed mocks for clipp-relay; all identities, hosts and usage are synthetic.",
+  "open": "Clipp Relay proposals.html",
+  "style_guide": "Style proposal.html",
+  "run": "npm --prefix .taste-skill/relay-portal-mocks run dev",
+  "variants": {
+    "A": "Workspace: framed sheet and labelled navigation. Recommended for regular account and administration work.",
+    "B": "Open ledger: top navigation and one open plane; review opens a detail page. Simpler for occasional visits.",
+    "C": "Connection desk: persistent allowance summary beside history; account review uses a compact queue."
+  },
+  "direction": {
+    "style": "Framed sheet",
+    "seed": 324836847,
+    "redraws": [],
+    "kept": [
+      "Clipp green and green-black ink",
+      "System font family",
+      "Plain HTML, CSS and JavaScript, compatible with the existing Go template stack"
+    ],
+    "alternates": "B and C are structural comparisons for the prototype question, not production theme settings."
+  },
+  "idea": "The relay account’s separate allowance, live Relay Sessions and Login Grants become one access-and-capacity summary. No device membership or per-device data is invented.",
+  "screen_questions": {
+    "account": "Can I use the relay, and what allowance and capacity remain?",
+    "admin": "Which accounts need review, and what would approval assign?",
+    "plans": "Which quota plans can be assigned, and what are their limits?",
+    "access": "Which kind of sign-in or authorization will this control end?",
+    "consent": "Which app is requesting permission for which relay account?",
+    "pending": "What blocks relay use, and what can I prepare?",
+    "sign-in": "How do I sign in, and does approval apply?",
+    "error": "Why did the update fail, and how do I recover?"
+  },
+  "style_changes": [
+    "Flat #f1f4f2 frame, white sheet, #192d27 ink, #596760 secondary ink, #23654c data accent.",
+    "24px titles; 32px lead figure; 14px working text; 12–13px supporting and axis text.",
+    "8px inset panels and 6px controls; 16px outer workspace sheet. No resting shadows.",
+    "Sentence-case labels, a 24px shared gap, right-aligned tabular figures.",
+    "44px phone controls; menu folds; account rows retain a visible Review action.",
+    "One green current-week series; neutral completed weeks; no decorative gradients or large KPI tiles."
+  ],
+  "validation": {
+    "inspected_screen_variants": 13,
+    "viewport_checks": 39,
+    "widths": [
+      1440,
+      768,
+      390
+    ],
+    "fails": 0,
+    "interaction_checks": 36,
+    "interaction_failures": 0,
+    "offline": "Self-contained HTML verified directly via file://; four chart bars rendered, styles loaded, no browser exceptions.",
+    "visual_review": "All 78 emitted fold/page-sheet screenshots viewed through thirteen labelled contact sheets.",
+    "lint": "0 FAIL; 2 shadow warnings, restricted to the floating toast and dialog."
+  },
+  "remaining_warnings": {
+    "hero-void": "Narrow sign-in/consent/error tasks and a two-plan list intentionally keep their honest content size. No imagery or invented rows were added to fill the desktop.",
+    "panel-void": "The full workspace sheet is a canvas, not a data card. Consent has a 43px internal brand-to-title spacing band.",
+    "tiny-text": "Remaining flags concern supporting metadata, axis ticks or the design comparison table; primary account data and actions remain 14px or larger. These are still worth reviewing on a physical phone."
+  },
+  "rounds": [
+    "ROUND 1\nSeen in one second: Remaining relay allowance, then the current-week history.\nIdea (one sentence): Allowance, Relay Sessions and Login Grants form one account summary.\nLive thing: Range selection, discovery URL copying and a working approval queue.\nLayout words by section: shell=framed workspace / allowance=divided strip / history=chart / setup=compact panel / security=row\nScores: design 7.2 · usability 7.4 · creativity 7 · content 8 → overall 7.3\nCaps applied: App-screen rules; no image or motion floor.\nTop three problems (most visible first), each with the screenshot it shows in and the fix:\n1. A-account/mobile-fold.jpg: too many 12px working labels. Increased metric labels and explanatory text.\n2. C-account/tablet-fold.jpg: inline snapshot text runs into its usage-details action. Stacked those items.\n3. A-account/mobile-fold.jpg: discovery copying is below history. Added Connect Clipp to the title row.",
+    "ROUND 2\nSeen in one second: Allowance first, approval actions next to their assigned limits.\nIdea (one sentence): The same three account measures remain distinct across every layout.\nLive thing: Sample account filtering, approval and quota-plan creation.\nLayout words by section: shell=framed workspace / review=master-detail / plans=table / consent=single task\nScores: design 7.5 · usability 7.8 · creativity 7 · content 8.2 → overall 7.6\nCaps applied: App-screen rules.\nTop three problems (most visible first), each with the screenshot it shows in and the fix:\n1. A-admin/desktop-fold.jpg: default one-item pending queue creates a large unused list area. Defaulted to all five honest sample accounts, keeping the pending account first and its filter one click away.\n2. A-consent/desktop-fold.jpg: a wide sheet stretches a narrow authorization task. Replaced it with a compact message surface.\n3. A-plans/desktop-fold.jpg: supporting table and status text remains too small. Raised tables, badges and key meta to 13px.",
+    "ROUND 3\nSeen in one second: 768 MiB remaining; a specific app can be connected from the header.\nIdea (one sentence): Separate relay entitlements become one honest, readable access-and-capacity surface.\nLive thing: URL copying, history range, approval filter, sample forms and three layout options.\nLayout words by section: account=divided summary / history=chart+connection panel / administration=queue+decision / plans=table / security=label+controls / authorization=compact task\nScores: design 7.8 · usability 8 · creativity 7 · content 8.5 → overall 7.8\nCaps applied: Competitor-test ceiling of 7 on creativity; app-screen exceptions for rules, form borders and narrow task surfaces. No image or motion floor.\nTop three problems (most visible first), each with the screenshot it shows in and the fix:\n1. A-account/mobile-fold.jpg: email and date wrap densely beside the header action. A production refinement should put the week under the allowance instead.\n2. A-plans/desktop-fold.jpg: two actual plans leave unused workspace. Keep the content honest; revisit compact canvas height if the product stays this small.\n3. C-account/tablet-fold.jpg: its persistent left summary gives a tall column at tablet size. Prefer A for broad device coverage; C is best on desktop."
+  ],
+  "sample_content": {
+    "email": "alex@example.test",
+    "review_accounts": [
+      "mira@example.test",
+      "alex@example.test",
+      "sam@example.test",
+      "noor@example.test",
+      "lee@example.test"
+    ],
+    "host": "relay.example.test",
+    "allowance": "1 GiB; 256 MiB recorded; 768 MiB remaining",
+    "relay_sessions": "2 of 5",
+    "login_grants": "3 of 20",
+    "plans": [
+      "Standard: 1 GiB/week, 5 Relay Sessions",
+      "Team: 5 GiB/week, 10 Relay Sessions"
+    ],
+    "history": "13 weekly synthetic totals; current week agrees with account summary",
+    "snapshot": "26 Oct 2026, 10:42 UTC"
+  },
+  "assets": "No stock photos, generated artwork, web fonts, external dependencies or runtime data. The brand mark and icons are code drawings; usage charts are SVG from the skill helper, not photographs.",
+  "integration_notes": [
+    "Live authentication, authorization, quota changes and account deletion are not connected. All mutation-looking controls use local sample data or explicit preview dialogs.",
+    "The proposed consent account identity and Cancel action need handler data and the validated OAuth cancellation path.",
+    "Server-side email/status filtering must query the full dataset, not just a fetched page.",
+    "Named plan display needs a reliable lookup when the plan is outside the current page. Preserve saved assignment snapshots.",
+    "Keep recovery holds, revision checks, CSRF, operation identity, reason codes and one-session-per-Peer-ID admission intact.",
+    "Choose a layout before rewriting the winning design in the actual Go templates. This artifact is not a production implementation."
+  ],
+  "status": "Ready for design feedback. No production source changed or committed."
+}

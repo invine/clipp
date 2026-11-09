@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-10T09:12:45.814Z",
+  "preferenceObservedInNativeUI": {
+    "defaultFontSize": 32,
+    "minimumFontSize": 0
+  },
+  "popupCaptureCompleted": false,
+  "limitation": "Native menu/popup state changed between observations and actions; repeated CUA invalid-element/user-changed responses. No layout result is qualified.",
+  "scope": "Disposable Chrome profile only; global OS text preferences unchanged"
+}

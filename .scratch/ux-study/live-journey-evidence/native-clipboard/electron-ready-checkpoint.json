@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-10T08:11:52.480Z",
+  "clips": 1,
+  "devices": 0,
+  "relays": 0,
+  "boundary": {
+    "enabled": false,
+    "stats": {
+      "reads": 0,
+      "writes": 0,
+      "unexpected": 0
+    }
+  }
+}

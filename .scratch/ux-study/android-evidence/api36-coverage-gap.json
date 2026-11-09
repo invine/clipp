@@ -1,0 +1,11 @@
+{
+  "reason": "System UI ANR during comparison under concurrent emulators; API36 screenshot excluded; retry separately",
+  "at": "2026-10-07T23:31:34.014Z",
+  "retry": {
+    "outcome": "System UI ANR repeated in fresh API 36 AVD after main API 35 emulator was closed; all three retry images excluded",
+    "webview": "133.0.6943.137",
+    "emulatorClosed": true,
+    "closureReceipt": "api-comparison-closed.json",
+    "at": "2026-10-07T23:52:37.287054+00:00"
+  }
+}

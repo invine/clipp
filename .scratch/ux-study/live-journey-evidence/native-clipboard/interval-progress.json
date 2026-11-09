@@ -1,0 +1,31 @@
+{
+  "userReadiness": "Ready \u2014 marker copied",
+  "nativeIntervalStartedAt": "2026-10-10T08:13:29.326Z",
+  "electron": {
+    "nativeReadObserved": true,
+    "expectedMarkerCaptured": true,
+    "nativeReadsAtGateClose": 43,
+    "nativeWrites": 1,
+    "unexpectedContentCount": 0,
+    "gateEnabled": false,
+    "nativeCopyVerified": true
+  },
+  "chrome": {
+    "nativeReadAttempts": 2,
+    "errorName": "NotAllowedError",
+    "errorMessage": "Failed to execute 'readText' on 'Clipboard': Document is not focused.",
+    "focusAtRetry": false,
+    "userActivationAtRetry": true,
+    "nativeWrites": 1,
+    "unexpectedContentCount": 0,
+    "popupAndOffscreenGatesEnabled": false,
+    "manualRetryRequested": false,
+    "osPermissionDenialQualified": false,
+    "nativeCopyVerified": true,
+    "manualRetryDisposition": "No manual click observed. Request withdrawn after native Copy cleared the notice; successful read recovery remains unverified."
+  },
+  "intervalFinished": true,
+  "remaining": "Chrome successful native read/recovery; deliberate OS denial/regrant; unchanged-clipboard recapture. No active clipboard coordination remains.",
+  "nativeAccessEndedAt": "2026-10-10T08:24:03.854Z",
+  "ownedHostsClosedAt": "2026-10-10T08:24:15.630Z"
+}

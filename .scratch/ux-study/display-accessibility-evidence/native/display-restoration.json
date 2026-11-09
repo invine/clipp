@@ -1,0 +1,54 @@
+{
+  "at": "2026-10-10T09:06:17.189Z",
+  "expected": {
+    "width": 1512,
+    "height": 982,
+    "scaleFactor": 2
+  },
+  "restored": true,
+  "displays": [
+    {
+      "accelerometerSupport": "unknown",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1512,
+        "height": 982
+      },
+      "colorDepth": 30,
+      "colorSpace": "{primaries:BT709, transfer:SRGB, matrix:RGB, range:FULL}",
+      "depthPerComponent": 10,
+      "detected": true,
+      "displayFrequency": 120.0006103515625,
+      "id": 1,
+      "internal": true,
+      "label": "Built-in Retina Display",
+      "maximumCursorSize": {
+        "width": 0,
+        "height": 0
+      },
+      "monochrome": false,
+      "nativeOrigin": {
+        "x": 0,
+        "y": 0
+      },
+      "rotation": 0,
+      "scaleFactor": 2,
+      "size": {
+        "width": 1512,
+        "height": 982
+      },
+      "workArea": {
+        "x": 0,
+        "y": 33,
+        "width": 1512,
+        "height": 949
+      },
+      "workAreaSize": {
+        "width": 1512,
+        "height": 949
+      },
+      "touchSupport": "unknown"
+    }
+  ]
+}

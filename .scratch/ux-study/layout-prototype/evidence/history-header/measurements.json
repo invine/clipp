@@ -1,0 +1,175 @@
+{
+  "at": "2026-10-09T06:01:44.973Z",
+  "browser": "143.0.7499.4",
+  "records": [
+    {
+      "id": "S2-phone-1",
+      "variant": "S2",
+      "surface": "phone",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 1,
+      "statusInHeader": true,
+      "headerHeight": 48,
+      "searchWidth": 236,
+      "firstClipY": 132,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "Connections need attention. Connection status and options"
+      ],
+      "screenshot": "S2-phone-1.png",
+      "statusFocusReturned": true
+    },
+    {
+      "id": "S2-small-1",
+      "variant": "S2",
+      "surface": "small",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 1,
+      "statusInHeader": true,
+      "headerHeight": 48,
+      "searchWidth": 196,
+      "firstClipY": 132,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "Connections need attention. Connection status and options"
+      ],
+      "screenshot": "S2-small-1.png",
+      "statusFocusReturned": true
+    },
+    {
+      "id": "S2-small-2",
+      "variant": "S2",
+      "surface": "small",
+      "scale": "2",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 1,
+      "statusInHeader": true,
+      "headerHeight": 48,
+      "searchWidth": 248,
+      "firstClipY": 373.8125,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "Connections need attention. Connection status and options"
+      ],
+      "screenshot": "S2-small-2.png",
+      "statusFocusReturned": true
+    },
+    {
+      "id": "S2-popup-1",
+      "variant": "S2",
+      "surface": "popup",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 1,
+      "statusInHeader": true,
+      "headerHeight": 40,
+      "searchWidth": 372,
+      "firstClipY": 92,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "Connections need attention. Connection status and options"
+      ],
+      "screenshot": "S2-popup-1.png",
+      "statusFocusReturned": true
+    },
+    {
+      "id": "S2-landscape-1",
+      "variant": "S2",
+      "surface": "landscape",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 1,
+      "statusInHeader": true,
+      "headerHeight": 48,
+      "searchWidth": 516,
+      "firstClipY": 189,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "Connections need attention. Connection status and options"
+      ],
+      "screenshot": "S2-landscape-1.png",
+      "statusFocusReturned": true
+    },
+    {
+      "id": "S2-restored-1",
+      "variant": "S2",
+      "surface": "restored",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 1,
+      "statusInHeader": true,
+      "headerHeight": 56,
+      "searchWidth": 776,
+      "firstClipY": 114,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "Connections need attention. Connection status and options",
+        "Auto Sync on"
+      ],
+      "screenshot": "S2-restored-1.png",
+      "statusFocusReturned": true
+    },
+    {
+      "id": "M-phone-1",
+      "variant": "M",
+      "surface": "phone",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 0,
+      "statusInHeader": true,
+      "headerHeight": 48,
+      "searchWidth": 236,
+      "firstClipY": 132,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "More options"
+      ],
+      "screenshot": "M-phone-1.png"
+    },
+    {
+      "id": "1-phone-1",
+      "variant": "1",
+      "surface": "phone",
+      "scale": "1",
+      "headerVisible": true,
+      "brandVisible": true,
+      "headerAboveSearch": true,
+      "statusCount": 0,
+      "statusInHeader": true,
+      "headerHeight": 48,
+      "searchWidth": 236,
+      "firstClipY": 132,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "headerLabels": [
+        "More options"
+      ],
+      "screenshot": "1-phone-1.png"
+    }
+  ],
+  "errors": [],
+  "failures": []
+}

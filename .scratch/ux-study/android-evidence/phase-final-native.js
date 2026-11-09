@@ -1,0 +1,7 @@
+(async()=>{
+await shell('settings','put','system','font_scale','1');await shell('am','force-stop',pkg);await shell('am','start','-n',pkg+'/com.clipp.app.MainActivity');await sleep(5000);await connect();await findClient();
+// PROCESS_TEXT is invoked directly against the real acceptance ingress Activity, not an external app chooser.
+await shell('am','start','-n',pkg+'/com.clipp.app.ExplicitTextIngressActivity','-a','android.intent.action.PROCESS_TEXT','-t','text/plain','--es','android.intent.extra.PROCESS_TEXT',"'Selected study text - synthetic only'",'--ez','android.intent.extra.PROCESS_TEXT_READONLY','true');await sleep(1500);await capture('native-selected-text-ingress',{scenario:'Actual PROCESS_TEXT native contract; synthetic selected text'});out({selectedTextPresent:await evaluate("__uxClient.getState().then(s=>s.clips.some(c=>c.content==='Selected study text - synthetic only'))")});
+await ensureDrawer();await evaluate("document.querySelector('.drawer-pane').scrollTop=10000");await domText('Export privacy-safe diagnostics');await sleep(2500);await fs.writeFile(path.join(dir,'diagnostics-share-chooser.xml'),await uiTree());await nativeCapture('native-export-chooser-settled',{scenario:'Native export chooser after settling; no recipient selected'});await shell('input','keyevent','4');await sleep(1000);
+out({overlays:await shell('cmd','overlay','list'),activityHelp:(await shell('am','help')).split('\n').filter(l=>/windowing|resize|task |split/i.test(l))});
+})();

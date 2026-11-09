@@ -1,0 +1,1236 @@
+{
+  "at": "2026-10-09T05:52:18.149Z",
+  "browser": "143.0.7499.4",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "S1-history-phone-direct",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-direct.png"
+    },
+    {
+      "id": "S1-history-phone-relayed",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connected through relay. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-relayed.png"
+    },
+    {
+      "id": "S1-history-phone-directOnly",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-directOnly.png"
+    },
+    {
+      "id": "S1-history-phone-waiting",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Relay ready; waiting for devices. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-waiting.png"
+    },
+    {
+      "id": "S1-history-phone-offline",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "No device connection. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-offline.png"
+    },
+    {
+      "id": "S1-history-phone-attention",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-attention.png"
+    },
+    {
+      "id": "S1-history-phone-degraded",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-degraded.png"
+    },
+    {
+      "id": "S1-history-phone-warning",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-warning.png"
+    },
+    {
+      "id": "S1-history-phone-retrying",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-retrying.png"
+    },
+    {
+      "id": "S1-history-phone-connecting",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connecting. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-connecting.png"
+    },
+    {
+      "id": "S1-history-phone-unknown",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Device connected; path unknown. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-unknown.png"
+    },
+    {
+      "id": "S1-history-phone-newDevice",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "No other devices paired. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S1-history-phone-newDevice.png"
+    },
+    {
+      "id": "S2-history-phone-direct",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-direct.png"
+    },
+    {
+      "id": "S2-history-phone-relayed",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connected through relay. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-relayed.png"
+    },
+    {
+      "id": "S2-history-phone-directOnly",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-directOnly.png"
+    },
+    {
+      "id": "S2-history-phone-waiting",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Relay ready; waiting for devices. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-waiting.png"
+    },
+    {
+      "id": "S2-history-phone-offline",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "No device connection. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-offline.png"
+    },
+    {
+      "id": "S2-history-phone-attention",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-attention.png"
+    },
+    {
+      "id": "S2-history-phone-degraded",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-degraded.png"
+    },
+    {
+      "id": "S2-history-phone-warning",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-warning.png"
+    },
+    {
+      "id": "S2-history-phone-retrying",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-retrying.png"
+    },
+    {
+      "id": "S2-history-phone-connecting",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connecting. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-connecting.png"
+    },
+    {
+      "id": "S2-history-phone-unknown",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Device connected; path unknown. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-unknown.png"
+    },
+    {
+      "id": "S2-history-phone-newDevice",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "No other devices paired. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-phone-newDevice.png"
+    },
+    {
+      "id": "S3-history-phone-direct",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-direct.png"
+    },
+    {
+      "id": "S3-history-phone-relayed",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connected through relay. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-relayed.png"
+    },
+    {
+      "id": "S3-history-phone-directOnly",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-directOnly.png"
+    },
+    {
+      "id": "S3-history-phone-waiting",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Relay ready; waiting for devices. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-waiting.png"
+    },
+    {
+      "id": "S3-history-phone-offline",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "No device connection. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-offline.png"
+    },
+    {
+      "id": "S3-history-phone-attention",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-attention.png"
+    },
+    {
+      "id": "S3-history-phone-degraded",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-degraded.png"
+    },
+    {
+      "id": "S3-history-phone-warning",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-warning.png"
+    },
+    {
+      "id": "S3-history-phone-retrying",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-retrying.png"
+    },
+    {
+      "id": "S3-history-phone-connecting",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Connecting. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-connecting.png"
+    },
+    {
+      "id": "S3-history-phone-unknown",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Device connected; path unknown. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-unknown.png"
+    },
+    {
+      "id": "S3-history-phone-newDevice",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "No other devices paired. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 184,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S3-history-phone-newDevice.png"
+    },
+    {
+      "id": "S2-devices-phone-direct",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 0,
+      "statusColor": null,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [
+        "Work laptop, Direct connection",
+        "Phone, Relayed connection",
+        "Reading tablet, Offline"
+      ],
+      "screenshot": "S2-devices-phone-direct.png"
+    },
+    {
+      "id": "S2-devices-phone-relayed",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 0,
+      "statusColor": null,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [
+        "Work laptop, Relayed connection",
+        "Phone, Relayed connection",
+        "Reading tablet, Offline"
+      ],
+      "screenshot": "S2-devices-phone-relayed.png"
+    },
+    {
+      "id": "S2-devices-phone-offline",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 0,
+      "statusColor": null,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [
+        "Work laptop, Offline",
+        "Phone, Offline",
+        "Reading tablet, Offline"
+      ],
+      "screenshot": "S2-devices-phone-offline.png"
+    },
+    {
+      "id": "S2-devices-phone-unknown",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 0,
+      "statusColor": null,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [
+        "Work laptop, Connected; path unknown",
+        "Phone, Offline",
+        "Reading tablet, Offline"
+      ],
+      "screenshot": "S2-devices-phone-unknown.png"
+    },
+    {
+      "id": "S2-history-restored-1-direct",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 776,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-restored-1-direct.png"
+    },
+    {
+      "id": "S2-panel-restored-1-direct",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 776,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-restored-1-direct.png"
+    },
+    {
+      "id": "S2-history-wide-1-attention",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 1316,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-wide-1-attention.png"
+    },
+    {
+      "id": "S2-panel-wide-1-attention",
+      "viewport": {
+        "w": 1440,
+        "h": 868
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 1316,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-wide-1-attention.png"
+    },
+    {
+      "id": "S2-history-fullscreen-1-waiting",
+      "viewport": {
+        "w": 1920,
+        "h": 1080
+      },
+      "statusCount": 1,
+      "statusName": "Relay ready; waiting for devices. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 1796,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-fullscreen-1-waiting.png"
+    },
+    {
+      "id": "S2-panel-fullscreen-1-waiting",
+      "viewport": {
+        "w": 1920,
+        "h": 1080
+      },
+      "statusCount": 1,
+      "statusName": "Relay ready; waiting for devices. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 1796,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-fullscreen-1-waiting.png"
+    },
+    {
+      "id": "S2-history-popup-1-relayed",
+      "viewport": {
+        "w": 480,
+        "h": 600
+      },
+      "statusCount": 1,
+      "statusName": "Connected through relay. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 52,
+      "toolbarHeight": 40,
+      "searchWidth": 328,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-popup-1-relayed.png"
+    },
+    {
+      "id": "S2-panel-popup-1-relayed",
+      "viewport": {
+        "w": 480,
+        "h": 600
+      },
+      "statusCount": 1,
+      "statusName": "Connected through relay. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 52,
+      "toolbarHeight": 40,
+      "searchWidth": 328,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-popup-1-relayed.png"
+    },
+    {
+      "id": "S2-history-small-1-direct",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(23, 101, 79)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 144,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-small-1-direct.png"
+    },
+    {
+      "id": "S2-panel-small-1-direct",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(23, 101, 79)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 144,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-small-1-direct.png"
+    },
+    {
+      "id": "S2-history-small-2-attention",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(149, 82, 6)",
+      "statusSvgCount": 1,
+      "firstClipY": 325.8125,
+      "toolbarHeight": 119.34375,
+      "searchWidth": 248,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-small-2-attention.png"
+    },
+    {
+      "id": "S2-panel-small-2-attention",
+      "viewport": {
+        "w": 320,
+        "h": 640
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(149, 82, 6)",
+      "statusSvgCount": 1,
+      "firstClipY": 325.8125,
+      "toolbarHeight": 119.34375,
+      "searchWidth": 248,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-small-2-attention.png"
+    },
+    {
+      "id": "S2-history-tablet-1-direct",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(23, 101, 79)",
+      "statusSvgCount": 1,
+      "firstClipY": 151,
+      "searchWidth": 1060,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-tablet-1-direct.png"
+    },
+    {
+      "id": "S2-panel-tablet-1-direct",
+      "viewport": {
+        "w": 1200,
+        "h": 800
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(23, 101, 79)",
+      "statusSvgCount": 1,
+      "firstClipY": 151,
+      "searchWidth": 1060,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-tablet-1-direct.png"
+    },
+    {
+      "id": "S2-history-landscape-1-offline",
+      "viewport": {
+        "w": 640,
+        "h": 360
+      },
+      "statusCount": 1,
+      "statusName": "No device connection. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 141,
+      "toolbarHeight": 48,
+      "searchWidth": 464,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-history-landscape-1-offline.png"
+    },
+    {
+      "id": "S2-panel-landscape-1-offline",
+      "viewport": {
+        "w": 640,
+        "h": 360
+      },
+      "statusCount": 1,
+      "statusName": "No device connection. Connection status and options",
+      "statusColor": "rgb(180, 182, 194)",
+      "statusSvgCount": 1,
+      "firstClipY": 141,
+      "toolbarHeight": 48,
+      "searchWidth": 464,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-panel-landscape-1-offline.png"
+    },
+    {
+      "id": "S2-phone-active-search",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 84,
+      "toolbarHeight": 48,
+      "searchWidth": 136,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-phone-active-search.png"
+    },
+    {
+      "id": "S2-phone-auto-sync-off",
+      "viewport": {
+        "w": 360,
+        "h": 720
+      },
+      "statusCount": 1,
+      "statusName": "Direct connection available. Connection status and options",
+      "statusColor": "rgb(130, 214, 183)",
+      "statusSvgCount": 1,
+      "firstClipY": 136,
+      "toolbarHeight": 48,
+      "searchWidth": 136,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-phone-auto-sync-off.png"
+    },
+    {
+      "id": "S2-attention-hover-hint",
+      "viewport": {
+        "w": 900,
+        "h": 668
+      },
+      "statusCount": 1,
+      "statusName": "Connections need attention. Connection status and options",
+      "statusColor": "rgb(239, 179, 102)",
+      "statusSvgCount": 1,
+      "firstClipY": 114,
+      "searchWidth": 776,
+      "horizontalOverflow": false,
+      "controlsOutsideWidth": [],
+      "smallTouchTargets": [],
+      "overlaysOutsideViewport": [],
+      "deviceNames": [],
+      "screenshot": "S2-attention-hover-hint.png"
+    }
+  ],
+  "checks": [
+    {
+      "name": "restored panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "wide panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "fullscreen panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "popup panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "small panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "small panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "tablet panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "landscape panel focus returns",
+      "passed": true
+    },
+    {
+      "name": "Auto Sync off leaves physical connection green",
+      "passed": true
+    },
+    {
+      "name": "opening status keeps search query",
+      "passed": true
+    },
+    {
+      "name": "status routes to selected M1 Devices",
+      "passed": true
+    },
+    {
+      "name": "Settings uses selected M3 categories",
+      "passed": true
+    },
+    {
+      "name": "partial relay problem overrides direct availability",
+      "passed": true
+    },
+    {
+      "name": "workbench keeps connection fixture while cycling",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "geometryFailures": [],
+  "interactionFailures": [],
+  "statusFailures": []
+}

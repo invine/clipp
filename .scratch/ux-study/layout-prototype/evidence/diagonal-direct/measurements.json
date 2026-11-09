@@ -1,0 +1,63 @@
+{
+  "at": "2026-10-09T06:15:37.025Z",
+  "browser": "143.0.7499.4",
+  "evidenceClass": "throwaway-browser-simulation",
+  "records": [
+    {
+      "id": "S1-history-phone",
+      "transform": "rotate(-45 12 12)",
+      "bottomLeftToTopRight": true,
+      "iconInsideViewport": true,
+      "horizontalOverflow": false,
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><g transform=\"rotate(-45 12 12)\"><circle cx=\"4\" cy=\"12\" r=\"2.5\"></circle><circle cx=\"20\" cy=\"12\" r=\"2.5\"></circle><path d=\"M7 12h10\"></path></g></svg>",
+      "screenshot": "S1-history-phone.png"
+    },
+    {
+      "id": "S2-history-phone",
+      "transform": "rotate(-45 12 12)",
+      "bottomLeftToTopRight": true,
+      "iconInsideViewport": true,
+      "horizontalOverflow": false,
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><g transform=\"rotate(-45 12 12)\"><circle cx=\"4\" cy=\"12\" r=\"2.5\"></circle><circle cx=\"20\" cy=\"12\" r=\"2.5\"></circle><path d=\"M7 12h10\"></path></g></svg>",
+      "screenshot": "S2-history-phone.png"
+    },
+    {
+      "id": "S3-history-phone",
+      "transform": "rotate(-45 12 12)",
+      "bottomLeftToTopRight": true,
+      "iconInsideViewport": true,
+      "horizontalOverflow": false,
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><g transform=\"rotate(-45 12 12)\"><circle cx=\"4\" cy=\"12\" r=\"2.5\"></circle><circle cx=\"20\" cy=\"12\" r=\"2.5\"></circle><path d=\"M7 12h10\"></path></g></svg>",
+      "screenshot": "S3-history-phone.png"
+    },
+    {
+      "id": "S2-devices-phone",
+      "transform": "rotate(-45 12 12)",
+      "bottomLeftToTopRight": true,
+      "iconInsideViewport": true,
+      "horizontalOverflow": false,
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><g transform=\"rotate(-45 12 12)\"><circle cx=\"4\" cy=\"12\" r=\"2.5\"></circle><circle cx=\"20\" cy=\"12\" r=\"2.5\"></circle><path d=\"M7 12h10\"></path></g></svg>",
+      "screenshot": "S2-devices-phone.png"
+    },
+    {
+      "id": "S2-history-restored",
+      "transform": "rotate(-45 12 12)",
+      "bottomLeftToTopRight": true,
+      "iconInsideViewport": true,
+      "horizontalOverflow": false,
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><g transform=\"rotate(-45 12 12)\"><circle cx=\"4\" cy=\"12\" r=\"2.5\"></circle><circle cx=\"20\" cy=\"12\" r=\"2.5\"></circle><path d=\"M7 12h10\"></path></g></svg>",
+      "screenshot": "S2-history-restored.png"
+    },
+    {
+      "id": "S2-history-popup",
+      "transform": "rotate(-45 12 12)",
+      "bottomLeftToTopRight": true,
+      "iconInsideViewport": true,
+      "horizontalOverflow": false,
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><g transform=\"rotate(-45 12 12)\"><circle cx=\"4\" cy=\"12\" r=\"2.5\"></circle><circle cx=\"20\" cy=\"12\" r=\"2.5\"></circle><path d=\"M7 12h10\"></path></g></svg>",
+      "screenshot": "S2-history-popup.png"
+    }
+  ],
+  "errors": [],
+  "failures": []
+}

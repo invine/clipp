@@ -1,0 +1,41 @@
+{
+  "at": "2026-10-10T08:11:22.382003+00:00",
+  "findingCount": 51,
+  "runtimeCounts": {
+    "E": 17,
+    "C": 16,
+    "A": 18
+  },
+  "changedFilesValidated": [
+    "sign-in-free-journeys.md",
+    "live-journey-observations.md",
+    "handoff.md",
+    "handoff-findings.md",
+    "electron-observations.md",
+    "extension-observations.md",
+    "issues/14-observe-live-pairing-and-account-journeys.md",
+    "live-journey-evidence/local-pairing/README.md",
+    "live-journey-evidence/native-clipboard/README.md"
+  ],
+  "localLinksChecked": 336,
+  "anchorsChecked": 66,
+  "errors": [],
+  "sourceCount": 145,
+  "changedSources": [],
+  "pairingAndRecoveryClosure": {
+    "at": "2026-10-10T08:11:22.347662+00:00",
+    "protocolPeerPids": [
+      98477,
+      99136,
+      99361
+    ],
+    "protocolPeersClosed": true,
+    "aliveProtocolPeers": [],
+    "electronClosed": true,
+    "chromeClosed": true,
+    "recoveryProfileClosed": true,
+    "nativeClipboardProfiles": "Prepared separately; gates off, awaiting user Ready",
+    "sqliteWriterLock": "Released by newline; helper reported rollback/close and exited 0"
+  },
+  "ticketStatus": "claimed; native clipboard coordination pending; account deferred; notification/Chrome Pairing gaps explicit"
+}

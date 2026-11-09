@@ -1,0 +1,145 @@
+{
+  "at": "2026-10-09T20:45:20.285101+00:00",
+  "findingCount": 51,
+  "runtimeCounts": {
+    "E": 17,
+    "C": 16,
+    "A": 18
+  },
+  "localLinksChecked": 302,
+  "anchorsChecked": 78,
+  "errors": [],
+  "decisionStatus": "Priority approved. Targeted native checks required; host, live-journey and display tasks remain open. Public manifest key/original extension path requested.",
+  "noRuntimeRetest": false,
+  "nativeEvidence": "native-host-evidence/source-build-receipt.json",
+  "mapStatus": "open",
+  "ticketStatus": {
+    "04": {
+      "title": "Observe Chrome popup and options flows",
+      "status": "resolved",
+      "blockedBy": [
+        "01",
+        "02"
+      ]
+    },
+    "05": {
+      "title": "Observe Android layouts and native interactions",
+      "status": "resolved",
+      "blockedBy": [
+        "01",
+        "02"
+      ]
+    },
+    "12": {
+      "title": "Explore compact connection status",
+      "status": "resolved",
+      "blockedBy": [
+        "11"
+      ]
+    },
+    "01": {
+      "title": "Establish platform sizing and interaction constraints",
+      "status": "resolved",
+      "blockedBy": [
+        "none"
+      ]
+    },
+    "09": {
+      "title": "Compare history density and navigation",
+      "status": "resolved",
+      "blockedBy": [
+        "03",
+        "04",
+        "05"
+      ]
+    },
+    "07": {
+      "title": "Decide visual consistency and efficient layout",
+      "status": "resolved",
+      "blockedBy": [
+        "03",
+        "04",
+        "05",
+        "09",
+        "10",
+        "11",
+        "12"
+      ]
+    },
+    "02": {
+      "title": "Inventory user flows and control coverage",
+      "status": "resolved",
+      "blockedBy": [
+        "none"
+      ]
+    },
+    "08": {
+      "title": "Prioritize the UX findings and handoff",
+      "status": "open",
+      "blockedBy": [
+        "06",
+        "07",
+        "13",
+        "14",
+        "15"
+      ]
+    },
+    "06": {
+      "title": "Decide missing controls and obsolete entry points",
+      "status": "resolved",
+      "blockedBy": [
+        "02",
+        "03",
+        "04",
+        "05"
+      ]
+    },
+    "11": {
+      "title": "Compare Devices and Settings organization",
+      "status": "resolved",
+      "blockedBy": [
+        "09",
+        "10"
+      ]
+    },
+    "15": {
+      "title": "Qualify desktop display scaling and accessibility",
+      "status": "open",
+      "blockedBy": [
+        "06",
+        "07"
+      ]
+    },
+    "14": {
+      "title": "Observe live Pairing and account journeys",
+      "status": "open",
+      "blockedBy": [
+        "06",
+        "07"
+      ]
+    },
+    "13": {
+      "title": "Observe native window and popup lifecycle",
+      "status": "claimed",
+      "blockedBy": [
+        "06",
+        "07"
+      ]
+    },
+    "03": {
+      "title": "Observe Electron flows across window sizes",
+      "status": "resolved",
+      "blockedBy": [
+        "01",
+        "02"
+      ]
+    },
+    "10": {
+      "title": "Compare lightweight narrow toolbars",
+      "status": "resolved",
+      "blockedBy": [
+        "09"
+      ]
+    }
+  }
+}

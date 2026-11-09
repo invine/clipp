@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-10T08:02:24.320Z",
+  "rendererErrors": [
+    {
+      "at": "2026-10-10T08:02:12.161Z",
+      "message": "Error invoking remote method 'clipp:respond-trust': SqliteError: database is locked"
+    }
+  ]
+}
