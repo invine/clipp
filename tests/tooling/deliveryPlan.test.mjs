@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  symlinkSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -214,4 +221,119 @@ test("Android plans declare signing mode and publication blockers without exposi
     "env:PLAY_CREDENTIAL"
   );
   assert.ok(!result.stdout.includes("secret-value"));
+});
+
+test("run stores reached through symlinks cannot write into the selected source", () => {
+  const f = fixture();
+  const direct = path.join(f.root, "linked-store");
+  symlinkSync(f.repo, direct);
+  for (const runRoot of [
+    path.join(direct, "delivery"),
+    path.join(f.root, "linked-parent", "delivery"),
+  ]) {
+    if (runRoot.includes("linked-parent"))
+      symlinkSync(f.repo, path.join(f.root, "linked-parent"));
+    writeFileSync(
+      f.config,
+      JSON.stringify({ schema: 1, runRoot, destinations: {} })
+    );
+    const result = plan(f, f.first);
+    assert.notEqual(result.status, 0);
+    assert.equal(JSON.parse(result.stdout).code, "invalid_configuration");
+    assert.equal(existsSync(path.join(f.repo, "delivery")), false);
+  }
+});
+
+test("relative local remote URLs are fetched relative to the selected repository", () => {
+  const f = fixture();
+  command("git", ["remote", "set-url", "origin", "../remote.git"], f.repo);
+  const result = plan(f, "origin/main");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).plan.source.commit, f.first);
+});
+
+test("android-internal rejects a non-internal Play track", () => {
+  const f = fixture();
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        playApplicationId: "example.clipp",
+        playTrack: "production",
+      },
+      references: {
+        androidSigningRef: "env:SIGNING",
+        playCredentialRef: "env:PLAY",
+        androidSdkRef: "env:ANDROID_HOME",
+        javaHomeRef: "env:JAVA_HOME",
+      },
+    })
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      tool,
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.first,
+      "--target",
+      "android-internal",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).code, "invalid_configuration");
+});
+
+test("planning reports an outdated npm and missing local destination independently", () => {
+  const f = fixture();
+  const bin = path.join(f.root, "bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "npm"), "#!/bin/sh\necho 1.0.0\n", {
+    mode: 0o755,
+  });
+  const result = spawnSync(
+    process.execPath,
+    [
+      tool,
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.first,
+      "--target",
+      "electron-local",
+      "--target",
+      "chrome-local",
+      "--json",
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+    }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const targets = JSON.parse(result.stdout).plan.targets;
+  assert.ok(
+    targets["electron-local"].prerequisites.includes("tool:npm:>=10.0.0")
+  );
+  assert.ok(
+    targets["chrome-local"].prerequisites.includes(
+      "destination:chromeExtensionDir"
+    )
+  );
+  assert.ok(
+    targets["chrome-local"].prerequisites.includes(
+      "destination:chromeProfilePath"
+    )
+  );
 });

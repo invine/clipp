@@ -67,6 +67,7 @@
   "supportedHost": { "platform": "darwin", "architectures": ["arm64"] },
   "toolchain": {
     "node": ">=22.22.1",
+    "npm": ">=10.0.0",
     "electronBuilder": "26.18.0",
     "gradle": "wrapper"
   }

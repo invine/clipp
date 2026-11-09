@@ -8,6 +8,7 @@ import {
   renameSync,
   statSync,
   realpathSync,
+  lstatSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,9 +130,15 @@ function sourceFrom(root, ref, cache) {
       );
     mkdirSync(cache, { recursive: true, mode: 0o700 });
     git(cache, ["init", "--bare", "-q"], "source_cache_unavailable");
+    const fetchUrl =
+      path.isAbsolute(url) ||
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ||
+      /^[^/]+:/.test(url)
+        ? url
+        : path.resolve(root, url);
     git(
       cache,
-      ["fetch", "--no-tags", "--quiet", url, `refs/heads/${branch}`],
+      ["fetch", "--no-tags", "--quiet", fetchUrl, `refs/heads/${branch}`],
       "source_freshness_unavailable",
       120_000
     );
@@ -238,7 +245,22 @@ function configuration(file, root) {
       "invalid_configuration",
       "Expected schema 1, absolute runRoot and destinations"
     );
-  const runRoot = path.resolve(config.runRoot);
+  let existing = path.resolve(config.runRoot);
+  while (!lstatSync(existing, { throwIfNoEntry: false })) {
+    const parent = path.dirname(existing);
+    if (parent === existing)
+      fail("invalid_configuration", "Run store has no existing ancestor");
+    existing = parent;
+  }
+  let runRoot;
+  try {
+    runRoot = path.resolve(
+      realpathSync(existing),
+      path.relative(existing, config.runRoot)
+    );
+  } catch {
+    fail("invalid_configuration", "Run store contains an unresolved symlink");
+  }
   if (runRoot === root || runRoot.startsWith(root + path.sep))
     fail(
       "invalid_configuration",
@@ -352,6 +374,33 @@ function prerequisites(target, profile, config) {
     );
   return missing;
 }
+function versionAtLeast(actual, minimum) {
+  const a = actual.replace(/^v/, "").split(".").map(Number);
+  const b = minimum.replace(/^>=/, "").split(".").map(Number);
+  if (a.length < b.length || a.some((n) => !Number.isInteger(n))) return false;
+  for (let index = 0; index < b.length; index++) {
+    if (a[index] > b[index]) return true;
+    if (a[index] < b[index]) return false;
+  }
+  return true;
+}
+function hostPrerequisites(profile) {
+  const missing = [];
+  if (!versionAtLeast(process.version, profile.toolchain.node))
+    missing.push(`tool:node:${profile.toolchain.node}`);
+  const npm = spawnSync("npm", ["--version"], {
+    encoding: "utf8",
+    timeout: 10_000,
+    env: gitEnvironment,
+  });
+  if (
+    npm.error ||
+    npm.status !== 0 ||
+    !versionAtLeast(npm.stdout.trim(), profile.toolchain.npm)
+  )
+    missing.push(`tool:npm:${profile.toolchain.npm}`);
+  return missing;
+}
 function plan(args) {
   const parsed = options(args);
   const root = checkedRoot(parsed.repo);
@@ -364,6 +413,16 @@ function plan(args) {
   for (const target of targets)
     if (!profile.targets[target])
       fail("invalid_target", `Unknown target: ${target}`);
+  if (
+    targets.includes("android-internal") &&
+    config.destinations.playTrack &&
+    config.destinations.playTrack !== "internal"
+  )
+    fail(
+      "invalid_configuration",
+      "Android internal publication requires the internal Play track"
+    );
+  const hostMissing = hostPrerequisites(profile);
   const id = randomUUID();
   const source = sourceFrom(
     root,
@@ -394,7 +453,10 @@ function plan(args) {
               : profile.targets[target].signing,
         destinationIdentity:
           config.destinations[profile.targets[target].destination] || null,
-        prerequisites: prerequisites(target, profile, config),
+        prerequisites: [
+          ...hostMissing,
+          ...prerequisites(target, profile, config),
+        ],
       },
     ])
   );
