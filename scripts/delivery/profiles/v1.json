@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "targets": {
+    "electron-package": {
+      "dependsOn": [],
+      "checks": [
+        "common-verify",
+        "ui-behavior",
+        "electron-inventory",
+        "electron-native-webrtc",
+        "electron-quit"
+      ],
+      "signing": "unsigned-local",
+      "destination": "artifact"
+    },
+    "electron-local": {
+      "dependsOn": ["electron-package"],
+      "checks": [
+        "electron-installed-identity",
+        "electron-installed-launch-quit"
+      ],
+      "signing": "unsigned-local",
+      "destination": "electronInstallPath"
+    },
+    "chrome-local": {
+      "dependsOn": [],
+      "checks": [
+        "common-verify",
+        "ui-behavior",
+        "chrome-production-inventory",
+        "chrome-populated-history",
+        "chrome-loaded-identity",
+        "chrome-popup"
+      ],
+      "signing": "unpacked",
+      "destination": "chromeExtensionDir"
+    },
+    "android-package": {
+      "dependsOn": ["android-qualification"],
+      "checks": [
+        "common-verify",
+        "android-native-unit",
+        "android-native-matrix",
+        "android-package-inventory",
+        "android-signature"
+      ],
+      "signing": "upload",
+      "destination": "artifact"
+    },
+    "android-local": {
+      "dependsOn": ["android-qualification", "android-package"],
+      "checks": [
+        "android-device-compatibility",
+        "android-installed-identity",
+        "android-readiness"
+      ],
+      "signing": "debug-or-upload",
+      "destination": "androidDeviceSerial"
+    },
+    "android-internal": {
+      "dependsOn": ["android-qualification", "android-package"],
+      "checks": ["android-play-upload", "android-play-release-readback"],
+      "signing": "upload",
+      "destination": "playApplicationId"
+    }
+  },
+  "supportedHost": { "platform": "darwin", "architectures": ["arm64"] },
+  "toolchain": {
+    "node": ">=22.22.1",
+    "electronBuilder": "26.18.0",
+    "gradle": "wrapper"
+  }
+}
