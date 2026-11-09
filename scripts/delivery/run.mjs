@@ -1,6 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  appendFileSync,
+  chmodSync,
+  copyFileSync,
   existsSync,
   closeSync,
   lstatSync,
@@ -32,6 +35,10 @@ const knownChecks = [
   ["android-web-build", ["npm", "--workspace", "apps/android", "run", "build"]],
   ["chrome-build", ["npm", "--workspace", "apps/extension", "run", "build"]],
   ["ui-behavior", ["npm", "run", "test:ui-behavior"]],
+];
+const knownGeneratedOutputs = [
+  "/.local/startup-replay-*/",
+  "/test-results/.last-run.json",
 ];
 const gitEnvironment = Object.fromEntries(
   Object.entries(process.env).filter(
@@ -191,6 +198,14 @@ function planRecord(file, identity) {
     JSON.stringify(knownChecks.map(([id, command]) => ({ id, command })))
   )
     fail("invalid_profile", "Frozen common check allocation is unsupported");
+  if (
+    JSON.stringify(plan.profile.candidateGeneratedOutputs) !==
+    JSON.stringify(knownGeneratedOutputs)
+  )
+    fail(
+      "invalid_profile",
+      "Frozen generated-output allocation is unsupported"
+    );
   if (
     !Number.isSafeInteger(plan.profile.preflight?.minimumFreeBytes) ||
     plan.profile.preflight.minimumFreeBytes <= 0
@@ -380,6 +395,98 @@ function outputs(checkout) {
     ])
   );
 }
+function generatedOutputs(checkout) {
+  const files = {};
+  let count = 0;
+  const capture = (file) => {
+    if (++count > 1000)
+      fail("candidate_artifact_invalid", "Too many generated test outputs");
+    const stat = lstatSync(file);
+    if (!stat.isFile())
+      fail(
+        "candidate_artifact_invalid",
+        "Generated test output is not a regular file"
+      );
+    files[path.relative(checkout, file)] = {
+      size: stat.size,
+      sha256: sha(readFileSync(file)),
+    };
+  };
+  const local = path.join(checkout, ".local");
+  if (existsSync(local)) {
+    for (const entry of readdirSync(local).sort()) {
+      if (!entry.startsWith("startup-replay-")) continue;
+      if (
+        !/^startup-replay-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          entry
+        )
+      )
+        fail(
+          "candidate_artifact_invalid",
+          "Unexpected generated-output directory"
+        );
+      const directory = path.join(local, entry);
+      if (!lstatSync(directory).isDirectory())
+        fail(
+          "candidate_artifact_invalid",
+          "Generated test output directory is invalid"
+        );
+      for (const name of readdirSync(directory).sort())
+        capture(path.join(directory, name));
+    }
+  }
+  const playwright = path.join(checkout, "test-results", ".last-run.json");
+  if (existsSync(playwright)) capture(playwright);
+  return files;
+}
+function retainUiFailureDiagnostics(run, file, number) {
+  const results = path.join(run.checkout, "test-results");
+  if (!existsSync(results)) return;
+  const destinationRoot = path.join(
+    path.dirname(file),
+    "ui-failures",
+    String(number)
+  );
+  let count = 0;
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory).sort()) {
+      const source = path.join(directory, entry);
+      const relative = path.relative(run.checkout, source);
+      const stat = lstatSync(source);
+      if (stat.isDirectory()) {
+        visit(source);
+        continue;
+      }
+      if (relative === "test-results/.last-run.json") continue;
+      if (
+        !stat.isFile() ||
+        stat.size > 100 * 1024 * 1024 ||
+        ++count > 1000 ||
+        !/^test-results\/[A-Za-z0-9._/-]+$/.test(relative) ||
+        relative.split("/").includes("..")
+      )
+        fail(
+          "candidate_artifact_invalid",
+          "Unsafe UI failure diagnostic output"
+        );
+      const copy = path.join(destinationRoot, path.relative(results, source));
+      mkdirSync(path.dirname(copy), { recursive: true, mode: 0o700 });
+      copyFileSync(source, copy);
+      chmodSync(copy, 0o600);
+      run.uiFailureDiagnostics.push({
+        path: relative,
+        copy: path.relative(path.dirname(file), copy),
+        size: stat.size,
+        sha256: sha(readFileSync(copy)),
+      });
+      appendFileSync(
+        path.join(run.checkout, ".git", "info", "exclude"),
+        `/${relative}\n`
+      );
+    }
+  };
+  visit(results);
+}
 function sourceClean(checkout, commit) {
   const head = spawnSync("git", ["rev-parse", "HEAD"], {
     cwd: checkout,
@@ -426,14 +533,40 @@ function selectedSource(checkout, plan) {
       "Checkout tree or lockfile differs from frozen plan"
     );
 }
-function checkRecordedArtifacts(run) {
+function checkRecordedArtifacts(run, file) {
   sourceClean(run.checkout, run.source.commit);
+  checkUiFailureDiagnostics(run, file);
   const actual = outputs(run.checkout);
   if (JSON.stringify(actual) !== JSON.stringify(run.artifacts))
     fail(
       "candidate_artifact_changed",
       "Production output differs from recorded artifact inventory"
     );
+  if (
+    JSON.stringify(generatedOutputs(run.checkout)) !==
+    JSON.stringify(run.generatedOutputs)
+  )
+    fail(
+      "candidate_evidence_changed",
+      "Generated test output differs from recorded evidence"
+    );
+}
+function checkUiFailureDiagnostics(run, file) {
+  const root = path.dirname(file);
+  const base = path.join(root, "ui-failures");
+  for (const record of run.uiFailureDiagnostics || []) {
+    const copy = path.resolve(root, record.copy || "");
+    if (
+      !copy.startsWith(`${base}${path.sep}`) ||
+      !existsSync(copy) ||
+      !lstatSync(copy).isFile() ||
+      sha(readFileSync(copy)) !== record.sha256
+    )
+      fail(
+        "candidate_evidence_changed",
+        "Retained UI failure diagnostic changed"
+      );
+  }
 }
 function priorCheckValid(prior, file) {
   const base = path.dirname(file);
@@ -483,6 +616,8 @@ function newRun(plan, digest) {
       ])
     ),
     artifacts: null,
+    generatedOutputs: null,
+    uiFailureDiagnostics: [],
     installationSha256: null,
   };
 }
@@ -535,6 +670,8 @@ async function commandAttempt(
     cases,
   });
   attempt.logSha256 = sha(logBytes);
+  if (!attempt.passed && checkId === "ui-behavior")
+    retainUiFailureDiagnostics(run, file, number);
   if (attempt.passed && checkId?.endsWith("-build")) {
     const app = {
       "electron-build": "electron",
@@ -555,6 +692,7 @@ async function commandAttempt(
 async function prepare(run, plan, file) {
   if (run.stages.prepare.state === "passed") {
     sourceClean(run.checkout, plan.source.commit);
+    checkUiFailureDiagnostics(run, file);
     const installed = path.join(
       run.checkout,
       "node_modules",
@@ -604,6 +742,10 @@ async function prepare(run, plan, file) {
     file
   );
   selectedSource(checkout, plan);
+  appendFileSync(
+    path.join(checkout, ".git", "info", "exclude"),
+    `\n# Known delivery check outputs; tracked source and other untracked files remain visible.\n${plan.profile.candidateGeneratedOutputs.join("\n")}\n`
+  );
   const packageJson = readJson(
     path.join(checkout, "package.json"),
     "candidate_adapter_missing"
@@ -661,7 +803,7 @@ async function commonVerify(run, plan, file) {
       if (!prior || !priorCheckValid(prior, file))
         fail("candidate_evidence_changed", `Previous ${id} evidence changed`);
     }
-    checkRecordedArtifacts(run);
+    checkRecordedArtifacts(run, file);
     return;
   }
   for (const { id, command } of plan.profile.commonChecks) {
@@ -675,6 +817,7 @@ async function commonVerify(run, plan, file) {
         fail("candidate_artifact_changed", `Previous ${id} output changed`);
       continue;
     }
+    sourceClean(run.checkout, plan.source.commit);
     await commandAttempt(
       run,
       "commonVerify",
@@ -689,6 +832,7 @@ async function commonVerify(run, plan, file) {
   }
   sourceClean(run.checkout, plan.source.commit);
   run.artifacts = outputs(run.checkout);
+  run.generatedOutputs = generatedOutputs(run.checkout);
   stage(
     run,
     "commonVerify",

@@ -1,6 +1,10 @@
 {
   "schema": 1,
   "preflight": { "minimumFreeBytes": 3221225472 },
+  "candidateGeneratedOutputs": [
+    "/.local/startup-replay-*/",
+    "/test-results/.last-run.json"
+  ],
   "commonChecks": [
     { "id": "lint", "command": ["npm", "run", "lint"] },
     { "id": "typecheck", "command": ["npm", "run", "typecheck"] },
