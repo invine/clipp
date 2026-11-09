@@ -183,6 +183,18 @@ test("run prepares the frozen commit and records common checks without touching 
   );
 });
 
+test("Electron packaging reports a target-local prerequisite when the candidate has no native package config", (t) => {
+  const f = fixture(t);
+  const result = delivery(["run", f.plan.path], f.repo);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.run.stages.commonVerify.state, "passed");
+  assert.equal(report.run.targets["electron-package"].state, "blocked");
+  assert.match(
+    report.run.targets["electron-package"].nextAction,
+    /Native Electron dependency inventory is unavailable/i
+  );
+});
+
 test("changed installed dependency inventory blocks replay instead of reusing a pass", (t) => {
   const f = fixture(t);
   const first = delivery(["run", f.plan.path], f.repo);
