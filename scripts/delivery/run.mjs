@@ -9,6 +9,8 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
+  rmSync,
+  statfsSync,
   openSync,
   writeSync,
   writeFileSync,
@@ -48,6 +50,8 @@ function readJson(file, code) {
 }
 function atomically(file, record) {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const { integritySha256: _prior, ...body } = record;
+  record.integritySha256 = sha(JSON.stringify(body));
   const temporary = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temporary, JSON.stringify(record, null, 2) + "\n", {
     flag: "wx",
@@ -187,6 +191,11 @@ function planRecord(file, identity) {
     JSON.stringify(knownChecks.map(([id, command]) => ({ id, command })))
   )
     fail("invalid_profile", "Frozen common check allocation is unsupported");
+  if (
+    !Number.isSafeInteger(plan.profile.preflight?.minimumFreeBytes) ||
+    plan.profile.preflight.minimumFreeBytes <= 0
+  )
+    fail("invalid_profile", "Frozen storage preflight is unsupported");
   const current = spawnSync(
     "git",
     ["-C", plan.repository.root, "rev-parse", "--show-toplevel"],
@@ -199,8 +208,36 @@ function planRecord(file, identity) {
 function runFile(plan) {
   return path.join(plan.outputRoot, "run.json");
 }
+function validIntegrity(record) {
+  const { integritySha256, ...body } = record;
+  return (
+    /^[0-9a-f]{64}$/.test(integritySha256 || "") &&
+    integritySha256 === sha(JSON.stringify(body))
+  );
+}
+function validCheckoutPath(checkout, outputRoot) {
+  if (
+    typeof checkout !== "string" ||
+    !/^checkout-[0-9a-f-]{36}$/.test(path.basename(checkout)) ||
+    path.dirname(checkout) !== outputRoot
+  )
+    return false;
+  let existing = checkout;
+  while (!lstatSync(existing, { throwIfNoEntry: false })) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return false;
+    existing = parent;
+  }
+  const physical = path.resolve(
+    realpathSync(existing),
+    path.relative(existing, checkout)
+  );
+  const physicalRoot = realpathSync(outputRoot);
+  return physical.startsWith(`${physicalRoot}${path.sep}`);
+}
 function validateRun(record, plan, digest) {
   if (
+    !validIntegrity(record) ||
     record.schema !== 1 ||
     record.id !== plan.id ||
     record.planSha256 !== digest ||
@@ -211,6 +248,20 @@ function validateRun(record, plan, digest) {
     !record.stages?.commonVerify
   )
     fail("invalid_run", "Run record is incompatible with the frozen plan");
+  if (
+    (record.checkout !== null &&
+      !validCheckoutPath(record.checkout, plan.outputRoot)) ||
+    !Array.isArray(record.retainedCheckouts) ||
+    record.retainedCheckouts.some(
+      (checkout) => !validCheckoutPath(checkout, plan.outputRoot)
+    ) ||
+    JSON.stringify(Object.keys(record.targets || {}).sort()) !==
+      JSON.stringify(Object.keys(plan.targets).sort())
+  )
+    fail(
+      "invalid_run",
+      "Run record contains paths or targets outside the frozen plan"
+    );
   if (
     JSON.stringify(record.environment) !== JSON.stringify(environmentIdentity())
   )
@@ -684,12 +735,38 @@ function hostReady(plan) {
       "prerequisite_unavailable",
       "Node or npm version is below frozen delivery profile"
     );
+  let available;
+  try {
+    const storage = statfsSync(plan.outputRoot, { bigint: true });
+    available = storage.bavail * storage.bsize;
+  } catch {
+    fail("prerequisite_unavailable", "Cannot inspect candidate store capacity");
+  }
+  if (available < BigInt(plan.profile.preflight.minimumFreeBytes))
+    fail(
+      "prerequisite_unavailable",
+      "Candidate store has insufficient free space"
+    );
+  const probe = path.join(plan.outputRoot, `.write-probe-${randomUUID()}`);
+  try {
+    writeFileSync(probe, "", { flag: "wx", mode: 0o600 });
+    rmSync(probe);
+  } catch {
+    fail("prerequisite_unavailable", "Candidate store is not writable");
+  }
 }
 export async function runDelivery(planPath, identity) {
   const plan = planRecord(planPath, identity);
   const bytes = readFileSync(planPath);
   const digest = sha(bytes);
-  mkdirSync(plan.outputRoot, { recursive: true, mode: 0o700 });
+  try {
+    mkdirSync(plan.outputRoot, { recursive: true, mode: 0o700 });
+  } catch {
+    fail(
+      "prerequisite_unavailable",
+      "Cannot create candidate output in the private run store"
+    );
+  }
   const file = runFile(plan);
   const release = acquireOwnership(`run:${plan.outputRoot}`, {
     canRecover: () => {
@@ -762,6 +839,7 @@ export function statusDelivery(runRoot, id) {
   const file = path.join(runRoot, "runs", id, "run.json");
   const run = readJson(file, "run_unavailable");
   if (
+    !validIntegrity(run) ||
     run.schema !== 1 ||
     run.id !== id ||
     !run.stages?.prepare ||
