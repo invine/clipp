@@ -25,6 +25,60 @@
     },
     { "id": "ui-behavior", "command": ["npm", "run", "test:ui-behavior"] }
   ],
+  "androidQualification": {
+    "apis": [31, 33, 34, 35, 36],
+    "unitCheck": "android-native-unit",
+    "matrixChecks": [
+      "android-native-matrix-api31",
+      "android-native-matrix-api33",
+      "android-native-matrix-api34",
+      "android-native-matrix-api35",
+      "android-native-matrix-api36"
+    ],
+    "matrixClasses": [
+      "ManagedRelayCredentialStoreTest",
+      "BackgroundContinuityLifecycleTest",
+      "BackgroundContinuityManifestTest",
+      "BackgroundContinuityDiagnosticsTest"
+    ],
+    "matrixCases": [
+      "com.clipp.app.ManagedRelayCredentialStoreTest#fixturesRejectTheOperatorApplication",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#onlyExactPrivateCallbackResolvesToClipp",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#nativeCredentialKeyCannotBeExported",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#recreatedNativeStoreRetainsOnlyEndpointScopedRenewableCredentials",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#ciphertextIsAuthenticatedAndCorruptionRequiresLogin",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#missingKeystoreKeyErasesRestoredCiphertext",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#ciphertextFileIsExcludedFromCloudBackupAndDeviceTransfer",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#serviceStartupPublishesPrivacySafeStatusAndOnlyAppliedAutoSyncAction",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#notificationTapsWaitForAppliedStateAndOldActionsCannotUndoResume",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#unknownAutoSyncOffersOnlyStopUntilAnAppliedUpdateArrives",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#serviceHoldsPartialWakeLockUntilUserStops",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#heartbeatLossStopsTheEmptyServiceAndRecordsAnObservedFailure",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#removingTheApplicationTaskStopsBackgroundContinuity",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#rebootOffersReconnectWithoutStartingTheService",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#blockedNotificationAvailabilityDoesNotCountAsARuntimeFailure",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#ingressAndPendingApplicationDiagnosticsNeverContainTheirPayloadsOrIdentifiers",
+      "com.clipp.app.BackgroundContinuityManifestTest#backgroundContinuityDeclaresPartialWakeLockPermission",
+      "com.clipp.app.BackgroundContinuityManifestTest#taskRemovalIsDeliveredToBackgroundContinuityService",
+      "com.clipp.app.BackgroundContinuityManifestTest#androidDiscoversProcessTextAndSharesheetIngress",
+      "com.clipp.app.BackgroundContinuityManifestTest#explicitTextQueueSurvivesRestartAndPreservesRepeatedEventIdentity",
+      "com.clipp.app.BackgroundContinuityManifestTest#persistenceFailureNeverReportsAnActionAsQueued",
+      "com.clipp.app.BackgroundContinuityManifestTest#actionQueueUpdatesAreAtomicAcrossStoreInstances",
+      "com.clipp.app.BackgroundContinuityManifestTest#coldProcessTextIntentReachesTheDurableQueueBeforeRuntimeLaunch",
+      "com.clipp.app.BackgroundContinuityManifestTest#warmSharesheetIntentReachesTheDurableQueue",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#exportIsBoundedAndUsesOnlyThePrivacyReviewedSchema",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#repeatedObservedFailuresMarkTheConfigurationLimitedAndEnableGuidance",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#diagnosticExportReusesOneBoundedCacheFile",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#reconnectDurationDoesNotSpanStoppedSessions"
+    ],
+    "requiredCases": 28,
+    "jdkMajor": 21,
+    "gradleVersion": "8.11.1",
+    "sdkBuildTools": "35.0.0",
+    "aapt2Version": "2.19-11948202",
+    "minimumApi": 31,
+    "timeoutMs": { "unit": 600000, "candidate": 1200000, "matrix": 1200000 }
+  },
   "electronPackage": {
     "applicationFiles": ["dist/**/*"],
     "resourceFiles": [
