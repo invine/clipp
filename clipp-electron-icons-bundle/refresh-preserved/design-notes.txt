@@ -1,0 +1,60 @@
+Clipp icon refresh — corrected constraint — 2026-10-28
+
+The user's correction supersedes the previous proposals: preserve the C's tilt
+and the green dot's golden-ratio placement. Geometry is a brand constraint.
+
+Implementation
+The white C is traced directly from the original 512px PNG, using subpixel contour
+interpolation. Its asymmetric opening and tilted appearance are not regularized.
+All three SVGs have the identical C path. White remains #F9FAFB.
+Green remains #22C55E. Dot center (390,247), radius 28, in the original 512px canvas.
+The original golden-ratio construction is not available as vector source; its
+placement is preserved from the supplied artwork rather than recomputed from an
+invented formula. Raster tracing introduces subpixel edge differences.
+White silhouette overlap against the original: 99.52% intersection-over-union at
+512px, using the same white threshold. This measures tracing fidelity, not design quality.
+Tile: x/y 36, width/height 440, radius 122.
+
+Only the background differs:
+A Violet: #6735CC, flat.
+B Depth: #262653 to #443293 to #7728D3, diagonal gradient.
+C Ink: #40256E, flat.
+
+Scope
+Existing icon assets remain untouched. These are proposed finishes with SVG masters
+and PNGs at 16, 24, 32, 48, 64, 128, 256, 512 and 1024px.
+No runtime code changed, no application tests or commits performed.
+
+Skill application
+The component exception applies; no page direction draw/seed is needed.
+Purple and the optional gradient preserve existing brand conventions.
+This is a static specimen board, not a marketing page: no footage, animation,
+CTA, photographic minimum or single dominant hero is applicable.
+The off-centre heuristic measures text/image content bounds rather than the
+full specimen fields. Actual column backgrounds reach equal 40px desktop margins;
+tablet margins are 32px and mobile margins 24px. This is a documented exception.
+
+ROUND 2 (revised brief)
+Seen in one second: the original tilted C and green dot, in three purple finishes.
+Idea (one sentence): preserve Clipp's asymmetric mark and change only its field.
+Live thing: not applicable to static icon artwork.
+Layout words by section: introduction=title / options=specimens / original=reference.
+Scores: design 7.5 · usability 8 · creativity 6 · content 8 → overall 7.4
+Caps applied: creativity is intentionally constrained to a faithful brand refresh.
+Top three problems (most visible first), each with the screenshot it shows in and the fix:
+1. The previous proposals erased the tilt (previous comparison-1440.png). Fixed
+   by tracing the original rather than rebuilding a geometric C.
+2. The previous proposals moved/recolored the dot. Fixed by restoring its source
+   position, radius and color across every revised option.
+3. Raster-source tracing has minor subpixel irregularities (large 1024px export).
+   Accept for proposals; use the original vector master if one becomes available.
+
+Recommendation
+B Depth retains the most of the original character; A Violet removes the gradient
+without changing the mark. C Ink is a deliberately quieter color direction.
+
+Final verification
+Source lint: 0 FAIL, 0 WARN.
+Component-scoped browser inspection: 0 FAIL, 0 WARN at 1440, 768 and 390px,
+with the above documented scope allowances. All six final screenshots viewed.
+No horizontal overflow in separate file:// renders. Three identical C paths verified.

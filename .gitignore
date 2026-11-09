@@ -1,5 +1,12 @@
 node_modules
 dist
+apps/android/android/.idea/
+
+# Local design tooling and independently versioned Sites checkouts
+.codex-attachments/
+.taste-skill/
+.scratch/clipp-history-site/
+.scratch/device-page-concepts/site/
 
 # Local runtime state and diagnostic output
 .clipp-cli-store.json

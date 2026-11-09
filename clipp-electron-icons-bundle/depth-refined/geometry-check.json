@@ -1,0 +1,19 @@
+{
+  "source": "../refresh-preserved/b-depth/icon.svg",
+  "identicalForeground": true,
+  "cPath": "unchanged",
+  "dot": {
+    "cx": 390,
+    "cy": 247,
+    "r": 28,
+    "fill": "#22C55E"
+  },
+  "white": "#F9FAFB",
+  "tile": {
+    "x": 36,
+    "y": 36,
+    "width": 440,
+    "height": 440,
+    "rx": 122
+  }
+}

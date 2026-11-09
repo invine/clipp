@@ -1,0 +1,57 @@
+Clipp B / Depth refinement — 2026-10-28
+
+Selected source: ../refresh-preserved/b-depth/icon.svg
+Deliverable: refined-b/icon.svg and PNG exports at 16, 24, 32, 48, 64, 128,
+256, 512 and 1024px. selected-b/ is a comparison copy of the previous B.
+
+Changes
+Background only. A four-stop diagonal field runs from #222249 through #303674
+and #50339D to #7630D3. A broad, low-opacity blue field (#315AA2, peak opacity .34)
+at (240,225), radius 260, restores some of the original icon's cool center.
+There are no added bevels, outlines, gloss or drop shadows.
+
+Locked geometry
+The complete foreground markup is reused byte-for-byte from selected B.
+C contour, tilt, opening and #F9FAFB fill are unchanged.
+Green dot remains (390,247), radius 28, #22C55E in a 512px viewBox.
+The requested golden-ratio relationship is retained through the existing placement;
+no alternative mathematical construction was inferred or imposed.
+Tile bounds and corner radius remain (36,36,440,440), radius 122.
+The original raster-to-vector trace's subpixel edge differences remain unchanged.
+See geometry-check.json; generation fails if foreground markup differs.
+
+Skill scope
+Applied design-taste-frontend component exception. No direction draw/seed or redraw.
+Purple and gradient are established brand constraints. This is an icon specimen,
+so marketing-page photography, video, motion, CTA and hero requirements are not
+applicable. Off-centre text-bound heuristics are excluded: the specimen fields
+are symmetric inside a centered 1160px wrapper with equal padding.
+No found imagery or fabricated proof; only the project's existing icon and vectors.
+
+ROUND 1
+Seen in one second: the same tilted C, with a cooler and more dimensional purple field.
+Idea (one sentence): deepen the chosen B background while leaving the brand mark fixed.
+Live thing: not applicable to a static icon specimen.
+Layout words by section: introduction=title / selected-and-refined=comparison / original=reference.
+Scores: design 8 · usability 8 · creativity 6 · content 8 → overall 7.6
+Caps applied: creativity intentionally limited by the requested faithful refinement.
+Top three problems (most visible first), each with the screenshot it shows in and the fix:
+1. Previous B's center reads as a uniform purple band (desktop-fold.jpg, left).
+   Refined B adds a broad cool center without changing the white mark.
+2. Large changes would compete with the tilt/dot relationship (desktop-fold.jpg).
+   Keep all foreground geometry locked and limit changes to the field.
+3. At 16px the color refinement is subtle (desktop-fold.jpg small specimens).
+   Retain it: shape recognition takes precedence over exaggerating the gradient.
+
+Verification
+Source lint: 0 FAIL, 0 WARN.
+Component-scoped browser inspector: 0 FAIL, 0 WARN at 1440, 768 and 390px,
+using the documented component/brand exceptions above.
+All six final inspector screenshots viewed; actual-size specimens checked on
+light and dark grounds. File:// board checked at the same three widths, no overflow.
+Generator verified identical C and dot markup against selected B.
+Existing production assets are untouched. No runtime code changed, so application
+tests were not run. No commit was created.
+
+Regenerate from repository root
+node clipp-electron-icons-bundle/depth-refined/generate.mjs
