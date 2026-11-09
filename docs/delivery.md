@@ -1,6 +1,6 @@
-# Local Clipp delivery planning
+# Local Clipp delivery
 
-The `npm run delivery -- help` command is the current interface reference. This first implementation provides `plan`; execution and status are added by later tickets. Planning can read a Git remote and writes an immutable plan, but does not install dependencies, build, install an application or publish a release.
+The `npm run delivery -- help` command is the current interface reference. Planning can read a Git remote and writes an immutable plan. Running a plan now prepares an isolated committed checkout, installs its npm dependencies, runs the common local checks declared in `scripts/delivery/profiles/v1.json` and inventories production outputs. The profile lists lint, typecheck, Jest, candidate and delivery tooling, all three production builds and shared UI behavior as separate gates. Platform packaging, installation and publication remain incomplete until their adapters are added.
 
 Create a private JSON configuration outside the repository. The run store must also be outside the selected Clipp source checkout:
 
@@ -35,6 +35,11 @@ Omit destinations and references that do not apply to a selected target. A plan 
 
 ```sh
 npm run delivery -- plan --repo /absolute/path/to/clipp --config /absolute/private/delivery.json --source origin/main --target electron-package --json
+npm run delivery -- run /absolute/private/clipp-delivery-runs/plans/<run-id>/plan.json --json
+npm run delivery -- status <run-id> --config /absolute/private/delivery.json --json
+npm run delivery -- run <run-id> --config /absolute/private/delivery.json --json
 ```
 
-The plan stores the selected commit and source tree. A later change to the branch does not alter it. To select another source or profile, create a new plan and point `--supersedes` at the earlier plan. A plan is data and does not authorize installation or publication.
+The plan stores the selected commit and source tree. A later change to the branch does not alter it. To select another source or profile, create a new plan and point `--supersedes` at the earlier plan. The plan has a separate integrity receipt; edits to saved plan bytes block execution. A plan is data and does not authorize installation or publication.
+
+`run` returns a nonzero `delivery_incomplete` result after common checks pass because the selected platform targets still need their adapters. It writes atomic `run.json` observations and private command logs below `runRoot/runs/<run-id>`. Repeating the same plan or run ID checks the saved inputs and skips passing work when the isolated checkout, dependency lock and built output inventory still match. A failed common check retains its attempt and can be retried; interruption waits for the prior command process group to stop before recovery. `status` reads the last saved observation without contacting a destination or changing the run. Keep the run root private and retain it across ticket worktree cleanup.
