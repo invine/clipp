@@ -499,6 +499,7 @@ function plan(args) {
       toolchain: profile.toolchain,
       supportedHost: profile.supportedHost,
       preflight: profile.preflight,
+      candidateGeneratedOutputs: profile.candidateGeneratedOutputs,
       commonChecks: profile.commonChecks,
     },
     configurationSha256: sha(JSON.stringify(config)),

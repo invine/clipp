@@ -64,7 +64,7 @@ function fixture(t) {
   );
   writeFileSync(
     path.join(repo, "check.cjs"),
-    "const fs=require('node:fs'); const name=process.argv[2]; fs.appendFileSync('checks.txt',name+'\\n'); if(name==='lint' && process.env.CLIPP_VERIFY_DELAY_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,Number(process.env.CLIPP_VERIFY_DELAY_MS)); if((name==='lint' && process.env.CLIPP_FAIL_VERIFY)||name===process.env.CLIPP_FAIL_CHECK) process.exit(5); if(name!==process.env.CLIPP_EMPTY_CHECK){if(name==='jest') console.log('Tests: 3 passed, 3 total'); if(name.endsWith('tooling')) console.log('ℹ tests 3\\nℹ pass 3\\nℹ fail 0\\nℹ cancelled 0\\nℹ skipped 0');}"
+    "const fs=require('node:fs'); const name=process.argv[2]; fs.appendFileSync('checks.txt',name+'\\n'); if(name==='lint' && process.env.CLIPP_VERIFY_DELAY_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,Number(process.env.CLIPP_VERIFY_DELAY_MS)); if((name==='lint' && process.env.CLIPP_FAIL_VERIFY)||name===process.env.CLIPP_FAIL_CHECK) process.exit(5); if(process.env.CLIPP_GENERATE_KNOWN_OUTPUTS&&name==='jest'){fs.mkdirSync('.local/startup-replay-11111111-1111-4111-8111-111111111111',{recursive:true});fs.writeFileSync('.local/startup-replay-11111111-1111-4111-8111-111111111111/receipt.json','{}');} if(process.env.CLIPP_GENERATE_UNEXPECTED_OUTPUT&&name==='jest'){fs.mkdirSync('.local/startup-replay-not-a-uuid',{recursive:true});fs.writeFileSync('.local/startup-replay-not-a-uuid/receipt.json','{}');} if(name!==process.env.CLIPP_EMPTY_CHECK){if(name==='jest') console.log('Tests: 3 passed, 3 total'); if(name.endsWith('tooling')) console.log('ℹ tests 3\\nℹ pass 3\\nℹ fail 0\\nℹ cancelled 0\\nℹ skipped 0');}"
   );
   writeFileSync(
     path.join(repo, "build.cjs"),
@@ -72,7 +72,7 @@ function fixture(t) {
   );
   writeFileSync(
     path.join(repo, "ui.cjs"),
-    "require('node:fs').appendFileSync('checks.txt','ui\\n'); console.log('1 passed');"
+    "const fs=require('node:fs'); fs.appendFileSync('checks.txt','ui\\n'); if(process.env.CLIPP_GENERATE_KNOWN_OUTPUTS){fs.mkdirSync('test-results',{recursive:true});fs.writeFileSync('test-results/.last-run.json','{}');} if(process.env.CLIPP_FAIL_UI){fs.mkdirSync('test-results/example',{recursive:true});fs.writeFileSync('test-results/example/error-context.md','fixture failure');process.exit(5);} console.log('1 passed');"
   );
   writeFileSync(
     path.join(repo, ".gitignore"),
@@ -402,6 +402,93 @@ test("an unwritable run store blocks before candidate preparation", (t) => {
   assert.notEqual(result.status, 0);
   assert.equal(JSON.parse(result.stdout).code, "prerequisite_unavailable");
   assert.equal(existsSync(path.join(f.store, "runs", f.plan.plan.id)), false);
+});
+
+test("known test-output directories do not masquerade as source edits", (t) => {
+  const f = fixture(t);
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      CLIPP_GENERATE_KNOWN_OUTPUTS: "1",
+    }
+  );
+  assert.equal(JSON.parse(result.stdout).code, "delivery_incomplete");
+  assert.equal(
+    JSON.parse(result.stdout).run.stages.commonVerify.state,
+    "passed"
+  );
+  const replay = delivery(["run", f.plan.path], f.repo);
+  assert.equal(
+    JSON.parse(replay.stdout).run.stages.commonVerify.state,
+    "passed"
+  );
+});
+
+test("unexpected files under a generated-output prefix still fail source validation", (t) => {
+  const f = fixture(t);
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      CLIPP_GENERATE_UNEXPECTED_OUTPUT: "1",
+    }
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).code, "candidate_artifact_invalid");
+});
+
+test("a failed UI gate retains its diagnostics and can resume without replaying earlier checks", (t) => {
+  const f = fixture(t);
+  const first = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      CLIPP_FAIL_UI: "1",
+    }
+  );
+  assert.equal(JSON.parse(first.stdout).code, "required_check_failed");
+  const resumed = delivery(["run", f.plan.path], f.repo);
+  assert.equal(
+    JSON.parse(resumed.stdout).run.stages.commonVerify.state,
+    "passed"
+  );
+  const run = JSON.parse(resumed.stdout).run;
+  assert.equal(
+    run.stages.commonVerify.attempts.filter(
+      (attempt) => attempt.checkId === "jest"
+    ).length,
+    1
+  );
+  assert.ok(
+    run.uiFailureDiagnostics?.some((file) =>
+      file.path.endsWith("error-context.md")
+    )
+  );
+  assert.ok(
+    existsSync(
+      path.join(
+        f.store,
+        "runs",
+        f.plan.plan.id,
+        run.uiFailureDiagnostics[0].copy
+      )
+    )
+  );
+  writeFileSync(
+    path.join(
+      f.store,
+      "runs",
+      f.plan.plan.id,
+      run.uiFailureDiagnostics[0].copy
+    ),
+    "tampered diagnostic"
+  );
+  const replay = delivery(["run", f.plan.path], f.repo);
+  assert.equal(JSON.parse(replay.stdout).code, "candidate_evidence_changed");
 });
 
 test("a second process cannot run the same plan while the first owns it", async (t) => {
