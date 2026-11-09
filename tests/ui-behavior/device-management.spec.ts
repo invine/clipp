@@ -34,11 +34,12 @@ test("a trusted device menu exposes its full peer ID and copy action", async ({
   ).toBeVisible();
 });
 
-test("the half-screen desktop layout keeps device navigation visible", async ({
+test("the half-screen desktop layout keeps device navigation available", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 720, height: 900 });
   await page.goto("/device-management.html");
+  await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(
     page.getByRole("navigation", { name: "Clipp destinations" })
   ).toBeVisible();
