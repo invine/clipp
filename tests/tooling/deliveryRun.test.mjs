@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -362,6 +364,44 @@ test("a missing passed-check log blocks reuse", (t) => {
   const replay = delivery(["run", f.plan.path], f.repo);
   assert.notEqual(replay.status, 0);
   assert.equal(JSON.parse(replay.stdout).code, "candidate_evidence_changed");
+});
+
+test("an edited run record cannot redirect replay into the caller checkout", (t) => {
+  const f = fixture(t);
+  const first = delivery(["run", f.plan.path], f.repo);
+  assert.equal(
+    JSON.parse(first.stdout).run.stages.commonVerify.state,
+    "passed"
+  );
+  const record = path.join(f.store, "runs", f.plan.plan.id, "run.json");
+  const run = JSON.parse(readFileSync(record, "utf8"));
+  run.checkout = f.repo;
+  writeFileSync(record, JSON.stringify(run));
+  const replay = delivery(["run", f.plan.path], f.repo);
+  assert.notEqual(replay.status, 0);
+  assert.equal(JSON.parse(replay.stdout).code, "invalid_run");
+  const { integritySha256: _oldDigest, ...body } = run;
+  run.integritySha256 = createHash("sha256")
+    .update(JSON.stringify(body))
+    .digest("hex");
+  writeFileSync(record, JSON.stringify(run));
+  const redirected = delivery(["run", f.plan.path], f.repo);
+  assert.equal(JSON.parse(redirected.stdout).code, "invalid_run");
+  assert.equal(existsSync(path.join(f.repo, "checks.txt")), false);
+});
+
+test("an unwritable run store blocks before candidate preparation", (t) => {
+  const f = fixture(t);
+  chmodSync(f.store, 0o500);
+  let result;
+  try {
+    result = delivery(["run", f.plan.path], f.repo);
+  } finally {
+    chmodSync(f.store, 0o700);
+  }
+  assert.notEqual(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).code, "prerequisite_unavailable");
+  assert.equal(existsSync(path.join(f.store, "runs", f.plan.plan.id)), false);
 });
 
 test("a second process cannot run the same plan while the first owns it", async (t) => {

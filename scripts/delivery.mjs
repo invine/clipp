@@ -498,6 +498,7 @@ function plan(args) {
       sha256: sha(profileBytes),
       toolchain: profile.toolchain,
       supportedHost: profile.supportedHost,
+      preflight: profile.preflight,
       commonChecks: profile.commonChecks,
     },
     configurationSha256: sha(JSON.stringify(config)),
