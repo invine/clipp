@@ -72,10 +72,10 @@ and a compatible development Electron executable as the two arguments.
 
 ### Packaged Electron WebRTC smoke check
 
-Electron's main bundle leaves `@libp2p/webrtc` external. Keep it in the Electron
-workspace's production dependencies so the distribution includes the transport
-and its native `node-datachannel` dependency tree. Loading `@koush/wrtc` alone
-does not establish that these transports are available.
+Electron's main bundle loads `@koush/wrtc` at startup and leaves
+`@libp2p/webrtc` external. Keep both in the Electron workspace's production
+dependencies. The distribution must include `@koush/wrtc`'s `wrtc.node` addon
+and the transport's native `node-datachannel` dependency tree.
 
 Build a local unsigned package into a new directory outside the repository:
 
@@ -98,8 +98,9 @@ ELECTRON_RUN_AS_NODE=1 \
 
 For other platforms or architectures, select the corresponding packaged
 executable and `resources/app.asar` path. The check imports from the packaged
-main's context, rejects dependencies resolved outside the archive, loads both
-WebRTC transport factories, and constructs/closes a native data channel. It
+main's context, loads the same `@koush/wrtc` addon as startup, rejects
+dependencies resolved outside the archive, loads both WebRTC transport
+factories, and constructs/closes a native data channel. It
 requires local ICE socket access, starts no Clipp profile, and does not replace
 the installed app. This is packaging/native-loading evidence; direct peer
 upgrade and application-frame delivery still require a connectivity harness or
