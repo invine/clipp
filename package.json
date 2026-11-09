@@ -90,7 +90,7 @@
     "typecheck:electron": "tsc -p apps/electron/tsconfig.json --noEmit && tsc -p apps/electron/tsconfig.main.json --noEmit",
     "typecheck:android": "tsc -p apps/android/tsconfig.json --noEmit",
     "typecheck:extension": "tsc -p apps/extension/tsconfig.json --noEmit",
-    "check": "npm run typecheck && npm test -- --runInBand && npm run check:candidate",
+    "check": "npm run typecheck && npm test -- --runInBand && npm run check:candidate && npm run check:delivery",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint --ext .ts,.tsx packages apps tests",
@@ -100,6 +100,8 @@
     "prepare": "husky",
     "acceptance:candidate": "node scripts/prepare-acceptance-candidate.mjs",
     "check:candidate": "node --test tests/tooling/acceptanceCandidate.test.mjs",
+    "delivery": "node scripts/delivery.mjs",
+    "check:delivery": "node --test tests/tooling/deliveryPlan.test.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "workspaces": [
