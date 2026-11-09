@@ -58,6 +58,46 @@ export function inspectElectronInventory(entries) {
     throw new Error("Missing Electron renderer HTML");
   return { files: paths.size };
 }
+
+export function inspectElectronBundleInventory(inventory) {
+  const files = Object.keys(inventory);
+  if (!files.includes("Contents/Resources/app.asar"))
+    fail("electron_inventory_invalid", "Packaged Electron archive is missing");
+  for (const name of files) {
+    const parts = name.split(path.sep);
+    const unpackedDependency = name.startsWith(
+      `Contents${path.sep}Resources${path.sep}app.asar.unpacked${path.sep}node_modules${path.sep}`
+    );
+    if (
+      parts.some((part) => /\.(?:dmg|pkg)$/i.test(part)) ||
+      (parts.some((part) => /\.app$/i.test(part)) &&
+        !name.startsWith(`Contents${path.sep}Frameworks${path.sep}`)) ||
+      (!unpackedDependency &&
+        parts.some((part) =>
+          /^(?:src|tests|scripts|release|\.scratch)$/i.test(part)
+        ))
+    )
+      fail(
+        "electron_inventory_invalid",
+        `Unexpected unpacked artifact: ${name}`
+      );
+  }
+  return { files: files.length };
+}
+
+export function packagedElectronExecutable(app) {
+  const executable = path.join(app, "Contents/MacOS/Clipp");
+  if (
+    !existsSync(executable) ||
+    !lstatSync(executable).isFile() ||
+    !(lstatSync(executable).mode & 0o111)
+  )
+    fail(
+      "electron_artifact_invalid",
+      "Packaged Electron executable is missing"
+    );
+  return executable;
+}
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -445,6 +485,7 @@ export async function packageElectron({ plan, run, file, execute, save }) {
     "electron-dmg-package"
   );
   const { app, dmg } = packageLocations(stage);
+  const packagedBinary = packagedElectronExecutable(app);
   const asar = path.join(app, "Contents/Resources/app.asar");
   if (!existsSync(asar))
     fail("electron_artifact_invalid", "Packaged app.asar is missing");
@@ -460,6 +501,8 @@ export async function packageElectron({ plan, run, file, execute, save }) {
     .split(/\r?\n/)
     .filter((line) => line.startsWith("/"));
   const archive = inspectElectronInventory(entries);
+  const inventory = bundleInventory(app);
+  inspectElectronBundleInventory(inventory);
   const resourceDigests = resourceHashes(checkout, app, config);
   const signatureLog = await execute(
     "codesign",
@@ -487,7 +530,7 @@ export async function packageElectron({ plan, run, file, execute, save }) {
     "electron-dmg-integrity"
   );
   await execute(
-    electronBinary,
+    packagedBinary,
     [
       path.join(packageInput, "tests/harness/electron-packaged-webrtc.cjs"),
       asar,
@@ -509,7 +552,6 @@ export async function packageElectron({ plan, run, file, execute, save }) {
     120_000,
     "electron-quit"
   );
-  const inventory = bundleInventory(app);
   const receipt = {
     schema: 1,
     source: run.source.commit,
@@ -526,6 +568,10 @@ export async function packageElectron({ plan, run, file, execute, save }) {
     signing: "unsigned-local",
     appSignature: "adhoc",
     dmgSignature: "not-signed",
+    verificationExecutables: {
+      nativeSmoke: "packaged-app",
+      quitHarness: "pinned-electron-with-packaged-main",
+    },
     toolchain: {
       electron: plan.profile.toolchain.electron,
       electronBuilder: builder,

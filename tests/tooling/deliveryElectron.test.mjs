@@ -8,6 +8,8 @@ import {
   electronNativeInventory,
   inspectElectronConfig,
   inspectElectronInventory,
+  inspectElectronBundleInventory,
+  packagedElectronExecutable,
   packageElectron,
   verifyElectronReceipt,
 } from "../../scripts/delivery/electron.mjs";
@@ -51,6 +53,38 @@ test("Electron package inventory accepts only the selected application and produ
       ),
     /node-datachannel/i
   );
+});
+
+test("unpacked Electron bundle rejects nested installers and source outside the archive", () => {
+  const clean = {
+    "Contents/MacOS/Clipp": { size: 1 },
+    "Contents/Resources/app.asar": { size: 1 },
+    "Contents/Resources/app.asar.unpacked/node_modules/@koush/wrtc/src/peer.cc":
+      { size: 1 },
+  };
+  assert.doesNotThrow(() => inspectElectronBundleInventory(clean));
+  for (const artifact of [
+    "Contents/Resources/release/Old.dmg",
+    "Contents/Resources/Old.app/Contents/MacOS/Old",
+    "Contents/Resources/src/main.ts",
+    "Contents/Resources/.scratch/notes.md",
+  ]) {
+    assert.throws(
+      () =>
+        inspectElectronBundleInventory({ ...clean, [artifact]: { size: 1 } }),
+      /unexpected unpacked artifact/i
+    );
+  }
+});
+
+test("native smoke executable is the packaged app binary", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "clipp-executable-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const app = path.join(root, "Clipp.app");
+  mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
+  const executable = path.join(app, "Contents/MacOS/Clipp");
+  writeFileSync(executable, "binary", { mode: 0o755 });
+  assert.equal(packagedElectronExecutable(app), executable);
 });
 
 test("a changed DMG or packaged app cannot reuse an Electron receipt", (t) => {
