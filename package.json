@@ -101,7 +101,7 @@
     "acceptance:candidate": "node scripts/prepare-acceptance-candidate.mjs",
     "check:candidate": "node --test tests/tooling/acceptanceCandidate.test.mjs",
     "delivery": "node scripts/delivery.mjs",
-    "check:delivery": "node --test tests/tooling/deliveryPlan.test.mjs",
+    "check:delivery": "node --test tests/tooling/deliveryPlan.test.mjs tests/tooling/deliveryRun.test.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "workspaces": [

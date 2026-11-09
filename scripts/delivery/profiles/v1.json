@@ -1,5 +1,25 @@
 {
   "schema": 1,
+  "commonChecks": [
+    { "id": "lint", "command": ["npm", "run", "lint"] },
+    { "id": "typecheck", "command": ["npm", "run", "typecheck"] },
+    { "id": "jest", "command": ["npm", "test", "--", "--runInBand"] },
+    { "id": "candidate-tooling", "command": ["npm", "run", "check:candidate"] },
+    { "id": "delivery-tooling", "command": ["npm", "run", "check:delivery"] },
+    {
+      "id": "electron-build",
+      "command": ["npm", "--workspace", "apps/electron", "run", "build"]
+    },
+    {
+      "id": "android-web-build",
+      "command": ["npm", "--workspace", "apps/android", "run", "build"]
+    },
+    {
+      "id": "chrome-build",
+      "command": ["npm", "--workspace", "apps/extension", "run", "build"]
+    },
+    { "id": "ui-behavior", "command": ["npm", "run", "test:ui-behavior"] }
+  ],
   "targets": {
     "electron-package": {
       "dependsOn": [],

@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { planPathForId, runDelivery, statusDelivery } from "./delivery/run.mjs";
 
 const script = fileURLToPath(import.meta.url);
 const profilePath = path.join(
@@ -21,6 +22,14 @@ const profilePath = path.join(
   "v1.json"
 );
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const moduleSha256 = () =>
+  sha(
+    ["run.mjs", "ownership.mjs"]
+      .map((name) =>
+        readFileSync(path.join(path.dirname(script), "delivery", name))
+      )
+      .reduce((all, bytes) => Buffer.concat([all, bytes]), Buffer.alloc(0))
+  );
 const fail = (code, message) => {
   throw Object.assign(new Error(message), { code });
 };
@@ -152,6 +161,11 @@ function sourceFrom(root, ref, cache) {
         "source_freshness_changed",
         "Remote branch advanced during planning; retry"
       );
+    git(
+      cache,
+      ["update-ref", "refs/delivery/selected", fetched],
+      "source_cache_unavailable"
+    );
     gitRoot = cache;
     commit = fetched;
   } else {
@@ -477,12 +491,14 @@ function plan(args) {
         "tool_revision_unavailable"
       ),
       scriptSha256: sha(readFileSync(script)),
+      moduleSha256: moduleSha256(),
     },
     profile: {
       schema: 1,
       sha256: sha(profileBytes),
       toolchain: profile.toolchain,
       supportedHost: profile.supportedHost,
+      commonChecks: profile.commonChecks,
     },
     configurationSha256: sha(JSON.stringify(config)),
     privateReferences: config.references || {},
@@ -500,10 +516,41 @@ function plan(args) {
     flag: "wx",
   });
   renameSync(temporary, destination);
+  writeFileSync(
+    `${destination}.sha256`,
+    sha(readFileSync(destination)) + "\n",
+    {
+      mode: 0o600,
+      flag: "wx",
+    }
+  );
   return { code: "planned", path: destination, plan: record };
 }
 function help() {
-  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery.\n`;
+  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source, and leaves unimplemented target adapters incomplete. Status is read-only.\n`;
+}
+function runOptions(args) {
+  const [selector, ...rest] = args;
+  if (!selector || selector.startsWith("--"))
+    fail("invalid_options", "Expected plan path or run ID");
+  let configPath = process.env.CLIPP_DELIVERY_CONFIG;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--json") continue;
+    if (rest[i] === "--config" && rest[i + 1]) configPath = rest[++i];
+    else fail("invalid_options", `Unsupported run/status option: ${rest[i]}`);
+  }
+  const isId = /^[0-9a-f-]{36}$/.test(selector);
+  if (isId && !configPath)
+    fail(
+      "invalid_options",
+      "A run ID requires --config or CLIPP_DELIVERY_CONFIG"
+    );
+  const runRoot = configPath
+    ? readJson(configPath, "invalid_configuration").runRoot
+    : null;
+  if (configPath && (typeof runRoot !== "string" || !path.isAbsolute(runRoot)))
+    fail("invalid_configuration", "Configuration requires absolute runRoot");
+  return { selector, isId, runRoot };
 }
 let json = process.argv.includes("--json");
 try {
@@ -516,11 +563,38 @@ try {
         ? JSON.stringify(result) + "\n"
         : `Planned ${result.plan.id} at ${result.path}\nSource ${result.plan.source.commit}\nTargets ${Object.keys(result.plan.targets).join(", ")}\n`
     );
-  } else
-    fail(
-      "invalid_operation",
-      "Use plan or help; run and status are implemented by later tickets"
+  } else if (process.argv[2] === "run") {
+    const { selector, isId, runRoot } = runOptions(process.argv.slice(3));
+    const result = await runDelivery(
+      isId ? planPathForId(runRoot, selector) : path.resolve(selector),
+      {
+        scriptSha256: sha(readFileSync(script)),
+        moduleSha256: moduleSha256(),
+        profileSha256: sha(readFileSync(profilePath)),
+      }
     );
+    process.stdout.write(
+      json
+        ? JSON.stringify(result) + "\n"
+        : `${result.code}: ${result.run.nextAction}\n`
+    );
+    process.exitCode =
+      result.code === "delivery_incomplete"
+        ? 1
+        : result.code === "delivery_complete"
+          ? 0
+          : 1;
+  } else if (process.argv[2] === "status") {
+    const { selector, isId, runRoot } = runOptions(process.argv.slice(3));
+    if (!isId || !runRoot)
+      fail("invalid_options", "Status requires a run ID and --config");
+    const result = statusDelivery(runRoot, selector);
+    process.stdout.write(
+      json
+        ? JSON.stringify(result) + "\n"
+        : `${result.code}: ${result.run.nextAction} (observed ${result.run.updatedAt})\n`
+    );
+  } else fail("invalid_operation", "Use plan, run, status or help");
 } catch (error) {
   const code = error.code || "delivery_internal_error";
   process.stdout.write(
