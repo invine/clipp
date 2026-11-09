@@ -20,6 +20,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
+import { qualifyAndroid } from "./android-qualification.mjs";
 import {
   electronNativeInventory,
   inspectElectronConfig,
@@ -634,6 +635,15 @@ function newRun(plan, digest) {
         { state: "pending", nextAction: "platform adapter unavailable" },
       ])
     ),
+    androidQualification: Object.keys(plan.targets).some((target) =>
+      target.startsWith("android")
+    )
+      ? {
+          state: "pending",
+          nextAction: "prepare native acceptance",
+          updatedAt: null,
+        }
+      : null,
     artifacts: null,
     nativeDependencyInventory: null,
     generatedOutputs: null,
@@ -934,7 +944,7 @@ function hostReady(plan) {
     fail("prerequisite_unavailable", "Candidate store is not writable");
   }
 }
-export async function runDelivery(planPath, identity) {
+export async function runDelivery(planPath, identity, options = {}) {
   const plan = planRecord(planPath, identity);
   const bytes = readFileSync(planPath);
   const digest = sha(bytes);
@@ -989,6 +999,13 @@ export async function runDelivery(planPath, identity) {
       hostReady(plan);
       await prepare(run, plan, file);
       await commonVerify(run, plan, file);
+      await qualifyAndroid({
+        plan,
+        run,
+        save: () => atomically(file, run),
+        invoke,
+        diagnostic: options.native || {},
+      });
     } catch (error) {
       const name =
         run.stages.prepare.state === "passed" ? "commonVerify" : "prepare";
