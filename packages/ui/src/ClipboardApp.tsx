@@ -2785,7 +2785,7 @@ export function ClipboardApp({
                     session.open({
                       kind: "relay",
                       entity: issue.target,
-                      origin: `relay:${issue.target}`,
+                      origin: `relay:${issue.target === "new" ? "add" : issue.target}`,
                     });
                     session.relay.begin(config);
                   }

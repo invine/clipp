@@ -262,7 +262,13 @@ export function ManagedRelaySettings({
       {configurations.map((config) => {
         const state = states.find((item) => item.key === config.key);
         return (
-          <details className="relay-card managed-relay-card" key={config.key}>
+          <details
+            className="relay-card managed-relay-card"
+            key={config.key}
+            ref={(element) => {
+              if (element && editing === config.key) element.open = true;
+            }}
+          >
             <summary className="peer-meta">
               <div className="peer-name">
                 {config.name ||
@@ -289,6 +295,30 @@ export function ManagedRelaySettings({
               {state?.warning && (
                 <div className="relay-error">{state.warning}</div>
               )}
+              {context.relayActions[config.key]?.pending && (
+                <p role="status">Relay action pending…</p>
+              )}
+              {context.relayActions[config.key]?.result && (
+                <p
+                  role={
+                    context.relayActions[config.key]?.result?.error
+                      ? "alert"
+                      : "status"
+                  }
+                >
+                  {context.relayActions[config.key]?.result?.error ??
+                    (context.relayActions[config.key]?.result?.status ===
+                    "portal-opened"
+                      ? "Relay portal opened. Its browser account may differ from Clipp's account."
+                      : context.relayActions[config.key]?.result?.status ===
+                          "authenticated"
+                        ? "Relay authentication completed. Current connection status is shown above."
+                        : context.relayActions[config.key]?.result?.status ===
+                            "removed-local"
+                          ? "Local relay configuration removed."
+                          : "Retry requested. Current connection status is shown above.")}
+                </p>
+              )}
             </summary>
             <div className="peer-meta">
               <div className="relay-address">
@@ -297,30 +327,6 @@ export function ManagedRelaySettings({
                   : `${config.peerId} · ${config.addresses.length} address(es)`}
               </div>
             </div>
-            {context.relayActions[config.key]?.pending && (
-              <p role="status">Relay action pending…</p>
-            )}
-            {context.relayActions[config.key]?.result && (
-              <p
-                role={
-                  context.relayActions[config.key]?.result?.error
-                    ? "alert"
-                    : "status"
-                }
-              >
-                {context.relayActions[config.key]?.result?.error ??
-                  (context.relayActions[config.key]?.result?.status ===
-                  "portal-opened"
-                    ? "Relay portal opened. Its browser account may differ from Clipp's account."
-                    : context.relayActions[config.key]?.result?.status ===
-                        "authenticated"
-                      ? "Relay authentication completed. Current connection status is shown above."
-                      : context.relayActions[config.key]?.result?.status ===
-                          "removed-local"
-                        ? "Local relay configuration removed."
-                        : "Retry requested. Current connection status is shown above.")}
-              </p>
-            )}
             <div className="peer-actions">
               {config.kind === "managed" &&
                 onLogin &&

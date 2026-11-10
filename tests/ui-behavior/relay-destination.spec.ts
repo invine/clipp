@@ -55,3 +55,39 @@ test("a legacy relay settings handoff opens Relays", async ({ page }) => {
     page.getByRole("heading", { name: "Configured relays" })
   ).toBeVisible();
 });
+
+test("returning to a suspended relay editor restores focus to its visible Edit action", async ({
+  page,
+}) => {
+  await page.goto("/relay-address.html?managed");
+  await page.getByText("Relay A", { exact: true }).click();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("textbox", { name: "Name" }).fill("retained draft");
+  await page
+    .getByRole("button", { name: "Open Requests notification" })
+    .evaluate((button: HTMLButtonElement) => button.click());
+  await page.getByRole("button", { name: "Back to previous task" }).click();
+  await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue(
+    "retained draft"
+  );
+  await page.getByRole("button", { name: "Close relay editor" }).click();
+  await expect(
+    page.getByRole("button", { name: "Edit", exact: true })
+  ).toBeFocused();
+});
+
+test("relay action feedback remains visible after notification interruption", async ({
+  page,
+}) => {
+  await page.goto("/relay-address.html?managed");
+  await page.getByText("Relay A", { exact: true }).click();
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page.getByText("Relay action pending…")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Open Requests notification" })
+    .click();
+  await page.getByRole("button", { name: "Back to previous task" }).click();
+  await expect(page.getByText("Relay action pending…")).toBeVisible();
+  await page.getByRole("button", { name: "Reject relay login" }).click();
+  await expect(page.getByText("Login could not be confirmed")).toBeVisible();
+});
