@@ -1213,7 +1213,11 @@ test("Android local debug preparation keeps its APK separate from the release pa
   assert.equal(run.stages.androidPackage.receipt.signing, "debug");
   assert.match(run.stages.androidPackage.receipt.apk.path, /app-debug\.apk$/);
   assert.equal(run.stages.androidPackage.receipt.aab, null);
-  assert.equal(run.targets["android-local"].state, "pending");
+  assert.equal(run.targets["android-local"].state, "blocked");
+  assert.equal(
+    run.stages.androidLocal.detail.code,
+    "android_install_unauthorized"
+  );
 });
 
 for (const [name, override, expected] of [

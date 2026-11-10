@@ -229,6 +229,47 @@ test("Android plans declare signing mode and publication blockers without exposi
   assert.ok(!result.stdout.includes("secret-value"));
 });
 
+test("Android local debug plan requires selected serial and install authorization without Play access", () => {
+  const f = fixture();
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: { androidDeviceSerial: "emulator-5556" },
+      signing: { androidLocal: "debug" },
+    })
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      tool,
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.first,
+      "--target",
+      "android-local",
+      "--json",
+    ],
+    { encoding: "utf8" }
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const target = JSON.parse(result.stdout).plan.targets["android-local"];
+  assert.equal(target.signing, "debug");
+  assert.equal(target.destinationIdentity, "emulator-5556");
+  assert.ok(
+    target.prerequisites.includes("reference:androidInstallAuthorizationRef")
+  );
+  assert.equal(
+    target.prerequisites.includes("reference:playCredentialRef"),
+    false
+  );
+});
+
 test("run stores reached through symlinks cannot write into the selected source", () => {
   const f = fixture();
   const direct = path.join(f.root, "linked-store");
