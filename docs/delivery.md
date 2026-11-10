@@ -24,6 +24,7 @@ Create a private JSON configuration outside the repository. The run store must a
   "references": {
     "androidSdkRef": "env:ANDROID_HOME",
     "javaHomeRef": "env:JAVA_HOME",
+    "electronAuthorizationRef": "file:/absolute/private/electron-authorization.json",
     "chromeAuthorizationRef": "file:/absolute/private/chrome-authorization.json",
     "chromeDebugUrlRef": "file:/absolute/private/chrome-debug-url.txt",
     "androidSigningRef": "keychain:clipp-upload",
@@ -55,6 +56,14 @@ The plan stores the selected commit and source tree. A later change to the branc
 The v1 profile requires at least 3 GiB free in the candidate store and checks that the output is writable before preparation. This threshold covers the measured roughly 0.94 GiB locked npm installation plus room for the three web builds and temporary output; platform packaging adds its own later capacity checks.
 
 For `electron-package`, the frozen profile pins Electron 43.4.0, electron-builder 26.18.0 and the archive inventory tool. Packaging copies the verified candidate to an owned macOS temporary directory because the builder rebuilds native dependencies; the original candidate remains available for reuse. The run store retains the DMG and app, with digests, source/build identity, resource hashes and explicit local unsigned signing status. Completion requires archive and unpacked bundle inspection, disk-image integrity, WebRTC loading through the packaged app executable and the production-main normal Quit regression. The Quit harness uses the pinned Electron executable with the packaged main and dependencies; the receipt records both executable choices. Packaging does not install the app or establish live network acceptance.
+
+## Electron local installation
+
+Select `electron-local` and an absolute `electronInstallPath` ending in `Clipp.app`. The run first creates and verifies the same Electron package receipt as `electron-package`, even when the package target was not separately selected. It then installs that retained app without rebuilding it. The destination must be outside the source checkout and run store. For a disposable trial, choose a newly owned directory under `/private/tmp`, such as `/private/tmp/clipp-delivery-owned-<unique-id>/Clipp.app`.
+
+Before installation, set `electronAuthorizationRef` to private JSON with `schema: 1`, `scope: "local-electron-installation"`, the plan's full `sourceRevision`, the package receipt's `buildIdentity`, the exact absolute `destination`, a nonempty `authorizedBy`, and an ISO `authorizedAt` date. The reference may be `env:`, `file:`, or `keychain:`. The run records only the authorization source, time, scope, and digest. A missing or mismatched authorization blocks replacement.
+
+The adapter takes an exclusive lock on the canonical app path, stops only a process whose executable matches that selected app, copies the verified package beside the destination, and retains any previous app in `.clipp-delivery-backups` beside it. Completion checks the installed bundle identity, native WebRTC loading from its executable, and a normal Quit using its installed main with the pinned Electron runtime. A completed replay verifies the installed identity without recopying. After an interrupted replacement, inspect the destination, staged app, and retained backup recorded in `run.json`; a matching installed candidate can be reconciled, while an uncertain destination remains blocked for manual recovery.
 
 `run` returns `delivery_complete` when every selected target passes, or a nonzero `delivery_incomplete` result when a target remains blocked. It writes atomic `run.json` observations and private command logs below `runRoot/runs/<run-id>`. Repeating the same plan or run ID checks the saved inputs and skips passing work when the isolated checkout, dependency lock and built output inventory still match. A failed common check retains its attempt and can be retried; interruption waits for the prior command process group to stop before recovery. `status` reads the last saved observation without contacting a destination or changing the run. Keep the run root private and retain it across ticket worktree cleanup.
 

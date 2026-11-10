@@ -29,6 +29,7 @@ import {
   inspectElectronConfig,
   packageElectron,
 } from "./electron.mjs";
+import { installElectronLocal } from "./electron-local.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (code, message) => {
@@ -289,6 +290,7 @@ function validateRun(record, plan, digest) {
     !record.stages?.prepare ||
     !record.stages?.commonVerify ||
     !record.stages?.electronPackage ||
+    !record.stages?.electronLocal ||
     !record.stages?.androidPackage ||
     !record.stages?.androidInternal ||
     !record.stages?.chromeLocal
@@ -643,6 +645,7 @@ function newRun(plan, digest) {
       prepare: { state: "pending", attempts: [], updatedAt: null },
       commonVerify: { state: "pending", attempts: [], updatedAt: null },
       electronPackage: { state: "pending", attempts: [], updatedAt: null },
+      electronLocal: { state: "pending", attempts: [], updatedAt: null },
       androidPackage: { state: "pending", attempts: [], updatedAt: null },
       androidInternal: { state: "pending", attempts: [], updatedAt: null },
       chromeLocal: { state: "pending", attempts: [], updatedAt: null },
@@ -653,6 +656,13 @@ function newRun(plan, digest) {
         { state: "pending", nextAction: "platform adapter unavailable" },
       ])
     ),
+    electronPackage:
+      plan.targets["electron-local"] && !plan.targets["electron-package"]
+        ? {
+            state: "pending",
+            nextAction: "prepare Electron package dependency",
+          }
+        : null,
     androidQualification: Object.keys(plan.targets).some((target) =>
       target.startsWith("android")
     )
@@ -884,7 +894,7 @@ async function commonVerify(run, plan, file) {
   }
   sourceClean(run.checkout, plan.source.commit);
   run.artifacts = outputs(run.checkout);
-  if (plan.targets["electron-package"]) {
+  if (plan.targets["electron-package"] || plan.targets["electron-local"]) {
     try {
       const manifest = readJson(
         path.join(run.checkout, "apps/electron/package.json"),
@@ -986,6 +996,7 @@ export async function runDelivery(planPath, identity, options = {}) {
         "prepare",
         "commonVerify",
         "electronPackage",
+        "electronLocal",
         "androidPackage",
         "chromeLocal",
       ].every(
@@ -1005,6 +1016,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       "prepare",
       "commonVerify",
       "electronPackage",
+      "electronLocal",
       "androidPackage",
       "chromeLocal",
     ]) {
@@ -1058,7 +1070,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       };
     }
     let platformCode = null;
-    if (run.targets["electron-package"]) {
+    if (run.targets["electron-package"] || run.targets["electron-local"]) {
       try {
         await packageElectron({
           plan,
@@ -1090,8 +1102,11 @@ export async function runDelivery(planPath, identity, options = {}) {
         const blocked =
           !error.code || error.code === "prerequisite_unavailable";
         platformCode = blocked ? null : error.code;
-        run.targets["electron-package"] = {
-          ...run.targets["electron-package"],
+        const selected = run.targets["electron-package"]
+          ? "electron-package"
+          : "electron-local";
+        run.targets[selected] = {
+          ...run.targets[selected],
           state: blocked ? "blocked" : "failed",
           nextAction: error.message,
           updatedAt: new Date().toISOString(),
@@ -1102,6 +1117,71 @@ export async function runDelivery(planPath, identity, options = {}) {
           blocked ? "blocked" : "failed",
           {
             code: error.code || "prerequisite_unavailable",
+            message: error.message,
+          },
+          file
+        );
+      }
+    }
+    if (
+      run.targets["electron-local"] &&
+      run.stages.electronPackage.state === "passed"
+    ) {
+      try {
+        await installElectronLocal({
+          plan,
+          run,
+          execute: (bin, args, cwd, environment, timeout, checkId) =>
+            commandAttempt(
+              run,
+              "electronLocal",
+              bin,
+              args,
+              cwd,
+              environment,
+              timeout,
+              file,
+              checkId
+            ),
+          save: () => atomically(file, run),
+        });
+        if (run.targets["electron-local"].state === "complete")
+          stage(
+            run,
+            "electronLocal",
+            "passed",
+            "Installed Electron identity and Quit verified",
+            file
+          );
+        else
+          stage(
+            run,
+            "electronLocal",
+            "blocked",
+            {
+              code: "electron_handoff_required",
+              message: run.targets["electron-local"].nextAction,
+            },
+            file
+          );
+      } catch (error) {
+        const blocked =
+          !error.code ||
+          /unavailable|uncertain|resource_owned|ownership|process_running/.test(
+            error.code
+          );
+        platformCode ||= blocked ? null : error.code;
+        Object.assign(run.targets["electron-local"], {
+          state: blocked ? "blocked" : "failed",
+          nextAction: error.message,
+          updatedAt: new Date().toISOString(),
+        });
+        stage(
+          run,
+          "electronLocal",
+          blocked ? "blocked" : "failed",
+          {
+            code: error.code || "electron_unavailable",
             message: error.message,
           },
           file
