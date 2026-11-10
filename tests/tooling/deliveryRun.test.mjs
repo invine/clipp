@@ -195,6 +195,45 @@ test("Electron packaging reports a target-local prerequisite when the candidate 
   );
 });
 
+test("Electron local prepares its package dependency without selecting a package target", (t) => {
+  const f = fixture(t);
+  const destination = path.join(f.base, "Applications", "Clipp.app");
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: { electronInstallPath: destination },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-local",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const result = delivery(["run", plan.path], f.repo);
+  assert.notEqual(result.status, 0);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.run.stages.commonVerify.state, "passed");
+  assert.deepEqual(Object.keys(report.run.targets), ["electron-local"]);
+  assert.equal(report.run.targets["electron-local"].state, "blocked");
+  assert.match(
+    report.run.targets["electron-local"].nextAction,
+    /native Electron dependency inventory/i
+  );
+});
+
 test("changed installed dependency inventory blocks replay instead of reusing a pass", (t) => {
   const f = fixture(t);
   const first = delivery(["run", f.plan.path], f.repo);

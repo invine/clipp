@@ -170,6 +170,10 @@ function bundleInventory(root) {
   return files;
 }
 
+export function electronAppIdentity(app) {
+  return sha(JSON.stringify(bundleInventory(app)));
+}
+
 export function electronNativeInventory(checkout) {
   return Object.fromEntries(
     [
@@ -254,7 +258,7 @@ export function verifyElectronReceipt(run, receipt, runRoot) {
     !within(runRoot, app) ||
     !existsSync(app) ||
     !lstatSync(app).isDirectory() ||
-    sha(JSON.stringify(bundleInventory(app))) !== receipt.app.sha256
+    electronAppIdentity(app) !== receipt.app.sha256
   )
     fail(
       "electron_artifact_changed",
@@ -311,7 +315,7 @@ function resourceHashes(checkout, app, config) {
 }
 
 export async function packageElectron({ plan, run, file, execute, save }) {
-  const target = run.targets["electron-package"];
+  const target = run.targets["electron-package"] ?? run.electronPackage;
   if (!target) return;
   const runRoot = path.dirname(file);
   const checkout = run.checkout;
