@@ -409,12 +409,53 @@ export function createAdbDevice(plan) {
       const api = Number(
         invoke(serial, ["shell", "getprop", "ro.build.version.sdk"])
       );
-      const listing = invoke(serial, ["shell", "pm", "path", app]);
+      if (!booted) return { serial, state, booted, api, installed: null };
+      const packagePath = spawnSync(
+        adb,
+        ["-s", serial, "shell", "pm", "path", app],
+        { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 }
+      );
+      const listing = packagePath.stdout?.trim() || "";
+      if (
+        packagePath.error ||
+        (!listing && packagePath.stderr?.trim()) ||
+        (packagePath.status !== 0 &&
+          !(
+            packagePath.status === 1 &&
+            !listing &&
+            !packagePath.stderr?.trim()
+          ))
+      )
+        fail(
+          "android_device_unavailable",
+          "Selected Android device command failed"
+        );
+      if (!listing) {
+        const packages = invoke(serial, [
+          "shell",
+          "pm",
+          "list",
+          "packages",
+          "--user",
+          "0",
+          app,
+        ])
+          .split(/\r?\n/)
+          .filter(Boolean);
+        if (
+          packages.some((entry) => !/^package:[A-Za-z0-9._]+$/.test(entry)) ||
+          packages.includes(`package:${app}`)
+        )
+          fail(
+            "android_installed_identity_unknown",
+            "Installed package cannot be reconciled with package-manager state"
+          );
+        return { serial, state, booted, api, installed: null };
+      }
       const paths = listing
         .split(/\r?\n/)
         .filter(Boolean)
         .map((line) => /^package:(\/[^\s]+)$/.exec(line)?.[1]);
-      if (!listing) return { serial, state, booted, api, installed: null };
       if (paths.length !== 1 || !paths[0])
         fail(
           "android_installed_identity_unknown",

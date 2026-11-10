@@ -364,13 +364,26 @@ test("ADB adapter uses the selected serial and data-preserving install flags", a
   mkdirSync(path.dirname(aapt2), { recursive: true });
   const log = path.join(f.plan.outputRoot, "adb.log");
   const installed = path.join(f.plan.outputRoot, "installed.flag");
+  const misleading = path.join(f.plan.outputRoot, "misleading-package.flag");
+  const pathError = path.join(f.plan.outputRoot, "path-error.flag");
+  const listError = path.join(f.plan.outputRoot, "list-error.flag");
+  const deviceState = path.join(f.plan.outputRoot, "device-state.flag");
   writeFileSync(
     adb,
     `#!/usr/bin/env node
 const fs=require('node:fs'); const a=process.argv.slice(2); fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n');
-if(a[0]==='devices') console.log('List of devices attached\\nemulator-5556 device product:test');
+if(a[0]==='devices') console.log('List of devices attached\\nemulator-5556 '+(fs.existsSync(${JSON.stringify(deviceState)})?fs.readFileSync(${JSON.stringify(deviceState)},'utf8'):'device')+' product:test');
 else if(a[3]==='getprop') console.log(a[4]==='sys.boot_completed'?'1':'35');
-else if(a[3]==='pm') console.log(fs.existsSync(${JSON.stringify(installed)})?'package:/data/app/base.apk':'');
+else if(a[3]==='pm' && a[4]==='path') {
+  if(fs.existsSync(${JSON.stringify(pathError)})) { console.error('package manager unavailable'); process.exit(1); }
+  if(fs.existsSync(${JSON.stringify(installed)})) console.log('package:/data/app/base.apk');
+  else process.exit(1);
+}
+else if(a[3]==='pm' && a[4]==='list') {
+  if(fs.existsSync(${JSON.stringify(listError)})) process.exit(1);
+  console.log('package:com.clipp.app.acceptance');
+  if(fs.existsSync(${JSON.stringify(misleading)})) console.log('package:com.clipp.app');
+}
 else if(a[2]==='pull') fs.copyFileSync(${JSON.stringify(path.join(f.plan.outputRoot, "app.apk"))},a[4]);
 else if(a[2]==='install'){fs.writeFileSync(${JSON.stringify(installed)},'1');console.log('Success');}
 else if(a[3]==='am') console.log('Status: ok');
@@ -394,6 +407,28 @@ else if(a[3]==='pidof') console.log('123');
     (await device.observe("emulator-5556", "com.clipp.app")).installed,
     null
   );
+  writeFileSync(misleading, "1");
+  await assert.rejects(device.observe("emulator-5556", "com.clipp.app"), {
+    code: "android_installed_identity_unknown",
+  });
+  rmSync(misleading);
+  writeFileSync(pathError, "1");
+  await assert.rejects(device.observe("emulator-5556", "com.clipp.app"), {
+    code: "android_device_unavailable",
+  });
+  rmSync(pathError);
+  writeFileSync(listError, "1");
+  await assert.rejects(device.observe("emulator-5556", "com.clipp.app"), {
+    code: "android_device_unavailable",
+  });
+  rmSync(listError);
+  for (const state of ["offline", "unauthorized"]) {
+    writeFileSync(deviceState, state);
+    const observation = await device.observe("emulator-5556", "com.clipp.app");
+    assert.equal(observation.state, state);
+    assert.equal(observation.installed, null);
+  }
+  rmSync(deviceState);
   await device.install(
     "emulator-5556",
     path.join(f.plan.outputRoot, "app.apk")
