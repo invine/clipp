@@ -98,7 +98,50 @@ function webFiles(root, directory = root) {
     });
 }
 
-function archive(file, kind, builtWeb) {
+function stagedWebFiles(checkout, builtWeb, generatedNames) {
+  const root = path.join(
+    checkout,
+    "apps/android/android/app/src/main/assets/public"
+  );
+  if (!existsSync(root))
+    reject("android_artifact_missing", "Copied Android web assets are missing");
+  const staged = webFiles(root);
+  const built = new Map(
+    builtWeb.map((entry) => [entry.relative, entry.sha256])
+  );
+  const generated = new Set(generatedNames);
+  if (generated.size !== generatedNames.length)
+    reject("invalid_profile", "Duplicate generated Android web asset name");
+  for (const entry of staged) {
+    if (built.has(entry.relative)) {
+      if (entry.sha256 !== built.get(entry.relative))
+        reject(
+          "android_artifact_invalid",
+          "Copied Android web assets differ from verified build"
+        );
+    } else if (!generated.has(entry.relative)) {
+      reject(
+        "android_artifact_invalid",
+        `Unexpected copied Android web asset: ${entry.relative}`
+      );
+    }
+  }
+  const names = new Set(staged.map((entry) => entry.relative));
+  for (const name of [...built.keys(), ...generated])
+    if (!names.has(name))
+      reject(
+        "android_artifact_invalid",
+        `Copied Android web assets are missing ${name}`
+      );
+  if (staged.length !== built.size + generated.size)
+    reject(
+      "android_artifact_invalid",
+      "Copied Android web asset inventory differs from declared inputs"
+    );
+  return staged;
+}
+
+function archive(file, kind, expectedWeb) {
   const list = spawnSync("unzip", ["-Z", "-1", file], {
     encoding: "utf8",
     timeout: 30_000,
@@ -108,6 +151,18 @@ function archive(file, kind, builtWeb) {
   const entries = list.stdout.trim().split("\n");
   const prefix = kind === "aab" ? "base/assets/public/" : "assets/public/";
   const index = `${prefix}index.html`;
+  const publicEntries = entries
+    .filter((entry) => entry.startsWith(prefix) && !entry.endsWith("/"))
+    .map((entry) => entry.slice(prefix.length));
+  const expectedNames = new Set(expectedWeb.map((entry) => entry.relative));
+  if (
+    publicEntries.length !== expectedNames.size ||
+    publicEntries.some((entry) => !expectedNames.has(entry))
+  )
+    reject(
+      "android_artifact_invalid",
+      `${kind} has extra or missing web assets`
+    );
   const configPath =
     kind === "aab"
       ? "base/assets/capacitor.config.json"
@@ -127,7 +182,7 @@ function archive(file, kind, builtWeb) {
   });
   if (content.status !== 0)
     reject("android_artifact_invalid", `${kind} web index is unreadable`);
-  for (const webFile of builtWeb) {
+  for (const webFile of expectedWeb) {
     const archived = `${prefix}${webFile.relative}`;
     if (!entries.includes(archived))
       reject(
@@ -169,8 +224,8 @@ function archive(file, kind, builtWeb) {
     );
   return {
     entries: entries.length,
-    webFiles: builtWeb.length,
-    indexSha256: builtWeb.find((entry) => entry.relative === "index.html")
+    webFiles: expectedWeb.length,
+    indexSha256: expectedWeb.find((entry) => entry.relative === "index.html")
       ?.sha256,
   };
 }
@@ -394,6 +449,14 @@ export async function packageAndroid({ plan, run, execute, save }) {
     return;
   }
   cleanSource(run.checkout, plan.source.commit);
+  const committedVersion = sourceMetadata(run.checkout);
+  if (
+    committedVersion.applicationId !== plan.profile.androidPackage.applicationId
+  )
+    reject(
+      "android_manifest_invalid",
+      "Committed product applicationId differs from frozen Android profile"
+    );
   const identity = signing(plan, mode);
   const pair = run.androidQualification.pair;
   if (
@@ -419,8 +482,13 @@ export async function packageAndroid({ plan, run, execute, save }) {
       "Verified Android web output is missing"
     );
   const builtWeb = webFiles(path.dirname(web));
+  const stagedWeb = stagedWebFiles(
+    run.checkout,
+    builtWeb,
+    plan.profile.androidPackage.capacitorGeneratedWebAssets
+  );
   const webInventorySha256 = createHash("sha256")
-    .update(JSON.stringify(builtWeb))
+    .update(JSON.stringify(stagedWeb))
     .digest("hex");
   const sdk = privateValue(plan.privateReferences?.androidSdkRef);
   const java = privateValue(plan.privateReferences?.javaHomeRef);
@@ -495,7 +563,6 @@ export async function packageAndroid({ plan, run, execute, save }) {
           path.join(directory, "app-release.aab"),
           "aab"
         );
-  const committedVersion = sourceMetadata(run.checkout);
   const version = metadata(
     path.join(
       sdk,
@@ -525,8 +592,8 @@ export async function packageAndroid({ plan, run, execute, save }) {
     ? bundleMetadata(bundleLog, committedVersion)
     : null;
   const inventories = {
-    apk: archive(apk.path, "apk", builtWeb),
-    aab: aab && archive(aab.path, "aab", builtWeb),
+    apk: archive(apk.path, "apk", stagedWeb),
+    aab: aab && archive(aab.path, "aab", stagedWeb),
   };
   const signingResult = signature(
     path.join(

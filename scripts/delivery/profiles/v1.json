@@ -81,6 +81,7 @@
   },
   "androidPackage": {
     "applicationId": "com.clipp.app",
+    "capacitorGeneratedWebAssets": ["cordova.js", "cordova_plugins.js"],
     "bundletoolVersion": "1.17.2",
     "modes": ["upload", "unsigned-artifact", "debug"],
     "releaseChecks": [
