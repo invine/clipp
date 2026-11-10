@@ -6,7 +6,7 @@ export function relayAcceptanceFixture(
   extensionDirectory,
   explicitProductionPath
 ) {
-  const transport = process.env.CLIPP_EXTENSION_FIXTURE_TRANSPORT;
+  const transport = process.env.CLIPP_EXTENSION_FIXTURE_TRANSPORT || undefined;
   if (transport && transport !== "wss" && transport !== "webrtc-direct")
     throw new Error("unsupported_fixture_transport");
   return {

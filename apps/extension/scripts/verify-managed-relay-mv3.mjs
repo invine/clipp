@@ -53,17 +53,14 @@ try {
     async () => await chrome.runtime.sendMessage({ type: "getRuntimeState" })
   );
   assert.ok(runtimeState.state, "background and offscreen start together");
-  const hostStatus = await worker.evaluate(
-    async () =>
-      await chrome.runtime.sendMessage({
-        target: "offscreen",
-        action: "getStatus",
-      })
+  const hostStatus = await options.evaluate(
+    async () => await chrome.runtime.sendMessage({ type: "getStatus" })
   );
+  assert.equal(hostStatus.started, true);
   assert.equal(hostStatus.relayAcceptanceTransport, transport);
   if (transport) {
-    // A valid WSS address belonging to a device rather than a configured relay
-    // must be rejected by the compiled host's shared connection gate.
+    // Direct offscreen controls without the current runtime generation must
+    // be rejected before they can ask the host to dial any target.
     const denied = await worker.evaluate(
       async () =>
         await chrome.runtime.sendMessage({
@@ -74,11 +71,7 @@ try {
         })
     );
     assert.equal(denied.ok, false);
-    assert.match(
-      denied.error,
-      /denied|gater/i,
-      "direct device dial is denied before reaching the network"
-    );
+    assert.equal(denied.error, "identity_runtime_retired");
   }
   const unauthorizedShutdown = await options.evaluate(
     async () =>
@@ -89,7 +82,7 @@ try {
   );
   assert.equal(
     unauthorizedShutdown.error,
-    "managed_relay_control_unauthorized",
+    "offscreen_control_unauthorized",
     "options cannot control the offscreen host"
   );
   const credentialKey =
@@ -141,15 +134,8 @@ try {
     credentialKey
   );
   await worker.evaluate(async () => await chrome.offscreen.closeDocument());
-  await options.evaluate(
-    async () => await chrome.runtime.sendMessage({ type: "getRuntimeState" })
-  );
-  const recreated = await worker.evaluate(
-    async () =>
-      await chrome.runtime.sendMessage({
-        target: "offscreen",
-        action: "getStatus",
-      })
+  const recreated = await options.evaluate(
+    async () => await chrome.runtime.sendMessage({ type: "getStatus" })
   );
   assert.equal(
     recreated.started,
