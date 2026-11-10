@@ -23,7 +23,7 @@ test("relay edits retain newer drafts after rejection and do not claim the obser
 }) => {
   await page.goto("/relay-management.html");
   await page.getByRole("button", { name: "Publish managed relay" }).click();
-  await page.getByText("Relay A", { exact: true }).click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
   await page.getByRole("button", { name: "Edit" }).click();
 
   const name = page.getByRole("textbox", { name: "Name" });
@@ -47,26 +47,28 @@ test("login, account, retry, and uncertain removal remain scripted and observati
 }) => {
   await page.goto("/relay-management.html");
   await page.getByRole("button", { name: "Publish managed relay" }).click();
-  await page.getByText("Relay A", { exact: true }).click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
 
   await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page.getByText("Relay action pending…")).toBeVisible();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
   await expect(page.getByRole("button", { name: "Log in" })).toBeDisabled();
   await page
     .getByRole("button", { name: "Resolve pending effect: authenticated" })
     .click();
-  await expect(page.getByText(/Relay authentication completed/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in" })).toBeEnabled();
+  await expect(page.getByText(/Relay authentication completed/)).toHaveCount(0);
   await expect(page.getByText("Login needed", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Manage account" }).click();
   await page
     .getByRole("button", { name: "Resolve pending effect: portal opened" })
     .click();
-  await expect(page.getByText(/Relay portal opened/)).toBeVisible();
+  await expect(page.getByText(/Relay portal opened/)).toHaveCount(0);
 
   await page
     .getByRole("button", { name: "Publish degraded relay status" })
     .click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page
     .getByRole("button", { name: "Resolve pending effect: retry rejected" })
@@ -75,9 +77,12 @@ test("login, account, retry, and uncertain removal remain scripted and observati
     page.getByText(/Degraded: Rendezvous unavailable/)
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Remove" }).click();
-  await expect(page.getByText("Relay action pending…")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
+  await expect(
+    page.getByRole("button", { name: "Remove", exact: true })
+  ).toBeDisabled();
   await page
     .getByRole("button", { name: "Resolve pending effect: unconfirmed" })
     .click();
@@ -92,12 +97,26 @@ test("login, account, retry, and uncertain removal remain scripted and observati
   ).toContainText("Check the current relay list");
 });
 
+test("successful removal does not leave a configuration-applied message", async ({
+  page,
+}) => {
+  await page.goto("/relay-management.html");
+  await page.getByRole("button", { name: "Publish managed relay" }).click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Resolve pending effect: removed" })
+    .click();
+  await expect(page.getByText("No relays configured.")).toBeVisible();
+  await expect(page.getByText("Relay configuration applied.")).toHaveCount(0);
+});
+
 test("a notification suspends and restores the correct relay editor draft", async ({
   page,
 }) => {
   await page.goto("/relay-management.html");
   await page.getByRole("button", { name: "Publish managed relay" }).click();
-  await page.getByText("Relay A", { exact: true }).click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
   await page.getByRole("button", { name: "Edit" }).click();
   const name = page.getByRole("textbox", { name: "Name" });
   await name.fill("  first relay draft  ");

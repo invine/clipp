@@ -11,6 +11,7 @@ import "../../../packages/ui/src/host.css";
 let resolveLogin: ((result: RelayActionResult) => void) | undefined;
 const managed = new URLSearchParams(location.search).has("managed");
 const summary = new URLSearchParams(location.search).has("summary");
+const emptyManaged = new URLSearchParams(location.search).has("empty");
 const longIdentity = new URLSearchParams(location.search).has("long");
 let resolveSave: ((value?: string[]) => void) | undefined;
 let rejectSave: ((reason: Error) => void) | undefined;
@@ -137,16 +138,20 @@ function Scenario() {
                       discoveryUrl: `https://${key}.example/relay`,
                     }))
                   : []),
-                {
-                  key: "relay-a",
-                  name: longIdentity
-                    ? "Long relay name identifying the correct office and device across a narrow screen"
-                    : "Relay A",
-                  kind: "managed" as const,
-                  discoveryUrl: longIdentity
-                    ? "https://long-relay-identity.example.com/very/long/path/that/must/remain/visible/to/the/user/for/identification"
-                    : "https://relay.example/v1/relay",
-                },
+                ...(emptyManaged
+                  ? []
+                  : [
+                      {
+                        key: "relay-a",
+                        name: longIdentity
+                          ? "Long relay name identifying the correct office and device across a narrow screen"
+                          : "Relay A",
+                        kind: "managed" as const,
+                        discoveryUrl: longIdentity
+                          ? "https://long-relay-identity.example.com/very/long/path/that/must/remain/visible/to/the/user/for/identification"
+                          : "https://relay.example/v1/relay",
+                      },
+                    ]),
               ],
               managedRelayStates: [
                 ...(summary

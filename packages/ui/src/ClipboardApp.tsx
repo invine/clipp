@@ -1,5 +1,6 @@
 import { shortenPreview } from "./previewText";
 import { MiddleEllipsisText } from "./MiddleEllipsisText";
+import { RelayEmptyState } from "./RelayEmptyState";
 import { projectConnectionSummary } from "../../core/runtime/connectionSummary";
 import { ConnectionStatusButton } from "./ConnectionSummary";
 import { NotificationSettings } from "./NotificationSettings";
@@ -1436,7 +1437,7 @@ export function ClipboardApp({
           {relaysOpen && (
             <div className="relay-list">
               {relayAddresses.length === 0 && !addingRelay && (
-                <div className="relay-empty">No relays configured.</div>
+                <RelayEmptyState onAdd={beginAddRelay} disabled={relaySaving} />
               )}
               {relayError && !addingRelay && editingRelayIndex === null && (
                 <div className="relay-error relay-section-error">
@@ -1845,25 +1846,31 @@ export function ClipboardApp({
                 ) : (
                   <>
                     <strong>{total} configured</strong>
-                    <span>
-                      {" · "}
-                      {counts.ready}{" "}
-                      {onMutateManagedRelay ? "ready" : "connected"}
-                    </span>
-                    {onMutateManagedRelay && (
+                    {counts.ready > 0 && (
+                      <span>
+                        {" · "}
+                        {counts.ready}{" "}
+                        {onMutateManagedRelay ? "ready" : "connected"}
+                      </span>
+                    )}
+                    {onMutateManagedRelay && counts.transitioning > 0 && (
                       <span>
                         {" · "}
                         {counts.transitioning} connecting or retrying
                       </span>
                     )}
-                    <span>
-                      {" · "}
-                      {counts.attention} needs attention
-                    </span>
-                    <span>
-                      {" · "}
-                      {counts.unknown} unknown
-                    </span>
+                    {counts.attention > 0 && (
+                      <span>
+                        {" · "}
+                        {counts.attention} needs attention
+                      </span>
+                    )}
+                    {counts.unknown > 0 && (
+                      <span>
+                        {" · "}
+                        {counts.unknown} unknown
+                      </span>
+                    )}
                   </>
                 );
               })()}
@@ -2407,7 +2414,7 @@ export function ClipboardApp({
             { key: "pinned", label: "Pinned", icon: "pin" },
             { key: "links", label: "Links", icon: "links" },
             { key: "devices", label: "Devices", icon: "computer" },
-            { key: "relays", label: "Relays", icon: "network" },
+            { key: "relays", label: "Relays", icon: "relay" },
             { key: "requests", label: "Requests", icon: "requests" },
             { key: "settings", label: "Settings", icon: "settings" },
           ] as const

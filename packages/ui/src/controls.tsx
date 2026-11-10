@@ -71,6 +71,12 @@ const paths = {
       <path d="m5.5 14.5 5-7m3 0 5 7M7 17h10" />
     </>
   ),
+  relay: (
+    <>
+      <path d="M9 8H7a4 4 0 0 0 0 8h2m6-8h2a4 4 0 0 1 0 8h-2M8 12h2m4 0h2" />
+      <circle cx="12" cy="12" r="2" />
+    </>
+  ),
   openExternal: (
     <>
       <path d="M14 4h6v6m0-6-9 9" />

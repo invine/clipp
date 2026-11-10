@@ -56,11 +56,11 @@ test("a legacy relay settings handoff opens Relays", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("returning to a suspended relay editor restores focus to its visible Edit action", async ({
+test("returning to a suspended relay editor restores focus to its actions menu", async ({
   page,
 }) => {
   await page.goto("/relay-address.html?managed");
-  await page.getByText("Relay A", { exact: true }).click();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("textbox", { name: "Name" }).fill("retained draft");
   await page
@@ -72,7 +72,7 @@ test("returning to a suspended relay editor restores focus to its visible Edit a
   );
   await page.getByRole("button", { name: "Close relay editor" }).click();
   await expect(
-    page.getByRole("button", { name: "Edit", exact: true })
+    page.getByRole("button", { name: "Relay A actions" })
   ).toBeFocused();
 });
 
@@ -80,14 +80,17 @@ test("relay action feedback remains visible after notification interruption", as
   page,
 }) => {
   await page.goto("/relay-address.html?managed");
-  await page.getByText("Relay A", { exact: true }).click();
-  await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page.getByText("Relay action pending…")).toBeVisible();
+  await page.getByRole("button", { name: "Relay A actions" }).click();
+  await page
+    .locator(".device-action-popover")
+    .getByRole("button", { name: "Log in" })
+    .click();
+  await expect(page.getByRole("button", { name: "Log in" })).toBeDisabled();
   await page
     .getByRole("button", { name: "Open Requests notification" })
     .click();
   await page.getByRole("button", { name: "Back to previous task" }).click();
-  await expect(page.getByText("Relay action pending…")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in" })).toBeDisabled();
   await page.getByRole("button", { name: "Reject relay login" }).click();
   await expect(page.getByText("Login could not be confirmed")).toBeVisible();
 });
@@ -102,7 +105,7 @@ test("relay overview reports empty and observed attention states", async ({
   await page.goto("/relay-address.html?managed");
   const overview = page.getByRole("status", { name: "Relay status" });
   await expect(overview).toContainText("1 configured");
-  await expect(overview).toContainText("0 ready");
+  await expect(overview).not.toContainText("ready");
   await expect(overview).toContainText("1 needs attention");
 });
 
@@ -123,7 +126,7 @@ for (const theme of ["light", "dark"] as const) {
       .getByRole("button", { name: "Update relay observations" })
       .click();
     await expect(overview).toContainText("2 ready");
-    await expect(overview).toContainText("0 connecting or retrying");
+    await expect(overview).not.toContainText("connecting or retrying");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth
@@ -143,7 +146,7 @@ test("legacy address overview distinguishes unreported and disconnected observat
   await expect(overview).toContainText("1 unknown");
   await page.getByRole("button", { name: "Update relay observations" }).click();
   await expect(overview).toContainText("2 connected");
-  await expect(overview).toContainText("0 needs attention");
+  await expect(overview).not.toContainText("needs attention");
 });
 
 for (const width of [1440, 768, 390]) {
@@ -183,13 +186,37 @@ test("relay row exposes its actions through a keyboard-operable disclosure", asy
   page,
 }) => {
   await page.goto("/relay-address.html?managed");
-  const row = page.locator("details").filter({ hasText: "Relay A" });
-  await expect(row.getByText(/^Actions/)).toBeVisible();
+  const row = page
+    .locator(".managed-relay-item")
+    .filter({ hasText: "Relay A" });
   const disclosure = row.locator("summary");
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).toHaveAccessibleName(/actions/);
+  await expect(row.getByRole("button", { name: "Log in" })).toBeVisible();
   await disclosure.focus();
   await page.keyboard.press("Enter");
-  await expect(row).toHaveAttribute("open", "");
-  await expect(row.getByRole("button", { name: "Log in" })).toBeVisible();
+  await expect(row.locator("details")).toHaveAttribute("open", "");
+  await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    row
+      .locator(".device-action-popover")
+      .getByRole("button", { name: "Log in" })
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(row.locator("details")).not.toHaveAttribute("open", "");
+  await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await expect(disclosure).toBeFocused();
+});
+
+test("login-needed relay offers a direct login action", async ({ page }) => {
+  await page.goto("/relay-address.html?managed");
+  const item = page
+    .locator(".managed-relay-item")
+    .filter({ hasText: "Relay A" });
+  await item.getByRole("button", { name: "Log in" }).click();
+  await expect(item.getByRole("button", { name: "Log in" })).toBeDisabled();
+  await page.getByRole("button", { name: "Reject relay login" }).click();
+  await expect(item).toContainText("Login could not be confirmed");
 });
 
 for (const width of [1440, 768, 390]) {
@@ -199,7 +226,7 @@ for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/relay-address.html?managed&long");
     const row = page
-      .locator("details")
+      .locator(".managed-relay-item")
       .filter({ hasText: "Long relay name identifying" });
     await expect(
       row.getByText(
@@ -213,8 +240,24 @@ for (const width of [1440, 768, 390]) {
         )
         .first()
     ).toBeVisible();
+    const address = row.locator(".relay-address");
+    await expect(address).toHaveAttribute(
+      "title",
+      "https://long-relay-identity.example.com/very/long/path/that/must/remain/visible/to/the/user/for/identification"
+    );
+    expect(
+      await address.evaluate(
+        (element) =>
+          element.scrollWidth > element.clientWidth &&
+          getComputedStyle(element).textOverflow === "ellipsis"
+      )
+    ).toBe(true);
     await row.locator("summary").click();
-    await expect(row.getByRole("button", { name: "Log in" })).toBeVisible();
+    await expect(
+      row
+        .locator(".device-action-popover")
+        .getByRole("button", { name: "Log in" })
+    ).toBeVisible();
     await expect(
       row.getByRole("button", { name: "Edit", exact: true })
     ).toBeVisible();
@@ -244,4 +287,32 @@ test("relay recovery routes back to the Relays destination", async ({
   await expect(
     page.getByRole("heading", { name: "Configured relays" })
   ).toBeVisible();
+});
+
+test("empty relay state is centered and offers setup for both relay surfaces", async ({
+  page,
+}) => {
+  for (const query of ["", "?managed&empty"]) {
+    await page.goto(`/relay-address.html${query}`);
+    const prompt = page.locator(".relay-empty-prompt");
+    await expect(
+      prompt.getByRole("heading", { name: "No relays configured" })
+    ).toBeVisible();
+    await expect(prompt).toContainText(
+      "Add a relay to help your devices connect"
+    );
+    expect(
+      await prompt.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return style.textAlign === "center" && style.borderStyle === "none";
+      })
+    ).toBe(true);
+    await prompt.getByRole("button", { name: "+ Add relay" }).click();
+    if (query)
+      await expect(page.getByRole("textbox", { name: "Name" })).toBeVisible();
+    else
+      await expect(
+        page.getByRole("textbox", { name: "New relay address" })
+      ).toBeVisible();
+  }
 });

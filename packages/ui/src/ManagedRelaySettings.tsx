@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { TaskDialog } from "./TaskDialog";
+import { Icon } from "./controls";
+import { RelayEmptyState } from "./RelayEmptyState";
 import { createUiSession, type UiSession } from "./uiSession";
 import { relayMutationMessage } from "./relayEditSession";
 import type {
@@ -47,6 +49,7 @@ export function ManagedRelaySettings({
   onRetry,
 }: ManagedRelaySettingsProps) {
   const [session] = useState(() => providedSession ?? createUiSession());
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const draft = useSyncExternalStore(
     session.relay.subscribe,
     session.relay.getSnapshot,
@@ -85,11 +88,11 @@ export function ManagedRelaySettings({
         ],
       });
   }, [session, draft?.key]);
-  const edit = (config?: RelayConfiguration) => {
+  const edit = (config?: RelayConfiguration, origin?: string) => {
     session.open({
       kind: "relay",
       entity: config?.key ?? "new",
-      origin: `relay:${config?.key ?? "add"}`,
+      origin: origin ?? `relay:${config?.key ?? "add"}`,
     });
     session.relay.begin(config);
   };
@@ -110,12 +113,10 @@ export function ManagedRelaySettings({
             "Remove could not be confirmed. Check the current relay list before retrying.",
         };
       }
-      session.update({
-        relayMutationFeedback: {
-          ...session.getSnapshot().relayMutationFeedback,
-          [key]: relayMutationMessage(result),
-        },
-      });
+      const feedback = { ...session.getSnapshot().relayMutationFeedback };
+      if (result.status === "applied") delete feedback[key];
+      else feedback[key] = relayMutationMessage(result);
+      session.update({ relayMutationFeedback: feedback });
       return result.status === "applied"
         ? { status: "removed-local" }
         : { status: "unconfirmed", error: relayMutationMessage(result) };
@@ -254,86 +255,56 @@ export function ManagedRelaySettings({
   return (
     <div className="relay-settings" aria-label="Relay settings">
       {!taskPresentation && <div className="nav-section-label">Relays</div>}
-      {configurations.length === 0 && (
-        <div className="relay-empty">No relays configured.</div>
-      )}
+      {configurations.length === 0 &&
+        (taskPresentation ? (
+          <RelayEmptyState onAdd={() => edit(undefined, "relay:empty-add")} />
+        ) : (
+          <div className="relay-empty">No relays configured.</div>
+        ))}
       {configurations.map((config) => {
         const state = states.find((item) => item.key === config.key);
         return (
-          <details
-            className="relay-card managed-relay-card"
-            key={config.key}
-            ref={(element) => {
-              if (element && editing === config.key) element.open = true;
-            }}
-          >
-            <summary className="peer-meta">
+          <div className="managed-relay-item" key={config.key}>
+            <div className="relay-identity">
               <div className="peer-name">
                 {config.name ||
                   (config.kind === "managed"
                     ? config.discoveryUrl
                     : config.peerId)}
               </div>
-              <div className="relay-identity">
-                <span>
-                  {config.kind === "managed"
-                    ? "Authenticated discovery"
-                    : "Unauthenticated Peer ID"}
-                </span>
-                <span className="relay-address">
-                  {config.kind === "managed"
+              <span
+                className="relay-address"
+                title={
+                  config.kind === "managed"
                     ? config.discoveryUrl
-                    : config.peerId}
-                </span>
-              </div>
-              <div className="relay-status" role="status">
-                {state ? statusText[state.status] : "Status unknown"}
-                {state?.reason ? `: ${state.reason}` : ""}
-              </div>
-              <span className="relay-disclosure">
-                Actions <span aria-hidden="true">⌄</span>
-              </span>
-              {state?.warning && (
-                <div className="relay-error">{state.warning}</div>
-              )}
-              {context.relayActions[config.key]?.pending && (
-                <p role="status">Relay action pending…</p>
-              )}
-              {context.relayActions[config.key]?.result && (
-                <p
-                  role={
-                    context.relayActions[config.key]?.result?.error
-                      ? "alert"
-                      : "status"
-                  }
-                >
-                  {context.relayActions[config.key]?.result?.error ??
-                    (context.relayActions[config.key]?.result?.status ===
-                    "portal-opened"
-                      ? "Relay portal opened. Its browser account may differ from Clipp's account."
-                      : context.relayActions[config.key]?.result?.status ===
-                          "authenticated"
-                        ? "Relay authentication completed. Current connection status is shown above."
-                        : context.relayActions[config.key]?.result?.status ===
-                            "removed-local"
-                          ? "Local relay configuration removed."
-                          : "Retry requested. Current connection status is shown above.")}
-                </p>
-              )}
-            </summary>
-            <div className="peer-meta">
-              <div className="relay-address">
+                    : config.peerId
+                }
+              >
                 {config.kind === "managed"
                   ? config.discoveryUrl
-                  : `${config.peerId} · ${config.addresses.length} address(es)`}
-              </div>
+                  : config.peerId}
+              </span>
             </div>
-            <div className="peer-actions">
-              {config.kind === "managed" &&
+            <span className="relay-kind">
+              {config.kind === "managed"
+                ? "Authenticated discovery"
+                : "Unauthenticated Peer ID"}
+            </span>
+            <div
+              className={`relay-status relay-status-${state?.status ?? "unknown"}`}
+              role="status"
+            >
+              <span className="relay-status-dot" aria-hidden="true" />
+              {state ? statusText[state.status] : "Status unknown"}
+              {state?.reason ? `: ${state.reason}` : ""}
+            </div>
+            <div className="relay-row-actions">
+              {taskPresentation &&
+                config.kind === "managed" &&
                 onLogin &&
                 (!state || state.status === "login_needed") && (
                   <button
-                    className="primary-button compact-button"
+                    className="text-button relay-quick-login"
                     type="button"
                     onClick={() =>
                       void session.relayAction(config.key, () =>
@@ -348,69 +319,140 @@ export function ManagedRelaySettings({
                     Log in
                   </button>
                 )}
-              {config.kind === "managed" && onManageAccount && (
-                <button
-                  className="text-button"
-                  type="button"
-                  onClick={() =>
-                    void session.relayAction(config.key, () =>
-                      onManageAccount(config.key)
-                    )
-                  }
-                  disabled={
-                    context.relayActions[config.key]?.pending ||
-                    (draft?.key === config.key && draft.pending)
-                  }
-                  title="Open the relay portal"
-                >
-                  Manage account
-                </button>
-              )}
-              {onRetry &&
-                (state?.status === "retrying" ||
-                  state?.status === "degraded" ||
-                  state?.status === "refused") && (
-                  <button
-                    className="text-button"
-                    type="button"
-                    onClick={() =>
-                      void session.relayAction(config.key, () =>
-                        onRetry(config.key)
+              <details
+                className="device-action-menu relay-action-menu"
+                onToggle={(event) => {
+                  const menu = event.currentTarget;
+                  if (menu.open)
+                    document
+                      .querySelectorAll<HTMLDetailsElement>(
+                        ".device-action-menu[open]"
                       )
-                    }
+                      .forEach((other) => {
+                        if (other !== menu) other.open = false;
+                      });
+                  setOpenMenu((current) =>
+                    menu.open
+                      ? config.key
+                      : current === config.key
+                        ? null
+                        : current
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector("summary")?.focus();
+                }}
+              >
+                <summary
+                  role="button"
+                  aria-expanded={openMenu === config.key}
+                  aria-label={`${config.name || (config.kind === "managed" ? config.discoveryUrl : config.peerId)} actions`}
+                  data-session-focus={`relay:${config.key}`}
+                >
+                  <Icon name="more" />
+                </summary>
+                <div
+                  className="device-action-popover"
+                  onClick={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "button:not(:disabled)"
+                      )
+                    )
+                      event.currentTarget.closest("details")!.open = false;
+                  }}
+                >
+                  {config.kind === "managed" &&
+                    onLogin &&
+                    (!state || state.status === "login_needed") && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void session.relayAction(config.key, () =>
+                            onLogin(config.key)
+                          )
+                        }
+                        disabled={
+                          context.relayActions[config.key]?.pending ||
+                          (draft?.key === config.key && draft.pending)
+                        }
+                      >
+                        Log in
+                      </button>
+                    )}
+                  {config.kind === "managed" && onManageAccount && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void session.relayAction(config.key, () =>
+                          onManageAccount(config.key)
+                        )
+                      }
+                      disabled={
+                        context.relayActions[config.key]?.pending ||
+                        (draft?.key === config.key && draft.pending)
+                      }
+                    >
+                      Manage account
+                    </button>
+                  )}
+                  {onRetry &&
+                    (state?.status === "retrying" ||
+                      state?.status === "degraded" ||
+                      state?.status === "refused") && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void session.relayAction(config.key, () =>
+                            onRetry(config.key)
+                          )
+                        }
+                        disabled={
+                          context.relayActions[config.key]?.pending ||
+                          (draft?.key === config.key && draft.pending)
+                        }
+                      >
+                        Retry
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    onClick={() => edit(config)}
                     disabled={
                       context.relayActions[config.key]?.pending ||
                       (draft?.key === config.key && draft.pending)
                     }
                   >
-                    Retry
+                    Edit
                   </button>
-                )}
-              <button
-                className="text-button"
-                type="button"
-                data-session-focus={`relay:${config.key}`}
-                onClick={() => edit(config)}
-                disabled={
-                  context.relayActions[config.key]?.pending ||
-                  (draft?.key === config.key && draft.pending)
-                }
-              >
-                Edit
-              </button>
-              <button
-                className="text-button"
-                type="button"
-                onClick={() => void remove(config.key)}
-                disabled={
-                  context.relayActions[config.key]?.pending ||
-                  (draft?.key === config.key && draft.pending)
-                }
-              >
-                Remove
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => void remove(config.key)}
+                    disabled={
+                      context.relayActions[config.key]?.pending ||
+                      (draft?.key === config.key && draft.pending)
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              </details>
             </div>
-          </details>
+            {state?.warning && (
+              <div className="relay-error relay-row-feedback">
+                {state.warning}
+              </div>
+            )}
+            {context.relayActions[config.key]?.result?.error && (
+              <p className="relay-row-feedback" role="alert">
+                {context.relayActions[config.key]?.result?.error}
+              </p>
+            )}
+          </div>
         );
       })}
       {editing &&
@@ -436,10 +478,6 @@ export function ManagedRelaySettings({
             )
           : renderEditor())}
       {(!taskPresentation || !editing) && renderFeedback()}
-      <p>
-        Remove deletes this local configuration, its resources and local
-        credential. It does not revoke the relay account or remove other routes.
-      </p>
       {!editing && !taskPresentation && (
         <button
           type="button"
