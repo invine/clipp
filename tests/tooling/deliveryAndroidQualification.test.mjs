@@ -92,6 +92,7 @@ function fixture(
     const androidPackage = JSON.parse(
       readFileSync(path.join(android, "package.json"), "utf8")
     );
+    androidPackage.scripts["cap:sync"] = "node ../../sync.cjs";
     androidPackage.scripts["test:native:unit"] = "node ../../unit.cjs";
     androidPackage.scripts["build:native:acceptance-candidate"] =
       "node ../../candidate.cjs";
@@ -113,8 +114,12 @@ function fixture(
       "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip\n"
     );
     writeFileSync(
+      path.join(repo, "sync.cjs"),
+      "const fs=require('node:fs');const path=require('node:path');const d=path.join(__dirname,'apps/android/android/capacitor-cordova-android-plugins');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'cordova.variables.gradle'),'// generated\\n');"
+    );
+    writeFileSync(
       path.join(repo, "unit.cjs"),
-      "const fs=require('node:fs');const path=require('node:path');const d=path.join(__dirname,'apps/android/android/app/build/test-results/testDebugUnitTest');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'TEST-unit.xml'),'<testsuite tests=\"2\" skipped=\"0\" failures=\"0\" errors=\"0\"/>');"
+      "const fs=require('node:fs');const path=require('node:path');if(!fs.existsSync(path.join(__dirname,'apps/android/android/capacitor-cordova-android-plugins/cordova.variables.gradle')))process.exit(3);const d=path.join(__dirname,'apps/android/android/app/build/test-results/testDebugUnitTest');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'TEST-unit.xml'),'<testsuite tests=\"2\" skipped=\"0\" failures=\"0\" errors=\"0\"/>');"
     );
     writeFileSync(
       path.join(repo, "candidate.cjs"),
@@ -130,7 +135,7 @@ function fixture(
     );
     writeFileSync(
       path.join(repo, ".gitignore"),
-      "node_modules/\napps/*/dist/\napps/android/android/app/build/\nchecks.txt\n"
+      "node_modules/\napps/*/dist/\napps/android/android/app/build/\napps/android/android/capacitor-cordova-android-plugins/\nchecks.txt\n"
     );
   } else
     writeFileSync(
@@ -230,6 +235,8 @@ function nativeTools(f, serials) {
   const authorization = {
     schema: 1,
     scope: "isolated-android-acceptance",
+    authorizationSource: "user deterministic delivery implementation request",
+    authorizedAt: "2026-11-10T00:00:00.000Z",
     sourceRevision: f.revision,
     effort: "fixture-qualification",
     serials,
@@ -677,6 +684,10 @@ test("a failed native attempt resumes only with a changed diagnostic decision", 
     JSON.parse(resumed.stdout).run.androidQualification.state,
     "passed",
     JSON.parse(resumed.stdout).run.androidQualification.nextAction
+  );
+  assert.equal(
+    JSON.parse(resumed.stdout).run.androidQualification.authorization.scope,
+    "isolated-android-acceptance"
   );
   assert.equal(
     readFileSync(environment.adbLog, "utf8").trim().split("\n").length,
