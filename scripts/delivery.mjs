@@ -397,8 +397,9 @@ function prerequisites(target, profile, config) {
         missing.push(`destination:androidAcceptanceSerialApi${api}`);
   }
   if (
-    ["android-package", "android-internal"].includes(target) &&
-    config.signing?.androidPackage !== "unsigned-artifact"
+    target === "android-internal" ||
+    (target === "android-package" &&
+      config.signing?.androidPackage !== "unsigned-artifact")
   )
     if (!config.references?.androidSigningRef)
       missing.push("reference:androidSigningRef");
@@ -415,11 +416,6 @@ function prerequisites(target, profile, config) {
     !config.references?.androidSigningRef
   )
     missing.push("reference:androidSigningRef");
-  if (
-    target === "android-internal" &&
-    config.signing?.androidPackage === "unsigned-artifact"
-  )
-    missing.push("signing:android-internal-requires-upload");
   if (target === "android-internal" && !config.references?.playCredentialRef)
     missing.push("reference:playCredentialRef");
   if (target === "android-internal" && !config.references?.playAuthorizationRef)

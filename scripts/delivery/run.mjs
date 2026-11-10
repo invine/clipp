@@ -51,6 +51,11 @@ const knownGeneratedOutputs = [
   "/.local/startup-replay-*/",
   "/test-results/.last-run.json",
 ];
+const androidPackageStageNames = [
+  "androidPackage",
+  "androidAdditionalPackage",
+  "androidThirdPackage",
+];
 const gitEnvironment = Object.fromEntries(
   Object.entries(process.env).filter(
     ([name]) =>
@@ -311,6 +316,7 @@ function validateRun(record, plan, digest) {
     !record.stages?.androidPackage ||
     !record.stages?.androidLocal ||
     !record.stages?.androidAdditionalPackage ||
+    !record.stages?.androidThirdPackage ||
     !record.stages?.androidInternal ||
     !record.stages?.chromeLocal
   )
@@ -407,6 +413,12 @@ function executionGraph(plan) {
     if (plan.targets[name]) ensure(name);
   return nodes;
 }
+function androidPackageStageForMode(run, mode) {
+  const index = run.graph
+    .filter((node) => node.id.startsWith("androidPackage:"))
+    .findIndex((node) => node.id === `androidPackage:${mode}`);
+  return index < 0 ? null : run.stages[androidPackageStageNames[index]];
+}
 function summary(run) {
   const targets = Object.entries(run.targets || {});
   const complete = targets
@@ -422,7 +434,12 @@ function summary(run) {
   return {
     ...run,
     aggregate: {
-      state: outstanding.length ? "incomplete" : "complete",
+      state:
+        outstanding.length ||
+        run.stages.prepare.state !== "passed" ||
+        run.stages.commonVerify.state !== "passed"
+          ? "incomplete"
+          : "complete",
       complete,
       outstanding,
     },
@@ -741,6 +758,7 @@ function newRun(plan, digest) {
         attempts: [],
         updatedAt: null,
       },
+      androidThirdPackage: { state: "pending", attempts: [], updatedAt: null },
       androidInternal: { state: "pending", attempts: [], updatedAt: null },
       chromeLocal: { state: "pending", attempts: [], updatedAt: null },
     },
@@ -1093,6 +1111,7 @@ export async function runDelivery(planPath, identity, options = {}) {
         "electronLocal",
         "androidPackage",
         "androidAdditionalPackage",
+        "androidThirdPackage",
         "chromeLocal",
       ].every(
         (name) =>
@@ -1115,6 +1134,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       "electronLocal",
       "androidPackage",
       "androidAdditionalPackage",
+      "androidThirdPackage",
       "chromeLocal",
     ]) {
       if (run.stages[name].state !== "running") continue;
@@ -1155,11 +1175,12 @@ export async function runDelivery(planPath, identity, options = {}) {
       const failureState =
         error.code === "prerequisite_unavailable" ? "blocked" : "failed";
       for (const target of Object.values(run.targets))
-        Object.assign(target, {
-          state: failureState,
-          nextAction: `${name} failed: ${error.message}`,
-          updatedAt: new Date().toISOString(),
-        });
+        if (target.state !== "complete")
+          Object.assign(target, {
+            state: failureState,
+            nextAction: `${name} failed: ${error.message}`,
+            updatedAt: new Date().toISOString(),
+          });
       stage(
         run,
         name,
@@ -1367,7 +1388,7 @@ export async function runDelivery(planPath, identity, options = {}) {
           if (!modeTargets.has(mode)) modeTargets.set(mode, []);
           modeTargets.get(mode).push(name);
         }
-      let firstMode = true;
+      let packageIndex = 0;
       for (const node of run.graph.filter((item) =>
         item.id.startsWith("androidPackage:")
       )) {
@@ -1385,10 +1406,7 @@ export async function runDelivery(planPath, identity, options = {}) {
           atomically(file, run);
           continue;
         }
-        const stageName = firstMode
-          ? "androidPackage"
-          : "androidAdditionalPackage";
-        firstMode = false;
+        const stageName = androidPackageStageNames[packageIndex++];
         try {
           await packageAndroid({
             plan,
@@ -1441,20 +1459,10 @@ export async function runDelivery(planPath, identity, options = {}) {
         }
       }
     }
-    const localPackageIndex = run.graph
-      .filter((node) => node.id.startsWith("androidPackage:"))
-      .findIndex(
-        (node) =>
-          node.id === `androidPackage:${plan.targets["android-local"]?.signing}`
-      );
-    const localPackageStage =
-      localPackageIndex < 0
-        ? null
-        : run.stages[
-            localPackageIndex === 0
-              ? "androidPackage"
-              : "androidAdditionalPackage"
-          ];
+    const localPackageStage = androidPackageStageForMode(
+      run,
+      plan.targets["android-local"]?.signing
+    );
     if (
       scheduled.has("androidLocal") &&
       localPackageStage?.state === "passed" &&
@@ -1494,12 +1502,19 @@ export async function runDelivery(planPath, identity, options = {}) {
         );
       }
     }
+    const internalPackageStage = androidPackageStageForMode(run, "upload");
     if (
       scheduled.has("androidInternal") &&
-      run.stages.androidPackage.state === "passed"
+      internalPackageStage?.state === "passed" &&
+      !internalPackageStage.integrityError
     ) {
       try {
-        await publishInternal({ plan, run, save: () => atomically(file, run) });
+        await publishInternal({
+          plan,
+          run,
+          packageStage: internalPackageStage,
+          save: () => atomically(file, run),
+        });
       } catch (error) {
         const uncertain =
           error.code === "play_response_uncertain" ||

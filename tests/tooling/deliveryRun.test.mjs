@@ -979,6 +979,233 @@ test("mixed Android targets retain separate upload and debug package receipts", 
   );
 });
 
+test("unsigned artifact package and internal release use separate upload receipt", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        playApplicationId: "com.clipp.app",
+        playTrack: "internal",
+      },
+      signing: { androidPackage: "unsigned-artifact" },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-package",
+      "--target",
+      "android-internal",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  assert.equal(
+    plan.plan.targets["android-package"].signing,
+    "unsigned-artifact"
+  );
+  assert.equal(plan.plan.targets["android-internal"].signing, "upload");
+  assert.ok(
+    plan.plan.targets["android-internal"].prerequisites.includes(
+      "reference:androidSigningRef"
+    )
+  );
+  assert.ok(
+    !plan.plan.targets["android-internal"].prerequisites.includes(
+      "signing:android-internal-requires-upload"
+    )
+  );
+  const loader = path.join(f.base, "internal-modes-loader.mjs");
+  const modules = {
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification={state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid({run,mode,stageName,save}) { const stage=run.stages[stageName]; stage.state="passed"; stage.receipt={signing:mode,buildIdentity:mode+"-artifact"}; if(mode==="unsigned-artifact") run.targets["android-package"]={state:"complete",nextAction:null}; save(); }`,
+    "./android-internal.mjs": `export async function publishInternal({run,packageStage,save}) { if(packageStage?.receipt?.signing!=="upload") throw Error("publication borrowed wrong package mode"); run.targets["android-internal"]={state:"complete",nextAction:null}; run.stages.androidInternal.state="passed"; save(); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const result = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.code, "delivery_complete");
+  assert.equal(
+    report.run.stages.androidPackage.receipt.signing,
+    "unsigned-artifact"
+  );
+  assert.equal(
+    report.run.stages.androidAdditionalPackage.receipt.signing,
+    "upload"
+  );
+  assert.deepEqual(report.run.aggregate.outstanding, []);
+});
+
+test("three Android modes preserve unsigned and debug progress while upload is blocked", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        playApplicationId: "com.clipp.app",
+        playTrack: "internal",
+        androidDeviceSerial: "owned-emulator-1",
+      },
+      signing: { androidPackage: "unsigned-artifact", androidLocal: "debug" },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-package",
+      "--target",
+      "android-internal",
+      "--target",
+      "android-local",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const loader = path.join(f.base, "three-modes-loader.mjs");
+  const modules = {
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification={state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid({run,mode,stageName,save}) { if(mode==="upload") throw Object.assign(Error("upload signing identity unavailable"),{code:"prerequisite_unavailable"}); const stage=run.stages[stageName]; stage.state="passed"; stage.receipt={signing:mode,buildIdentity:mode+"-artifact"}; if(mode==="unsigned-artifact") run.targets["android-package"]={state:"complete",nextAction:null}; save(); }`,
+    "./android-local.mjs": `export async function installAndroidLocal({run,packageStage,save}) { if(packageStage?.receipt?.signing!=="debug") throw Error("local borrowed wrong mode"); run.targets["android-local"]={state:"complete",nextAction:null}; run.stages.androidLocal.state="passed"; save(); }`,
+    "./android-internal.mjs": `export async function publishInternal() { throw Error("blocked upload must not publish"); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const result = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.code, "delivery_incomplete");
+  assert.equal(
+    report.run.stages.androidPackage.receipt.signing,
+    "unsigned-artifact"
+  );
+  assert.equal(report.run.stages.androidAdditionalPackage.state, "blocked");
+  assert.equal(report.run.stages.androidThirdPackage.receipt.signing, "debug");
+  assert.equal(report.run.targets["android-package"].state, "complete");
+  assert.equal(report.run.targets["android-internal"].state, "blocked");
+  assert.equal(report.run.targets["android-local"].state, "complete");
+  assert.deepEqual(
+    report.run.aggregate.outstanding.map((item) => item.target),
+    ["android-internal"]
+  );
+});
+
+test("shared replay failure preserves completed destination and recovery skips installation", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        electronInstallPath: path.join(f.base, "Applications", "Clipp.app"),
+      },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-local",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const loader = path.join(f.base, "completed-replay-loader.mjs");
+  const modules = {
+    "./electron.mjs": `export const electronNativeInventory=()=>({}); export const inspectElectronConfig=()=>({}); export async function packageElectron({run,save}) { run.stages.electronPackage.state="passed"; save(); }`,
+    "./electron-local.mjs": `export async function installElectronLocal({run,save}) { if(run.targets["electron-local"].state==="complete") return; run.stages.electronLocal.installCount=(run.stages.electronLocal.installCount||0)+1; run.targets["electron-local"]={state:"complete",nextAction:null}; save(); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const run = () =>
+    command(process.execPath, [cli, "run", plan.path, "--json"], f.repo, {
+      NODE_OPTIONS: `--experimental-loader=${loader}`,
+    });
+  const first = JSON.parse(run().stdout);
+  assert.equal(first.code, "delivery_complete");
+  assert.equal(first.run.stages.electronLocal.installCount, 1);
+  const installed = path.join(
+    first.run.checkout,
+    "node_modules",
+    ".package-lock.json"
+  );
+  const original = readFileSync(installed);
+  writeFileSync(installed, Buffer.concat([original, Buffer.from("tampered")]));
+  const failed = JSON.parse(run().stdout);
+  assert.equal(failed.code, "candidate_installation_changed");
+  assert.equal(failed.run.targets["electron-local"].state, "complete");
+  assert.equal(failed.run.aggregate.state, "incomplete");
+  writeFileSync(installed, original);
+  const recovered = JSON.parse(run().stdout);
+  assert.equal(recovered.code, "delivery_complete");
+  assert.equal(recovered.run.targets["electron-local"].state, "complete");
+  assert.equal(recovered.run.stages.electronLocal.installCount, 1);
+});
+
 test("unresolved local signing blocks only that target after shared qualification", (t) => {
   const f = fixture(t);
   writeFileSync(
