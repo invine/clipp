@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const extensionPath = resolve(scriptDirectory, "..", "dist");
+const extensionPath = resolve(
+  process.argv[2] ?? resolve(scriptDirectory, "..", "dist")
+);
 const profilePath = await mkdtemp(join(tmpdir(), "clipp-extension-profile-"));
 
 let context;
@@ -23,7 +25,9 @@ try {
 
   let serviceWorker = context.serviceWorkers()[0];
   if (!serviceWorker) {
-    serviceWorker = await context.waitForEvent("serviceworker", { timeout: 15_000 });
+    serviceWorker = await context.waitForEvent("serviceworker", {
+      timeout: 15_000,
+    });
   }
 
   const deadline = Date.now() + 15_000;
@@ -33,17 +37,24 @@ try {
       chrome.storage.local.get([
         "localDeviceIdentity",
         "localDeviceIdentity:initializationError",
-      ]),
+      ])
     );
-    if (storage.localDeviceIdentity || storage["localDeviceIdentity:initializationError"]) break;
+    if (
+      storage.localDeviceIdentity ||
+      storage["localDeviceIdentity:initializationError"]
+    )
+      break;
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
   }
 
-  assert.ok(storage.localDeviceIdentity, "the extension should persist a Device Identity on first run");
+  assert.ok(
+    storage.localDeviceIdentity,
+    "the extension should persist a Device Identity on first run"
+  );
   assert.equal(
     storage["localDeviceIdentity:initializationError"],
     undefined,
-    "the extension should not persist an identity initialization failure",
+    "the extension should not persist an identity initialization failure"
   );
   console.log("MV3 identity initialization verified.");
 } finally {
