@@ -444,6 +444,7 @@ export function ClipboardApp({
   runtimeOwner,
 }: ClipboardAppProps) {
   const [isNarrow, setIsNarrow] = useState(false);
+  const [isRelayDesktop, setIsRelayDesktop] = useState(false);
   const [isCramped, setIsCramped] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [session] = useState(() => providedSession ?? createUiSession());
@@ -921,6 +922,7 @@ export function ClipboardApp({
   useEffect(() => {
     function handleResize() {
       const size = hostContentSize(window, document);
+      setIsRelayDesktop(size.width > 1100);
       setIsNarrow(
         size.width <=
           (sessionState.destination === "devices" ? 640 : NARROW_CONTENT_WIDTH)
@@ -1415,31 +1417,7 @@ export function ClipboardApp({
     if (!onSetRelayAddresses) return null;
     return (
       <>
-        <div className="section-divider"></div>
         <div className="relay-settings">
-          <div className="nav-section-label">Network</div>
-          <div className="relay-accordion-head">
-            <button
-              className="relay-accordion-toggle"
-              onClick={() => setRelaysOpen((open) => !open)}
-              aria-expanded={relaysOpen}
-            >
-              <Icon
-                name="chevron"
-                style={{ transform: relaysOpen ? "rotate(180deg)" : undefined }}
-              />
-              <span className="relay-accordion-title">Relays</span>
-              <span className="relay-summary-text">{relaySummaryLabel()}</span>
-            </button>
-            <button
-              className="text-button"
-              title="Add relay"
-              onClick={beginAddRelay}
-              disabled={relaySaving}
-            >
-              Add relay
-            </button>
-          </div>
           {relaysOpen && (
             <div className="relay-list">
               {relayAddresses.length === 0 && !addingRelay && (
@@ -1838,6 +1816,26 @@ export function ClipboardApp({
             </section>
           </>
         )}
+        {sessionState.destination === "relays" && (
+          <div className="relays-destination">
+            <section
+              className="relay-overview"
+              aria-label="Relay status"
+              role="status"
+            >
+              {onMutateManagedRelay
+                ? `${managedRelayConfigurations.length} configured relay${managedRelayConfigurations.length === 1 ? "" : "s"}`
+                : relaySummaryLabel()}
+            </section>
+            <section
+              className="relay-configurations"
+              aria-labelledby="configured-relays-heading"
+            >
+              <h2 id="configured-relays-heading">Configured relays</h2>
+              {renderRelaysSection()}
+            </section>
+          </div>
+        )}
         {sessionState.destination === "settings" &&
           (() => {
             const category =
@@ -2115,15 +2113,6 @@ export function ClipboardApp({
                     <p className="settings-intro">
                       Configure how Clipp reaches your Trusted Devices.
                     </p>
-                    <section
-                      className="settings-group"
-                      aria-labelledby="settings-relays-heading"
-                      tabIndex={-1}
-                      data-session-focus="settings:relays"
-                    >
-                      <h4 id="settings-relays-heading">Managed relays</h4>
-                      {renderRelaysSection()}
-                    </section>
                     {backgroundContinuity && onSetBackgroundContinuity && (
                       <section
                         className="settings-group"
@@ -2349,7 +2338,7 @@ export function ClipboardApp({
 
   function renderNavigation() {
     const openDestination = (
-      destination: "history" | "devices" | "requests" | "settings",
+      destination: "history" | "devices" | "requests" | "settings" | "relays",
       filterMode: "all" | "pinned" | "links" = "all"
     ) => {
       session.close();
@@ -2358,7 +2347,7 @@ export function ClipboardApp({
         filterMode,
         showNav: false,
         focusKey:
-          isNarrow || showNav
+          (isNarrow || showNav) && !(destination === "relays" && isRelayDesktop)
             ? "nav-toggle"
             : filterMode === "all"
               ? `destination:${destination}`
@@ -2377,6 +2366,7 @@ export function ClipboardApp({
             { key: "pinned", label: "Pinned", icon: "pin" },
             { key: "links", label: "Links", icon: "links" },
             { key: "devices", label: "Devices", icon: "computer" },
+            { key: "relays", label: "Relays", icon: "network" },
             { key: "requests", label: "Requests", icon: "requests" },
             { key: "settings", label: "Settings", icon: "settings" },
           ] as const
@@ -2393,6 +2383,7 @@ export function ClipboardApp({
               filterMode === "links") ||
             (key === "devices" && sessionState.destination === "devices") ||
             (key === "requests" && sessionState.destination === "requests") ||
+            (key === "relays" && sessionState.destination === "relays") ||
             (key === "settings" && sessionState.destination === "settings");
           return (
             <button
@@ -2528,12 +2519,16 @@ export function ClipboardApp({
         }
       }}
       data-session-scroll="workspace"
-      className={`app-shell ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${showNav ? "nav-open" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
+      className={`app-shell ${sessionState.destination === "relays" && isRelayDesktop ? "relays-desktop" : ""} ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${showNav ? "nav-open" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
     >
       <aside
         className="workspace-sidebar"
-        inert={!showNav}
-        aria-hidden={!showNav}
+        inert={
+          !showNav && !(sessionState.destination === "relays" && isRelayDesktop)
+        }
+        aria-hidden={
+          !showNav && !(sessionState.destination === "relays" && isRelayDesktop)
+        }
       >
         <div className="workspace-brand">
           <span className="app-logo">
@@ -2574,7 +2569,7 @@ export function ClipboardApp({
       )}
       <div className="workspace-content">
         <header
-          className={`workspace-topbar ${sessionState.destination === "devices" ? "devices-topbar" : ""} ${sessionState.destination === "history" ? "history-topbar" : ""}`}
+          className={`workspace-topbar ${sessionState.destination === "devices" || sessionState.destination === "relays" ? "devices-topbar" : ""} ${sessionState.destination === "history" ? "history-topbar" : ""}`}
         >
           <button
             type="button"
@@ -2650,12 +2645,34 @@ export function ClipboardApp({
               </button>
             </div>
           )}
-          {sessionState.destination !== "devices" && (
-            <ConnectionStatusButton
-              summary={connectionSummary}
-              session={session}
-            />
-          )}
+          {sessionState.destination === "relays" &&
+            (onMutateManagedRelay || onSetRelayAddresses) && (
+              <button
+                type="button"
+                className="primary-button"
+                data-session-focus="relay:add"
+                onClick={() => {
+                  if (onMutateManagedRelay) {
+                    session.open({
+                      kind: "relay",
+                      entity: "new",
+                      origin: "relay:add",
+                    });
+                    session.relay.begin();
+                  } else beginAddRelay();
+                }}
+                disabled={relaySaving}
+              >
+                Add relay
+              </button>
+            )}
+          {sessionState.destination !== "devices" &&
+            sessionState.destination !== "relays" && (
+              <ConnectionStatusButton
+                summary={connectionSummary}
+                session={session}
+              />
+            )}
           {sessionState.destination === "history" && onShareNow && (
             <div className="workspace-controls history-share-controls">
               <div className="send-control">
@@ -2780,6 +2797,11 @@ export function ClipboardApp({
                     ? "requests"
                     : issue.scope === "relay" ||
                         (issue.scope === "task" &&
+                          ["relay-edit", "relay-action", "relay"].includes(
+                            issue.code
+                          ))
+                      ? "relays"
+                      : issue.scope === "task" &&
                           [
                             "relay-edit",
                             "relay-action",
@@ -2789,14 +2811,14 @@ export function ClipboardApp({
                             "settings",
                             "continuity",
                             "notifications",
-                          ].includes(issue.code))
-                      ? "settings"
-                      : issue.scope === "task" &&
-                          ["alias", "device-name", "pairing"].includes(
-                            issue.code
-                          )
-                        ? "devices"
-                        : "history",
+                          ].includes(issue.code)
+                        ? "settings"
+                        : issue.scope === "task" &&
+                            ["alias", "device-name", "pairing"].includes(
+                              issue.code
+                            )
+                          ? "devices"
+                          : "history",
                 ...(issue.scope === "relay" ||
                 (issue.scope === "task" &&
                   [
@@ -2855,6 +2877,7 @@ export function ClipboardApp({
           style={{ gridTemplateColumns: isNarrow ? "1fr" : undefined }}
         >
           {sessionState.destination !== "devices" &&
+            sessionState.destination !== "relays" &&
             sessionState.destination !== "history" && (
               <div className="workspace-page-head" aria-hidden="true">
                 <div>
@@ -2872,7 +2895,7 @@ export function ClipboardApp({
             )}
           {sessionState.destination !== "history" && (
             <section
-              className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : sessionState.destination === "devices" ? "devices-pane" : ""}`}
+              className={`surface destination-pane ${sessionState.destination === "settings" ? "settings-pane" : sessionState.destination === "devices" || sessionState.destination === "relays" ? "devices-pane" : ""}`}
               data-session-scroll={sessionState.destination}
             >
               {renderDestination()}

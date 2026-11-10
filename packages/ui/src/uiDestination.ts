@@ -13,6 +13,7 @@ export type UiDestination =
   | { kind: "requests"; entity?: string }
   | { kind: "pairing" }
   | { kind: "devices" }
+  | { kind: "relays" }
   | {
       kind: "settings";
       category?:
@@ -45,6 +46,7 @@ export function parseUiDestination(value: unknown): UiDestination | null {
       "requests",
       "pairing",
       "devices",
+      "relays",
       "settings",
     ].includes(String(v.kind))
   )
@@ -97,6 +99,8 @@ export function parseUiDestination(value: unknown): UiDestination | null {
     )
       return null;
   }
+  if (v.kind === "settings" && v.category === "relays")
+    return { kind: "relays" };
   // One canonical field order makes duplicate handoffs compare by validated data.
   const normalized: Record<string, unknown> = { kind: v.kind };
   for (const key of ["entity", "category"])

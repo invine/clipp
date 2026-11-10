@@ -253,7 +253,7 @@ export function ManagedRelaySettings({
   }
   return (
     <div className="relay-settings" aria-label="Relay settings">
-      <div className="nav-section-label">Relays</div>
+      {!taskPresentation && <div className="nav-section-label">Relays</div>}
       {configurations.length === 0 && (
         <div className="relay-empty">
           No relays configured. Direct connections remain available.
@@ -270,8 +270,20 @@ export function ManagedRelaySettings({
                     ? config.discoveryUrl
                     : config.peerId)}
               </div>
+              <div className="relay-identity">
+                <span>
+                  {config.kind === "managed"
+                    ? "Authenticated discovery"
+                    : "Unauthenticated Peer ID"}
+                </span>
+                <span className="relay-address">
+                  {config.kind === "managed"
+                    ? config.discoveryUrl
+                    : config.peerId}
+                </span>
+              </div>
               <div className="relay-status" role="status">
-                {state ? statusText[state.status] : "Connecting"}
+                {state ? statusText[state.status] : "Status unknown"}
                 {state?.reason ? `: ${state.reason}` : ""}
               </div>
               {state?.warning && (
@@ -421,7 +433,7 @@ export function ManagedRelaySettings({
         Remove deletes this local configuration, its resources and local
         credential. It does not revoke the relay account or remove other routes.
       </p>
-      {!editing && (
+      {!editing && !taskPresentation && (
         <button
           type="button"
           data-session-focus="relay:add"

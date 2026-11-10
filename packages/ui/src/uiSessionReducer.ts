@@ -19,7 +19,7 @@ export type SessionTask = {
 export type RelayTaskResume = { resume(): string | null };
 
 export type NotificationReturn = {
-  destination: "history" | "devices" | "settings" | "requests";
+  destination: "history" | "devices" | "settings" | "requests" | "relays";
   focusKey: string | null;
   showNav: boolean;
   settingsCategory?:
@@ -35,7 +35,7 @@ export type UiSessionNavigationState = {
   sourceFilter: string;
   filterMode: "all" | "pinned" | "links";
   showNav: boolean;
-  destination: "history" | "devices" | "settings" | "requests";
+  destination: "history" | "devices" | "settings" | "requests" | "relays";
   tasks: SessionTask[];
   focusKey: string | null;
   scroll: Record<string, number>;

@@ -5057,3 +5057,68 @@ html[data-host-geometry="android"] .android-host {
     min-width: 0;
   }
 }
+
+/* Relays share the Devices workspace while keeping overview and configuration distinct. */
+.relays-destination {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.relay-overview,
+.relay-configurations {
+  border: 1px solid var(--clipp-border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 0;
+}
+.relay-configurations h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+.relay-configurations .relay-settings {
+  min-width: 0;
+}
+.relay-configurations .relay-card,
+.relay-identity,
+.relay-address {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.relay-configurations .managed-relay-card summary {
+  cursor: pointer;
+}
+.relay-identity {
+  display: grid;
+  gap: 4px;
+}
+.relay-configurations .peer-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .relay-overview,
+  .relay-configurations {
+    padding: 16px;
+  }
+  .relay-configurations .relay-card {
+    flex-wrap: wrap;
+  }
+}
+
+/* The Relays workspace keeps navigation in view on desktop. */
+.app-shell.relays-desktop {
+  grid-template-columns: minmax(13.5rem, 15rem) minmax(0, 1fr);
+}
+.app-shell.relays-desktop .workspace-sidebar {
+  position: static;
+  width: auto;
+  transform: none;
+}
+.app-shell.relays-desktop .workspace-content {
+  grid-column: 2;
+}
+.app-shell.relays-desktop .navigation-toggle {
+  display: none;
+}
+.app-shell.relays-desktop .workspace-navigation-scrim {
+  display: none;
+}
