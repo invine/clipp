@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -20,7 +21,9 @@ import { acquireOwnership } from "../../scripts/delivery/ownership.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 function fixture(t) {
-  const root = mkdtempSync(path.join(tmpdir(), "clipp-delivery-chrome-"));
+  const root = realpathSync(
+    mkdtempSync(path.join(tmpdir(), "clipp-delivery-chrome-"))
+  );
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const dist = path.join(root, "checkout/apps/extension/dist");
   mkdirSync(path.join(dist, "src"), { recursive: true });
@@ -289,12 +292,16 @@ test("Chrome replacement blocks for loaded-build handoff, then confirms and repl
   );
 });
 
-test("a competing run cannot replace the same Chrome directory and profile", async (t) => {
+test("competing runs cannot share a Chrome directory or profile", async (t) => {
   const { root, dist } = fixture(t);
   const destination = path.join(root, "stable");
   const profilePath = path.join(root, "profile");
+  const otherDestination = path.join(root, "other-stable");
+  const otherProfilePath = path.join(root, "other-profile");
   mkdirSync(destination);
+  mkdirSync(otherDestination);
   writeFileSync(path.join(destination, "old.txt"), "unchanged");
+  writeFileSync(path.join(otherDestination, "old.txt"), "unchanged");
   const auth = path.join(root, "auth.json");
   writeFileSync(
     auth,
@@ -323,25 +330,55 @@ test("a competing run cannot replace the same Chrome directory and profile", asy
     stages: { chromeLocal: { state: "pending", attempts: [] } },
     targets: { "chrome-local": { state: "pending" } },
   };
-  const release = acquireOwnership(
-    `chrome-destination:${destination}:profile:${profilePath}`
-  );
-  try {
-    await assert.rejects(
-      deliverChrome({
-        plan,
-        run,
-        execute: async () => {},
-        save: () => {},
-        observe: async () => null,
-      }),
-      /resource_owned/
+  for (const scenario of [
+    {
+      identity: `chrome-destination:${destination}`,
+      destination,
+      profilePath: otherProfilePath,
+    },
+    {
+      identity: `chrome-profile:${profilePath}`,
+      destination: otherDestination,
+      profilePath,
+    },
+  ]) {
+    plan.targets["chrome-local"] = {
+      destinationIdentity: scenario.destination,
+      profilePath: scenario.profilePath,
+    };
+    writeFileSync(
+      auth,
+      JSON.stringify({
+        schema: 1,
+        scope: "local-chrome-extension",
+        sourceRevision: "a".repeat(40),
+        destination: scenario.destination,
+        profilePath: scenario.profilePath,
+        authorizedBy: "fixture",
+      })
     );
-    assert.equal(
-      readFileSync(path.join(destination, "old.txt"), "utf8"),
-      "unchanged"
-    );
-  } finally {
-    release();
+    const release = acquireOwnership(scenario.identity);
+    try {
+      await assert.rejects(
+        deliverChrome({
+          plan,
+          run,
+          execute: async () => {},
+          save: () => {},
+          observe: async () => null,
+        }),
+        /resource_owned/
+      );
+      assert.equal(
+        readFileSync(path.join(scenario.destination, "old.txt"), "utf8"),
+        "unchanged"
+      );
+    } finally {
+      release();
+    }
   }
+  const releaseDestination = acquireOwnership(
+    `chrome-destination:${otherDestination}`
+  );
+  releaseDestination();
 });

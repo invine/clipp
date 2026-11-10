@@ -659,19 +659,22 @@ export async function deliverChrome({ plan, run, execute, save, observe }) {
     return;
   }
   stage.authorization = authorization;
-  const release = acquireOwnership(
-    `chrome-destination:${destination}:profile:${profilePath}`,
-    {
-      canRecover: () => {
-        if (!stage.replacement?.startedAt) return true;
-        if (!existsSync(destination)) return false;
-        return (
-          JSON.stringify(chromeInventory(destination)) ===
-          JSON.stringify(stage.artifact.inventory)
-        );
-      },
-    }
-  );
+  const releases = [];
+  const canRecover = () =>
+    Boolean(stage.replacement?.startedAt) &&
+    existsSync(destination) &&
+    JSON.stringify(chromeInventory(destination)) ===
+      JSON.stringify(stage.artifact.inventory);
+  try {
+    for (const identity of [
+      `chrome-destination:${destinationPhysical}`,
+      `chrome-profile:${profilePhysical}`,
+    ].sort())
+      releases.push(acquireOwnership(identity, { canRecover }));
+  } catch (error) {
+    for (const release of releases.reverse()) release();
+    throw error;
+  }
   try {
     if (!stage.replacement?.confirmed) {
       if (
@@ -757,6 +760,6 @@ export async function deliverChrome({ plan, run, execute, save, observe }) {
     };
     save();
   } finally {
-    release();
+    for (const release of releases.reverse()) release();
   }
 }
