@@ -1315,25 +1315,29 @@ export async function runDelivery(planPath, identity, options = {}) {
       try {
         await publishInternal({ plan, run, save: () => atomically(file, run) });
       } catch (error) {
+        const uncertain =
+          error.code === "play_response_uncertain" ||
+          Boolean(run.stages.androidInternal.pending);
         const blocked =
-          /unavailable|uncertain|unauthorized|pending|resource_owned|ownership/.test(
+          /unavailable|unauthorized|pending|resource_owned|ownership/.test(
             error.code || ""
           );
-        platformCode ||= blocked
-          ? null
+        const code = uncertain
+          ? "play_response_uncertain"
           : error.code || "play_publication_failed";
+        platformCode ||= blocked && !uncertain ? null : code;
         run.targets["android-internal"] = {
           ...run.targets["android-internal"],
-          state: blocked ? "blocked" : "failed",
+          state: uncertain ? "uncertain" : blocked ? "blocked" : "failed",
           nextAction: error.message,
           updatedAt: new Date().toISOString(),
         };
         stage(
           run,
           "androidInternal",
-          blocked ? "blocked" : "failed",
+          uncertain ? "uncertain" : blocked ? "blocked" : "failed",
           {
-            code: error.code || "play_publication_failed",
+            code,
             message: error.message,
           },
           file

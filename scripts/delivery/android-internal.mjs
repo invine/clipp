@@ -222,6 +222,7 @@ export async function publishInternal({ plan, run, save, client }) {
       (item) => item.number === stage.pending?.number
     );
     if (attempt) Object.assign(attempt, { state, finishedAt: now() });
+    if (state === "uncertain") stage.state = "uncertain";
     if (state !== "uncertain") stage.pending = null;
     persist();
   };
@@ -475,7 +476,16 @@ export async function publishInternal({ plan, run, save, client }) {
       finish("uncertain");
       fail("play_response_uncertain", "Play commit response is uncertain");
     }
-    const readback = await client.releases("internal");
+    let readback;
+    try {
+      readback = await client.releases("internal");
+    } catch {
+      finish("uncertain");
+      fail(
+        "play_response_uncertain",
+        "Play commit was accepted but release readback is uncertain"
+      );
+    }
     const completed = readback.find((release) =>
       sameRelease(release, stage, version)
     );
