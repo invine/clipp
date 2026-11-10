@@ -210,6 +210,20 @@ function Scenario() {
         >
           Resolve pending effect: unconfirmed
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setConfigurations([]);
+            resolveNext("mutation", {
+              status: "applied",
+              configurations: [],
+              configurationApplied: true,
+              credentialsRemoved: [],
+            });
+          }}
+        >
+          Resolve pending effect: removed
+        </button>
         <h2>Requested runtime effects</h2>
         <output data-testid="relay-effects">{JSON.stringify(effects)}</output>
       </aside>

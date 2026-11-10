@@ -231,7 +231,22 @@ export function createUiSession() {
               taskNotice: "This Request is no longer available. Open Requests.",
             });
           }
-        } else if (destination.kind === "settings")
+        } else if (destination.kind === "relays")
+          update({
+            destination: "relays",
+            showNav: false,
+            focusKey: "destination:relays",
+          });
+        else if (
+          destination.kind === "settings" &&
+          destination.category === "relays"
+        )
+          update({
+            destination: "relays",
+            showNav: false,
+            focusKey: "destination:relays",
+          });
+        else if (destination.kind === "settings")
           update({
             destination: "settings",
             settingsCategory: destination.category,

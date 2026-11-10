@@ -5057,3 +5057,177 @@ html[data-host-geometry="android"] .android-host {
     min-width: 0;
   }
 }
+
+/* Relays use the Devices panel, header and action-menu styles. */
+.relays-destination {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.relay-overview,
+.relay-configurations {
+  min-width: 0;
+  padding: 20px;
+  border-radius: 9px;
+  background: var(--workspace-panel);
+}
+.relay-overview {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.relay-configurations h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+.relay-configurations .relay-settings {
+  min-width: 0;
+}
+.app-shell.relays-desktop {
+  grid-template-columns: minmax(13.5rem, 15rem) minmax(0, 1fr);
+}
+.app-shell.relays-desktop .workspace-sidebar {
+  position: static;
+  width: auto;
+  transform: none;
+}
+.app-shell.relays-desktop .workspace-content {
+  grid-column: 2;
+}
+.app-shell.relays-desktop .navigation-toggle,
+.app-shell.relays-desktop .workspace-navigation-scrim {
+  display: none;
+}
+.workspace-topbar .relay-header-add {
+  margin-inline-start: auto;
+  min-height: 2.5rem;
+  padding-inline: 0.875rem;
+  border-radius: 0.5rem;
+}
+.destination-pane:has(.relays-destination) {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
+}
+.relay-configurations .managed-relay-item {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+  padding: 12px 0;
+}
+.relay-configurations .managed-relay-item + .managed-relay-item {
+  border-top: 1px solid var(--clipp-border);
+}
+.managed-relay-item .relay-identity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.managed-relay-item .relay-address {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--clipp-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relay-kind {
+  color: var(--clipp-text-muted);
+  font-size: 0.8125rem;
+}
+.relay-configurations .managed-relay-item .relay-status {
+  max-width: none;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.8125rem;
+}
+.relay-configurations .relay-status-dot {
+  background: var(--clipp-text-muted);
+}
+.relay-configurations .relay-status-ready .relay-status-dot {
+  background: var(--clipp-success);
+}
+.relay-configurations .relay-status-login_needed .relay-status-dot,
+.relay-configurations .relay-status-degraded .relay-status-dot,
+.relay-configurations .relay-status-refused .relay-status-dot,
+.relay-configurations .relay-status-conflict .relay-status-dot {
+  background: var(--clipp-warning);
+}
+.relay-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.relay-quick-login {
+  min-height: 40px;
+}
+@media (max-width: 640px) {
+  .relay-overview,
+  .relay-configurations {
+    padding: 16px;
+  }
+  .relay-configurations .managed-relay-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "identity actions" "kind actions" "status actions";
+    gap: 4px 12px;
+  }
+  .managed-relay-item .relay-identity {
+    grid-area: identity;
+  }
+  .managed-relay-item .relay-kind {
+    grid-area: kind;
+  }
+  .managed-relay-item .relay-status {
+    grid-area: status;
+  }
+  .managed-relay-item .relay-row-actions {
+    grid-area: actions;
+  }
+}
+
+.relay-empty-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px 36px;
+  text-align: center;
+}
+.relay-empty-prompt h3 {
+  margin: 0 0 8px;
+  font-size: 0.9375rem;
+}
+.relay-empty-prompt p {
+  max-width: 26rem;
+  margin: 0 0 18px;
+  color: var(--clipp-text-muted);
+  line-height: 1.5;
+}
+.relay-empty-add {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--clipp-border);
+  border-radius: 0.5rem;
+  background: var(--workspace-panel);
+  color: var(--clipp-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.relay-empty-add:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.relay-empty-add:focus-visible {
+  outline: 2px solid var(--clipp-focus);
+  outline-offset: 2px;
+}
