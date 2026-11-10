@@ -4,9 +4,7 @@ test("relay management starts empty and never invents configuration or connectio
   page,
 }) => {
   await page.goto("/relay-management.html");
-  await expect(
-    page.getByText("No relays configured. Direct connections remain available.")
-  ).toBeVisible();
+  await expect(page.getByText("No relays configured.")).toBeVisible();
   await expect(page.getByTestId("relay-effects")).toHaveText("[]");
 
   await page.getByRole("button", { name: "Publish managed relay" }).click();

@@ -255,9 +255,7 @@ export function ManagedRelaySettings({
     <div className="relay-settings" aria-label="Relay settings">
       {!taskPresentation && <div className="nav-section-label">Relays</div>}
       {configurations.length === 0 && (
-        <div className="relay-empty">
-          No relays configured. Direct connections remain available.
-        </div>
+        <div className="relay-empty">No relays configured.</div>
       )}
       {configurations.map((config) => {
         const state = states.find((item) => item.key === config.key);
@@ -292,6 +290,9 @@ export function ManagedRelaySettings({
                 {state ? statusText[state.status] : "Status unknown"}
                 {state?.reason ? `: ${state.reason}` : ""}
               </div>
+              <span className="relay-disclosure">
+                Actions <span aria-hidden="true">⌄</span>
+              </span>
               {state?.warning && (
                 <div className="relay-error">{state.warning}</div>
               )}

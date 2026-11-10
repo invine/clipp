@@ -962,14 +962,6 @@ export function ClipboardApp({
     peerConnections.forEach((conn) => map.set(conn.peerId, conn));
     return map;
   }, [peerConnections]);
-  const connectedRelayCount = useMemo(
-    () =>
-      relayAddresses.filter(
-        (address) =>
-          relayConnectionFor(address, relayConnections)?.status === "connected"
-      ).length,
-    [relayAddresses, relayConnections]
-  );
 
   const sources = useMemo(() => {
     const set = new Set<string>();
@@ -1241,14 +1233,37 @@ export function ClipboardApp({
 
   const scanPairingCode = pairingScan.start;
 
-  function relaySummaryLabel() {
-    if (relayAddresses.length === 0) return "No relays";
-    if (connectedRelayCount > 0) {
-      return `${connectedRelayCount}/${relayAddresses.length} connected`;
+  function relaySummary() {
+    const counts = { ready: 0, transitioning: 0, attention: 0, unknown: 0 };
+    if (onMutateManagedRelay) {
+      for (const config of managedRelayConfigurations) {
+        const status = managedRelayStates.find(
+          (state) => state.key === config.key
+        )?.status;
+        if (status === "ready") counts.ready++;
+        else if (status === "connecting" || status === "retrying")
+          counts.transitioning++;
+        else if (
+          status === "login_needed" ||
+          status === "degraded" ||
+          status === "refused" ||
+          status === "conflict"
+        )
+          counts.attention++;
+        else counts.unknown++;
+      }
+    } else {
+      for (const address of relayAddresses) {
+        const status = relayConnectionFor(address, relayConnections)?.status;
+        if (status === "connected") counts.ready++;
+        else if (status === "disconnected") counts.attention++;
+        else counts.unknown++;
+      }
     }
-    return relayAddresses.length === 1
-      ? "1 configured"
-      : `${relayAddresses.length} configured`;
+    const total = onMutateManagedRelay
+      ? managedRelayConfigurations.length
+      : relayAddresses.length;
+    return { counts, total };
   }
 
   function renderRelayDraftCard() {
@@ -1823,9 +1838,35 @@ export function ClipboardApp({
               aria-label="Relay status"
               role="status"
             >
-              {onMutateManagedRelay
-                ? `${managedRelayConfigurations.length} configured relay${managedRelayConfigurations.length === 1 ? "" : "s"}`
-                : relaySummaryLabel()}
+              {(() => {
+                const { counts, total } = relaySummary();
+                return total === 0 ? (
+                  <span>No relays configured</span>
+                ) : (
+                  <>
+                    <strong>{total} configured</strong>
+                    <span>
+                      {" · "}
+                      {counts.ready}{" "}
+                      {onMutateManagedRelay ? "ready" : "connected"}
+                    </span>
+                    {onMutateManagedRelay && (
+                      <span>
+                        {" · "}
+                        {counts.transitioning} connecting or retrying
+                      </span>
+                    )}
+                    <span>
+                      {" · "}
+                      {counts.attention} needs attention
+                    </span>
+                    <span>
+                      {" · "}
+                      {counts.unknown} unknown
+                    </span>
+                  </>
+                );
+              })()}
             </section>
             <section
               className="relay-configurations"
@@ -2649,7 +2690,7 @@ export function ClipboardApp({
             (onMutateManagedRelay || onSetRelayAddresses) && (
               <button
                 type="button"
-                className="primary-button"
+                className="primary-button relay-header-add"
                 data-session-focus="relay:add"
                 onClick={() => {
                   if (onMutateManagedRelay) {

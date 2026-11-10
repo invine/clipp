@@ -5071,6 +5071,12 @@ html[data-host-geometry="android"] .android-host {
   padding: 20px;
   min-width: 0;
 }
+.relay-overview {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
 .relay-configurations h2 {
   margin: 0 0 16px;
   font-size: 16px;
@@ -5121,4 +5127,52 @@ html[data-host-geometry="android"] .android-host {
 }
 .app-shell.relays-desktop .workspace-navigation-scrim {
   display: none;
+}
+
+/* Relays use the full workspace while retaining their separate overview and list. */
+.workspace-topbar .relay-header-add {
+  margin-inline-start: auto;
+}
+.destination-pane:has(.relays-destination) {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
+}
+.relay-configurations .managed-relay-card {
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--clipp-border);
+  border-radius: 0;
+  background: transparent;
+  transform: none;
+}
+.relay-configurations .managed-relay-card > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(8rem, auto) auto;
+  align-items: center;
+  gap: 8px 16px;
+}
+.relay-configurations .managed-relay-card .relay-status {
+  font-size: 0.75rem;
+}
+.relay-configurations .managed-relay-card > summary > .relay-error,
+.relay-configurations .managed-relay-card > summary > p {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .relay-configurations .managed-relay-card > summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
+.relay-disclosure {
+  color: var(--clipp-text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.managed-relay-card[open] .relay-disclosure span {
+  display: inline-block;
+  transform: rotate(180deg);
 }
