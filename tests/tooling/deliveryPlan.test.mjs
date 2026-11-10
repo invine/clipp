@@ -213,7 +213,7 @@ test("Android plans declare signing mode and publication blockers without exposi
   assert.equal(report.targets["android-package"].signing, "unsigned-artifact");
   assert.ok(
     report.targets["android-internal"].prerequisites.includes(
-      "signing:android-internal-requires-upload"
+      "reference:androidSigningRef"
     )
   );
   assert.ok(

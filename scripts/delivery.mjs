@@ -397,8 +397,9 @@ function prerequisites(target, profile, config) {
         missing.push(`destination:androidAcceptanceSerialApi${api}`);
   }
   if (
-    ["android-package", "android-internal"].includes(target) &&
-    config.signing?.androidPackage !== "unsigned-artifact"
+    target === "android-internal" ||
+    (target === "android-package" &&
+      config.signing?.androidPackage !== "unsigned-artifact")
   )
     if (!config.references?.androidSigningRef)
       missing.push("reference:androidSigningRef");
@@ -415,11 +416,6 @@ function prerequisites(target, profile, config) {
     !config.references?.androidSigningRef
   )
     missing.push("reference:androidSigningRef");
-  if (
-    target === "android-internal" &&
-    config.signing?.androidPackage === "unsigned-artifact"
-  )
-    missing.push("signing:android-internal-requires-upload");
   if (target === "android-internal" && !config.references?.playCredentialRef)
     missing.push("reference:playCredentialRef");
   if (target === "android-internal" && !config.references?.playAuthorizationRef)
@@ -662,6 +658,23 @@ function runOptions(args, { status = false } = {}) {
   return { selector, isId, runRoot, native };
 }
 let json = process.argv.includes("--json");
+const humanResult = (result, observed = false) => {
+  const lines = [
+    `${result.code}: ${result.run.aggregate?.state || "incomplete"}${observed ? ` (observed ${result.run.updatedAt})` : ""}`,
+  ];
+  for (const [name, target] of Object.entries(result.run.targets || {}))
+    lines.push(
+      `${name}: ${target.state}${target.nextAction ? ` — ${target.nextAction}` : ""}`
+    );
+  if (
+    result.run.nextAction &&
+    !Object.values(result.run.targets || {}).some(
+      (target) => target.nextAction === result.run.nextAction
+    )
+  )
+    lines.push(`Next: ${result.run.nextAction}`);
+  return `${lines.join("\n")}\n`;
+};
 try {
   if (["help", "--help", "-h"].includes(process.argv[2]))
     process.stdout.write(help());
@@ -686,9 +699,7 @@ try {
       { native }
     );
     process.stdout.write(
-      json
-        ? JSON.stringify(result) + "\n"
-        : `${result.code}: ${result.run.nextAction}\n`
+      json ? JSON.stringify(result) + "\n" : humanResult(result)
     );
     process.exitCode =
       result.code === "delivery_incomplete"
@@ -704,9 +715,7 @@ try {
       fail("invalid_options", "Status requires a run ID and --config");
     const result = statusDelivery(runRoot, selector);
     process.stdout.write(
-      json
-        ? JSON.stringify(result) + "\n"
-        : `${result.code}: ${result.run.nextAction} (observed ${result.run.updatedAt})\n`
+      json ? JSON.stringify(result) + "\n" : humanResult(result, true)
     );
   } else fail("invalid_operation", "Use plan, run, status or help");
 } catch (error) {

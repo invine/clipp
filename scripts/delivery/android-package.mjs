@@ -16,6 +16,27 @@ const sha = (file) =>
 const reject = (code, message = code) => {
   throw Object.assign(new Error(message), { code });
 };
+const packageIdentity = (
+  plan,
+  mode,
+  webInventorySha256,
+  pair,
+  certificateSha256
+) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        source: plan.source.commit,
+        tree: plan.source.tree,
+        mode,
+        profileSha256: plan.profile.sha256,
+        configurationSha256: plan.configurationSha256,
+        webInventorySha256,
+        acceptance: [pair.appSha256, pair.testSha256],
+        certificateSha256,
+      })
+    )
+    .digest("hex");
 
 function privateValue(reference) {
   if (typeof reference !== "string") return null;
@@ -405,19 +426,28 @@ function signature(apksigner, keytool, apk, aab, identity) {
   return { state: identity.mode, certificateSha256: apkHash };
 }
 
-export async function packageAndroid({ plan, run, execute, save }) {
+export async function packageAndroid({
+  plan,
+  run,
+  execute,
+  save,
+  mode: requestedMode,
+  stageName = "androidPackage",
+}) {
   const selected =
     plan.targets["android-package"] ||
     plan.targets["android-local"] ||
     plan.targets["android-internal"];
   if (!selected || run.androidQualification?.state !== "passed") return;
-  const mode = selected.signing;
+  const mode = requestedMode || selected.signing;
   if (!["upload", "unsigned-artifact", "debug"].includes(mode))
     reject("invalid_profile", "Unsupported Android signing mode");
-  const stage = run.stages.androidPackage;
+  const stage = run.stages[stageName];
   if (stage.state === "passed") {
     if (
       stage.receipt?.source !== plan.source.commit ||
+      stage.receipt?.tree !== plan.source.tree ||
+      stage.receipt?.configurationSha256 !== plan.configurationSha256 ||
       stage.receipt?.signing !== mode ||
       stage.receipt?.qualification?.appSha256 !==
         run.androidQualification.pair?.appSha256 ||
@@ -427,6 +457,26 @@ export async function packageAndroid({ plan, run, execute, save }) {
       reject(
         "android_artifact_changed",
         "Saved Android package identity changed"
+      );
+    const expectedCertificate = stage.receipt.signature?.certificateSha256;
+    if (mode === "upload" && !/^[a-f0-9]{64}$/.test(expectedCertificate || ""))
+      reject(
+        "android_artifact_changed",
+        "Saved Android signing identity is invalid"
+      );
+    if (
+      stage.receipt.buildIdentity !==
+      packageIdentity(
+        plan,
+        mode,
+        stage.receipt.webInventorySha256,
+        run.androidQualification.pair,
+        expectedCertificate
+      )
+    )
+      reject(
+        "android_artifact_changed",
+        "Saved Android build identity changed"
       );
     for (const artifact of [stage.receipt.apk, stage.receipt.aab].filter(
       Boolean
@@ -608,20 +658,13 @@ export async function packageAndroid({ plan, run, execute, save }) {
     identity
   );
   cleanSource(run.checkout, plan.source.commit);
-  const buildIdentity = createHash("sha256")
-    .update(
-      JSON.stringify({
-        source: plan.source.commit,
-        tree: plan.source.tree,
-        mode,
-        profileSha256: plan.profile.sha256,
-        configurationSha256: plan.configurationSha256,
-        webInventorySha256,
-        acceptance: [pair.appSha256, pair.testSha256],
-        certificateSha256: signingResult.certificateSha256,
-      })
-    )
-    .digest("hex");
+  const buildIdentity = packageIdentity(
+    plan,
+    mode,
+    webInventorySha256,
+    pair,
+    signingResult.certificateSha256
+  );
   const receipt = {
     schema: 1,
     source: plan.source.commit,
@@ -651,23 +694,25 @@ export async function packageAndroid({ plan, run, execute, save }) {
     aab: aab && { ...aab, path: path.relative(plan.outputRoot, aab.path) },
     verifiedAt: new Date().toISOString(),
   };
-  run.stages.androidPackage.receipt = receipt;
-  run.stages.androidPackage.state = "passed";
-  run.stages.androidPackage.updatedAt = new Date().toISOString();
-  if (run.targets["android-package"])
+  stage.receipt = receipt;
+  stage.state = "passed";
+  stage.updatedAt = new Date().toISOString();
+  if (
+    run.targets["android-package"] &&
+    plan.targets["android-package"].signing === mode
+  )
     Object.assign(run.targets["android-package"], {
       state: "complete",
       nextAction: null,
     });
-  if (run.targets["android-local"])
+  if (
+    run.targets["android-local"] &&
+    plan.targets["android-local"].signing === mode
+  )
     run.targets["android-local"].nextAction =
-      plan.targets["android-local"].signing === mode
-        ? "install the verified compatible APK"
-        : "prepare an APK with the declared local signing mode";
-  if (run.targets["android-internal"])
+      "install the verified compatible APK";
+  if (run.targets["android-internal"] && mode === "upload")
     run.targets["android-internal"].nextAction =
-      mode === "upload"
-        ? "publish the verified signed AAB"
-        : "prepare an upload-signed AAB before publication";
+      "publish the verified signed AAB";
   save();
 }

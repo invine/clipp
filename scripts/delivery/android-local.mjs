@@ -41,15 +41,15 @@ function privateValue(ref) {
   return null;
 }
 
-function candidate(plan, run) {
-  const receipt = run.stages.androidPackage?.receipt;
+function candidate(plan, run, packageStage) {
+  const receipt = packageStage?.receipt;
   const target = plan.targets["android-local"];
   if (
     !target?.destinationIdentity ||
     /\s/.test(target.destinationIdentity) ||
     !["debug", "upload"].includes(target.signing) ||
-    run.stages.androidPackage?.state !== "passed" ||
-    run.stages.androidPackage?.integrityError ||
+    packageStage?.state !== "passed" ||
+    packageStage?.integrityError ||
     run.androidQualification?.state !== "passed" ||
     receipt?.source !== plan.source.commit ||
     receipt.signing !== target.signing ||
@@ -175,11 +175,17 @@ function checkCompatibility(installed, receipt, app) {
   );
 }
 
-export async function installAndroidLocal({ plan, run, save, device }) {
+export async function installAndroidLocal({
+  plan,
+  run,
+  save,
+  device,
+  packageStage = run.stages.androidPackage,
+}) {
   const target = run.targets["android-local"];
   if (!target) return;
   const stage = run.stages.androidLocal;
-  const { receipt, apk, serial, app } = candidate(plan, run);
+  const { receipt, apk, serial, app } = candidate(plan, run, packageStage);
   if (target.state === "complete" && stage.state === "passed") return;
   const auth = authorization(plan, receipt, serial, app);
   device ||= createAdbDevice(plan);
@@ -236,7 +242,7 @@ export async function installAndroidLocal({ plan, run, save, device }) {
       finish("reconciled");
     }
     if (!matching) {
-      candidate(plan, run);
+      candidate(plan, run, packageStage);
       authorization(plan, receipt, serial, app);
       begin("install");
       try {

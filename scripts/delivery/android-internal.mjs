@@ -92,11 +92,11 @@ function authorization(plan, receipt) {
   return grant;
 }
 
-function candidate(plan, run) {
-  const receipt = run.stages.androidPackage?.receipt;
+function candidate(plan, run, packageStage) {
+  const receipt = packageStage?.receipt;
   if (
-    run.stages.androidPackage?.state !== "passed" ||
-    run.stages.androidPackage?.integrityError ||
+    packageStage?.state !== "passed" ||
+    packageStage?.integrityError ||
     run.androidQualification?.state !== "passed" ||
     receipt?.qualification?.appSha256 !==
       run.androidQualification?.pair?.appSha256 ||
@@ -167,7 +167,13 @@ const sameDraft = (release, releaseName, version, notes) =>
         .sort(([left], [right]) => left.localeCompare(right))
     );
 
-export async function publishInternal({ plan, run, save, client }) {
+export async function publishInternal({
+  plan,
+  run,
+  save,
+  client,
+  packageStage = run.stages.androidPackage,
+}) {
   if (!run.targets["android-internal"]) return;
   const stage = run.stages.androidInternal;
   if (
@@ -175,7 +181,7 @@ export async function publishInternal({ plan, run, save, client }) {
     stage.state === "passed"
   )
     return;
-  const { receipt, bytes } = candidate(plan, run);
+  const { receipt, bytes } = candidate(plan, run, packageStage);
   const grant = authorization(plan, receipt);
   if (!plan.privateReferences?.playCredentialRef)
     fail(
@@ -469,6 +475,7 @@ export async function publishInternal({ plan, run, save, client }) {
         "Commit outcome awaits a matching remote release"
       );
     await client.validateEdit(stage.editId);
+    candidate(plan, run, packageStage);
     begin("commit");
     try {
       await client.commitEdit(stage.editId);
