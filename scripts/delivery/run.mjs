@@ -22,6 +22,7 @@ import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
 import { qualifyAndroid } from "./android-qualification.mjs";
 import { packageAndroid } from "./android-package.mjs";
+import { installAndroidLocal } from "./android-local.mjs";
 import { publishInternal } from "./android-internal.mjs";
 import { deliverChrome, observeChrome } from "./chrome.mjs";
 import {
@@ -292,6 +293,7 @@ function validateRun(record, plan, digest) {
     !record.stages?.electronPackage ||
     !record.stages?.electronLocal ||
     !record.stages?.androidPackage ||
+    !record.stages?.androidLocal ||
     !record.stages?.androidInternal ||
     !record.stages?.chromeLocal
   )
@@ -647,6 +649,7 @@ function newRun(plan, digest) {
       electronPackage: { state: "pending", attempts: [], updatedAt: null },
       electronLocal: { state: "pending", attempts: [], updatedAt: null },
       androidPackage: { state: "pending", attempts: [], updatedAt: null },
+      androidLocal: { state: "pending", attempts: [], updatedAt: null },
       androidInternal: { state: "pending", attempts: [], updatedAt: null },
       chromeLocal: { state: "pending", attempts: [], updatedAt: null },
     },
@@ -1306,6 +1309,43 @@ export async function runDelivery(planPath, identity, options = {}) {
             file
           );
         }
+      }
+    }
+    if (
+      run.targets["android-local"] &&
+      run.stages.androidPackage.state === "passed"
+    ) {
+      try {
+        await installAndroidLocal({
+          plan,
+          run,
+          save: () => atomically(file, run),
+        });
+      } catch (error) {
+        const uncertain =
+          /uncertain/.test(error.code || "") ||
+          Boolean(run.stages.androidLocal.pending);
+        const blocked =
+          /unavailable|unauthorized|conflict|downgrade|identity_unknown|resource_owned|ownership/.test(
+            error.code || ""
+          );
+        const code = uncertain
+          ? "android_install_uncertain"
+          : error.code || "android_install_failed";
+        platformCode ||= blocked && !uncertain ? null : code;
+        run.targets["android-local"] = {
+          ...run.targets["android-local"],
+          state: uncertain ? "uncertain" : blocked ? "blocked" : "failed",
+          nextAction: error.message,
+          updatedAt: new Date().toISOString(),
+        };
+        stage(
+          run,
+          "androidLocal",
+          uncertain ? "uncertain" : blocked ? "blocked" : "failed",
+          { code, message: error.message },
+          file
+        );
       }
     }
     if (

@@ -128,6 +128,79 @@ function delivery(args, cwd) {
   return command(process.execPath, [cli, ...args, "--json"], cwd);
 }
 
+test("public Android local run and status retain uncertain install outcome", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: { androidDeviceSerial: "emulator-5556" },
+      signing: { androidLocal: "debug" },
+    })
+  );
+  const planned = command(
+    process.execPath,
+    [
+      cli,
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-local",
+      "--json",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  // The CLI and durable run stay real; only device-facing adapters are controlled.
+  const modules = {
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification = {state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid({run,save}) { run.stages.androidPackage.state = "passed"; save(); }`,
+    "./android-local.mjs": `export async function installAndroidLocal({run,save}) { run.stages.androidLocal.pending = {kind:"install",number:1}; run.stages.androidLocal.attempts.push({number:1,kind:"install",state:"uncertain"}); run.stages.androidLocal.state = "uncertain"; save(); throw new Error("Selected device disconnected during install"); }`,
+  };
+  const loader = path.join(f.base, "android-local-loader.mjs");
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules = ${JSON.stringify(urls)}; export async function resolve(specifier, context, nextResolve) { if (context.parentURL?.endsWith('/delivery/run.mjs') && modules[specifier]) return {url: modules[specifier], shortCircuit: true}; return nextResolve(specifier, context); }`
+  );
+  const run = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(run.status, 1, run.stderr || run.stdout);
+  const result = JSON.parse(run.stdout);
+  assert.equal(result.code, "android_install_uncertain");
+  assert.equal(result.run.targets["android-local"].state, "uncertain");
+  assert.equal(result.run.stages.androidLocal.state, "uncertain");
+  assert.equal(result.run.stages.androidLocal.pending.kind, "install");
+  const record = path.join(f.store, "runs", plan.plan.id, "run.json");
+  const beforeStatus = readFileSync(record, "utf8");
+  const status = delivery(
+    ["status", plan.plan.id, "--config", f.config],
+    f.repo
+  );
+  assert.equal(status.status, 0, status.stderr || status.stdout);
+  assert.equal(
+    JSON.parse(status.stdout).run.stages.androidLocal.state,
+    "uncertain"
+  );
+  assert.equal(readFileSync(record, "utf8"), beforeStatus);
+});
+
 test("public run and status retain uncertain Play commit outcome", (t) => {
   const f = fixture(t);
   writeFileSync(
