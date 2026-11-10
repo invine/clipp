@@ -42,6 +42,7 @@ function fixture(
     references = {},
     env = {},
     native = false,
+    applicationId = "com.clipp.app",
     signing = { androidPackage: "unsigned-artifact" },
     target = "android-package",
   } = {}
@@ -115,7 +116,7 @@ function fixture(
     mkdirSync(path.join(android, "android", "app"), { recursive: true });
     writeFileSync(
       path.join(android, "android", "app", "build.gradle"),
-      "android { defaultConfig { applicationId 'com.clipp.app'; versionCode 6; versionName '1.0.4' } }\n"
+      `android { defaultConfig { applicationId '${applicationId}'; versionCode 6; versionName '1.0.4' } }\n`
     );
     writeFileSync(
       path.join(android, "android", "variables.gradle"),
@@ -133,7 +134,7 @@ function fixture(
     );
     writeFileSync(
       path.join(repo, "sync.cjs"),
-      "const fs=require('node:fs');const path=require('node:path');const d=path.join(__dirname,'apps/android/android/capacitor-cordova-android-plugins');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'cordova.variables.gradle'),'// generated\\n');"
+      "const fs=require('node:fs');const path=require('node:path');const d=path.join(__dirname,'apps/android/android/capacitor-cordova-android-plugins');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'cordova.variables.gradle'),'// generated\\n');const publicRoot=path.join(__dirname,'apps/android/android/app/src/main/assets/public');fs.cpSync(path.join(__dirname,'apps/android/dist'),publicRoot,{recursive:true});fs.writeFileSync(path.join(publicRoot,'cordova.js'),'generated cordova');fs.writeFileSync(path.join(publicRoot,'cordova_plugins.js'),'generated plugins');"
     );
     writeFileSync(
       path.join(repo, "unit.cjs"),
@@ -145,11 +146,11 @@ function fixture(
     );
     writeFileSync(
       path.join(repo, "product-build.cjs"),
-      `const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const kind=process.argv[2];const root=__dirname;const out=path.join(root,'apps/android/android/app/build/outputs');const sandbox=path.join(root,'product-zip');fs.mkdirSync(path.join(sandbox,'assets/public'),{recursive:true});fs.mkdirSync(path.join(sandbox,'base/assets/public'),{recursive:true});fs.mkdirSync(path.join(sandbox,'base/manifest'),{recursive:true});fs.writeFileSync(path.join(sandbox,'assets/public/index.html'),'<html>production</html>');fs.writeFileSync(path.join(sandbox,'base/assets/public/index.html'),'<html>production</html>');for(const prefix of ['assets','base/assets'])fs.writeFileSync(path.join(sandbox,prefix,'public/build.txt'),process.env.CLIPP_FAKE_WRONG_WEB_ASSET?'changed':'verified');fs.writeFileSync(path.join(sandbox,'base/manifest/AndroidManifest.xml'),'manifest fixture');for(const prefix of ['assets','base/assets'])fs.writeFileSync(path.join(sandbox,prefix,'capacitor.config.json'),JSON.stringify(process.env.CLIPP_FAKE_DEV_ASSET?{server:{url:'http://10.0.2.2:5173'}}:{}));let file;if(kind==='release'){file=path.join(out,'apk/release/',process.env.CLIPP_ANDROID_UPLOAD_KEYSTORE?'app-release.apk':'app-release-unsigned.apk');}else if(kind==='bundle'){file=path.join(out,'bundle/release/app-release.aab');}else{file=path.join(out,'apk/debug/app-debug.apk');}if(process.env.CLIPP_FAKE_PRODUCT_FAIL&&kind==='bundle')process.exit(9);fs.mkdirSync(path.dirname(file),{recursive:true});const entries=kind==='bundle'?['base/assets/public/index.html','base/assets/public/build.txt','base/manifest/AndroidManifest.xml','base/assets/capacitor.config.json']:['assets/public/index.html','assets/public/build.txt','assets/capacitor.config.json'];const result=cp.spawnSync('zip',['-q',file,...entries],{cwd:sandbox});if(result.status!==0)process.exit(4);`
+      `const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const kind=process.argv[2];const root=__dirname;const out=path.join(root,'apps/android/android/app/build/outputs');const sandbox=path.join(root,'product-zip');fs.mkdirSync(path.join(sandbox,'assets/public'),{recursive:true});fs.mkdirSync(path.join(sandbox,'base/assets/public'),{recursive:true});fs.mkdirSync(path.join(sandbox,'base/manifest'),{recursive:true});fs.writeFileSync(path.join(sandbox,'assets/public/index.html'),'<html>production</html>');fs.writeFileSync(path.join(sandbox,'base/assets/public/index.html'),'<html>production</html>');for(const prefix of ['assets','base/assets']){fs.writeFileSync(path.join(sandbox,prefix,'public/cordova.js'),'generated cordova');fs.writeFileSync(path.join(sandbox,prefix,'public/cordova_plugins.js'),'generated plugins');if(process.env.CLIPP_FAKE_EXTRA_WEB_ASSET||(prefix==='base/assets'&&process.env.CLIPP_FAKE_EXTRA_AAB_WEB_ASSET))fs.writeFileSync(path.join(sandbox,prefix,'public/extra.js'),'unexpected');}for(const prefix of ['assets','base/assets'])fs.writeFileSync(path.join(sandbox,prefix,'public/build.txt'),process.env.CLIPP_FAKE_WRONG_WEB_ASSET?'changed':'verified');fs.writeFileSync(path.join(sandbox,'base/manifest/AndroidManifest.xml'),'manifest fixture');for(const prefix of ['assets','base/assets'])fs.writeFileSync(path.join(sandbox,prefix,'capacitor.config.json'),JSON.stringify(process.env.CLIPP_FAKE_DEV_ASSET?{server:{url:'http://10.0.2.2:5173'}}:{}));let file;if(kind==='release'){file=path.join(out,'apk/release/',process.env.CLIPP_ANDROID_UPLOAD_KEYSTORE?'app-release.apk':'app-release-unsigned.apk');}else if(kind==='bundle'){file=path.join(out,'bundle/release/app-release.aab');}else{file=path.join(out,'apk/debug/app-debug.apk');}if(process.env.CLIPP_FAKE_PRODUCT_FAIL&&kind==='bundle')process.exit(9);fs.mkdirSync(path.dirname(file),{recursive:true});const prefix=kind==='bundle'?'base/assets':'assets';const entries=[prefix+'/public/index.html',prefix+'/public/build.txt',prefix+'/public/cordova.js',prefix+'/public/cordova_plugins.js',prefix+'/capacitor.config.json',...(kind==='bundle'?['base/manifest/AndroidManifest.xml']:[]),...((process.env.CLIPP_FAKE_EXTRA_WEB_ASSET||(kind==='bundle'&&process.env.CLIPP_FAKE_EXTRA_AAB_WEB_ASSET))?[prefix+'/public/extra.js']:[])];const result=cp.spawnSync('zip',['-q',file,...entries],{cwd:sandbox});if(result.status!==0)process.exit(4);`
     );
     writeFileSync(
       path.join(repo, "bundle-manifest.cjs"),
-      'const version=process.env.CLIPP_FAKE_WRONG_AAB_MANIFEST?\'7\':\'6\';console.log(`<manifest package="com.clipp.app" android:versionCode="${version}" android:versionName="1.0.4"><uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36"/></manifest>`);'
+      'const version=process.env.CLIPP_FAKE_WRONG_AAB_MANIFEST?\'7\':\'6\';const app=process.env.CLIPP_FAKE_APPLICATION_ID||\'com.clipp.app\';console.log(`<manifest package="${app}" android:versionCode="${version}" android:versionName="1.0.4"><uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36"/></manifest>`);'
     );
     mkdirSync(path.join(android, "scripts"), { recursive: true });
     const cases = JSON.parse(
@@ -161,7 +162,7 @@ function fixture(
     );
     writeFileSync(
       path.join(repo, ".gitignore"),
-      "node_modules/\napps/*/dist/\napps/android/android/app/build/\napps/android/android/capacitor-cordova-android-plugins/\nproduct-zip/\nchecks.txt\n"
+      "node_modules/\napps/*/dist/\napps/android/android/app/build/\napps/android/android/app/src/main/assets/public/\napps/android/android/capacitor-cordova-android-plugins/\nproduct-zip/\nchecks.txt\n"
     );
   } else
     writeFileSync(
@@ -255,7 +256,7 @@ function nativeTools(f, serials) {
   );
   writeFileSync(
     aapt,
-    '#!/bin/sh\nif [ "$1" = version ]; then echo "Android Asset Packaging Tool (aapt) 2.19-11948202"; else code=6; if [ "$CLIPP_FAKE_WRONG_MANIFEST" = 1 ]; then code=7; fi; echo "package: name=\x27com.clipp.app\x27 versionCode=\x27${code}\x27 versionName=\x271.0.4\x27 compileSdkVersion=\x2736\x27"; echo "minSdkVersion:\x2724\x27"; echo "targetSdkVersion:\x2736\x27"; fi\n'
+    '#!/bin/sh\nif [ "$1" = version ]; then echo "Android Asset Packaging Tool (aapt) 2.19-11948202"; else code=6; if [ "$CLIPP_FAKE_WRONG_MANIFEST" = 1 ]; then code=7; fi; echo "package: name=\x27${CLIPP_FAKE_APPLICATION_ID:-com.clipp.app}\x27 versionCode=\x27${code}\x27 versionName=\x271.0.4\x27 compileSdkVersion=\x2736\x27"; echo "minSdkVersion:\x2724\x27"; echo "targetSdkVersion:\x2736\x27"; fi\n'
   );
   writeFileSync(
     apksigner,
@@ -972,6 +973,50 @@ test("explicit unsigned Android package retains distinct release APK and AAB art
   );
 });
 
+test("Android package rejects a committed product ID outside the frozen profile", (t) => {
+  const selection = nativeSelection();
+  const applicationId = "com.example.changed";
+  const f = fixture(t, { ...selection, native: true, applicationId });
+  const environment = {
+    ...nativeTools(f, selection.serials),
+    CLIPP_FAKE_APPLICATION_ID: applicationId,
+  };
+  assert.match(
+    command(
+      path.join(
+        environment.CLIPP_TEST_ANDROID_HOME,
+        "build-tools/35.0.0/aapt2"
+      ),
+      ["dump", "badging", "fixture.apk"],
+      f.repo,
+      environment
+    ).stdout,
+    /name='com\.example\.changed'/
+  );
+  assert.match(
+    command(
+      process.execPath,
+      [path.join(f.repo, "bundle-manifest.cjs")],
+      f.repo,
+      environment
+    ).stdout,
+    /package="com\.example\.changed"/
+  );
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    environment
+  );
+  const run = JSON.parse(result.stdout).run;
+  assert.equal(run.androidQualification.state, "passed");
+  assert.equal(run.targets["android-package"].state, "failed");
+  assert.match(
+    run.targets["android-package"].nextAction,
+    /applicationId|product ID|profile/i
+  );
+});
+
 test("interrupted Android bundle preparation retains its failed attempt without a package receipt", (t) => {
   const selection = nativeSelection();
   const f = fixture(t, { ...selection, native: true });
@@ -1174,6 +1219,16 @@ test("Android local debug preparation keeps its APK separate from the release pa
 for (const [name, override, expected] of [
   ["development-server payload", "CLIPP_FAKE_DEV_ASSET", /development|server/i],
   ["changed web asset", "CLIPP_FAKE_WRONG_WEB_ASSET", /web assets/i],
+  [
+    "extra packaged web asset",
+    "CLIPP_FAKE_EXTRA_WEB_ASSET",
+    /web assets|extra/i,
+  ],
+  [
+    "extra bundle web asset",
+    "CLIPP_FAKE_EXTRA_AAB_WEB_ASSET",
+    /web assets|extra/i,
+  ],
   [
     "wrong product versionCode",
     "CLIPP_FAKE_WRONG_MANIFEST",
