@@ -21,6 +21,7 @@ import {
 import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
 import { qualifyAndroid } from "./android-qualification.mjs";
+import { packageAndroid } from "./android-package.mjs";
 import {
   electronNativeInventory,
   inspectElectronConfig,
@@ -213,6 +214,11 @@ function planRecord(file, identity) {
   )
     fail("invalid_profile", "Frozen Electron package profile is unsupported");
   if (
+    JSON.stringify(plan.profile.androidPackage) !==
+    JSON.stringify(supportedProfile.androidPackage)
+  )
+    fail("invalid_profile", "Frozen Android package profile is unsupported");
+  if (
     JSON.stringify(plan.profile.candidateGeneratedOutputs) !==
     JSON.stringify(knownGeneratedOutputs)
   )
@@ -275,7 +281,8 @@ function validateRun(record, plan, digest) {
     record.configurationSha256 !== plan.configurationSha256 ||
     !record.stages?.prepare ||
     !record.stages?.commonVerify ||
-    !record.stages?.electronPackage
+    !record.stages?.electronPackage ||
+    !record.stages?.androidPackage
   )
     fail("invalid_run", "Run record is incompatible with the frozen plan");
   if (
@@ -628,6 +635,7 @@ function newRun(plan, digest) {
       prepare: { state: "pending", attempts: [], updatedAt: null },
       commonVerify: { state: "pending", attempts: [], updatedAt: null },
       electronPackage: { state: "pending", attempts: [], updatedAt: null },
+      androidPackage: { state: "pending", attempts: [], updatedAt: null },
     },
     targets: Object.fromEntries(
       Object.keys(plan.targets).map((target) => [
@@ -702,7 +710,10 @@ async function commandAttempt(
   attempt.logSha256 = sha(logBytes);
   if (!attempt.passed && checkId === "ui-behavior")
     retainUiFailureDiagnostics(run, file, number);
-  if (attempt.passed && checkId?.endsWith("-build")) {
+  if (
+    attempt.passed &&
+    ["electron-build", "android-web-build", "chrome-build"].includes(checkId)
+  ) {
     const app = {
       "electron-build": "electron",
       "android-web-build": "android",
@@ -961,7 +972,12 @@ export async function runDelivery(planPath, identity, options = {}) {
     canRecover: () => {
       if (!existsSync(file)) return true;
       const previous = readJson(file, "invalid_run");
-      return ["prepare", "commonVerify", "electronPackage"].every(
+      return [
+        "prepare",
+        "commonVerify",
+        "electronPackage",
+        "androidPackage",
+      ].every(
         (name) =>
           previous.stages?.[name]?.state !== "running" ||
           (previous.stages[name].attempts.length &&
@@ -974,7 +990,12 @@ export async function runDelivery(planPath, identity, options = {}) {
       ? validateRun(readJson(file, "invalid_run"), plan, digest)
       : newRun(plan, digest);
     if (!existsSync(file)) atomically(file, run);
-    for (const name of ["prepare", "commonVerify", "electronPackage"]) {
+    for (const name of [
+      "prepare",
+      "commonVerify",
+      "electronPackage",
+      "androidPackage",
+    ]) {
       if (run.stages[name].state !== "running") continue;
       const attempt = run.stages[name].attempts.at(-1);
       if (attempt?.state === "running")
@@ -1073,6 +1094,67 @@ export async function runDelivery(planPath, identity, options = {}) {
           },
           file
         );
+      }
+    }
+    if (
+      run.targets["android-package"] ||
+      run.targets["android-local"] ||
+      run.targets["android-internal"]
+    ) {
+      try {
+        await packageAndroid({
+          plan,
+          run,
+          execute: (bin, args, cwd, environment, timeout, checkId) =>
+            commandAttempt(
+              run,
+              "androidPackage",
+              bin,
+              args,
+              cwd,
+              environment,
+              timeout,
+              file,
+              checkId
+            ),
+          save: () => atomically(file, run),
+        });
+      } catch (error) {
+        const selected = run.targets["android-package"]
+          ? "android-package"
+          : run.targets["android-local"]
+            ? "android-local"
+            : "android-internal";
+        const blocked = error.code === "prerequisite_unavailable";
+        platformCode = blocked
+          ? platformCode
+          : error.code || "android_package_failed";
+        run.targets[selected] = {
+          ...run.targets[selected],
+          state: blocked ? "blocked" : "failed",
+          nextAction: error.message,
+          updatedAt: new Date().toISOString(),
+        };
+        if (run.stages.androidPackage.state === "passed") {
+          // Preserve the completed receipt so a changed artifact cannot be
+          // silently rebuilt and accepted by replaying the same candidate.
+          run.stages.androidPackage.integrityError = {
+            code: error.code || "android_package_failed",
+            message: error.message,
+          };
+          atomically(file, run);
+        } else {
+          stage(
+            run,
+            "androidPackage",
+            blocked ? "blocked" : "failed",
+            {
+              code: error.code || "android_package_failed",
+              message: error.message,
+            },
+            file
+          );
+        }
       }
     }
     return {

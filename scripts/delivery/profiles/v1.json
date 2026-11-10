@@ -79,6 +79,26 @@
     "minimumApi": 31,
     "timeoutMs": { "unit": 600000, "candidate": 1200000, "matrix": 1200000 }
   },
+  "androidPackage": {
+    "applicationId": "com.clipp.app",
+    "bundletoolVersion": "1.17.2",
+    "modes": ["upload", "unsigned-artifact", "debug"],
+    "releaseChecks": [
+      "android-release-apk-build",
+      "android-release-aab-build",
+      "android-bundle-manifest",
+      "android-package-manifest",
+      "android-package-web-assets",
+      "android-package-signature"
+    ],
+    "debugChecks": [
+      "android-debug-apk-build",
+      "android-package-manifest",
+      "android-package-web-assets",
+      "android-package-signature"
+    ],
+    "gradleTimeoutMs": 900000
+  },
   "electronPackage": {
     "applicationFiles": ["dist/**/*"],
     "resourceFiles": [

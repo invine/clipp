@@ -43,6 +43,7 @@ function fixture(
     env = {},
     native = false,
     signing = { androidPackage: "unsigned-artifact" },
+    target = "android-package",
   } = {}
 ) {
   const base = mkdtempSync(path.join(tmpdir(), "clipp-delivery-android-"));
@@ -84,7 +85,7 @@ function fixture(
   );
   writeFileSync(
     path.join(repo, "build.cjs"),
-    "const fs=require('node:fs');const path=require('node:path');const d=path.join(__dirname,'apps',process.argv[2],'dist');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'build.txt'),'verified');"
+    "const fs=require('node:fs');const path=require('node:path');const d=path.join(__dirname,'apps',process.argv[2],'dist');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(path.join(d,'build.txt'),'verified');if(process.argv[2]==='android')fs.writeFileSync(path.join(d,'index.html'),'<html>production</html>');"
   );
   writeFileSync(path.join(repo, "ui.cjs"), "console.log('1 passed')");
   if (native) {
@@ -96,6 +97,14 @@ function fixture(
     androidPackage.scripts["test:native:unit"] = "node ../../unit.cjs";
     androidPackage.scripts["build:native:acceptance-candidate"] =
       "node ../../candidate.cjs";
+    androidPackage.scripts["build:native:release"] =
+      "node ../../product-build.cjs release";
+    androidPackage.scripts["build:native:bundle"] =
+      "node ../../product-build.cjs bundle";
+    androidPackage.scripts["build:native:debug"] =
+      "node ../../product-build.cjs debug";
+    androidPackage.scripts["inspect:native:bundle-manifest"] =
+      "node ../../bundle-manifest.cjs";
     writeFileSync(
       path.join(android, "package.json"),
       JSON.stringify(androidPackage)
@@ -103,6 +112,15 @@ function fixture(
     mkdirSync(path.join(android, "android", "gradle", "wrapper"), {
       recursive: true,
     });
+    mkdirSync(path.join(android, "android", "app"), { recursive: true });
+    writeFileSync(
+      path.join(android, "android", "app", "build.gradle"),
+      "android { defaultConfig { applicationId 'com.clipp.app'; versionCode 6; versionName '1.0.4' } }\n"
+    );
+    writeFileSync(
+      path.join(android, "android", "variables.gradle"),
+      "ext { minSdkVersion = 24; targetSdkVersion = 36; compileSdkVersion = 36 }\n"
+    );
     writeFileSync(
       path.join(
         android,
@@ -125,6 +143,14 @@ function fixture(
       path.join(repo, "candidate.cjs"),
       "const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const crypto=require('node:crypto');const root=__dirname;const dir=process.argv.at(-1);fs.mkdirSync(dir,{recursive:true});const app=path.join(dir,'app-acceptance.apk');const test=path.join(dir,'app-acceptance-androidTest.apk');fs.writeFileSync(app,'frozen app');fs.writeFileSync(test,'frozen test');const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');const revision=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();const p={schemaVersion:2,revision,dirty:false,source:{checkout:root},artifact:path.basename(app),artifactSha256:hash(app),applicationId:'com.clipp.app.acceptance',callbackScheme:'clipp-relay-acceptance',signatures:{appCertificateSha256:'a'.repeat(64),testCertificateSha256:'b'.repeat(64)},toolchain:{java:'openjdk version \"21.0.1\"',aapt2:'Android Asset Packaging Tool (aapt) 2.19-11948202'},lockfileSha256:hash(path.join(root,'package-lock.json')),installationSha256:hash(path.join(root,'node_modules/.package-lock.json')),testArtifact:{file:path.basename(test),sha256:hash(test),applicationId:'com.clipp.app.acceptance.test',targetPackage:'com.clipp.app.acceptance'}};fs.writeFileSync(app+'.provenance.json',JSON.stringify(p));"
     );
+    writeFileSync(
+      path.join(repo, "product-build.cjs"),
+      `const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const kind=process.argv[2];const root=__dirname;const out=path.join(root,'apps/android/android/app/build/outputs');const sandbox=path.join(root,'product-zip');fs.mkdirSync(path.join(sandbox,'assets/public'),{recursive:true});fs.mkdirSync(path.join(sandbox,'base/assets/public'),{recursive:true});fs.mkdirSync(path.join(sandbox,'base/manifest'),{recursive:true});fs.writeFileSync(path.join(sandbox,'assets/public/index.html'),'<html>production</html>');fs.writeFileSync(path.join(sandbox,'base/assets/public/index.html'),'<html>production</html>');for(const prefix of ['assets','base/assets'])fs.writeFileSync(path.join(sandbox,prefix,'public/build.txt'),process.env.CLIPP_FAKE_WRONG_WEB_ASSET?'changed':'verified');fs.writeFileSync(path.join(sandbox,'base/manifest/AndroidManifest.xml'),'manifest fixture');for(const prefix of ['assets','base/assets'])fs.writeFileSync(path.join(sandbox,prefix,'capacitor.config.json'),JSON.stringify(process.env.CLIPP_FAKE_DEV_ASSET?{server:{url:'http://10.0.2.2:5173'}}:{}));let file;if(kind==='release'){file=path.join(out,'apk/release/',process.env.CLIPP_ANDROID_UPLOAD_KEYSTORE?'app-release.apk':'app-release-unsigned.apk');}else if(kind==='bundle'){file=path.join(out,'bundle/release/app-release.aab');}else{file=path.join(out,'apk/debug/app-debug.apk');}if(process.env.CLIPP_FAKE_PRODUCT_FAIL&&kind==='bundle')process.exit(9);fs.mkdirSync(path.dirname(file),{recursive:true});const entries=kind==='bundle'?['base/assets/public/index.html','base/assets/public/build.txt','base/manifest/AndroidManifest.xml','base/assets/capacitor.config.json']:['assets/public/index.html','assets/public/build.txt','assets/capacitor.config.json'];const result=cp.spawnSync('zip',['-q',file,...entries],{cwd:sandbox});if(result.status!==0)process.exit(4);`
+    );
+    writeFileSync(
+      path.join(repo, "bundle-manifest.cjs"),
+      'const version=process.env.CLIPP_FAKE_WRONG_AAB_MANIFEST?\'7\':\'6\';console.log(`<manifest package="com.clipp.app" android:versionCode="${version}" android:versionName="1.0.4"><uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36"/></manifest>`);'
+    );
     mkdirSync(path.join(android, "scripts"), { recursive: true });
     const cases = JSON.parse(
       readFileSync(path.resolve("scripts/delivery/profiles/v1.json"), "utf8")
@@ -135,7 +161,7 @@ function fixture(
     );
     writeFileSync(
       path.join(repo, ".gitignore"),
-      "node_modules/\napps/*/dist/\napps/android/android/app/build/\napps/android/android/capacitor-cordova-android-plugins/\nchecks.txt\n"
+      "node_modules/\napps/*/dist/\napps/android/android/app/build/\napps/android/android/capacitor-cordova-android-plugins/\nproduct-zip/\nchecks.txt\n"
     );
   } else
     writeFileSync(
@@ -179,7 +205,7 @@ function fixture(
       "--source",
       revision,
       "--target",
-      "android-package",
+      target,
       "--json",
     ],
     repo,
@@ -200,7 +226,7 @@ function nativeSelection() {
   const destinations = { androidAcceptanceEffort: "fixture-qualification" };
   const serials = {};
   for (const api of [31, 33, 34, 35, 36]) {
-    serials[api] = `emulator-${api}`;
+    serials[api] = `emulator-6${api}`;
     destinations[`androidAcceptanceSerialApi${api}`] = serials[api];
   }
   const references = {
@@ -222,16 +248,25 @@ function nativeTools(f, serials) {
   for (const file of [aapt, apksigner, adb, java])
     mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(java, "#!/bin/sh\necho 'openjdk version \"21.0.1\"'\n");
+  const keytool = path.join(jdk, "bin", "keytool");
+  writeFileSync(
+    keytool,
+    '#!/bin/sh\nif [ "$CLIPP_FAKE_SIGNED" = 1 ]; then echo "SHA256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; else echo "Not a signed jar file"; fi\n'
+  );
   writeFileSync(
     aapt,
-    '#!/bin/sh\necho "Android Asset Packaging Tool (aapt) 2.19-11948202"\n'
+    '#!/bin/sh\nif [ "$1" = version ]; then echo "Android Asset Packaging Tool (aapt) 2.19-11948202"; else code=6; if [ "$CLIPP_FAKE_WRONG_MANIFEST" = 1 ]; then code=7; fi; echo "package: name=\x27com.clipp.app\x27 versionCode=\x27${code}\x27 versionName=\x271.0.4\x27 compileSdkVersion=\x2736\x27"; echo "minSdkVersion:\x2724\x27"; echo "targetSdkVersion:\x2736\x27"; fi\n'
   );
-  writeFileSync(apksigner, "#!/bin/sh\necho 0.9\n");
+  writeFileSync(
+    apksigner,
+    '#!/bin/sh\nif [ "$1" = --version ]; then echo 0.9; elif [ "$CLIPP_FAKE_SIGNED" = 1 ]; then echo "Signer #1 certificate SHA-256 digest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; else exit 1; fi\n'
+  );
   writeFileSync(
     adb,
-    '#!/usr/bin/env node\nconst fs=require("node:fs");const a=process.argv.slice(2);if(a.includes("install"))fs.appendFileSync(process.env.CLIPP_FAKE_ADB_LOG,a.join(" ")+"\\n");if(a.includes("get-state"))console.log(process.env.CLIPP_FAKE_OFFLINE_API===a[1].split("-").at(-1)?"offline":"device");else if(a.includes("getprop")){const k=a.at(-1);if(k==="ro.kernel.qemu"||k==="sys.boot_completed")console.log("1");else if(k==="ro.build.version.sdk")console.log(a[1].split("-").at(-1));}else console.log("OK");\n'
+    '#!/usr/bin/env node\nconst fs=require("node:fs");const a=process.argv.slice(2);const api=a[1]?.split("-").at(-1)?.slice(-2);if(a.includes("install"))fs.appendFileSync(process.env.CLIPP_FAKE_ADB_LOG,a.join(" ")+"\\n");if(a.includes("get-state"))console.log(process.env.CLIPP_FAKE_OFFLINE_API===api?"offline":"device");else if(a.includes("getprop")){const k=a.at(-1);if(k==="ro.kernel.qemu"||k==="sys.boot_completed")console.log("1");else if(k==="ro.build.version.sdk")console.log(api);}else console.log("OK");\n'
   );
-  for (const file of [aapt, apksigner, adb, java]) chmodSync(file, 0o755);
+  for (const file of [aapt, apksigner, adb, java, keytool])
+    chmodSync(file, 0o755);
   const authorization = {
     schema: 1,
     scope: "isolated-android-acceptance",
@@ -472,7 +507,7 @@ test("Android qualification runs the frozen acceptance pair on each selected emu
     f.repo,
     environment
   );
-  assert.notEqual(first.status, 0, first.stdout);
+  assert.equal(first.status, 0, first.stdout);
   const run = JSON.parse(first.stdout).run;
   assert.equal(run.stages.commonVerify.state, "passed");
   assert.equal(
@@ -487,7 +522,7 @@ test("Android qualification runs the frozen acceptance pair on each selected emu
     "35",
     "36",
   ]);
-  assert.equal(run.targets["android-package"].state, "pending");
+  assert.equal(run.targets["android-package"].state, "complete");
   assert.equal(
     readFileSync(environment.adbLog, "utf8").trim().split("\n").length,
     10
@@ -715,7 +750,7 @@ test("missing upload signing reference does not block native qualification", (t)
     "passed",
     run.androidQualification.nextAction
   );
-  assert.equal(run.targets["android-package"].state, "pending");
+  assert.equal(run.targets["android-package"].state, "blocked");
 });
 
 test("native build can finish while acceptance installation waits for matching authorization", (t) => {
@@ -858,3 +893,318 @@ test("an unavailable later emulator resumes without repeating completed API matr
     10
   );
 });
+
+test("Android release packaging blocks on a missing upload signing identity after native qualification", (t) => {
+  const selection = nativeSelection();
+  const f = fixture(t, {
+    ...selection,
+    native: true,
+    signing: { androidPackage: "upload" },
+  });
+  const environment = nativeTools(f, selection.serials);
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    environment
+  );
+  const run = JSON.parse(result.stdout).run;
+  assert.equal(
+    run.androidQualification.state,
+    "passed",
+    JSON.stringify(run.androidQualification)
+  );
+  assert.equal(
+    run.targets["android-package"].state,
+    "blocked",
+    JSON.stringify(run.targets["android-package"])
+  );
+  assert.match(run.targets["android-package"].nextAction, /signing/i);
+  assert.equal(run.stages.androidPackage.attempts.length, 0);
+});
+
+test("explicit unsigned Android package retains distinct release APK and AAB artifacts without installation", (t) => {
+  const selection = nativeSelection();
+  const f = fixture(t, { ...selection, native: true });
+  const environment = {
+    ...nativeTools(f, selection.serials),
+    CLIPP_ANDROID_UPLOAD_KEYSTORE: path.join(f.base, "ambient-keystore.jks"),
+  };
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    environment
+  );
+  const run = JSON.parse(result.stdout).run;
+  assert.equal(
+    run.androidQualification.state,
+    "passed",
+    run.androidQualification.nextAction
+  );
+  assert.equal(
+    run.targets["android-package"].state,
+    "complete",
+    JSON.stringify(run.targets["android-package"])
+  );
+  assert.equal(run.stages.androidPackage.receipt.signing, "unsigned-artifact");
+  assert.notEqual(
+    run.stages.androidPackage.receipt.apk.sha256,
+    run.stages.androidPackage.receipt.aab.sha256
+  );
+  assert.equal(run.stages.androidPackage.receipt.source, f.revision);
+  assert.equal(
+    run.stages.androidPackage.receipt.bundleManifest.applicationId,
+    "com.clipp.app"
+  );
+  assert.equal(
+    existsSync(
+      path.join(
+        run.checkout,
+        "apps/android/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+      )
+    ),
+    true
+  );
+  assert.equal(
+    readFileSync(environment.adbLog, "utf8").trim().split("\n").length,
+    10
+  );
+});
+
+test("interrupted Android bundle preparation retains its failed attempt without a package receipt", (t) => {
+  const selection = nativeSelection();
+  const f = fixture(t, { ...selection, native: true });
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      ...nativeTools(f, selection.serials),
+      CLIPP_FAKE_PRODUCT_FAIL: "1",
+    }
+  );
+  const run = JSON.parse(result.stdout).run;
+  assert.equal(run.androidQualification.state, "passed");
+  assert.equal(run.targets["android-package"].state, "failed");
+  assert.equal(run.stages.androidPackage.receipt, undefined);
+  assert.equal(
+    run.stages.androidPackage.attempts.at(-1).checkId,
+    "android-release-aab-build"
+  );
+  assert.notEqual(run.stages.androidPackage.attempts.at(-1).exitCode, 0);
+});
+
+test("signed Android package rejects an upload certificate that differs from the configured identity", (t) => {
+  const selection = nativeSelection();
+  selection.references.androidSigningRef = "env:CLIPP_TEST_UPLOAD_IDENTITY";
+  const f = fixture(t, {
+    ...selection,
+    native: true,
+    signing: { androidPackage: "upload" },
+  });
+  const keystorePath = path.join(f.base, "private-upload.jks");
+  writeFileSync(keystorePath, "fixture key", { mode: 0o600 });
+  const environment = {
+    ...nativeTools(f, selection.serials),
+    CLIPP_FAKE_SIGNED: "1",
+    CLIPP_TEST_UPLOAD_IDENTITY: JSON.stringify({
+      keystorePath,
+      keyAlias: "upload",
+      storePassword: "private-store-pass",
+      keyPassword: "private-key-pass",
+      certificateSha256: "b".repeat(64),
+    }),
+  };
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    environment
+  );
+  const run = JSON.parse(result.stdout).run;
+  assert.equal(run.androidQualification.state, "passed");
+  assert.equal(run.targets["android-package"].state, "failed");
+  assert.match(
+    run.targets["android-package"].nextAction,
+    /certificate|signature/i
+  );
+  assert.doesNotMatch(
+    JSON.stringify(run),
+    /private-store-pass|private-key-pass/
+  );
+});
+
+test("signed Android package verifies the upload identity and replays without retrieving the key", (t) => {
+  const selection = nativeSelection();
+  selection.references.androidSigningRef = "env:CLIPP_TEST_UPLOAD_IDENTITY";
+  const f = fixture(t, {
+    ...selection,
+    native: true,
+    signing: { androidPackage: "upload" },
+  });
+  const keystorePath = path.join(f.base, "private-upload.jks");
+  writeFileSync(keystorePath, "fixture key", { mode: 0o600 });
+  const environment = {
+    ...nativeTools(f, selection.serials),
+    CLIPP_FAKE_SIGNED: "1",
+    CLIPP_TEST_UPLOAD_IDENTITY: JSON.stringify({
+      keystorePath,
+      keyAlias: "upload",
+      storePassword: "private-store-pass",
+      keyPassword: "private-key-pass",
+      certificateSha256: "a".repeat(64),
+    }),
+  };
+  const first = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    environment
+  );
+  const run = JSON.parse(first.stdout).run;
+  assert.equal(
+    run.targets["android-package"].state,
+    "complete",
+    run.targets["android-package"].nextAction
+  );
+  assert.equal(
+    run.stages.androidPackage.receipt.signature.certificateSha256,
+    "a".repeat(64)
+  );
+  assert.equal(run.stages.androidPackage.receipt.signing, "upload");
+  assert.doesNotMatch(
+    JSON.stringify(run),
+    /private-store-pass|private-key-pass/
+  );
+  const count = run.stages.androidPackage.attempts.length;
+  const replay = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      ...environment,
+      CLIPP_TEST_UPLOAD_IDENTITY: "",
+    }
+  );
+  const reused = JSON.parse(replay.stdout).run;
+  assert.equal(
+    reused.targets["android-package"].state,
+    "complete",
+    reused.targets["android-package"].nextAction
+  );
+  assert.equal(reused.stages.androidPackage.attempts.length, count);
+  // The artifact path is relative to the private run output, never the checkout.
+  const artifact = path.join(
+    reused.checkout,
+    "..",
+    reused.stages.androidPackage.receipt.aab.path
+  );
+  assert.equal(existsSync(artifact), true);
+  writeFileSync(artifact, "tampered");
+  const changed = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      ...environment,
+      CLIPP_TEST_UPLOAD_IDENTITY: "",
+    }
+  );
+  const rejected = JSON.parse(changed.stdout).run;
+  assert.equal(rejected.targets["android-package"].state, "failed");
+  assert.match(
+    rejected.targets["android-package"].nextAction,
+    /changed|artifact/i
+  );
+  assert.equal(rejected.stages.androidPackage.attempts.length, count);
+  const repeated = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    {
+      ...environment,
+      CLIPP_TEST_UPLOAD_IDENTITY: "",
+    }
+  );
+  const repeatedRun = JSON.parse(repeated.stdout).run;
+  assert.equal(repeatedRun.targets["android-package"].state, "failed");
+  assert.equal(repeatedRun.stages.androidPackage.attempts.length, count);
+});
+
+test("Android local debug preparation keeps its APK separate from the release package target", (t) => {
+  const selection = nativeSelection();
+  const f = fixture(t, {
+    ...selection,
+    native: true,
+    target: "android-local",
+    signing: { androidLocal: "debug" },
+    destinations: {
+      ...selection.destinations,
+      androidDeviceSerial: "emulator-699",
+    },
+  });
+  const environment = {
+    ...nativeTools(f, selection.serials),
+    CLIPP_FAKE_SIGNED: "1",
+  };
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    environment
+  );
+  const run = JSON.parse(result.stdout).run;
+  assert.equal(
+    run.androidQualification.state,
+    "passed",
+    run.androidQualification.nextAction
+  );
+  assert.equal(
+    run.stages.androidPackage.state,
+    "passed",
+    run.stages.androidPackage.detail
+  );
+  assert.equal(run.stages.androidPackage.receipt.signing, "debug");
+  assert.match(run.stages.androidPackage.receipt.apk.path, /app-debug\.apk$/);
+  assert.equal(run.stages.androidPackage.receipt.aab, null);
+  assert.equal(run.targets["android-local"].state, "pending");
+});
+
+for (const [name, override, expected] of [
+  ["development-server payload", "CLIPP_FAKE_DEV_ASSET", /development|server/i],
+  ["changed web asset", "CLIPP_FAKE_WRONG_WEB_ASSET", /web assets/i],
+  [
+    "wrong product versionCode",
+    "CLIPP_FAKE_WRONG_MANIFEST",
+    /manifest|versionCode/i,
+  ],
+  [
+    "wrong bundle versionCode",
+    "CLIPP_FAKE_WRONG_AAB_MANIFEST",
+    /manifest|versionCode/i,
+  ],
+]) {
+  test(`Android package rejects ${name} before completion`, (t) => {
+    const selection = nativeSelection();
+    const f = fixture(t, { ...selection, native: true });
+    const environment = {
+      ...nativeTools(f, selection.serials),
+      [override]: "1",
+    };
+    const result = command(
+      process.execPath,
+      [cli, "run", f.plan.path, "--json"],
+      f.repo,
+      environment
+    );
+    const run = JSON.parse(result.stdout).run;
+    assert.equal(
+      run.androidQualification.state,
+      "passed",
+      run.androidQualification.nextAction
+    );
+    assert.equal(run.targets["android-package"].state, "failed");
+    assert.match(run.targets["android-package"].nextAction, expected);
+  });
+}

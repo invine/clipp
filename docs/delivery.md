@@ -33,6 +33,10 @@ Omit destinations and references that do not apply to a selected target. A plan 
 
 `androidPackage` defaults to `upload`; `unsigned-artifact` can be selected for an artifact-only package. `androidLocal` must explicitly be `debug` or `upload`. Internal publication requires upload signing.
 
+For an upload-signed Android package, `androidSigningRef` must resolve to private JSON with `keystorePath` (an absolute path), `keyAlias`, `storePassword`, `keyPassword`, and the expected upload `certificateSha256` (64 hex digits). An environment, private file, or macOS Keychain generic-password reference can hold this JSON. The runner supplies its values only in the Gradle child environment; the plan and receipt retain the reference and verified certificate digest, never the passwords. A missing or wrong identity blocks signed packaging. The explicit `unsigned-artifact` mode builds an unsigned release APK and AAB, labels both as such, and cannot satisfy installation or internal publication. `android-local` with `debug` produces a separately identified debug APK.
+
+The Android package adapter consumes the selected source's already verified web build and ticket-05 native receipt. It runs the declared release APK and AAB Gradle tasks, checks product APK metadata with the pinned SDK tools, reads the AAB manifest through pinned bundletool, verifies both bundled web payloads and Capacitor configuration, and checks declared signatures. It copies completed packages to the private run store and verifies their hashes again on replay. Packaging does not install a phone app or contact Play.
+
 ```sh
 npm run delivery -- plan --repo /absolute/path/to/clipp --config /absolute/private/delivery.json --source origin/main --target electron-package --json
 npm run delivery -- run /absolute/private/clipp-delivery-runs/plans/<run-id>/plan.json --json

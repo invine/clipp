@@ -24,7 +24,13 @@ const profilePath = path.join(
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const moduleSha256 = () =>
   sha(
-    ["run.mjs", "ownership.mjs", "electron.mjs", "android-qualification.mjs"]
+    [
+      "run.mjs",
+      "ownership.mjs",
+      "electron.mjs",
+      "android-qualification.mjs",
+      "android-package.mjs",
+    ]
       .map((name) =>
         readFileSync(path.join(path.dirname(script), "delivery", name))
       )
@@ -531,6 +537,7 @@ function plan(args) {
       candidateGeneratedOutputs: profile.candidateGeneratedOutputs,
       commonChecks: profile.commonChecks,
       androidQualification: profile.androidQualification,
+      androidPackage: profile.androidPackage,
       electronPackage: profile.electronPackage,
     },
     configurationSha256: sha(JSON.stringify(config)),
@@ -560,7 +567,7 @@ function plan(args) {
   return { code: "planned", path: destination, plan: record };
 }
 function help() {
-  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--native-diagnostic-change <text> --native-expected-observation <text>] [--native-renewal <absolute decision file>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source. The electron-package target creates a local unsigned DMG and retained app after packaged WebRTC and Quit checks. Android qualification uses explicitly selected and authorized acceptance emulators. Status is read-only.\n`;
+  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--native-diagnostic-change <text> --native-expected-observation <text>] [--native-renewal <absolute decision file>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source. The electron-package target creates a local unsigned DMG and retained app after packaged WebRTC and Quit checks. Android qualification uses explicitly selected and authorized acceptance emulators. Android package builds release APK and AAB with the configured upload signing identity; an explicitly selected unsigned-artifact profile produces labeled artifact-only outputs, while android-local can prepare a declared debug APK. Missing or mismatched upload keys block signed packaging. Packaging does not install or publish. Status is read-only.\n`;
 }
 function runOptions(args, { status = false } = {}) {
   const [selector, ...rest] = args;
