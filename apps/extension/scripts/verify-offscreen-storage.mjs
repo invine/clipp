@@ -8,7 +8,8 @@ import { relayAcceptanceFixture } from "./relay-acceptance-fixture.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const { extensionPath, transport } = relayAcceptanceFixture(
-  resolve(scriptDirectory, "..")
+  resolve(scriptDirectory, ".."),
+  process.argv[2]
 );
 const profilePath = await mkdtemp(
   join(tmpdir(), "clipp-offscreen-storage-profile-")

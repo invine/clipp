@@ -12,6 +12,7 @@ Create a private JSON configuration outside the repository. The run store must a
     "electronInstallPath": "/Applications/Clipp.app",
     "chromeExtensionDir": "/absolute/stable/unpacked-extension",
     "chromeProfilePath": "/absolute/chrome/profile",
+    "chromeExtensionId": "optional-known-extension-id",
     "androidDeviceSerial": "selected-device-serial",
     "playApplicationId": "example.application.id",
     "playTrack": "internal"
@@ -23,6 +24,8 @@ Create a private JSON configuration outside the repository. The run store must a
   "references": {
     "androidSdkRef": "env:ANDROID_HOME",
     "javaHomeRef": "env:JAVA_HOME",
+    "chromeAuthorizationRef": "file:/absolute/private/chrome-authorization.json",
+    "chromeDebugUrlRef": "file:/absolute/private/chrome-debug-url.txt",
     "androidSigningRef": "keychain:clipp-upload",
     "playCredentialRef": "file:/absolute/private/play-credential.json"
   }
@@ -49,6 +52,16 @@ For `electron-package`, the frozen profile pins Electron 43.4.0, electron-builde
 `run` returns `delivery_complete` when every selected target passes, or a nonzero `delivery_incomplete` result when a target remains blocked. It writes atomic `run.json` observations and private command logs below `runRoot/runs/<run-id>`. Repeating the same plan or run ID checks the saved inputs and skips passing work when the isolated checkout, dependency lock and built output inventory still match. A failed common check retains its attempt and can be retried; interruption waits for the prior command process group to stop before recovery. `status` reads the last saved observation without contacting a destination or changing the run. Keep the run root private and retain it across ticket worktree cleanup.
 
 The candidate profile declares the Android startup replay test directories and Playwright's `.last-run.json` as generated check outputs. Their inventories are retained in the run record. Tracked source changes and any other untracked files still fail source validation.
+
+## Chrome local extension
+
+Select the stable unpacked extension directory and the exact Chrome profile path in private configuration. `chrome-local` consumes the already verified production `apps/extension/dist`, runs the frozen extension checks against an immutable marked copy, and measures populated History at 43 rows. The popup checks include 480 px and 320 px widths, a long source label, three standard-width repetitions, and the options view. The profile records its timing and layout limits.
+
+Before replacing the stable directory, create private authorization JSON with `schema: 1`, `scope: "local-chrome-extension"`, the plan's full `sourceRevision`, the exact `destination` and `profilePath`, and a nonempty `authorizedBy`. An optional `buildId` binds authorization to the candidate artifact shown in the run record. Point `chromeAuthorizationRef` at that file. The adapter keeps the previous complete tree under `.clipp-delivery-backups` beside the stable directory and verifies the new full inventory. It never writes Chrome profile databases.
+
+To confirm the loaded build, launch the selected profile with Chrome's supported remote debugging and `--load-extension=<stable directory>`, then put its local endpoint (for example `http://127.0.0.1:9222`) in the private file referenced by `chromeDebugUrlRef`. A dedicated test profile is suitable for this workflow. The adapter reads `chrome://version` for profile and loaded path, discovers the extension ID from its service worker, reads the build marker from the extension popup, and waits for popup readiness. Set `chromeExtensionId` when an existing ID must be preserved. Without a matching live observation, the target remains `blocked` with a resumable load/reload handoff; rerun the same plan after loading the stable copy. A completed replay verifies the destination and does not copy or reload it again.
+
+If replacement was interrupted, inspect the stable directory and retained backup. A retry reconciles a complete matching stable inventory; an uncertain or mixed directory remains blocked for operator recovery. Keep the run store, stable directory, backups, and selected Chrome profile available until confirmation is complete.
 
 ## Android native qualification
 
