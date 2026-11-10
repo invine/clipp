@@ -128,6 +128,86 @@ function delivery(args, cwd) {
   return command(process.execPath, [cli, ...args, "--json"], cwd);
 }
 
+test("public run and status retain uncertain Play commit outcome", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        playApplicationId: "com.clipp.app",
+        playTrack: "internal",
+      },
+    })
+  );
+  const planned = command(
+    process.execPath,
+    [
+      cli,
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-internal",
+      "--json",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  // Keep the public CLI, common gates, run persistence, and error mapping real.
+  // Replace only platform adapters so this test cannot contact Play or emulators.
+  const modules = {
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification = {state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid({run,save}) { run.stages.androidPackage.state = "passed"; save(); }`,
+    "./android-internal.mjs": `export async function publishInternal({run,save}) { run.stages.androidInternal.pending = {kind:"commit",number:1}; run.stages.androidInternal.attempts.push({number:1,kind:"commit",state:"uncertain"}); run.stages.androidInternal.state = "uncertain"; save(); throw new Error("Play commit readback unavailable"); }`,
+  };
+  const loader = path.join(f.base, "play-loader.mjs");
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules = ${JSON.stringify(urls)}; export async function resolve(specifier, context, nextResolve) { if (context.parentURL?.endsWith('/delivery/run.mjs') && modules[specifier]) return {url: modules[specifier], shortCircuit: true}; return nextResolve(specifier, context); }`
+  );
+  const run = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(run.status, 1, run.stderr || run.stdout);
+  const result = JSON.parse(run.stdout);
+  assert.equal(result.code, "play_response_uncertain");
+  assert.equal(result.run.targets["android-internal"].state, "uncertain");
+  assert.equal(result.run.stages.androidInternal.state, "uncertain");
+  assert.equal(
+    result.run.stages.androidInternal.detail.code,
+    "play_response_uncertain"
+  );
+  assert.equal(result.run.stages.androidInternal.pending.kind, "commit");
+  const record = path.join(f.store, "runs", plan.plan.id, "run.json");
+  const beforeStatus = readFileSync(record, "utf8");
+  const status = delivery(
+    ["status", plan.plan.id, "--config", f.config],
+    f.repo
+  );
+  assert.equal(status.status, 0, status.stderr || status.stdout);
+  assert.equal(
+    JSON.parse(status.stdout).run.stages.androidInternal.state,
+    "uncertain"
+  );
+  assert.equal(readFileSync(record, "utf8"), beforeStatus);
+});
+
 test("run prepares the frozen commit and records common checks without touching the caller checkout", (t) => {
   const f = fixture(t);
   writeFileSync(path.join(f.repo, "caller.txt"), "keep me");

@@ -261,6 +261,7 @@ test("lost upload response reconciles bundle digest before retry", async () => {
   };
   await assert.rejects(publishInternal(f), { code: "play_response_uncertain" });
   assert.equal(f.run.stages.androidInternal.attempts.at(-1).state, "uncertain");
+  assert.equal(f.run.stages.androidInternal.state, "uncertain");
   await publishInternal(f);
   assert.equal(f.calls.filter((call) => call === "upload").length, 1);
   assert.equal(f.run.targets["android-internal"].state, "complete");
@@ -336,6 +337,7 @@ test("lost commit response reconciles published release without another commit",
         ]
       : [];
   await assert.rejects(publishInternal(f), { code: "play_response_uncertain" });
+  assert.equal(f.run.stages.androidInternal.state, "uncertain");
   await publishInternal(f);
   assert.equal(f.run.targets["android-internal"].state, "complete");
   assert.equal(f.calls.filter((call) => call === "commit").length, 1);
@@ -363,6 +365,38 @@ test("review pending release stays incomplete after commit", async () => {
   await assert.rejects(publishInternal(f), { code: "play_response_uncertain" });
   await assert.rejects(publishInternal(f), { code: "play_release_pending" });
   assert.equal(f.calls.filter((call) => call === "commit").length, 1);
+});
+
+test("lost readback after accepted commit stays uncertain and reconciles", async () => {
+  const f = fixture();
+  authorize(f);
+  let committed = false;
+  let readbackLost = true;
+  f.client.commitEdit = async () => {
+    f.calls.push("commit");
+    committed = true;
+    return {};
+  };
+  f.client.releases = async () => {
+    if (!committed) return [];
+    if (readbackLost) {
+      readbackLost = false;
+      throw new Error("readback unavailable");
+    }
+    return [
+      {
+        releaseName: f.run.stages.androidInternal.releaseName,
+        releaseLifecycleState: "RELEASE_LIFECYCLE_STATE_PUBLISHED",
+        activeArtifacts: [{ versionCode: 42 }],
+      },
+    ];
+  };
+  await assert.rejects(publishInternal(f), { code: "play_response_uncertain" });
+  assert.equal(f.run.stages.androidInternal.state, "uncertain");
+  assert.equal(f.run.stages.androidInternal.pending.kind, "commit");
+  await publishInternal(f);
+  assert.equal(f.calls.filter((call) => call === "commit").length, 1);
+  assert.equal(f.run.targets["android-internal"].state, "complete");
 });
 
 test("lost track update resumes the attributable draft without another update", async () => {
