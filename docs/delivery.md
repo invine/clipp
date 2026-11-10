@@ -28,7 +28,8 @@ Create a private JSON configuration outside the repository. The run store must a
     "chromeAuthorizationRef": "file:/absolute/private/chrome-authorization.json",
     "chromeDebugUrlRef": "file:/absolute/private/chrome-debug-url.txt",
     "androidSigningRef": "keychain:clipp-upload",
-    "playCredentialRef": "file:/absolute/private/play-credential.json"
+    "playCredentialRef": "file:/absolute/private/play-credential.json",
+    "playAuthorizationRef": "file:/absolute/private/play-authorization.json"
   }
 }
 ```
@@ -40,6 +41,8 @@ Omit destinations and references that do not apply to a selected target. A plan 
 For an upload-signed Android package, `androidSigningRef` must resolve to private JSON with `keystorePath` (an absolute path), `keyAlias`, `storePassword`, `keyPassword`, and the expected upload `certificateSha256` (64 hex digits). An environment, private file, or macOS Keychain generic-password reference can hold this JSON. The runner supplies its values only in the Gradle child environment; the plan and receipt retain the reference and verified certificate digest, never the passwords. A missing or wrong identity blocks signed packaging. The explicit `unsigned-artifact` mode builds an unsigned release APK and AAB, labels both as such, and cannot satisfy installation or internal publication. `android-local` with `debug` produces a separately identified debug APK.
 
 The Android package adapter consumes the selected source's already verified web build and ticket-05 native receipt. It runs the declared release APK and AAB Gradle tasks, checks product APK metadata against the frozen application ID with the pinned SDK tools, reads the AAB manifest through pinned bundletool, verifies the exact bundled web inventory (including the declared Capacitor-generated Cordova files) and Capacitor configuration, and checks declared signatures. It copies completed packages to the private run store and verifies their hashes again on replay. Packaging does not install a phone app or contact Play.
+
+For `android-internal`, `playCredentialRef` resolves to a private Google service-account JSON with `client_email`, `private_key`, and `token_uri` set to `https://oauth2.googleapis.com/token`; grant that account Android Publisher access to the selected Play application. `playAuthorizationRef` resolves to a separately approved private JSON matching the signed package receipt: `applicationId`, `track` (`internal`), `sourceCommit`, `aabSha256`, `versionCode`, `certificateSha256`, `releaseNotes` (an array of `{ "language": "en-US", "text": "..." }`), `authorizedBy`, and `authorizedAt` (ISO date). A saved plan or account credential alone does not authorize a release. The adapter validates the selected app and track, certificate, release notes, artifact digest, version, and matching authorization before writing to Play. It records the edit, upload, draft, commit attempt, and remote release readback in the private run record. An unresolved Play response blocks replay until the same artifact and release can be attributed remotely. A completed internal release is distinct from availability on a tester's device. The local automated tests use a controlled Play client; actual Play publication and tester installation require separate operator evidence.
 
 ```sh
 npm run delivery -- plan --repo /absolute/path/to/clipp --config /absolute/private/delivery.json --source origin/main --target electron-package --json

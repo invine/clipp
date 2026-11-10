@@ -216,6 +216,12 @@ test("Android plans declare signing mode and publication blockers without exposi
       "signing:android-internal-requires-upload"
     )
   );
+  assert.ok(
+    report.targets["android-internal"].prerequisites.includes(
+      "reference:playAuthorizationRef"
+    )
+  );
+  assert.equal(report.targets["android-internal"].track, "internal");
   assert.equal(
     report.privateReferences.playCredentialRef,
     "env:PLAY_CREDENTIAL"
