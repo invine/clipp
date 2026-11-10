@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
   existsSync,
   chmodSync,
   mkdtempSync,
@@ -66,6 +67,10 @@ function fixture(t) {
     path.join(repo, "check.cjs"),
     "const fs=require('node:fs'); const name=process.argv[2]; fs.appendFileSync('checks.txt',name+'\\n'); if(name==='lint' && process.env.CLIPP_VERIFY_DELAY_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,Number(process.env.CLIPP_VERIFY_DELAY_MS)); if((name==='lint' && process.env.CLIPP_FAIL_VERIFY)||name===process.env.CLIPP_FAIL_CHECK) process.exit(5); if(process.env.CLIPP_GENERATE_KNOWN_OUTPUTS&&name==='jest'){fs.mkdirSync('.local/startup-replay-11111111-1111-4111-8111-111111111111',{recursive:true});fs.writeFileSync('.local/startup-replay-11111111-1111-4111-8111-111111111111/receipt.json','{}');} if(process.env.CLIPP_GENERATE_UNEXPECTED_OUTPUT&&name==='jest'){fs.mkdirSync('.local/startup-replay-not-a-uuid',{recursive:true});fs.writeFileSync('.local/startup-replay-not-a-uuid/receipt.json','{}');} if(name!==process.env.CLIPP_EMPTY_CHECK){if(name==='jest') console.log('Tests: 3 passed, 3 total'); if(name.endsWith('tooling')) console.log('ℹ tests 3\\nℹ pass 3\\nℹ fail 0\\nℹ cancelled 0\\nℹ skipped 0');}"
   );
+  appendFileSync(
+    path.join(repo, "check.cjs"),
+    "\nif(name===process.env.CLIPP_SKIP_CHECK) console.log('ℹ tests 3\\nℹ pass 2\\nℹ fail 0\\nℹ cancelled 0\\nℹ skipped 1'); if(process.env.CLIPP_PRIVATE_LOG_CANARY) console.log(process.env.CLIPP_PRIVATE_LOG_CANARY);\n"
+  );
   writeFileSync(
     path.join(repo, "build.cjs"),
     "const fs=require('node:fs'); const path=require('node:path'); const app=process.argv[2]; const dist=path.join(__dirname,'apps',app,'dist'); fs.mkdirSync(dist,{recursive:true}); fs.writeFileSync(path.join(dist,'build.txt'),'verified'); fs.appendFileSync(path.join(__dirname,'checks.txt'),app+'-build\\n');"
@@ -126,6 +131,61 @@ function fixture(t) {
 }
 function delivery(args, cwd) {
   return command(process.execPath, [cli, ...args, "--json"], cwd);
+}
+
+function controlledPlayRun(t, adapterSource) {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        playApplicationId: "com.clipp.app",
+        playTrack: "internal",
+      },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-internal",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const modules = {
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification={state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid({run,stageName,save}) { run.stages[stageName].state="passed"; save(); }`,
+    "./android-internal.mjs": adapterSource,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  const loader = path.join(f.base, "controlled-play-loader.mjs");
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  return {
+    ...f,
+    plan,
+    run: () =>
+      command(process.execPath, [cli, "run", plan.path, "--json"], f.repo, {
+        NODE_OPTIONS: `--experimental-loader=${loader}`,
+      }),
+  };
 }
 
 test("public Android local run and status retain uncertain install outcome", (t) => {
@@ -281,6 +341,47 @@ test("public run and status retain uncertain Play commit outcome", (t) => {
   assert.equal(readFileSync(record, "utf8"), beforeStatus);
 });
 
+test("public Play run reconciles a lost upload response without another upload", (t) => {
+  const f = controlledPlayRun(
+    t,
+    `export async function publishInternal({run,save}) { const stage=run.stages.androidInternal; if(stage.pending?.kind==="upload") { stage.pending=null; stage.state="passed"; stage.uploadReconciled=true; run.targets["android-internal"]={state:"complete",nextAction:null}; save(); return; } stage.uploadAttempts=(stage.uploadAttempts||0)+1; stage.pending={kind:"upload",number:stage.uploadAttempts}; stage.state="uncertain"; save(); throw Error("Play upload response lost"); }`
+  );
+  const first = f.run();
+  assert.equal(first.status, 1, first.stderr || first.stdout);
+  const uncertain = JSON.parse(first.stdout);
+  assert.equal(uncertain.code, "play_response_uncertain");
+  assert.equal(uncertain.run.targets["android-internal"].state, "uncertain");
+  assert.equal(uncertain.run.stages.androidInternal.pending.kind, "upload");
+  const second = f.run();
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  const reconciled = JSON.parse(second.stdout);
+  assert.equal(reconciled.code, "delivery_complete");
+  assert.equal(reconciled.run.stages.androidInternal.uploadAttempts, 1);
+  assert.equal(reconciled.run.stages.androidInternal.uploadReconciled, true);
+});
+
+test("public Play run retains an uploaded draft and resumes release completion", (t) => {
+  const f = controlledPlayRun(
+    t,
+    `export async function publishInternal({run,save}) { const stage=run.stages.androidInternal; if(stage.draftReleaseId) { stage.state="passed"; stage.releaseCompleted=true; run.targets["android-internal"]={state:"complete",nextAction:null}; save(); return; } stage.uploadAttempts=(stage.uploadAttempts||0)+1; stage.draftReleaseId="owned-draft-1"; stage.state="blocked"; run.targets["android-internal"]={state:"blocked",nextAction:"Complete the retained draft release"}; save(); }`
+  );
+  const first = f.run();
+  assert.equal(first.status, 1, first.stderr || first.stdout);
+  const pending = JSON.parse(first.stdout);
+  assert.equal(pending.code, "delivery_incomplete");
+  assert.equal(pending.run.targets["android-internal"].state, "blocked");
+  assert.equal(
+    pending.run.stages.androidInternal.draftReleaseId,
+    "owned-draft-1"
+  );
+  const second = f.run();
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  const completed = JSON.parse(second.stdout);
+  assert.equal(completed.code, "delivery_complete");
+  assert.equal(completed.run.stages.androidInternal.uploadAttempts, 1);
+  assert.equal(completed.run.stages.androidInternal.releaseCompleted, true);
+});
+
 test("run prepares the frozen commit and records common checks without touching the caller checkout", (t) => {
   const f = fixture(t);
   writeFileSync(path.join(f.repo, "caller.txt"), "keep me");
@@ -336,6 +437,84 @@ test("run prepares the frozen commit and records common checks without touching 
   );
 });
 
+test("candidate execution preserves caller branch, index, tracked edits and unrelated files", (t) => {
+  const f = fixture(t);
+  checked("git", ["switch", "-c", "operator-work"], f.repo);
+  writeFileSync(path.join(f.repo, "check.cjs"), "// staged operator edit\n", {
+    flag: "a",
+  });
+  checked("git", ["add", "check.cjs"], f.repo);
+  writeFileSync(path.join(f.repo, "ui.cjs"), "// unstaged operator edit\n", {
+    flag: "a",
+  });
+  writeFileSync(path.join(f.repo, "operator-notes.txt"), "keep this file\n");
+  const before = {
+    branch: checked("git", ["branch", "--show-current"], f.repo),
+    status: checked("git", ["status", "--porcelain=v1"], f.repo),
+    index: checked("git", ["diff", "--cached", "--binary"], f.repo),
+    worktree: checked("git", ["diff", "--binary"], f.repo),
+  };
+  const result = delivery(["run", f.plan.path], f.repo);
+  assert.equal(
+    JSON.parse(result.stdout).run.stages.commonVerify.state,
+    "passed"
+  );
+  assert.equal(
+    checked("git", ["branch", "--show-current"], f.repo),
+    before.branch
+  );
+  assert.equal(
+    checked("git", ["status", "--porcelain=v1"], f.repo),
+    before.status
+  );
+  assert.equal(
+    checked("git", ["diff", "--cached", "--binary"], f.repo),
+    before.index
+  );
+  assert.equal(checked("git", ["diff", "--binary"], f.repo), before.worktree);
+  assert.equal(
+    readFileSync(path.join(f.repo, "operator-notes.txt"), "utf8"),
+    "keep this file\n"
+  );
+});
+
+test("candidate execution preserves a pre-existing user worktree and durable run receipts", (t) => {
+  const f = fixture(t);
+  const ownedByUser = path.join(f.base, "operator-worktree");
+  checked(
+    "git",
+    ["worktree", "add", "-b", "operator-side", ownedByUser],
+    f.repo
+  );
+  writeFileSync(
+    path.join(ownedByUser, "operator-notes.txt"),
+    "pre-existing work\n"
+  );
+  const before = checked("git", ["worktree", "list", "--porcelain"], f.repo);
+  const result = delivery(["run", f.plan.path], f.repo);
+  assert.equal(
+    JSON.parse(result.stdout).run.stages.commonVerify.state,
+    "passed"
+  );
+  assert.equal(
+    readFileSync(path.join(ownedByUser, "operator-notes.txt"), "utf8"),
+    "pre-existing work\n"
+  );
+  assert.equal(
+    checked("git", ["worktree", "list", "--porcelain"], f.repo),
+    before
+  );
+  const receipt = path.join(f.store, "runs", f.plan.plan.id, "run.json");
+  assert.equal(
+    JSON.parse(readFileSync(receipt, "utf8")).source.commit,
+    f.revision
+  );
+  assert.equal(
+    existsSync(path.join(f.store, "plans", f.plan.plan.id, "plan.json")),
+    true
+  );
+});
+
 test("Electron packaging reports a target-local prerequisite when the candidate has no native package config", (t) => {
   const f = fixture(t);
   const result = delivery(["run", f.plan.path], f.repo);
@@ -345,6 +524,98 @@ test("Electron packaging reports a target-local prerequisite when the candidate 
   assert.match(
     report.run.targets["electron-package"].nextAction,
     /Native Electron dependency inventory is unavailable/i
+  );
+});
+
+test("public Electron package remains incomplete when packaged native loading fails", (t) => {
+  const f = fixture(t);
+  const loader = path.join(f.base, "native-failure-loader.mjs");
+  const modules = {
+    "./electron.mjs": `export const electronNativeInventory=()=>({}); export const inspectElectronConfig=()=>({}); export async function packageElectron() { throw Object.assign(Error("packaged WebRTC loading failed"),{code:"electron_native_smoke_failed"}); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const result = command(
+    process.execPath,
+    [cli, "run", f.plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.code, "electron_native_smoke_failed");
+  assert.equal(report.run.targets["electron-package"].state, "failed");
+  assert.equal(report.run.aggregate.state, "incomplete");
+  assert.match(
+    report.run.targets["electron-package"].nextAction,
+    /WebRTC loading failed/
+  );
+});
+
+test("public Electron local run stays incomplete after installed normal Quit fails", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        electronInstallPath: path.join(f.base, "Applications", "Clipp.app"),
+      },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-local",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const loader = path.join(f.base, "quit-failure-loader.mjs");
+  const modules = {
+    "./electron.mjs": `export const electronNativeInventory=()=>({}); export const inspectElectronConfig=()=>({}); export async function packageElectron({run,save}) { run.stages.electronPackage.state="passed"; run.electronPackage={state:"complete",receipt:{buildIdentity:"fixture"}}; save(); }`,
+    "./electron-local.mjs": `export async function installElectronLocal() { throw Object.assign(Error("installed normal Quit failed"),{code:"electron_installed_quit_failed"}); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const result = command(
+    process.execPath,
+    [cli, "run", JSON.parse(planned.stdout).path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.code, "electron_installed_quit_failed");
+  assert.equal(report.run.targets["electron-local"].state, "failed");
+  assert.equal(report.run.aggregate.state, "incomplete");
+  assert.match(
+    report.run.targets["electron-local"].nextAction,
+    /normal Quit failed/
   );
 });
 
@@ -487,6 +758,115 @@ test("a zero-case required test gate cannot pass verification", (t) => {
     JSON.parse(result.stdout).run.stages.commonVerify.state,
     "failed"
   );
+});
+
+test("skipped or unavailable local coverage blocks delivery even when CI is green", (t) => {
+  const skipped = fixture(t);
+  const skipResult = command(
+    process.execPath,
+    [cli, "run", skipped.plan.path, "--json"],
+    skipped.repo,
+    {
+      CLIPP_SKIP_CHECK: "candidate-tooling",
+      CI: "true",
+      CLIPP_CI_GREEN: "true",
+    }
+  );
+  assert.equal(skipResult.status, 1);
+  const skipRun = JSON.parse(skipResult.stdout);
+  assert.equal(skipRun.code, "required_check_empty");
+  assert.equal(skipRun.run.stages.commonVerify.state, "failed");
+  assert.equal(skipRun.run.targets["electron-package"].state, "failed");
+  assert.equal(skipRun.run.stages.electronPackage.state, "pending");
+
+  const unavailable = fixture(t);
+  const failed = command(
+    process.execPath,
+    [cli, "run", unavailable.plan.path, "--json"],
+    unavailable.repo,
+    {
+      CLIPP_FAIL_CHECK: "candidate-tooling",
+      CI: "true",
+      CLIPP_CI_GREEN: "true",
+    }
+  );
+  assert.equal(failed.status, 1);
+  const failedRun = JSON.parse(failed.stdout);
+  assert.equal(failedRun.code, "required_check_failed");
+  assert.equal(failedRun.run.stages.commonVerify.state, "failed");
+  assert.equal(failedRun.run.targets["electron-package"].state, "failed");
+  assert.equal(failedRun.run.stages.electronPackage.state, "pending");
+});
+
+test("public plan, run and status omit private values from shareable output and command arguments", (t) => {
+  const f = fixture(t);
+  const secret = "fixture-private-canary-7f42";
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {},
+      references: { playCredentialRef: "env:CLIPP_PRIVATE_LOG_CANARY" },
+    })
+  );
+  const planned = command(
+    process.execPath,
+    [
+      cli,
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-package",
+      "--json",
+    ],
+    f.repo,
+    { CLIPP_PRIVATE_LOG_CANARY: secret }
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  assert.equal(planned.stdout.includes(secret), false);
+  const plan = JSON.parse(planned.stdout);
+  const run = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { CLIPP_PRIVATE_LOG_CANARY: secret, CLIPP_EMPTY_CHECK: "candidate-tooling" }
+  );
+  assert.equal(run.status, 1, run.stderr || run.stdout);
+  assert.equal(run.stdout.includes(secret), false);
+  const report = JSON.parse(run.stdout);
+  assert.equal(report.code, "required_check_empty");
+  assert.equal(
+    JSON.stringify(
+      report.run.stages.commonVerify.attempts.map((attempt) => attempt.command)
+    ).includes(secret),
+    false
+  );
+  const privateLog = path.join(
+    f.store,
+    "runs",
+    plan.plan.id,
+    report.run.stages.commonVerify.attempts.at(-1).log
+  );
+  assert.equal(readFileSync(privateLog, "utf8").includes(secret), true);
+  const status = delivery(
+    ["status", plan.plan.id, "--config", f.config],
+    f.repo
+  );
+  assert.equal(status.status, 0, status.stderr || status.stdout);
+  assert.equal(status.stdout.includes(secret), false);
+  const human = command(
+    process.execPath,
+    [cli, "status", plan.plan.id, "--config", f.config],
+    f.repo
+  );
+  assert.equal(human.status, 0, human.stderr || human.stdout);
+  assert.equal(human.stdout.includes(secret), false);
 });
 
 test("run uses the frozen remote commit after main advances", (t) => {

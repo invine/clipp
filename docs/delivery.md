@@ -2,6 +2,16 @@
 
 The `npm run delivery -- help` command is the current interface reference. Planning can read a Git remote and writes an immutable plan. Running a plan prepares an isolated committed checkout, installs its npm dependencies, runs the common local checks declared in `scripts/delivery/profiles/v1.json` and inventories production outputs. The profile lists lint, typecheck, Jest, candidate and delivery tooling, all three production builds and shared UI behavior as separate gates. `electron-package` creates an unsigned local DMG and retains the packaged app. Android targets qualify the frozen acceptance APK pair with native unit and emulator evidence before later package or destination work.
 
+Use the [acceptance coverage map](delivery-acceptance.md) to distinguish automated recovery tests from final Mac destination evidence. The selected `runRoot` holds the plan, receipts and private diagnostics across operator handoffs; the canonical tickets record implementation status.
+
+## Fresh-context setup and recovery
+
+Start with command help and the checked-in [v1 profile](../scripts/delivery/profiles/v1.json) for supported Mac architecture, tool versions, target dependencies and check timeouts. Select the committed source and the stable destinations you actually intend to use, then place the configuration and run store in private absolute paths. Keep credential and authorization values in environment, private file or Keychain references; the reference in a plan is not approval for a destination mutation. Existing local settings, previous run stores and old installed profiles are historical evidence, not current destination or credential choices. Migrate by selecting a new private configuration and explicit destinations while retaining the old artifacts for recovery.
+
+At handoff, provide the saved plan path or run ID, selected source/profile hashes, configured private-reference _names_, and the latest aggregate/target next actions. A new operator can inspect the plan and read-only status, then resume the same run ID after resolving a prerequisite. Reuse an existing authorization when it still exactly matches the source, artifact and destination; a new source, profile or target set needs a successor plan. Inspect the retained private attempt log and destination before resuming an uncertain external response. Share only the status/summary and reviewed receipt references; private logs can contain child-process output and must remain in the private run store.
+
+The profile checks at least 3 GiB free in the candidate store; the observed locked npm installation was roughly 0.94 GiB. Platform packaging has separate capacity and time limits in the profile. No general end-to-end duration or peak-space promise has been measured for the final combined run; record those observations with the final frozen-source Mac receipts before setting an operator threshold.
+
 Create a private JSON configuration outside the repository. The run store must also be outside the selected Clipp source checkout:
 
 ```json
@@ -55,8 +65,6 @@ npm run delivery -- run <run-id> --config /absolute/private/delivery.json --json
 ```
 
 The plan stores the selected commit and source tree. A later change to the branch does not alter it. To select another source or profile, create a new plan and point `--supersedes` at the earlier plan. The plan has a separate integrity receipt; edits to saved plan bytes block execution. A plan is data and does not authorize installation or publication.
-
-The v1 profile requires at least 3 GiB free in the candidate store and checks that the output is writable before preparation. This threshold covers the measured roughly 0.94 GiB locked npm installation plus room for the three web builds and temporary output; platform packaging adds its own later capacity checks.
 
 For `electron-package`, the frozen profile pins Electron 43.4.0, electron-builder 26.18.0 and the archive inventory tool. Packaging copies the verified candidate to an owned macOS temporary directory because the builder rebuilds native dependencies; the original candidate remains available for reuse. The run store retains the DMG and app, with digests, source/build identity, resource hashes and explicit local unsigned signing status. Completion requires archive and unpacked bundle inspection, disk-image integrity, WebRTC loading through the packaged app executable and the production-main normal Quit regression. The Quit harness uses the pinned Electron executable with the packaged main and dependencies; the receipt records both executable choices. Packaging does not install the app or establish live network acceptance.
 

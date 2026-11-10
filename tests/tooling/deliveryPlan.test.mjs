@@ -142,6 +142,31 @@ test("immutable commit works when remote is unavailable, while latest branch fai
   assert.equal(JSON.parse(selected.stdout).plan.source.commit, f.first);
 });
 
+test("a version change creates a successor without changing the frozen predecessor", () => {
+  const f = fixture();
+  const first = plan(f, f.first);
+  assert.equal(first.status, 0, first.stderr);
+  const predecessor = JSON.parse(first.stdout);
+  writeFileSync(
+    path.join(f.repo, "apps", "android", "package.json"),
+    '{"version":"1.2.4"}'
+  );
+  command("git", ["add", "apps/android/package.json"], f.repo);
+  command("git", ["commit", "-m", "next Android version"], f.repo);
+  const nextRevision = command("git", ["rev-parse", "HEAD"], f.repo);
+  const next = plan(f, nextRevision, "--supersedes", predecessor.path);
+  assert.equal(next.status, 0, next.stderr);
+  const successor = JSON.parse(next.stdout);
+  assert.equal(successor.plan.predecessorId, predecessor.plan.id);
+  assert.equal(successor.plan.source.commit, nextRevision);
+  assert.equal(successor.plan.source.versions.android, "1.2.4");
+  assert.equal(
+    JSON.parse(readFileSync(predecessor.path, "utf8")).source.versions.android,
+    "1.2.3"
+  );
+  assert.notEqual(successor.plan.id, predecessor.plan.id);
+});
+
 test("plan records exact committed lockfile bytes and rejects unknown targets", () => {
   const f = fixture();
   const selected = plan(f, f.first);
