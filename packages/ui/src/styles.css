@@ -5171,10 +5171,6 @@ html[data-host-geometry="android"] .android-host {
 .relay-quick-login {
   min-height: 40px;
 }
-.relay-row-feedback {
-  grid-column: 1 / -1;
-  margin: 0;
-}
 @media (max-width: 640px) {
   .relay-overview,
   .relay-configurations {
@@ -5182,7 +5178,7 @@ html[data-host-geometry="android"] .android-host {
   }
   .relay-configurations .managed-relay-item {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "identity actions" "kind actions" "status actions" "feedback feedback";
+    grid-template-areas: "identity actions" "kind actions" "status actions";
     gap: 4px 12px;
   }
   .managed-relay-item .relay-identity {
@@ -5196,9 +5192,6 @@ html[data-host-geometry="android"] .android-host {
   }
   .managed-relay-item .relay-row-actions {
     grid-area: actions;
-  }
-  .managed-relay-item .relay-row-feedback {
-    grid-column: 1 / -1;
   }
 }
 

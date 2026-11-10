@@ -76,7 +76,7 @@ test("returning to a suspended relay editor restores focus to its actions menu",
   ).toBeFocused();
 });
 
-test("relay action feedback remains visible after notification interruption", async ({
+test("relay action remains available after notification interruption", async ({
   page,
 }) => {
   await page.goto("/relay-address.html?managed");
@@ -92,7 +92,10 @@ test("relay action feedback remains visible after notification interruption", as
   await page.getByRole("button", { name: "Back to previous task" }).click();
   await expect(page.getByRole("button", { name: "Log in" })).toBeDisabled();
   await page.getByRole("button", { name: "Reject relay login" }).click();
-  await expect(page.getByText("Login could not be confirmed")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in" })).toBeEnabled();
+  await expect(page.locator(".managed-relay-item")).not.toContainText(
+    "Login could not be confirmed"
+  );
 });
 
 test("relay overview reports empty and observed attention states", async ({
@@ -216,7 +219,8 @@ test("login-needed relay offers a direct login action", async ({ page }) => {
   await item.getByRole("button", { name: "Log in" }).click();
   await expect(item.getByRole("button", { name: "Log in" })).toBeDisabled();
   await page.getByRole("button", { name: "Reject relay login" }).click();
-  await expect(item).toContainText("Login could not be confirmed");
+  await expect(item.getByRole("button", { name: "Log in" })).toBeEnabled();
+  await expect(item).not.toContainText("Login could not be confirmed");
 });
 
 for (const width of [1440, 768, 390]) {

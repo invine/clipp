@@ -293,6 +293,7 @@ export function ManagedRelaySettings({
             <div
               className={`relay-status relay-status-${state?.status ?? "unknown"}`}
               role="status"
+              title={state?.warning || undefined}
             >
               <span className="relay-status-dot" aria-hidden="true" />
               {state ? statusText[state.status] : "Status unknown"}
@@ -442,16 +443,6 @@ export function ManagedRelaySettings({
                 </div>
               </details>
             </div>
-            {state?.warning && (
-              <div className="relay-error relay-row-feedback">
-                {state.warning}
-              </div>
-            )}
-            {context.relayActions[config.key]?.result?.error && (
-              <p className="relay-row-feedback" role="alert">
-                {context.relayActions[config.key]?.result?.error}
-              </p>
-            )}
           </div>
         );
       })}
