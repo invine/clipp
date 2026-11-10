@@ -773,3 +773,309 @@ test("interrupted owner waits for its running command before resuming and retain
     "interrupted"
   );
 });
+
+test("mixed run reports independent completion and every remaining target action", (t) => {
+  const f = fixture(t);
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-package",
+      "--target",
+      "android-package",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const loader = path.join(f.base, "mixed-loader.mjs");
+  const modules = {
+    "./electron.mjs": `export const electronNativeInventory=()=>({}); export const inspectElectronConfig=()=>({}); export async function packageElectron({run,save}) { run.targets["electron-package"]={state:"complete",nextAction:null}; run.stages.electronPackage.state="passed"; save(); }`,
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification={state:"blocked",nextAction:"connect owned acceptance emulator"}; run.targets["android-package"]={state:"blocked",nextAction:"connect owned acceptance emulator"}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid() { throw Error("blocked dependency must not package"); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const first = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(first.status, 1, first.stderr || first.stdout);
+  const result = JSON.parse(first.stdout);
+  assert.equal(result.code, "delivery_incomplete");
+  assert.equal(result.run.targets["electron-package"].state, "complete");
+  assert.equal(result.run.targets["android-package"].state, "blocked");
+  assert.deepEqual(result.run.aggregate, {
+    state: "incomplete",
+    complete: ["electron-package"],
+    outstanding: [
+      {
+        target: "android-package",
+        state: "blocked",
+        nextAction: "connect owned acceptance emulator",
+      },
+    ],
+  });
+  const replay = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(replay.status, 1, replay.stderr || replay.stdout);
+  assert.equal(
+    JSON.parse(replay.stdout).run.targets["electron-package"].state,
+    "complete"
+  );
+  const human = command(
+    process.execPath,
+    [cli, "status", plan.plan.id, "--config", f.config],
+    f.repo
+  );
+  assert.equal(human.status, 0, human.stderr || human.stdout);
+  assert.match(human.stdout, /electron-package: complete/);
+  assert.match(
+    human.stdout,
+    /android-package: blocked — connect owned acceptance emulator/
+  );
+});
+
+test("shared verification failure blocks every selected target", (t) => {
+  const f = fixture(t);
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-package",
+      "--target",
+      "android-package",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const result = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { CLIPP_FAIL_VERIFY: "1" }
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.code, "required_check_failed");
+  assert.deepEqual(
+    report.run.aggregate.outstanding.map((item) => item.target),
+    ["electron-package", "android-package"]
+  );
+  for (const target of Object.values(report.run.targets)) {
+    assert.equal(target.state, "failed");
+    assert.match(target.nextAction, /commonVerify failed/);
+  }
+});
+
+test("mixed Android targets retain separate upload and debug package receipts", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: { androidDeviceSerial: "owned-emulator-1" },
+      signing: { androidPackage: "upload", androidLocal: "debug" },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-package",
+      "--target",
+      "android-local",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const loader = path.join(f.base, "android-modes-loader.mjs");
+  const modules = {
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification={state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid({run,mode,stageName,save}) { const stage=run.stages[stageName]; stage.state="passed"; stage.receipt={signing:mode,buildIdentity:mode+"-artifact"}; if(mode==="upload") run.targets["android-package"]={state:"complete",nextAction:null}; save(); }`,
+    "./android-local.mjs": `export const createAdbDevice=()=>({}); export async function installAndroidLocal({run,packageStage,save}) { if(packageStage?.receipt?.signing!=="debug") throw Error("local install borrowed wrong package mode"); run.targets["android-local"]={state:"complete",nextAction:null}; run.stages.androidLocal.state="passed"; save(); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const first = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(first.status, 0, first.stderr || first.stdout);
+  const result = JSON.parse(first.stdout);
+  assert.deepEqual(result.run.graph, [
+    { id: "prepare", dependsOn: [] },
+    { id: "commonVerify", dependsOn: ["prepare"] },
+    { id: "androidQualification", dependsOn: ["commonVerify"] },
+    { id: "androidPackage:upload", dependsOn: ["androidQualification"] },
+    { id: "androidPackage:debug", dependsOn: ["androidQualification"] },
+    {
+      id: "androidLocal",
+      dependsOn: ["androidQualification", "androidPackage:debug"],
+    },
+  ]);
+  assert.equal(result.run.stages.androidPackage.receipt.signing, "upload");
+  assert.equal(
+    result.run.stages.androidAdditionalPackage.receipt.signing,
+    "debug"
+  );
+  assert.equal(result.run.targets["android-package"].state, "complete");
+  assert.equal(result.run.targets["android-local"].state, "complete");
+  const replay = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(replay.status, 0, replay.stderr || replay.stdout);
+  assert.equal(
+    JSON.parse(replay.stdout).run.stages.androidPackage.receipt.buildIdentity,
+    "upload-artifact"
+  );
+});
+
+test("unresolved local signing blocks only that target after shared qualification", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: { androidDeviceSerial: "owned-emulator-1" },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "android-local",
+      "--target",
+      "electron-package",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const plan = JSON.parse(planned.stdout);
+  const loader = path.join(f.base, "missing-mode-loader.mjs");
+  const modules = {
+    "./electron.mjs": `export const electronNativeInventory=()=>({}); export const inspectElectronConfig=()=>({}); export async function packageElectron({run,save}) { run.targets["electron-package"]={state:"complete",nextAction:null}; run.stages.electronPackage.state="passed"; save(); }`,
+    "./android-qualification.mjs": `export async function qualifyAndroid({run,save}) { run.androidQualification={state:"passed",pair:{appSha256:"a",testSha256:"b"}}; save(); }`,
+    "./android-package.mjs": `export async function packageAndroid() { throw Error("missing signing mode must not package"); }`,
+  };
+  const urls = Object.fromEntries(
+    Object.entries(modules).map(([name, source]) => [
+      name,
+      `data:text/javascript,${encodeURIComponent(source)}`,
+    ])
+  );
+  writeFileSync(
+    loader,
+    `const modules=${JSON.stringify(urls)}; export async function resolve(specifier,context,nextResolve){if(context.parentURL?.endsWith('/delivery/run.mjs')&&modules[specifier])return {url:modules[specifier],shortCircuit:true};return nextResolve(specifier,context);}`
+  );
+  const result = command(
+    process.execPath,
+    [cli, "run", plan.path, "--json"],
+    f.repo,
+    { NODE_OPTIONS: `--experimental-loader=${loader}` }
+  );
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.code, "delivery_incomplete");
+  assert.equal(report.run.targets["electron-package"].state, "complete");
+  assert.equal(report.run.targets["android-local"].state, "blocked");
+  assert.match(
+    report.run.targets["android-local"].nextAction,
+    /signing:androidLocal/
+  );
+});
+
+test("a failed shared Electron package blocks its selected local dependent", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    f.config,
+    JSON.stringify({
+      schema: 1,
+      runRoot: f.store,
+      destinations: {
+        electronInstallPath: path.join(f.base, "Applications", "Clipp.app"),
+      },
+    })
+  );
+  const planned = delivery(
+    [
+      "plan",
+      "--repo",
+      f.repo,
+      "--config",
+      f.config,
+      "--source",
+      f.revision,
+      "--target",
+      "electron-package",
+      "--target",
+      "electron-local",
+    ],
+    f.repo
+  );
+  assert.equal(planned.status, 0, planned.stderr || planned.stdout);
+  const first = delivery(["run", JSON.parse(planned.stdout).path], f.repo);
+  assert.equal(first.status, 1, first.stderr || first.stdout);
+  const report = JSON.parse(first.stdout);
+  assert.equal(report.run.targets["electron-package"].state, "blocked");
+  assert.equal(report.run.targets["electron-local"].state, "blocked");
+  assert.match(
+    report.run.targets["electron-local"].nextAction,
+    /Native Electron dependency inventory is unavailable/i
+  );
+});

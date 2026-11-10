@@ -212,6 +212,19 @@ function planRecord(file, identity) {
   const supportedProfile = JSON.parse(
     readFileSync(new URL("./profiles/v1.json", import.meta.url), "utf8")
   );
+  for (const [name, target] of Object.entries(plan.targets)) {
+    const frozen = supportedProfile.targets[name];
+    if (
+      !frozen ||
+      JSON.stringify(target.dependsOn) !== JSON.stringify(frozen.dependsOn) ||
+      JSON.stringify(target.checks) !== JSON.stringify(frozen.checks) ||
+      target.destination !== frozen.destination
+    )
+      fail(
+        "invalid_profile",
+        `Frozen ${name} dependency/check allocation is unsupported`
+      );
+  }
   if (
     JSON.stringify(plan.profile.electronPackage) !==
     JSON.stringify(supportedProfile.electronPackage)
@@ -286,14 +299,18 @@ function validateRun(record, plan, digest) {
     record.id !== plan.id ||
     record.planSha256 !== digest ||
     record.source?.commit !== plan.source.commit ||
+    record.source?.tree !== plan.source.tree ||
+    JSON.stringify(record.tool) !== JSON.stringify(plan.tool) ||
     record.profileSha256 !== plan.profile.sha256 ||
     record.configurationSha256 !== plan.configurationSha256 ||
+    JSON.stringify(record.graph) !== JSON.stringify(executionGraph(plan)) ||
     !record.stages?.prepare ||
     !record.stages?.commonVerify ||
     !record.stages?.electronPackage ||
     !record.stages?.electronLocal ||
     !record.stages?.androidPackage ||
     !record.stages?.androidLocal ||
+    !record.stages?.androidAdditionalPackage ||
     !record.stages?.androidInternal ||
     !record.stages?.chromeLocal
   )
@@ -334,19 +351,87 @@ function environmentIdentity() {
     npm: npm.status === 0 ? npm.stdout.trim() : null,
   };
 }
+function executionGraph(plan) {
+  const nodes = [
+    { id: "prepare", dependsOn: [] },
+    { id: "commonVerify", dependsOn: ["prepare"] },
+  ];
+  const seen = new Set(nodes.map((node) => node.id));
+  const add = (id, dependsOn) => {
+    if (!seen.has(id)) {
+      nodes.push({ id, dependsOn });
+      seen.add(id);
+    }
+    return id;
+  };
+  const ensure = (name, signing) => {
+    if (name === "android-qualification")
+      return add("androidQualification", ["commonVerify"]);
+    if (name === "android-package") {
+      const mode = signing || plan.targets[name]?.signing || null;
+      if (!["upload", "unsigned-artifact", "debug", null].includes(mode))
+        fail(
+          "invalid_profile",
+          "Android package has no supported signing mode"
+        );
+      return add(`androidPackage:${mode || "unresolved"}`, [
+        ensure("android-qualification"),
+      ]);
+    }
+    const target = plan.targets[name];
+    if (!target && name !== "electron-package")
+      fail("invalid_profile", `Unsupported dependency ${name}`);
+    if (name === "electron-package")
+      return add("electronPackage", ["commonVerify"]);
+    const dependencies = target.dependsOn.map((dependency) =>
+      ensure(dependency, target.signing)
+    );
+    if (name === "electron-local") return add("electronLocal", dependencies);
+    if (name === "chrome-local")
+      return add("chromeLocal", ["commonVerify", ...dependencies]);
+    if (name === "android-local") return add("androidLocal", dependencies);
+    if (name === "android-internal")
+      return add("androidInternal", dependencies);
+    fail("invalid_profile", `Unsupported target ${name}`);
+  };
+  if (Object.keys(plan.targets).some((name) => name.startsWith("android")))
+    ensure("android-qualification");
+  for (const name of [
+    "electron-package",
+    "electron-local",
+    "chrome-local",
+    "android-package",
+    "android-internal",
+    "android-local",
+  ])
+    if (plan.targets[name]) ensure(name);
+  return nodes;
+}
 function summary(run) {
-  const outstanding = Object.entries(run.targets || {}).find(
-    ([, target]) => target.state !== "complete"
-  );
+  const targets = Object.entries(run.targets || {});
+  const complete = targets
+    .filter(([, target]) => target.state === "complete")
+    .map(([name]) => name);
+  const outstanding = targets
+    .filter(([, target]) => target.state !== "complete")
+    .map(([name, target]) => ({
+      target: name,
+      state: target.state,
+      nextAction: target.nextAction || `complete ${name}`,
+    }));
   return {
     ...run,
+    aggregate: {
+      state: outstanding.length ? "incomplete" : "complete",
+      complete,
+      outstanding,
+    },
     nextAction:
       run.stages.prepare.state !== "passed"
         ? "prepare candidate"
         : run.stages.commonVerify.state !== "passed"
           ? "run common local verification"
-          : outstanding?.[1].nextAction ||
-            (outstanding ? `complete ${outstanding[0]}` : null),
+          : outstanding[0]?.nextAction || null,
   };
 }
 function stage(run, name, state, detail, file) {
@@ -639,6 +724,7 @@ function newRun(plan, digest) {
     profileSha256: plan.profile.sha256,
     configurationSha256: plan.configurationSha256,
     environment: environmentIdentity(),
+    graph: executionGraph(plan),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     checkout: null,
@@ -650,13 +736,18 @@ function newRun(plan, digest) {
       electronLocal: { state: "pending", attempts: [], updatedAt: null },
       androidPackage: { state: "pending", attempts: [], updatedAt: null },
       androidLocal: { state: "pending", attempts: [], updatedAt: null },
+      androidAdditionalPackage: {
+        state: "pending",
+        attempts: [],
+        updatedAt: null,
+      },
       androidInternal: { state: "pending", attempts: [], updatedAt: null },
       chromeLocal: { state: "pending", attempts: [], updatedAt: null },
     },
     targets: Object.fromEntries(
       Object.keys(plan.targets).map((target) => [
         target,
-        { state: "pending", nextAction: "platform adapter unavailable" },
+        { state: "pending", nextAction: "await shared verification" },
       ])
     ),
     electronPackage:
@@ -1001,6 +1092,7 @@ export async function runDelivery(planPath, identity, options = {}) {
         "electronPackage",
         "electronLocal",
         "androidPackage",
+        "androidAdditionalPackage",
         "chromeLocal",
       ].every(
         (name) =>
@@ -1014,6 +1106,7 @@ export async function runDelivery(planPath, identity, options = {}) {
     const run = existsSync(file)
       ? validateRun(readJson(file, "invalid_run"), plan, digest)
       : newRun(plan, digest);
+    const scheduled = new Set(run.graph.map((node) => node.id));
     if (!existsSync(file)) atomically(file, run);
     for (const name of [
       "prepare",
@@ -1021,6 +1114,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       "electronPackage",
       "electronLocal",
       "androidPackage",
+      "androidAdditionalPackage",
       "chromeLocal",
     ]) {
       if (run.stages[name].state !== "running") continue;
@@ -1047,20 +1141,29 @@ export async function runDelivery(planPath, identity, options = {}) {
       hostReady(plan);
       await prepare(run, plan, file);
       await commonVerify(run, plan, file);
-      await qualifyAndroid({
-        plan,
-        run,
-        save: () => atomically(file, run),
-        invoke,
-        diagnostic: options.native || {},
-      });
+      if (scheduled.has("androidQualification"))
+        await qualifyAndroid({
+          plan,
+          run,
+          save: () => atomically(file, run),
+          invoke,
+          diagnostic: options.native || {},
+        });
     } catch (error) {
       const name =
         run.stages.prepare.state === "passed" ? "commonVerify" : "prepare";
+      const failureState =
+        error.code === "prerequisite_unavailable" ? "blocked" : "failed";
+      for (const target of Object.values(run.targets))
+        Object.assign(target, {
+          state: failureState,
+          nextAction: `${name} failed: ${error.message}`,
+          updatedAt: new Date().toISOString(),
+        });
       stage(
         run,
         name,
-        error.code === "prerequisite_unavailable" ? "blocked" : "failed",
+        failureState,
         {
           code: error.code || "delivery_internal_error",
           message: error.message,
@@ -1073,7 +1176,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       };
     }
     let platformCode = null;
-    if (run.targets["electron-package"] || run.targets["electron-local"]) {
+    if (scheduled.has("electronPackage")) {
       try {
         await packageElectron({
           plan,
@@ -1105,15 +1208,14 @@ export async function runDelivery(planPath, identity, options = {}) {
         const blocked =
           !error.code || error.code === "prerequisite_unavailable";
         platformCode = blocked ? null : error.code;
-        const selected = run.targets["electron-package"]
-          ? "electron-package"
-          : "electron-local";
-        run.targets[selected] = {
-          ...run.targets[selected],
-          state: blocked ? "blocked" : "failed",
-          nextAction: error.message,
-          updatedAt: new Date().toISOString(),
-        };
+        for (const selected of ["electron-package", "electron-local"])
+          if (run.targets[selected])
+            run.targets[selected] = {
+              ...run.targets[selected],
+              state: blocked ? "blocked" : "failed",
+              nextAction: error.message,
+              updatedAt: new Date().toISOString(),
+            };
         stage(
           run,
           "electronPackage",
@@ -1127,7 +1229,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       }
     }
     if (
-      run.targets["electron-local"] &&
+      scheduled.has("electronLocal") &&
       run.stages.electronPackage.state === "passed"
     ) {
       try {
@@ -1191,7 +1293,7 @@ export async function runDelivery(planPath, identity, options = {}) {
         );
       }
     }
-    if (run.targets["chrome-local"]) {
+    if (scheduled.has("chromeLocal")) {
       try {
         await deliverChrome({
           plan,
@@ -1251,74 +1353,118 @@ export async function runDelivery(planPath, identity, options = {}) {
       }
     }
     if (
-      run.targets["android-package"] ||
-      run.targets["android-local"] ||
-      run.targets["android-internal"]
+      scheduled.has("androidQualification") &&
+      run.androidQualification?.state === "passed"
     ) {
-      try {
-        await packageAndroid({
-          plan,
-          run,
-          execute: (bin, args, cwd, environment, timeout, checkId) =>
-            commandAttempt(
-              run,
-              "androidPackage",
-              bin,
-              args,
-              cwd,
-              environment,
-              timeout,
-              file,
-              checkId
-            ),
-          save: () => atomically(file, run),
-        });
-      } catch (error) {
-        const selected = run.targets["android-package"]
-          ? "android-package"
-          : run.targets["android-local"]
-            ? "android-local"
-            : "android-internal";
-        const blocked = error.code === "prerequisite_unavailable";
-        platformCode = blocked
-          ? platformCode
-          : error.code || "android_package_failed";
-        run.targets[selected] = {
-          ...run.targets[selected],
-          state: blocked ? "blocked" : "failed",
-          nextAction: error.message,
-          updatedAt: new Date().toISOString(),
-        };
-        if (run.stages.androidPackage.state === "passed") {
-          // Preserve the completed receipt so a changed artifact cannot be
-          // silently rebuilt and accepted by replaying the same candidate.
-          run.stages.androidPackage.integrityError = {
-            code: error.code || "android_package_failed",
-            message: error.message,
-          };
+      const modeTargets = new Map();
+      for (const name of [
+        "android-package",
+        "android-internal",
+        "android-local",
+      ])
+        if (run.targets[name]) {
+          const mode = plan.targets[name].signing;
+          if (!modeTargets.has(mode)) modeTargets.set(mode, []);
+          modeTargets.get(mode).push(name);
+        }
+      let firstMode = true;
+      for (const node of run.graph.filter((item) =>
+        item.id.startsWith("androidPackage:")
+      )) {
+        const mode = node.id.slice("androidPackage:".length);
+        const names =
+          modeTargets.get(mode === "unresolved" ? null : mode) || [];
+        if (mode === "unresolved") {
+          for (const name of names)
+            run.targets[name] = {
+              ...run.targets[name],
+              state: "blocked",
+              nextAction: `Complete ${name} prerequisites: ${(plan.targets[name].prerequisites || []).join(", ")}`,
+              updatedAt: new Date().toISOString(),
+            };
           atomically(file, run);
-        } else {
-          stage(
+          continue;
+        }
+        const stageName = firstMode
+          ? "androidPackage"
+          : "androidAdditionalPackage";
+        firstMode = false;
+        try {
+          await packageAndroid({
+            plan,
             run,
-            "androidPackage",
-            blocked ? "blocked" : "failed",
-            {
+            mode,
+            stageName,
+            execute: (bin, args, cwd, environment, timeout, checkId) =>
+              commandAttempt(
+                run,
+                stageName,
+                bin,
+                args,
+                cwd,
+                environment,
+                timeout,
+                file,
+                checkId
+              ),
+            save: () => atomically(file, run),
+          });
+        } catch (error) {
+          const blocked = error.code === "prerequisite_unavailable";
+          platformCode ||= blocked
+            ? null
+            : error.code || "android_package_failed";
+          for (const name of names)
+            run.targets[name] = {
+              ...run.targets[name],
+              state: blocked ? "blocked" : "failed",
+              nextAction: error.message,
+              updatedAt: new Date().toISOString(),
+            };
+          if (run.stages[stageName].state === "passed") {
+            run.stages[stageName].integrityError = {
               code: error.code || "android_package_failed",
               message: error.message,
-            },
-            file
-          );
+            };
+            atomically(file, run);
+          } else
+            stage(
+              run,
+              stageName,
+              blocked ? "blocked" : "failed",
+              {
+                code: error.code || "android_package_failed",
+                message: error.message,
+              },
+              file
+            );
         }
       }
     }
+    const localPackageIndex = run.graph
+      .filter((node) => node.id.startsWith("androidPackage:"))
+      .findIndex(
+        (node) =>
+          node.id === `androidPackage:${plan.targets["android-local"]?.signing}`
+      );
+    const localPackageStage =
+      localPackageIndex < 0
+        ? null
+        : run.stages[
+            localPackageIndex === 0
+              ? "androidPackage"
+              : "androidAdditionalPackage"
+          ];
     if (
-      run.targets["android-local"] &&
-      run.stages.androidPackage.state === "passed"
+      scheduled.has("androidLocal") &&
+      localPackageStage?.state === "passed" &&
+      !localPackageStage.integrityError
     ) {
       try {
         await installAndroidLocal({
           plan,
           run,
+          packageStage: localPackageStage,
           save: () => atomically(file, run),
         });
       } catch (error) {
@@ -1349,7 +1495,7 @@ export async function runDelivery(planPath, identity, options = {}) {
       }
     }
     if (
-      run.targets["android-internal"] &&
+      scheduled.has("androidInternal") &&
       run.stages.androidPackage.state === "passed"
     ) {
       try {
