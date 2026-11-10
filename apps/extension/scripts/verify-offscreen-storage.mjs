@@ -16,6 +16,7 @@ const profilePath = await mkdtemp(
 );
 
 let context;
+let statusPage;
 try {
   context = await chromium.launchPersistentContext(profilePath, {
     headless: false,
@@ -32,8 +33,11 @@ try {
       timeout: 15_000,
     });
   }
+  const extensionId = await serviceWorker.evaluate(() => chrome.runtime.id);
+  statusPage = await context.newPage();
+  await statusPage.goto(`chrome-extension://${extensionId}/src/options.html`);
 
-  const initialStatus = await waitForStartedOffscreen(serviceWorker);
+  const initialStatus = await waitForStartedOffscreen(statusPage);
   assert.equal(
     initialStatus.started,
     true,
@@ -41,45 +45,50 @@ try {
   );
   assert.equal(initialStatus.relayAcceptanceTransport, transport);
 
-  // Recreate the document so its identity manager cannot satisfy init from its
-  // module-level cache; both identity and peer-record state must use the proxy.
-  assert.deepEqual(
-    await sendToOffscreen(serviceWorker, { action: "shutdown" }),
-    { ok: true }
-  );
-  await recreateOffscreenDocument(serviceWorker);
-  assert.deepEqual(await waitForOffscreenPing(serviceWorker), { ok: true });
-  assert.deepEqual(
-    await sendToOffscreen(serviceWorker, { action: "init", relays: [] }),
-    { ok: true },
-    "offscreen initialization should load durable state through the service worker"
-  );
-  const recreatedStatus = await sendToOffscreen(serviceWorker, {
-    action: "getStatus",
+  // Recreate the document through the supported background request. The
+  // background owns the runtime generation and offscreen initialization.
+  await serviceWorker.evaluate(() => {
+    globalThis.__clippOffscreenStorageRequests = 0;
+    chrome.runtime.onMessage.addListener((message) => {
+      if (
+        message?.target === "background" &&
+        message?.action === "offscreenStorage"
+      )
+        globalThis.__clippOffscreenStorageRequests++;
+    });
   });
+  await serviceWorker.evaluate(
+    async () => await chrome.offscreen.closeDocument()
+  );
+  const recreatedStatus = await waitForStartedOffscreen(statusPage);
   assert.equal(
     recreatedStatus.started,
     true,
     "the offscreen runtime should be started after proxied storage initialization"
   );
   assert.equal(recreatedStatus.relayAcceptanceTransport, transport);
-  assert.deepEqual(
-    await sendToOffscreen(serviceWorker, { action: "shutdown" }),
-    { ok: true }
+  assert.ok(
+    await serviceWorker.evaluate(
+      () => globalThis.__clippOffscreenStorageRequests
+    ),
+    "recreated offscreen document should load durable state through the storage proxy"
   );
 
   console.log("MV3 offscreen storage proxy verified.");
 } finally {
+  await statusPage?.close();
   await context?.close();
   await rm(profilePath, { recursive: true, force: true });
 }
 
-async function waitForStartedOffscreen(serviceWorker) {
+async function waitForStartedOffscreen(statusPage) {
   const deadline = Date.now() + 15_000;
   let latest;
   while (Date.now() < deadline) {
     try {
-      latest = await sendToOffscreen(serviceWorker, { action: "getStatus" });
+      latest = await statusPage.evaluate(
+        async () => await chrome.runtime.sendMessage({ type: "getStatus" })
+      );
       if (latest?.started) return latest;
     } catch {
       // The background may still be creating and initializing the document.
@@ -87,36 +96,4 @@ async function waitForStartedOffscreen(serviceWorker) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
   }
   return latest ?? {};
-}
-
-async function recreateOffscreenDocument(serviceWorker) {
-  await serviceWorker.evaluate(async () => {
-    await chrome.offscreen.closeDocument();
-    await chrome.offscreen.createDocument({
-      url: chrome.runtime.getURL("offscreen.html"),
-      reasons: ["WEB_RTC", "CLIPBOARD"],
-      justification: "Verify offscreen storage-proxy initialization",
-    });
-  });
-}
-
-async function waitForOffscreenPing(serviceWorker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      return await sendToOffscreen(serviceWorker, { action: "ping" });
-    } catch {
-      // The recreated document may not have registered its listener yet.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error("offscreen_ping_timeout");
-}
-
-async function sendToOffscreen(serviceWorker, message) {
-  return await serviceWorker.evaluate(
-    async (payload) =>
-      await chrome.runtime.sendMessage({ target: "offscreen", ...payload }),
-    message
-  );
 }
