@@ -264,17 +264,21 @@ function resultFor(run, names, state, nextAction, save) {
 }
 function readAuthorization(ref, plan, target, pair) {
   const raw = reference(ref);
-  if (!raw) return false;
+  if (!raw) return null;
   let record;
   try {
     record = JSON.parse(raw);
   } catch {
-    return false;
+    return null;
   }
   const serials = target.qualification.serials;
-  return (
+  if (!(
     record.schema === 1 &&
     record.scope === "isolated-android-acceptance" &&
+    typeof record.authorizationSource === "string" &&
+    record.authorizationSource.length > 0 &&
+    typeof record.authorizedAt === "string" &&
+    !Number.isNaN(Date.parse(record.authorizedAt)) &&
     record.sourceRevision === plan.source.commit &&
     record.effort === target.qualification.effort &&
     JSON.stringify(record.serials) === JSON.stringify(serials) &&
@@ -282,7 +286,19 @@ function readAuthorization(ref, plan, target, pair) {
     record.testPackage === "com.clipp.app.acceptance.test" &&
     (record.appSha256 === undefined || record.appSha256 === pair.appSha256) &&
     (record.testSha256 === undefined || record.testSha256 === pair.testSha256)
-  );
+  ))
+    return null;
+  return {
+    scope: record.scope,
+    authorizationSource: record.authorizationSource,
+    authorizedAt: record.authorizedAt,
+    sourceRevision: record.sourceRevision,
+    effort: record.effort,
+    serials,
+    appSha256: pair.appSha256,
+    testSha256: pair.testSha256,
+    recordSha256: createHash("sha256").update(raw).digest("hex"),
+  };
 }
 function parseReceipt(file) {
   try {
@@ -549,6 +565,16 @@ export async function qualifyAndroid({
       CLIPP_ANDROID_APKSIGNER: preflight.apksigner,
       CLIPP_ACCEPTANCE_STATE_ROOT: preflight.stateRoot,
     };
+    await execute(
+      { run, plan, save, invoke },
+      "android-native-sync",
+      "npm",
+      ["--workspace", "apps/android", "run", "cap:sync"],
+      run.checkout,
+      env,
+      frozen.timeoutMs.unit,
+      true
+    );
     const unit = await execute(
       { run, plan, save, invoke },
       "android-native-unit",
@@ -618,14 +644,13 @@ export async function qualifyAndroid({
     }
     releaseBuild();
     releaseBuild = null;
-    if (
-      !readAuthorization(
-        plan.privateReferences?.androidAcceptanceAuthorizationRef,
-        plan,
-        target,
-        pair
-      )
-    ) {
+    const authorization = readAuthorization(
+      plan.privateReferences?.androidAcceptanceAuthorizationRef,
+      plan,
+      target,
+      pair
+    );
+    if (!authorization) {
       resultFor(
         run,
         selected,
@@ -635,6 +660,8 @@ export async function qualifyAndroid({
       );
       return;
     }
+    stage.authorization = authorization;
+    save();
     for (const api of frozen.apis) {
       const serial = target.qualification.serials[api];
       const old = stage.matrix[api];
