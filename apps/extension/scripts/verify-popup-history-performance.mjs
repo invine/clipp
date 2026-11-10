@@ -11,6 +11,15 @@ const extension = resolve(
   process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "../dist")
 );
 const output = process.env.CLIPP_POPUP_TIMING_OUTPUT;
+const fixtureRows = Number(process.env.CLIPP_POPUP_TIMING_ROWS ?? 43);
+const maxElapsedMs = Number(process.env.CLIPP_POPUP_TIMING_MAX_MS ?? 1000);
+if (
+  !Number.isSafeInteger(fixtureRows) ||
+  fixtureRows < 2 ||
+  !Number.isSafeInteger(maxElapsedMs) ||
+  maxElapsedMs < 1
+)
+  throw new Error("invalid_popup_timing_profile");
 const profile = await mkdtemp(
   join(tmpdir(), "clipp-popup-history-performance-")
 );
@@ -110,13 +119,13 @@ try {
   for (const [surface, width, count, sourceName] of [
     ["popup", 480, 0],
     ["popup", 480, 1],
-    ["popup", 480, 43],
-    ["popup", 480, 43],
-    ["popup", 480, 43],
-    ["popup", 320, 43],
-    ["options", 1440, 43],
-    ["popup", 480, 43, "Extension"],
-    ["popup", 320, 43, "Extension"],
+    ["popup", 480, fixtureRows],
+    ["popup", 480, fixtureRows],
+    ["popup", 480, fixtureRows],
+    ["popup", 320, fixtureRows],
+    ["options", 1440, fixtureRows],
+    ["popup", 480, fixtureRows, "Extension"],
+    ["popup", 320, fixtureRows, "Extension"],
   ]) {
     const page = await context.newPage();
     await page.setViewportSize({
@@ -176,7 +185,7 @@ try {
           .length,
       })
     );
-    if (count === 43 && output) {
+    if (count === fixtureRows && output) {
       await mkdir(output, { recursive: true });
       await page.screenshot({
         path: join(
@@ -202,15 +211,15 @@ try {
     "label fitting must not force synchronous DOM layout for every candidate"
   );
   assert.ok(
-    results.every((result) => result.elapsedMs < 1000),
-    "popup history must render within 1000 ms"
+    results.every((result) => result.elapsedMs < maxElapsedMs),
+    `popup history must render within ${maxElapsedMs} ms`
   );
   assert.ok(
     results
-      .filter((result) => result.count === 43)
+      .filter((result) => result.count === fixtureRows)
       .every(
         (result) =>
-          result.labels.length === 43 &&
+          result.labels.length === fixtureRows &&
           result.labels.every(
             (label) =>
               (!label.visible ||

@@ -21,6 +21,7 @@ import {
 import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
 import { qualifyAndroid } from "./android-qualification.mjs";
+import { deliverChrome, observeChrome } from "./chrome.mjs";
 import {
   electronNativeInventory,
   inspectElectronConfig,
@@ -213,6 +214,11 @@ function planRecord(file, identity) {
   )
     fail("invalid_profile", "Frozen Electron package profile is unsupported");
   if (
+    JSON.stringify(plan.profile.chromeLocal) !==
+    JSON.stringify(supportedProfile.chromeLocal)
+  )
+    fail("invalid_profile", "Frozen Chrome profile is unsupported");
+  if (
     JSON.stringify(plan.profile.candidateGeneratedOutputs) !==
     JSON.stringify(knownGeneratedOutputs)
   )
@@ -275,7 +281,8 @@ function validateRun(record, plan, digest) {
     record.configurationSha256 !== plan.configurationSha256 ||
     !record.stages?.prepare ||
     !record.stages?.commonVerify ||
-    !record.stages?.electronPackage
+    !record.stages?.electronPackage ||
+    !record.stages?.chromeLocal
   )
     fail("invalid_run", "Run record is incompatible with the frozen plan");
   if (
@@ -330,12 +337,11 @@ function summary(run) {
   };
 }
 function stage(run, name, state, detail, file) {
-  run.stages[name] = {
-    ...run.stages[name],
+  Object.assign(run.stages[name], {
     state,
     updatedAt: new Date().toISOString(),
     detail,
-  };
+  });
   run.updatedAt = new Date().toISOString();
   atomically(file, run);
 }
@@ -628,6 +634,7 @@ function newRun(plan, digest) {
       prepare: { state: "pending", attempts: [], updatedAt: null },
       commonVerify: { state: "pending", attempts: [], updatedAt: null },
       electronPackage: { state: "pending", attempts: [], updatedAt: null },
+      chromeLocal: { state: "pending", attempts: [], updatedAt: null },
     },
     targets: Object.fromEntries(
       Object.keys(plan.targets).map((target) => [
@@ -961,7 +968,12 @@ export async function runDelivery(planPath, identity, options = {}) {
     canRecover: () => {
       if (!existsSync(file)) return true;
       const previous = readJson(file, "invalid_run");
-      return ["prepare", "commonVerify", "electronPackage"].every(
+      return [
+        "prepare",
+        "commonVerify",
+        "electronPackage",
+        "chromeLocal",
+      ].every(
         (name) =>
           previous.stages?.[name]?.state !== "running" ||
           (previous.stages[name].attempts.length &&
@@ -974,7 +986,12 @@ export async function runDelivery(planPath, identity, options = {}) {
       ? validateRun(readJson(file, "invalid_run"), plan, digest)
       : newRun(plan, digest);
     if (!existsSync(file)) atomically(file, run);
-    for (const name of ["prepare", "commonVerify", "electronPackage"]) {
+    for (const name of [
+      "prepare",
+      "commonVerify",
+      "electronPackage",
+      "chromeLocal",
+    ]) {
       if (run.stages[name].state !== "running") continue;
       const attempt = run.stages[name].attempts.at(-1);
       if (attempt?.state === "running")
@@ -1071,6 +1088,65 @@ export async function runDelivery(planPath, identity, options = {}) {
             code: error.code || "prerequisite_unavailable",
             message: error.message,
           },
+          file
+        );
+      }
+    }
+    if (run.targets["chrome-local"]) {
+      try {
+        await deliverChrome({
+          plan,
+          run,
+          execute: (bin, args, cwd, environment, timeout, checkId) =>
+            commandAttempt(
+              run,
+              "chromeLocal",
+              bin,
+              args,
+              cwd,
+              environment,
+              timeout,
+              file,
+              checkId
+            ),
+          save: () => atomically(file, run),
+          observe: observeChrome,
+        });
+        if (run.targets["chrome-local"].state === "complete")
+          stage(
+            run,
+            "chromeLocal",
+            "passed",
+            "Chrome destination and selected profile verified",
+            file
+          );
+        else
+          stage(
+            run,
+            "chromeLocal",
+            "blocked",
+            {
+              code: "chrome_handoff_required",
+              message: run.targets["chrome-local"].nextAction,
+            },
+            file
+          );
+      } catch (error) {
+        const blocked =
+          !error.code ||
+          /unavailable|uncertain|resource_owned|ownership/.test(error.code);
+        platformCode ||= blocked ? null : error.code;
+        run.targets["chrome-local"] = {
+          ...run.targets["chrome-local"],
+          state: blocked ? "blocked" : "failed",
+          nextAction: error.message,
+          updatedAt: new Date().toISOString(),
+        };
+        stage(
+          run,
+          "chromeLocal",
+          blocked ? "blocked" : "failed",
+          { code: error.code || "chrome_unavailable", message: error.message },
           file
         );
       }

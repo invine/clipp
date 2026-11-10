@@ -8,7 +8,8 @@ import { chromium } from "@playwright/test";
 import { relayAcceptanceFixture } from "./relay-acceptance-fixture.mjs";
 
 const { extensionPath, transport } = relayAcceptanceFixture(
-  resolve(dirname(fileURLToPath(import.meta.url)), "..")
+  resolve(dirname(fileURLToPath(import.meta.url)), ".."),
+  process.argv[2]
 );
 const profilePath = await mkdtemp(
   join(tmpdir(), "clipp-managed-relay-profile-")

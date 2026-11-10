@@ -94,6 +94,50 @@
       "clipp-trayTemplate-64.png"
     ]
   },
+  "chromeLocal": {
+    "checks": [
+      {
+        "id": "chrome-identity",
+        "script": "apps/extension/scripts/verify-identity-initialization.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-pairing",
+        "script": "apps/extension/scripts/verify-pairing-response.mjs",
+        "artifact": false,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-offscreen-storage",
+        "script": "apps/extension/scripts/verify-offscreen-storage.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-managed-relay",
+        "script": "apps/extension/scripts/verify-managed-relay-mv3.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-populated-history",
+        "script": "apps/extension/scripts/verify-popup-history-performance.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      }
+    ],
+    "historyPerformance": {
+      "fixtureRows": 43,
+      "widths": [480, 320],
+      "optionsWidth": 1440,
+      "standardWidthRepetitions": 3,
+      "longLabel": "Extension",
+      "measurementBoundary": "page navigation through initial ResizeObserver commit",
+      "maxElapsedMs": 1000,
+      "maxSynchronousLabelLayoutReads": 0
+    }
+  },
   "targets": {
     "electron-package": {
       "dependsOn": [],
