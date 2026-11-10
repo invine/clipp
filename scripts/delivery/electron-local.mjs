@@ -1,15 +1,16 @@
 /** Install a verified Electron package at one explicitly selected app path. */
 import { createHash, randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
   lstatSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
 } from "node:fs";
 import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
@@ -51,6 +52,72 @@ function verifyPackageChecks(stage, runRoot) {
         "electron_package_evidence_changed",
         `Electron package check ${id} is unavailable or changed`
       );
+  }
+}
+
+function verifyInstalledChecks(
+  stage,
+  runRoot,
+  checkout,
+  executable,
+  asar,
+  profile
+) {
+  const commands = {
+    "electron-installed-native-webrtc": [
+      executable,
+      path.join(checkout, "tests/harness/electron-packaged-webrtc.cjs"),
+      asar,
+    ],
+    "electron-installed-launch-quit": [
+      process.execPath,
+      path.join(checkout, "tests/harness/electron-installed-quit.mjs"),
+      executable,
+      asar,
+      profile,
+    ],
+  };
+  for (const [id, command] of Object.entries(commands)) {
+    const attempt = stage.attempts?.findLast((item) => item.checkId === id);
+    const log = path.resolve(runRoot, attempt?.log || "");
+    if (
+      !attempt?.passed ||
+      attempt.state !== "passed" ||
+      JSON.stringify(attempt.command) !== JSON.stringify(command) ||
+      !/^[0-9a-f]{64}$/.test(attempt.logSha256 || "") ||
+      !log.startsWith(`${path.resolve(runRoot)}${path.sep}`) ||
+      !existsSync(log) ||
+      !lstatSync(log).isFile() ||
+      sha(readFileSync(log)) !== attempt.logSha256
+    )
+      invalid(
+        "electron_installed_evidence_changed",
+        `Electron installed check ${id} is unavailable or changed`
+      );
+    if (id === "electron-installed-launch-quit") {
+      const observation = readFileSync(log, "utf8")
+        .split(/\r?\n/)
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line)];
+          } catch {
+            return [];
+          }
+        })
+        .findLast(
+          (row) => row?.result === "installed-launch-normal-quit-passed"
+        );
+      if (
+        observation?.executable !== executable ||
+        observation?.profile !== profile ||
+        !Number.isSafeInteger(observation?.pid) ||
+        observation.pid <= 0
+      )
+        invalid(
+          "electron_installed_evidence_changed",
+          "Electron installed Quit observation is missing or mismatched"
+        );
+    }
   }
 }
 
@@ -230,6 +297,8 @@ export async function installElectronLocal({
   const destination = canonicalPath(requested);
   const checkout = canonicalPath(run.checkout);
   const output = canonicalPath(runRoot);
+  const repository = canonicalPath(plan.repository.root);
+  const profileRoot = canonicalPath("/private/tmp");
   if (
     destination === checkout ||
     destination.startsWith(`${checkout}${path.sep}`) ||
@@ -239,6 +308,22 @@ export async function installElectronLocal({
     invalid(
       "electron_destination_invalid",
       "Electron installation must be outside candidate and run store"
+    );
+  if (
+    destination === repository ||
+    destination.startsWith(`${repository}${path.sep}`)
+  )
+    invalid(
+      "electron_destination_invalid",
+      "Electron installation must be outside selected repository"
+    );
+  if (
+    profileRoot === repository ||
+    profileRoot.startsWith(`${repository}${path.sep}`)
+  )
+    invalid(
+      "electron_destination_invalid",
+      "Installed Quit profile root must be outside selected repository"
     );
   const parent = path.dirname(destination);
   if (!existsSync(parent) || !lstatSync(parent).isDirectory())
@@ -257,11 +342,31 @@ export async function installElectronLocal({
         "electron_installed_changed",
         "Installed app differs from the confirmed candidate"
       );
+    const installedBinary = packagedElectronExecutable(destination);
+    if (
+      target.installed?.destination !== destination ||
+      target.installed?.buildIdentity !== receipt.buildIdentity ||
+      target.installed?.appSha256 !== receipt.app.sha256 ||
+      target.installed?.executable !== installedBinary ||
+      target.installed?.profile !== stage.installedProbe?.profile
+    )
+      invalid(
+        "electron_installed_evidence_changed",
+        "Installed Electron receipt identity is incompatible with selected app"
+      );
     if (stage.replacement?.backup && !existsSync(stage.replacement.backup))
       invalid(
         "electron_replacement_uncertain",
         "Retained previous app is missing; inspect replacement recovery"
       );
+    verifyInstalledChecks(
+      stage,
+      runRoot,
+      run.checkout,
+      installedBinary,
+      path.join(destination, "Contents/Resources/app.asar"),
+      target.installed.profile
+    );
     return;
   }
   const auth = authorization(
@@ -280,22 +385,14 @@ export async function installElectronLocal({
     save();
     return;
   }
-  const require = createRequire(
-    path.join(run.checkout, "apps/electron/package.json")
+  const installedQuitHarness = path.join(
+    run.checkout,
+    "tests/harness/electron-installed-quit.mjs"
   );
-  let electronBinary;
-  try {
-    electronBinary = require("electron");
-  } catch {
+  if (!existsSync(installedQuitHarness))
     invalid(
       "electron_runtime_unavailable",
-      "Pinned Electron runtime is unavailable for installed Quit check"
-    );
-  }
-  if (typeof electronBinary !== "string" || !existsSync(electronBinary))
-    invalid(
-      "electron_runtime_unavailable",
-      "Pinned Electron executable is unavailable"
+      "Installed Quit harness is unavailable"
     );
   stage.authorization = auth;
   save();
@@ -380,17 +477,40 @@ export async function installElectronLocal({
       120_000,
       "electron-installed-native-webrtc"
     );
+    const profile = realpathSync(
+      mkdtempSync("/private/tmp/clipp-installed-quit-")
+    );
+    if (
+      profile === repository ||
+      profile.startsWith(`${repository}${path.sep}`)
+    ) {
+      rmSync(profile, { recursive: true, force: true });
+      invalid(
+        "electron_destination_invalid",
+        "Installed Quit profile must be outside selected repository"
+      );
+    }
+    stage.installedProbe = {
+      executable: installedBinary,
+      profile,
+      startedAt: new Date().toISOString(),
+    };
+    save();
     await execute(
       process.execPath,
-      [
-        path.join(run.checkout, "tests/harness/electron-quit.mjs"),
-        path.join(installedAsar, "dist/main.cjs"),
-        electronBinary,
-      ],
+      [installedQuitHarness, installedBinary, installedAsar, profile],
       run.checkout,
       {},
       120_000,
       "electron-installed-launch-quit"
+    );
+    verifyInstalledChecks(
+      stage,
+      runRoot,
+      run.checkout,
+      installedBinary,
+      installedAsar,
+      profile
     );
     if (!installedMatches(destination, receipt.app.sha256))
       invalid(
@@ -404,6 +524,8 @@ export async function installElectronLocal({
         destination,
         buildIdentity: receipt.buildIdentity,
         appSha256: receipt.app.sha256,
+        executable: installedBinary,
+        profile,
         confirmedAt: new Date().toISOString(),
       },
       updatedAt: new Date().toISOString(),
