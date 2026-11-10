@@ -13,16 +13,63 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { installElectronLocal } from "../../scripts/delivery/electron-local.mjs";
+import { installElectronLocal as installAdapter } from "../../scripts/delivery/electron-local.mjs";
 import { acquireOwnership } from "../../scripts/delivery/ownership.mjs";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
+const ownedProfiles = new WeakMap();
+const installedChecks = new Set([
+  "electron-installed-native-webrtc",
+  "electron-installed-launch-quit",
+]);
+
+async function installElectronLocal(options) {
+  try {
+    return await installAdapter({
+      ...options,
+      execute: async (...args) => {
+        const result = await options.execute(...args);
+        const checkId = args.at(-1);
+        if (installedChecks.has(checkId)) {
+          const log = `logs/${checkId}-${options.run.stages.electronLocal.attempts.length}.log`;
+          const content =
+            checkId === "electron-installed-launch-quit"
+              ? JSON.stringify({
+                  result: "installed-launch-normal-quit-passed",
+                  executable: args[1][1],
+                  profile: args[1][3],
+                  pid: 1234,
+                })
+              : `passed ${checkId}`;
+          writeFileSync(path.join(options.plan.outputRoot, log), content);
+          options.run.stages.electronLocal.attempts.push({
+            checkId,
+            log,
+            command: [args[0], ...args[1]],
+            state: "passed",
+            passed: true,
+            logSha256: digest(content),
+          });
+        }
+        return result;
+      },
+    });
+  } finally {
+    const profile = options.run.stages.electronLocal.installedProbe?.profile;
+    if (profile) ownedProfiles.get(options.run)?.add(profile);
+  }
+}
 
 function fixture(t) {
   const base = realpathSync(
     mkdtempSync(path.join(tmpdir(), "clipp-electron-local-"))
   );
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const profiles = new Set();
+  t.after(() => {
+    for (const profile of profiles)
+      rmSync(profile, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  });
   const runRoot = path.join(base, "runs", "run-1");
   const app = path.join(runRoot, "package", "Clipp.app");
   mkdirSync(path.join(app, "Contents", "Resources"), { recursive: true });
@@ -75,6 +122,8 @@ function fixture(t) {
   const destination = path.join(base, "Applications", "Clipp.app");
   const checkout = path.join(base, "checkout");
   mkdirSync(checkout);
+  const repository = path.join(base, "repository");
+  mkdirSync(repository);
   const packageChecks = [
     "electron-package-input",
     "electron-native-provision",
@@ -103,8 +152,10 @@ function fixture(t) {
       electronLocal: { state: "pending", attempts: [] },
     },
   };
+  ownedProfiles.set(run, profiles);
   const plan = {
     outputRoot: runRoot,
+    repository: { root: repository },
     privateReferences: {},
     targets: { "electron-local": { destinationIdentity: destination } },
   };
@@ -144,6 +195,16 @@ function fakeRuntime(f) {
   writeFileSync(
     path.join(f.run.checkout, "apps", "electron", "package.json"),
     JSON.stringify({ name: "clipp-electron" })
+  );
+  mkdirSync(path.join(f.run.checkout, "tests", "harness"), { recursive: true });
+  writeFileSync(
+    path.join(
+      f.run.checkout,
+      "tests",
+      "harness",
+      "electron-installed-quit.mjs"
+    ),
+    "// test harness"
   );
 }
 
@@ -245,6 +306,22 @@ test("Electron local retains the old bundle and confirms the installed candidate
     commands.map((command) => command.id),
     ["electron-installed-native-webrtc", "electron-installed-launch-quit"]
   );
+  assert.equal(
+    commands[1].args[1],
+    path.join(f.destination, "Contents", "MacOS", "Clipp")
+  );
+  assert.equal(
+    commands[1].args[2],
+    path.join(f.destination, "Contents", "Resources", "app.asar")
+  );
+  assert.equal(
+    commands[1].args[3],
+    f.run.targets["electron-local"].installed.profile
+  );
+  assert.equal(
+    f.run.targets["electron-local"].installed.executable,
+    commands[1].args[1]
+  );
   const saved = commands.length;
   await installElectronLocal({
     plan: f.plan,
@@ -256,6 +333,202 @@ test("Electron local retains the old bundle and confirms the installed candidate
     processes: () => [],
   });
   assert.equal(commands.length, saved);
+});
+
+test("tampered installed launch evidence invalidates completed replay", async (t) => {
+  const f = fixture(t);
+  mkdirSync(path.dirname(f.destination), { recursive: true });
+  authorize(f);
+  fakeRuntime(f);
+  await installElectronLocal({
+    plan: f.plan,
+    run: f.run,
+    save() {},
+    processes: () => [],
+    execute: async () => {},
+  });
+  const quit = f.run.stages.electronLocal.attempts.findLast(
+    (item) => item.checkId === "electron-installed-launch-quit"
+  );
+  writeFileSync(path.join(f.runRoot, quit.log), "tampered");
+  await assert.rejects(
+    () =>
+      installElectronLocal({
+        plan: f.plan,
+        run: f.run,
+        save() {},
+        processes: () => [],
+        execute: async () => {
+          throw new Error("unexpected replay");
+        },
+      }),
+    /installed check electron-installed-launch-quit/
+  );
+});
+
+test("installed Quit evidence must state the observed executable and profile", async (t) => {
+  const f = fixture(t);
+  mkdirSync(path.dirname(f.destination), { recursive: true });
+  authorize(f);
+  fakeRuntime(f);
+  await installElectronLocal({
+    plan: f.plan,
+    run: f.run,
+    save() {},
+    processes: () => [],
+    execute: async () => {},
+  });
+  const quit = f.run.stages.electronLocal.attempts.findLast(
+    (item) => item.checkId === "electron-installed-launch-quit"
+  );
+  writeFileSync(
+    path.join(f.runRoot, quit.log),
+    "passed without installed observation"
+  );
+  quit.logSha256 = digest("passed without installed observation");
+  await assert.rejects(
+    () =>
+      installElectronLocal({
+        plan: f.plan,
+        run: f.run,
+        save() {},
+        processes: () => [],
+        execute: async () => {
+          throw new Error("unexpected replay");
+        },
+      }),
+    /installed Quit observation/
+  );
+});
+
+test("missing installed WebRTC evidence invalidates completed replay", async (t) => {
+  const f = fixture(t);
+  mkdirSync(path.dirname(f.destination), { recursive: true });
+  authorize(f);
+  fakeRuntime(f);
+  await installElectronLocal({
+    plan: f.plan,
+    run: f.run,
+    save() {},
+    processes: () => [],
+    execute: async () => {},
+  });
+  const native = f.run.stages.electronLocal.attempts.findLast(
+    (item) => item.checkId === "electron-installed-native-webrtc"
+  );
+  rmSync(path.join(f.runRoot, native.log));
+  await assert.rejects(
+    () =>
+      installElectronLocal({
+        plan: f.plan,
+        run: f.run,
+        save() {},
+        processes: () => [],
+        execute: async () => {
+          throw new Error("unexpected replay");
+        },
+      }),
+    /installed check electron-installed-native-webrtc/
+  );
+});
+
+test("completed receipt cannot redirect launch evidence to another executable", async (t) => {
+  const f = fixture(t);
+  mkdirSync(path.dirname(f.destination), { recursive: true });
+  authorize(f);
+  fakeRuntime(f);
+  await installElectronLocal({
+    plan: f.plan,
+    run: f.run,
+    save() {},
+    processes: () => [],
+    execute: async () => {},
+  });
+  f.run.targets["electron-local"].installed.executable = path.join(
+    f.base,
+    "other",
+    "Clipp"
+  );
+  await assert.rejects(
+    () =>
+      installElectronLocal({
+        plan: f.plan,
+        run: f.run,
+        save() {},
+        processes: () => [],
+        execute: async () => {
+          throw new Error("unexpected replay");
+        },
+      }),
+    /receipt identity is incompatible/
+  );
+});
+
+test("repository-contained destination is rejected despite matching authorization", async (t) => {
+  const f = fixture(t);
+  f.destination = path.join(
+    f.plan.repository.root,
+    "Applications",
+    "Clipp.app"
+  );
+  f.plan.targets["electron-local"].destinationIdentity = f.destination;
+  mkdirSync(path.join(f.destination, "Contents"), { recursive: true });
+  writeFileSync(
+    path.join(f.destination, "Contents", "keep.txt"),
+    "caller source"
+  );
+  authorize(f);
+  fakeRuntime(f);
+  await assert.rejects(
+    () =>
+      installElectronLocal({
+        plan: f.plan,
+        run: f.run,
+        save() {},
+        processes: () => [],
+        execute: async () => {},
+      }),
+    /outside selected repository/
+  );
+  assert.equal(
+    readFileSync(path.join(f.destination, "Contents", "keep.txt"), "utf8"),
+    "caller source"
+  );
+});
+
+test("repository alias cannot hide a selected app destination", async (t) => {
+  const f = fixture(t);
+  const alias = path.join(f.base, "repository-alias");
+  symlinkSync(f.plan.repository.root, alias, "dir");
+  f.destination = path.join(alias, "Clipp.app");
+  f.plan.targets["electron-local"].destinationIdentity = f.destination;
+  mkdirSync(path.join(f.plan.repository.root, "Clipp.app", "Contents"), {
+    recursive: true,
+  });
+  writeFileSync(
+    path.join(f.plan.repository.root, "Clipp.app", "Contents", "keep.txt"),
+    "caller source"
+  );
+  authorize(f);
+  fakeRuntime(f);
+  await assert.rejects(
+    () =>
+      installElectronLocal({
+        plan: f.plan,
+        run: f.run,
+        save() {},
+        processes: () => [],
+        execute: async () => {},
+      }),
+    /outside selected repository/
+  );
+  assert.equal(
+    readFileSync(
+      path.join(f.plan.repository.root, "Clipp.app", "Contents", "keep.txt"),
+      "utf8"
+    ),
+    "caller source"
+  );
 });
 
 test("missing installed Quit runtime blocks before replacement", async (t) => {
@@ -272,7 +545,7 @@ test("missing installed Quit runtime blocks before replacement", async (t) => {
         processes: () => [],
         execute: async () => {},
       }),
-    /Pinned Electron runtime/
+    /Installed Quit harness/
   );
   assert.equal(
     readFileSync(path.join(f.destination, "Contents", "keep.txt"), "utf8"),

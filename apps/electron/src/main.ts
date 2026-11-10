@@ -1,7 +1,9 @@
-import { startElectronRuntime } from "./electronRuntime.js";
+import { prepareInstalledDeliveryProbe } from "./installedDeliveryProbe.js";
 import * as log from "../../../packages/core/logger.js";
 
-void startElectronRuntime()
+prepareInstalledDeliveryProbe();
+void import("./electronRuntime.js")
+  .then(({ startElectronRuntime }) => startElectronRuntime())
   .then((owner) => owner.ready)
   .catch((error) => {
     (log as any).error?.("Clipp bootstrap failed", {
