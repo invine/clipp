@@ -30,6 +30,7 @@ const moduleSha256 = () =>
       "electron.mjs",
       "android-qualification.mjs",
       "android-package.mjs",
+      "android-internal.mjs",
       "chrome.mjs",
     ]
       .map((name) =>
@@ -314,6 +315,7 @@ function configuration(file, root) {
   const referenceKeys = [
     "androidSigningRef",
     "playCredentialRef",
+    "playAuthorizationRef",
     "chromeAuthorizationRef",
     "chromeDebugUrlRef",
     "androidSdkRef",
@@ -406,6 +408,8 @@ function prerequisites(target, profile, config) {
     missing.push("signing:android-internal-requires-upload");
   if (target === "android-internal" && !config.references?.playCredentialRef)
     missing.push("reference:playCredentialRef");
+  if (target === "android-internal" && !config.references?.playAuthorizationRef)
+    missing.push("reference:playAuthorizationRef");
   if (
     process.platform !== profile.supportedHost.platform ||
     !profile.supportedHost.architectures.includes(process.arch)
@@ -494,6 +498,10 @@ function plan(args) {
               : profile.targets[target].signing,
         destinationIdentity:
           config.destinations[profile.targets[target].destination] || null,
+        track:
+          target === "android-internal"
+            ? config.destinations.playTrack || null
+            : undefined,
         profilePath:
           target === "chrome-local"
             ? config.destinations.chromeProfilePath || null
@@ -580,7 +588,7 @@ function plan(args) {
   return { code: "planned", path: destination, plan: record };
 }
 function help() {
-  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--native-diagnostic-change <text> --native-expected-observation <text>] [--native-renewal <absolute decision file>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source. The electron-package target creates a local unsigned DMG and retained app after packaged WebRTC and Quit checks. Chrome-local replaces an authorized stable unpacked directory, then requires selected-profile loaded path, extension ID, build marker and popup confirmation; see docs/delivery.md for private references and recovery. Android qualification uses explicitly selected and authorized acceptance emulators. Android package builds release APK and AAB with the configured upload signing identity; an explicitly selected unsigned-artifact profile produces labeled artifact-only outputs, while android-local can prepare a declared debug APK. Missing or mismatched upload keys block signed packaging. Packaging does not install or publish. Status is read-only.\n`;
+  return `Clipp delivery (Mac)\n\n  npm run delivery -- plan --repo <Clipp root> --config <private JSON> --source <full commit|remote/branch> --target <target> [--target <target>] [--supersedes <plan.json>] [--json]\n  npm run delivery -- run <plan.json|run-id> [--config <private JSON>] [--native-diagnostic-change <text> --native-expected-observation <text>] [--native-renewal <absolute decision file>] [--json]\n  npm run delivery -- status <run-id> --config <private JSON> [--json]\n\nTargets: electron-package, electron-local, chrome-local, android-package, android-local, android-internal.\nPlanning may contact a named Git remote and writes an immutable plan to config.runRoot. It does not build, install, publish, or authorize delivery. Run prepares and verifies the frozen source. The electron-package target creates a local unsigned DMG and retained app after packaged WebRTC and Quit checks. Chrome-local replaces an authorized stable unpacked directory, then requires selected-profile loaded path, extension ID, build marker and popup confirmation; see docs/delivery.md for private references and recovery. Android qualification uses explicitly selected and authorized acceptance emulators. Android package builds release APK and AAB with the configured upload signing identity; an explicitly selected unsigned-artifact profile produces labeled artifact-only outputs, while android-local can prepare a declared debug APK. Missing or mismatched upload keys block signed packaging. The android-internal target requires separate matching private authorization, publishes only to the internal track, and completes after published release readback. Status is read-only.\n`;
 }
 function runOptions(args, { status = false } = {}) {
   const [selector, ...rest] = args;

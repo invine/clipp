@@ -22,6 +22,7 @@ import path from "node:path";
 import { acquireOwnership } from "./ownership.mjs";
 import { qualifyAndroid } from "./android-qualification.mjs";
 import { packageAndroid } from "./android-package.mjs";
+import { publishInternal } from "./android-internal.mjs";
 import { deliverChrome, observeChrome } from "./chrome.mjs";
 import {
   electronNativeInventory,
@@ -289,6 +290,7 @@ function validateRun(record, plan, digest) {
     !record.stages?.commonVerify ||
     !record.stages?.electronPackage ||
     !record.stages?.androidPackage ||
+    !record.stages?.androidInternal ||
     !record.stages?.chromeLocal
   )
     fail("invalid_run", "Run record is incompatible with the frozen plan");
@@ -642,6 +644,7 @@ function newRun(plan, digest) {
       commonVerify: { state: "pending", attempts: [], updatedAt: null },
       electronPackage: { state: "pending", attempts: [], updatedAt: null },
       androidPackage: { state: "pending", attempts: [], updatedAt: null },
+      androidInternal: { state: "pending", attempts: [], updatedAt: null },
       chromeLocal: { state: "pending", attempts: [], updatedAt: null },
     },
     targets: Object.fromEntries(
@@ -1223,6 +1226,38 @@ export async function runDelivery(planPath, identity, options = {}) {
             file
           );
         }
+      }
+    }
+    if (
+      run.targets["android-internal"] &&
+      run.stages.androidPackage.state === "passed"
+    ) {
+      try {
+        await publishInternal({ plan, run, save: () => atomically(file, run) });
+      } catch (error) {
+        const blocked =
+          /unavailable|uncertain|unauthorized|pending|resource_owned|ownership/.test(
+            error.code || ""
+          );
+        platformCode ||= blocked
+          ? null
+          : error.code || "play_publication_failed";
+        run.targets["android-internal"] = {
+          ...run.targets["android-internal"],
+          state: blocked ? "blocked" : "failed",
+          nextAction: error.message,
+          updatedAt: new Date().toISOString(),
+        };
+        stage(
+          run,
+          "androidInternal",
+          blocked ? "blocked" : "failed",
+          {
+            code: error.code || "play_publication_failed",
+            message: error.message,
+          },
+          file
+        );
       }
     }
     return {
