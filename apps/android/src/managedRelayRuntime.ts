@@ -6,6 +6,7 @@ import {
   type RelayState,
 } from "@core/network/managedRelays";
 import type { AndroidManagedRelayAuth } from "./managedRelayAuth";
+import { logRelayRenewal } from "@core/network/managedRelayDiagnostics";
 
 export type AndroidManagedRelayHost = Pick<
   ManagedRelayAdapter,
@@ -87,5 +88,6 @@ export function createAndroidManagedRelayAdapter(
     interactiveLogin: (url) => auth.login(url),
     openAccount: (url) => auth.openAccount(url),
     onStateChange,
+    onRenewalDiagnostic: logRelayRenewal,
   };
 }

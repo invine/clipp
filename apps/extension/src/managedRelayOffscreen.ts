@@ -4,6 +4,7 @@ import {
   type ManagedRelayAdapter,
   type RelayState,
 } from "../../../packages/core/network/managedRelays";
+import { logRelayRenewal } from "../../../packages/core/network/managedRelayDiagnostics";
 import { MANAGED_RELAY_PORT, parseAccessReply } from "./managedRelayBridge";
 import {
   extensionRelayTransportAllows,
@@ -117,6 +118,7 @@ export function createExtensionManagedRelayController(options: {
     async openAccount() {
       throw new Error("relay_account_requires_ui_action");
     },
+    onRenewalDiagnostic: logRelayRenewal,
     onStateChange(states) {
       const endpoints = new Map(
         controller

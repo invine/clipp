@@ -1,5 +1,9 @@
 import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { canonicalDiscoveryUrl } from "@core/network/managedRelays";
+import {
+  logRelayAccess,
+  relayRefreshFailureReason,
+} from "@core/network/managedRelayDiagnostics";
 import { parseManagedRelayTokenResponse } from "@core/network/managedRelayTokens";
 
 /** This value is also pinned by AndroidManifest.xml and the relay public-client configuration. */
@@ -132,9 +136,18 @@ export class AndroidManagedRelayAuth {
     this.workFence?.assertOpen();
     endpoint = canonicalDiscoveryUrl(endpoint);
     const cached = this.access.get(endpoint);
-    if (cached && cached.expiresAt - this.now() > 60_000) return cached.token;
+    if (cached && cached.expiresAt - this.now() > 60_000) {
+      logRelayAccess(
+        { phase: "cached", expiresAt: cached.expiresAt },
+        this.now()
+      );
+      return cached.token;
+    }
     const existing = this.flights.get(endpoint);
-    if (existing) return existing;
+    if (existing) {
+      logRelayAccess({ phase: "refresh_joined" }, this.now());
+      return existing;
+    }
     const flight = this.refresh(endpoint, signal);
     this.flights.set(endpoint, flight);
     try {
@@ -155,6 +168,10 @@ export class AndroidManagedRelayAuth {
       try {
         old = (await this.bridge.readCredential(endpoint)) ?? undefined;
       } catch {
+        logRelayAccess(
+          { phase: "credential_unavailable", state: "unreadable" },
+          this.now()
+        );
         await this.serializedCredential(endpoint, async () => {
           if (
             !this.runtimeCurrent(runtimeGeneration) ||
@@ -175,7 +192,13 @@ export class AndroidManagedRelayAuth {
       (this.generations.get(endpoint) ?? 0) !== generation
     )
       return null;
-    if (!old) return null;
+    if (!old) {
+      logRelayAccess(
+        { phase: "credential_unavailable", state: "missing" },
+        this.now()
+      );
+      return null;
+    }
     // A refresh can consume its input even when the response or later save fails.
     // Remove the durable old token before sending it, so restart cannot replay it.
     const erased = await this.serializedCredential(endpoint, async () => {
@@ -184,7 +207,15 @@ export class AndroidManagedRelayAuth {
         (this.generations.get(endpoint) ?? 0) !== generation
       )
         return false;
-      await this.bridge.eraseCredential(endpoint);
+      try {
+        await this.bridge.eraseCredential(endpoint);
+      } catch (error) {
+        logRelayAccess(
+          { phase: "credential_unavailable", state: "erase_failed" },
+          this.now()
+        );
+        throw error;
+      }
       return true;
     });
     if (
@@ -196,6 +227,7 @@ export class AndroidManagedRelayAuth {
     this.renewable.delete(endpoint);
     let result: Awaited<ReturnType<typeof tokenResponse>>;
     try {
+      logRelayAccess({ phase: "refresh_started" }, this.now());
       result = await this.postToken(
         endpoint,
         {
@@ -211,6 +243,10 @@ export class AndroidManagedRelayAuth {
         (this.generations.get(endpoint) ?? 0) !== generation
       )
         return null;
+      logRelayAccess(
+        { phase: "refresh_failed", reason: relayRefreshFailureReason(error) },
+        this.now()
+      );
       this.access.delete(endpoint);
       if (error instanceof Error && error.message === "invalid_credentials")
         return null;
@@ -255,6 +291,7 @@ export class AndroidManagedRelayAuth {
       (this.generations.get(endpoint) ?? 0) !== generation
     )
       return null;
+    logRelayAccess({ phase: "refresh_succeeded" }, this.now());
     return result.access_token;
   }
 

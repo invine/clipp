@@ -1,6 +1,10 @@
 import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRelays";
 import {
+  relayRefreshFailureReason,
+  type RelayAccessDiagnostic,
+} from "../../../packages/core/network/managedRelayDiagnostics";
+import {
   parseManagedRelayTokenResponse,
   type ManagedRelayTokenResponse,
 } from "../../../packages/core/network/managedRelayTokens";
@@ -36,6 +40,7 @@ type CredentialOptions = {
   now?: () => number;
   randomBytes?: (length: number) => Uint8Array;
   digest?: (bytes: Uint8Array) => Promise<Uint8Array>;
+  onAccessDiagnostic?(event: RelayAccessDiagnostic): void;
 };
 
 function encodeBase64Url(bytes: Uint8Array): string {
@@ -192,7 +197,13 @@ export function createExtensionManagedRelayCredentials(
       assertCurrent(runtimeGeneration);
       const credential = await read(discoveryUrl);
       assertCurrent(runtimeGeneration);
-      if (!credential || credential.status !== "ready") return null;
+      if (!credential || credential.status !== "ready") {
+        options.onAccessDiagnostic?.({
+          phase: "credential_unavailable",
+          state: credential?.status ?? "missing",
+        });
+        return null;
+      }
       // Durable marker makes a service-worker crash or uncertain HTTP response fail closed.
       await storage.write(key(discoveryUrl), {
         status: "refreshing",
@@ -204,15 +215,22 @@ export function createExtensionManagedRelayCredentials(
         client_id: "extension",
         refresh_token: credential.refreshToken,
       });
+      options.onAccessDiagnostic?.({ phase: "refresh_started" });
       try {
-        return await save(
+        const token = await save(
           discoveryUrl,
           requireToken(
             await options.fetchToken(tokenEndpoint(discoveryUrl), form)
           ),
           runtimeGeneration
         );
-      } catch {
+        options.onAccessDiagnostic?.({ phase: "refresh_succeeded" });
+        return token;
+      } catch (error) {
+        options.onAccessDiagnostic?.({
+          phase: "refresh_failed",
+          reason: relayRefreshFailureReason(error),
+        });
         return null;
       }
     });
@@ -223,7 +241,10 @@ export function createExtensionManagedRelayCredentials(
     operation: () => Promise<string | null>
   ): Promise<string | null> {
     const pending = flights.get(discoveryUrl);
-    if (pending) return pending;
+    if (pending) {
+      options.onAccessDiagnostic?.({ phase: "refresh_joined" });
+      return pending;
+    }
     const flight = operation().finally(() => {
       flights.delete(discoveryUrl);
     });
@@ -250,8 +271,13 @@ export function createExtensionManagedRelayCredentials(
         !requestOptions?.forceRefresh &&
         cached &&
         cached.expiresAt - now() > 15_000
-      )
+      ) {
+        options.onAccessDiagnostic?.({
+          phase: "cached",
+          expiresAt: cached.expiresAt,
+        });
         return cached.token;
+      }
       const token = await singleFlight(url, () =>
         refresh(url, runtimeGeneration)
       );

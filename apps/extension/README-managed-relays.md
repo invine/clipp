@@ -13,6 +13,13 @@ credential access. The offscreen document receives short Access Tokens over a
 validated port, and popup/options receive configuration and status only. Chrome
 extension storage is not an OS keychain.
 
+For renewal diagnosis, enable Debug logging and show Verbose messages in Chrome
+DevTools. Inspect `relay.session_renewal` in the offscreen document console and
+`relay.access_token` in the service worker console. Compare the timer's
+`scheduledAt`, actual `at` and `sessionExpiresAt` timestamps (Unix milliseconds),
+then look for cache reuse, OAuth refresh and relay authentication outcomes.
+These events exclude tokens, account identifiers and relay addresses.
+
 Run `npm --workspace apps/extension run test:managed-relays` to build and check
 the empty first-adoption configuration, popup/options message boundary,
 content-script storage isolation and offscreen recreation in Chrome. The probe

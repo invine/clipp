@@ -1,4 +1,5 @@
 import { shell } from "electron";
+import { logRelayRenewal } from "../../../packages/core/network/managedRelayDiagnostics.js";
 import {
   acceptanceTransportAllows,
   type RelayAcceptanceTransport,
@@ -73,5 +74,6 @@ export function createElectronManagedRelayAdapter(options: {
     unregister: (connection, signal) =>
       options.host().unregister(connection, signal),
     onStateChange: options.onStateChange,
+    onRenewalDiagnostic: logRelayRenewal,
   };
 }
