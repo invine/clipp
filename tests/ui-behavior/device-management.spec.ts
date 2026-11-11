@@ -21,6 +21,47 @@ test("device pairing actions are available in the page header", async ({
   await expect(page.getByText("This installation")).toHaveCount(0);
 });
 
+test("Devices header buttons share a height at default and Android target sizes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/device-management.html");
+  const header = page.locator("header.devices-topbar");
+  const heights = async () =>
+    Promise.all(
+      ["Open navigation", "Pair this device", "Show my QR"].map(
+        async (name) =>
+          (await header.getByRole("button", { name }).boundingBox())!.height
+      )
+    );
+
+  for (const target of [40, 52]) {
+    await page.evaluate((size) => {
+      document.documentElement.style.setProperty(
+        "--clipp-target-min",
+        `${size}px`
+      );
+    }, target);
+    const sizes = await heights();
+    expect(sizes[1]).toBe(sizes[0]);
+    expect(sizes[2]).toBe(sizes[0]);
+    expect(sizes[0]).toBeGreaterThanOrEqual(Math.max(44, target));
+    const visualHeights = await header
+      .locator(".device-header-actions .header-action-face")
+      .evaluateAll((faces) =>
+        faces.map((face) => face.getBoundingClientRect().height)
+      );
+    expect(visualHeights).toEqual([38, 38]);
+  }
+
+  await header
+    .getByRole("button", { name: "Pair this device" })
+    .evaluate((button) => (button.style.fontSize = "32px"));
+  const enlarged = await heights();
+  expect(enlarged[1]).toBe(enlarged[0]);
+  expect(enlarged[2]).toBe(enlarged[0]);
+});
+
 test("a trusted device menu exposes its full peer ID and copy action", async ({
   page,
 }) => {

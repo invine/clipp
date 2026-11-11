@@ -1,5 +1,204 @@
 import { expect, test } from "@playwright/test";
 
+test("each compact header keeps its visible buttons at one height", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/relay-address.html");
+
+  for (const target of [40, 52]) {
+    await page.evaluate((size) => {
+      document.documentElement.style.setProperty(
+        "--clipp-target-min",
+        `${size}px`
+      );
+    }, target);
+    for (const destination of ["History", "Devices", "Settings", "Relays"]) {
+      await page.getByRole("button", { name: "Open navigation" }).click();
+      await page
+        .getByRole("navigation", { name: "Clipp destinations" })
+        .getByRole("button", { name: destination })
+        .click();
+      const heights = await page
+        .locator("header.workspace-topbar button:visible")
+        .evaluateAll((buttons) =>
+          buttons.map((button) => button.getBoundingClientRect().height)
+        );
+      expect(heights.length).toBeGreaterThan(1);
+      for (const height of heights)
+        expect(height, `${destination} at ${target}px`).toBeCloseTo(
+          heights[0],
+          1
+        );
+      if (destination === "Relays") {
+        const faceHeight = await page
+          .locator("header .relay-header-add .header-action-face")
+          .evaluate((face) => face.getBoundingClientRect().height);
+        expect(faceHeight).toBe(38);
+      }
+    }
+  }
+});
+
+test("History, Devices, Settings, and Relays share one header height at each viewport", async ({
+  page,
+}) => {
+  for (const width of [390, 768, 1440]) {
+    for (const target of [40, 52]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/relay-address.html");
+      await page.evaluate((size) => {
+        document.documentElement.style.setProperty(
+          "--clipp-target-min",
+          `${size}px`
+        );
+      }, target);
+      const heights: number[] = [];
+      for (const destination of ["History", "Devices", "Settings", "Relays"]) {
+        const nav = page.getByRole("navigation", {
+          name: "Clipp destinations",
+        });
+        if (!(await nav.isVisible()))
+          await page.getByRole("button", { name: "Open navigation" }).click();
+        await nav.getByRole("button", { name: destination }).click();
+        const height = await page
+          .locator("header.workspace-topbar")
+          .evaluate((header) => header.getBoundingClientRect().height);
+        heights.push(height);
+      }
+      for (const height of heights)
+        expect(height, `${width}px viewport, ${target}px target`).toBeCloseTo(
+          heights[0],
+          1
+        );
+    }
+  }
+});
+
+test("the Clipp mark and leading header content align across destinations", async ({
+  page,
+}) => {
+  for (const width of [320, 390, 768, 1100, 1101, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/relay-address.html");
+    for (const target of [40, 52]) {
+      await page.evaluate((size) => {
+        document.documentElement.style.setProperty(
+          "--clipp-target-min",
+          `${size}px`
+        );
+      }, target);
+      const positions: {
+        destination: string;
+        icon: number;
+        content: number;
+      }[] = [];
+      for (const destination of ["History", "Devices", "Settings", "Relays"]) {
+        const nav = page.getByRole("navigation", {
+          name: "Clipp destinations",
+        });
+        if (!(await nav.isVisible()))
+          await page.getByRole("button", { name: "Open navigation" }).click();
+        await nav.getByRole("button", { name: destination }).click();
+        const position = await page.evaluate((desktop) => {
+          const icon = document.querySelector(
+            desktop
+              ? ".workspace-brand .app-logo img"
+              : "header .navigation-toggle img"
+          )!;
+          const content = document.querySelector(
+            "header .workspace-current-title, header .search-field"
+          )!;
+          return {
+            icon: icon.getBoundingClientRect().left,
+            content: content.getBoundingClientRect().left,
+          };
+        }, width > 1100);
+        positions.push({ destination, ...position });
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth
+          ),
+          `${width}px ${destination} overflow`
+        ).toBe(true);
+      }
+      for (const position of positions) {
+        expect(
+          position.icon,
+          `${width}px ${target}px target ${position.destination} icon`
+        ).toBeCloseTo(positions[0].icon, 1);
+        expect(
+          position.content,
+          `${width}px ${target}px target ${position.destination} header content`
+        ).toBeCloseTo(positions[0].content, 1);
+      }
+    }
+  }
+});
+
+test("desktop navigation stays visible across all destinations and folds on resize", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/relay-address.html");
+  const nav = page.getByRole("navigation", { name: "Clipp destinations" });
+  const toggle = page.getByRole("button", { name: "Open navigation" });
+
+  for (const destination of ["History", "Devices", "Settings", "Relays"]) {
+    await expect(nav).toBeVisible();
+    await expect(toggle).toBeHidden();
+    await nav.getByRole("button", { name: destination }).click();
+    await expect(
+      nav.getByRole("button", { name: destination })
+    ).toHaveAttribute("aria-current", "page");
+    const columns = await page.evaluate(() => ({
+      sidebarRight: document
+        .querySelector(".workspace-sidebar")!
+        .getBoundingClientRect().right,
+      contentLeft: document
+        .querySelector(".workspace-content")!
+        .getBoundingClientRect().left,
+      overflows: document.documentElement.scrollWidth > innerWidth,
+    }));
+    expect(columns.contentLeft).toBeGreaterThanOrEqual(
+      columns.sidebarRight - 1
+    );
+    expect(columns.overflows).toBe(false);
+  }
+
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeVisible();
+  await page.setViewportSize({ width: 1101, height: 900 });
+  await expect(nav).toBeVisible();
+  await expect(toggle).toBeHidden();
+  await page.setViewportSize({ width: 768, height: 900 });
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(nav).toBeVisible();
+  await nav.getByRole("button", { name: "History" }).click();
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeFocused();
+
+  await toggle.click();
+  await expect(nav).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(nav).toBeVisible();
+  await expect(toggle).toBeHidden();
+  await expect(page.locator(".navigation-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
+  await expect(nav.getByRole("button", { name: "History" })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
+  await page.setViewportSize({ width: 768, height: 900 });
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeVisible();
+});
+
 for (const width of [1440, 768, 390]) {
   test(`Relays is a dedicated destination at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

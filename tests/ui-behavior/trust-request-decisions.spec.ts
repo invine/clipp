@@ -353,23 +353,19 @@ test("navigation shows the current incoming request count on Devices", async ({
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/trust-requests.html?devices");
-  await page.getByRole("button", { name: "Open navigation" }).click();
   const nav = page.getByRole("navigation", { name: "Clipp destinations" });
+  await expect(nav).toBeVisible();
   const devices = nav.getByRole("button", { name: /^Devices/ });
   await expect(devices).toHaveText("Devices (1)");
   await expect(nav.getByRole("button", { name: "Requests" })).toHaveCount(0);
   await expect(nav.getByRole("button", { name: "Pinned" })).toHaveCount(0);
   await expect(nav.getByRole("button", { name: "Links" })).toHaveCount(0);
-  await page.locator(".workspace-navigation-scrim").click();
   await page
     .getByRole("button", { name: "Publish two pending requests" })
     .click();
-  await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(devices).toHaveText("Devices (2)");
-  await page.locator(".workspace-navigation-scrim").click();
   await page
     .getByRole("button", { name: "Publish no pending requests" })
     .click();
-  await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(devices).toHaveText("Devices");
 });

@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-test("the Clipp mark opens navigation on History and remains available on every destination", async ({
+test("the Clipp mark opens compact navigation on History and remains available on every destination", async ({
   page,
 }) => {
-  for (const width of [390, 1200]) {
+  for (const width of [390, 768]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/history-mutations.html?history");
 
@@ -24,7 +24,7 @@ test("the Clipp mark opens navigation on History and remains available on every 
       page.getByRole("button", { name: "Open navigation" })
     ).toBeFocused();
 
-    for (const destination of ["Settings", "Devices", "Requests"] as const) {
+    for (const destination of ["Settings", "Devices", "Relays"] as const) {
       await page.getByRole("button", { name: "Open navigation" }).click();
       await navigation.getByRole("button", { name: destination }).click();
       await expect(

@@ -35,6 +35,7 @@ test("notification selection waits for request authority and returns to the susp
 test("notification availability failures stay visible until refreshed and permission results are confirmed", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
   await page.goto("/notification-journeys.html");
   await page.getByText("Pairing diagnostics", { exact: true }).click();
   await expect(
