@@ -300,3 +300,34 @@ test.describe("Trust Request sent time", () => {
     await expect(card.getByText("Unavailable", { exact: true })).toBeVisible();
   });
 });
+
+test("same-named Trust Requests have independently identifiable decision actions", async ({
+  page,
+}) => {
+  await page.goto("/trust-requests.html?devices");
+  await page
+    .getByRole("button", { name: "Publish same-named requests" })
+    .click();
+  const card = page.getByRole("region", { name: "Trust requests" });
+  await expect(
+    card.getByRole("button", {
+      name: "Approve request from Peer One (Peer ID: peer-one)",
+      exact: true,
+    })
+  ).toBeVisible();
+  await expect(
+    card.getByRole("button", {
+      name: "Approve request from Peer One (Peer ID: peer-two)",
+      exact: true,
+    })
+  ).toBeVisible();
+  await card
+    .getByRole("button", {
+      name: "Reject request from Peer One (Peer ID: peer-two)",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByTestId("trust-effects")).toHaveText(
+    "reject:peer-two:request-two"
+  );
+});

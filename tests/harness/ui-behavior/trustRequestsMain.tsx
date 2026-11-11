@@ -191,6 +191,23 @@ function ScenarioControls({
         type="button"
         onClick={() =>
           adapter.publish({
+            pending: [
+              initialRequest,
+              {
+                deviceId: "peer-two",
+                deviceName: "Peer One",
+                requestVersion: "request-two",
+              },
+            ],
+          })
+        }
+      >
+        Publish same-named requests
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
             pending: [{ ...initialRequest, issuedAtUnixMs: "1704067200000" }],
           })
         }

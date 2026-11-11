@@ -1475,6 +1475,62 @@ export function ClipboardApp({
     session.open({ kind: "peer-id", entity: deviceId, origin });
   }
 
+  function renderRequestAvailability(deviceView: boolean) {
+    const retry = onRetryRequests || onRetryInitialization || onRetryRuntime;
+    const unavailable = (
+      <>
+        <p role="alert">
+          {requestsUnavailable
+            ? "Requests are unavailable. Retry to refresh the current list."
+            : "Requests are unavailable until this installation is ready."}
+        </p>
+        {retry && (
+          <button
+            type="button"
+            disabled={sessionState.recoveryAttempts["requests:read"]?.pending}
+            onClick={() => void session.retryRecovery("requests:read", retry)}
+          >
+            Retry Requests
+          </button>
+        )}
+        {sessionState.recoveryAttempts["requests:read"]?.error && (
+          <p role="status">
+            Requests refresh could not be confirmed. Retry again.
+          </p>
+        )}
+      </>
+    );
+    return (
+      <>
+        {trustRequestBehavior.visibleFeedback.map((item) => (
+          <p
+            className={deviceView ? "device-request-feedback" : undefined}
+            key={`${item.deviceId}:${item.requestVersion}`}
+            role="status"
+            style={deviceView ? undefined : { overflowWrap: "anywhere" }}
+          >
+            {item.message}
+          </p>
+        ))}
+        {requestsLoading && (
+          <p
+            className={deviceView ? "device-request-feedback" : undefined}
+            role="status"
+          >
+            Loading Requests…
+          </p>
+        )}
+        {!requestsLoading &&
+          (requestsUnavailable || !identityReady) &&
+          (deviceView ? (
+            <div className="device-request-feedback">{unavailable}</div>
+          ) : (
+            unavailable
+          ))}
+      </>
+    );
+  }
+
   function renderDestination() {
     return (
       <>
@@ -1539,54 +1595,7 @@ export function ClipboardApp({
         )}
         {sessionState.destination === "devices" && (
           <>
-            {trustRequestBehavior.visibleFeedback.map((item) => (
-              <p
-                className="device-request-feedback"
-                key={`${item.deviceId}:${item.requestVersion}`}
-                role="status"
-              >
-                {item.message}
-              </p>
-            ))}
-            {requestsLoading && (
-              <p className="device-request-feedback" role="status">
-                Loading Requests…
-              </p>
-            )}
-            {!requestsLoading && (requestsUnavailable || !identityReady) && (
-              <div className="device-request-feedback">
-                <p role="alert">
-                  {requestsUnavailable
-                    ? "Requests are unavailable. Retry to refresh the current list."
-                    : "Requests are unavailable until this installation is ready."}
-                </p>
-                {(onRetryRequests ||
-                  onRetryInitialization ||
-                  onRetryRuntime) && (
-                  <button
-                    type="button"
-                    disabled={
-                      sessionState.recoveryAttempts["requests:read"]?.pending
-                    }
-                    onClick={() =>
-                      void session.retryRecovery(
-                        "requests:read",
-                        (onRetryRequests ||
-                          onRetryInitialization ||
-                          onRetryRuntime)!
-                      )
-                    }
-                  >
-                    Retry Requests
-                  </button>
-                )}
-                {sessionState.recoveryAttempts["requests:read"]?.error && (
-                  <p role="status">
-                    Requests refresh could not be confirmed. Retry again.
-                  </p>
-                )}
-              </div>
-            )}
+            {renderRequestAvailability(true)}
             {pending.length > 0 && (
               <section
                 className="device-section device-trust-requests"
@@ -1628,7 +1637,7 @@ export function ClipboardApp({
                       <div className="device-request-actions">
                         <button
                           type="button"
-                          aria-label={`Reject request from ${req.deviceName || req.deviceId}`}
+                          aria-label={`Reject request from ${req.deviceName || "Unknown device"} (Peer ID: ${req.deviceId})`}
                           disabled={
                             !identityReady ||
                             requestsLoading ||
@@ -1644,7 +1653,7 @@ export function ClipboardApp({
                         <button
                           type="button"
                           className="device-request-approve"
-                          aria-label={`Approve request from ${req.deviceName || req.deviceId}`}
+                          aria-label={`Approve request from ${req.deviceName || "Unknown device"} (Peer ID: ${req.deviceId})`}
                           disabled={
                             !identityReady ||
                             requestsLoading ||
@@ -1679,50 +1688,7 @@ export function ClipboardApp({
                 devices={devices}
                 onDismiss={onDismissPairingOutcome}
               />
-              {trustRequestBehavior.visibleFeedback.map((item) => (
-                <p
-                  key={`${item.deviceId}:${item.requestVersion}`}
-                  role="status"
-                  style={{ overflowWrap: "anywhere" }}
-                >
-                  {item.message}
-                </p>
-              ))}
-              {requestsLoading && <p role="status">Loading Requests…</p>}
-              {!requestsLoading && (requestsUnavailable || !identityReady) && (
-                <>
-                  <p role="alert">
-                    {requestsUnavailable
-                      ? "Requests are unavailable. Retry to refresh the current list."
-                      : "Requests are unavailable until this installation is ready."}
-                  </p>
-                  {(onRetryRequests ||
-                    onRetryInitialization ||
-                    onRetryRuntime) && (
-                    <button
-                      type="button"
-                      disabled={
-                        sessionState.recoveryAttempts["requests:read"]?.pending
-                      }
-                      onClick={() =>
-                        void session.retryRecovery(
-                          "requests:read",
-                          (onRetryRequests ||
-                            onRetryInitialization ||
-                            onRetryRuntime)!
-                        )
-                      }
-                    >
-                      Retry Requests
-                    </button>
-                  )}
-                  {sessionState.recoveryAttempts["requests:read"]?.error && (
-                    <p role="status">
-                      Requests refresh could not be confirmed. Retry again.
-                    </p>
-                  )}
-                </>
-              )}
+              {renderRequestAvailability(false)}
               {!requestsLoading &&
                 !requestsUnavailable &&
                 identityReady &&
