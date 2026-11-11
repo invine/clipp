@@ -245,3 +245,40 @@ test("Devices distinguishes unavailable and loading requests from an empty list"
     )
   ).toBeVisible();
 });
+
+test("desktop returns to its two-column Devices layout when the last request clears", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/trust-requests.html?devices");
+  const local = page.getByRole("region", { name: "This device" });
+  const trusted = page.getByRole("region", { name: "Trusted devices" });
+  await page
+    .getByRole("button", { name: "Publish no pending requests" })
+    .click();
+  const originalLocal = await local.boundingBox();
+  const originalTrusted = await trusted.boundingBox();
+  expect(originalLocal).not.toBeNull();
+  expect(originalTrusted).not.toBeNull();
+  expect(originalTrusted!.x).toBeGreaterThan(
+    originalLocal!.x + originalLocal!.width
+  );
+  await page
+    .getByRole("button", { name: "Publish first pending request" })
+    .click();
+  const card = page.getByRole("region", { name: "Trust requests" });
+  await expect(card).toBeVisible();
+  const localWithRequest = await local.boundingBox();
+  const cardBox = await card.boundingBox();
+  const trustedWithRequest = await trusted.boundingBox();
+  expect(cardBox!.y).toBeGreaterThan(localWithRequest!.y);
+  expect(trustedWithRequest!.y).toBeGreaterThan(cardBox!.y);
+  await page
+    .getByRole("button", { name: "Publish no pending requests" })
+    .click();
+  await expect(card).toHaveCount(0);
+  const restoredLocal = await local.boundingBox();
+  const restoredTrusted = await trusted.boundingBox();
+  expect(restoredLocal).toEqual(originalLocal);
+  expect(restoredTrusted).toEqual(originalTrusted);
+});
