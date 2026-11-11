@@ -13,8 +13,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const cli = path.resolve("scripts/delivery.mjs");
+const fixtureHost = path.resolve("tests/tooling/fixtureDeliveryHost.cjs");
 function command(bin, args, cwd) {
-  return spawnSync(bin, args, {
+  const commandArgs =
+    bin === process.execPath && args[0] === cli
+      ? ["--require", fixtureHost, ...args]
+      : args;
+  return spawnSync(bin, commandArgs, {
     cwd,
     encoding: "utf8",
     timeout: 120_000,

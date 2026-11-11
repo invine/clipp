@@ -16,8 +16,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const cli = path.resolve("scripts/delivery.mjs");
+const fixtureHost = path.resolve("tests/tooling/fixtureDeliveryHost.cjs");
 function command(bin, args, cwd, env = {}) {
-  return spawnSync(bin, args, {
+  const commandArgs =
+    bin === process.execPath && args[0] === cli
+      ? ["--require", fixtureHost, ...args]
+      : args;
+  return spawnSync(bin, commandArgs, {
     cwd,
     encoding: "utf8",
     env: { ...process.env, HUSKY: "0", ...env },
@@ -975,6 +980,10 @@ test("an edited run record cannot redirect replay into the caller checkout", (t)
 });
 
 test("an unwritable run store blocks before candidate preparation", (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip("root bypasses directory mode bits");
+    return;
+  }
   const f = fixture(t);
   chmodSync(f.store, 0o500);
   let result;
@@ -1077,11 +1086,15 @@ test("a failed UI gate retains its diagnostics and can resume without replaying 
 
 test("a second process cannot run the same plan while the first owns it", async (t) => {
   const f = fixture(t);
-  const child = spawn(process.execPath, [cli, "run", f.plan.path, "--json"], {
-    cwd: f.repo,
-    env: { ...process.env, HUSKY: "0", CLIPP_VERIFY_DELAY_MS: "1600" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child = spawn(
+    process.execPath,
+    ["--require", fixtureHost, cli, "run", f.plan.path, "--json"],
+    {
+      cwd: f.repo,
+      env: { ...process.env, HUSKY: "0", CLIPP_VERIFY_DELAY_MS: "1600" },
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  );
   let childOutput = "";
   child.stdout.on("data", (part) => {
     childOutput += part;
@@ -1115,12 +1128,20 @@ test("an edited saved plan cannot select new inputs before first execution", (t)
 });
 
 test("interrupted owner waits for its running command before resuming and retains its attempt", async (t) => {
+  if (process.platform !== "darwin") {
+    t.skip("the frozen delivery host uses macOS process-group recovery");
+    return;
+  }
   const f = fixture(t);
-  const child = spawn(process.execPath, [cli, "run", f.plan.path, "--json"], {
-    cwd: f.repo,
-    env: { ...process.env, HUSKY: "0", CLIPP_VERIFY_DELAY_MS: "1800" },
-    stdio: "ignore",
-  });
+  const child = spawn(
+    process.execPath,
+    ["--require", fixtureHost, cli, "run", f.plan.path, "--json"],
+    {
+      cwd: f.repo,
+      env: { ...process.env, HUSKY: "0", CLIPP_VERIFY_DELAY_MS: "1800" },
+      stdio: "ignore",
+    }
+  );
   const record = path.join(f.store, "runs", f.plan.plan.id, "run.json");
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
@@ -1144,12 +1165,11 @@ test("interrupted owner waits for its running command before resuming and retain
   assert.equal(JSON.parse(uncertain.stdout).code, "ownership_uncertain");
   await new Promise((resolve) => setTimeout(resolve, 2100));
   const resumed = delivery(["run", f.plan.path], f.repo);
+  const resumedResult = JSON.parse(resumed.stdout);
+  assert.ok(resumedResult.run, resumed.stdout);
+  assert.equal(resumedResult.run.stages.commonVerify.state, "passed");
   assert.equal(
-    JSON.parse(resumed.stdout).run.stages.commonVerify.state,
-    "passed"
-  );
-  assert.equal(
-    JSON.parse(resumed.stdout).run.stages.commonVerify.attempts[0].state,
+    resumedResult.run.stages.commonVerify.attempts[0].state,
     "interrupted"
   );
 });

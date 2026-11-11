@@ -21,7 +21,7 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: timeout 600s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'
+      - run: timeout 600s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3 zip unzip'
       - run: npm ci
         env:
           # Routine CI does not run native Electron startup checks.

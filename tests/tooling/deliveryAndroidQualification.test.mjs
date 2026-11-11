@@ -22,8 +22,13 @@ import {
 } from "../../scripts/delivery/android-qualification.mjs";
 
 const cli = path.resolve("scripts/delivery.mjs");
+const fixtureHost = path.resolve("tests/tooling/fixtureDeliveryHost.cjs");
 function command(bin, args, cwd, env = {}) {
-  return spawnSync(bin, args, {
+  const commandArgs =
+    bin === process.execPath && args[0] === cli
+      ? ["--require", fixtureHost, ...args]
+      : args;
+  return spawnSync(bin, commandArgs, {
     cwd,
     encoding: "utf8",
     env: { ...process.env, HUSKY: "0", ...env },
