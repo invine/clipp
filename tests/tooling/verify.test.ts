@@ -165,7 +165,7 @@ test("ordinary pull requests and main changes use the same read-only routine com
     jobs[0].steps.filter((step) => step.run).map((step) => step.run)
   ).toEqual([
     'git config --global --add safe.directory "$GITHUB_WORKSPACE"',
-    "timeout 180s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'",
+    "timeout 600s bash -euc 'apt-get update -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 && apt-get install -y --no-install-recommends build-essential python3'",
     "npm ci",
     "npm run verify",
   ]);
