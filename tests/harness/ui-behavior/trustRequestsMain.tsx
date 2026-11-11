@@ -73,7 +73,9 @@ function makeAdapter(
 }
 
 const session = createUiSession();
-session.update({ destination: "requests" });
+session.update({
+  destination: location.search === "?devices" ? "devices" : "requests",
+});
 
 function ScenarioControls({
   adapter,
@@ -167,6 +169,29 @@ function ScenarioControls({
         }
       >
         Rotate identity
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [
+              initialRequest,
+              {
+                deviceId: "peer-two",
+                deviceName: "Peer Two",
+                requestVersion: "request-two",
+              },
+            ],
+          })
+        }
+      >
+        Publish two pending requests
+      </button>
+      <button
+        type="button"
+        onClick={() => adapter.publish({ pending: [initialRequest] })}
+      >
+        Publish first pending request
       </button>
       <button type="button" onClick={() => adapter.publish({ pending: [] })}>
         Publish no pending requests

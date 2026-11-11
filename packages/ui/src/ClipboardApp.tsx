@@ -1522,6 +1522,134 @@ export function ClipboardApp({
             </section>
           </>
         )}
+        {sessionState.destination === "devices" && (
+          <>
+            {trustRequestBehavior.visibleFeedback.map((item) => (
+              <p
+                className="device-request-feedback"
+                key={`${item.deviceId}:${item.requestVersion}`}
+                role="status"
+              >
+                {item.message}
+              </p>
+            ))}
+            {requestsLoading && (
+              <p className="device-request-feedback" role="status">
+                Loading Requests…
+              </p>
+            )}
+            {!requestsLoading && (requestsUnavailable || !identityReady) && (
+              <div className="device-request-feedback">
+                <p role="alert">
+                  {requestsUnavailable
+                    ? "Requests are unavailable. Retry to refresh the current list."
+                    : "Requests are unavailable until this installation is ready."}
+                </p>
+                {(onRetryRequests ||
+                  onRetryInitialization ||
+                  onRetryRuntime) && (
+                  <button
+                    type="button"
+                    disabled={
+                      sessionState.recoveryAttempts["requests:read"]?.pending
+                    }
+                    onClick={() =>
+                      void session.retryRecovery(
+                        "requests:read",
+                        (onRetryRequests ||
+                          onRetryInitialization ||
+                          onRetryRuntime)!
+                      )
+                    }
+                  >
+                    Retry Requests
+                  </button>
+                )}
+                {sessionState.recoveryAttempts["requests:read"]?.error && (
+                  <p role="status">
+                    Requests refresh could not be confirmed. Retry again.
+                  </p>
+                )}
+              </div>
+            )}
+            {pending.length > 0 && (
+              <section
+                className="device-section device-trust-requests"
+                aria-labelledby="device-trust-requests-heading"
+              >
+                <div className="device-section-heading">
+                  <h2
+                    className="device-section-title"
+                    id="device-trust-requests-heading"
+                  >
+                    Trust requests
+                  </h2>
+                  <span className="device-count">
+                    {pending.length}{" "}
+                    {pending.length === 1 ? "request" : "requests"}
+                  </span>
+                </div>
+                <div>
+                  {pending.map((req) => (
+                    <div className="device-request-row" key={req.deviceId}>
+                      <div className="device-request-body">
+                        <span className="device-request-name">
+                          {req.deviceName || "Unknown device"}
+                        </span>
+                        <dl className="device-request-details">
+                          <div>
+                            <dt>Peer ID</dt>
+                            <dd>{req.deviceId}</dd>
+                          </div>
+                          <div>
+                            <dt>Request sent</dt>
+                            <dd>Unavailable</dd>
+                          </div>
+                        </dl>
+                        {trustRequestBehavior.isPending(req) && (
+                          <p role="status">Deciding Trust Request…</p>
+                        )}
+                      </div>
+                      <div className="device-request-actions">
+                        <button
+                          type="button"
+                          aria-label={`Reject request from ${req.deviceName || req.deviceId}`}
+                          disabled={
+                            !identityReady ||
+                            requestsLoading ||
+                            requestsUnavailable ||
+                            trustRequestBehavior.isPending(req)
+                          }
+                          onClick={() =>
+                            void trustRequestBehavior.decide(req, false)
+                          }
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          className="device-request-approve"
+                          aria-label={`Approve request from ${req.deviceName || req.deviceId}`}
+                          disabled={
+                            !identityReady ||
+                            requestsLoading ||
+                            requestsUnavailable ||
+                            trustRequestBehavior.isPending(req)
+                          }
+                          onClick={() =>
+                            void trustRequestBehavior.decide(req, true)
+                          }
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
         {sessionState.destination === "requests" && (
           <>
             <div className="section-divider"></div>
