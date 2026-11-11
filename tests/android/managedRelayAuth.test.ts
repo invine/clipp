@@ -46,6 +46,45 @@ function tokens(
 }
 
 describe("Android managed relay authorization", () => {
+  it("logs refresh and cache decisions without exposing credentials or native errors", async () => {
+    const debug = jest.spyOn(console, "debug").mockImplementation(() => {});
+    try {
+      let now = 1_000_000;
+      const native = bridge();
+      native.saved.set(endpoint, "old-refresh");
+      const fetcher = jest
+        .fn()
+        .mockResolvedValueOnce(tokens())
+        .mockRejectedValueOnce(new Error("private account and token canary"));
+      const auth = new AndroidManagedRelayAuth(native, fetcher, () => now);
+      const { signal } = new AbortController();
+
+      expect(await auth.accessToken(endpoint, signal)).toBe("access-new");
+      expect(await auth.accessToken(endpoint, signal)).toBe("access-new");
+      now = 1_900_000;
+      await expect(auth.accessToken(endpoint, signal)).rejects.toThrow();
+      expect(debug.mock.calls).toEqual([
+        ["relay.access_token", { phase: "refresh_started", at: 1_000_000 }],
+        ["relay.access_token", { phase: "refresh_succeeded", at: 1_000_000 }],
+        [
+          "relay.access_token",
+          { phase: "cached", expiresAt: 1_900_000, at: 1_000_000 },
+        ],
+        ["relay.access_token", { phase: "refresh_started", at: 1_900_000 }],
+        [
+          "relay.access_token",
+          {
+            phase: "refresh_failed",
+            reason: "unexpected_failure",
+            at: 1_900_000,
+          },
+        ],
+      ]);
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
   it("keeps native token bytes through login, protected reload, refresh, and relay use", async () => {
     const native = bridge();
     const requests: URLSearchParams[] = [];
